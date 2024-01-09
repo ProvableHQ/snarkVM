@@ -39,6 +39,9 @@ workspace = true
 [dependencies.snarkvm-ledger-narwhal-transmission-id]
 workspace = true
 
+[dependencies.snarkvm-ledger-narwhal-traits]
+workspace = true
+
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]

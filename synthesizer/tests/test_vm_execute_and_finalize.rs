@@ -550,7 +550,9 @@ fn construct_next_block<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>
         ratifications,
         None.into(),
         vec![],
+        vec![],
         transactions,
+        vec![],
         aborted_transaction_ids,
         rng,
     )

@@ -20,7 +20,7 @@ use super::*;
 use snarkvm_ledger_puzzle::Puzzle;
 use snarkvm_synthesizer_program::FinalizeOperation;
 
-use std::collections::HashSet;
+use std::{borrow::Cow, collections::HashSet};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -178,7 +178,10 @@ impl<N: Network> Block<N> {
                 if previous_round != 0 {
                     for round in previous_round..=subdag.anchor_round() {
                         ensure!(
-                            subdag.contains_key(&round),
+                            match subdag {
+                                Subdag::Full { subdag } => subdag.contains_key(&round),
+                                Subdag::Compact { subdag } => subdag.contains_key(&round),
+                            },
                             "Subdag is missing round {round} in block {expected_height}",
                         );
                     }
@@ -231,8 +234,10 @@ impl<N: Network> Block<N> {
                 Self::check_subdag_transmissions(
                     subdag,
                     &self.solutions,
+                    &self.prior_solution_ids,
                     &self.aborted_solution_ids,
                     &self.transactions,
+                    &self.prior_transaction_ids,
                     &self.aborted_transaction_ids,
                 )?
             }
@@ -255,18 +260,7 @@ impl<N: Network> Block<N> {
             );
 
             // Check that all certificates on each round have the same committee ID.
-            cfg_iter!(subdag).try_for_each(|(round, certificates)| {
-                // Check that every certificate for a given round shares the same committee ID.
-                let expected_committee_id = certificates
-                    .first()
-                    .map(|certificate| certificate.committee_id())
-                    .ok_or(anyhow!("No certificates found for subdag round {round}"))?;
-                ensure!(
-                    certificates.iter().skip(1).all(|certificate| certificate.committee_id() == expected_committee_id),
-                    "Certificates on round {round} do not all have the same committee ID",
-                );
-                Ok(())
-            })?;
+            subdag.check_committee_id_coherence()?;
         }
 
         // Return success.
@@ -561,12 +555,12 @@ impl<N: Network> Block<N> {
     pub(super) fn check_subdag_transmissions(
         subdag: &Subdag<N>,
         solutions: &Option<PuzzleSolutions<N>>,
+        prior_solution_ids: &[SolutionID<N>],
         aborted_solution_ids: &[SolutionID<N>],
         transactions: &Transactions<N>,
+        prior_transaction_ids: &[N::TransactionID],
         aborted_transaction_ids: &[N::TransactionID],
     ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
-        // Prepare an iterator over the solution IDs.
-        let mut solutions = solutions.as_ref().map(|s| s.deref()).into_iter().flatten().peekable();
         // Prepare an iterator over the unconfirmed transactions.
         let unconfirmed_transactions = cfg_iter!(transactions)
             .map(|confirmed| confirmed.to_unconfirmed_transaction())
@@ -574,21 +568,46 @@ impl<N: Network> Block<N> {
         let mut unconfirmed_transactions = unconfirmed_transactions.iter().peekable();
 
         // Initialize a set of already seen transaction and solution IDs.
-        let mut seen_transaction_ids = HashSet::new();
-        let mut seen_solution_ids = HashSet::new();
+        let mut seen_transaction_ids: HashSet<N::TransactionID> = HashSet::new();
+        let mut seen_solution_ids: HashSet<SolutionID<N>> = HashSet::new();
 
         // Initialize a set of aborted or already-existing solution IDs.
-        let mut aborted_or_existing_solution_ids = HashSet::new();
+        let mut aborted_or_existing_solution_ids: HashSet<SolutionID<N>> = HashSet::new();
         // Initialize a set of aborted or already-existing transaction IDs.
-        let mut aborted_or_existing_transaction_ids = HashSet::new();
+        let mut aborted_or_existing_transaction_ids: HashSet<N::TransactionID> = HashSet::new();
+
+        let transmission_ids: Vec<Cow<'_, TransmissionID<N>>> = match subdag {
+            Subdag::Full { subdag } => {
+                subdag.values().flatten().flat_map(|cert| cert.transmission_ids()).map(Cow::Borrowed).collect()
+            }
+            Subdag::Compact { subdag } => {
+                let mut ids = Vec::new();
+                for compact_header in subdag.values().flatten().map(|cert| cert.compact_header()) {
+                    let batch_header = compact_header.clone().into_batch_header(
+                        [].iter(),
+                        solutions.as_ref().map(|s| s.solution_ids()),
+                        prior_solution_ids.iter(),
+                        transactions.transaction_ids(),
+                        prior_transaction_ids.iter(),
+                        aborted_transaction_ids.iter(),
+                    )?;
+                    ids.extend(batch_header.transmission_ids().iter().cloned().map(Cow::Owned));
+                }
+
+                ids
+            }
+        };
+
+        // Prepare an iterator over the solution IDs.
+        let mut solutions = solutions.as_ref().map(|s| s.deref()).into_iter().flatten().peekable();
 
         // Iterate over the transmission IDs.
-        for transmission_id in subdag.transmission_ids() {
+        for transmission_id in transmission_ids {
             // If the transaction or solution ID has already been seen, then continue.
             // Note: This is done instead of checking `TransmissionID` directly, because we need to
             // ensure that each transaction or solution ID is unique. The `TransmissionID` is guaranteed
             // to be unique, however the transaction/solution ID may not be due to malleability concerns.
-            match transmission_id {
+            match *transmission_id {
                 TransmissionID::Ratification => {}
                 TransmissionID::Solution(solution_id, _) => {
                     if !seen_solution_ids.insert(solution_id) {
@@ -603,19 +622,19 @@ impl<N: Network> Block<N> {
             }
 
             // Process the transmission ID.
-            match transmission_id {
+            match *transmission_id {
                 TransmissionID::Ratification => {}
                 TransmissionID::Solution(solution_id, _checksum) => {
                     match solutions.peek() {
                         // Check the next solution matches the expected solution ID.
                         // We don't check against the checksum, because check_solution_mut might mutate the solution.
-                        Some((_, solution)) if solution.id() == *solution_id => {
+                        Some((_, solution)) if solution.id() == solution_id => {
                             // Increment the solution iterator.
                             solutions.next();
                         }
                         // Otherwise, add the solution ID to the aborted or existing list.
                         _ => {
-                            if !aborted_or_existing_solution_ids.insert(*solution_id) {
+                            if !aborted_or_existing_solution_ids.insert(solution_id) {
                                 bail!("Block contains a duplicate aborted solution ID (found '{solution_id}')");
                             }
                         }
@@ -625,17 +644,17 @@ impl<N: Network> Block<N> {
                     match unconfirmed_transactions.peek() {
                         // Check the next transaction matches the expected transaction.
                         Some(transaction)
-                            if transaction.id() == *transaction_id
+                            if transaction.id() == transaction_id
                                 && Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into())
                                     .to_checksum::<N>()?
-                                    == *checksum =>
+                                    == checksum =>
                         {
                             // Increment the unconfirmed transaction iterator.
                             unconfirmed_transactions.next();
                         }
                         // Otherwise, add the transaction ID to the aborted or existing list.
                         _ => {
-                            if !aborted_or_existing_transaction_ids.insert(*transaction_id) {
+                            if !aborted_or_existing_transaction_ids.insert(transaction_id) {
                                 bail!("Block contains a duplicate aborted transaction ID (found '{transaction_id}')");
                             }
                         }

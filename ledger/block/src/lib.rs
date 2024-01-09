@@ -77,10 +77,14 @@ pub struct Block<N: Network> {
     ratifications: Ratifications<N>,
     /// The solutions in the block.
     solutions: Solutions<N>,
+    /// The prior solution ids in the block.
+    prior_solution_ids: Vec<SolutionID<N>>,
     /// The aborted solution IDs in this block.
     aborted_solution_ids: Vec<SolutionID<N>>,
     /// The transactions in this block.
     transactions: Transactions<N>,
+    /// The prior transaction ids in the block.
+    prior_transaction_ids: Vec<N::TransactionID>,
     /// The aborted transaction IDs in this block.
     aborted_transaction_ids: Vec<N::TransactionID>,
 }
@@ -94,8 +98,10 @@ impl<N: Network> Block<N> {
         header: Header<N>,
         ratifications: Ratifications<N>,
         solutions: Solutions<N>,
+        prior_solution_ids: Vec<SolutionID<N>>,
         aborted_solution_ids: Vec<SolutionID<N>>,
         transactions: Transactions<N>,
+        prior_transaction_ids: Vec<N::TransactionID>,
         aborted_transaction_ids: Vec<N::TransactionID>,
         rng: &mut R,
     ) -> Result<Self> {
@@ -110,8 +116,10 @@ impl<N: Network> Block<N> {
             authority,
             ratifications,
             solutions,
+            prior_solution_ids,
             aborted_solution_ids,
             transactions,
+            prior_transaction_ids,
             aborted_transaction_ids,
         )
     }
@@ -124,8 +132,10 @@ impl<N: Network> Block<N> {
         subdag: Subdag<N>,
         ratifications: Ratifications<N>,
         solutions: Solutions<N>,
+        prior_solution_ids: Vec<SolutionID<N>>,
         aborted_solution_ids: Vec<SolutionID<N>>,
         transactions: Transactions<N>,
+        prior_transaction_ids: Vec<N::TransactionID>,
         aborted_transaction_ids: Vec<N::TransactionID>,
     ) -> Result<Self> {
         // Construct the beacon authority.
@@ -137,8 +147,10 @@ impl<N: Network> Block<N> {
             authority,
             ratifications,
             solutions,
+            prior_solution_ids,
             aborted_solution_ids,
             transactions,
+            prior_transaction_ids,
             aborted_transaction_ids,
         )
     }
@@ -151,8 +163,10 @@ impl<N: Network> Block<N> {
         authority: Authority<N>,
         ratifications: Ratifications<N>,
         solutions: Solutions<N>,
+        prior_solution_ids: Vec<SolutionID<N>>,
         aborted_solution_ids: Vec<SolutionID<N>>,
         transactions: Transactions<N>,
+        prior_transaction_ids: Vec<N::TransactionID>,
         aborted_transaction_ids: Vec<N::TransactionID>,
     ) -> Result<Self> {
         // Ensure the number of aborted solutions IDs is within the allowed range.
@@ -202,8 +216,10 @@ impl<N: Network> Block<N> {
                 Self::check_subdag_transmissions(
                     subdag,
                     &solutions,
+                    &prior_solution_ids,
                     &aborted_solution_ids,
                     &transactions,
+                    &prior_transaction_ids,
                     &aborted_transaction_ids,
                 )?;
             }
@@ -231,8 +247,10 @@ impl<N: Network> Block<N> {
             authority,
             ratifications,
             solutions,
+            prior_solution_ids,
             aborted_solution_ids,
             transactions,
+            prior_transaction_ids,
             aborted_transaction_ids,
         )
     }
@@ -247,8 +265,10 @@ impl<N: Network> Block<N> {
         authority: Authority<N>,
         ratifications: Ratifications<N>,
         solutions: Solutions<N>,
+        prior_solution_ids: Vec<SolutionID<N>>,
         aborted_solution_ids: Vec<SolutionID<N>>,
         transactions: Transactions<N>,
+        prior_transaction_ids: Vec<N::TransactionID>,
         aborted_transaction_ids: Vec<N::TransactionID>,
     ) -> Result<Self> {
         // Return the block.
@@ -259,10 +279,80 @@ impl<N: Network> Block<N> {
             authority,
             ratifications,
             solutions,
+            prior_solution_ids,
             aborted_solution_ids,
             transactions,
+            prior_transaction_ids,
             aborted_transaction_ids,
         })
+    }
+
+    /// Consume the Block and return a Subdag with full batch certificates.
+    pub fn into_full_subdag(self) -> Result<Subdag<N>> {
+        let Block {
+            ratifications,
+            solutions,
+            prior_solution_ids,
+            transactions,
+            prior_transaction_ids,
+            aborted_transaction_ids,
+            authority,
+            ..
+        } = self;
+
+        // Check if Authority is a Quorum
+        let Authority::Quorum(subdag) = authority else {
+            bail!("Can only convert block with Quorum Authority to full subdag");
+        };
+
+        // Collect ratification IDs.
+        let ratification_ids = ratifications.ratification_ids().copied().collect_vec();
+        // Collect transaction IDs.
+        let transaction_ids = transactions.transaction_ids().copied().collect_vec();
+
+        // Convert Quorum authority to subdag with full batch certificates.
+        subdag.into_full(
+            ratification_ids,
+            solutions.as_puzzle_solutions().cloned(),
+            prior_solution_ids,
+            transaction_ids,
+            prior_transaction_ids,
+            aborted_transaction_ids,
+        )
+    }
+
+    /// Borrow the Block and return a Subdag with full batch certificates.
+    pub fn to_full_subdag(&self) -> Result<Subdag<N>> {
+        let Block {
+            ratifications,
+            solutions,
+            prior_solution_ids,
+            transactions,
+            prior_transaction_ids,
+            aborted_transaction_ids,
+            authority,
+            ..
+        } = self;
+
+        // Check if Authority is a Quorum
+        let Authority::Quorum(subdag) = authority else {
+            bail!("Can only convert block with Quorum Authority to full subdag");
+        };
+
+        // Collect ratification IDs.
+        let ratification_ids = ratifications.ratification_ids().copied().collect_vec();
+        // Collect transaction IDs.
+        let transaction_ids = transactions.transaction_ids().copied().collect_vec();
+
+        // Convert Quorum authority to subdag with full batch certificates.
+        subdag.clone().into_full(
+            ratification_ids,
+            solutions.as_puzzle_solutions().cloned(),
+            prior_solution_ids.clone(),
+            transaction_ids,
+            prior_transaction_ids.clone(),
+            aborted_transaction_ids.clone(),
+        )
     }
 }
 
@@ -297,9 +387,19 @@ impl<N: Network> Block<N> {
         &self.aborted_solution_ids
     }
 
+    /// Returns the prior solution ids in the block.
+    pub const fn prior_solution_ids(&self) -> &Vec<SolutionID<N>> {
+        &self.prior_solution_ids
+    }
+
     /// Returns the transactions in this block.
     pub const fn transactions(&self) -> &Transactions<N> {
         &self.transactions
+    }
+
+    /// Returns the prior transactions ids in the block.
+    pub const fn prior_transaction_ids(&self) -> &Vec<N::TransactionID> {
+        &self.prior_transaction_ids
     }
 
     /// Returns the aborted transaction IDs in this block.
@@ -709,7 +809,9 @@ pub mod test_helpers {
             ratifications,
             None.into(),
             vec![],
+            vec![],
             transactions,
+            vec![],
             vec![],
             rng,
         )

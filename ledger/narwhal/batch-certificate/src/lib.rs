@@ -28,11 +28,12 @@ use console::{
     types::Field,
 };
 use snarkvm_ledger_narwhal_batch_header::BatchHeader;
+use snarkvm_ledger_narwhal_traits::NarwhalCertificate;
 use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 
 use core::hash::{Hash, Hasher};
 use indexmap::IndexSet;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -111,43 +112,50 @@ impl<N: Network> BatchCertificate<N> {
         &self.batch_header
     }
 
+    /// Returns the transmission IDs.
+    pub const fn transmission_ids(&self) -> &BTreeSet<TransmissionID<N>> {
+        self.batch_header().transmission_ids()
+    }
+}
+
+impl<N: Network> NarwhalCertificate<N> for BatchCertificate<N> {
+    /// Returns the certificate ID.
+    fn id(&self) -> Field<N> {
+        self.batch_header().batch_id()
+    }
+
     /// Returns the batch ID.
-    pub const fn batch_id(&self) -> Field<N> {
+    fn batch_id(&self) -> Field<N> {
         self.batch_header().batch_id()
     }
 
     /// Returns the author.
-    pub const fn author(&self) -> Address<N> {
+    fn author(&self) -> Address<N> {
         self.batch_header().author()
     }
 
     /// Returns the round.
-    pub const fn round(&self) -> u64 {
+    fn round(&self) -> u64 {
         self.batch_header().round()
     }
 
     /// Returns the timestamp of the batch header.
-    pub fn timestamp(&self) -> i64 {
+    fn timestamp(&self) -> i64 {
         self.batch_header().timestamp()
     }
 
     /// Returns the committee ID.
-    pub const fn committee_id(&self) -> Field<N> {
+    fn committee_id(&self) -> Field<N> {
         self.batch_header().committee_id()
     }
 
-    /// Returns the transmission IDs.
-    pub const fn transmission_ids(&self) -> &IndexSet<TransmissionID<N>> {
-        self.batch_header().transmission_ids()
-    }
-
     /// Returns the batch certificate IDs for the previous round.
-    pub const fn previous_certificate_ids(&self) -> &IndexSet<Field<N>> {
+    fn previous_certificate_ids(&self) -> &IndexSet<Field<N>> {
         self.batch_header().previous_certificate_ids()
     }
 
     /// Returns the signatures of the batch ID from the committee.
-    pub fn signatures(&self) -> Box<dyn '_ + ExactSizeIterator<Item = &Signature<N>>> {
+    fn signatures(&self) -> Box<dyn '_ + ExactSizeIterator<Item = &Signature<N>>> {
         Box::new(self.signatures.iter())
     }
 }

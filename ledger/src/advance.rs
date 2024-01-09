@@ -20,19 +20,50 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn prepare_advance_to_next_quorum_block<R: Rng + CryptoRng>(
         &self,
         subdag: Subdag<N>,
-        transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
+        subdag_transmissions: SubdagTransmissions<N>,
         rng: &mut R,
     ) -> Result<Block<N>> {
         // Retrieve the latest block as the previous block (for the next block).
         let previous_block = self.latest_block();
 
+        // Obtain the subdag transmissions.
+        let SubdagTransmissions { prior_included_transmissions, aborted_transmissions, transmissions } =
+            subdag_transmissions;
+
         // Decouple the transmissions into ratifications, solutions, and transactions.
         let (ratifications, solutions, transactions) = decouple_transmissions(transmissions.into_iter())?;
+        // Decouple the prior_transmissions into ratifications, solutions, and transactions.
+        let (prior_ratifications, prior_solution_ids, prior_transaction_ids) =
+            decouple_transmission_ids(prior_included_transmissions)?;
+        // Decouple the aborted_transmissions into ratifications, solutions, and transactions.
+        // TODO: add support for aborted solution ids
+        let (aborted_ratifications, _aborted_solution_ids, aborted_transaction_ids) =
+            decouple_transmission_ids(aborted_transmissions)?;
         // Currently, we do not support ratifications from the memory pool.
-        ensure!(ratifications.is_empty(), "Ratifications are currently unsupported from the memory pool");
+        ensure!(
+            ratifications.is_empty() && prior_ratifications.is_empty() && aborted_ratifications.is_empty(),
+            "Ratifications are currently unsupported from the memory pool"
+        );
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) =
+        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids_2) =
             self.construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)?;
+        // Construct Ratification IDs.
+        let ratification_ids = ratifications.ratification_ids().copied().collect_vec();
+        // Construct Transaction IDs.
+        let transaction_ids = transactions.unconfirmed_transaction_ids()?;
+        // Construct the aborted Transaction IDs.
+        let aborted_transaction_ids =
+            aborted_transaction_ids.into_iter().chain(aborted_transaction_ids_2.into_iter()).collect_vec();
+
+        // Construct the compact Subdag
+        let subdag = subdag.into_compact(
+            ratification_ids,
+            solutions.as_ref(),
+            prior_solution_ids.clone(),
+            transaction_ids,
+            prior_transaction_ids.clone(),
+            aborted_transaction_ids.clone(),
+        )?;
 
         // Construct the new quorum block.
         Block::new_quorum(
@@ -41,8 +72,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             subdag,
             ratifications,
             solutions,
+            prior_solution_ids,
             aborted_solution_ids,
             transactions,
+            prior_transaction_ids,
             aborted_transaction_ids,
         )
     }
@@ -54,6 +87,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         candidate_ratifications: Vec<Ratify<N>>,
         candidate_solutions: Vec<Solution<N>>,
         candidate_transactions: Vec<Transaction<N>>,
+        prior_solution_ids: Vec<SolutionID<N>>,
+        prior_transaction_ids: Vec<N::TransactionID>,
         rng: &mut R,
     ) -> Result<Block<N>> {
         // Currently, we do not support ratifications from the memory pool.
@@ -80,8 +115,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             header,
             ratifications,
             solutions,
+            prior_solution_ids,
             aborted_solution_ids,
             transactions,
+            prior_transaction_ids,
             aborted_transaction_ids,
             rng,
         )

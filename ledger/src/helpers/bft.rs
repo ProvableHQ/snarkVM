@@ -16,9 +16,10 @@
 #![allow(clippy::type_complexity)]
 
 use console::network::Network;
+use indexmap::IndexSet;
 use snarkvm_ledger_block::{Ratify, Transaction};
 use snarkvm_ledger_narwhal::{Transmission, TransmissionID};
-use snarkvm_ledger_puzzle::Solution;
+use snarkvm_ledger_puzzle::{Solution, SolutionID};
 
 use anyhow::{Result, bail, ensure};
 use std::collections::HashSet;
@@ -72,4 +73,36 @@ pub fn decouple_transmissions<N: Network>(
     }
     // Return the ratifications, solutions, and transactions.
     Ok((ratifications, solutions, transactions))
+}
+
+/// Takes in an iterator of transmission IDs and returns a tuple of ratifications, solutions, and transactions.
+///
+/// This method guarantees that the output is 1) order-preserving, and 2) unique.
+pub fn decouple_transmission_ids<N: Network>(
+    transmission_ids: IndexSet<TransmissionID<N>>,
+) -> Result<(Vec<Ratify<N>>, Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
+    // Initialize a list for the ratifications.
+    let ratifications = Vec::new();
+    // Initialize a list for the solutions.
+    let mut solution_ids = Vec::new();
+    // Initialize a list for the transactions.
+    let mut transaction_ids = Vec::new();
+
+    // Iterate over the transmissions.
+    for transmission_id in transmission_ids.into_iter() {
+        // Deserialize and store the transmission.
+        match transmission_id {
+            TransmissionID::Ratification => (),
+            TransmissionID::Solution(commitment, _) => {
+                // Insert the solution into the list.
+                solution_ids.push(commitment);
+            }
+            TransmissionID::Transaction(transaction_id, _) => {
+                // Insert the transaction into the list.
+                transaction_ids.push(transaction_id);
+            }
+        }
+    }
+    // Return the ratifications, solution_ids, and transaction_ids.
+    Ok((ratifications, solution_ids, transaction_ids))
 }

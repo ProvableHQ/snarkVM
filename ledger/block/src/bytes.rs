@@ -54,8 +54,28 @@ impl<N: Network> FromBytes for Block<N> {
             aborted_solution_ids.push(FromBytes::read_le(&mut reader)?);
         }
 
+        // Read the number of prior solution IDs.
+        let num_prior_solutions = u16::read_le(&mut reader)?;
+        // Read the aborted transaction IDs.
+        let mut prior_solution_ids = Vec::with_capacity(num_prior_solutions as usize);
+        for _ in 0..num_prior_solutions {
+            prior_solution_ids.push(FromBytes::read_le(&mut reader)?);
+        }
+
         // Read the transactions.
         let transactions = FromBytes::read_le(&mut reader)?;
+
+        // Read the number of prior transaction IDs.
+        let num_prior_transactions = u32::read_le(&mut reader)?;
+        // Ensure the number of prior transaction IDs is within bounds (this is an early safety check).
+        if num_prior_transactions as usize > Transactions::<N>::MAX_TRANSACTIONS {
+            return Err(error("Invalid number of aborted transaction IDs in the block"));
+        }
+        // Read the aborted transaction IDs.
+        let mut prior_transaction_ids = Vec::with_capacity(num_prior_transactions as usize);
+        for _ in 0..num_prior_transactions {
+            prior_transaction_ids.push(FromBytes::read_le(&mut reader)?);
+        }
 
         // Read the number of aborted transaction IDs.
         let num_aborted_transactions = u32::read_le(&mut reader)?;
@@ -76,8 +96,10 @@ impl<N: Network> FromBytes for Block<N> {
             authority,
             ratifications,
             solutions,
+            prior_solution_ids,
             aborted_solution_ids,
             transactions,
+            prior_transaction_ids,
             aborted_transaction_ids,
         )
         .map_err(error)?;
@@ -113,12 +135,24 @@ impl<N: Network> ToBytes for Block<N> {
         // Write the solutions.
         self.solutions.write_le(&mut writer)?;
 
+        // Write the prior solution ids.
+        (u16::try_from(self.prior_solution_ids.len()).map_err(error))?.write_le(&mut writer)?;
+        self.prior_solution_ids.write_le(&mut writer)?;
+
         // Write the aborted solution IDs.
         (u32::try_from(self.aborted_solution_ids.len()).map_err(error))?.write_le(&mut writer)?;
         self.aborted_solution_ids.write_le(&mut writer)?;
 
+        // Write the prior solution ids.
+        (u16::try_from(self.prior_solution_ids.len()).map_err(error))?.write_le(&mut writer)?;
+        self.prior_solution_ids.write_le(&mut writer)?;
+
         // Write the transactions.
         self.transactions.write_le(&mut writer)?;
+
+        // Write the prior transaction ids.
+        (u32::try_from(self.prior_transaction_ids.len()).map_err(error))?.write_le(&mut writer)?;
+        self.prior_transaction_ids.write_le(&mut writer)?;
 
         // Write the aborted transaction IDs.
         (u32::try_from(self.aborted_transaction_ids.len()).map_err(error))?.write_le(&mut writer)?;

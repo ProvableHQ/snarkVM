@@ -1,8 +1,8 @@
 [package]
-name = "snarkvm-ledger-narwhal-subdag"
+name = "snarkvm-ledger-narwhal-compact-header"
 version = "4.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
-description = "A subdag for a Narwhal-style memory pool in a decentralized virtual machine"
+description = "A compact header for a Narwhal-style memory pool in a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
 keywords = [
@@ -24,32 +24,18 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "indexmap/rayon", "rayon" ]
+default = [ ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
-test-helpers = [ "snarkvm-ledger-narwhal-batch-certificate/test-helpers" ]
+test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers", "snarkvm-ledger-narwhal-batch-header/test-helpers", "time" ]
 
 [dependencies.snarkvm-console]
-workspace = true
-features = [ "default" ]
-
-[dependencies.snarkvm-ledger-narwhal-batch-certificate]
-workspace = true
-
-[dependencies.snarkvm-ledger-narwhal-compact-certificate]
 workspace = true
 
 [dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
 
-[dependencies.snarkvm-ledger-committee]
-workspace = true
-features = [ "default" ]
-
 [dependencies.snarkvm-ledger-narwhal-transmission-id]
-workspace = true
-
-[dependencies.snarkvm-ledger-narwhal-traits]
 workspace = true
 
 [dependencies.snarkvm-ledger-puzzle]
@@ -58,24 +44,24 @@ workspace = true
 [dependencies.bit-set]
 version = "0.5.3"
 
+[dependencies.bit-vec]
+version = "0.6.3"
+
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]
-
-[dependencies.rayon]
-workspace = true
-optional = true
 
 [dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
 
-[dependencies.tracing]
+[dependencies.time]
 workspace = true
+optional = true
 
 [dev-dependencies.bincode]
 workspace = true
 
-[dev-dependencies.snarkvm-ledger-narwhal-subdag]
-workspace = true
+[dev-dependencies.snarkvm-ledger-narwhal-compact-header]
+path = "."
 features = [ "test-helpers" ]

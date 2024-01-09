@@ -15,47 +15,36 @@
 
 use super::*;
 
-impl<N: Network> Serialize for Subdag<N> {
-    /// Serializes the subdag to a JSON-string or buffer.
+impl<N: Network> Serialize for CompactCertificate<N> {
+    /// Serializes the batch certificate to a JSON-string or buffer.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
-            true => match self {
-                Self::Full { subdag } => {
-                    let mut certificate = serializer.serialize_struct("Subdag", 1)?;
-                    certificate.serialize_field("full_subdag", subdag)?;
-                    certificate.end()
-                }
-                Self::Compact { subdag } => {
-                    let mut certificate = serializer.serialize_struct("Subdag", 1)?;
-                    certificate.serialize_field("compact_subdag", subdag)?;
-                    certificate.end()
-                }
-            },
+            true => {
+                let mut state = serializer.serialize_struct("CompactCertificate", 2)?;
+                state.serialize_field("compact_header", &self.compact_header)?;
+                state.serialize_field("signatures", &self.signatures)?;
+                state.end()
+            }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
         }
     }
 }
 
-impl<'de, N: Network> Deserialize<'de> for Subdag<N> {
-    /// Deserializes the subdag from a JSON-string or buffer.
+impl<'de, N: Network> Deserialize<'de> for CompactCertificate<N> {
+    /// Deserializes the batch certificate from a JSON-string or buffer.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         match deserializer.is_human_readable() {
             true => {
                 let mut value = serde_json::Value::deserialize(deserializer)?;
 
-                // Check if a full Subdag field is present.
-                let subdag_is_full = match value.get("full_subdag") {
-                    Some(..) => true,
-                    None => false,
-                };
-                match subdag_is_full {
-                    true => Ok(Self::from_full(DeserializeExt::take_from_value::<D>(&mut value, "full_subdag")?)
-                        .map_err(de::Error::custom)?),
-                    false => Ok(Self::from_full(DeserializeExt::take_from_value::<D>(&mut value, "compact_subdag")?)
-                        .map_err(de::Error::custom)?),
-                }
+                // Parse batch certificate.
+                Self::from(
+                    DeserializeExt::take_from_value::<D>(&mut value, "compact_header")?,
+                    DeserializeExt::take_from_value::<D>(&mut value, "signatures")?,
+                )
+                .map_err(de::Error::custom)
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "subdag"),
+            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "compact certificate"),
         }
     }
 }
@@ -101,7 +90,7 @@ mod tests {
     fn test_serde_json() {
         let rng = &mut TestRng::default();
 
-        for expected in crate::test_helpers::sample_subdags(rng) {
+        for expected in crate::test_helpers::sample_compact_certificates(rng) {
             check_serde_json(expected);
         }
     }
@@ -110,7 +99,7 @@ mod tests {
     fn test_bincode() {
         let rng = &mut TestRng::default();
 
-        for expected in crate::test_helpers::sample_subdags(rng) {
+        for expected in crate::test_helpers::sample_compact_certificates(rng) {
             check_bincode(expected);
         }
     }

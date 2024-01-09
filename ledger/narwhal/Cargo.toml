@@ -27,8 +27,11 @@ edition = "2024"
 default = [
   "batch-certificate",
   "batch-header",
+  "compact-certificate",
+  "compact-header",
   "data",
   "subdag",
+  "traits",
   "transmission",
   "transmission-id"
 ]
@@ -36,6 +39,8 @@ async = [ "snarkvm-ledger-narwhal-data/async" ]
 serial = [
   "snarkvm-ledger-narwhal-batch-certificate/serial",
   "snarkvm-ledger-narwhal-batch-header/serial",
+  "snarkvm-ledger-narwhal-compact-certificate/serial",
+  "snarkvm-ledger-narwhal-compact-header/serial",
   "snarkvm-ledger-narwhal-subdag/serial",
   "snarkvm-ledger-narwhal-transmission/serial",
   "snarkvm-ledger-narwhal-transmission-id/serial"
@@ -43,6 +48,8 @@ serial = [
 wasm = [
   "snarkvm-ledger-narwhal-batch-certificate/wasm",
   "snarkvm-ledger-narwhal-batch-header/wasm",
+  "snarkvm-ledger-narwhal-compact-certificate/wasm",
+  "snarkvm-ledger-narwhal-compact-header/wasm",
   "snarkvm-ledger-narwhal-subdag/wasm",
   "snarkvm-ledger-narwhal-transmission/wasm",
   "snarkvm-ledger-narwhal-transmission-id/wasm"
@@ -50,14 +57,19 @@ wasm = [
 test-helpers = [
   "snarkvm-ledger-narwhal-batch-certificate/test-helpers",
   "snarkvm-ledger-narwhal-batch-header/test-helpers",
+  "snarkvm-ledger-narwhal-compact-certificate/test-helpers",
+  "snarkvm-ledger-narwhal-compact-header/test-helpers",
   "snarkvm-ledger-narwhal-subdag/test-helpers",
   "snarkvm-ledger-narwhal-transmission/test-helpers",
   "snarkvm-ledger-narwhal-transmission-id/test-helpers"
 ]
 batch-certificate = [ "snarkvm-ledger-narwhal-batch-certificate" ]
 batch-header = [ "snarkvm-ledger-narwhal-batch-header" ]
+compact-certificate = [ "snarkvm-ledger-narwhal-compact-certificate" ]
+compact-header = [ "snarkvm-ledger-narwhal-compact-header" ]
 data = [ "snarkvm-ledger-narwhal-data" ]
 subdag = [ "snarkvm-ledger-narwhal-subdag" ]
+traits = [ "snarkvm-ledger-narwhal-traits" ]
 transmission = [ "snarkvm-ledger-narwhal-transmission" ]
 transmission-id = [ "snarkvm-ledger-narwhal-transmission-id" ]
 
@@ -69,11 +81,23 @@ optional = true
 workspace = true
 optional = true
 
+[dependencies.snarkvm-ledger-narwhal-compact-certificate]
+workspace = true
+optional = true
+
+[dependencies.snarkvm-ledger-narwhal-compact-header]
+workspace = true
+optional = true
+
 [dependencies.snarkvm-ledger-narwhal-data]
 workspace = true
 optional = true
 
 [dependencies.snarkvm-ledger-narwhal-subdag]
+workspace = true
+optional = true
+
+[dependencies.snarkvm-ledger-narwhal-traits]
 workspace = true
 optional = true
 
