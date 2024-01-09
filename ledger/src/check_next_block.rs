@@ -13,9 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use snarkvm_ledger_narwhal::CompactCertificate;
+
 use super::*;
 
-use crate::narwhal::BatchHeader;
+use crate::narwhal::{BatchHeader, LeaderCertificate, NarwhalCertificate};
 
 /// Wrapper for a block that has a valid subDAG, but where the block header,
 /// solutions, and transmissions have not been verified yet.
@@ -243,16 +245,29 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Store the IDs of all certificates in this subDAG.
         // This allows determining which edges point to other subDAGs/blocks.
-        let subdag_certs: HashSet<_> = subdag.certificate_ids().collect();
+        let subdag_certs: HashSet<_> = subdag.certificate_ids().into_iter().collect();
 
         // Generate a set of all external certificates this subDAG references.
         // If multiple certificates reference the same external certificate, the id and round number will be
         // identical and the set will contain only one entry for the external certificate.
-        let leaf_edges: HashSet<_> = subdag
-            .certificates()
-            .flat_map(|cert| cert.previous_certificate_ids().iter().map(|prev_id| (cert.round() - 1, prev_id)))
-            .filter(|(_, prev_id)| !subdag_certs.contains(prev_id))
-            .collect();
+        let leaf_edges: HashSet<_> = match subdag {
+            Subdag::Full { subdag } => subdag
+                .values()
+                .flatten()
+                .flat_map(|cert: &BatchCertificate<N>| {
+                    cert.previous_certificate_ids().iter().map(|prev_id| (cert.round() - 1, prev_id))
+                })
+                .filter(|(_, prev_id)| !subdag_certs.contains(prev_id))
+                .collect(),
+            Subdag::Compact { subdag } => subdag
+                .values()
+                .flatten()
+                .flat_map(|cert: &CompactCertificate<N>| {
+                    cert.previous_certificate_ids().iter().map(|prev_id| (cert.round() - 1, prev_id))
+                })
+                .filter(|(_, prev_id)| !subdag_certs.contains(prev_id))
+                .collect(),
+        };
 
         cfg_iter!(leaf_edges).try_for_each(|(prev_round, prev_id)| {
             if prev_round + (BatchHeader::<N>::MAX_GC_ROUNDS as u64) - 1 <= block.round() {
@@ -277,19 +292,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     ///
     /// Called by [`Self::check_block_subdag`]
     fn check_block_subdag_quorum(&self, block: &Block<N>) -> Result<()> {
-        // Check if the block has a subdag.
-        let subdag = match block.authority() {
-            Authority::Quorum(subdag) => subdag,
-            _ => return Ok(()),
-        };
-
-        // Check that all certificates on each round have met quorum requirements.
-        cfg_iter!(subdag).try_for_each(|(round, certificates)| {
-            // Retrieve the committee lookback for the round.
-            let committee_lookback = self
-                .get_committee_lookback_for_round(*round)?
-                .ok_or_else(|| anyhow!("No committee lookback found for round {round}"))?;
-
+        fn check_quorum_requirements<N: Network, C: NarwhalCertificate<N>>(
+            round: u64,
+            certificates: &IndexSet<C>,
+            committee_lookback: Committee<N>,
+        ) -> Result<()> {
             // Check that each certificate for this round has met quorum requirements.
             // Note that we do not need to check the quorum requirement for the previous certificates
             // because that is done during construction in `BatchCertificate::new`.
@@ -308,12 +315,34 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 );
 
                 Ok::<_, Error>(())
-            })?;
+            })
+        }
 
-            Ok::<_, Error>(())
-        })?;
+        // Check if the block has a subdag.
+        let subdag = match block.authority() {
+            Authority::Quorum(subdag) => subdag,
+            _ => return Ok(()),
+        };
 
-        Ok(())
+        // Check that all certificates on each round have met quorum requirements.
+        match subdag {
+            Subdag::Full { subdag } => cfg_iter!(subdag).try_for_each(|(round, certificates)| {
+                // Retrieve the committee lookback for the round.
+                let committee_lookback = self
+                    .get_committee_lookback_for_round(*round)?
+                    .ok_or_else(|| anyhow!("No committee lookback found for round {round}"))?;
+
+                check_quorum_requirements(*round, certificates, committee_lookback)
+            }),
+            Subdag::Compact { subdag } => cfg_iter!(subdag).try_for_each(|(round, certificates)| {
+                // Retrieve the committee lookback for the round.
+                let committee_lookback = self
+                    .get_committee_lookback_for_round(*round)?
+                    .ok_or_else(|| anyhow!("No committee lookback found for round {round}"))?;
+
+                check_quorum_requirements(*round, certificates, committee_lookback)
+            }),
+        }
     }
 
     /// Checks that the block subdag can not be split into multiple valid subdags.
@@ -323,20 +352,31 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Returns `true` if there is a path from the previous certificate to the current certificate.
         fn is_linked<N: Network>(
             subdag: &Subdag<N>,
-            previous_certificate: &BatchCertificate<N>,
-            current_certificate: &BatchCertificate<N>,
+            previous_certificate: LeaderCertificate<N>,
+            current_certificate: LeaderCertificate<N>,
         ) -> Result<bool> {
+            // Obtain the current round.
+            let current_round = current_certificate.round();
             // Initialize the list containing the traversal.
             let mut traversal = vec![current_certificate];
             // Iterate over the rounds from the current certificate to the previous certificate.
-            for round in (previous_certificate.round()..current_certificate.round()).rev() {
+            for round in (previous_certificate.round()..current_round).rev() {
                 // Retrieve all of the certificates for this past round.
-                let certificates = subdag.get(&round).ok_or(anyhow!("No certificates found for round {round}"))?;
                 // Filter the certificates to only include those that are in the traversal.
-                traversal = certificates
-                    .into_iter()
-                    .filter(|p| traversal.iter().any(|c| c.previous_certificate_ids().contains(&p.id())))
-                    .collect();
+                traversal = match subdag {
+                    Subdag::Full { subdag } => subdag
+                        .get(&round)
+                        .map(|certs| certs.iter().map(LeaderCertificate::<N>::from))
+                        .ok_or(anyhow!("No certificates found for round {round}"))?
+                        .filter(|p| traversal.iter().any(|c| c.previous_certificate_ids().contains(&p.id())))
+                        .collect(),
+                    Subdag::Compact { subdag } => subdag
+                        .get(&round)
+                        .map(|certs| certs.iter().map(LeaderCertificate::<N>::from))
+                        .ok_or(anyhow!("No certificates found for round {round}"))?
+                        .filter(|p| traversal.iter().any(|c| c.previous_certificate_ids().contains(&p.id())))
+                        .collect(),
+                };
             }
             Ok(traversal.contains(&previous_certificate))
         }
@@ -361,11 +401,23 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 .map_err(|e| anyhow!("Failed to compute leader for round {round}: {e}"))?;
 
             // Retrieve the previous leader certificates.
-            let previous_certificate = match subdag.get(&round).and_then(|certificates| {
-                certificates.iter().find(|certificate| certificate.author() == computed_leader)
-            }) {
-                Some(cert) => cert,
-                None => continue,
+            let previous_certificate = match subdag {
+                Subdag::Full { subdag } => {
+                    match subdag.get(&round).map(|certs| certs.iter().map(LeaderCertificate::<N>::from)).and_then(
+                        |mut certificates| certificates.find(|certificate| computed_leader == certificate.author()),
+                    ) {
+                        Some(cert) => cert,
+                        None => continue,
+                    }
+                }
+                Subdag::Compact { subdag } => {
+                    match subdag.get(&round).map(|certs| certs.iter().map(LeaderCertificate::<N>::from)).and_then(
+                        |mut certificates| certificates.find(|certificate| computed_leader == certificate.author()),
+                    ) {
+                        Some(cert) => cert,
+                        None => continue,
+                    }
+                }
             };
 
             // Determine if there is a path between the previous certificate and the subdag's leader certificate.

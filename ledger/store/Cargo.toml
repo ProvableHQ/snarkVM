@@ -34,7 +34,6 @@ wasm = [
   "snarkvm-ledger-block/wasm",
   "snarkvm-ledger-puzzle/wasm",
   "snarkvm-ledger-committee/wasm",
-  "snarkvm-ledger-narwhal-batch-certificate/wasm",
   "snarkvm-synthesizer-program/wasm",
   "snarkvm-synthesizer-snark/wasm"
 ]
@@ -54,7 +53,7 @@ workspace = true
 workspace = true
 features = [ "default" ]
 
-[dependencies.snarkvm-ledger-narwhal-batch-certificate]
+[dependencies.snarkvm-ledger-narwhal-transmission-id]
 workspace = true
 
 [dependencies.snarkvm-ledger-puzzle]

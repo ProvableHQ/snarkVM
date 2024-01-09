@@ -221,6 +221,14 @@ impl<N: Network> Transactions<N> {
         self.transactions.keys()
     }
 
+    /// Returns the unconfirmed transaction IDs, for all transactions in `self`.
+    pub fn unconfirmed_transaction_ids(&self) -> Result<Vec<N::TransactionID>> {
+        self.transactions
+            .values()
+            .map(|confirmed_tx| confirmed_tx.to_unconfirmed_transaction_id())
+            .collect::<Result<_>>()
+    }
+
     /// Returns an iterator over all transactions in `self` that are accepted deploy transactions.
     pub fn deployments(&self) -> impl '_ + Iterator<Item = &ConfirmedTransaction<N>> {
         self.iter().filter(|tx| tx.is_accepted() && tx.is_deploy())

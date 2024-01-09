@@ -16,6 +16,7 @@
 use crate::{
     Ledger,
     RecordsFilter,
+    SubdagTransmissions,
     advance::split_candidate_solutions,
     test_helpers::{CurrentAleo, CurrentConsensusStorage, CurrentLedger, CurrentNetwork},
 };
@@ -29,7 +30,15 @@ use console::{
 use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
 use snarkvm_ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
-use snarkvm_ledger_narwhal::{BatchCertificate, BatchHeader, Data, Subdag, Transmission, TransmissionID};
+use snarkvm_ledger_narwhal::{
+    BatchCertificate,
+    BatchHeader,
+    Data,
+    NarwhalCertificate,
+    Subdag,
+    Transmission,
+    TransmissionID,
+};
 use snarkvm_ledger_store::ConsensusStore;
 use snarkvm_synthesizer::{
     Stack,
@@ -286,8 +295,15 @@ impl TestChainBuilder {
         self.last_committed_batch.insert(leader_idx, commit_round);
 
         // Construct the block.
-        let subdag = Subdag::from(subdag_map).unwrap();
-        let block = self.ledger.prepare_advance_to_next_quorum_block(subdag, transmissions, rng).unwrap();
+        let subdag = Subdag::from_full(subdag_map).unwrap();
+        let block = self
+            .ledger
+            .prepare_advance_to_next_quorum_block(
+                subdag,
+                SubdagTransmissions { transmissions, ..Default::default() },
+                rng,
+            )
+            .unwrap();
         if !skip_verification {
             self.ledger.check_next_block(&block, rng).unwrap();
         }
@@ -3563,8 +3579,8 @@ fn test_forged_block_subdags() {
     ledger.check_next_block(&block_2, rng).expect("Unmodified block 2 must be accepted by the ledger");
 
     // Fetch the unmodified/correct subdags.
-    let Authority::Quorum(block_2_subdag) = block_2.authority() else { unreachable!("") };
-    let Authority::Quorum(block_3_subdag) = block_3.authority() else { unreachable!("") };
+    let Authority::Quorum(Subdag::Full { subdag: block_2_subdag }) = block_2.authority() else { unreachable!("") };
+    let Authority::Quorum(Subdag::Full { subdag: block_3_subdag }) = block_3.authority() else { unreachable!("") };
 
     // Fetch the transmissions.
     let block_2_transmissions = extract_transmissions(&block_2);
@@ -3577,8 +3593,8 @@ fn test_forged_block_subdags() {
         // Forge the block.
         let forged_block_2 = ledger
             .prepare_advance_to_next_quorum_block(
-                block_3_subdag.clone(),
-                block_3_transmissions.clone(),
+                Subdag::Full { subdag: block_3_subdag.clone() },
+                SubdagTransmissions { transmissions: block_3_transmissions.clone(), ..Default::default() },
                 &mut rand::thread_rng(),
             )
             .unwrap();
@@ -3594,7 +3610,7 @@ fn test_forged_block_subdags() {
     ////////////////////////////////////////////////////////////////////////////
     {
         // Combined the subdags.
-        let mut combined_subdag = block_2_subdag.deref().clone();
+        let mut combined_subdag = block_2_subdag.clone();
         for (round, certificates) in block_3_subdag.iter() {
             combined_subdag
                 .entry(*round)
@@ -3609,8 +3625,8 @@ fn test_forged_block_subdags() {
         // Forge the block.
         let forged_block_2_from_both_subdags = ledger
             .prepare_advance_to_next_quorum_block(
-                Subdag::from(combined_subdag).unwrap(),
-                combined_transmissions,
+                Subdag::from_full(combined_subdag).unwrap(),
+                SubdagTransmissions { transmissions: combined_transmissions, ..Default::default() },
                 &mut rand::thread_rng(),
             )
             .unwrap();
@@ -3625,7 +3641,7 @@ fn test_forged_block_subdags() {
     // Attack 3:  Forge block 2' that misses some batches.
     ////////////////////////////////////////////////////////////////////////////
     {
-        let mut subdag = block_2_subdag.deref().clone();
+        let mut subdag = block_2_subdag.clone();
 
         // Get the lowest round which contains batches pointing to the previous
         // block's DAG
@@ -3645,7 +3661,11 @@ fn test_forged_block_subdags() {
 
         // Forge the block.
         let forged_block_2 = ledger
-            .prepare_advance_to_next_quorum_block(Subdag::from(subdag).unwrap(), transmissions, &mut rand::thread_rng())
+            .prepare_advance_to_next_quorum_block(
+                Subdag::from_full(subdag).unwrap(),
+                SubdagTransmissions { transmissions, ..Default::default() },
+                &mut rand::thread_rng(),
+            )
             .unwrap();
 
         assert_ne!(forged_block_2, block_1);
@@ -3746,8 +3766,9 @@ fn test_subdag_with_gc_length() {
 
     {
         // First, let us ensure that the leaf check still works by removing the lowest round and trying to reinsert.
-        let Authority::Quorum(block_subdag) = block.authority() else { unreachable!("") };
-        let mut forged_subdag = block_subdag.deref().clone();
+        let subdag = block.to_full_subdag().unwrap();
+        let Subdag::Full { subdag } = subdag else { unreachable!("") };
+        let mut forged_subdag = subdag.clone();
         let transmissions = extract_transmissions(&block);
 
         // Remove one round from the subDAG.
@@ -3765,8 +3786,8 @@ fn test_subdag_with_gc_length() {
         // Forge the block.
         let forged_block = ledger
             .prepare_advance_to_next_quorum_block(
-                Subdag::from(forged_subdag).unwrap(),
-                transmissions,
+                Subdag::from_full(forged_subdag).unwrap(),
+                SubdagTransmissions { transmissions, ..Default::default() },
                 &mut rand::thread_rng(),
             )
             .unwrap();

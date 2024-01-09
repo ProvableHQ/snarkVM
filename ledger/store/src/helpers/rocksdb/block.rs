@@ -29,6 +29,7 @@ use crate::{
 use console::{prelude::*, types::Field};
 use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Header, Ratifications, Rejected, Solutions};
+use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 use snarkvm_ledger_puzzle::SolutionID;
 use snarkvm_synthesizer_program::FinalizeOperation;
 
@@ -56,6 +57,10 @@ pub struct BlockDB<N: Network> {
     ratifications_map: DataMap<N::BlockHash, Ratifications<N>>,
     /// The solutions map.
     solutions_map: DataMap<N::BlockHash, Solutions<N>>,
+    /// The prior solution transmission ids map.
+    prior_solution_transmission_ids_map: DataMap<N::BlockHash, Vec<TransmissionID<N>>>,
+    /// The aborted solution transmission ids map.
+    aborted_solution_transmission_ids_map: DataMap<N::BlockHash, Vec<TransmissionID<N>>>,
     /// The solution IDs map.
     solution_ids_map: DataMap<SolutionID<N>, u32>,
     /// The aborted solution IDs map.
@@ -64,6 +69,10 @@ pub struct BlockDB<N: Network> {
     aborted_solution_heights_map: DataMap<SolutionID<N>, u32>,
     /// The transactions map.
     transactions_map: DataMap<N::BlockHash, Vec<N::TransactionID>>,
+    /// The prior transaction transmission ids map.
+    prior_transaction_transmission_ids_map: DataMap<N::BlockHash, Vec<TransmissionID<N>>>,
+    /// The aborted transaction transmission ids map.
+    aborted_transaction_transmission_ids_map: DataMap<N::BlockHash, Vec<TransmissionID<N>>>,
     /// The aborted transaction IDs map.
     aborted_transaction_ids_map: DataMap<N::BlockHash, Vec<N::TransactionID>>,
     /// The rejected or aborted transaction ID map.
@@ -88,10 +97,14 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
     type CertificateMap = DataMap<Field<N>, (u32, u64)>;
     type RatificationsMap = DataMap<N::BlockHash, Ratifications<N>>;
     type SolutionsMap = DataMap<N::BlockHash, Solutions<N>>;
+    type PriorSolutionTransmissionIDsMap = DataMap<N::BlockHash, Vec<TransmissionID<N>>>;
+    type AbortedSolutionTransmissionIDsMap = DataMap<N::BlockHash, Vec<TransmissionID<N>>>;
     type SolutionIDsMap = DataMap<SolutionID<N>, u32>;
     type AbortedSolutionIDsMap = DataMap<N::BlockHash, Vec<SolutionID<N>>>;
     type AbortedSolutionHeightsMap = DataMap<SolutionID<N>, u32>;
     type TransactionsMap = DataMap<N::BlockHash, Vec<N::TransactionID>>;
+    type PriorTransactionTransmissionIDsMap = DataMap<N::BlockHash, Vec<TransmissionID<N>>>;
+    type AbortedTransactionTransmissionIDsMap = DataMap<N::BlockHash, Vec<TransmissionID<N>>>;
     type AbortedTransactionIDsMap = DataMap<N::BlockHash, Vec<N::TransactionID>>;
     type RejectedOrAbortedTransactionIDMap = DataMap<N::TransactionID, N::BlockHash>;
     type ConfirmedTransactionsMap = DataMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
@@ -117,11 +130,15 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
             certificate_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::Certificate))?,
             ratifications_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::Ratifications))?,
             solutions_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::Solutions))?,
+            prior_solution_transmission_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::PriorSolutionTransmissionIDs))?,
+            aborted_solution_transmission_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::AbortedSolutionTransmissionIDs))?,
             solution_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::PuzzleCommitments))?,
             aborted_solution_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::AbortedSolutionIDs))?,
             aborted_solution_heights_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::AbortedSolutionHeights))?,
             transactions_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::Transactions))?,
             aborted_transaction_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::AbortedTransactionIDs))?,
+            prior_transaction_transmission_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::PriorTransactionTransmissionIDs))?,
+            aborted_transaction_transmission_ids_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::AbortedTransactionTransmissionIDs))?,
             rejected_or_aborted_transaction_id_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::RejectedOrAbortedTransactionID))?,
             confirmed_transactions_map: internal::RocksDB::open_map(N::ID, storage.clone(), MapID::Block(BlockMap::ConfirmedTransactions))?,
             rejected_deployment_or_execution_map: internal::RocksDB::open_map(N::ID, storage, MapID::Block(BlockMap::RejectedDeploymentOrExecution))?,
@@ -174,6 +191,16 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         &self.solutions_map
     }
 
+    /// Returns the prior solution transmission ids map.
+    fn prior_solution_transmission_ids_map(&self) -> &Self::PriorSolutionTransmissionIDsMap {
+        &self.prior_solution_transmission_ids_map
+    }
+
+    /// Returns the aborted solution transmission ids map.
+    fn aborted_solution_transmission_ids_map(&self) -> &Self::AbortedSolutionTransmissionIDsMap {
+        &self.aborted_solution_transmission_ids_map
+    }
+
     /// Returns the solution IDs map.
     fn solution_ids_map(&self) -> &Self::SolutionIDsMap {
         &self.solution_ids_map
@@ -192,6 +219,16 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
     /// Returns the transactions map.
     fn transactions_map(&self) -> &Self::TransactionsMap {
         &self.transactions_map
+    }
+
+    /// Returns the prior transaction transmission ids map.
+    fn prior_transaction_transmission_ids_map(&self) -> &Self::PriorTransactionTransmissionIDsMap {
+        &self.prior_transaction_transmission_ids_map
+    }
+
+    /// Returns the aborted transaction transmission ids map.
+    fn aborted_transaction_transmission_ids_map(&self) -> &Self::AbortedTransactionTransmissionIDsMap {
+        &self.aborted_transaction_transmission_ids_map
     }
 
     /// Returns the aborted transaction IDs map.

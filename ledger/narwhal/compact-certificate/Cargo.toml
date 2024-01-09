@@ -1,8 +1,8 @@
 [package]
-name = "snarkvm-ledger-narwhal-subdag"
-version = "4.1.0"
+name = "snarkvm-ledger-narwhal-compact-certificate"
+version = "4.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
-description = "A subdag for a Narwhal-style memory pool in a decentralized virtual machine"
+description = "A compact certificate for a Narwhal-style memory pool in a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
 keywords = [
@@ -24,27 +24,19 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "indexmap/rayon", "rayon" ]
+default = [ "rayon" ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
-test-helpers = [ "snarkvm-ledger-narwhal-batch-certificate/test-helpers" ]
+test-helpers = [ "snarkvm-ledger-narwhal-compact-header/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-narwhal-batch-certificate]
 workspace = true
 
-[dependencies.snarkvm-ledger-narwhal-compact-certificate]
+[dependencies.snarkvm-ledger-narwhal-compact-header]
 workspace = true
-
-[dependencies.snarkvm-ledger-narwhal-batch-header]
-workspace = true
-
-[dependencies.snarkvm-ledger-committee]
-workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-narwhal-traits]
 workspace = true
@@ -64,12 +56,9 @@ optional = true
 workspace = true
 features = [ "preserve_order" ]
 
-[dependencies.tracing]
-workspace = true
-
 [dev-dependencies.bincode]
 workspace = true
 
-[dev-dependencies.snarkvm-ledger-narwhal-subdag]
+[dev-dependencies.snarkvm-ledger-narwhal-compact-certificate]
 path = "."
 features = [ "test-helpers" ]

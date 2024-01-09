@@ -40,7 +40,7 @@ use snarkvm_ledger_block::{
     Transaction,
     Transactions,
 };
-use snarkvm_ledger_narwhal_batch_certificate::BatchCertificate;
+use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 use snarkvm_ledger_puzzle::{Solution, SolutionID};
 use snarkvm_synthesizer_program::{FinalizeOperation, Program};
 
@@ -125,6 +125,10 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     type RatificationsMap: for<'a> Map<'a, N::BlockHash, Ratifications<N>>;
     /// The mapping of `block hash` to `block solutions`.
     type SolutionsMap: for<'a> Map<'a, N::BlockHash, Solutions<N>>;
+    /// The mapping of `block hash` to `[prior solution transmission ID]`.
+    type PriorSolutionTransmissionIDsMap: for<'a> Map<'a, N::BlockHash, Vec<TransmissionID<N>>>;
+    /// The mapping of `block hash` to `[aborted solution transmission ID]`.
+    type AbortedSolutionTransmissionIDsMap: for<'a> Map<'a, N::BlockHash, Vec<TransmissionID<N>>>;
     /// The mapping of `solution ID` to `block height`.
     type SolutionIDsMap: for<'a> Map<'a, SolutionID<N>, u32>;
     /// The mapping of `block hash` to `[aborted solution ID]`.
@@ -135,6 +139,10 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     type TransactionsMap: for<'a> Map<'a, N::BlockHash, Vec<N::TransactionID>>;
     /// The mapping of `block hash` to `[aborted transaction ID]`.
     type AbortedTransactionIDsMap: for<'a> Map<'a, N::BlockHash, Vec<N::TransactionID>>;
+    /// The mapping of `block hash` to `[prior transaction transmission ID]`.
+    type PriorTransactionTransmissionIDsMap: for<'a> Map<'a, N::BlockHash, Vec<TransmissionID<N>>>;
+    /// The mapping of `block hash` to `[aborted transaction transmission ID]`.
+    type AbortedTransactionTransmissionIDsMap: for<'a> Map<'a, N::BlockHash, Vec<TransmissionID<N>>>;
     /// The mapping of rejected or aborted `transaction ID` to `block hash`.
     type RejectedOrAbortedTransactionIDMap: for<'a> Map<'a, N::TransactionID, N::BlockHash>;
     /// The mapping of `transaction ID` to `(block hash, confirmed tx type, finalize operations)`.
@@ -167,6 +175,10 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn ratifications_map(&self) -> &Self::RatificationsMap;
     /// Returns the solutions map.
     fn solutions_map(&self) -> &Self::SolutionsMap;
+    /// Returns the prior solution transmission IDs map.
+    fn prior_solution_transmission_ids_map(&self) -> &Self::PriorSolutionTransmissionIDsMap;
+    /// Returns the aborted solution transmission IDs map.
+    fn aborted_solution_transmission_ids_map(&self) -> &Self::AbortedSolutionTransmissionIDsMap;
     /// Returns the solution IDs map.
     fn solution_ids_map(&self) -> &Self::SolutionIDsMap;
     /// Returns the aborted solution IDs map.
@@ -177,6 +189,10 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn transactions_map(&self) -> &Self::TransactionsMap;
     /// Returns the aborted transaction IDs map.
     fn aborted_transaction_ids_map(&self) -> &Self::AbortedTransactionIDsMap;
+    /// Returns the prior transaction transmission IDs map.
+    fn prior_transaction_transmission_ids_map(&self) -> &Self::PriorTransactionTransmissionIDsMap;
+    /// Returns the aborted transaction transmission IDs map.
+    fn aborted_transaction_transmission_ids_map(&self) -> &Self::AbortedTransactionTransmissionIDsMap;
     /// Returns the rejected or aborted transaction ID map.
     fn rejected_or_aborted_transaction_id_map(&self) -> &Self::RejectedOrAbortedTransactionIDMap;
     /// Returns the confirmed transactions map.
@@ -207,11 +223,15 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.certificate_map().start_atomic();
         self.ratifications_map().start_atomic();
         self.solutions_map().start_atomic();
+        self.prior_solution_transmission_ids_map().start_atomic();
+        self.aborted_solution_transmission_ids_map().start_atomic();
         self.solution_ids_map().start_atomic();
         self.aborted_solution_ids_map().start_atomic();
         self.aborted_solution_heights_map().start_atomic();
         self.transactions_map().start_atomic();
         self.aborted_transaction_ids_map().start_atomic();
+        self.prior_transaction_transmission_ids_map().start_atomic();
+        self.aborted_transaction_transmission_ids_map().start_atomic();
         self.rejected_or_aborted_transaction_id_map().start_atomic();
         self.confirmed_transactions_map().start_atomic();
         self.rejected_deployment_or_execution_map().start_atomic();
@@ -229,11 +249,15 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             || self.certificate_map().is_atomic_in_progress()
             || self.ratifications_map().is_atomic_in_progress()
             || self.solutions_map().is_atomic_in_progress()
+            || self.prior_solution_transmission_ids_map().is_atomic_in_progress()
+            || self.aborted_solution_transmission_ids_map().is_atomic_in_progress()
             || self.solution_ids_map().is_atomic_in_progress()
             || self.aborted_solution_ids_map().is_atomic_in_progress()
             || self.aborted_solution_heights_map().is_atomic_in_progress()
             || self.transactions_map().is_atomic_in_progress()
             || self.aborted_transaction_ids_map().is_atomic_in_progress()
+            || self.prior_transaction_transmission_ids_map().is_atomic_in_progress()
+            || self.aborted_transaction_transmission_ids_map().is_atomic_in_progress()
             || self.rejected_or_aborted_transaction_id_map().is_atomic_in_progress()
             || self.confirmed_transactions_map().is_atomic_in_progress()
             || self.rejected_deployment_or_execution_map().is_atomic_in_progress()
@@ -251,11 +275,15 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.certificate_map().atomic_checkpoint();
         self.ratifications_map().atomic_checkpoint();
         self.solutions_map().atomic_checkpoint();
+        self.prior_solution_transmission_ids_map().atomic_checkpoint();
+        self.aborted_solution_transmission_ids_map().atomic_checkpoint();
         self.solution_ids_map().atomic_checkpoint();
         self.aborted_solution_ids_map().atomic_checkpoint();
         self.aborted_solution_heights_map().atomic_checkpoint();
         self.transactions_map().atomic_checkpoint();
         self.aborted_transaction_ids_map().atomic_checkpoint();
+        self.prior_transaction_transmission_ids_map().atomic_checkpoint();
+        self.aborted_transaction_transmission_ids_map().atomic_checkpoint();
         self.rejected_or_aborted_transaction_id_map().atomic_checkpoint();
         self.confirmed_transactions_map().atomic_checkpoint();
         self.rejected_deployment_or_execution_map().atomic_checkpoint();
@@ -273,11 +301,15 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.certificate_map().clear_latest_checkpoint();
         self.ratifications_map().clear_latest_checkpoint();
         self.solutions_map().clear_latest_checkpoint();
+        self.prior_solution_transmission_ids_map().clear_latest_checkpoint();
+        self.aborted_solution_transmission_ids_map().clear_latest_checkpoint();
         self.solution_ids_map().clear_latest_checkpoint();
         self.aborted_solution_ids_map().clear_latest_checkpoint();
         self.aborted_solution_heights_map().clear_latest_checkpoint();
         self.transactions_map().clear_latest_checkpoint();
         self.aborted_transaction_ids_map().clear_latest_checkpoint();
+        self.prior_transaction_transmission_ids_map().clear_latest_checkpoint();
+        self.aborted_transaction_transmission_ids_map().clear_latest_checkpoint();
         self.rejected_or_aborted_transaction_id_map().clear_latest_checkpoint();
         self.confirmed_transactions_map().clear_latest_checkpoint();
         self.rejected_deployment_or_execution_map().clear_latest_checkpoint();
@@ -295,11 +327,15 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.certificate_map().atomic_rewind();
         self.ratifications_map().atomic_rewind();
         self.solutions_map().atomic_rewind();
+        self.prior_solution_transmission_ids_map().atomic_rewind();
+        self.aborted_solution_transmission_ids_map().atomic_rewind();
         self.solution_ids_map().atomic_rewind();
         self.aborted_solution_ids_map().atomic_rewind();
         self.aborted_solution_heights_map().atomic_rewind();
         self.transactions_map().atomic_rewind();
         self.aborted_transaction_ids_map().atomic_rewind();
+        self.prior_transaction_transmission_ids_map().atomic_rewind();
+        self.aborted_transaction_transmission_ids_map().atomic_rewind();
         self.rejected_or_aborted_transaction_id_map().atomic_rewind();
         self.confirmed_transactions_map().atomic_rewind();
         self.rejected_deployment_or_execution_map().atomic_rewind();
@@ -317,11 +353,15 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.certificate_map().abort_atomic();
         self.ratifications_map().abort_atomic();
         self.solutions_map().abort_atomic();
+        self.prior_solution_transmission_ids_map().abort_atomic();
+        self.aborted_solution_transmission_ids_map().abort_atomic();
         self.solution_ids_map().abort_atomic();
         self.aborted_solution_ids_map().abort_atomic();
         self.aborted_solution_heights_map().abort_atomic();
         self.transactions_map().abort_atomic();
         self.aborted_transaction_ids_map().abort_atomic();
+        self.prior_transaction_transmission_ids_map().abort_atomic();
+        self.aborted_transaction_transmission_ids_map().abort_atomic();
         self.rejected_or_aborted_transaction_id_map().abort_atomic();
         self.confirmed_transactions_map().abort_atomic();
         self.rejected_deployment_or_execution_map().abort_atomic();
@@ -339,11 +379,15 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.certificate_map().finish_atomic()?;
         self.ratifications_map().finish_atomic()?;
         self.solutions_map().finish_atomic()?;
+        self.prior_solution_transmission_ids_map().finish_atomic()?;
+        self.aborted_solution_transmission_ids_map().finish_atomic()?;
         self.solution_ids_map().finish_atomic()?;
         self.aborted_solution_ids_map().finish_atomic()?;
         self.aborted_solution_heights_map().finish_atomic()?;
         self.transactions_map().finish_atomic()?;
         self.aborted_transaction_ids_map().finish_atomic()?;
+        self.prior_transaction_transmission_ids_map().finish_atomic()?;
+        self.aborted_transaction_transmission_ids_map().finish_atomic()?;
         self.rejected_or_aborted_transaction_id_map().finish_atomic()?;
         self.confirmed_transactions_map().finish_atomic()?;
         self.rejected_deployment_or_execution_map().finish_atomic()?;
@@ -377,9 +421,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         // Retrieve the certificate IDs to store.
         let certificates_to_store = match block.authority() {
             Authority::Beacon(_) => Vec::new(),
-            Authority::Quorum(subdag) => {
-                subdag.iter().flat_map(|(round, certificates)| certificates.iter().map(|c| (c.id(), *round))).collect()
-            }
+            Authority::Quorum(subdag) => subdag.certificate_ids_rounds(),
         };
 
         // Prepare the rejected transaction IDs and their corresponding unconfirmed transaction IDs.
@@ -422,9 +464,17 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
                 self.solution_ids_map().insert(*solution_id, block.height())?;
             }
 
+            if N::CONSENSUS_VERSION(block.height()).unwrap() >= ConsensusVersion::V10 {
+                // Store the prior solution transmission IDs.
+                self.prior_solution_transmission_ids_map()
+                    .insert(block.hash(), block.prior_solution_transmission_ids().clone().unwrap_or_default())?;
+
+                // Store the aborted solution transmission ids.
+                self.aborted_solution_transmission_ids_map()
+                    .insert(block.hash(), block.aborted_solution_transmission_ids().clone().unwrap_or_default())?;
+            }
             // Store the aborted solution IDs.
             self.aborted_solution_ids_map().insert(block.hash(), block.aborted_solution_ids().clone())?;
-
             // Store the block aborted solution heights.
             for solution_id in block.aborted_solution_ids() {
                 self.aborted_solution_heights_map().insert(*solution_id, block.height())?;
@@ -433,6 +483,15 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             // Store the transaction IDs.
             self.transactions_map().insert(block.hash(), block.transaction_ids().copied().collect())?;
 
+            if N::CONSENSUS_VERSION(block.height()).unwrap() >= ConsensusVersion::V10 {
+                // Store the prior transaction IDs.
+                self.prior_transaction_transmission_ids_map()
+                    .insert(block.hash(), block.prior_transaction_transmission_ids().clone().unwrap_or_default())?;
+
+                // Store the aborted transaction transmission ids.
+                self.aborted_transaction_transmission_ids_map()
+                    .insert(block.hash(), block.aborted_transaction_transmission_ids().clone().unwrap_or_default())?;
+            }
             // Store the aborted transaction IDs.
             self.aborted_transaction_ids_map().insert(block.hash(), block.aborted_transaction_ids().clone())?;
             for aborted_transaction_id in block.aborted_transaction_ids() {
@@ -501,9 +560,9 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         // Determine the certificate IDs to remove.
         let certificate_ids_to_remove = match self.authority_map().get_confirmed(block_hash)? {
             Some(authority) => match &authority {
-                Cow::Owned(Authority::Beacon(_)) | Cow::Borrowed(Authority::Beacon(_)) => Vec::new(),
+                Cow::Owned(Authority::Beacon(_)) | Cow::Borrowed(Authority::Beacon(_)) => None,
                 Cow::Owned(Authority::Quorum(subdag)) | Cow::Borrowed(Authority::Quorum(subdag)) => {
-                    subdag.values().flatten().map(|c| c.id()).collect()
+                    Some(subdag.certificate_ids())
                 }
             },
             None => bail!("Failed to remove block: missing authority for block '{block_height}' ('{block_hash}')"),
@@ -526,8 +585,10 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             self.authority_map().remove(block_hash)?;
 
             // Remove the block certificates.
-            for certificate_id in certificate_ids_to_remove.iter() {
-                self.certificate_map().remove(certificate_id)?;
+            if let Some(certificate_ids_to_remove) = certificate_ids_to_remove {
+                for certificate_id in certificate_ids_to_remove {
+                    self.certificate_map().remove(&certificate_id)?;
+                }
             }
 
             // Remove the block ratifications.
@@ -742,40 +803,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.certificate_map().contains_key_confirmed(certificate_id)
     }
 
-    /// Returns the batch certificate for the given `certificate ID`.
-    fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
-        // Retrieve the height and round for the given certificate ID.
-        let Some((block_height, round)) = self.certificate_map().get_confirmed(certificate_id)?.map(|x| *x) else {
-            return Ok(None);
-        };
-        // Retrieve the block hash.
-        let Some(block_hash) = self.get_block_hash(block_height)? else {
-            bail!("The block hash for block '{block_height}' is missing in block storage")
-        };
-        // Retrieve the authority for the given block hash.
-        let Some(authority) = self.authority_map().get_confirmed(&block_hash)? else {
-            bail!("The authority for '{block_hash}' is missing in block storage")
-        };
-        // Retrieve the certificate for the given certificate ID.
-        match &authority {
-            Cow::Owned(Authority::Quorum(subdag)) | Cow::Borrowed(Authority::Quorum(subdag)) => {
-                match subdag.get(&round) {
-                    Some(certificates) => {
-                        // Retrieve the certificate for the given certificate ID.
-                        match certificates.iter().find(|certificate| &certificate.id() == certificate_id) {
-                            Some(certificate) => Ok(Some(certificate.clone())),
-                            None => bail!("The certificate '{certificate_id}' is missing in block storage"),
-                        }
-                    }
-                    None => bail!("The certificates for round '{round}' is missing in block storage"),
-                }
-            }
-            _ => bail!(
-                "Cannot fetch batch certificate '{certificate_id}' - The authority for block '{block_height}' is not a subdag"
-            ),
-        }
-    }
-
     /// Returns the block ratifications for the given `block hash`.
     fn get_block_ratifications(&self, block_hash: &N::BlockHash) -> Result<Option<Ratifications<N>>> {
         Ok(self.ratifications_map().get_confirmed(block_hash)?.map(|x| x.into_owned()))
@@ -812,6 +839,28 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         }
     }
 
+    /// Returns the block prior solution transmission IDs for the given `block hash`.
+    fn get_block_prior_solution_transmission_ids(
+        &self,
+        block_hash: &N::BlockHash,
+    ) -> Result<Option<Vec<TransmissionID<N>>>> {
+        match self.prior_solution_transmission_ids_map().get_confirmed(block_hash)? {
+            Some(ids) => Ok(Some(ids.to_vec())),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns the block aborted solution transmission IDs for the given `block hash`.
+    fn get_block_aborted_solution_transmission_ids(
+        &self,
+        block_hash: &N::BlockHash,
+    ) -> Result<Option<Vec<TransmissionID<N>>>> {
+        match self.aborted_solution_transmission_ids_map().get_confirmed(block_hash)? {
+            Some(ids) => Ok(Some(ids.to_vec())),
+            None => Ok(None),
+        }
+    }
+
     /// Returns the block aborted solution IDs for the given `block hash`.
     fn get_block_aborted_solution_ids(&self, block_hash: &N::BlockHash) -> Result<Option<Vec<SolutionID<N>>>> {
         Ok(self.aborted_solution_ids_map().get_confirmed(block_hash)?.map(|x| x.into_owned()))
@@ -833,6 +882,28 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns the block aborted transaction IDs for the given `block hash`.
     fn get_block_aborted_transaction_ids(&self, block_hash: &N::BlockHash) -> Result<Option<Vec<N::TransactionID>>> {
         Ok(self.aborted_transaction_ids_map().get_confirmed(block_hash)?.map(|x| x.into_owned()))
+    }
+
+    /// Returns the block prior transaction transmission IDs for the given `block hash`.
+    fn get_block_prior_transaction_transmission_ids(
+        &self,
+        block_hash: &N::BlockHash,
+    ) -> Result<Option<Vec<TransmissionID<N>>>> {
+        match self.prior_transaction_transmission_ids_map().get_confirmed(block_hash)? {
+            Some(ids) => Ok(Some(ids.to_vec())),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns the block aborted transaction transmission IDs for the given `block hash`.
+    fn get_block_aborted_transaction_transmission_ids(
+        &self,
+        block_hash: &N::BlockHash,
+    ) -> Result<Option<Vec<TransmissionID<N>>>> {
+        match self.aborted_transaction_transmission_ids_map().get_confirmed(block_hash)? {
+            Some(ids) => Ok(Some(ids.to_vec())),
+            None => Ok(None),
+        }
     }
 
     /// Returns the transaction for the given `TransactionID`.
@@ -945,6 +1016,14 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let Ok(solutions) = self.get_block_solutions(block_hash) else {
             bail!("Missing solutions for block {height} ('{block_hash}')");
         };
+        // Retrieve the block prior solution transmission IDs.
+        let Ok(prior_solution_transmission_ids) = self.get_block_prior_solution_transmission_ids(block_hash) else {
+            bail!("Missing prior solution transmission IDs for block {height} ('{block_hash}')");
+        };
+        // Retrieve the block prior solution transmission IDs.
+        let Ok(aborted_solution_transmission_ids) = self.get_block_aborted_solution_transmission_ids(block_hash) else {
+            bail!("Missing aborted solution transmission IDs for block {height} ('{block_hash}')");
+        };
         // Retrieve the block aborted solution IDs.
         let Some(aborted_solution_ids) = self.get_block_aborted_solution_ids(block_hash)? else {
             bail!("Missing aborted solutions IDs for block {height} ('{block_hash}')");
@@ -953,20 +1032,33 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let Some(transactions) = self.get_block_transactions(block_hash)? else {
             bail!("Missing transactions for block {height} ('{block_hash}')");
         };
+        // Retrieve the block prior solution transmission IDs.
+        let Ok(prior_transaction_transmission_ids) = self.get_block_prior_transaction_transmission_ids(block_hash)
+        else {
+            bail!("Missing prior transaction transmission IDs for block {height} ('{block_hash}')");
+        };
+        // Retrieve the block prior solution transmission IDs.
+        let Ok(aborted_transaction_transmission_ids) = self.get_block_aborted_transaction_transmission_ids(block_hash)
+        else {
+            bail!("Missing aborted transaction transmission IDs for block {height} ('{block_hash}')");
+        };
         // Retrieve the block aborted transaction IDs.
         let Some(aborted_transaction_ids) = self.get_block_aborted_transaction_ids(block_hash)? else {
             bail!("Missing aborted transaction IDs for block {height} ('{block_hash}')");
         };
 
-        // Return the block.
         Ok(Some(Block::from(
             previous_hash,
             header,
             authority,
             ratifications,
             solutions,
+            prior_solution_transmission_ids,
+            aborted_solution_transmission_ids,
             aborted_solution_ids,
             transactions,
+            prior_transaction_transmission_ids,
+            aborted_transaction_transmission_ids,
             aborted_transaction_ids,
         )?))
     }
@@ -1288,11 +1380,6 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Returns true if there is a block for the given certificate.
     pub fn contains_block_for_certificate(&self, certificate_id: &Field<N>) -> Result<bool> {
         self.storage.contains_block_for_certificate(certificate_id)
-    }
-
-    /// Returns the batch certificate for the given `certificate ID`.
-    pub fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
-        self.storage.get_batch_certificate(certificate_id)
     }
 }
 

@@ -15,8 +15,8 @@
 
 use super::*;
 
-impl<N: Network> FromBytes for BatchHeader<N> {
-    /// Reads the batch header from the buffer.
+impl<N: Network> FromBytes for CompactHeader<N> {
+    /// Reads the compact header from the buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
@@ -36,57 +36,64 @@ impl<N: Network> FromBytes for BatchHeader<N> {
         // Read the committee ID.
         let committee_id = Field::read_le(&mut reader)?;
 
-        // Read the number of transmission IDs.
-        let num_transmission_ids = u32::read_le(&mut reader)?;
-        // Ensure the number of transmission IDs is within bounds.
-        if num_transmission_ids as usize > Self::MAX_TRANSMISSIONS_PER_BATCH {
-            return Err(error(format!(
-                "Number of transmission IDs ({num_transmission_ids}) exceeds the maximum ({})",
-                Self::MAX_TRANSMISSIONS_PER_BATCH,
-            )));
+        // Read the number of transaction indices.
+        let num_transaction_indices = u16::read_le(&mut reader)?;
+        let mut transaction_indices = IndexSet::with_capacity(num_transaction_indices as usize);
+        // Read the transaction indices.
+        for _ in 0..num_transaction_indices {
+            transaction_indices.insert(u32::read_le(&mut reader)?);
         }
-        // Read the transmission IDs.
-        let mut transmission_ids = IndexSet::new();
-        for _ in 0..num_transmission_ids {
-            // Insert the transmission ID.
-            transmission_ids.insert(TransmissionID::read_le(&mut reader)?);
+
+        // Read the number of solution indices.
+        let num_solution_indices = u16::read_le(&mut reader)?;
+        let mut solution_indices = IndexSet::with_capacity(num_solution_indices as usize);
+        // Read the transaction indices.
+        for _ in 0..num_solution_indices {
+            solution_indices.insert(u32::read_le(&mut reader)?);
         }
 
         // Read the number of previous certificate IDs.
         let num_previous_certificate_ids = u16::read_le(&mut reader)?;
         // Ensure the number of previous certificate IDs is within bounds.
-        if num_previous_certificate_ids > N::LATEST_MAX_CERTIFICATES().map_err(error)? {
+        if num_previous_certificate_ids > N::LATEST_MAX_CERTIFICATES().unwrap() {
             return Err(error(format!(
-                "Number of previous certificate IDs ({num_previous_certificate_ids}) exceeds the maximum.",
+                "Number of previous certificate IDs ({num_previous_certificate_ids}) exceeds the maximum ({})",
+                N::LATEST_MAX_CERTIFICATES().unwrap()
             )));
         }
-
-        // Read the previous certificate ID bytes.
-        let mut previous_certificate_id_bytes =
-            vec![0u8; num_previous_certificate_ids as usize * Field::<N>::size_in_bytes()];
-        reader.read_exact(&mut previous_certificate_id_bytes)?;
         // Read the previous certificate IDs.
-        let previous_certificate_ids = cfg_chunks!(previous_certificate_id_bytes, Field::<N>::size_in_bytes())
-            .map(Field::read_le)
-            .collect::<Result<IndexSet<_>, _>>()?;
+        let mut previous_certificate_ids = IndexSet::new();
+        for _ in 0..num_previous_certificate_ids {
+            // Read the certificate ID.
+            previous_certificate_ids.insert(Field::read_le(&mut reader)?);
+        }
 
         // Read the signature.
         let signature = Signature::read_le(&mut reader)?;
 
         // Construct the batch.
-        let batch =
-            Self::from(author, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, signature)
-                .map_err(error)?;
+        let batch = Self::from(
+            batch_id,
+            author,
+            round,
+            timestamp,
+            committee_id,
+            transaction_indices,
+            solution_indices,
+            previous_certificate_ids,
+            signature,
+        )
+        .map_err(|e| error(e.to_string()))?;
 
         // Return the batch.
         match batch.batch_id == batch_id {
             true => Ok(batch),
-            false => Err(error("Invalid batch ID for batch header.")),
+            false => Err(error("Invalid batch ID")),
         }
     }
 }
 
-impl<N: Network> ToBytes for BatchHeader<N> {
+impl<N: Network> ToBytes for CompactHeader<N> {
     /// Writes the batch header to the buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
@@ -101,13 +108,14 @@ impl<N: Network> ToBytes for BatchHeader<N> {
         self.timestamp.write_le(&mut writer)?;
         // Write the committee ID.
         self.committee_id.write_le(&mut writer)?;
-        // Write the number of transmission IDs.
-        u32::try_from(self.transmission_ids.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
-        // Write the transmission IDs.
-        for transmission_id in &self.transmission_ids {
-            // Write the transmission ID.
-            transmission_id.write_le(&mut writer)?;
-        }
+        // Write the number of transaction indices.
+        u16::try_from(self.transaction_indices.len()).map_err(error)?.write_le(&mut writer)?;
+        // Write the transaction indices.
+        self.transaction_indices.iter().try_for_each(|b| b.write_le(&mut writer))?;
+        // Write the number of solution indices.
+        u16::try_from(self.solution_indices.len()).map_err(error)?.write_le(&mut writer)?;
+        // Write the solution indices.
+        self.solution_indices.iter().try_for_each(|b| b.write_le(&mut writer))?;
         // Write the number of previous certificate IDs.
         u16::try_from(self.previous_certificate_ids.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
         // Write the previous certificate IDs.
@@ -128,10 +136,10 @@ mod tests {
     fn test_bytes() {
         let rng = &mut TestRng::default();
 
-        for expected in crate::test_helpers::sample_batch_headers(rng) {
+        for expected in crate::test_helpers::sample_compact_headers(rng) {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
-            assert_eq!(expected, BatchHeader::read_le(&expected_bytes[..]).unwrap());
+            assert_eq!(expected, CompactHeader::read_le(&expected_bytes[..]).unwrap());
         }
     }
 }

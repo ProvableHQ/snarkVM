@@ -20,7 +20,7 @@ use snarkvm_console::{
     prelude::*,
 };
 use snarkvm_ledger::{Block, Ledger};
-use snarkvm_ledger_narwhal::{BatchCertificate, BatchHeader, Subdag};
+use snarkvm_ledger_narwhal::{BatchCertificate, BatchHeader, NarwhalCertificate, Subdag};
 use snarkvm_ledger_store::ConsensusStore;
 use snarkvm_synthesizer::vm::VM;
 
@@ -282,7 +282,7 @@ impl TestChainBuilder {
         self.last_committed_batch_round.insert(leader_idx, commit_round);
 
         // Construct the block.
-        let subdag = Subdag::from(subdag_map).unwrap();
+        let subdag = Subdag::from_full(subdag_map).unwrap();
         let block = self.ledger.prepare_advance_to_next_quorum_block(subdag, Default::default(), rng).unwrap();
         self.ledger.check_next_block(&block, rng).unwrap();
 

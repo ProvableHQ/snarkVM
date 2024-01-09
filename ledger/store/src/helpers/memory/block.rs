@@ -23,6 +23,7 @@ use crate::{
 use console::{prelude::*, types::Field};
 use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Header, Ratifications, Rejected, Solutions};
+use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 use snarkvm_ledger_puzzle::SolutionID;
 use snarkvm_synthesizer_program::FinalizeOperation;
 
@@ -50,6 +51,10 @@ pub struct BlockMemory<N: Network> {
     ratifications_map: MemoryMap<N::BlockHash, Ratifications<N>>,
     /// The solutions map.
     solutions_map: MemoryMap<N::BlockHash, Solutions<N>>,
+    /// The prior solution transmission IDs map.
+    prior_solution_transmission_ids_map: MemoryMap<N::BlockHash, Vec<TransmissionID<N>>>,
+    /// The aborted solution transmission IDs map.
+    aborted_solution_transmission_ids_map: MemoryMap<N::BlockHash, Vec<TransmissionID<N>>>,
     /// The solution IDs map.
     solution_ids_map: MemoryMap<SolutionID<N>, u32>,
     /// The aborted solution IDs map.
@@ -58,6 +63,10 @@ pub struct BlockMemory<N: Network> {
     aborted_solution_heights_map: MemoryMap<SolutionID<N>, u32>,
     /// The transactions map.
     transactions_map: MemoryMap<N::BlockHash, Vec<N::TransactionID>>,
+    /// The prior transaction transmission ids map.
+    prior_transaction_transmission_ids_map: MemoryMap<N::BlockHash, Vec<TransmissionID<N>>>,
+    /// The aborted transaction transmission ids map.
+    aborted_transaction_transmission_ids_map: MemoryMap<N::BlockHash, Vec<TransmissionID<N>>>,
     /// The aborted transaction IDs map.
     aborted_transaction_ids_map: MemoryMap<N::BlockHash, Vec<N::TransactionID>>,
     /// The rejected transaction ID or aborted transaction ID map.
@@ -82,10 +91,14 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
     type CertificateMap = MemoryMap<Field<N>, (u32, u64)>;
     type RatificationsMap = MemoryMap<N::BlockHash, Ratifications<N>>;
     type SolutionsMap = MemoryMap<N::BlockHash, Solutions<N>>;
+    type PriorSolutionTransmissionIDsMap = MemoryMap<N::BlockHash, Vec<TransmissionID<N>>>;
+    type AbortedSolutionTransmissionIDsMap = MemoryMap<N::BlockHash, Vec<TransmissionID<N>>>;
     type SolutionIDsMap = MemoryMap<SolutionID<N>, u32>;
     type AbortedSolutionIDsMap = MemoryMap<N::BlockHash, Vec<SolutionID<N>>>;
     type AbortedSolutionHeightsMap = MemoryMap<SolutionID<N>, u32>;
     type TransactionsMap = MemoryMap<N::BlockHash, Vec<N::TransactionID>>;
+    type PriorTransactionTransmissionIDsMap = MemoryMap<N::BlockHash, Vec<TransmissionID<N>>>;
+    type AbortedTransactionTransmissionIDsMap = MemoryMap<N::BlockHash, Vec<TransmissionID<N>>>;
     type AbortedTransactionIDsMap = MemoryMap<N::BlockHash, Vec<N::TransactionID>>;
     type RejectedOrAbortedTransactionIDMap = MemoryMap<N::TransactionID, N::BlockHash>;
     type ConfirmedTransactionsMap = MemoryMap<N::TransactionID, (N::BlockHash, ConfirmedTxType<N>, Vec<FinalizeOperation<N>>)>;
@@ -110,10 +123,14 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
             certificate_map: MemoryMap::default(),
             ratifications_map: MemoryMap::default(),
             solutions_map: MemoryMap::default(),
+            prior_solution_transmission_ids_map: MemoryMap::default(),
+            aborted_solution_transmission_ids_map: MemoryMap::default(),
             solution_ids_map: MemoryMap::default(),
             aborted_solution_ids_map: MemoryMap::default(),
             aborted_solution_heights_map: MemoryMap::default(),
             transactions_map: MemoryMap::default(),
+            prior_transaction_transmission_ids_map: MemoryMap::default(),
+            aborted_transaction_transmission_ids_map: MemoryMap::default(),
             aborted_transaction_ids_map: MemoryMap::default(),
             rejected_or_aborted_transaction_id_map: MemoryMap::default(),
             confirmed_transactions_map: MemoryMap::default(),
@@ -167,6 +184,16 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
         &self.solutions_map
     }
 
+    /// Returns the prior solution transmission ids map.
+    fn prior_solution_transmission_ids_map(&self) -> &Self::PriorSolutionTransmissionIDsMap {
+        &self.prior_solution_transmission_ids_map
+    }
+
+    /// Returns the aborted solution transmission ids map.
+    fn aborted_solution_transmission_ids_map(&self) -> &Self::PriorSolutionTransmissionIDsMap {
+        &self.aborted_solution_transmission_ids_map
+    }
+
     /// Returns the solution IDs map.
     fn solution_ids_map(&self) -> &Self::SolutionIDsMap {
         &self.solution_ids_map
@@ -185,6 +212,16 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
     /// Returns the transactions map.
     fn transactions_map(&self) -> &Self::TransactionsMap {
         &self.transactions_map
+    }
+
+    /// Returns the prior transaction transmission ids map.
+    fn prior_transaction_transmission_ids_map(&self) -> &Self::PriorTransactionTransmissionIDsMap {
+        &self.prior_transaction_transmission_ids_map
+    }
+
+    /// Returns the aborted transaction transmission ids map.
+    fn aborted_transaction_transmission_ids_map(&self) -> &Self::AbortedTransactionTransmissionIDsMap {
+        &self.aborted_transaction_transmission_ids_map
     }
 
     /// Returns the aborted transaction IDs map.

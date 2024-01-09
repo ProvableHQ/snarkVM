@@ -50,6 +50,12 @@ features = [ "default" ]
 [dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
 
+[dependencies.snarkvm-ledger-narwhal-batch-certificate]
+workspace = true
+
+[dependencies.snarkvm-ledger-narwhal-compact-certificate]
+workspace = true
+
 [dependencies.snarkvm-ledger-narwhal-data]
 workspace = true
 
@@ -67,6 +73,9 @@ workspace = true
 
 [dependencies.snarkvm-synthesizer-snark]
 workspace = true
+
+[dependencies.bit-set]
+version = "0.8"
 
 [dependencies.indexmap]
 workspace = true
