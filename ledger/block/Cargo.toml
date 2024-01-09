@@ -49,6 +49,12 @@ workspace = true
 [dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
 
+[dependencies.snarkvm-ledger-narwhal-batch-certificate]
+workspace = true
+
+[dependencies.snarkvm-ledger-narwhal-compact-certificate]
+workspace = true
+
 [dependencies.snarkvm-ledger-narwhal-data]
 workspace = true
 
@@ -72,6 +78,9 @@ workspace = true
 
 [dependencies.anyhow]
 version = "1"
+
+[dependencies.bit-set]
+version = "0.8"
 
 [dependencies.indexmap]
 workspace = true

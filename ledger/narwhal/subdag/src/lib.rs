@@ -26,13 +26,71 @@ use console::{account::Address, prelude::*, program::SUBDAG_CERTIFICATES_DEPTH, 
 use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal_batch_certificate::BatchCertificate;
 use snarkvm_ledger_narwhal_batch_header::BatchHeader;
+use snarkvm_ledger_narwhal_compact_certificate::CompactCertificate;
+use snarkvm_ledger_narwhal_traits::NarwhalCertificate;
 use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 
 use indexmap::IndexSet;
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
+
+/// Helper enum to wrap the leader certificate.
+#[derive(Clone, PartialEq, Eq)]
+pub enum LeaderCertificate<'a, N: Network> {
+    Full(&'a BatchCertificate<N>),
+    Compact(&'a CompactCertificate<N>),
+}
+
+impl<'a, N: Network> From<&'a BatchCertificate<N>> for LeaderCertificate<'a, N> {
+    fn from(cert: &'a BatchCertificate<N>) -> Self {
+        Self::Full(cert)
+    }
+}
+
+impl<'a, N: Network> From<&'a CompactCertificate<N>> for LeaderCertificate<'a, N> {
+    fn from(cert: &'a CompactCertificate<N>) -> Self {
+        Self::Compact(cert)
+    }
+}
+
+impl<'a, N: Network> LeaderCertificate<'a, N> {
+    pub fn id(&self) -> Field<N> {
+        match self {
+            Self::Full(cert) => cert.id(),
+            Self::Compact(cert) => cert.id(),
+        }
+    }
+
+    pub fn author(&self) -> Address<N> {
+        match self {
+            Self::Full(cert) => cert.author(),
+            Self::Compact(cert) => cert.author(),
+        }
+    }
+
+    pub fn committee_id(&self) -> Field<N> {
+        match self {
+            Self::Full(cert) => cert.committee_id(),
+            Self::Compact(cert) => cert.committee_id(),
+        }
+    }
+
+    pub fn previous_certificate_ids(&self) -> &IndexSet<Field<N>> {
+        match self {
+            Self::Full(cert) => cert.previous_certificate_ids(),
+            Self::Compact(cert) => cert.previous_certificate_ids(),
+        }
+    }
+
+    pub fn round(&self) -> u64 {
+        match self {
+            Self::Full(cert) => cert.round(),
+            Self::Compact(cert) => cert.round(),
+        }
+    }
+}
 
 /// Returns `true` if the rounds are sequential.
 fn is_sequential<T>(map: &BTreeMap<u64, T>) -> bool {
@@ -50,39 +108,64 @@ fn is_sequential<T>(map: &BTreeMap<u64, T>) -> bool {
 ///
 /// Returns `true` if the DFS traversal using the given subdag structure matches the commit.
 /// Note, this does not guarantee that the subDAG contains all batches it should, because this function has no knowledge of other blocks/subDAGs.
-fn sanity_check_subdag_with_dfs<N: Network>(subdag: &BTreeMap<u64, IndexSet<BatchCertificate<N>>>) -> bool {
-    use std::collections::HashSet;
+macro_rules! sanity_check_subdag_with_dfs {
+    ($subdag:expr) => {{
+        use std::collections::HashSet;
 
-    // Initialize a map for the certificates to commit.
-    let mut commit = BTreeMap::<u64, IndexSet<_>>::new();
-    // Initialize a set for the already ordered certificates.
-    let mut already_ordered = HashSet::new();
-    // Initialize a buffer for the certificates to order, starting with the leader certificate.
-    let mut buffer = subdag.iter().next_back().map_or(Default::default(), |(_, leader)| leader.clone());
-    // Iterate over the certificates to order.
-    while let Some(certificate) = buffer.pop() {
-        // Insert the certificate into the map.
-        commit.entry(certificate.round()).or_default().insert(certificate.clone());
-        // Iterate over the previous certificate IDs.
-        for previous_certificate_id in certificate.previous_certificate_ids() {
-            let Some(previous_certificate) = subdag
-                .get(&(certificate.round() - 1))
-                .and_then(|map| map.iter().find(|certificate| certificate.id() == *previous_certificate_id))
-            else {
-                // It is either ordered or below the GC round.
-                continue;
-            };
-            // Insert the previous certificate into the set of already ordered certificates.
-            if !already_ordered.insert(previous_certificate.id()) {
-                // If the previous certificate is already ordered, continue.
-                continue;
+        // Initialize a map for the certificates to commit.
+        let mut commit = BTreeMap::<u64, IndexSet<_>>::new();
+        // Initialize a set for the already ordered certificates.
+        let mut already_ordered = HashSet::new();
+        // Initialize a buffer for the certificates to order, starting with the leader certificate.
+        let mut buffer = $subdag.iter().next_back().map_or(Default::default(), |(_, leader)| leader.clone());
+        // Iterate over the certificates to order.
+        while let Some(certificate) = buffer.pop() {
+            // Insert the certificate into the map.
+            commit.entry(certificate.round()).or_default().insert(certificate.clone());
+            // Iterate over the previous certificate IDs.
+            for previous_certificate_id in certificate.previous_certificate_ids() {
+                let Some(previous_certificate) = $subdag
+                    .get(&(certificate.round() - 1))
+                    .and_then(|map| map.iter().find(|certificate| certificate.id() == *previous_certificate_id))
+                else {
+                    // It is either ordered or below the GC round.
+                    continue;
+                };
+                // Insert the previous certificate into the set of already ordered certificates.
+                if !already_ordered.insert(previous_certificate.id()) {
+                    // If the previous certificate is already ordered, continue.
+                    continue;
+                }
+                // Insert the previous certificate into the buffer.
+                buffer.insert(previous_certificate.clone());
             }
-            // Insert the previous certificate into the buffer.
-            buffer.insert(previous_certificate.clone());
         }
-    }
-    // Return `true` if the subdag matches the commit.
-    &commit == subdag
+        // Return `true` if the subdag matches the commit.
+        &commit == $subdag
+    }};
+}
+
+/// Performs sanity checks on the subdag.
+macro_rules! sanity_check_subdag {
+    ($subdag:expr) => {{
+        // Ensure the subdag is not empty.
+        ensure!(!$subdag.is_empty(), "Subdag cannot be empty");
+        // Ensure the subdag does not exceed the maximum number of rounds.
+        ensure!(
+            $subdag.len() <= usize::try_from(Self::MAX_ROUNDS)?,
+            "Subdag cannot exceed the maximum number of rounds"
+        );
+        // Ensure the anchor round is even.
+        ensure!($subdag.iter().next_back().map_or(0, |(r, _)| *r) % 2 == 0, "Anchor round must be even");
+        // Ensure there is only one leader certificate.
+        ensure!($subdag.iter().next_back().map_or(0, |(_, c)| c.len()) == 1, "Subdag cannot have multiple leaders");
+        // Ensure the rounds are sequential.
+        ensure!(is_sequential($subdag), "Subdag rounds must be sequential");
+        // Ensure the subdag structure matches the commit.
+        ensure!(sanity_check_subdag_with_dfs!($subdag), "Subdag structure does not match commit");
+        // Ensure the leader certificate is an even round.
+        Ok::<_, Error>(())
+    }};
 }
 
 /// Returns the weighted median timestamp of the given timestamps and stakes.
@@ -116,14 +199,27 @@ fn weighted_median(timestamps_and_stake: Vec<(i64, u64)>) -> i64 {
 }
 
 #[derive(Clone)]
-pub struct Subdag<N: Network> {
-    /// The subdag of round certificates.
-    subdag: BTreeMap<u64, IndexSet<BatchCertificate<N>>>,
+pub enum Subdag<N: Network> {
+    Full {
+        /// The subdag of round certificates.
+        subdag: BTreeMap<u64, IndexSet<BatchCertificate<N>>>,
+    },
+    Compact {
+        /// The subdag of round certificates.
+        subdag: BTreeMap<u64, IndexSet<CompactCertificate<N>>>,
+    },
 }
 
 impl<N: Network> PartialEq for Subdag<N> {
     fn eq(&self, other: &Self) -> bool {
-        self.subdag == other.subdag
+        match (self, other) {
+            (Self::Full { subdag }, Self::Full { subdag: other_subdag }) => subdag == other_subdag,
+            (Self::Compact { subdag }, Self::Compact { subdag: other_subdag }) => subdag == other_subdag,
+            _ => {
+                tracing::warn!("Subdag equality check failed - trying to compare a Full to a Compact subdag");
+                false
+            }
+        }
     }
 }
 
@@ -131,29 +227,93 @@ impl<N: Network> Eq for Subdag<N> {}
 
 impl<N: Network> Subdag<N> {
     /// Initializes a new subdag.
-    pub fn from(subdag: BTreeMap<u64, IndexSet<BatchCertificate<N>>>) -> Result<Self> {
-        // Ensure the subdag is not empty.
-        ensure!(!subdag.is_empty(), "Subdag cannot be empty");
-        // Ensure the subdag does not exceed the maximum number of rounds.
-        ensure!(
-            subdag.len() <= usize::try_from(Self::MAX_ROUNDS)?,
-            "Subdag cannot exceed the maximum number of rounds"
-        );
-        // Ensure the anchor round is even.
-        ensure!(subdag.iter().next_back().map_or(0, |(r, _)| *r) % 2 == 0, "Anchor round must be even");
-        // Ensure there is only one leader certificate.
-        ensure!(subdag.iter().next_back().map_or(0, |(_, c)| c.len()) == 1, "Subdag cannot have multiple leaders");
-        // Ensure the rounds are sequential.
-        ensure!(is_sequential(&subdag), "Subdag rounds must be sequential");
-        // Ensure the subdag structure matches the commit.
-        ensure!(sanity_check_subdag_with_dfs(&subdag), "Subdag structure does not match commit");
-        // Ensure the leader certificate is an even round.
-        Ok(Self { subdag })
+    pub fn from_full(subdag: BTreeMap<u64, IndexSet<BatchCertificate<N>>>) -> Result<Self> {
+        // Perform sanity checks.
+        sanity_check_subdag!(&subdag)?;
+        // Construct the subdag.
+        Ok(Self::Full { subdag })
     }
 
     /// Initializes a new subdag.
-    pub fn from_unchecked(subdag: BTreeMap<u64, IndexSet<BatchCertificate<N>>>) -> Self {
-        Self { subdag }
+    pub fn from_compact(subdag: BTreeMap<u64, IndexSet<CompactCertificate<N>>>) -> Result<Self> {
+        // Perform sanity checks.
+        sanity_check_subdag!(&subdag)?;
+        // Construct the subdag.
+        Ok(Self::Compact { subdag })
+    }
+
+    /// Initializes a new subdag.
+    pub fn from_full_unchecked(subdag: BTreeMap<u64, IndexSet<BatchCertificate<N>>>) -> Result<Self> {
+        Ok(Self::Full { subdag })
+    }
+
+    /// Initializes a new subdag.
+    pub fn from_compact_unchecked(subdag: BTreeMap<u64, IndexSet<CompactCertificate<N>>>) -> Result<Self> {
+        Ok(Self::Compact { subdag })
+    }
+
+    pub fn check_committee_id_coherence(&self) -> Result<()> {
+        macro_rules! checker {
+            ($round:expr, $certificates:expr) => {{
+                // Check that every certificate for a given round shares the same committee ID.
+                let expected_committee_id = $certificates
+                    .first()
+                    .map(|certificate| certificate.committee_id())
+                    .ok_or(anyhow!("No certificates found for subdag round {}", $round))?;
+                ensure!(
+                    $certificates.iter().skip(1).all(|certificate| certificate.committee_id() == expected_committee_id),
+                    "Certificates on round {} do not all have the same committee ID",
+                    $round,
+                );
+                Ok(())
+            }};
+        }
+
+        match self {
+            Self::Full { subdag } => cfg_iter!(subdag).try_for_each(|(round, certs)| checker!(round, certs))?,
+            Self::Compact { subdag } => cfg_iter!(subdag).try_for_each(|(round, certs)| checker!(round, certs))?,
+        }
+
+        Ok(())
+    }
+
+    /// Returns the subdag with full batch certificates.
+    pub fn into_full(
+        self,
+        solutions: &[TransmissionID<N>],
+        prior_solutions: &[TransmissionID<N>],
+        aborted_solutions: &[TransmissionID<N>],
+        transaction_ids: &[TransmissionID<N>],
+        prior_transactions: &[TransmissionID<N>],
+        aborted_transaction_ids: &[TransmissionID<N>],
+    ) -> Result<Subdag<N>> {
+        let subdag = match self {
+            Self::Compact { subdag } => subdag,
+            subdag @ Self::Full { .. } => return Ok(subdag),
+        };
+        // Initialize the new subdag.
+        let mut batch_subdag = BTreeMap::new();
+
+        // Iterate over the subdag.
+        for (round, compact_certificates) in subdag.into_iter() {
+            let mut batch_certificates = IndexSet::with_capacity(compact_certificates.len());
+            for certificate in compact_certificates.into_iter() {
+                // Convert compact certificate to batch certificate.
+                let batch_certificate = certificate.into_batch_certificate(
+                    solutions.iter(),
+                    prior_solutions.iter(),
+                    aborted_solutions.iter(),
+                    transaction_ids.iter(),
+                    prior_transactions.iter(),
+                    aborted_transaction_ids.iter(),
+                )?;
+                batch_certificates.insert(batch_certificate);
+            }
+            batch_subdag.insert(round, batch_certificates);
+        }
+
+        // Return the batch certificates.
+        Ok(Self::Full { subdag: batch_subdag })
     }
 }
 
@@ -165,40 +325,159 @@ impl<N: Network> Subdag<N> {
 impl<N: Network> Subdag<N> {
     /// Returns the anchor round.
     pub fn anchor_round(&self) -> u64 {
-        self.subdag.iter().next_back().map_or(0, |(round, _)| *round)
+        match self {
+            Self::Full { subdag } => subdag.iter().next_back().map_or(0, |(round, _)| *round),
+            Self::Compact { subdag } => subdag.iter().next_back().map_or(0, |(round, _)| *round),
+        }
     }
 
     /// Returns the certificate IDs of the subdag (from earliest round to latest round).
-    pub fn certificate_ids(&self) -> impl Iterator<Item = Field<N>> + '_ {
-        self.values().flatten().map(BatchCertificate::id)
+    pub fn certificate_ids(&self) -> Vec<Field<N>> {
+        match self {
+            Self::Full { subdag } => subdag.values().flatten().map(BatchCertificate::id).collect_vec(),
+            Self::Compact { subdag } => subdag.values().flatten().map(CompactCertificate::id).collect_vec(),
+        }
     }
 
-    /// Returns certificates in this subdag (from earliest round to latest round).
-    pub fn certificates(&self) -> impl Iterator<Item = &BatchCertificate<N>> {
-        self.values().flatten()
+    /// Returns the certificates of the subdag (from earliest round to latest round).
+    pub fn into_iter_batch_certificates(self) -> Result<impl Iterator<Item = BatchCertificate<N>>> {
+        let Self::Full { subdag } = self else {
+            bail!("Can only iter over certificates of Full Subdag.");
+        };
+        Ok(subdag.into_values().flatten())
+    }
+
+    /// Returns the certificates of the subdag (from earliest round to latest round).
+    #[cfg(not(feature = "serial"))]
+    pub fn into_par_iter_batch_certificates(self) -> Result<impl ParallelIterator<Item = BatchCertificate<N>>> {
+        let Self::Full { subdag } = self else {
+            bail!("Can only iter over certificates of Full Subdag.");
+        };
+        Ok(subdag.into_par_iter().map(|(_k, v)| v).flatten())
+    }
+
+    /// Returns the certificate IDs and rounds of the subdag (from earliest round to latest round).
+    pub fn certificate_ids_rounds(&self) -> Vec<(Field<N>, u64)> {
+        match self {
+            Self::Full { subdag } => subdag
+                .iter()
+                .flat_map(|(round, certificates)| certificates.iter().map(|c| (c.id(), *round)))
+                .collect_vec(),
+            Self::Compact { subdag } => subdag
+                .iter()
+                .flat_map(|(round, certificates)| certificates.iter().map(|c| (c.id(), *round)))
+                .collect_vec(),
+        }
+    }
+
+    /// Returns the number of certificates and rounds of the subdag (from earliest round to latest round).
+    pub fn num_certificates_rounds(&self) -> Vec<(usize, u64)> {
+        match self {
+            Self::Full { subdag } => {
+                subdag.iter().map(|(round, certificates)| (certificates.len(), *round)).collect_vec()
+            }
+            Self::Compact { subdag } => {
+                subdag.iter().map(|(round, certificates)| (certificates.len(), *round)).collect_vec()
+            }
+        }
     }
 
     /// Returns the leader certificate.
-    pub fn leader_certificate(&self) -> &BatchCertificate<N> {
-        // Retrieve entry for the anchor round.
-        let entry = self.subdag.iter().next_back();
-        debug_assert!(entry.is_some(), "There must be at least one round of certificates");
-        // Retrieve the certificates from the anchor round.
-        let certificates = entry.expect("There must be one round in the subdag").1;
-        debug_assert!(certificates.len() == 1, "There must be only one leader certificate, by definition");
-        // Note: There is guaranteed to be only one leader certificate.
-        certificates.iter().next().expect("There must be a leader certificate")
+    pub fn leader_certificate(&self) -> LeaderCertificate<N> {
+        match self {
+            Self::Full { subdag } => {
+                // Retrieve entry for the anchor round.
+                let entry = subdag.iter().next_back();
+                debug_assert!(entry.is_some(), "There must be at least one round of certificates");
+                // Retrieve the certificates from the anchor round.
+                let certificates = entry.expect("There must be one round in the subdag").1;
+                debug_assert!(certificates.len() == 1, "There must be only one leader certificate, by definition");
+                // Note: There is guaranteed to be only one leader certificate.
+                let cert = certificates.iter().next().expect("There must be a leader certificate");
+                LeaderCertificate::Full(cert)
+            }
+            Self::Compact { subdag } => {
+                // Retrieve entry for the anchor round.
+                let entry = subdag.iter().next_back();
+                debug_assert!(entry.is_some(), "There must be at least one round of certificates");
+                // Retrieve the certificates from the anchor round.
+                let certificates = entry.expect("There must be one round in the subdag").1;
+                debug_assert!(certificates.len() == 1, "There must be only one leader certificate, by definition");
+                // Note: There is guaranteed to be only one leader certificate.
+                let cert = certificates.iter().next().expect("There must be a leader certificate");
+                LeaderCertificate::Compact(cert)
+            }
+        }
+    }
+
+    /// Returns the leader certificate.
+    pub fn leader_batch_certificate(&self) -> Result<&BatchCertificate<N>> {
+        match self.leader_certificate() {
+            LeaderCertificate::Full(cert) => Ok(cert),
+            LeaderCertificate::Compact(_) => {
+                bail!("We can only return the leader batch certificate of a full Subdag")
+            }
+        }
+    }
+
+    /// Returns the timestamp of the leader certificate.
+    pub fn leader_timestamp(&self) -> Result<i64> {
+        match self.leader_certificate() {
+            LeaderCertificate::Full(cert) => Ok(cert.timestamp()),
+            LeaderCertificate::Compact(cert) => Ok(cert.timestamp()),
+        }
+    }
+
+    /// Return the number of certificates
+    pub fn num_certificates(&self) -> usize {
+        match self {
+            Self::Full { subdag } => subdag.values().flatten().count(),
+            Self::Compact { subdag } => subdag.values().flatten().count(),
+        }
+    }
+
+    /// Return CompactCertificate for a given round
+    pub fn get_certificate_for_round(
+        &self,
+        round: u64,
+        certificate_id: &Field<N>,
+    ) -> Option<Cow<'_, CompactCertificate<N>>> {
+        match self {
+            Self::Compact { subdag } => {
+                match subdag.get(&round) {
+                    Some(certificates) => {
+                        // Retrieve the certificate for the given certificate ID.
+                        certificates.iter().find(|certificate| certificate.id() == *certificate_id).map(Cow::Borrowed)
+                    }
+                    None => None,
+                }
+            }
+            Self::Full { subdag } => {
+                let Self::Compact { subdag } = Subdag::from_full(subdag.clone()).ok()? else {
+                    unreachable!();
+                };
+
+                match subdag.get(&round) {
+                    Some(certificates) => {
+                        // Retrieve the certificate for the given certificate ID.
+                        certificates
+                            .iter()
+                            .find(|certificate| certificate.id() == *certificate_id)
+                            .map(|certificate| Cow::Owned(certificate.clone()))
+                    }
+                    None => None,
+                }
+            }
+        }
     }
 
     /// Returns the address of the leader.
     pub fn leader_address(&self) -> Address<N> {
         // Retrieve the leader address from the leader certificate.
-        self.leader_certificate().author()
-    }
-
-    /// Returns the transmission IDs of the subdag (from earliest round to latest round).
-    pub fn transmission_ids(&self) -> impl Iterator<Item = &TransmissionID<N>> {
-        self.values().flatten().flat_map(BatchCertificate::transmission_ids)
+        match self.leader_certificate() {
+            LeaderCertificate::Full(cert) => cert.author(),
+            LeaderCertificate::Compact(cert) => cert.author(),
+        }
     }
 
     /// Returns the timestamp of the anchor round, defined as the weighted median timestamp of the subdag.
@@ -206,12 +485,20 @@ impl<N: Network> Subdag<N> {
         // Retrieve the anchor round.
         let anchor_round = self.anchor_round();
         // Retrieve the timestamps and stakes of the certificates for `anchor_round` - 1.
-        let timestamps_and_stakes = self
-            .values()
-            .flatten()
-            .filter(|certificate| certificate.round() == anchor_round.saturating_sub(1))
-            .map(|certificate| (certificate.timestamp(), committee.get_stake(certificate.author())))
-            .collect::<Vec<_>>();
+        let timestamps_and_stakes = match self {
+            Self::Compact { subdag } => subdag
+                .values()
+                .flatten()
+                .filter(|certificate| certificate.round() == anchor_round.saturating_sub(1))
+                .map(|cert| (cert.timestamp(), committee.get_stake(cert.author())))
+                .collect::<Vec<_>>(),
+            Self::Full { subdag } => subdag
+                .values()
+                .flatten()
+                .filter(|certificate| certificate.round() == anchor_round.saturating_sub(1))
+                .map(|cert| (cert.timestamp(), committee.get_stake(cert.author())))
+                .collect::<Vec<_>>(),
+        };
 
         // Return the weighted median timestamp.
         weighted_median(timestamps_and_stakes)
@@ -220,23 +507,57 @@ impl<N: Network> Subdag<N> {
     /// Returns the subdag root of the certificates.
     pub fn to_subdag_root(&self) -> Result<Field<N>> {
         // Prepare the leaves.
-        let leaves = cfg_iter!(self.subdag)
-            .map(|(_, certificates)| {
-                certificates.iter().flat_map(|certificate| certificate.id().to_bits_le()).collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
+        let leaves = match self {
+            Self::Full { subdag } => cfg_iter!(subdag)
+                .map(|(_, certificates)| {
+                    certificates.iter().flat_map(|certificate| certificate.id().to_bits_le()).collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
+            Self::Compact { subdag } => cfg_iter!(subdag)
+                .map(|(_, certificates)| {
+                    certificates.iter().flat_map(|certificate| certificate.id().to_bits_le()).collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
+        };
         // Compute the subdag root.
         Ok(*N::merkle_tree_bhp::<SUBDAG_CERTIFICATES_DEPTH>(&leaves)?.root())
     }
-}
 
-impl<N: Network> Deref for Subdag<N> {
-    type Target = BTreeMap<u64, IndexSet<BatchCertificate<N>>>;
+    /// Returns the subdag with compact certificates
+    pub fn into_compact(
+        self,
+        solutions: Vec<TransmissionID<N>>,
+        prior_solutions: Vec<TransmissionID<N>>,
+        aborted_solutions: Vec<TransmissionID<N>>,
+        transaction_ids: Vec<TransmissionID<N>>,
+        prior_transactions: Vec<TransmissionID<N>>,
+        aborted_transactions: Vec<TransmissionID<N>>,
+    ) -> Result<Subdag<N>> {
+        let Self::Full { subdag } = self else { bail!("Can only turn a Full subdag into a Compact one.") };
 
-    /// Returns the batch certificates.
-    fn deref(&self) -> &Self::Target {
-        &self.subdag
+        // Initialize the new subdag.
+        let mut compact_subdag = BTreeMap::new();
+
+        // Iterate over the subdag.
+        for (round, batch_certificates) in subdag.into_iter() {
+            let certificates = cfg_into_iter!(batch_certificates)
+                .map(|batch_certificate| {
+                    CompactCertificate::from_batch_certificate(
+                        batch_certificate,
+                        solutions.iter(),
+                        prior_solutions.iter(),
+                        aborted_solutions.iter(),
+                        transaction_ids.iter(),
+                        prior_transactions.iter(),
+                        aborted_transactions.iter(),
+                    )
+                })
+                .collect::<Result<_>>()?;
+            compact_subdag.insert(round, certificates);
+        }
+
+        // Return the compact certificates.
+        Ok(Self::Compact { subdag: compact_subdag })
     }
 }
 
@@ -251,8 +572,61 @@ pub mod test_helpers {
 
     type CurrentNetwork = MainnetV0;
 
-    /// Returns a sample subdag, sampled at random.
-    pub fn sample_subdag(rng: &mut TestRng) -> Subdag<CurrentNetwork> {
+    /// Returns a sample compact subdag, sampled at random.
+    pub fn sample_compact_subdag(rng: &mut TestRng) -> Subdag<CurrentNetwork> {
+        const F: usize = 1;
+        const AVAILABILITY_THRESHOLD: usize = F + 1;
+        const QUORUM_THRESHOLD: usize = 2 * F + 1;
+
+        // Initialize the map for the subdag.
+        let mut subdag = BTreeMap::<u64, IndexSet<_>>::new();
+
+        // Initialize the starting round.
+        let starting_round = {
+            loop {
+                let round = rng.gen_range(2..u64::MAX);
+                if round % 2 == 0 {
+                    break round;
+                }
+            }
+        };
+
+        // Process the earliest round.
+        let mut previous_certificate_ids = IndexSet::new();
+        for _ in 0..AVAILABILITY_THRESHOLD {
+            let certificate =
+                snarkvm_ledger_narwhal_compact_certificate::test_helpers::sample_compact_certificate_for_round(
+                    starting_round,
+                    rng,
+                );
+            previous_certificate_ids.insert(certificate.id());
+            subdag.entry(starting_round).or_default().insert(certificate);
+        }
+
+        // Process the middle round.
+        let mut previous_certificate_ids_2 = IndexSet::new();
+        for _ in 0..QUORUM_THRESHOLD {
+            let certificate =
+                snarkvm_ledger_narwhal_compact_certificate::test_helpers::sample_compact_certificate_for_round_with_previous_certificate_ids(starting_round + 1, previous_certificate_ids.clone(), rng);
+            previous_certificate_ids_2.insert(certificate.id());
+            subdag.entry(starting_round + 1).or_default().insert(certificate);
+        }
+
+        // Process the latest round.
+        let certificate =
+            snarkvm_ledger_narwhal_compact_certificate::test_helpers::sample_compact_certificate_for_round_with_previous_certificate_ids(
+                starting_round + 2,
+                previous_certificate_ids_2,
+                rng,
+            );
+        subdag.insert(starting_round + 2, indexset![certificate]);
+
+        // Return the subdag.
+        Subdag::from_compact(subdag).unwrap()
+    }
+
+    /// Returns a sample full subdag, sampled at random.
+    pub fn sample_full_subdag(rng: &mut TestRng) -> Subdag<CurrentNetwork> {
         const F: usize = 1;
         const AVAILABILITY_THRESHOLD: usize = F + 1;
         const QUORUM_THRESHOLD: usize = 2 * F + 1;
@@ -299,16 +673,33 @@ pub mod test_helpers {
         subdag.insert(starting_round + 2, indexset![certificate]);
 
         // Return the subdag.
-        Subdag::from(subdag).unwrap()
+        Subdag::from_full(subdag).unwrap()
     }
 
-    /// Returns a list of sample subdags, sampled at random.
-    pub fn sample_subdags(rng: &mut TestRng) -> Vec<Subdag<CurrentNetwork>> {
+    /// Returns a list of sample full subdags, sampled at random.
+    pub fn sample_full_subdags(rng: &mut TestRng) -> Vec<Subdag<CurrentNetwork>> {
         // Initialize a sample vector.
         let mut sample = Vec::with_capacity(10);
         // Append sample subdags.
         for _ in 0..10 {
-            sample.push(sample_subdag(rng));
+            sample.push(sample_full_subdag(rng));
+        }
+        // Return the sample vector.
+        sample
+    }
+
+    /// Returns a list of sample subdags, both full and compact, sampled at random.
+    pub fn sample_any_subdags(rng: &mut TestRng) -> Vec<Subdag<CurrentNetwork>> {
+        // Initialize a sample vector.
+        let mut sample = Vec::with_capacity(10);
+        // Append sample subdags.
+        for _ in 0..10 {
+            // Flip a coin to decide if the subdag is going to be compact.
+            if rng.r#gen::<bool>() {
+                sample.push(sample_compact_subdag(rng));
+            } else {
+                sample.push(sample_full_subdag(rng));
+            }
         }
         // Return the sample vector.
         sample

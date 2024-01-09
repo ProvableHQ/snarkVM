@@ -669,9 +669,9 @@ pub fn sample_genesis_block_and_components_uncached(
         header,
         ratifications,
         None.into(),
-        vec![],
+        Some(vec![]),
         transactions.clone(),
-        vec![],
+        Some(vec![]),
         rng,
     )
     .unwrap();

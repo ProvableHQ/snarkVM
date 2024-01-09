@@ -968,9 +968,9 @@ mod tests {
             deployment_header,
             ratifications,
             None.into(),
-            vec![],
+            Some(vec![]),
             transactions,
-            aborted_transaction_ids,
+            Some(aborted_transaction_ids),
             rng,
         )
         .unwrap();
@@ -1315,7 +1315,7 @@ function compute:
             rng,
         )
         .unwrap();
-        assert_eq!(next_block.aborted_transaction_ids(), &vec![
+        assert_eq!(next_block.aborted_transaction_ids().unwrap(), &vec![
             deploy_1_tx_id,
             deploy_2_tx_id,
             deploy_3_tx_id,
@@ -1927,7 +1927,7 @@ mod credits_migration_tests {
         println!("\n\n TOTAL UPGRADED: {total_upgraded}\n\n");
         let num_aborted = usize::try_from((total_upgraded - TOTAL_UPGRADE_LIMIT) / RECORD_UPGRADE_LIMIT).unwrap();
         assert_eq!(next_block.transactions().len() + num_aborted, combined_upgrades.len());
-        assert_eq!(next_block.aborted_transaction_ids().len(), num_aborted);
+        assert_eq!(next_block.aborted_transaction_ids().unwrap().len(), num_aborted);
         assert!(num_aborted > 0);
     }
 
@@ -2096,7 +2096,7 @@ function local_transfer:
         let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[local_transfer], rng).unwrap();
         assert_eq!(next_block.transactions().num_accepted(), 0);
         assert_eq!(next_block.transactions().num_rejected(), 0);
-        assert_eq!(next_block.aborted_transaction_ids().len(), 1);
+        assert_eq!(next_block.aborted_transaction_ids().unwrap().len(), 1);
         vm.add_next_block(&next_block).unwrap();
 
         // Re-deploy the program.
@@ -2104,7 +2104,7 @@ function local_transfer:
         let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
         assert_eq!(next_block.transactions().num_accepted(), 1);
         assert_eq!(next_block.transactions().num_rejected(), 0);
-        assert_eq!(next_block.aborted_transaction_ids().len(), 0);
+        assert_eq!(next_block.aborted_transaction_ids().unwrap().len(), 0);
         vm.add_next_block(&next_block).unwrap();
 
         // Execute the local transfer again.
@@ -2115,7 +2115,7 @@ function local_transfer:
         let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[local_transfer], rng).unwrap();
         assert_eq!(next_block.transactions().num_accepted(), 1);
         assert_eq!(next_block.transactions().num_rejected(), 0);
-        assert_eq!(next_block.aborted_transaction_ids().len(), 0);
+        assert_eq!(next_block.aborted_transaction_ids().unwrap().len(), 0);
     }
 
     #[cfg(feature = "test")]
@@ -2235,7 +2235,7 @@ function transfer:
         let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
         assert_eq!(next_block.transactions().num_accepted(), 1);
         assert_eq!(next_block.transactions().num_rejected(), 0);
-        assert_eq!(next_block.aborted_transaction_ids().len(), 0);
+        assert_eq!(next_block.aborted_transaction_ids().unwrap().len(), 0);
         vm.add_next_block(&next_block).unwrap();
 
         let transfer_2 = {

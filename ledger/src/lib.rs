@@ -72,7 +72,7 @@ use aleo_std::{
 };
 use anyhow::Result;
 use core::ops::Range;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::{Mutex, RwLock};
 use lru::LruCache;
@@ -102,6 +102,43 @@ pub enum RecordsFilter<N: Network> {
     SlowSpent(PrivateKey<N>),
     /// Returns all records associated with the account that are **not spent** with the given private key.
     SlowUnspent(PrivateKey<N>),
+}
+
+/// Helper struct to wrap transmissions in the subDAG.
+#[derive(Clone)]
+pub struct SubdagTransmissions<N: Network> {
+    /// The transmissions in the subDAG ready to be included in the next block.
+    pub transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
+    /// Transmission IDs in a subDAG which were already included in a prior block.
+    pub prior_included_transmissions: IndexSet<TransmissionID<N>>,
+    /// Novel transmission ids in a subDAG which at the moment can't be included in a block.
+    pub aborted_transmissions: IndexSet<TransmissionID<N>>,
+}
+
+impl<N: Network> Default for SubdagTransmissions<N> {
+    fn default() -> Self {
+        Self {
+            transmissions: IndexMap::default(),
+            prior_included_transmissions: IndexSet::default(),
+            aborted_transmissions: IndexSet::default(),
+        }
+    }
+}
+
+impl<N: Network> SubdagTransmissions<N> {
+    /// Returns the total number of transmissions.
+    pub fn len(&self) -> usize {
+        self.transmissions
+            .len()
+            .saturating_add(self.prior_included_transmissions.len().saturating_add(self.aborted_transmissions.len()))
+    }
+
+    /// Returns `true` if the subdag is empty.
+    pub fn is_empty(&self) -> bool {
+        self.transmissions.is_empty()
+            && self.prior_included_transmissions.is_empty()
+            && self.aborted_transmissions.is_empty()
+    }
 }
 
 /// State of the entire chain.

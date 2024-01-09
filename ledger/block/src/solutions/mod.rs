@@ -68,6 +68,10 @@ impl<N: Network> Solutions<N> {
             None => 0,
         }
     }
+
+    pub fn as_puzzle_solutions(&self) -> Option<&PuzzleSolutions<N>> {
+        self.solutions.as_ref()
+    }
 }
 
 impl<N: Network> Solutions<N> {

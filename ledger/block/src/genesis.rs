@@ -29,7 +29,7 @@ impl<N: Network> Block<N> {
         ensure!(self.authority.is_beacon(), "Invalid block authority");
         ensure!(self.solutions.is_empty(), "Invalid solutins");
         ensure!(self.transactions.num_rejected() == 0, "Invalid number of rejected transactions");
-        ensure!(self.aborted_transaction_ids.is_empty(), "Genesis block must not contain aborted transactions");
+        ensure!(self.aborted_transaction_ids == Some(vec![]), "Genesis block must not contain aborted transactions");
 
         // Perform additional checks in production
         #[cfg(not(any(test, feature = "test")))]

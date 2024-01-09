@@ -19,11 +19,18 @@ impl<N: Network> Serialize for Subdag<N> {
     /// Serializes the subdag to a JSON-string or buffer.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
-            true => {
-                let mut certificate = serializer.serialize_struct("Subdag", 1)?;
-                certificate.serialize_field("subdag", &self.subdag)?;
-                certificate.end()
-            }
+            true => match self {
+                Self::Full { subdag } => {
+                    let mut full_subdag = serializer.serialize_struct("Subdag", 1)?;
+                    full_subdag.serialize_field("subdag", subdag)?;
+                    full_subdag.end()
+                }
+                Self::Compact { subdag } => {
+                    let mut compact_subdag = serializer.serialize_struct("Subdag", 1)?;
+                    compact_subdag.serialize_field("compact_subdag", subdag)?;
+                    compact_subdag.end()
+                }
+            },
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
         }
     }
@@ -35,7 +42,17 @@ impl<'de, N: Network> Deserialize<'de> for Subdag<N> {
         if deserializer.is_human_readable() {
             let mut value = serde_json::Value::deserialize(deserializer)?;
 
-            Ok(Self::from(DeserializeExt::take_from_value::<D>(&mut value, "subdag")?).map_err(de::Error::custom)?)
+            // Check if a full Subdag field is present.
+            let subdag_is_full = match value.get("subdag") {
+                Some(..) => true,
+                None => false,
+            };
+            match subdag_is_full {
+                true => Ok(Self::from_full(DeserializeExt::take_from_value::<D>(&mut value, "subdag")?)
+                    .map_err(de::Error::custom)?),
+                false => Ok(Self::from_compact(DeserializeExt::take_from_value::<D>(&mut value, "compact_subdag")?)
+                    .map_err(de::Error::custom)?),
+            }
         } else {
             FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "subdag")
         }
@@ -83,7 +100,7 @@ mod tests {
     fn test_serde_json() {
         let rng = &mut TestRng::default();
 
-        for expected in crate::test_helpers::sample_subdags(rng) {
+        for expected in crate::test_helpers::sample_any_subdags(rng) {
             check_serde_json(expected);
         }
     }
@@ -92,7 +109,7 @@ mod tests {
     fn test_bincode() {
         let rng = &mut TestRng::default();
 
-        for expected in crate::test_helpers::sample_subdags(rng) {
+        for expected in crate::test_helpers::sample_any_subdags(rng) {
             check_bincode(expected);
         }
     }

@@ -21,7 +21,7 @@ impl<N: Network> Subdag<N> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
-        if version != 1 {
+        if ![1, 2].contains(&version) {
             return Err(error(format!("Invalid subdag version ({version})")));
         }
 
@@ -32,7 +32,8 @@ impl<N: Network> Subdag<N> {
             return Err(error(format!("Number of rounds ({num_rounds}) exceeds the maximum ({})", Self::MAX_ROUNDS)));
         }
         // Read the round certificates.
-        let mut subdag = BTreeMap::new();
+        let mut batch_subdag = BTreeMap::new();
+        let mut compact_subdag = BTreeMap::new();
         for _ in 0..num_rounds {
             // Read the round.
             let round = u64::read_le(&mut reader)?;
@@ -43,17 +44,50 @@ impl<N: Network> Subdag<N> {
                 return Err(error(format!("Number of certificates ({num_certificates}) exceeds the maximum.",)));
             }
             // Read the certificates.
-            let mut certificates = IndexSet::with_capacity(num_certificates as usize);
-            for _ in 0..num_certificates {
-                let cert = BatchCertificate::read_le_with_unchecked(&mut reader, unchecked)?;
-                certificates.insert(cert);
+            match version {
+                1 => {
+                    let mut certificates = IndexSet::new();
+                    for _ in 0..num_certificates {
+                        // Read the certificate.
+                        certificates.insert(BatchCertificate::read_le_with_unchecked(&mut reader, unchecked)?);
+                    }
+                    // Insert the round and certificates.
+                    batch_subdag.insert(round, certificates);
+                }
+                2 => {
+                    let mut certificates = IndexSet::new();
+                    for _ in 0..num_certificates {
+                        // Read the certificate.
+                        certificates.insert(CompactCertificate::read_le_with_unchecked(&mut reader, unchecked)?);
+                    }
+                    // Insert the round and certificates.
+                    compact_subdag.insert(round, certificates);
+                }
+                _ => {
+                    return Err(error(format!("Found unexpected subdag version ({version})")));
+                }
             }
-            // Insert the round and certificates.
-            subdag.insert(round, certificates);
         }
 
         // Return the subdag.
-        if unchecked { Ok(Self::from_unchecked(subdag)) } else { Self::from(subdag).map_err(error) }
+        match version {
+            1 => {
+                if unchecked {
+                    Self::from_full_unchecked(batch_subdag)
+                } else {
+                    Self::from_full(batch_subdag)
+                }
+            }
+            2 => {
+                if unchecked {
+                    Self::from_compact_unchecked(compact_subdag)
+                } else {
+                    Self::from_compact(compact_subdag)
+                }
+            }
+            _ => Err(anyhow!("Found unexpected subdag version ({version})")),
+        }
+        .map_err(into_io_error)
     }
 }
 impl<N: Network> FromBytes for Subdag<N> {
@@ -71,20 +105,42 @@ impl<N: Network> FromBytes for Subdag<N> {
 impl<N: Network> ToBytes for Subdag<N> {
     /// Writes the subdag to the buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        // Get the subdag version and length
+        let (version, subdag_len) = match self {
+            Self::Full { subdag, .. } => (1u8, subdag.len()),
+            Self::Compact { subdag, .. } => (2u8, subdag.len()),
+        };
         // Write the version.
-        1u8.write_le(&mut writer)?;
+        version.write_le(&mut writer)?;
         // Write the number of rounds.
-        u32::try_from(self.subdag.len()).map_err(error)?.write_le(&mut writer)?;
+        u32::try_from(subdag_len).map_err(error)?.write_le(&mut writer)?;
         // Write the round certificates.
-        for (round, certificates) in &self.subdag {
-            // Write the round.
-            round.write_le(&mut writer)?;
-            // Write the number of certificates.
-            u16::try_from(certificates.len()).map_err(error)?.write_le(&mut writer)?;
-            // Write the certificates.
-            for certificate in certificates {
-                // Write the certificate.
-                certificate.write_le(&mut writer)?;
+        match self {
+            Self::Full { subdag, .. } => {
+                for (round, certificates) in subdag {
+                    // Write the round.
+                    round.write_le(&mut writer)?;
+                    // Write the number of certificates.
+                    u16::try_from(certificates.len()).map_err(error)?.write_le(&mut writer)?;
+                    // Write the certificates.
+                    for certificate in certificates {
+                        // Write the certificate.
+                        certificate.write_le(&mut writer)?;
+                    }
+                }
+            }
+            Self::Compact { subdag, .. } => {
+                for (round, certificates) in subdag {
+                    // Write the round.
+                    round.write_le(&mut writer)?;
+                    // Write the number of certificates.
+                    u16::try_from(certificates.len()).map_err(error)?.write_le(&mut writer)?;
+                    // Write the certificates.
+                    for certificate in certificates {
+                        // Write the certificate.
+                        certificate.write_le(&mut writer)?;
+                    }
+                }
             }
         }
         Ok(())
@@ -99,7 +155,7 @@ mod tests {
     fn test_bytes() {
         let rng = &mut TestRng::default();
 
-        for expected in crate::test_helpers::sample_subdags(rng) {
+        for expected in crate::test_helpers::sample_any_subdags(rng) {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, Subdag::read_le(&expected_bytes[..]).unwrap());

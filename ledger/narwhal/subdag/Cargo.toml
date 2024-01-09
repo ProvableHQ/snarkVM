@@ -27,7 +27,10 @@ edition = "2024"
 default = [ "indexmap/rayon", "rayon" ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
-test-helpers = [ "snarkvm-ledger-narwhal-batch-certificate/test-helpers" ]
+test-helpers = [
+  "snarkvm-ledger-narwhal-batch-certificate/test-helpers",
+  "snarkvm-ledger-narwhal-compact-certificate/test-helpers",
+]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -35,10 +38,16 @@ workspace = true
 [dependencies.snarkvm-ledger-narwhal-batch-certificate]
 workspace = true
 
+[dependencies.snarkvm-ledger-narwhal-compact-certificate]
+workspace = true
+
 [dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
 
 [dependencies.snarkvm-ledger-committee]
+workspace = true
+
+[dependencies.snarkvm-ledger-narwhal-traits]
 workspace = true
 
 [dependencies.snarkvm-ledger-narwhal-transmission-id]
@@ -55,6 +64,9 @@ optional = true
 [dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
+
+[dependencies.tracing]
+workspace = true
 
 [dev-dependencies.bincode]
 workspace = true

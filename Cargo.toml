@@ -68,6 +68,8 @@ members = [
   "ledger/narwhal",
   "ledger/narwhal/batch-certificate",
   "ledger/narwhal/batch-header",
+  "ledger/narwhal/compact-certificate",
+  "ledger/narwhal/compact-header",
   "ledger/narwhal/data",
   "ledger/narwhal/subdag",
   "ledger/narwhal/transmission",
@@ -355,6 +357,18 @@ version = "=4.3.0"
 [workspace.dependencies.snarkvm-ledger-narwhal-batch-certificate]
 path = "ledger/narwhal/batch-certificate"
 version = "=4.3.0"
+
+[workspace.dependencies.snarkvm-ledger-narwhal-compact-certificate]
+path = "ledger/narwhal/compact-certificate"
+version = "=4.1.0"
+
+[workspace.dependencies.snarkvm-ledger-narwhal-compact-header]
+path = "ledger/narwhal/compact-header"
+version = "=4.1.0"
+
+[workspace.dependencies.snarkvm-ledger-narwhal-traits]
+path = "ledger/narwhal/traits"
+version = "=4.1.0"
 
 [workspace.dependencies.snarkvm-ledger-narwhal-subdag]
 path = "ledger/narwhal/subdag"

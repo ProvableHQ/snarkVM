@@ -15,6 +15,7 @@
 
 use snarkvm_console::prelude::*;
 use snarkvm_ledger::narwhal::subdag::test_helpers::sample_subdag;
+use snarkvm_ledger_narwhal::Subdag;
 use snarkvm_utilities::bytes::unchecked_deserialize;
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -77,13 +78,15 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
 
 fn subdag_serialization(c: &mut Criterion) {
     let rng = &mut TestRng::default();
-    let subdag = sample_subdag(rng);
+    let obj = sample_subdag(rng);
+
+    let Subdag::Full { subdag } = &obj else { panic!("Cannot bench compact subDAG") };
     let batch = subdag.iter().next().unwrap().1.iter().next().unwrap().clone();
     let batch_header = batch.batch_header().clone();
 
     bench_serialization(c, "BatchHeader", batch_header);
     bench_serialization(c, "BatchCertificate", batch);
-    bench_serialization(c, "Subdag", subdag.clone());
+    bench_serialization(c, "Subdag", obj);
 }
 
 criterion_group! {

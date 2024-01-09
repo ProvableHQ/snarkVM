@@ -208,7 +208,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn get_aborted_transaction_ids(&self, height: u32) -> Result<Vec<N::TransactionID>> {
         // If the height is 0, return the genesis block aborted transaction IDs.
         if height == 0 {
-            return Ok(self.genesis_block.aborted_transaction_ids().clone());
+            return Ok(self.genesis_block.aborted_transaction_ids().cloned().unwrap_or_default());
         }
         // Retrieve the block hash.
         let Some(block_hash) = self.vm.block_store().get_block_hash(height)? else {
@@ -314,11 +314,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             Some(authority) => Ok(authority),
             None => bail!("Missing authority for block {height}"),
         }
-    }
-
-    /// Returns the batch certificate for the given `certificate ID`.
-    pub fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
-        self.vm.block_store().get_batch_certificate(certificate_id)
     }
 
     /// Returns the delegators for the given validator.

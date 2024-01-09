@@ -272,8 +272,12 @@ impl<N: Network> Puzzle<N> {
         Ok(())
     }
 
-    /// ATTENTION: This function will update the target if the solution target is different from the calculated one.
-    /// Returns `Ok(())` if the solution is valid.
+    /// ATTENTION: This function will update the target if the solution target
+    /// is different from the calculated one. This was needed before
+    /// ConsensusVersion::V10, because the lack of transmission checksums could
+    /// have allowed a malicious actor to create a fork when submitting
+    /// solutions with the same id but different targets. Returns `Ok(())` if
+    /// the solution is valid.
     pub fn check_solution_mut(
         &self,
         solution: &mut Solution<N>,

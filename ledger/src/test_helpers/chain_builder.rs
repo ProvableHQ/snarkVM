@@ -16,10 +16,11 @@
 use crate::{
     Block,
     Ledger,
+    SubdagTransmissions,
     Transaction,
     Transmission,
     TransmissionID,
-    narwhal::{BatchCertificate, BatchHeader, Subdag},
+    narwhal::{BatchCertificate, BatchHeader, NarwhalCertificate, Subdag},
     puzzle::Solution,
     store::{ConsensusStore, helpers::memory::ConsensusMemory},
 };
@@ -400,7 +401,8 @@ impl<N: Network> TestChainBuilder<N> {
         trace!("Generated {cert_count} certificates for the next block");
 
         // Construct the block.
-        let subdag = Subdag::from(subdag_map).unwrap();
+        let subdag = Subdag::from_full(subdag_map).unwrap();
+        let transmissions = SubdagTransmissions { transmissions, ..Default::default() };
         let block = self.ledger.prepare_advance_to_next_quorum_block(subdag, transmissions, rng)?;
 
         // Skip to increase performance.

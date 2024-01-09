@@ -22,20 +22,175 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn prepare_advance_to_next_quorum_block<R: Rng + CryptoRng>(
         &self,
         subdag: Subdag<N>,
-        transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
+        subdag_transmissions: SubdagTransmissions<N>,
         rng: &mut R,
     ) -> Result<Block<N>> {
         // Retrieve the latest block as the previous block (for the next block).
         let previous_block = self.latest_block();
 
+        // Obtain the subdag transmissions.
+        let SubdagTransmissions { prior_included_transmissions, aborted_transmissions, transmissions } =
+            subdag_transmissions;
+
         // Decouple the transmissions into ratifications, solutions, and transactions.
-        let (ratifications, solutions, transactions) = decouple_transmissions(transmissions.into_iter())?;
+        let (ratifications, solutions, solutions_with_id, transactions, transactions_with_id) =
+            decouple_transmissions(transmissions.into_iter())?;
+        // Decouple the prior_transmissions into ratifications, solutions, and transactions.
+        let (prior_ratifications, prior_solution_transmission_ids, prior_transaction_transmission_ids) =
+            decouple_transmission_ids(prior_included_transmissions)?;
+        // Decouple the aborted_transmissions into ratifications, solutions, and transactions.
+        let (
+            aborted_ratifications,
+            early_aborted_solution_transmission_ids,
+            early_aborted_transaction_transmission_ids,
+        ) = decouple_transmission_ids(aborted_transmissions)?;
         // Currently, we do not support ratifications from the memory pool.
-        ensure!(ratifications.is_empty(), "Ratifications are currently unsupported from the memory pool");
+        ensure!(
+            ratifications.is_empty() && prior_ratifications.is_empty() && aborted_ratifications.is_empty(),
+            "Ratifications are currently unsupported from the memory pool"
+        );
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = self
+        let (
+            header,
+            ratifications,
+            solutions,
+            aborted_solution_ids_from_finalization,
+            transactions,
+            aborted_transaction_ids_from_finalization,
+        ) = self
             .construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)
             .with_context(|| "Failed to construct block template")?;
+
+        // --- Solutions ---
+        // Construct the solution transmission IDs.
+        let solution_transmission_ids = solutions
+            .solution_ids()
+            .filter_map(|target_id| {
+                solutions_with_id
+                    .iter()
+                    .find(|(id, _)| match id {
+                        TransmissionID::Solution(id, _) => *id == *target_id,
+                        _ => false,
+                    })
+                    .map(|(id, _)| *id)
+            })
+            .collect_vec();
+        ensure!(solution_transmission_ids.len() == solutions.len(), "Mismatching number of solution IDs");
+        // Construct the aborted solution transmission IDs.
+        let mut aborted_solution_transmission_ids = aborted_solution_ids_from_finalization
+            .iter()
+            .filter_map(|target_id| {
+                solutions_with_id
+                    .iter()
+                    .find(|(id, _)| match id {
+                        TransmissionID::Solution(id, _) => id == target_id,
+                        _ => false,
+                    })
+                    .map(|(id, _)| *id)
+            })
+            .collect_vec();
+        ensure!(
+            aborted_solution_transmission_ids.len() == aborted_solution_ids_from_finalization.len(),
+            "Mismatching number of aborted solution IDs"
+        );
+        aborted_solution_transmission_ids.extend(early_aborted_solution_transmission_ids);
+        // Construct the aborted solution IDs.
+        let aborted_solution_ids = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() < ConsensusVersion::V10 {
+            Some(
+                aborted_solution_transmission_ids
+                    .iter()
+                    .filter_map(|id| match id {
+                        TransmissionID::Solution(id, _) => Some(*id),
+                        _ => None,
+                    })
+                    .collect_vec(),
+            )
+        } else {
+            None
+        };
+
+        // --- Transactions ---
+        // Construct the transaction transmission IDs.
+        let unconfirmed_transaction_ids = transactions.unconfirmed_transaction_ids()?;
+        let unconfirmed_transactions_len = unconfirmed_transaction_ids.len();
+        let transaction_transmission_ids = unconfirmed_transaction_ids
+            .into_iter()
+            .filter_map(|target_id| {
+                transactions_with_id
+                    .iter()
+                    .find(|(id, _)| match id {
+                        TransmissionID::Transaction(id, _) => *id == target_id,
+                        _ => false,
+                    })
+                    .map(|(id, _)| *id)
+            })
+            .collect_vec();
+        ensure!(
+            transaction_transmission_ids.len() == unconfirmed_transactions_len,
+            "Mismatching number of transaction IDs"
+        );
+        // Construct the aborted Transaction transmission IDs.
+        let mut aborted_transaction_transmission_ids = aborted_transaction_ids_from_finalization
+            .iter()
+            .filter_map(|target_id| {
+                transactions_with_id
+                    .iter()
+                    .find(|(id, _)| match id {
+                        TransmissionID::Transaction(id, _) => id == target_id,
+                        _ => false,
+                    })
+                    .map(|(id, _)| *id)
+            })
+            .collect_vec();
+        ensure!(
+            aborted_transaction_transmission_ids.len() == aborted_transaction_ids_from_finalization.len(),
+            "Mismatching number of aborted transaction IDs"
+        );
+        aborted_transaction_transmission_ids.extend(early_aborted_transaction_transmission_ids);
+        // Construct the aborted transaction IDs.
+        let aborted_transaction_ids = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() < ConsensusVersion::V10 {
+            Some(
+                aborted_transaction_transmission_ids
+                    .iter()
+                    .filter_map(|id| match id {
+                        TransmissionID::Transaction(id, _) => Some(*id),
+                        _ => None,
+                    })
+                    .collect_vec(),
+            )
+        } else {
+            None
+        };
+
+        // Construct the compact Subdag
+        let subdag = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {
+            subdag.into_compact(
+                solution_transmission_ids,
+                prior_solution_transmission_ids.clone(),
+                aborted_solution_transmission_ids.clone(),
+                transaction_transmission_ids,
+                prior_transaction_transmission_ids.clone(),
+                aborted_transaction_transmission_ids.clone(),
+            )?
+        } else {
+            subdag
+        };
+
+        let (
+            prior_solution_transmission_ids,
+            aborted_solution_transmission_ids,
+            prior_transaction_transmission_ids,
+            aborted_transaction_transmission_ids,
+        ) = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {
+            (
+                Some(prior_solution_transmission_ids),
+                Some(aborted_solution_transmission_ids),
+                Some(prior_transaction_transmission_ids),
+                Some(aborted_transaction_transmission_ids),
+            )
+        } else {
+            (None, None, None, None)
+        };
 
         // Construct the new quorum block.
         Block::new_quorum(
@@ -44,13 +199,18 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             subdag,
             ratifications,
             solutions,
+            prior_solution_transmission_ids,
+            aborted_solution_transmission_ids,
             aborted_solution_ids,
             transactions,
+            prior_transaction_transmission_ids,
+            aborted_transaction_transmission_ids,
             aborted_transaction_ids,
         )
     }
 
     /// Returns a candidate for the next block in the ledger.
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_advance_to_next_beacon_block<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
@@ -84,9 +244,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             header,
             ratifications,
             solutions,
-            aborted_solution_ids,
+            Some(aborted_solution_ids),
             transactions,
-            aborted_transaction_ids,
+            Some(aborted_transaction_ids),
             rng,
         )
     }
@@ -242,8 +402,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                         if self.is_solution_limit_reached(&prover_address, num_accepted_solutions) {
                             return false;
                         }
+                        // From ConsensusVersion::V10 onwards, use `check_solution` instead of `check_solution_mut`.
+                        let res = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {
+                            self.puzzle().check_solution(solution, latest_epoch_hash, latest_proof_target)
+                        } else {
+                            self.puzzle().check_solution_mut(solution, latest_epoch_hash, latest_proof_target)
+                        };
                         // Check if the solution is valid and update the number of accepted solutions.
-                        match self.puzzle().check_solution_mut(solution, latest_epoch_hash, latest_proof_target) {
+                        match res {
                             // Increment the number of accepted solutions for the prover.
                             Ok(()) => {
                                 *accepted_solutions.entry(prover_address).or_insert(0) += 1;
