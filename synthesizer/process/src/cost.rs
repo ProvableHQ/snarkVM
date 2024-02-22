@@ -30,10 +30,6 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
     let program_id = deployment.program_id();
     // Determine the number of characters in the program ID.
     let num_characters = u32::try_from(program_id.name().to_string().len())?;
-    // Compute the number of combined variables in the program.
-    let num_combined_variables = deployment.num_combined_variables()?;
-    // Compute the number of combined constraints in the program.
-    let num_combined_constraints = deployment.num_combined_constraints()?;
 
     // Compute the storage cost in microcredits.
     let storage_cost = size_in_bytes
@@ -41,7 +37,7 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
         .ok_or(anyhow!("The storage cost computation overflowed for a deployment"))?;
 
     // Compute the synthesis cost in microcredits.
-    let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER;
+    let synthesis_cost = synthesis_cost(deployment)?;
 
     // Compute the namespace cost in credits: 10^(10 - num_characters).
     let namespace_cost = 10u64
@@ -56,6 +52,13 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
         .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
 
     Ok((total_cost, (storage_cost, synthesis_cost, namespace_cost)))
+}
+
+pub fn synthesis_cost<N: Network>(deployment: &Deployment<N>) -> Result<u64> {
+    // Compute the synthesis cost in microcredits.
+    let num_combined_variables = deployment.num_combined_variables()?;
+    let num_combined_constraints = deployment.num_combined_constraints()?;
+    Ok(num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER)
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).

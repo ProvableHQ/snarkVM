@@ -228,6 +228,21 @@ impl<N: Network> Process<N> {
         Ok(self.get_stack(program_id)?.program())
     }
 
+    /// Returns the finalize cost for the given program ID and function name.
+    #[inline]
+    pub fn get_finalize_cost(
+        &self,
+        program_id: impl TryInto<ProgramID<N>>,
+        function_name: impl TryInto<Identifier<N>>,
+    ) -> Result<u64> {
+        // Prepare the program ID.
+        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
+        // Prepare the function name.
+        let function_name = function_name.try_into().map_err(|_| anyhow!("Invalid function name"))?;
+        // Return the finalize cost.
+        self.get_stack(program_id)?.get_finalize_cost(&function_name)
+    }
+
     /// Returns the proving key for the given program ID and function name.
     #[inline]
     pub fn get_proving_key(

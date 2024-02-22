@@ -16,6 +16,7 @@
 use super::*;
 
 use ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
+use synthesizer_process::synthesis_cost;
 use utilities::cfg_sort_by_cached_key;
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -178,7 +179,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// The maximum number of confirmed transactions allowed in a block.
     /// This is deliberately set to a low value (8) for testing purposes only.
     #[cfg(any(test, feature = "test"))]
-    pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = 8;
+    pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = 256;
 
     /// Performs atomic speculation over a list of transactions.
     ///
@@ -286,6 +287,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut tpks: IndexSet<Group<N>> = IndexSet::new();
             // Initialize the list of deployment payers.
             let mut deployment_payers: IndexSet<Address<N>> = IndexSet::new();
+            // Initialize a counter for the total amount of microcredits spent on compute.
+            let mut microcredits_spent_on_compute = 0u64;
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
@@ -300,12 +303,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                 // Determine if the transaction should be aborted.
                 if let Some(reason) = self.should_abort_transaction(
+                    &process,
                     transaction,
                     &transition_ids,
                     &input_ids,
                     &output_ids,
                     &tpks,
                     &deployment_payers,
+                    microcredits_spent_on_compute,
                 ) {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), reason));
@@ -437,9 +442,25 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         output_ids.extend(confirmed_transaction.transaction().output_ids());
                         // Add the transition public keys to the set of produced transition public keys.
                         tpks.extend(confirmed_transaction.transaction().transition_public_keys());
-                        // Add any public deployment payer to the set of deployment payers.
-                        if let Transaction::Deploy(_, _, _, fee) = confirmed_transaction.transaction() {
+                        if let Transaction::Deploy(_, _, deployment, fee) = confirmed_transaction.transaction() {
+                            // Add any public deployment payer to the set of deployment payers.
                             fee.payer().map(|payer| deployment_payers.insert(payer));
+                            // Compute the synthesis cost.
+                            let synthesis_cost = synthesis_cost(deployment).map_err(|e| e.to_string())?;
+                            // Add the synthesis cost to the total microcredits spent on compute.
+                            microcredits_spent_on_compute =
+                                microcredits_spent_on_compute.saturating_add(synthesis_cost);
+                        }
+                        // Add any finalize cost to the total finalize cost.
+                        if let Transaction::Execute(_, execution, _) = confirmed_transaction.transaction() {
+                            // Get the root transition from the execution.
+                            let root_transition = execution.peek().map_err(|e| e.to_string())?;
+                            // Get the finalize cost from the process.
+                            let finalize_cost = process
+                                .get_finalize_cost(root_transition.program_id(), root_transition.function_name())
+                                .map_err(|e| e.to_string())?;
+                            // Add the finalize cost to the total microcredits spent on compute.
+                            microcredits_spent_on_compute = microcredits_spent_on_compute.saturating_add(finalize_cost);
                         }
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
@@ -768,14 +789,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is producing a duplicate output
     /// - The transaction is producing a duplicate transition public key
     /// - The transaction is another deployment in the block from the same public fee payer.
+    /// - The transaction is an execution that exceeds the block spend limit.
+    #[allow(clippy::too_many_arguments)]
     fn should_abort_transaction(
         &self,
+        process: &Process<N>,
         transaction: &Transaction<N>,
         transition_ids: &IndexSet<N::TransitionID>,
         input_ids: &IndexSet<Field<N>>,
         output_ids: &IndexSet<Field<N>>,
         tpks: &IndexSet<Group<N>>,
         deployment_payers: &IndexSet<Address<N>>,
+        microcredits_spent_on_compute: u64,
     ) -> Option<String> {
         // Ensure that the transaction is not producing a duplicate transition.
         for transition_id in transaction.transition_ids() {
@@ -813,12 +838,36 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // If the transaction is a deployment, ensure that it is not another deployment in the block from the same public fee payer.
-        if let Transaction::Deploy(_, _, _, fee) = transaction {
+        if let Transaction::Deploy(_, _, deployment, fee) = transaction {
             // If any public deployment payer has already deployed in this block, abort the transaction.
             if let Some(payer) = fee.payer() {
                 if deployment_payers.contains(&payer) {
                     return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
                 }
+            }
+            // Check that the synthesis cost does not exceed the maximum.
+            let Ok(synthesis_cost) = synthesis_cost(deployment) else {
+                return Some("Failed to get synthesis cost".to_string());
+            };
+            // If the synthesis cost exceeds the block spend limit, abort the transaction.
+            if synthesis_cost.saturating_add(microcredits_spent_on_compute) > N::BLOCK_SPEND_LIMIT {
+                return Some("Exceeds block spend limit".to_string());
+            }
+        }
+
+        // If the transaction is an execution, ensure that the total finalize cost does not exceed the block spend limit.
+        if let Transaction::Execute(_, execution, _) = transaction {
+            // Get the root transition from the execution.
+            let Ok(root) = execution.peek() else {
+                return Some("Failed to get root transition".to_string());
+            };
+            // Get the finalize cost from the process.
+            let Ok(finalize_cost) = process.get_finalize_cost(root.program_id(), root.function_name()) else {
+                return Some("Failed to get finalize cost".to_string());
+            };
+            // If the finalize cost exceeds the block spend limit, abort the transaction.
+            if finalize_cost.saturating_add(microcredits_spent_on_compute) > N::BLOCK_SPEND_LIMIT {
+                return Some("Exceeds block spend limit".to_string());
             }
         }
 
@@ -852,6 +901,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut tpks: IndexSet<Group<N>> = Default::default();
         // Initialize the list of deployment payers.
         let mut deployment_payers: IndexSet<Address<N>> = Default::default();
+        // Initialize a counter for the total amount of microcredits spent on compute.
+        let mut microcredits_spent_on_compute = 0u64;
 
         // Abort the transactions that are have duplicates or are invalid. This will prevent the VM from performing
         // verification on transactions that would have been aborted in `VM::atomic_speculate`.
@@ -864,12 +915,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             // Determine if the transaction should be aborted.
             match self.should_abort_transaction(
+                &self.process.read(),
                 transaction,
                 &transition_ids,
                 &input_ids,
                 &output_ids,
                 &tpks,
                 &deployment_payers,
+                microcredits_spent_on_compute,
             ) {
                 // Store the aborted transaction.
                 Some(reason) => aborted_transactions.push((*transaction, reason.to_string())),
@@ -883,9 +936,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     output_ids.extend(transaction.output_ids());
                     // Add the transition public keys to the set of produced transition public keys.
                     tpks.extend(transaction.transition_public_keys());
-                    // Add any public deployment payer to the set of deployment payers.
-                    if let Transaction::Deploy(_, _, _, fee) = transaction {
+
+                    if let Transaction::Deploy(_, _, deployment, fee) = transaction {
+                        // Add any public deployment payer to the set of deployment payers.
                         fee.payer().map(|payer| deployment_payers.insert(payer));
+                        // Compute the synthesis cost.
+                        let synthesis_cost = synthesis_cost(deployment)?;
+                        // Add the synthesis cost to the total microcredits spent on compute.
+                        microcredits_spent_on_compute = microcredits_spent_on_compute.saturating_add(synthesis_cost);
+                    }
+                    // Add any finalize cost to the total finalize cost.
+                    if let Transaction::Execute(_, execution, _) = transaction {
+                        // Get the root transition from the execution.
+                        let root_transition = execution.peek()?;
+                        // Get the finalize cost from the process.
+                        let finalize_cost = self
+                            .process
+                            .read()
+                            .get_finalize_cost(root_transition.program_id(), root_transition.function_name())?;
+                        // Add the finalize cost to the total microcredits spent on compute.
+                        microcredits_spent_on_compute = microcredits_spent_on_compute.saturating_add(finalize_cost);
                     }
 
                     // Add the transaction to the list of transactions to verify.
@@ -1569,7 +1639,7 @@ finalize transfer_public:
 
         // Prepare the additional fee.
         let view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
-        let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
+        let credits = unspent_records.pop().and_then(|record| record.decrypt(&view_key).ok());
 
         // Execute.
         let transaction = vm

@@ -62,26 +62,66 @@ fn deploy(c: &mut Criterion) {
     // Initialize the VM.
     let (vm, records) = initialize_vm(&private_key, rng);
 
-    // Create a sample program.
-    let program = Program::<MainnetV0>::from_str(
-        r"
-program helloworld.aleo;
-
-function hello:
+    let func = |index: usize| {
+        format!(
+            r"
+function hello{index}:
     input r0 as u32.private;
     input r1 as u32.private;
     add r0 r1 into r2;
-    output r2 as u32.private;
-",
-    )
+    output r2 as u32.private;"
+        )
+    };
+
+    let func_block = (0..1).map(func).reduce(|acc, e| acc + &e).unwrap();
+
+    // Create a sample program.
+    let program = Program::<MainnetV0>::from_str(&format!(
+        r"
+program helloworld_small.aleo;
+
+{func_block}"
+    ))
     .unwrap();
 
     c.bench_function("Transaction::Deploy", |b| {
         b.iter(|| vm.deploy(&private_key, &program, Some(records[0].clone()), 600000, None, rng).unwrap())
     });
 
+    // NOTE: the partially_verified_transactions LruCache causes significant speedup.
     c.bench_function("Transaction::Deploy - verify", |b| {
         let transaction = vm.deploy(&private_key, &program, Some(records[0].clone()), 600000, None, rng).unwrap();
+        // Print num_constraints and num_variables.
+        if let snarkvm_ledger::Transaction::Deploy(_, _, deployment, _) = &transaction {
+            println!("num_combined_constraints: {}", deployment.num_combined_constraints().unwrap());
+            println!("num_combined_variables: {}", deployment.num_combined_variables().unwrap());
+        }
+        b.iter(|| vm.check_transaction(&transaction, None, rng).unwrap())
+    });
+
+    let func_block = (0..10).map(func).reduce(|acc, e| acc + &e).unwrap();
+
+    // Create a bigger sample program.
+    let program = Program::<MainnetV0>::from_str(&format!(
+        r"
+program helloworld_big.aleo;
+
+{func_block}"
+    ))
+    .unwrap();
+
+    c.bench_function("Transaction::Deploy", |b| {
+        b.iter(|| vm.deploy(&private_key, &program, Some(records[0].clone()), 600000, None, rng).unwrap())
+    });
+
+    // NOTE: the partially_verified_transactions LruCache causes significant speedup.
+    c.bench_function("Transaction::Deploy - verify", |b| {
+        let transaction = vm.deploy(&private_key, &program, Some(records[0].clone()), 600000, None, rng).unwrap();
+        // Print num_constraints and num_variables.
+        if let snarkvm_ledger::Transaction::Deploy(_, _, deployment, _) = &transaction {
+            println!("num_combined_constraints: {}", deployment.num_combined_constraints().unwrap());
+            println!("num_combined_variables: {}", deployment.num_combined_variables().unwrap());
+        }
         b.iter(|| vm.check_transaction(&transaction, None, rng).unwrap())
     });
 }
