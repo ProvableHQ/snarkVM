@@ -14,6 +14,8 @@
 
 use super::*;
 
+use smallvec::SmallVec;
+
 impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompressed
     for BHP<E, NUM_WINDOWS, WINDOW_SIZE>
 {
@@ -39,7 +41,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
         let mut digest = Group::<E>::zero();
 
         // Prepare a reusable vector for the preimage.
-        let mut preimage = Vec::with_capacity(num_hasher_bits);
+        let mut preimage: SmallVec<[bool; 2048]> = SmallVec::new();
 
         // Compute the hash of the input.
         for (i, input_bits) in input.chunks(max_input_bits_per_iteration).enumerate() {
