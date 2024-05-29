@@ -140,7 +140,7 @@ impl<N: Network> Owner<N, Ciphertext<N>> {
 
 impl<N: Network> ToBits for Owner<N, Plaintext<N>> {
     /// Returns `self` as a boolean vector in little-endian order.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         vec.push(self.is_private());
         match self {
             Self::Public(public) => public.write_bits_le(vec),
@@ -162,7 +162,7 @@ impl<N: Network> ToBits for Owner<N, Plaintext<N>> {
 
 impl<N: Network> ToBits for Owner<N, Ciphertext<N>> {
     /// Returns `self` as a boolean vector in little-endian order.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         vec.push(self.is_private());
         match self {
             Self::Public(public) => public.write_bits_le(vec),

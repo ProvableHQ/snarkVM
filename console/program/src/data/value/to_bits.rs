@@ -17,7 +17,7 @@ use super::*;
 impl<N: Network> ToBits for Value<N> {
     /// Returns the stack value as a list of **little-endian** bits.
     #[inline]
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         match self {
             Self::Plaintext(plaintext) => plaintext.write_bits_le(vec),
             Self::Record(record) => record.write_bits_le(vec),

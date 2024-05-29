@@ -32,9 +32,75 @@ macro_rules! to_bits_le {
     });
 }
 
-pub trait ToBits: Sized {
+pub trait VecLike {
+    fn extend<I: IntoIterator<Item = bool>>(&mut self, iter: I);
+
+    fn extend_from_slice(&mut self, other: &[bool]);
+
+    fn len(&self) -> usize;
+
+    fn push(&mut self, elem: bool);
+
+    fn reserve(&mut self, additional: usize);
+
+    fn truncate(&mut self, len: usize);
+}
+
+impl VecLike for Vec<bool> {
+    fn extend<I: IntoIterator<Item = bool>>(&mut self, iter: I) {
+        Extend::extend(self, iter);
+    }
+
+    fn extend_from_slice(&mut self, other: &[bool]) {
+        self.extend_from_slice(other);
+    }
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn push(&mut self, elem: bool) {
+        self.push(elem);
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.reserve(additional);
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.truncate(len);
+    }
+}
+
+impl<const N: usize> VecLike for smallvec::SmallVec<[bool; N]> {
+    fn extend<I: IntoIterator<Item = bool>>(&mut self, iter: I) {
+        Extend::extend(self, iter);
+    }
+
+    fn extend_from_slice(&mut self, other: &[bool]) {
+        self.extend_from_slice(other);
+    }
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn push(&mut self, elem: bool) {
+        self.push(elem);
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.reserve(additional);
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.truncate(len);
+    }
+}
+
+pub trait ToBits {
     /// Writes `self` into the given vector as a boolean array in little-endian order.
-    fn write_bits_le(&self, vec: &mut Vec<bool>);
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T);
 
     /// Writes `self` into the given vector as a boolean array in big-endian order.
     fn write_bits_be(&self, vec: &mut Vec<bool>);
@@ -77,7 +143,7 @@ macro_rules! to_bits_tuple {
         impl<$t0: ToBits, $($ty: ToBits),+> ToBits for ($t0, $($ty),+) {
             /// A helper method to return a concatenated list of little-endian bits from the circuits.
             #[inline]
-            fn write_bits_le(&self, vec: &mut Vec<bool>) {
+            fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
                 // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
                 (&self).write_bits_le(vec);
             }
@@ -93,7 +159,7 @@ macro_rules! to_bits_tuple {
         impl<'a, $t0: ToBits, $($ty: ToBits),+> ToBits for &'a ($t0, $($ty),+) {
             /// A helper method to return a concatenated list of little-endian bits from the circuits.
             #[inline]
-            fn write_bits_le(&self, vec: &mut Vec<bool>) {
+            fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
                 // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
                 self.$i0.write_bits_le(vec);
                 $(self.$idx.write_bits_le(vec);)+
@@ -128,7 +194,7 @@ to_bits_tuple!((C0, 0), (C1, 1), (C2, 2), (C3, 3), (C4, 4), (C5, 5), (C6, 6), (C
 impl ToBits for bool {
     /// A helper method to return a concatenated list of little-endian bits.
     #[inline]
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         vec.push(*self);
     }
 
@@ -148,7 +214,7 @@ macro_rules! impl_bits_for_integer {
         impl ToBits for $int {
             /// Returns `self` as a boolean array in little-endian order.
             #[inline]
-            fn write_bits_le(&self, vec: &mut Vec<bool>) {
+            fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
                 let mut value = *self;
                 for _ in 0..<$int>::BITS {
                     vec.push(value & 1 == 1);
@@ -221,7 +287,7 @@ impl_bits_for_integer!(i128);
 impl ToBits for String {
     /// A helper method to return a concatenated list of little-endian bits.
     #[inline]
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         // The vector is order-preserving, meaning the first byte in is the first byte bits out.
         self.as_bytes().write_bits_le(vec);
     }
@@ -241,7 +307,7 @@ impl ToBits for String {
 impl<C: ToBits> ToBits for Vec<C> {
     /// A helper method to return a concatenated list of little-endian bits.
     #[inline]
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         // The vector is order-preserving, meaning the first variable in is the first variable bits out.
         self.as_slice().write_bits_le(vec);
     }
@@ -257,7 +323,7 @@ impl<C: ToBits> ToBits for Vec<C> {
 impl<C: ToBits, const N: usize> ToBits for [C; N] {
     /// A helper method to return a concatenated list of little-endian bits.
     #[inline]
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         // The slice is order-preserving, meaning the first variable in is the first variable bits out.
         self.as_slice().write_bits_le(vec)
     }
@@ -273,7 +339,7 @@ impl<C: ToBits, const N: usize> ToBits for [C; N] {
 impl<C: ToBits> ToBits for &[C] {
     /// A helper method to return a concatenated list of little-endian bits.
     #[inline]
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         if let Some(num_bits) = C::num_bits() {
             vec.reserve(num_bits * self.len());
         }

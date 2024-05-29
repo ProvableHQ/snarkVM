@@ -16,7 +16,7 @@ use super::*;
 
 impl<N: Network> ToBits for Record<N, Plaintext<N>> {
     /// Returns this data as a list of **little-endian** bits.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         // Compute the data bits.
         let mut data_bits_le = vec![];
         for (identifier, entry) in &self.data {
@@ -50,7 +50,7 @@ impl<N: Network> ToBits for Record<N, Plaintext<N>> {
 
 impl<N: Network> ToBits for Record<N, Ciphertext<N>> {
     /// Returns this data as a list of **little-endian** bits.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         // Compute the data bits.
         let mut data_bits_le = vec![];
         for (identifier, entry) in &self.data {

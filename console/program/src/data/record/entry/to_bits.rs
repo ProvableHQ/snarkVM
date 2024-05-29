@@ -16,7 +16,7 @@ use super::*;
 
 impl<N: Network> ToBits for Entry<N, Plaintext<N>> {
     /// Returns this entry as a list of **little-endian** bits.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         match self {
             Self::Constant(..) => vec.extend_from_slice(&[false, false]),
             Self::Public(..) => vec.extend_from_slice(&[false, true]),
@@ -46,7 +46,7 @@ impl<N: Network> ToBits for Entry<N, Plaintext<N>> {
 
 impl<N: Network> ToBits for Entry<N, Ciphertext<N>> {
     /// Returns this entry as a list of **little-endian** bits.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         match self {
             Self::Constant(..) => vec.extend_from_slice(&[false, false]),
             Self::Public(..) => vec.extend_from_slice(&[false, true]),

@@ -142,7 +142,7 @@ where
         // Check if the collection of valid solutions is full.
         if valid_candidate_solutions.len() >= max_solutions {
             // If that's the case, mark the rest of the candidates as aborted.
-            aborted_candidate_solutions.extend(candidate_solutions.into_iter().rev());
+            Extend::extend(&mut aborted_candidate_solutions, candidate_solutions.into_iter().rev());
             break;
         }
 

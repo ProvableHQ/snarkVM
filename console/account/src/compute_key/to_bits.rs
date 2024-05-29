@@ -16,7 +16,7 @@ use super::*;
 
 impl<N: Network> ToBits for ComputeKey<N> {
     /// Returns the little-endian bits of the compute key.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         // Write the `pk_sig` bits.
         self.pk_sig.write_bits_le(vec);
         // Write the `pr_sig` bits.

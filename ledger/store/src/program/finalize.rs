@@ -234,7 +234,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         // Compute the key ID.
         let key_id = to_key_id(&program_id, &mapping_name, &key)?;
         // Compute the value ID.
-        let value_id = N::hash_bhp1024(&(key_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
+        let value_bits = value.to_bits_le();
+        let preimage = (key_id, N::hash_bhp1024(&value_bits)?).to_bits_le();
+        let value_id = N::hash_bhp1024(&preimage)?;
 
         atomic_batch_scope!(self, {
             // Update the key-value map with the new key-value.

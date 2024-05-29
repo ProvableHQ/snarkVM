@@ -304,7 +304,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         // Initialize the Merkle tree.
         let mut tree = Vec::with_capacity(self.tree.len());
         // Extend the new Merkle tree with the existing leaf hashes.
-        tree.extend(&self.tree);
+        Extend::extend(&mut tree, &self.tree);
 
         // Update the rest of the tree with the new path hashes.
         let mut index = Some(start + leaf_index);

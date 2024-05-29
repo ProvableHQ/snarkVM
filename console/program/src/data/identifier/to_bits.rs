@@ -16,7 +16,7 @@ use super::*;
 
 impl<N: Network> ToBits for Identifier<N> {
     /// Returns the little-endian bits of the identifier.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         (&self).write_bits_le(vec);
     }
 
@@ -28,7 +28,7 @@ impl<N: Network> ToBits for Identifier<N> {
 
 impl<N: Network> ToBits for &Identifier<N> {
     /// Returns the little-endian bits of the identifier.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         let initial_len = vec.len();
         self.0.write_bits_le(vec);
         vec.truncate(initial_len + 8 * self.1 as usize);

@@ -255,7 +255,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             match Self::atomic_pre_ratify(store, state, pre_ratifications) {
                 // Store the finalize operations from the post-ratify.
-                Ok(operations) => ratified_finalize_operations.extend(operations),
+                Ok(operations) => Extend::extend(&mut ratified_finalize_operations, operations),
                 // Note: This will abort the entire atomic batch.
                 Err(e) => return Err(format!("Failed to pre-ratify - {e}")),
             }
@@ -497,7 +497,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Process the post-ratifications.
             match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, solutions) {
                 // Store the finalize operations from the post-ratify.
-                Ok(operations) => ratified_finalize_operations.extend(operations),
+                Ok(operations) => Extend::extend(&mut ratified_finalize_operations, operations),
                 // Note: This will abort the entire atomic batch.
                 Err(e) => return Err(format!("Failed to post-ratify - {e}")),
             }
@@ -560,7 +560,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             match Self::atomic_pre_ratify(store, state, pre_ratifications) {
                 // Store the finalize operations from the post-ratify.
-                Ok(operations) => ratified_finalize_operations.extend(operations),
+                Ok(operations) => Extend::extend(&mut ratified_finalize_operations, operations),
                 // Note: This will abort the entire atomic batch.
                 Err(e) => return Err(format!("Failed to pre-ratify - {e}")),
             }
@@ -741,7 +741,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, solutions) {
                 // Store the finalize operations from the post-ratify.
-                Ok(operations) => ratified_finalize_operations.extend(operations),
+                Ok(operations) => Extend::extend(&mut ratified_finalize_operations, operations),
                 // Note: This will abort the entire atomic batch.
                 Err(e) => return Err(format!("Failed to post-ratify - {e}")),
             }
@@ -918,7 +918,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 });
 
             // Collect the valid and aborted transactions.
-            valid_transactions.extend(valid);
+            Extend::extend(&mut valid_transactions, valid);
             aborted_transactions.extend(invalid);
         }
 
@@ -1130,7 +1130,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Insert the next committee into storage.
                     store.committee_store().insert(state.block_height(), *(committee.clone()))?;
                     // Store the finalize operations for updating the committee and bonded mapping.
-                    finalize_operations.extend(&[
+                    Extend::extend(&mut finalize_operations, [
                         // Replace the committee mapping in storage.
                         store.replace_mapping(program_id, committee_mapping, next_committee_map)?,
                         // Replace the delegated mapping in storage.
@@ -1142,7 +1142,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     ]);
 
                     // Update the number of validators.
-                    finalize_operations.extend(&[
+                    Extend::extend(&mut finalize_operations, [
                         // Update the number of validators in the metadata mapping.
                         store.update_key_value(
                             program_id,
@@ -1153,7 +1153,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     ]);
 
                     // Update the number of delegators.
-                    finalize_operations.extend(&[
+                    Extend::extend(&mut finalize_operations, [
                         // Update the number of delegators in the metadata mapping.
                         store.update_key_value(
                             program_id,
@@ -1175,7 +1175,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         .collect::<Vec<_>>();
 
                     // Update the public balances.
-                    finalize_operations.extend(&[
+                    Extend::extend(&mut finalize_operations, [
                         // Update the public balances in storage.
                         store.replace_mapping(program_id, account_mapping, public_balances)?,
                     ]);
@@ -1261,7 +1261,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Insert the next committee into storage.
                     store.committee_store().insert(state.block_height(), next_committee)?;
                     // Store the finalize operations for updating the committee and bonded mapping.
-                    finalize_operations.extend(&[
+                    Extend::extend(&mut finalize_operations, [
                         // Replace the committee mapping in storage.
                         store.replace_mapping(program_id, committee_mapping, next_committee_map)?,
                         // Replace the delegated mapping in storage.

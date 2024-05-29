@@ -16,7 +16,7 @@ use super::*;
 
 impl<E: Environment> ToBits for Boolean<E> {
     /// Outputs `self` in a vector.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         vec.push(**self);
     }
 

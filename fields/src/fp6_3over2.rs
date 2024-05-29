@@ -19,6 +19,7 @@ use snarkvm_utilities::{
     FromBytes,
     ToBits,
     ToBytes,
+    VecLike,
 };
 
 use rand::{
@@ -470,7 +471,7 @@ impl<P: Fp6Parameters> From<u8> for Fp6<P> {
 }
 
 impl<P: Fp6Parameters> ToBits for Fp6<P> {
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         self.c0.write_bits_le(vec);
         self.c1.write_bits_le(vec);
         self.c2.write_bits_le(vec);

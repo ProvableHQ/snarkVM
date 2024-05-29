@@ -17,7 +17,7 @@ use super::*;
 impl<N: Network> ToBits for Metadata<N> {
     /// Returns the little-endian bits of the metadata.
     #[rustfmt::skip]
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         0u8.write_bits_le(vec);                               // 1 byte
         self.network.write_bits_le(vec);                      // 2 bytes
         self.round.write_bits_le(vec);                        // 8 bytes

@@ -16,7 +16,7 @@ use super::*;
 
 impl<N: Network> ToBits for ProgramID<N> {
     /// Returns the little-endian bits of the program ID.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         (&self).write_bits_le(vec);
     }
 
@@ -28,7 +28,7 @@ impl<N: Network> ToBits for ProgramID<N> {
 
 impl<N: Network> ToBits for &ProgramID<N> {
     /// Returns the little-endian bits of the program ID.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         self.name().write_bits_le(vec);
         self.network().write_bits_le(vec);
     }

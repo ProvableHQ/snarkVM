@@ -20,6 +20,7 @@ use crate::{
     FromBytes,
     ToBits,
     ToBytes,
+    VecLike,
 };
 
 use anyhow::Result;
@@ -228,13 +229,13 @@ impl crate::biginteger::BigInteger for BigInteger256 {
 
 impl ToBits for BigInteger256 {
     #[doc = " Returns `self` as a boolean array in little-endian order, with trailing zeros."]
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
-        vec.extend(BitIteratorLE::new(self));
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
+        VecLike::extend(vec, BitIteratorLE::new(self));
     }
 
     #[doc = " Returns `self` as a boolean array in big-endian order, with leading zeros."]
     fn write_bits_be(&self, vec: &mut Vec<bool>) {
-        vec.extend(BitIteratorBE::new(self));
+        VecLike::extend(vec, BitIteratorBE::new(self));
     }
 }
 

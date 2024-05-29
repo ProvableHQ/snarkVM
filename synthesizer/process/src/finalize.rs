@@ -53,7 +53,7 @@ impl<N: Network> Process<N> {
             // Retrieve the fee stack.
             let fee_stack = self.get_stack(fee.program_id())?;
             // Finalize the fee transition.
-            finalize_operations.extend(finalize_fee_transition(state, store, fee_stack, fee)?);
+            Extend::extend(&mut finalize_operations, finalize_fee_transition(state, store, fee_stack, fee)?);
             lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
 
             /* Finalize the deployment. */
