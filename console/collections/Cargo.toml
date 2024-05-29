@@ -33,6 +33,11 @@ default-features = false
 [dependencies.rayon]
 version = "1"
 
+[dependencies.smallvec]
+version = "1.11"
+features = ["const_new"]
+default_features = false
+
 [dev-dependencies.snarkvm-console-network]
 path = "../network"
 

@@ -17,6 +17,7 @@ use snarkvm_console_types::prelude::*;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
+use smallvec::SmallVec;
 
 /// A trait for a Merkle path hash function.
 pub trait PathHash: Clone + Send + Sync {
@@ -45,7 +46,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> PathHash for 
 
     /// Returns the hash of the given child nodes.
     fn hash_children(&self, left: &Self::Hash, right: &Self::Hash) -> Result<Self::Hash> {
-        let mut input = Vec::with_capacity(1 + <Self::Hash as SizeInBits>::size_in_bits() * 2);
+        let mut input: SmallVec<[bool; 512]> = SmallVec::new();
         // Prepend the nodes with a `true` bit.
         input.push(true);
         left.write_bits_le(&mut input);
