@@ -59,5 +59,10 @@ version = "1.0"
 version = "1.0"
 features = [ "preserve_order" ]
 
+[dependencies.smallvec]
+version = "1.11"
+features = [ "const_new" ]
+default-features = false
+
 [dev-dependencies.bincode]
 version = "1.3"
