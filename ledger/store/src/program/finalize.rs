@@ -30,12 +30,13 @@ use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
+use smallvec::SmallVec;
 
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
 fn to_mapping_id<N: Network>(program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<Field<N>> {
     // Construct the preimage.
-    let mut preimage = Vec::new();
+    let mut preimage: SmallVec<[bool; 256]> = SmallVec::new();
     program_id.write_bits_le(&mut preimage);
     false.write_bits_le(&mut preimage); // Separator
     mapping_name.write_bits_le(&mut preimage);
@@ -50,7 +51,7 @@ fn to_key_id<N: Network>(
     key: &Plaintext<N>,
 ) -> Result<Field<N>> {
     // Construct the preimage.
-    let mut preimage = Vec::new();
+    let mut preimage: SmallVec<[bool; 512]> = SmallVec::new();
     program_id.write_bits_le(&mut preimage);
     false.write_bits_le(&mut preimage); // Separator
     mapping_name.write_bits_le(&mut preimage);
@@ -202,7 +203,12 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         // Compute the key ID.
         let key_id = to_key_id(&program_id, &mapping_name, &key)?;
         // Compute the value ID.
-        let value_id = N::hash_bhp1024(&(key_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
+        let mut preimage: SmallVec<[bool; 512]> = SmallVec::new();
+        value.write_bits_le(&mut preimage);
+        let hashed_value = N::hash_bhp1024(&preimage)?;
+        preimage.clear();
+        (key_id, hashed_value).write_bits_le(&mut preimage);
+        let value_id = N::hash_bhp1024(&preimage)?;
 
         atomic_batch_scope!(self, {
             // Update the key-value map with the new key-value.
@@ -234,8 +240,11 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         // Compute the key ID.
         let key_id = to_key_id(&program_id, &mapping_name, &key)?;
         // Compute the value ID.
-        let value_bits = value.to_bits_le();
-        let preimage = (key_id, N::hash_bhp1024(&value_bits)?).to_bits_le();
+        let mut preimage: SmallVec<[bool; 512]> = SmallVec::new();
+        value.write_bits_le(&mut preimage);
+        let value_hash = N::hash_bhp1024(&preimage)?;
+        preimage.clear();
+        (key_id, value_hash).write_bits_le(&mut preimage);
         let value_id = N::hash_bhp1024(&preimage)?;
 
         atomic_batch_scope!(self, {
