@@ -702,7 +702,7 @@ jobs:
     resource_class: anf/2xlarge
     steps:
       - run_serial:
-          flags: --test '*' -- --skip keccak --skip psd --skip sha
+          flags: --test '*' -- --skip keccak --skip psd --skip sha --skip instruction::is --skip instruction::equal --skip instruction::commit
           workspace_member: synthesizer/program
           cache_key: snarkvm-synthesizer-program-cache
 
@@ -733,6 +733,36 @@ jobs:
     steps:
       - run_serial:
           flags: sha --test '*'
+          workspace_member: synthesizer/program
+          cache_key: snarkvm-synthesizer-program-cache
+
+  synthesizer-program-integration-instruction-is:
+    docker:
+      - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    resource_class: anf/2xlarge
+    steps:
+      - run_serial:
+          flags: instruction::is --test '*'
+          workspace_member: synthesizer/program
+          cache_key: snarkvm-synthesizer-program-cache
+
+  synthesizer-program-integration-instruction-equal:
+    docker:
+      - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    resource_class: anf/2xlarge
+    steps:
+      - run_serial:
+          flags: instruction::equal --test '*'
+          workspace_member: synthesizer/program
+          cache_key: snarkvm-synthesizer-program-cache
+
+  synthesizer-program-integration-instruction-commit:
+    docker:
+      - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    resource_class: anf/2xlarge
+    steps:
+      - run_serial:
+          flags: instruction::commit --test '*'
           workspace_member: synthesizer/program
           cache_key: snarkvm-synthesizer-program-cache
 
@@ -913,6 +943,9 @@ workflows:
       - synthesizer-program-integration-keccak
       - synthesizer-program-integration-psd
       - synthesizer-program-integration-sha
+      - synthesizer-program-integration-instruction-is
+      - synthesizer-program-integration-instruction-equal
+      - synthesizer-program-integration-instruction-commit
       - synthesizer-snark
       - utilities
       - utilities-derives
