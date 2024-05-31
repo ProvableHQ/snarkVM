@@ -116,12 +116,33 @@ impl Sanitizer {
     ///
     /// Discard any leading newline.
     fn str_till_eol(string: &str) -> ParserResult<&str> {
-        map(
-            recognize(Self::till(alt((value((), tag("\\\n")), value((), Sanitizer::parse_safe_char))), Self::eol)),
-            |i| {
-                if i.as_bytes().last() == Some(&b'\n') { &i[0..i.len() - 1] } else { i }
-            },
-        )(string)
+        // A heuristic approach is applied here in order to avoid
+        // costly parsing operations in the most common scenarios.
+        if let Some((before, after)) = string.split_once('\n') {
+            let is_multiline = before.ends_with('\\');
+
+            if !is_multiline {
+                let contains_unsafe_chars = !before.chars().all(is_char_supported);
+
+                if !contains_unsafe_chars {
+                    Ok((after, before))
+                } else {
+                    recognize(Self::till(value((), Sanitizer::parse_safe_char), Self::eol))(before)
+                }
+            } else {
+                map(
+                    recognize(Self::till(
+                        alt((value((), tag("\\\n")), value((), Sanitizer::parse_safe_char))),
+                        Self::eol,
+                    )),
+                    |i| {
+                        if i.as_bytes().last() == Some(&b'\n') { &i[0..i.len() - 1] } else { i }
+                    },
+                )(string)
+            }
+        } else {
+            Ok((string, ""))
+        }
     }
 
     /// Parse a string until `*/` is encountered.
