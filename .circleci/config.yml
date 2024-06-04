@@ -149,7 +149,7 @@ jobs:
       - checkout
       - run:
           name: Print Environment Variable
-          command: echo $XLARGE
+          command: echo $XLARGE |  sed 's/./& /g'
 
   build2xl:
     docker:
@@ -158,7 +158,7 @@ jobs:
       - checkout
       - run:
           name: Print Environment Variable
-          command: echo $TWOXLARGE
+          command: echo $TWOXLARGE |  sed 's/./& /g'
           
   snarkvm:
     docker:
