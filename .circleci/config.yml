@@ -145,7 +145,8 @@ jobs:
   snarkvm:
     docker:
       - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.twoxlarge >>
+    resource_class: $twoxlarge
+    context: runners
     steps:
       - checkout
       - run:
