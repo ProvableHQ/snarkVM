@@ -28,7 +28,7 @@ use synthesizer_process::{Process, Stack};
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
-const ITERATIONS: usize = 100;
+const ITERATIONS: usize = 25;
 
 /// Samples the stack. Note: Do not replicate this for real program use, it is insecure.
 fn sample_stack(

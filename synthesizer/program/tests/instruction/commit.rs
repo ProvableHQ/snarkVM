@@ -41,7 +41,7 @@ use synthesizer_process::{Process, Stack};
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
-const ITERATIONS: usize = 50;
+const ITERATIONS: usize = 25;
 
 /// **Attention**: When changing this, also update in `src/logic/instruction/commit.rs`.
 fn valid_destination_types() -> &'static [LiteralType] {
