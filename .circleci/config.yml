@@ -146,13 +146,13 @@ jobs:
     docker:
       - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: $twoxlarge
-    context: runners
     steps:
       - checkout
       - run:
           no_output_timeout: 30m
           command: RUST_MIN_STACK=67108864 cargo test
-
+    context: runners
+    
   algorithms:
     docker:
       - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
