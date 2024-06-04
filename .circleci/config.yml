@@ -145,6 +145,7 @@ jobs:
   buildxl:
     docker:
       - image: circleci/python:3.7
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - checkout
       - run:
@@ -154,6 +155,7 @@ jobs:
   build2xl:
     docker:
       - image: circleci/python:3.7
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - checkout
       - run:
