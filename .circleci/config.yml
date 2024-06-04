@@ -3,7 +3,7 @@ version: 2.1
 parameters:
   xlarge:
     type: string
-    default: xlarge
+    default: $xlarge
   twoxlarge:
     type: string
     default: 2xlarge
