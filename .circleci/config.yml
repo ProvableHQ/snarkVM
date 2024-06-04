@@ -3,10 +3,10 @@ version: 2.1
 parameters:
   xlarge:
     type: string
-    default: $XLARGE
+    default: xlarge
   twoxlarge:
     type: string
-    default: $TWOXLARGE
+    default: twoxlarge
 
 orbs:
   windows: circleci/windows@5.0
