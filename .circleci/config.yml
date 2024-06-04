@@ -89,6 +89,23 @@ commands:
           paths:
             - .cache/sccache
             - .cargo
+  buildxl:
+    docker:
+      - image: circleci/python:3.7
+    steps:
+      - checkout
+      - run:
+          name: Print Environment Variable
+          command: echo $XLARGE
+
+  build2xl:
+    docker:
+      - image: circleci/python:3.7
+    steps:
+      - checkout
+      - run:
+          name: Print Environment Variable
+          command: echo $TWOXLARGE
 
   run_serial:
     description: "Build and run tests"
@@ -856,6 +873,8 @@ workflows:
 
   main-workflow:
     jobs:
+      - buildxl
+      - build2xl
       - snarkvm
       - algorithms
       - algorithms-profiler
