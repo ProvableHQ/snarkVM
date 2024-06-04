@@ -89,24 +89,6 @@ commands:
           paths:
             - .cache/sccache
             - .cargo
-  buildxl:
-    docker:
-      - image: circleci/python:3.7
-    steps:
-      - checkout
-      - run:
-          name: Print Environment Variable
-          command: echo $XLARGE
-
-  build2xl:
-    docker:
-      - image: circleci/python:3.7
-    steps:
-      - checkout
-      - run:
-          name: Print Environment Variable
-          command: echo $TWOXLARGE
-
   run_serial:
     description: "Build and run tests"
     parameters:
@@ -160,6 +142,24 @@ commands:
       - run: rustup toolchain install nightly-x86_64-unknown-linux-gnu
 
 jobs:
+  buildxl:
+    docker:
+      - image: circleci/python:3.7
+    steps:
+      - checkout
+      - run:
+          name: Print Environment Variable
+          command: echo $XLARGE
+
+  build2xl:
+    docker:
+      - image: circleci/python:3.7
+    steps:
+      - checkout
+      - run:
+          name: Print Environment Variable
+          command: echo $TWOXLARGE
+          
   snarkvm:
     docker:
       - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
