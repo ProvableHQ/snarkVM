@@ -3,7 +3,7 @@ version: 2.1
 parameters:
   xlarge:
     type: string
-    default: $xlarge
+    default: xlarge
   twoxlarge:
     type: string
     default: 2xlarge
@@ -774,7 +774,7 @@ jobs:
   wasm:
     docker:
       - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.twoxlarge >>
+    resource_class: $2xlarge
     steps:
       - checkout
       - setup_environment:
