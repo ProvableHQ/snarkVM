@@ -6,6 +6,11 @@ description = "Field circuit for a decentralized virtual machine"
 license = "Apache-2.0"
 edition = "2021"
 
+[[bench]]
+name = "mul"
+path = "benches/mul.rs"
+harness = false
+
 [dependencies.console]
 package = "snarkvm-console-types-field"
 path = "../../../console/types/field"
@@ -19,6 +24,9 @@ version = "=0.16.19"
 [dependencies.snarkvm-circuit-types-boolean]
 path = "../boolean"
 version = "=0.16.19"
+
+[dev-dependencies.criterion]
+version = "0.5"
 
 [features]
 default = [ "enable_console" ]
