@@ -163,8 +163,7 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
 
     /// Apply the Maximally Distance Separating (MDS) matrix in-place.
     #[inline]
-    fn apply_mds(&self, state: &mut [Field<E>]) {
-        let mut new_state = Vec::with_capacity(state.len());
+    fn apply_mds(&self, state: &mut [Field<E>], new_state: &mut Vec<Field<E>>) {
         for i in 0..state.len() {
             let mut accumulator = Field::zero();
             for (j, element) in state.iter().enumerate() {
@@ -172,7 +171,7 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
             }
             new_state.push(accumulator);
         }
-        state.clone_from_slice(&new_state);
+        state.swap_with_slice(new_state);
     }
 
     /// Apply the permutation for all rounds in-place.
@@ -183,11 +182,13 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
         let partial_round_range = full_rounds_over_2..(full_rounds_over_2 + self.partial_rounds);
 
         // Iterate through all rounds to permute.
+        let mut new_state = Vec::with_capacity(state.len());
         for i in 0..(self.partial_rounds + self.full_rounds) {
             let is_full_round = !partial_round_range.contains(&i);
             self.apply_ark(state, i);
             self.apply_s_box(state, is_full_round);
-            self.apply_mds(state);
+            self.apply_mds(state, &mut new_state);
+            new_state.clear();
         }
     }
 }
