@@ -59,7 +59,7 @@ impl<E: Environment> MulAssign<Field<E>> for Field<E> {
 impl<E: Environment> MulAssign<&Field<E>> for Field<E> {
     fn mul_assign(&mut self, other: &Field<E>) {
         match (self.is_constant(), other.is_constant()) {
-            (true, true) | (false, true) => *self = (&self.linear_combination * *other.eject_value()).into(),
+            (true, true) | (false, true) => self.linear_combination *= &*other.eject_value(),
             (true, false) => *self = (&other.linear_combination * *self.eject_value()).into(),
             (false, false) => {
                 let product = witness!(|self, other| self * other);

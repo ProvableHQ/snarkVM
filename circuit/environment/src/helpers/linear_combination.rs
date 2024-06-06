@@ -17,7 +17,7 @@ use snarkvm_fields::PrimeField;
 
 use core::{
     fmt,
-    ops::{Add, AddAssign, Mul, Neg, Sub},
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub},
 };
 
 // Before high level program operations are converted into constraints, they are first tracked as linear combinations.
@@ -460,6 +460,20 @@ impl<F: PrimeField> Mul<&F> for &LinearCombination<F> {
 
     fn mul(self, coefficient: &F) -> Self::Output {
         self.clone() * coefficient
+    }
+}
+
+impl<F: PrimeField> MulAssign<&F> for LinearCombination<F> {
+    fn mul_assign(&mut self, coefficient: &F) {
+        self.constant *= coefficient;
+        self.terms = std::mem::take(&mut self.terms)
+            .into_iter()
+            .filter_map(|(v, current_coefficient)| {
+                let res = current_coefficient * coefficient;
+                (!res.is_zero()).then_some((v, res))
+            })
+            .collect();
+        self.value *= coefficient;
     }
 }
 
