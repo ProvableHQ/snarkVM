@@ -130,7 +130,8 @@ impl<
     ///
     fn atomic_checkpoint(&self) {
         // Push the current length of the atomic batch to the checkpoint stack.
-        self.checkpoints.lock().push(self.atomic_batch.lock().len());
+        let batch_len = self.atomic_batch.lock().len();
+        self.checkpoints.lock().push(batch_len);
     }
 
     ///
