@@ -358,7 +358,14 @@ mod tests {
             // Set the network.
             type Network = console::network::MainnetV0;
             // Initialize the restrictions.
-            let restrictions = Restrictions::<Network>::new_blank().unwrap();
+            let mut restrictions = Restrictions::<Network>::new_blank().unwrap();
+            // Add a program ID.
+            restrictions.restrictions_id =
+                Field::from_str("5990626497004338480795078796922903812962674412239021866159347614258503263942field")
+                    .unwrap();
+            let program_id = ProgramID::from_str("hello.aleo").unwrap();
+            let range = BlockRange::RangeFrom(10..);
+            restrictions.programs.insert(program_id, range);
             // Check the restrictions.
             check_restrictions!(restrictions, Network);
         }
