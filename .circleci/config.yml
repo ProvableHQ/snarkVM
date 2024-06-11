@@ -3,13 +3,13 @@ version: 2.1
 parameters:
   large:
     type: string
-    default: aleonet/large
+    default: large
   xlarge:
     type: string
-    default: aleonet/xlarge
+    default: xlarge
   twoxlarge:
     type: string
-    default: aleonet/2xlarge
+    default: 2xlarge
 
 orbs:
   windows: circleci/windows@5.0
