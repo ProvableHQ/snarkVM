@@ -271,7 +271,7 @@ impl<N: Network> Restrictions<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::types::I8;
+    use console::types::{Address, I8};
 
     use indexmap::indexmap;
     use ledger_block::Input;
@@ -361,11 +361,19 @@ mod tests {
             let mut restrictions = Restrictions::<Network>::new_blank().unwrap();
             // Add a program ID.
             restrictions.restrictions_id =
-                Field::from_str("5990626497004338480795078796922903812962674412239021866159347614258503263942field")
+                Field::from_str("565692246249929386853861250603407577977410496268514614186112026084930301564field")
                     .unwrap();
-            let program_id = ProgramID::from_str("hello.aleo").unwrap();
-            let range = BlockRange::RangeFrom(10..);
-            restrictions.programs.insert(program_id, range);
+            let program_id = ProgramID::from_str("credits.aleo").unwrap();
+            let function_id = Identifier::from_str("transfer_public").unwrap();
+            let literal = Literal::Address(
+                Address::from_str("aleo10unn23a4z4jh2ea4g2n9fa7vz5mxzd2jf5nxpmv7f2f2sh3ur5rstqnpcg").unwrap(),
+            );
+            let index = 0;
+            let range = BlockRange::RangeFrom(150..);
+            restrictions.arguments.insert(
+                Locator::new(program_id, function_id),
+                indexmap!( ArgumentLocator::new(true, index) => indexmap!( literal.clone() => range )),
+            );
             // Check the restrictions.
             check_restrictions!(restrictions, Network);
         }
