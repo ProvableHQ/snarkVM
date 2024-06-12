@@ -361,7 +361,7 @@ mod tests {
             let mut restrictions = Restrictions::<Network>::new_blank().unwrap();
             // Add a program ID.
             restrictions.restrictions_id =
-                Field::from_str("565692246249929386853861250603407577977410496268514614186112026084930301564field")
+                Field::from_str("1871284876240256033332185241519021756417872804257916728716620258392288601704field")
                     .unwrap();
             let program_id = ProgramID::from_str("credits.aleo").unwrap();
             let function_id = Identifier::from_str("transfer_public").unwrap();
@@ -369,7 +369,7 @@ mod tests {
                 Address::from_str("aleo10unn23a4z4jh2ea4g2n9fa7vz5mxzd2jf5nxpmv7f2f2sh3ur5rstqnpcg").unwrap(),
             );
             let index = 0;
-            let range = BlockRange::RangeFrom(150..);
+            let range = BlockRange::RangeFrom(50..);
             restrictions.arguments.insert(
                 Locator::new(program_id, function_id),
                 indexmap!( ArgumentLocator::new(true, index) => indexmap!( literal.clone() => range )),

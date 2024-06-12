@@ -1,12 +1,12 @@
 {
-  "restrictions_id": "565692246249929386853861250603407577977410496268514614186112026084930301564field",
+  "restrictions_id": "1871284876240256033332185241519021756417872804257916728716620258392288601704field",
   "programs": {},
   "functions": {},
   "arguments": {
     "credits.aleo/transfer_public": {
       "true/0": {
         "aleo10unn23a4z4jh2ea4g2n9fa7vz5mxzd2jf5nxpmv7f2f2sh3ur5rstqnpcg": {
-          "RangeFrom": 150
+          "RangeFrom": 50
         }
       }
     }
