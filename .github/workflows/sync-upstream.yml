@@ -1,0 +1,15 @@
+name: Sync fork with upstream
+on:
+  schedule:
+    - cron: "0 0 * * 0" # At 00:00 on Sunday.
+  workflow_dispatch: # Allow manual triggering via Web UI.
+
+jobs:
+  sync-fork:
+    if : github.repository_owner != 'AleoNet'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: thiagokokada/merge-upstream@v1.0.2
+        with:
+          branch: mainnet-staging
+          token: ${{ secrets.GITHUB_TOKEN }}
