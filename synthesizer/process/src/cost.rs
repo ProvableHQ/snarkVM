@@ -60,7 +60,7 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
 /// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).
 pub fn execution_cost<N: Network>(process: &Process<N>, execution: &Execution<N>) -> Result<(u64, (u64, u64))> {
     // Compute the storage cost in microcredits.
-    let storage_cost = execution.size_in_bytes()?;
+    let storage_cost = execution_storage_cost::<N>(execution.size_in_bytes()?);
 
     // Get the root transition.
     let transition = execution.peek()?;
@@ -74,6 +74,15 @@ pub fn execution_cost<N: Network>(process: &Process<N>, execution: &Execution<N>
         .ok_or(anyhow!("The total cost computation overflowed for an execution"))?;
 
     Ok((total_cost, (storage_cost, finalize_cost)))
+}
+
+/// Returns the storage cost in microcredits for a program execution.
+fn execution_storage_cost<N: Network>(size_in_bytes: u64) -> u64 {
+    if size_in_bytes > N::EXECUTION_STORAGE_PENALTY_THRESHOLD {
+        size_in_bytes.saturating_mul(size_in_bytes).saturating_div(N::EXECUTION_STORAGE_FEE_SCALING_FACTOR)
+    } else {
+        size_in_bytes
+    }
 }
 
 /// Finalize costs for compute heavy operations, derived as:
@@ -383,4 +392,93 @@ pub fn cost_in_microcredits<N: Network>(stack: &Stack<N>, function_name: &Identi
         .try_fold(future_cost, |acc, res| {
             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::get_execution;
+
+    use console::network::{CanaryV0, MainnetV0, TestnetV0};
+    use synthesizer_program::Program;
+
+    // Test program with two functions just below and above the size threshold.
+    const SIZE_BOUNDARY_PROGRAM: &str = r#"
+program size_boundary.aleo;
+
+function under_five_thousand:
+    input r0 as group.public;
+    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 into r1 as [group; 9u32];
+    cast r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 into r2 as [[group; 9u32]; 10u32];
+    cast r0 r0 r0 r0 r0 r0 r0 into r3 as [group; 7u32];
+    output r2 as [[group; 9u32]; 10u32].public;
+    output r3 as [group; 7u32].public;
+
+function over_five_thousand:
+    input r0 as group.public;
+    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 into r1 as [group; 9u32];
+    cast r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 into r2 as [[group; 9u32]; 10u32];
+    cast r0 r0 r0 r0 r0 r0 r0 into r3 as [group; 7u32];
+    output r2 as [[group; 9u32]; 10u32].public;
+    output r3 as [group; 7u32].public;
+    output 5u64 as u64.public;
+    "#;
+    // Cost for a program +1 byte above the threshold.
+    const STORAGE_COST_ABOVE_THRESHOLD: u64 = 5002;
+    // Storage cost for an execution transaction at the maximum transaction size.
+    const STORAGE_COST_MAX: u64 = 3_276_800;
+
+    fn test_storage_cost_bounds<N: Network>() {
+        // Calculate the bounds directly above and below the size threshold.
+        let threshold = N::EXECUTION_STORAGE_PENALTY_THRESHOLD;
+        let threshold_lower_offset = threshold.saturating_sub(1);
+        let threshold_upper_offset = threshold.saturating_add(1);
+
+        // Test the storage cost bounds.
+        assert_eq!(execution_storage_cost::<N>(0), 0);
+        assert_eq!(execution_storage_cost::<N>(1), 1);
+        assert_eq!(execution_storage_cost::<N>(threshold_lower_offset), threshold_lower_offset);
+        assert_eq!(execution_storage_cost::<N>(threshold), threshold);
+        assert_eq!(execution_storage_cost::<N>(threshold_upper_offset), STORAGE_COST_ABOVE_THRESHOLD);
+        assert_eq!(execution_storage_cost::<N>(N::MAX_TRANSACTION_SIZE as u64), STORAGE_COST_MAX);
+    }
+
+    #[test]
+    fn test_storage_cost_bounds_for_all_networks() {
+        test_storage_cost_bounds::<CanaryV0>();
+        test_storage_cost_bounds::<MainnetV0>();
+        test_storage_cost_bounds::<TestnetV0>();
+    }
+
+    #[test]
+    fn test_storage_costs_compute_correctly() {
+        // Test the storage cost of an execution.
+        let threshold = MainnetV0::EXECUTION_STORAGE_PENALTY_THRESHOLD;
+
+        // Test the cost of an execution.
+        let mut process = Process::load().unwrap();
+
+        // Get the program.
+        let program = Program::from_str(SIZE_BOUNDARY_PROGRAM).unwrap();
+
+        // Get the program identifiers.
+        let under_5000 = Identifier::from_str("under_five_thousand").unwrap();
+        let over_5000 = Identifier::from_str("over_five_thousand").unwrap();
+
+        // Get execution and cost data.
+        let execution_under_5000 = get_execution(&mut process, &program, &under_5000, ["2group"].into_iter());
+        let execution_size_under_5000 = execution_under_5000.size_in_bytes().unwrap();
+        let (_, (storage_cost_under_5000, _)) = execution_cost(&process, &execution_under_5000).unwrap();
+        let execution_over_5000 = get_execution(&mut process, &program, &over_5000, ["2group"].into_iter());
+        let execution_size_over_5000 = execution_over_5000.size_in_bytes().unwrap();
+        let (_, (storage_cost_over_5000, _)) = execution_cost(&process, &execution_over_5000).unwrap();
+
+        // Ensure the sizes are below and above the threshold respectively.
+        assert!(execution_size_under_5000 < threshold);
+        assert!(execution_size_over_5000 > threshold);
+
+        // Ensure storage costs compute correctly.
+        assert_eq!(storage_cost_under_5000, execution_storage_cost::<MainnetV0>(execution_size_under_5000));
+        assert_eq!(storage_cost_over_5000, execution_storage_cost::<MainnetV0>(execution_size_over_5000));
+    }
 }
