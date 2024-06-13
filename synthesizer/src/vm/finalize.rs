@@ -495,7 +495,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let post_ratifications = reward_ratifications.iter().chain(post_ratifications);
 
             // Process the post-ratifications.
-            match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, solutions) {
+            match Self::atomic_post_ratify::<false>(&self.puzzle, store, state, post_ratifications, solutions) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -739,7 +739,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Perform the ratifications after finalize. */
 
-            match Self::atomic_post_ratify(&self.puzzle, store, state, post_ratifications, solutions) {
+            match Self::atomic_post_ratify::<true>(&self.puzzle, store, state, post_ratifications, solutions) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -1191,7 +1191,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Performs the post-ratifications after finalizing transactions.
     #[inline]
-    fn atomic_post_ratify<'a>(
+    fn atomic_post_ratify<'a, const IS_FINALIZE: bool>(
         puzzle: &Puzzle<N>,
         store: &FinalizeStore<N, C::FinalizeStorage>,
         state: FinalizeGlobalState,
@@ -1259,19 +1259,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Insert the next committee into storage.
                     store.committee_store().insert(state.block_height(), next_committee)?;
 
-                    #[cfg(feature = "history")]
+                    #[cfg(all(feature = "history", feature = "rocks"))]
                     {
-                        // Load a `History` object.
-                        let history = History::new(N::ID, store.storage_mode().clone());
+                        // When finalizing in `FinalizeMode::RealRun`, store the delegated and bonded mappings in history.
+                        if IS_FINALIZE {
+                            // Load a `History` object.
+                            let history = History::new(N::ID, store.storage_mode());
 
-                        // Write the delegated mapping as JSON.
-                        history.store_mapping(state.block_height(), MappingName::Delegated, &next_delegated_map)?;
-                        // Write the bonded mapping as JSON.
-                        history.store_mapping(state.block_height(), MappingName::Bonded, &next_bonded_map)?;
+                            // Write the delegated mapping as JSON.
+                            history.store_mapping(state.block_height(), MappingName::Delegated, &next_delegated_map)?;
+                            // Write the bonded mapping as JSON.
+                            history.store_mapping(state.block_height(), MappingName::Bonded, &next_bonded_map)?;
 
-                        let unbonding_mapping = Identifier::from_str("unbonding")?;
-                        let unbonding_map = store.get_mapping_speculative(program_id, unbonding_mapping)?;
-                        history.store_mapping(state.block_height(), MappingName::Unbonding, &unbonding_map)?;
+                            let unbonding_mapping = Identifier::from_str("unbonding")?;
+                            let unbonding_map = store.get_mapping_speculative(program_id, unbonding_mapping)?;
+                            history.store_mapping(state.block_height(), MappingName::Unbonding, &unbonding_map)?;
+                        }
                     }
 
                     // Store the finalize operations for updating the committee and bonded mapping.

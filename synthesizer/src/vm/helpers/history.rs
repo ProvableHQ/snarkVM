@@ -24,7 +24,7 @@ use std::{
 };
 
 /// Returns the path where a `history` directory may be stored.
-pub fn history_directory_path(network: u16, storage_mode: StorageMode) -> PathBuf {
+pub fn history_directory_path(network: u16, storage_mode: &StorageMode) -> PathBuf {
     const HISTORY_DIRECTORY_NAME: &str = "history";
 
     // Create the name of the history directory.
@@ -34,7 +34,7 @@ pub fn history_directory_path(network: u16, storage_mode: StorageMode) -> PathBu
     };
 
     // Obtain the path to the ledger.
-    let mut path = aleo_ledger_dir(network, storage_mode);
+    let mut path = aleo_ledger_dir(network, storage_mode.clone());
     // Go to the folder right above the ledger.
     path.pop();
     // Append the history directory's name.
@@ -71,7 +71,7 @@ pub struct History {
 
 impl History {
     /// Initializes a new instance of `History`.
-    pub fn new(network: u16, storage_mode: StorageMode) -> Self {
+    pub fn new(network: u16, storage_mode: &StorageMode) -> Self {
         Self { path: history_directory_path(network, storage_mode) }
     }
 
@@ -81,15 +81,15 @@ impl History {
         T: Serialize + ?Sized,
     {
         // Get the path to the block directory.
-        let block_path = self.path.join(format!("block-{height}"));
+        let path = self.block_path(height);
         // Create the block directory if it does not exist.
-        if !block_path.exists() {
-            std::fs::create_dir_all(&block_path)?;
+        if !path.exists() {
+            std::fs::create_dir_all(&path)?;
         }
 
         // Write the entry to the block directory.
-        let entry_path = block_path.join(format!("block-{height}-{mapping}.json"));
-        std::fs::write(entry_path, serde_json::to_string_pretty(data)?)?;
+        let path = path.join(format!("block-{height}-{mapping}.json"));
+        std::fs::write(path, serde_json::to_string_pretty(data)?)?;
 
         Ok(())
     }
@@ -97,12 +97,27 @@ impl History {
     /// Loads the JSON string for a mapping from a given block from the history directory.
     pub fn load_mapping(&self, height: u32, mapping: MappingName) -> Result<String> {
         // Get the path to the block directory.
-        let block_path = self.path.join(format!("block-{height}"));
-        // Get the path to the entry.
-        let entry_path = block_path.join(format!("block-{height}-{mapping}.json"));
-        // Load the entry.
-        let result = std::fs::read_to_string(entry_path)?;
+        let path = self.block_path(height);
+        // Get the path to the block file.
+        let path = path.join(format!("block-{height}-{mapping}.json"));
 
-        Ok(result)
+        // Read the file.
+        let data = std::fs::read_to_string(path)?;
+
+        Ok(data)
+    }
+
+    // A helper function to get the path to the block directory.
+    fn block_path(&self, height: u32) -> PathBuf {
+        // Get the path the directory group.
+        let group = Self::group(height);
+        let path = self.path.join(format!("group-{group}"));
+        // Get the path to the block directory.
+        path.join(format!("block-{height}"))
+    }
+
+    // A helper function to calculate the group number for a given block height.
+    fn group(height: u32) -> u32 {
+        height.saturating_div(u16::MAX as u32)
     }
 }
