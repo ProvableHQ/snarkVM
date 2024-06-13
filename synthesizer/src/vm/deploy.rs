@@ -24,7 +24,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn deploy<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
-        program: &Program<N>,
+        program: &Arc<Program<N>>,
         fee_record: Option<Record<N, Plaintext<N>>>,
         priority_fee_in_microcredits: u64,
         query: Option<Query<N, C::BlockStorage>>,
@@ -70,11 +70,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns a deployment for the given program.
     #[inline]
-    pub(super) fn deploy_raw<R: Rng + CryptoRng>(&self, program: &Program<N>, rng: &mut R) -> Result<Deployment<N>> {
+    pub(super) fn deploy_raw<R: Rng + CryptoRng>(&self, program: &Arc<Program<N>>, rng: &mut R) -> Result<Deployment<N>> {
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
                 // Prepare the program.
-                let program = cast_ref!(&program as Program<$network>);
+                let program = cast_ref!(&program as Arc<Program<$network>>);
                 // Compute the deployment.
                 let deployment = $process.deploy::<$aleo, _>(program, rng)?;
                 // Prepare the deployment.

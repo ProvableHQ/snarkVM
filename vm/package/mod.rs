@@ -41,7 +41,10 @@ use crate::{
 use anyhow::{bail, ensure, Error, Result};
 use core::str::FromStr;
 use rand::{CryptoRng, Rng};
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 #[cfg(feature = "aleo-cli")]
 use colored::Colorize;
@@ -133,7 +136,7 @@ impl<N: Network> Package<N> {
     }
 
     /// Returns the program.
-    pub const fn program(&self) -> &Program<N> {
+    pub fn program(&self) -> &Arc<Program<N>> {
         self.program_file.program()
     }
 

@@ -14,17 +14,19 @@
 
 use super::*;
 
+use std::sync::Arc;
+
 use snarkvm_utilities::DeserializeExt;
 
 pub struct BuildRequest<N: Network> {
-    program: Program<N>,
-    imports: Vec<Program<N>>,
+    program: Arc<Program<N>>,
+    imports: Vec<Arc<Program<N>>>,
     function_name: Identifier<N>,
 }
 
 impl<N: Network> BuildRequest<N> {
     /// Initializes a new build request.
-    pub const fn new(program: Program<N>, imports: Vec<Program<N>>, function_name: Identifier<N>) -> Self {
+    pub const fn new(program: Arc<Program<N>>, imports: Vec<Arc<Program<N>>>, function_name: Identifier<N>) -> Self {
         Self { program, imports, function_name }
     }
 
@@ -34,12 +36,12 @@ impl<N: Network> BuildRequest<N> {
     }
 
     /// Returns the program.
-    pub const fn program(&self) -> &Program<N> {
+    pub fn program(&self) -> &Program<N> {
         &self.program
     }
 
     /// Returns the imports.
-    pub const fn imports(&self) -> &Vec<Program<N>> {
+    pub const fn imports(&self) -> &Vec<Arc<Program<N>>> {
         &self.imports
     }
 

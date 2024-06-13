@@ -173,7 +173,7 @@ impl<N: Network> CallStack<N> {
 #[derive(Clone)]
 pub struct Stack<N: Network> {
     /// The program (record types, structs, functions).
-    program: Program<N>,
+    program: Arc<Program<N>>,
     /// The mapping of external stacks as `(program ID, stack)`.
     external_stacks: IndexMap<ProgramID<N>, Arc<Stack<N>>>,
     /// The mapping of closure and function names to their register types.
@@ -197,7 +197,7 @@ pub struct Stack<N: Network> {
 impl<N: Network> Stack<N> {
     /// Initializes a new stack, if it does not already exist, given the process and the program.
     #[inline]
-    pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
+    pub fn new(process: &Process<N>, program: &Arc<Program<N>>) -> Result<Self> {
         // Retrieve the program ID.
         let program_id = program.id();
         // Ensure the program does not already exist in the process.
@@ -208,12 +208,12 @@ impl<N: Network> Stack<N> {
         // Serialize the program into bytes.
         let program_bytes = program.to_bytes_le()?;
         // Ensure the program deserializes from bytes correctly.
-        ensure!(program == &Program::from_bytes_le(&program_bytes)?, "Program byte serialization failed");
+        ensure!(&**program == &Program::from_bytes_le(&program_bytes)?, "Program byte serialization failed");
 
         // Serialize the program into string.
         let program_string = program.to_string();
         // Ensure the program deserializes from a string correctly.
-        ensure!(program == &Program::from_str(&program_string)?, "Program string serialization failed");
+        ensure!(&**program == &Program::from_str(&program_string)?, "Program string serialization failed");
 
         // Return the stack.
         Stack::initialize(process, program)
@@ -223,7 +223,7 @@ impl<N: Network> Stack<N> {
 impl<N: Network> StackProgram<N> for Stack<N> {
     /// Returns the program.
     #[inline]
-    fn program(&self) -> &Program<N> {
+    fn program(&self) -> &Arc<Program<N>> {
         &self.program
     }
 
@@ -260,7 +260,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
 
     /// Returns the external program for the given program ID.
     #[inline]
-    fn get_external_program(&self, program_id: &ProgramID<N>) -> Result<&Program<N>> {
+    fn get_external_program(&self, program_id: &ProgramID<N>) -> Result<&Arc<Program<N>>> {
         match self.program.id() == program_id {
             true => bail!("Attempted to get the main program '{}' as an external program", self.program.id()),
             // Retrieve the external stack, and return the external program.

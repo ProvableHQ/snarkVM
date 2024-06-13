@@ -27,12 +27,14 @@ use console::{
 use synthesizer_program::Program;
 use synthesizer_snark::{Certificate, VerifyingKey};
 
+use std::sync::Arc;
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Deployment<N: Network> {
     /// The edition.
     edition: u16,
     /// The program.
-    program: Program<N>,
+    program: Arc<Program<N>>,
     /// The mapping of function names to their verifying key and certificate.
     verifying_keys: Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>,
 }
@@ -41,7 +43,7 @@ impl<N: Network> Deployment<N> {
     /// Initializes a new deployment.
     pub fn new(
         edition: u16,
-        program: Program<N>,
+        program: Arc<Program<N>>,
         verifying_keys: Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>,
     ) -> Result<Self> {
         // Construct the deployment.
@@ -110,12 +112,12 @@ impl<N: Network> Deployment<N> {
     }
 
     /// Returns the program.
-    pub const fn program(&self) -> &Program<N> {
+    pub fn program(&self) -> &Arc<Program<N>> {
         &self.program
     }
 
     /// Returns the program.
-    pub const fn program_id(&self) -> &ProgramID<N> {
+    pub fn program_id(&self) -> &ProgramID<N> {
         self.program.id()
     }
 

@@ -27,7 +27,7 @@ impl<N: Network> FromBytes for Deployment<N> {
         // Read the edition.
         let edition = u16::read_le(&mut reader)?;
         // Read the program.
-        let program = Program::read_le(&mut reader)?;
+        let program = Arc::new(Program::read_le(&mut reader)?);
 
         // Read the number of entries in the bundle.
         let num_entries = u16::read_le(&mut reader)?;

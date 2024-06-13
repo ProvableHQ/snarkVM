@@ -39,7 +39,7 @@ use synthesizer_snark::{Certificate, VerifyingKey};
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TransactionType {
@@ -386,7 +386,7 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     }
 
     /// Returns the program for the given `program ID`.
-    pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Option<Program<N>>> {
+    pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Option<Arc<Program<N>>>> {
         self.storage.deployment_store().get_program(program_id)
     }
 
@@ -458,7 +458,7 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     }
 
     /// Returns an iterator over the programs, for all deployments.
-    pub fn programs(&self) -> impl '_ + Iterator<Item = Cow<'_, Program<N>>> {
+    pub fn programs(&self) -> impl '_ + Iterator<Item = Cow<'_, Arc<Program<N>>>> {
         self.storage.deployment_store().programs()
     }
 

@@ -14,6 +14,8 @@
 
 use super::*;
 
+use std::sync::Arc;
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns an iterator over the state roots, for all blocks in `self`.
     pub fn state_roots(&self) -> impl '_ + Iterator<Item = Cow<'_, N::StateRoot>> {
@@ -33,7 +35,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns an iterator over the programs, for all transactions in `self`.
-    pub fn programs(&self) -> impl '_ + Iterator<Item = Cow<'_, Program<N>>> {
+    pub fn programs(&self) -> impl '_ + Iterator<Item = Cow<'_, Arc<Program<N>>>> {
         self.vm.transaction_store().programs()
     }
 

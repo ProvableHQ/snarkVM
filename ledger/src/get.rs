@@ -14,6 +14,8 @@
 
 use super::*;
 
+use std::sync::Arc;
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the committee for the given `block height`.
     pub fn get_committee(&self, block_height: u32) -> Result<Option<Committee<N>>> {
@@ -192,7 +194,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns the program for the given program ID.
-    pub fn get_program(&self, program_id: ProgramID<N>) -> Result<Program<N>> {
+    pub fn get_program(&self, program_id: ProgramID<N>) -> Result<Arc<Program<N>>> {
         match self.vm.block_store().get_program(&program_id)? {
             Some(program) => Ok(program),
             None => bail!("Missing program for ID {program_id}"),
