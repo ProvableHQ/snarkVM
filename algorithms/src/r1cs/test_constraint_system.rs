@@ -306,7 +306,7 @@ impl<F: Field> TestConstraintSystem<F> {
                 ns_idx
             }
             Entry::Occupied(e) => {
-                let interned_segments = e.remove_entry().0;
+                let interned_segments = e.swap_remove_entry().0;
                 panic!("tried to create object at existing path: {}", self.unintern_path(interned_segments));
             }
         }
