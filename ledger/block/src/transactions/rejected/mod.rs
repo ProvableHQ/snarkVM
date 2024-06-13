@@ -23,14 +23,14 @@ use crate::{Deployment, Execution, Fee};
 /// A wrapper around the rejected deployment or execution.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Rejected<N: Network> {
-    Deployment(ProgramOwner<N>, Box<Deployment<N>>),
+    Deployment(ProgramOwner<N>, Deployment<N>),
     Execution(Execution<N>),
 }
 
 impl<N: Network> Rejected<N> {
     /// Initializes a rejected deployment.
     pub fn new_deployment(program_owner: ProgramOwner<N>, deployment: Deployment<N>) -> Self {
-        Self::Deployment(program_owner, Box::new(deployment))
+        Self::Deployment(program_owner, deployment)
     }
 
     /// Initializes a rejected execution.

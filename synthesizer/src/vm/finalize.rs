@@ -339,7 +339,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Check if the program has already been deployed in this block.
                         match deployments.contains(deployment.program_id()) {
                             // If the program has already been deployed, construct the rejected deploy transaction.
-                            true => match process_rejected_deployment(fee, *deployment.clone()) {
+                            true => match process_rejected_deployment(fee, deployment.clone()) {
                                 Ok(result) => result,
                                 Err(error) => {
                                     // Note: On failure, skip this transaction, and continue speculation.
@@ -361,7 +361,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         .map_err(|e| e.to_string())
                                 }
                                 // Construct the rejected deploy transaction.
-                                Err(_error) => match process_rejected_deployment(fee, *deployment.clone()) {
+                                Err(_error) => match process_rejected_deployment(fee, deployment.clone()) {
                                     Ok(result) => result,
                                     Err(error) => {
                                         // Note: On failure, skip this transaction, and continue speculation.

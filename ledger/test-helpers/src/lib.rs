@@ -165,7 +165,7 @@ function compute:
 pub fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
     // Sample a deploy transaction.
     let deployment = match crate::sample_deployment_transaction(is_fee_private, rng) {
-        Transaction::Deploy(_, _, deployment, _) => (*deployment).clone(),
+        Transaction::Deploy(_, _, deployment, _) => deployment.clone(),
         _ => unreachable!(),
     };
 

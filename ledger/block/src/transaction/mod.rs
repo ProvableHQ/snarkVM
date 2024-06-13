@@ -36,7 +36,7 @@ use console::{
 #[derive(Clone, PartialEq, Eq)]
 pub enum Transaction<N: Network> {
     /// The deploy transaction publishes an Aleo program to the network.
-    Deploy(N::TransactionID, ProgramOwner<N>, Box<Deployment<N>>, Fee<N>),
+    Deploy(N::TransactionID, ProgramOwner<N>, Deployment<N>, Fee<N>),
     /// The execute transaction represents a call to an Aleo program.
     Execute(N::TransactionID, Execution<N>, Option<Fee<N>>),
     /// The fee transaction represents a fee paid to the network, used for rejected transactions.
@@ -55,7 +55,7 @@ impl<N: Network> Transaction<N> {
         // Ensure the owner signed the correct transaction ID.
         ensure!(owner.verify(deployment_id), "Attempted to create a deployment transaction with an invalid owner");
         // Construct the deployment transaction.
-        Ok(Self::Deploy(id.into(), owner, Box::new(deployment), fee))
+        Ok(Self::Deploy(id.into(), owner, deployment, fee))
     }
 
     /// Initializes a new execution transaction.
@@ -126,7 +126,7 @@ impl<N: Network> Transaction<N> {
     #[inline]
     pub fn deployment(&self) -> Option<&Deployment<N>> {
         match self {
-            Self::Deploy(_, _, deployment, _) => Some(deployment.as_ref()),
+            Self::Deploy(_, _, deployment, _) => Some(deployment),
             _ => None,
         }
     }
