@@ -1268,12 +1268,24 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                             // Write the delegated mapping as JSON.
                             history.store_mapping(state.block_height(), MappingName::Delegated, &next_delegated_map)?;
+
                             // Write the bonded mapping as JSON.
                             history.store_mapping(state.block_height(), MappingName::Bonded, &next_bonded_map)?;
 
+                            // Write the metadata mapping as JSON.
+                            let metadata_mapping = Identifier::from_str("metadata")?;
+                            let metadata_map = store.get_mapping_speculative(program_id, metadata_mapping)?;
+                            history.store_mapping(state.block_height(), MappingName::Metadata, &metadata_map)?;
+
+                            // Write the unbonding mapping as JSON.
                             let unbonding_mapping = Identifier::from_str("unbonding")?;
                             let unbonding_map = store.get_mapping_speculative(program_id, unbonding_mapping)?;
                             history.store_mapping(state.block_height(), MappingName::Unbonding, &unbonding_map)?;
+
+                            // Write the withdraw mapping as JSON.
+                            let withdraw_mapping = Identifier::from_str("withdraw")?;
+                            let withdraw_map = store.get_mapping_speculative(program_id, withdraw_mapping)?;
+                            history.store_mapping(state.block_height(), MappingName::Withdraw, &withdraw_map)?;
                         }
                     }
 

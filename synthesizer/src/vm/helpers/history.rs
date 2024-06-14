@@ -50,8 +50,12 @@ pub enum MappingName {
     Bonded,
     /// The `delegated` mapping.
     Delegated,
+    /// The `metadata` mapping.
+    Metadata,
     /// The `unbonding` mapping.
     Unbonding,
+    /// The `withdraw` mapping.
+    Withdraw,
 }
 
 impl Display for MappingName {
@@ -59,7 +63,9 @@ impl Display for MappingName {
         match self {
             Self::Bonded => write!(f, "bonded"),
             Self::Delegated => write!(f, "delegated"),
+            Self::Metadata => write!(f, "metadata"),
             Self::Unbonding => write!(f, "unbonding"),
+            Self::Withdraw => write!(f, "withdraw"),
         }
     }
 }
