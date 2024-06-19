@@ -262,10 +262,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Perform the atomic finalize over the transactions. */
 
-            // Acquire the write lock on the process.
+            // Acquire the read lock on the process.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
-            // we choose to acquire the write lock for the entire duration of this atomic batch.
-            let process = self.process.write();
+            // we choose to acquire the read lock for the entire duration of this atomic batch.
+            let process = self.process.read();
 
             // Initialize a list of the confirmed transactions.
             let mut confirmed = Vec::with_capacity(num_transactions);
