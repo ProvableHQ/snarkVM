@@ -133,9 +133,9 @@ impl Network for TestnetV0 {
     /// The network edition.
     const EDITION: u16 = 0;
     /// The genesis block coinbase target.
-    const GENESIS_COINBASE_TARGET: u64 = (1u64 << 10).saturating_sub(1);
+    const GENESIS_COINBASE_TARGET: u64 = (1u64 << 29).saturating_sub(1);
     /// The genesis block proof target.
-    const GENESIS_PROOF_TARGET: u64 = 1u64 << 8;
+    const GENESIS_PROOF_TARGET: u64 = 1u64 << 27;
     /// The fixed timestamp of the genesis block.
     const GENESIS_TIMESTAMP: i64 = 1715776496 /* 2024-05-15 12:34:56 UTC */;
     /// The network ID.
