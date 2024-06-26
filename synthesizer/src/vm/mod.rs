@@ -313,14 +313,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         bonded_balances: IndexMap<Address<N>, (Address<N>, Address<N>, u64)>,
         rng: &mut R,
     ) -> Result<Block<N>> {
-        // Retrieve the total stake.
-        let total_stake = committee.total_stake();
+        // Retrieve the total bonded balance.
+        let total_bonded_amount = bonded_balances
+            .values()
+            .try_fold(0u64, |acc, (_, _, x)| acc.checked_add(*x).ok_or(anyhow!("Invalid bonded amount")))?;
         // Compute the account supply.
         let account_supply = public_balances
             .values()
             .try_fold(0u64, |acc, x| acc.checked_add(*x).ok_or(anyhow!("Invalid account supply")))?;
         // Compute the total supply.
-        let total_supply = total_stake.checked_add(account_supply).ok_or_else(|| anyhow!("Invalid total supply"))?;
+        let total_supply =
+            total_bonded_amount.checked_add(account_supply).ok_or_else(|| anyhow!("Invalid total supply"))?;
         // Ensure the total supply matches.
         ensure!(
             total_supply == N::STARTING_SUPPLY,
