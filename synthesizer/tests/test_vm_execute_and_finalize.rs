@@ -38,7 +38,6 @@ use anyhow::Result;
 use console::account::Address;
 use indexmap::IndexMap;
 use rayon::prelude::*;
-use std::borrow::Borrow;
 use utilities::*;
 
 #[test]
@@ -457,8 +456,7 @@ fn construct_next_block<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>
     rng: &mut R,
 ) -> Result<Block<CurrentNetwork>> {
     // Get the most recent block.
-    let block_hash =
-        vm.block_store().get_block_hash(*vm.block_store().heights().max().unwrap().borrow()).unwrap().unwrap();
+    let block_hash = vm.block_store().get_block_hash(vm.block_store().max_height().unwrap()).unwrap().unwrap();
     let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
 
     // Construct the metadata associated with the block.
@@ -523,7 +521,7 @@ fn construct_finalize_global_state<C: ConsensusStorage<CurrentNetwork>>(
     vm: &VM<CurrentNetwork, C>,
 ) -> FinalizeGlobalState {
     // Retrieve the latest block.
-    let block_height = *vm.block_store().heights().max().unwrap().clone();
+    let block_height = vm.block_store().max_height().unwrap();
     let latest_block_hash = vm.block_store().get_block_hash(block_height).unwrap().unwrap();
     let latest_block = vm.block_store().get_block(&latest_block_hash).unwrap().unwrap();
     // Retrieve the latest round.

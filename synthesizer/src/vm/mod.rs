@@ -403,7 +403,6 @@ pub(crate) mod test_helpers {
 
     use indexmap::IndexMap;
     use once_cell::sync::OnceCell;
-    use std::borrow::Borrow;
     #[cfg(feature = "rocks")]
     use std::path::Path;
     use synthesizer_snark::VerifyingKey;
@@ -685,8 +684,7 @@ function compute:
         rng: &mut R,
     ) -> Result<Block<MainnetV0>> {
         // Get the most recent block.
-        let block_hash =
-            vm.block_store().get_block_hash(*vm.block_store().heights().max().unwrap().borrow()).unwrap().unwrap();
+        let block_hash = vm.block_store().get_block_hash(vm.block_store().max_height().unwrap()).unwrap().unwrap();
         let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
 
         // Construct the new block header.
