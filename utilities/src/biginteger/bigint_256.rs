@@ -229,12 +229,16 @@ impl crate::biginteger::BigInteger for BigInteger256 {
 impl ToBits for BigInteger256 {
     #[doc = " Returns `self` as a boolean array in little-endian order, with trailing zeros."]
     fn write_bits_le(&self, vec: &mut Vec<bool>) {
-        vec.extend(BitIteratorLE::new(self));
+        let iter = BitIteratorLE::new(self);
+        vec.reserve(iter.len());
+        vec.extend(iter);
     }
 
     #[doc = " Returns `self` as a boolean array in big-endian order, with leading zeros."]
     fn write_bits_be(&self, vec: &mut Vec<bool>) {
-        vec.extend(BitIteratorBE::new(self));
+        let iter = BitIteratorBE::new(self);
+        vec.reserve(iter.len());
+        vec.extend(iter);
     }
 }
 
