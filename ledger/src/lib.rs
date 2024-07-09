@@ -126,7 +126,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         const NUM_BLOCKS: usize = 10;
         // Retrieve the latest height.
         let latest_height = ledger.current_block.read().height();
-        debug_assert_eq!(latest_height, *ledger.vm.block_store().heights().max().unwrap(), "Mismatch in latest height");
+        debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
         // Sample random block heights.
         let block_heights: Vec<u32> =
             (0..=latest_height).choose_multiple(&mut OsRng, (latest_height as usize).min(NUM_BLOCKS));
@@ -169,7 +169,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         };
 
         // If the block store is empty, initialize the genesis block.
-        if ledger.vm.block_store().heights().max().is_none() {
+        if ledger.vm.block_store().max_height().is_none() {
             // Add the genesis block.
             ledger.advance_to_next_block(&genesis_block)?;
         }
@@ -177,7 +177,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Retrieve the latest height.
         let latest_height =
-            *ledger.vm.block_store().heights().max().ok_or_else(|| anyhow!("Failed to load blocks from the ledger"))?;
+            ledger.vm.block_store().max_height().ok_or_else(|| anyhow!("Failed to load blocks from the ledger"))?;
         // Fetch the latest block.
         let block = ledger
             .get_block(latest_height)

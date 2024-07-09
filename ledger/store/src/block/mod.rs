@@ -1353,6 +1353,11 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         self.storage.id_map().keys_confirmed()
     }
 
+    /// Returns the height of the latest block in the storage.
+    pub fn max_height(&self) -> Option<u32> {
+        u32::try_from(self.storage.id_map().len_confirmed()).ok()?.checked_sub(1)
+    }
+
     /// Returns an iterator over the block hashes, for all blocks in `self`.
     pub fn hashes(&self) -> impl '_ + Iterator<Item = Cow<'_, N::BlockHash>> {
         self.storage.reverse_id_map().keys_confirmed()
