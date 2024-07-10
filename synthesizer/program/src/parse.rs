@@ -75,7 +75,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
             Ok(program) => program,
             Err(error) => {
                 eprintln!("{error}");
-                return map_res(take(0usize), move |error| Err(error))(string);
+                return map_res(take(0usize), Err)(string);
             }
         };
         // Construct the program with the parsed components.
@@ -92,7 +92,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
                 Ok(_) => (),
                 Err(error) => {
                     eprintln!("{error}");
-                    return map_res(take(0usize), move |error| Err(error))(string);
+                    return map_res(take(0usize), Err)(string);
                 }
             }
         }
@@ -102,7 +102,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
                 Ok(_) => (),
                 Err(error) => {
                     eprintln!("{error}");
-                    return map_res(take(0usize), move |error| Err(error))(string);
+                    return map_res(take(0usize), Err)(string);
                 }
             }
         }
