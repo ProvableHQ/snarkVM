@@ -1355,7 +1355,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns the height of the latest block in the storage.
     pub fn max_height(&self) -> Option<u32> {
-        u32::try_from(self.storage.id_map().len_confirmed()).ok()?.checked_sub(1)
+        self.storage.id_map().len_confirmed().checked_sub(1)?.try_into().ok()
     }
 
     /// Returns an iterator over the block hashes, for all blocks in `self`.
