@@ -1014,16 +1014,19 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
         // Compute the block tree.
         let tree = {
-            // Prepare an iterator over the block heights.
-            let heights = storage.id_map().keys_confirmed();
+            // Find the maximum block height.
+            let max_height = storage.id_map().len_confirmed().checked_sub(1).map(u32::try_from);
             // Prepare the leaves of the block tree.
-            let hashes = match heights.max() {
-                Some(height) => cfg_into_iter!(0..=cow_to_copied!(height))
-                    .map(|height| match storage.get_block_hash(height)? {
-                        Some(hash) => Ok(hash.to_bits_le()),
-                        None => bail!("Missing block hash for block {height}"),
-                    })
-                    .collect::<Result<Vec<Vec<bool>>>>()?,
+            let hashes = match max_height {
+                Some(height) => {
+                    let height = height?;
+                    cfg_into_iter!(0..=height)
+                        .map(|height| match storage.get_block_hash(height)? {
+                            Some(hash) => Ok(hash.to_bits_le()),
+                            None => bail!("Missing block hash for block {height}"),
+                        })
+                        .collect::<Result<Vec<Vec<bool>>>>()?
+                }
                 None => vec![],
             };
             // Construct the block tree.
@@ -1075,10 +1078,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         let mut tree = self.tree.write();
 
         // Determine the block heights to remove.
-        let heights = match self.storage.id_map().keys_confirmed().max() {
-            Some(height) => {
-                // Determine the end block height to remove.
-                let end_height = cow_to_copied!(height);
+        let heights = match self.max_height() {
+            Some(end_height) => {
                 // Determine the start block height to remove.
                 let start_height = end_height
                     .checked_sub(n - 1)
