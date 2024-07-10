@@ -18,6 +18,8 @@ impl<N: Network, Instruction: InstructionTrait<N>> Parser for ClosureCore<N, Ins
     /// Parses a string into a closure.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
         // Parse the 'closure' keyword from the string.
         let (string, _) = tag(Self::type_name())(string)?;
         // Parse the whitespace from the string.
