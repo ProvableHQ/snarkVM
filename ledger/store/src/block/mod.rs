@@ -1015,17 +1015,10 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // Compute the block tree.
         let tree = {
             // Prepare an iterator over the block heights.
-            let heights = storage.id_map().keys_confirmed();
+            let mut heights_hashes = storage.id_map().iter_confirmed().collect::<Vec<_>>();
+            heights_hashes.sort_unstable_by(|(h1, _), (h2, _)| h1.cmp(h2));
             // Prepare the leaves of the block tree.
-            let hashes = match heights.max() {
-                Some(height) => cfg_into_iter!(0..=cow_to_copied!(height))
-                    .map(|height| match storage.get_block_hash(height)? {
-                        Some(hash) => Ok(hash.to_bits_le()),
-                        None => bail!("Missing block hash for block {height}"),
-                    })
-                    .collect::<Result<Vec<Vec<bool>>>>()?,
-                None => vec![],
-            };
+            let hashes = cfg_into_iter!(heights_hashes).map(|(_, hash)| hash.to_bits_le()).collect::<Vec<Vec<bool>>>();
             // Construct the block tree.
             Arc::new(RwLock::new(N::merkle_tree_bhp(&hashes)?))
         };
