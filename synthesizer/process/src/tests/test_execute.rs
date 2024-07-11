@@ -18,6 +18,7 @@ use crate::{
     Process,
     Stack,
     Trace,
+    MAX_STACKS,
 };
 use circuit::{network::AleoV0, Aleo};
 use console::{
@@ -35,12 +36,15 @@ use ledger_store::{
     FinalizeStorage,
     FinalizeStore,
 };
+use lru::LruCache;
 use synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackProgram};
 use synthesizer_snark::UniversalSRS;
 
-use indexmap::IndexMap;
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{
+    num::NonZeroUsize,
+    sync::{Arc, Mutex},
+};
 
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
@@ -1238,7 +1242,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
@@ -1351,7 +1355,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
@@ -1478,7 +1482,7 @@ finalize mint_public:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
@@ -1607,7 +1611,7 @@ finalize mint_public:
     process.synthesize_key::<CurrentAleo, _>(program0.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
@@ -1765,7 +1769,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
@@ -2194,7 +2198,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
@@ -2363,8 +2367,12 @@ fn test_process_deploy_credits_program() {
     let rng = &mut TestRng::default();
 
     // Initialize an empty process without the `credits` program.
-    let empty_process =
-        Process { universal_srs: Arc::new(UniversalSRS::<CurrentNetwork>::load().unwrap()), stacks: IndexMap::new() };
+    let empty_process = Process {
+        universal_srs: Arc::new(UniversalSRS::<CurrentNetwork>::load().unwrap()),
+        credits: None,
+        stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(MAX_STACKS).unwrap()))),
+        storage_mode: None,
+    };
 
     // Construct the process.
     let process = Process::load().unwrap();
@@ -2421,7 +2429,7 @@ function {function_name}:
     .unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
