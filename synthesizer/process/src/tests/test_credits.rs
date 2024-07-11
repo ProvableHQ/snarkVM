@@ -2889,7 +2889,7 @@ mod sanity_checks {
         let r2 = Value::<CurrentNetwork>::from_str("1_500_000_000_000_000_u64").unwrap();
 
         // Compute the assignment.
-        let assignment = get_assignment::<_, CurrentAleo>(stack, &private_key, function_name, &[r0, r1, r2], rng);
+        let assignment = get_assignment::<_, CurrentAleo>(&stack, &private_key, function_name, &[r0, r1, r2], rng);
         assert_eq!(16, assignment.num_public());
         assert_eq!(50956, assignment.num_private());
         assert_eq!(51002, assignment.num_constraints());
@@ -2917,7 +2917,7 @@ mod sanity_checks {
         let r1 = Value::<CurrentNetwork>::from_str("1_500_000_000_000_000_u64").unwrap();
 
         // Compute the assignment.
-        let assignment = get_assignment::<_, CurrentAleo>(stack, &private_key, function_name, &[r0, r1], rng);
+        let assignment = get_assignment::<_, CurrentAleo>(&stack, &private_key, function_name, &[r0, r1], rng);
         assert_eq!(11, assignment.num_public());
         assert_eq!(12318, assignment.num_private());
         assert_eq!(12325, assignment.num_constraints());
@@ -2945,7 +2945,7 @@ mod sanity_checks {
         let r1 = Value::<CurrentNetwork>::from_str("1_500_000_000_000_000_u64").unwrap();
 
         // Compute the assignment.
-        let assignment = get_assignment::<_, CurrentAleo>(stack, &private_key, function_name, &[r0, r1], rng);
+        let assignment = get_assignment::<_, CurrentAleo>(&stack, &private_key, function_name, &[r0, r1], rng);
         assert_eq!(11, assignment.num_public());
         assert_eq!(12323, assignment.num_private());
         assert_eq!(12330, assignment.num_constraints());
@@ -2979,7 +2979,7 @@ mod sanity_checks {
         let r3 = Value::<CurrentNetwork>::from_str(&Field::<CurrentNetwork>::rand(rng).to_string()).unwrap();
 
         // Compute the assignment.
-        let assignment = get_assignment::<_, CurrentAleo>(stack, &private_key, function_name, &[r0, r1, r2, r3], rng);
+        let assignment = get_assignment::<_, CurrentAleo>(&stack, &private_key, function_name, &[r0, r1, r2, r3], rng);
         assert_eq!(15, assignment.num_public());
         assert_eq!(38115, assignment.num_private());
         assert_eq!(38151, assignment.num_constraints());
@@ -3007,7 +3007,7 @@ mod sanity_checks {
         let r2 = Value::<CurrentNetwork>::from_str(&Field::<CurrentNetwork>::rand(rng).to_string()).unwrap();
 
         // Compute the assignment.
-        let assignment = get_assignment::<_, CurrentAleo>(stack, &private_key, function_name, &[r0, r1, r2], rng);
+        let assignment = get_assignment::<_, CurrentAleo>(&stack, &private_key, function_name, &[r0, r1, r2], rng);
         assert_eq!(12, assignment.num_public());
         assert_eq!(12920, assignment.num_private());
         assert_eq!(12930, assignment.num_constraints());
