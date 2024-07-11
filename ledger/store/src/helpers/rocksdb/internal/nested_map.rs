@@ -594,7 +594,7 @@ pub struct NestedIter<
     K: 'a + Debug + PartialEq + Eq + Serialize + DeserializeOwned,
     V: 'a + PartialEq + Eq + Serialize + DeserializeOwned,
 > {
-    db_iter: rocksdb::DBIterator<'a>,
+    db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<(M, K, V)>,
 }
 
@@ -606,7 +606,7 @@ impl<
 > NestedIter<'a, M, K, V>
 {
     pub(super) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
-        Self { db_iter, _phantom: PhantomData }
+        Self { db_iter: db_iter.into(), _phantom: PhantomData }
     }
 }
 
@@ -620,16 +620,14 @@ impl<
     type Item = (Cow<'a, M>, Cow<'a, K>, Cow<'a, V>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (map_key, value) = self
-            .db_iter
-            .next()?
-            .map_err(|e| {
-                error!("RocksDB NestedIter iterator error: {e}");
-            })
-            .ok()?;
+        if !self.db_iter.valid() {
+            return None;
+        }
+
+        let (map_key, value) = self.db_iter.item()?;
 
         // Extract the bytes belonging to the map and the key.
-        let (entry_map, entry_key) = get_map_and_key(&map_key)
+        let (entry_map, entry_key) = get_map_and_key(map_key)
             .map_err(|e| {
                 error!("RocksDB NestedIter get_map_and_key error: {e}");
             })
@@ -647,11 +645,13 @@ impl<
             })
             .ok()?;
         // Deserialize the value.
-        let value = bincode::deserialize(&value)
+        let value = bincode::deserialize(value)
             .map_err(|e| {
                 error!("RocksDB NestedIter deserialize(value) error: {e}");
             })
             .ok()?;
+
+        self.db_iter.next();
 
         Some((Cow::Owned(map), Cow::Owned(key), Cow::Owned(value)))
     }
@@ -663,7 +663,7 @@ pub struct NestedKeys<
     M: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
     K: 'a + Clone + Debug + PartialEq + Eq + Serialize + DeserializeOwned,
 > {
-    db_iter: rocksdb::DBIterator<'a>,
+    db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<(M, K)>,
 }
 
@@ -674,7 +674,7 @@ impl<
 > NestedKeys<'a, M, K>
 {
     pub(crate) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
-        Self { db_iter, _phantom: PhantomData }
+        Self { db_iter: db_iter.into(), _phantom: PhantomData }
     }
 }
 
@@ -687,16 +687,14 @@ impl<
     type Item = (Cow<'a, M>, Cow<'a, K>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (map_key, _) = self
-            .db_iter
-            .next()?
-            .map_err(|e| {
-                error!("RocksDB NestedKeys iterator error: {e}");
-            })
-            .ok()?;
+        if !self.db_iter.valid() {
+            return None;
+        }
+
+        let map_key = self.db_iter.key()?;
 
         // Extract the bytes belonging to the map and the key.
-        let (entry_map, entry_key) = get_map_and_key(&map_key)
+        let (entry_map, entry_key) = get_map_and_key(map_key)
             .map_err(|e| {
                 error!("RocksDB NestedKeys get_map_and_key error: {e}");
             })
@@ -714,19 +712,21 @@ impl<
             })
             .ok()?;
 
+        self.db_iter.next();
+
         Some((Cow::Owned(map), Cow::Owned(key)))
     }
 }
 
 /// An iterator over the values of a prefix.
 pub struct NestedValues<'a, V: 'a + PartialEq + Eq + Serialize + DeserializeOwned> {
-    db_iter: rocksdb::DBIterator<'a>,
+    db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<V>,
 }
 
 impl<'a, V: 'a + PartialEq + Eq + Serialize + DeserializeOwned> NestedValues<'a, V> {
     pub(crate) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
-        Self { db_iter, _phantom: PhantomData }
+        Self { db_iter: db_iter.into(), _phantom: PhantomData }
     }
 }
 
@@ -734,20 +734,20 @@ impl<'a, V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned> Iterator
     type Item = Cow<'a, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (_, value) = self
-            .db_iter
-            .next()?
-            .map_err(|e| {
-                error!("RocksDB NestedValues iterator error: {e}");
-            })
-            .ok()?;
+        if !self.db_iter.valid() {
+            return None;
+        }
+
+        let value = self.db_iter.value()?;
 
         // Deserialize the value.
-        let value = bincode::deserialize(&value)
+        let value = bincode::deserialize(value)
             .map_err(|e| {
                 error!("RocksDB NestedValues deserialize(value) error: {e}");
             })
             .ok()?;
+
+        self.db_iter.next();
 
         Some(Cow::Owned(value))
     }
