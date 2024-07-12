@@ -276,17 +276,21 @@ impl<
 
         // Count the number of keys belonging to the map.
         let mut len = 0usize;
-        while let Some(key) = iter.key() {
-            // Only compare the map ID - the network ID is guaranteed to
-            // remain the same as long as there is more than a single map.
-            if key[2..][..2] != self.context[2..][..2] {
-                // If the map ID is different, it's the end of iteration.
+        while iter.valid() {
+            if let Some(key) = iter.key() {
+                // Only compare the map ID - the network ID is guaranteed to
+                // remain the same as long as there is more than a single map.
+                if key[2..][..2] != self.context[2..][..2] {
+                    // If the map ID is different, it's the end of iteration.
+                    break;
+                }
+
+                // Increment the length and go to the next record.
+                len += 1;
+                iter.next();
+            } else {
                 break;
             }
-
-            // Increment the length and go to the next record.
-            len += 1;
-            iter.next();
         }
 
         len
