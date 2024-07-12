@@ -371,18 +371,22 @@ impl<
 
         // Count the number of keys belonging to the nested map.
         let mut len = 0usize;
-        while let Some(key) = iter.key() {
-            // Only compare the nested map - the network ID and the outer map
-            // ID are guaranteed to remain the same as long as there is more
-            // than a single map in the database.
-            if !key[PREFIX_LEN + 4..].starts_with(serialized_map) {
-                // If the nested map ID is different, it's the end of iteration.
+        while iter.valid() {
+            if let Some(key) = iter.key() {
+                // Only compare the nested map - the network ID and the outer map
+                // ID are guaranteed to remain the same as long as there is more
+                // than a single map in the database.
+                if !key[PREFIX_LEN + 4..].starts_with(serialized_map) {
+                    // If the nested map ID is different, it's the end of iteration.
+                    break;
+                }
+
+                // Increment the length and go to the next record.
+                len += 1;
+                iter.next();
+            } else {
                 break;
             }
-
-            // Increment the length and go to the next record.
-            len += 1;
-            iter.next();
         }
 
         Ok(len)
