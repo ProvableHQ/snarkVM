@@ -36,6 +36,9 @@ wasm = [
 ]
 test = [ ]
 
+[dependencies.tracing]
+version = "0.1"
+
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../console"
