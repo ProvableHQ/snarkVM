@@ -777,49 +777,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         deployment_payers: &IndexSet<Address<N>>,
     ) -> Option<String> {
         // Ensure that the transaction is not producing a duplicate transition.
-        for transition_id in transaction.transition_ids() {
-            // If the transition ID is already produced in this block or previous blocks, abort the transaction.
-            if transition_ids.contains(transition_id)
-                || self.transition_store().contains_transition_id(transition_id).unwrap_or(true)
-            {
-                return Some(format!("Duplicate transition {transition_id}"));
-            }
-        }
-
-        // Ensure that the transaction is not double-spending an input.
-        for input_id in transaction.input_ids() {
-            // If the input ID is already spent in this block or previous blocks, abort the transaction.
-            if input_ids.contains(input_id) || self.transition_store().contains_input_id(input_id).unwrap_or(true) {
-                return Some(format!("Double-spending input {input_id}"));
-            }
-        }
-
-        // Ensure that the transaction is not producing a duplicate output.
-        for output_id in transaction.output_ids() {
-            // If the output ID is already produced in this block or previous blocks, abort the transaction.
-            if output_ids.contains(output_id) || self.transition_store().contains_output_id(output_id).unwrap_or(true) {
-                return Some(format!("Duplicate output {output_id}"));
-            }
-        }
-
-        // Ensure that the transaction is not producing a duplicate transition public key.
-        // Note that the tpk and tcm are corresponding, so a uniqueness check for just the tpk is sufficient.
-        for tpk in transaction.transition_public_keys() {
-            // If the transition public key is already produced in this block or previous blocks, abort the transaction.
-            if tpks.contains(tpk) || self.transition_store().contains_tpk(tpk).unwrap_or(true) {
-                return Some(format!("Duplicate transition public key {tpk}"));
-            }
-        }
-
-        // If the transaction is a deployment, ensure that it is not another deployment in the block from the same public fee payer.
-        if let Transaction::Deploy(_, _, _, fee) = transaction {
-            // If any public deployment payer has already deployed in this block, abort the transaction.
-            if let Some(payer) = fee.payer() {
-                if deployment_payers.contains(&payer) {
-                    return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
-                }
-            }
-        }
+        
+        println!("Hello from should_abort_transaction");
+        
 
         // Return `None` because the transaction is well-formed.
         None
