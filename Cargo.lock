@@ -3143,6 +3143,7 @@ dependencies = [
  "snarkvm-synthesizer-process",
  "snarkvm-synthesizer-program",
  "snarkvm-synthesizer-snark",
+ "tracing",
 ]
 
 [[package]]
