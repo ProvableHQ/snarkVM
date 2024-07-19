@@ -154,14 +154,10 @@ where
         };
 
         // Verify the solutions in the chunk.
-        let verification_results: Vec<_> = candidates_chunk
-            .iter_mut()
-            .rev()
-            .map(|solution| {
-                let verified = verification_fn(solution);
-                (solution, verified)
-            })
-            .collect();
+        let verification_results = candidates_chunk.iter_mut().rev().map(|solution| {
+            let verified = verification_fn(solution);
+            (solution, verified)
+        });
 
         // Process the results of the verification.
         for (solution, is_valid) in verification_results.into_iter() {
