@@ -73,21 +73,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         _rng: &mut R,
     ) -> Result<()> {
         let timer = timer!("VM::check_transaction");
-    
+
         /* Transaction */
-    
+
         // Allocate a buffer to write the transaction.
         let mut _buffer: Vec<u8> = Vec::with_capacity(N::MAX_TRANSACTION_SIZE);
         // Ensure that the transaction is well formed and does not exceed the maximum size.
         // if let Err(error) = transaction.write_le(LimitedWriter::new(&mut buffer, N::MAX_TRANSACTION_SIZE)) {
         //     bail!("Transaction '{}' is not well-formed: {error}", transaction.id())
         // }
-    
+
         // Ensure the transaction ID is unique.
         // if self.block_store().contains_transaction_id(&transaction.id())? {
         //     bail!("Transaction '{}' already exists in the ledger", transaction.id())
         // }
-    
+
         // Compute the Merkle root of the transaction.
         // match transaction.to_root() {
         //     Ok(root) if *transaction.id() != root => bail!("Incorrect transaction ID ({})", transaction.id()),
@@ -97,45 +97,45 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         //     }
         // };
         lap!(timer, "Verify the transaction ID");
-    
+
         /* Transition */
-    
+
         // Ensure the transition IDs are unique.
         // ensure_is_unique!("transition ID", self, contains_transition_id, transaction.transition_ids());
-    
+
         /* Input */
-    
+
         // Ensure the input IDs are unique.
         // ensure_is_unique!("input ID", self, contains_input_id, transaction.input_ids());
         // Ensure the serial numbers are unique.
         // ensure_is_unique!("serial number", self, contains_serial_number, transaction.serial_numbers());
         // Ensure the tags are unique.
         // ensure_is_unique!("tag", self, contains_tag, transaction.tags());
-    
+
         /* Output */
-    
+
         // Ensure the output IDs are unique.
         // ensure_is_unique!("output ID", self, contains_output_id, transaction.output_ids());
         // Ensure the commitments are unique.
         // ensure_is_unique!("commitment", self, contains_commitment, transaction.commitments());
         // Ensure the nonces are unique.
         // ensure_is_unique!("nonce", self, contains_nonce, transaction.nonces());
-    
+
         /* Metadata */
-    
+
         // Ensure the transition public keys are unique.
         // ensure_is_unique!("transition public key", self, contains_tpk, transaction.transition_public_keys());
         // Ensure the transition commitments are unique.
         // ensure_is_unique!("transition commitment", self, contains_tcm, transaction.transition_commitments());
-    
+
         lap!(timer, "Check for duplicate elements");
-    
+
         // First, verify the fee.
         // self.check_fee(transaction, rejected_id)?;
-    
+
         // Check if the transaction exists in the partially-verified cache.
         // let is_partially_verified = self.partially_verified_transactions.read().peek(&transaction.id()).is_some();
-    
+
         // Next, verify the deployment or execution.
         match transaction {
             Transaction::Deploy(id, owner, deployment, _) => {
@@ -182,13 +182,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
             Transaction::Fee(..) => { /* no-op */ }
         }
-    
+
         // If the above checks have passed and this is not a fee transaction,
         // then add the transaction ID to the partially-verified transactions cache.
         // if !matches!(transaction, Transaction::Fee(..)) && !is_partially_verified {
         //     self.partially_verified_transactions.write().push(transaction.id(), ());
         // }
-    
+
         finish!(timer, "Verify the transaction");
         Ok(())
     }

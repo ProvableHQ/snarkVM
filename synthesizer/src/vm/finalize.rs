@@ -777,9 +777,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         deployment_payers: &IndexSet<Address<N>>,
     ) -> Option<String> {
         // Ensure that the transaction is not producing a duplicate transition.
-        
+
         println!("Hello from should_abort_transaction");
-        
 
         // Return `None` because the transaction is well-formed.
         None
