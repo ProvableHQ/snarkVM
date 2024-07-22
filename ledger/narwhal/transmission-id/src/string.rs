@@ -19,11 +19,20 @@ impl<N: Network> FromStr for TransmissionID<N> {
 
     /// Initializes the transmission ID from a string.
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        if input.starts_with(SOLUTION_ID_PREFIX) {
-            Ok(Self::Solution(SolutionID::from_str(input)?))
-        } else if input.starts_with(TRANSACTION_PREFIX) {
+        // Split the id and checksum.
+        let (id, checksum) = input.split_once('.').ok_or_else(|| anyhow!("Invalid transmission ID: {input}"))?;
+        // Parse the string.
+        if id.starts_with(SOLUTION_ID_PREFIX) {
+            Ok(Self::Solution(
+                SolutionID::from_str(id)?,
+                N::TransmissionChecksum::from_str(checksum)
+                    .map_err(|_| anyhow!("Failed to parse checksum: {checksum}"))?,
+            ))
+        } else if id.starts_with(TRANSACTION_PREFIX) {
             Ok(Self::Transaction(
-                N::TransactionID::from_str(input).map_err(|_| anyhow!("Failed to parse transaction ID: {input}"))?,
+                N::TransactionID::from_str(id).map_err(|_| anyhow!("Failed to parse transaction ID: {id}"))?,
+                N::TransmissionChecksum::from_str(checksum)
+                    .map_err(|_| anyhow!("Failed to parse checksum: {checksum}"))?,
             ))
         } else {
             bail!("Invalid transmission ID: {input}")
@@ -43,8 +52,8 @@ impl<N: Network> Display for TransmissionID<N> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Ratification => write!(f, "ratification"),
-            Self::Solution(id) => write!(f, "{}", id),
-            Self::Transaction(id) => write!(f, "{}", id),
+            Self::Solution(id, checksum) => write!(f, "{}.{}", id, checksum),
+            Self::Transaction(id, checksum) => write!(f, "{}.{}", id, checksum),
         }
     }
 }

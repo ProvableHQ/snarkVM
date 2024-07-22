@@ -64,6 +64,17 @@ impl<N: Network> From<Data<Transaction<N>>> for Transmission<N> {
     }
 }
 
+impl<N: Network> Transmission<N> {
+    /// Returns the checksum of the transmission.
+    pub fn checksum(&self) -> Result<Option<N::TransmissionChecksum>> {
+        match self {
+            Self::Ratification => Ok(None),
+            Self::Solution(solution) => solution.to_checksum::<N>().map(Some),
+            Self::Transaction(transaction) => transaction.to_checksum::<N>().map(Some),
+        }
+    }
+}
+
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers {
     use super::*;

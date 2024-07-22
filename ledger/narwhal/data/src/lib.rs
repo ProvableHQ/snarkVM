@@ -35,6 +35,20 @@ pub enum Data<T: FromBytes + ToBytes + Send + 'static> {
 }
 
 impl<T: FromBytes + ToBytes + Send + 'static> Data<T> {
+    pub fn to_checksum<N: Network>(&self) -> Result<N::TransmissionChecksum> {
+        // Convert to bits.
+        let preimage = match self {
+            Self::Object(object) => object.to_bytes_le()?.to_bits_le(),
+            Self::Buffer(bytes) => bytes.deref().to_bits_le(),
+        };
+        // Hash the preimage bits.
+        let hash = N::hash_sha3_256(&preimage)?;
+        // Select the number of bits needed to parse the checksum.
+        let num_bits = usize::try_from(N::TransmissionChecksum::BITS).map_err(error)?;
+        // Return the checksum.
+        N::TransmissionChecksum::from_bits_le(&hash[0..num_bits])
+    }
+
     pub fn into<T2: From<Data<T>> + From<T> + FromBytes + ToBytes + Send + 'static>(self) -> Data<T2> {
         match self {
             Self::Object(x) => Data::Object(x.into()),

@@ -44,8 +44,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn contains_transmission(&self, transmission_id: &TransmissionID<N>) -> Result<bool> {
         match transmission_id {
             TransmissionID::Ratification => Ok(false),
-            TransmissionID::Solution(solution_id) => self.contains_solution_id(solution_id),
-            TransmissionID::Transaction(transaction_id) => self.contains_transaction_id(transaction_id),
+            TransmissionID::Solution(solution_id, _) => self.contains_solution_id(solution_id),
+            TransmissionID::Transaction(transaction_id, _) => self.contains_transaction_id(transaction_id),
         }
     }
 

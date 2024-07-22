@@ -91,6 +91,11 @@ package = "snarkvm-ledger-committee"
 path = "../ledger/committee"
 version = "=0.16.19"
 
+[dependencies.ledger-narwhal-data]
+package = "snarkvm-ledger-narwhal-data"
+path = "../ledger/narwhal/data"
+version = "=0.16.19"
+
 [dependencies.ledger-puzzle]
 package = "snarkvm-ledger-puzzle"
 path = "../ledger/puzzle"

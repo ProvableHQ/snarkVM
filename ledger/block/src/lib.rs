@@ -55,6 +55,7 @@ use console::{
 };
 use ledger_authority::Authority;
 use ledger_committee::Committee;
+use ledger_narwhal_data::Data;
 use ledger_narwhal_subdag::Subdag;
 use ledger_narwhal_transmission_id::TransmissionID;
 use ledger_puzzle::{PuzzleSolutions, Solution, SolutionID};

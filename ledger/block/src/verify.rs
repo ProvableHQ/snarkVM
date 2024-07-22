@@ -539,11 +539,11 @@ impl<N: Network> Block<N> {
     ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
         // Prepare an iterator over the solution IDs.
         let mut solutions = solutions.as_ref().map(|s| s.deref()).into_iter().flatten().peekable();
-        // Prepare an iterator over the unconfirmed transaction IDs.
-        let unconfirmed_transaction_ids = cfg_iter!(transactions)
-            .map(|confirmed| confirmed.to_unconfirmed_transaction_id())
+        // Prepare an iterator over the unconfirmed transactions.
+        let unconfirmed_transactions = cfg_iter!(transactions)
+            .map(|confirmed| confirmed.to_unconfirmed_transaction())
             .collect::<Result<Vec<_>>>()?;
-        let mut unconfirmed_transaction_ids = unconfirmed_transaction_ids.iter().peekable();
+        let mut unconfirmed_transactions = unconfirmed_transactions.iter().peekable();
 
         // Initialize a set of already seen transmission IDs.
         let mut seen_transmission_ids = HashSet::new();
@@ -563,10 +563,15 @@ impl<N: Network> Block<N> {
             // Process the transmission ID.
             match transmission_id {
                 TransmissionID::Ratification => {}
-                TransmissionID::Solution(solution_id) => {
+                TransmissionID::Solution(solution_id, checksum) => {
                     match solutions.peek() {
                         // Check the next solution matches the expected solution ID.
-                        Some((_, solution)) if solution.id() == *solution_id => {
+                        Some((_, solution))
+                            if solution.id() == *solution_id
+                                && Data::<Solution<N>>::Buffer(solution.to_bytes_le()?.into())
+                                    .to_checksum::<N>()?
+                                    == *checksum =>
+                        {
                             // Increment the solution iterator.
                             solutions.next();
                         }
@@ -578,12 +583,17 @@ impl<N: Network> Block<N> {
                         }
                     }
                 }
-                TransmissionID::Transaction(transaction_id) => {
-                    match unconfirmed_transaction_ids.peek() {
+                TransmissionID::Transaction(transaction_id, checksum) => {
+                    match unconfirmed_transactions.peek() {
                         // Check the next transaction matches the expected transaction.
-                        Some(expected_id) if transaction_id == *expected_id => {
-                            // Increment the unconfirmed transaction ID iterator.
-                            unconfirmed_transaction_ids.next();
+                        Some(transaction)
+                            if transaction.id() == *transaction_id
+                                && Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into())
+                                    .to_checksum::<N>()?
+                                    == *checksum =>
+                        {
+                            // Increment the unconfirmed transaction iterator.
+                            unconfirmed_transactions.next();
                         }
                         // Otherwise, add the transaction ID to the aborted or existing list.
                         _ => {
@@ -599,7 +609,7 @@ impl<N: Network> Block<N> {
         // Ensure there are no more solutions in the block.
         ensure!(solutions.next().is_none(), "There exists more solutions than expected.");
         // Ensure there are no more transactions in the block.
-        ensure!(unconfirmed_transaction_ids.next().is_none(), "There exists more transactions than expected.");
+        ensure!(unconfirmed_transactions.next().is_none(), "There exists more transactions than expected.");
 
         // Ensure the aborted solution IDs match.
         for aborted_solution_id in aborted_solution_ids {

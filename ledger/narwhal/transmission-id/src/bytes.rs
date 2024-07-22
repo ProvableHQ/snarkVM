@@ -22,8 +22,8 @@ impl<N: Network> FromBytes for TransmissionID<N> {
         // Match the variant.
         match variant {
             0 => Ok(Self::Ratification),
-            1 => Ok(Self::Solution(FromBytes::read_le(&mut reader)?)),
-            2 => Ok(Self::Transaction(FromBytes::read_le(&mut reader)?)),
+            1 => Ok(Self::Solution(FromBytes::read_le(&mut reader)?, FromBytes::read_le(&mut reader)?)),
+            2 => Ok(Self::Transaction(FromBytes::read_le(&mut reader)?, FromBytes::read_le(&mut reader)?)),
             3.. => Err(error("Invalid worker transmission ID variant")),
         }
     }
@@ -35,13 +35,15 @@ impl<N: Network> ToBytes for TransmissionID<N> {
         // Write the transmission.
         match self {
             Self::Ratification => 0u8.write_le(&mut writer),
-            Self::Solution(id) => {
+            Self::Solution(id, checksum) => {
                 1u8.write_le(&mut writer)?;
-                id.write_le(&mut writer)
+                id.write_le(&mut writer)?;
+                checksum.write_le(&mut writer)
             }
-            Self::Transaction(id) => {
+            Self::Transaction(id, checksum) => {
                 2u8.write_le(&mut writer)?;
-                id.write_le(&mut writer)
+                id.write_le(&mut writer)?;
+                checksum.write_le(&mut writer)
             }
         }
     }

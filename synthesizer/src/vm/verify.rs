@@ -134,8 +134,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // First, verify the fee.
         self.check_fee(transaction, rejected_id)?;
 
+        // Construct the transaction checksum.
+        let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
+
         // Check if the transaction exists in the partially-verified cache.
-        let is_partially_verified = self.partially_verified_transactions.read().peek(&transaction.id()).is_some();
+        let is_partially_verified =
+            self.partially_verified_transactions.read().peek(&(transaction.id())) == Some(&checksum);
 
         // Next, verify the deployment or execution.
         match transaction {
@@ -188,7 +192,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // If the above checks have passed and this is not a fee transaction,
         // then add the transaction ID to the partially-verified transactions cache.
         if !matches!(transaction, Transaction::Fee(..)) && !is_partially_verified {
-            self.partially_verified_transactions.write().push(transaction.id(), ());
+            self.partially_verified_transactions.write().push(transaction.id(), checksum);
         }
 
         finish!(timer, "Verify the transaction");

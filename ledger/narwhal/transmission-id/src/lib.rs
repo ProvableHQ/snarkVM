@@ -27,22 +27,22 @@ pub enum TransmissionID<N: Network> {
     /// A ratification.
     Ratification,
     /// A solution.
-    Solution(SolutionID<N>),
+    Solution(SolutionID<N>, N::TransmissionChecksum),
     /// A transaction.
-    Transaction(N::TransactionID),
+    Transaction(N::TransactionID, N::TransmissionChecksum),
 }
 
-impl<N: Network> From<SolutionID<N>> for TransmissionID<N> {
+impl<N: Network> From<(SolutionID<N>, N::TransmissionChecksum)> for TransmissionID<N> {
     /// Converts the solution ID into a transmission ID.
-    fn from(solution_id: SolutionID<N>) -> Self {
-        Self::Solution(solution_id)
+    fn from((solution_id, checksum): (SolutionID<N>, N::TransmissionChecksum)) -> Self {
+        Self::Solution(solution_id, checksum)
     }
 }
 
-impl<N: Network> From<&N::TransactionID> for TransmissionID<N> {
+impl<N: Network> From<(&N::TransactionID, &N::TransmissionChecksum)> for TransmissionID<N> {
     /// Converts the transaction ID into a transmission ID.
-    fn from(transaction_id: &N::TransactionID) -> Self {
-        Self::Transaction(*transaction_id)
+    fn from((transaction_id, checksum): (&N::TransactionID, &N::TransmissionChecksum)) -> Self {
+        Self::Transaction(*transaction_id, *checksum)
     }
 }
 
@@ -50,7 +50,7 @@ impl<N: Network> TransmissionID<N> {
     /// Returns the solution ID if the transmission is a solution.
     pub fn solution(&self) -> Option<SolutionID<N>> {
         match self {
-            Self::Solution(solution_id) => Some(*solution_id),
+            Self::Solution(solution_id, _) => Some(*solution_id),
             _ => None,
         }
     }
@@ -58,8 +58,17 @@ impl<N: Network> TransmissionID<N> {
     /// Returns the transaction ID if the transmission is a transaction.
     pub fn transaction(&self) -> Option<N::TransactionID> {
         match self {
-            Self::Transaction(transaction_id) => Some(*transaction_id),
+            Self::Transaction(transaction_id, _) => Some(*transaction_id),
             _ => None,
+        }
+    }
+
+    /// Returns the checksum of the transmission.
+    pub fn checksum(&self) -> Option<N::TransmissionChecksum> {
+        match self {
+            Self::Ratification => None,
+            Self::Solution(_, checksum) => Some(*checksum),
+            Self::Transaction(_, checksum) => Some(*checksum),
         }
     }
 }
@@ -81,11 +90,17 @@ pub mod test_helpers {
         let mut sample = Vec::with_capacity(10);
         // Append sample solution IDs.
         for _ in 0..5 {
-            sample.push(TransmissionID::Solution(SolutionID::from(rng.gen::<u64>())));
+            sample.push(TransmissionID::Solution(
+                SolutionID::from(rng.gen::<u64>()),
+                <CurrentNetwork as Network>::TransmissionChecksum::from(rng.gen::<u128>()),
+            ));
         }
         // Append sample transaction IDs.
         for _ in 0..5 {
-            let id = TransmissionID::Transaction(<CurrentNetwork as Network>::TransactionID::from(Field::rand(rng)));
+            let id = TransmissionID::Transaction(
+                <CurrentNetwork as Network>::TransactionID::from(Field::rand(rng)),
+                <CurrentNetwork as Network>::TransmissionChecksum::from(rng.gen::<u128>()),
+            );
             sample.push(id);
         }
         // Return the sample vector.

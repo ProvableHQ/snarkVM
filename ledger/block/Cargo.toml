@@ -56,6 +56,11 @@ package = "snarkvm-ledger-narwhal-batch-header"
 path = "../narwhal/batch-header"
 version = "=0.16.19"
 
+[dependencies.ledger-narwhal-data]
+package = "snarkvm-ledger-narwhal-data"
+path = "../narwhal/data"
+version = "=0.16.19"
+
 [dependencies.ledger-narwhal-subdag]
 package = "snarkvm-ledger-narwhal-subdag"
 path = "../narwhal/subdag"
