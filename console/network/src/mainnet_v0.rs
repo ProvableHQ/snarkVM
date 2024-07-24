@@ -157,7 +157,7 @@ impl Network for MainnetV0 {
     /// The function name for the inclusion circuit.
     const INCLUSION_FUNCTION_NAME: &'static str = snarkvm_parameters::mainnet::NETWORK_INCLUSION_FUNCTION_NAME;
     /// The maximum number of certificates in a batch.
-    const MAX_CERTIFICATES: u16 = 25;
+    const MAX_CERTIFICATES: u16 = 50;
     /// The network name.
     const NAME: &'static str = "Aleo Mainnet (v0)";
 
