@@ -430,8 +430,7 @@ impl<N: Network> Block<N> {
             );
         }
 
-        // Ensure there are no duplicate transaction IDs.
-        if has_duplicates(self.transaction_ids().chain(self.aborted_transaction_ids.iter())) {
+        if has_duplicates(self.transaction_ids()) {
             bail!("Found a duplicate transaction in block {height}");
         }
 
@@ -546,8 +545,7 @@ impl<N: Network> Block<N> {
         let mut unconfirmed_transactions = unconfirmed_transactions.iter().peekable();
 
         // Initialize a set of already seen transmission IDs.
-        let mut seen_transaction_ids = HashSet::new();
-        let mut seen_solution_ids = HashSet::new();
+        let mut seen_transmission_ids = HashSet::new();
 
         // Initialize a set of aborted or already-existing solution IDs.
         let mut aborted_or_existing_solution_ids = HashSet::new();
@@ -557,18 +555,8 @@ impl<N: Network> Block<N> {
         // Iterate over the transmission IDs.
         for transmission_id in subdag.transmission_ids() {
             // If the transmission ID has already been seen, then continue.
-            match transmission_id {
-                TransmissionID::Ratification => {}
-                TransmissionID::Solution(solution_id, _) => {
-                    if !seen_solution_ids.insert(solution_id) {
-                        continue;
-                    }
-                }
-                TransmissionID::Transaction(transaction_id, _) => {
-                    if !seen_transaction_ids.insert(transaction_id) {
-                        continue;
-                    }
-                }
+            if !seen_transmission_ids.insert(transmission_id) {
+                continue;
             }
 
             // Process the transmission ID.
@@ -608,10 +596,8 @@ impl<N: Network> Block<N> {
                         }
                         // Otherwise, add the transaction ID to the aborted or existing list.
                         _ => {
-                            if !aborted_or_existing_transaction_ids.insert(*transaction_id) {
-                                bail!("Block contains a duplicate aborted transaction ID (found '{transaction_id}')");
-                            }
-                        }
+                            aborted_or_existing_transaction_ids.insert(*transaction_id);
+                        },
                     }
                 }
             }

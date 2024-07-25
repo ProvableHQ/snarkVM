@@ -117,6 +117,20 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             ratified_finalize_operations,
         )?;
 
+        // Ensure that each existing solution ID from the block exists in the ledger.
+        for existing_solution_id in expected_existing_solution_ids {
+            if !self.contains_solution_id(&existing_solution_id)? {
+                bail!("Solution ID '{existing_solution_id}' does not exist in the ledger");
+            }
+        }
+
+        // Ensure that each existing transaction ID from the block exists in the ledger.
+        for existing_transaction_id in expected_existing_transaction_ids {
+            if !self.contains_transaction_id(&existing_transaction_id)? {
+                bail!("Transaction ID '{existing_transaction_id}' does not exist in the ledger");
+            }
+        }
+
         Ok(())
     }
 }
