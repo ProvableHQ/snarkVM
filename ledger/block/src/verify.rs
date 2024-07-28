@@ -597,7 +597,7 @@ impl<N: Network> Block<N> {
                         // Otherwise, add the transaction ID to the aborted or existing list.
                         _ => {
                             aborted_or_existing_transaction_ids.insert(*transaction_id);
-                        },
+                        }
                     }
                 }
             }
