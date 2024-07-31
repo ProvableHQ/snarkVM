@@ -97,6 +97,8 @@ commands:
           paths:
             - .cache/sccache
             - .cargo
+            - .aleo/resources
+
   run_serial:
     description: "Build and run tests"
     parameters:
