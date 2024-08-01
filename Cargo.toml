@@ -164,7 +164,6 @@ optional = true
 path = "./console"
 version = "=0.16.19"
 optional = true
-features = ["test"]
 
 [dependencies.snarkvm-curves]
 path = "./curves"
