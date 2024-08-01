@@ -562,15 +562,11 @@ impl<N: Network> Block<N> {
             // Process the transmission ID.
             match transmission_id {
                 TransmissionID::Ratification => {}
-                TransmissionID::Solution(solution_id, checksum) => {
+                TransmissionID::Solution(solution_id, _checksum) => {
                     match solutions.peek() {
                         // Check the next solution matches the expected solution ID.
-                        Some((_, solution))
-                            if solution.id() == *solution_id
-                                && Data::<Solution<N>>::Buffer(solution.to_bytes_le()?.into())
-                                    .to_checksum::<N>()?
-                                    == *checksum =>
-                        {
+                        // We don't check against the checksum, because check_solution_mut might mutate the solution.
+                        Some((_, solution)) if solution.id() == *solution_id => {
                             // Increment the solution iterator.
                             solutions.next();
                         }
