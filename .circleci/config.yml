@@ -75,6 +75,8 @@ commands:
             mv $CIRCLE_WORKING_DIRECTORY/.bin/sccache-v0.3.0-x86_64-unknown-linux-musl/sccache $CIRCLE_WORKING_DIRECTORY/.bin/sccache
             export PATH="$PATH:$CIRCLE_WORKING_DIRECTORY/.bin"
             export RUSTC_WRAPPER="sccache"
+            echo $PATH
+            sccache -s
             rm -rf "$CIRCLE_WORKING_DIRECTORY/.cargo/registry"
             DEBIAN_FRONTEND=noninteractive sudo apt-get update
             DEBIAN_FRONTEND=noninteractive sudo apt-get dist-upgrade -y -o DPkg::Options::=--force-confold
@@ -95,7 +97,7 @@ commands:
       - save_cache:
           key: << parameters.cache_key >>
           paths:
-            - /home/circleci/.cache/sccache
+            - /home/circleci/project/.cache/sccache
             - /home/circleci/.cargo
             - /home/circleci/.aleo/resources
 
@@ -169,7 +171,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: algorithms
-          cache_key: v2-snarkvm-algorithms-cache
+          cache_key: v3-snarkvm-algorithms-cache
 
   algorithms-profiler:
     docker:
@@ -178,7 +180,7 @@ jobs:
     steps:
       - run_serial: # This runs a single test with profiler enabled
           workspace_member: algorithms
-          cache_key: v2-snarkvm-algorithms-cache
+          cache_key: v3-snarkvm-algorithms-cache
           flags: varuna::prove_and_verify_with_square_matrix --features profiler
 
   circuit:
@@ -188,7 +190,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit
-          cache_key: v2-snarkvm-circuit-cache
+          cache_key: v3-snarkvm-circuit-cache
 
   circuit-account:
     docker:
@@ -197,7 +199,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/account
-          cache_key: v2-snarkvm-circuit-account-cache
+          cache_key: v3-snarkvm-circuit-account-cache
 
   # This checks that no `console` structs are used in core circuit logic.
   circuit-account-noconsole:
@@ -208,7 +210,7 @@ jobs:
       - run_serial:
           workspace_member: circuit/account
           flags: --no-default-features
-          cache_key: v2-snarkvm-circuit-account-noconsole-cache
+          cache_key: v3-snarkvm-circuit-account-noconsole-cache
 
   circuit-algorithms:
     docker:
@@ -217,7 +219,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/algorithms
-          cache_key: v2-snarkvm-circuit-algorithms-cache
+          cache_key: v3-snarkvm-circuit-algorithms-cache
 
   circuit-collections:
     docker:
@@ -226,7 +228,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/collections
-          cache_key: v2-snarkvm-circuit-collections-cache
+          cache_key: v3-snarkvm-circuit-collections-cache
 
   # This checks that no `console` structs are used in core circuit logic.
   circuit-collections-noconsole:
@@ -237,7 +239,7 @@ jobs:
       - run_serial:
           workspace_member: circuit/collections
           flags: --no-default-features
-          cache_key: v2-snarkvm-circuit-collections-noconsole-cache
+          cache_key: v3-snarkvm-circuit-collections-noconsole-cache
 
   circuit-environment:
     docker:
@@ -246,7 +248,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/environment
-          cache_key: v2-snarkvm-circuit-environment-cache
+          cache_key: v3-snarkvm-circuit-environment-cache
 
   circuit-network:
     docker:
@@ -255,7 +257,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/network
-          cache_key: v2-snarkvm-circuit-network-cache
+          cache_key: v3-snarkvm-circuit-network-cache
 
   circuit-program:
     docker:
@@ -264,7 +266,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/program
-          cache_key: v2-snarkvm-circuit-program-cache
+          cache_key: v3-snarkvm-circuit-program-cache
 
   circuit-types:
     docker:
@@ -273,7 +275,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/types
-          cache_key: v2-snarkvm-circuit-types-cache
+          cache_key: v3-snarkvm-circuit-types-cache
 
   circuit-types-address:
     docker:
@@ -282,7 +284,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/types/address
-          cache_key: v2-snarkvm-circuit-types-address-cache
+          cache_key: v3-snarkvm-circuit-types-address-cache
 
   circuit-types-boolean:
     docker:
@@ -291,7 +293,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/types/boolean
-          cache_key: v2-snarkvm-circuit-types-boolean-cache
+          cache_key: v3-snarkvm-circuit-types-boolean-cache
 
   circuit-types-field:
     docker:
@@ -300,7 +302,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/types/field
-          cache_key: v2-snarkvm-circuit-types-field-cache
+          cache_key: v3-snarkvm-circuit-types-field-cache
 
   circuit-types-group:
     docker:
@@ -309,7 +311,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/types/group
-          cache_key: v2-snarkvm-circuit-types-group-cache
+          cache_key: v3-snarkvm-circuit-types-group-cache
 
   circuit-types-integers:
     docker:
@@ -318,7 +320,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/types/integers
-          cache_key: v2-snarkvm-circuit-types-integers-cache
+          cache_key: v3-snarkvm-circuit-types-integers-cache
           flags: -- --ignored
 
   circuit-types-scalar:
@@ -328,7 +330,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/types/scalar
-          cache_key: v2-snarkvm-circuit-types-scalar-cache
+          cache_key: v3-snarkvm-circuit-types-scalar-cache
 
   circuit-types-string:
     docker:
@@ -337,7 +339,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: circuit/types/string
-          cache_key: v2-snarkvm-circuit-types-string-cache
+          cache_key: v3-snarkvm-circuit-types-string-cache
   console:
     docker:
       - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
@@ -345,7 +347,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console
-          cache_key: v2-snarkvm-console-cache
+          cache_key: v3-snarkvm-console-cache
 
   console-account:
     docker:
@@ -354,7 +356,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/account
-          cache_key: v2-snarkvm-console-account-cache
+          cache_key: v3-snarkvm-console-account-cache
 
   console-algorithms:
     docker:
@@ -363,7 +365,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/algorithms
-          cache_key: v2-snarkvm-console-algorithms-cache
+          cache_key: v3-snarkvm-console-algorithms-cache
 
   console-collections:
     docker:
@@ -372,7 +374,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/collections
-          cache_key: v2-snarkvm-console-collections-cache
+          cache_key: v3-snarkvm-console-collections-cache
 
   console-network:
     docker:
@@ -381,7 +383,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/network
-          cache_key: v2-snarkvm-console-network-cache
+          cache_key: v3-snarkvm-console-network-cache
 
   console-network-environment:
     docker:
@@ -390,7 +392,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/network/environment
-          cache_key: v2-snarkvm-console-network-environment-cache
+          cache_key: v3-snarkvm-console-network-environment-cache
 
   console-program:
     docker:
@@ -399,7 +401,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/program
-          cache_key: v2-snarkvm-console-program-cache
+          cache_key: v3-snarkvm-console-program-cache
 
   console-types:
     docker:
@@ -408,7 +410,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/types
-          cache_key: v2-snarkvm-console-types-cache
+          cache_key: v3-snarkvm-console-types-cache
 
   console-types-address:
     docker:
@@ -417,7 +419,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/types/address
-          cache_key: v2-snarkvm-console-types-address-cache
+          cache_key: v3-snarkvm-console-types-address-cache
 
   console-types-boolean:
     docker:
@@ -426,7 +428,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/types/boolean
-          cache_key: v2-snarkvm-console-types-boolean-cache
+          cache_key: v3-snarkvm-console-types-boolean-cache
 
   console-types-field:
     docker:
@@ -435,7 +437,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/types/field
-          cache_key: v2-snarkvm-console-types-field-cache
+          cache_key: v3-snarkvm-console-types-field-cache
 
   console-types-group:
     docker:
@@ -444,7 +446,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/types/group
-          cache_key: v2-snarkvm-console-types-group-cache
+          cache_key: v3-snarkvm-console-types-group-cache
 
   console-types-integers:
     docker:
@@ -453,7 +455,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/types/integers
-          cache_key: v2-snarkvm-console-types-integers-cache
+          cache_key: v3-snarkvm-console-types-integers-cache
 
   console-types-scalar:
     docker:
@@ -462,7 +464,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/types/scalar
-          cache_key: v2-snarkvm-console-types-scalar-cache
+          cache_key: v3-snarkvm-console-types-scalar-cache
 
   console-types-string:
     docker:
@@ -471,7 +473,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: console/types/string
-          cache_key: v2-snarkvm-console-types-string-cache
+          cache_key: v3-snarkvm-console-types-string-cache
 
   curves:
     docker:
@@ -480,7 +482,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: curves
-          cache_key: v2-snarkvm-curves-cache
+          cache_key: v3-snarkvm-curves-cache
 
   fields:
     docker:
@@ -489,7 +491,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: fields
-          cache_key: v2-snarkvm-fields-cache
+          cache_key: v3-snarkvm-fields-cache
 
   ledger:
     docker:
@@ -498,7 +500,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger
-          cache_key: v2-snarkvm-ledger-cache
+          cache_key: v3-snarkvm-ledger-cache
 
   ledger-with-rocksdb:
     docker:
@@ -508,7 +510,7 @@ jobs:
       - run_serial:
           flags: --features=rocks
           workspace_member: ledger
-          cache_key: v2-snarkvm-ledger-with-rocksdb-cache
+          cache_key: v3-snarkvm-ledger-with-rocksdb-cache
 
   ledger-with-valid-solutions:
     docker:
@@ -518,7 +520,7 @@ jobs:
       - run_serial:
           flags: valid_solutions --features=test
           workspace_member: ledger
-          cache_key: v2-snarkvm-ledger-with-valid-solutions-cache
+          cache_key: v3-snarkvm-ledger-with-valid-solutions-cache
 
   ledger-authority:
     docker:
@@ -527,7 +529,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/authority
-          cache_key: v2-snarkvm-ledger-authority-cache
+          cache_key: v3-snarkvm-ledger-authority-cache
 
   ledger-block:
     docker:
@@ -536,7 +538,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/block
-          cache_key: v2-snarkvm-ledger-block-cache
+          cache_key: v3-snarkvm-ledger-block-cache
 
   ledger-committee:
     docker:
@@ -545,7 +547,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/committee
-          cache_key: v2-snarkvm-ledger-committee-cache
+          cache_key: v3-snarkvm-ledger-committee-cache
 
   ledger-narwhal:
     docker:
@@ -554,7 +556,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/narwhal
-          cache_key: v2-snarkvm-ledger-narwhal-cache
+          cache_key: v3-snarkvm-ledger-narwhal-cache
 
   ledger-narwhal-batch-certificate:
     docker:
@@ -563,7 +565,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/batch-certificate
-          cache_key: v2-snarkvm-ledger-narwhal-batch-certificate-cache
+          cache_key: v3-snarkvm-ledger-narwhal-batch-certificate-cache
 
   ledger-narwhal-batch-header:
     docker:
@@ -572,7 +574,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/batch-header
-          cache_key: v2-snarkvm-ledger-narwhal-batch-header-cache
+          cache_key: v3-snarkvm-ledger-narwhal-batch-header-cache
 
   ledger-narwhal-data:
     docker:
@@ -581,7 +583,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/data
-          cache_key: v2-snarkvm-ledger-narwhal-data-cache
+          cache_key: v3-snarkvm-ledger-narwhal-data-cache
 
   ledger-narwhal-subdag:
     docker:
@@ -590,7 +592,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/subdag
-          cache_key: v2-snarkvm-ledger-narwhal-subdag-cache
+          cache_key: v3-snarkvm-ledger-narwhal-subdag-cache
 
   ledger-narwhal-transmission:
     docker:
@@ -599,7 +601,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/transmission
-          cache_key: v2-snarkvm-ledger-narwhal-transmission-cache
+          cache_key: v3-snarkvm-ledger-narwhal-transmission-cache
 
   ledger-narwhal-transmission-id:
     docker:
@@ -608,7 +610,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/transmission-id
-          cache_key: v2-snarkvm-ledger-narwhal-transmission-id-cache
+          cache_key: v3-snarkvm-ledger-narwhal-transmission-id-cache
 
   ledger-puzzle:
     docker:
@@ -617,7 +619,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/puzzle
-          cache_key: v2-snarkvm-ledger-puzzle-cache
+          cache_key: v3-snarkvm-ledger-puzzle-cache
 
   ledger-puzzle-epoch:
     docker:
@@ -626,7 +628,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/puzzle/epoch
-          cache_key: v2-snarkvm-ledger-puzzle-epoch-cache
+          cache_key: v3-snarkvm-ledger-puzzle-epoch-cache
 
   ledger-query:
     docker:
@@ -635,7 +637,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/query
-          cache_key: v2-snarkvm-ledger-query-cache
+          cache_key: v3-snarkvm-ledger-query-cache
 
   ledger-store:
     docker:
@@ -645,7 +647,7 @@ jobs:
       - run_serial:
           flags: --features=rocks
           workspace_member: ledger/store
-          cache_key: v2-snarkvm-ledger-store-cache
+          cache_key: v3-snarkvm-ledger-store-cache
 
   ledger-test-helpers:
     docker:
@@ -654,7 +656,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: ledger/test-helpers
-          cache_key: v2-snarkvm-ledger-test-helpers-cache
+          cache_key: v3-snarkvm-ledger-test-helpers-cache
 
   parameters:
     docker:
@@ -663,7 +665,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: parameters
-          cache_key: v2-snarkvm-parameters-cache
+          cache_key: v3-snarkvm-parameters-cache
 
   synthesizer:
     docker:
@@ -673,7 +675,7 @@ jobs:
       - run_serial:
           flags: --lib --bins
           workspace_member: synthesizer
-          cache_key: v2-snarkvm-synthesizer-cache
+          cache_key: v3-snarkvm-synthesizer-cache
 
   synthesizer-integration:
     docker:
@@ -683,7 +685,7 @@ jobs:
       - run_serial:
           flags: --test '*'
           workspace_member: synthesizer
-          cache_key: v2-snarkvm-synthesizer-integration-cache
+          cache_key: v3-snarkvm-synthesizer-integration-cache
 
   synthesizer-process:
     docker:
@@ -692,7 +694,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: synthesizer/process
-          cache_key: v2-snarkvm-synthesizer-process-cache
+          cache_key: v3-snarkvm-synthesizer-process-cache
 
   synthesizer-process-with-rocksdb:
     docker:
@@ -702,7 +704,7 @@ jobs:
       - run_serial:
           flags: --features=rocks
           workspace_member: synthesizer/process
-          cache_key: v2-snarkvm-synthesizer-process-cache
+          cache_key: v3-snarkvm-synthesizer-process-cache
 
   synthesizer-program:
     docker:
@@ -712,7 +714,7 @@ jobs:
       - run_serial:
           flags: --lib --bins
           workspace_member: synthesizer/program
-          cache_key: v2-snarkvm-synthesizer-program-cache
+          cache_key: v3-snarkvm-synthesizer-program-cache
 
   synthesizer-program-integration:
     docker:
@@ -722,7 +724,7 @@ jobs:
       - run_serial:
           flags: --test '*' -- --skip keccak --skip psd --skip sha --skip instruction::is --skip instruction::equal --skip instruction::commit
           workspace_member: synthesizer/program
-          cache_key: v2-snarkvm-synthesizer-program-cache
+          cache_key: v3-snarkvm-synthesizer-program-cache
 
   synthesizer-program-integration-keccak:
     docker:
@@ -732,7 +734,7 @@ jobs:
       - run_serial:
           flags: keccak --test '*'
           workspace_member: synthesizer/program
-          cache_key: v2-snarkvm-synthesizer-program-cache
+          cache_key: v3-snarkvm-synthesizer-program-cache
 
   synthesizer-program-integration-psd:
     docker:
@@ -742,7 +744,7 @@ jobs:
       - run_serial:
           flags: psd --test '*'
           workspace_member: synthesizer/program
-          cache_key: v2-snarkvm-synthesizer-program-cache
+          cache_key: v3-snarkvm-synthesizer-program-cache
 
   synthesizer-program-integration-sha:
     docker:
@@ -752,7 +754,7 @@ jobs:
       - run_serial:
           flags: sha --test '*'
           workspace_member: synthesizer/program
-          cache_key: v2-snarkvm-synthesizer-program-cache
+          cache_key: v3-snarkvm-synthesizer-program-cache
 
   synthesizer-program-integration-instruction-is:
     docker:
@@ -762,7 +764,7 @@ jobs:
       - run_serial:
           flags: instruction::is --test '*'
           workspace_member: synthesizer/program
-          cache_key: v2-snarkvm-synthesizer-program-cache
+          cache_key: v3-snarkvm-synthesizer-program-cache
 
   synthesizer-program-integration-instruction-equal:
     docker:
@@ -772,7 +774,7 @@ jobs:
       - run_serial:
           flags: instruction::equal --test '*'
           workspace_member: synthesizer/program
-          cache_key: v2-snarkvm-synthesizer-program-cache
+          cache_key: v3-snarkvm-synthesizer-program-cache
 
   synthesizer-program-integration-instruction-commit:
     docker:
@@ -782,7 +784,7 @@ jobs:
       - run_serial:
           flags: instruction::commit --test '*'
           workspace_member: synthesizer/program
-          cache_key: v2-snarkvm-synthesizer-program-cache
+          cache_key: v3-snarkvm-synthesizer-program-cache
 
   synthesizer-snark:
     docker:
@@ -791,7 +793,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: synthesizer/snark
-          cache_key: v2-snarkvm-synthesizer-snark-cache
+          cache_key: v3-snarkvm-synthesizer-snark-cache
 
   utilities:
     docker:
@@ -800,7 +802,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: utilities
-          cache_key: v2-snarkvm-utilities-cache
+          cache_key: v3-snarkvm-utilities-cache
 
   utilities-derives:
     docker:
@@ -809,7 +811,7 @@ jobs:
     steps:
       - run_serial:
           workspace_member: utilities/derives
-          cache_key: v2-snarkvm-utilities-derives-cache
+          cache_key: v3-snarkvm-utilities-derives-cache
 
   wasm:
     docker:
@@ -818,7 +820,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v2-snarkvm-wasm-cache
+          cache_key: v3-snarkvm-wasm-cache
       - run:
           no_output_timeout: 30m
           command: |
@@ -827,7 +829,7 @@ jobs:
             cd wasm && wasm-pack test --node
             # cargo test --target wasm32-unknown-unknown
       - clear_environment:
-          cache_key: v2-snarkvm-wasm-cache
+          cache_key: v3-snarkvm-wasm-cache
 
   check-fmt:
     docker:
@@ -837,13 +839,13 @@ jobs:
       - checkout
       - install_rust_nightly
       - setup_environment:
-          cache_key: v2-snarkvm-fmt-cache
+          cache_key: v3-snarkvm-fmt-cache
       - run:
           name: Check style
           no_output_timeout: 35m
           command: cargo +nightly fmt --all -- --check
       - clear_environment:
-          cache_key: v2-snarkvm-fmt-cache
+          cache_key: v3-snarkvm-fmt-cache
 
   check-clippy:
     docker:
@@ -852,7 +854,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v2-snarkvm-clippy-cache
+          cache_key: v3-snarkvm-clippy-cache
       - run:
           name: Check Clippy
           no_output_timeout: 35m
@@ -860,7 +862,7 @@ jobs:
             cargo clippy --workspace --all-targets -- -D warnings
             cargo clippy --workspace --all-targets --all-features -- -D warnings
       - clear_environment:
-          cache_key: v2-snarkvm-clippy-cache
+          cache_key: v3-snarkvm-clippy-cache
 
   check-all-targets:
     docker:
@@ -869,13 +871,13 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v2-snarkvm-all-targets-cache
+          cache_key: v3-snarkvm-all-targets-cache
       - run:
           name: Check all targets
           no_output_timeout: 35m
           command: cargo check --release --workspace --all-targets
       - clear_environment:
-          cache_key: v2-snarkvm-all-targets-cache
+          cache_key: v3-snarkvm-all-targets-cache
 
   verify-windows:
     executor:
