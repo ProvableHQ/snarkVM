@@ -670,10 +670,30 @@ jobs:
   synthesizer:
     docker:
       - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.twoxlarge >>
+    resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
-          flags: --lib --bins
+          flags: --lib --bins -- --skip vm::execute --skip vm::finalize
+          workspace_member: synthesizer
+          cache_key: v4-snarkvm-synthesizer-cache
+
+  synthesizer-execute:
+    docker:
+      - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    resource_class: << pipeline.parameters.xlarge >>
+    steps:
+      - run_serial:
+          flags: --lib --bins vm::execute
+          workspace_member: synthesizer
+          cache_key: v4-snarkvm-synthesizer-cache
+
+  synthesizer-finalize:
+    docker:
+      - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    resource_class: << pipeline.parameters.xlarge >>
+    steps:
+      - run_serial:
+          flags: --lib --bins vm::finalize
           workspace_member: synthesizer
           cache_key: v4-snarkvm-synthesizer-cache
 
