@@ -4,18 +4,33 @@ parameters:
   small:
     type: string
     default: small
+  small-threads:
+    type: string
+    default: 2
   medium:
     type: string
     default: medium
+  medium-threads:
+    type: string
+    default: 4
   large:
     type: string
     default: large
+  large-threads:
+    type: string
+    default: 8
   xlarge:
     type: string
     default: xlarge
+  xlarge-threads:
+    type: string
+    default: 16
   twoxlarge:
     type: string
     default: 2xlarge
+  twoxlarge-threads:
+    type: string
+    default: 32
 
 orbs:
   windows: circleci/windows@5.0
@@ -672,39 +687,9 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: --lib --bins -- --skip vm::execute --skip vm::finalize --skip vm::verify
+          flags: --lib --bins -- --test-threads=<< pipeline.parameters.xlarge-threads >>
           workspace_member: synthesizer
           cache_key: v6-snarkvm-synthesizer-cache
-
-  synthesizer-execute:
-    docker:
-      - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.xlarge >>
-    steps:
-      - run_serial:
-          flags: --lib --bins vm::execute
-          workspace_member: synthesizer
-          cache_key: v6-snarkvm-synthesizer-execute-cache
-
-  synthesizer-verify:
-    docker:
-      - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.xlarge >>
-    steps:
-      - run_serial:
-          flags: --lib --bins vm::execute
-          workspace_member: synthesizer
-          cache_key: v6-snarkvm-synthesizer-verify-cache
-
-  synthesizer-finalize:
-    docker:
-      - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.xlarge >>
-    steps:
-      - run_serial:
-          flags: --lib --bins vm::finalize
-          workspace_member: synthesizer
-          cache_key: v6-snarkvm-synthesizer-finalize-cache
 
   synthesizer-integration:
     docker:
@@ -712,16 +697,17 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: --test '*'
+          flags: --test '*' -- --test-threads=<< pipeline.parameters.xlarge-threads >>
           workspace_member: synthesizer
           cache_key: v6-snarkvm-synthesizer-integration-cache
 
   synthesizer-process:
     docker:
       - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.large >>
+    resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
+          flags: -- --test-threads=<< pipeline.parameters.large-threads >>
           workspace_member: synthesizer/process
           cache_key: v6-snarkvm-synthesizer-process-cache
 
