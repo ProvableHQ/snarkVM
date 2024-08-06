@@ -4,33 +4,18 @@ parameters:
   small:
     type: string
     default: small
-  small-threads:
-    type: integer
-    default: 2
   medium:
     type: string
     default: medium
-  medium-threads:
-    type: integer
-    default: 4
   large:
     type: string
     default: large
-  large-threads:
-    type: integer
-    default: 8
   xlarge:
     type: string
     default: xlarge
-  xlarge-threads:
-    type: integer
-    default: 16
   twoxlarge:
     type: string
     default: 2xlarge
-  twoxlarge-threads:
-    type: integer
-    default: 32
 
 orbs:
   windows: circleci/windows@5.0
@@ -90,7 +75,6 @@ commands:
             tar -C "$CIRCLE_WORKING_DIRECTORY/.bin" -xvf sccache-v0.3.0-x86_64-unknown-linux-musl.tar.gz
             chmod +x $CIRCLE_WORKING_DIRECTORY/.bin/sccache-v0.3.0-x86_64-unknown-linux-musl/sccache
             mv $CIRCLE_WORKING_DIRECTORY/.bin/sccache-v0.3.0-x86_64-unknown-linux-musl/sccache /home/circleci/bin/sccache
-            sccache -s
             rm -rf "/home/circleci/.cargo/registry"
             DEBIAN_FRONTEND=noninteractive sudo apt-get update
             DEBIAN_FRONTEND=noninteractive sudo apt-get dist-upgrade -y -o DPkg::Options::=--force-confold
@@ -106,7 +90,7 @@ commands:
         type: string
         default: snarkvm-stable-cache
     steps:
-      - run: (sccache -s||true)
+      - run: (sccache -s || true)
       - run: set +e
       - save_cache:
           key: << parameters.cache_key >>
@@ -675,7 +659,7 @@ jobs:
   parameters:
     docker:
       - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.xlarge >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           flags: -- --test-threads=2
@@ -698,7 +682,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: --test '*' -- --test-threads=<< pipeline.parameters.xlarge-threads >>
+          flags: --test '*' -- --test-threads=8
           workspace_member: synthesizer
           cache_key: v7-snarkvm-synthesizer-integration-cache
 
@@ -708,7 +692,7 @@ jobs:
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
-          flags: -- --test-threads=<< pipeline.parameters.large-threads >>
+          flags: -- --test-threads=8
           workspace_member: synthesizer/process
           cache_key: v7-snarkvm-synthesizer-process-cache
 
@@ -841,8 +825,7 @@ jobs:
           no_output_timeout: 30m
           command: |
             sudo apt-get install nodejs
-            curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf -o init.sh
-            echo y | sh init.sh
+            (cargo install wasm-pack || true)
             cd wasm && wasm-pack test --node
             # cargo test --target wasm32-unknown-unknown
       - clear_environment:
