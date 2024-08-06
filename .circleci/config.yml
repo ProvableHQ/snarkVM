@@ -678,6 +678,7 @@ jobs:
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
+          flags: -- --test-threads=<< pipeline.parameters.large-threads >>
           workspace_member: parameters
           cache_key: v7-snarkvm-parameters-cache
 
@@ -687,7 +688,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: --lib --bins -- --test-threads=<< pipeline.parameters.large-threads >>
+          flags: --lib --bins -- --test-threads=6
           workspace_member: synthesizer
           cache_key: v7-snarkvm-synthesizer-cache
 
