@@ -63,12 +63,9 @@ impl<N: Network> Transaction<N> {
     /// Initializes a new execution transaction.
     pub fn from_execution(execution: Execution<N>, fee: Option<Fee<N>>) -> Result<Self> {
         // Ensure the transaction is not empty.
-        info!("log_from_execution-1");
         ensure!(!execution.is_empty(), "Attempted to create an empty execution transaction");
-        info!("log_from_execution-2");
         // Compute the transaction ID.
         let id = *Self::execution_tree(&execution, &fee)?.root();
-        info!("log_from_execution-3");
         // Construct the execution transaction.
         Ok(Self::Execute(id.into(), execution, fee))
     }
