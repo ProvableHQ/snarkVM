@@ -840,7 +840,8 @@ jobs:
           no_output_timeout: 30m
           command: |
             sudo apt-get install nodejs
-            yes | curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+            curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf -o init.sh
+            yes | sh init.sh
             cd wasm && wasm-pack test --node
             # cargo test --target wasm32-unknown-unknown
       - clear_environment:
