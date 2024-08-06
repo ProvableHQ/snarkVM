@@ -687,7 +687,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: --lib --bins -- --test-threads=<< pipeline.parameters.xlarge-threads >>
+          flags: --lib --bins -- --test-threads=<< pipeline.parameters.large-threads >>
           workspace_member: synthesizer
           cache_key: v7-snarkvm-synthesizer-cache
 
@@ -840,7 +840,7 @@ jobs:
           no_output_timeout: 30m
           command: |
             sudo apt-get install nodejs
-            curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+            yes | curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
             cd wasm && wasm-pack test --node
             # cargo test --target wasm32-unknown-unknown
       - clear_environment:
