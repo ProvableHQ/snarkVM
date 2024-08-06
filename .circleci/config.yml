@@ -5,31 +5,31 @@ parameters:
     type: string
     default: small
   small-threads:
-    type: string
+    type: integer
     default: 2
   medium:
     type: string
     default: medium
   medium-threads:
-    type: string
+    type: integer
     default: 4
   large:
     type: string
     default: large
   large-threads:
-    type: string
+    type: integer
     default: 8
   xlarge:
     type: string
     default: xlarge
   xlarge-threads:
-    type: string
+    type: integer
     default: 16
   twoxlarge:
     type: string
     default: 2xlarge
   twoxlarge-threads:
-    type: string
+    type: integer
     default: 32
 
 orbs:
@@ -81,7 +81,8 @@ commands:
       - run:
           name: Prepare environment and install dependencies
           command: |
-            export SCCACHE_CACHE_SIZE=200M
+            echo 'export "RUSTC_WRAPPER"="sccache"' >> $BASH_ENV
+            echo 'export "SCCACHE_CACHE_SIZE"="200M"' >> $BASH_ENV
             export WORK_DIR="$CIRCLE_WORKING_DIRECTORY/.cache/sccache"
             export SCCACHE_DIR="$CIRCLE_WORKING_DIRECTORY/.cache/sccache"
             mkdir -p "$CIRCLE_WORKING_DIRECTORY/.bin"
@@ -89,7 +90,6 @@ commands:
             tar -C "$CIRCLE_WORKING_DIRECTORY/.bin" -xvf sccache-v0.3.0-x86_64-unknown-linux-musl.tar.gz
             chmod +x $CIRCLE_WORKING_DIRECTORY/.bin/sccache-v0.3.0-x86_64-unknown-linux-musl/sccache
             mv $CIRCLE_WORKING_DIRECTORY/.bin/sccache-v0.3.0-x86_64-unknown-linux-musl/sccache /home/circleci/bin/sccache
-            export RUSTC_WRAPPER=/home/circleci/bin/sccache
             sccache -s
             rm -rf "/home/circleci/.cargo/registry"
             DEBIAN_FRONTEND=noninteractive sudo apt-get update
