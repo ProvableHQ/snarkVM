@@ -149,6 +149,7 @@ parameters = [ "snarkvm-parameters" ]
 synthesizer = [ "snarkvm-synthesizer" ]
 utilities = [ "snarkvm-utilities" ]
 wasm = [ "snarkvm-wasm" ]
+test_skip_tx_checks = [ "snarkvm-console/test_skip_tx_checks" ]
 
 [dependencies.snarkvm-algorithms]
 path = "./algorithms"
