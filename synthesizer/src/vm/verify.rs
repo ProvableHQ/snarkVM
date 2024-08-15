@@ -102,8 +102,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         /* Transition */
     
         // Ensure the transition IDs are unique.
-        // ensure_is_unique!("transition ID", self, contains_transition_id, transaction.transition_ids());
+        //#[cfg(not(feature = "test_skip_tx_checks"))]
+        #[cfg(feature = "test_skip_tx_checks")]
+        ensure_is_unique!("transition ID", self, contains_transition_id, transaction.transition_ids());
     
+        // info! log hello world
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        info!("Hello, world! - test_skip_tx_checks not active");
+        #[cfg(feature = "test_skip_tx_checks")]
+        info!("Hello, world! - test_skip_tx_checks is active");
+
         /* Input */
     
         // Ensure the input IDs are unique.
