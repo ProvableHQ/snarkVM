@@ -45,6 +45,7 @@ serial = [
 ]
 setup = [ ]
 test = [ ]
+test_skip_tx_checks = []
 timer = [ "aleo-std/timer" ]
 wasm = [
   "process",
