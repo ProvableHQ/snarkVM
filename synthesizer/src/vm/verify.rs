@@ -69,41 +69,43 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn check_transaction<R: CryptoRng + Rng>(
         &self,
         transaction: &Transaction<N>,
-        _rejected_id: Option<Field<N>>,
-        _rng: &mut R,
+        rejected_id: Option<Field<N>>,
+        rng: &mut R,
     ) -> Result<()> {
         let timer = timer!("VM::check_transaction");
 
         /* Transaction */
 
         // Allocate a buffer to write the transaction.
-        let mut _buffer: Vec<u8> = Vec::with_capacity(N::MAX_TRANSACTION_SIZE);
+        let mut buffer: Vec<u8> = Vec::with_capacity(N::MAX_TRANSACTION_SIZE);
         // Ensure that the transaction is well formed and does not exceed the maximum size.
-        // if let Err(error) = transaction.write_le(LimitedWriter::new(&mut buffer, N::MAX_TRANSACTION_SIZE)) {
-        //     bail!("Transaction '{}' is not well-formed: {error}", transaction.id())
-        // }
-
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        if let Err(error) = transaction.write_le(LimitedWriter::new(&mut buffer, N::MAX_TRANSACTION_SIZE)) {
+            bail!("Transaction '{}' is not well-formed: {error}", transaction.id())
+        }
+    
         // Ensure the transaction ID is unique.
-        // if self.block_store().contains_transaction_id(&transaction.id())? {
-        //     bail!("Transaction '{}' already exists in the ledger", transaction.id())
-        // }
-
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        if self.block_store().contains_transaction_id(&transaction.id())? {
+            bail!("Transaction '{}' already exists in the ledger", transaction.id())
+        }
+    
         // Compute the Merkle root of the transaction.
-        // match transaction.to_root() {
-        //     Ok(root) if *transaction.id() != root => bail!("Incorrect transaction ID ({})", transaction.id()),
-        //     Ok(_) => (),
-        //     Err(error) => {
-        //         bail!("Failed to compute the Merkle root of the transaction: {error}\n{transaction}");
-        //     }
-        // };
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        match transaction.to_root() {
+            Ok(root) if *transaction.id() != root => bail!("Incorrect transaction ID ({})", transaction.id()),
+            Ok(_) => (),
+            Err(error) => {
+                bail!("Failed to compute the Merkle root of the transaction: {error}\n{transaction}");
+            }
+        };
         lap!(timer, "Verify the transaction ID");
 
         /* Transition */
 
         // Ensure the transition IDs are unique.
-        #[cfg(not(feature = "test_skip_tx_checks"))] // use brackets for scope {}
+        #[cfg(not(feature = "test_skip_tx_checks"))]
         ensure_is_unique!("transition ID", self, contains_transition_id, transaction.transition_ids());
-        //#[cfg(feature = "test_skip_tx_checks")]
     
         // info! log hello world
         #[cfg(not(feature = "test_skip_tx_checks"))]
@@ -114,89 +116,113 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         /* Input */
 
         // Ensure the input IDs are unique.
-        // ensure_is_unique!("input ID", self, contains_input_id, transaction.input_ids());
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        ensure_is_unique!("input ID", self, contains_input_id, transaction.input_ids());
         // Ensure the serial numbers are unique.
-        // ensure_is_unique!("serial number", self, contains_serial_number, transaction.serial_numbers());
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        ensure_is_unique!("serial number", self, contains_serial_number, transaction.serial_numbers());
         // Ensure the tags are unique.
-        // ensure_is_unique!("tag", self, contains_tag, transaction.tags());
-
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        ensure_is_unique!("tag", self, contains_tag, transaction.tags());
+    
         /* Output */
 
         // Ensure the output IDs are unique.
-        // ensure_is_unique!("output ID", self, contains_output_id, transaction.output_ids());
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        ensure_is_unique!("output ID", self, contains_output_id, transaction.output_ids());
         // Ensure the commitments are unique.
-        // ensure_is_unique!("commitment", self, contains_commitment, transaction.commitments());
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        ensure_is_unique!("commitment", self, contains_commitment, transaction.commitments());
         // Ensure the nonces are unique.
-        // ensure_is_unique!("nonce", self, contains_nonce, transaction.nonces());
-
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        ensure_is_unique!("nonce", self, contains_nonce, transaction.nonces());
+    
         /* Metadata */
 
         // Ensure the transition public keys are unique.
-        // ensure_is_unique!("transition public key", self, contains_tpk, transaction.transition_public_keys());
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        ensure_is_unique!("transition public key", self, contains_tpk, transaction.transition_public_keys());
         // Ensure the transition commitments are unique.
-        // ensure_is_unique!("transition commitment", self, contains_tcm, transaction.transition_commitments());
-
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        ensure_is_unique!("transition commitment", self, contains_tcm, transaction.transition_commitments());
+    
         lap!(timer, "Check for duplicate elements");
 
         // First, verify the fee.
-        // self.check_fee(transaction, rejected_id)?;
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        self.check_fee(transaction, rejected_id)?;
 
+        // Construct the transaction checksum.
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
+    
         // Check if the transaction exists in the partially-verified cache.
-        // let is_partially_verified = self.partially_verified_transactions.read().peek(&transaction.id()).is_some();
-
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        let is_partially_verified = self.partially_verified_transactions.read().peek(&transaction.id()).is_some();
+    
         // Next, verify the deployment or execution.
         match transaction {
             Transaction::Deploy(id, owner, deployment, _) => {
                 // Compute the deployment ID.
-                // let Ok(deployment_id) = deployment.to_deployment_id() else {
-                //     bail!("Failed to compute the Merkle root for a deployment transaction '{id}'")
-                // };
+                #[cfg(not(feature = "test_skip_tx_checks"))]
+                let Ok(deployment_id) = deployment.to_deployment_id() else {
+                    bail!("Failed to compute the Merkle root for a deployment transaction '{id}'")
+                };
                 // Verify the signature corresponds to the transaction ID.
-                // ensure!(owner.verify(deployment_id), "Invalid owner signature for deployment transaction '{id}'");
+                #[cfg(not(feature = "test_skip_tx_checks"))]
+                ensure!(owner.verify(deployment_id), "Invalid owner signature for deployment transaction '{id}'");
                 // Ensure the edition is correct.
-                // if deployment.edition() != N::EDITION {
-                //     bail!("Invalid deployment transaction '{id}' - expected edition {}", N::EDITION)
-                // }
+                #[cfg(not(feature = "test_skip_tx_checks"))]
+                if deployment.edition() != N::EDITION {
+                    bail!("Invalid deployment transaction '{id}' - expected edition {}", N::EDITION)
+                }
                 // Ensure the program ID does not already exist in the store.
-                // if self.transaction_store().contains_program_id(deployment.program_id())? {
-                //     bail!("Program ID '{}' is already deployed", deployment.program_id())
-                // }
+                #[cfg(not(feature = "test_skip_tx_checks"))]
+                if self.transaction_store().contains_program_id(deployment.program_id())? {
+                    bail!("Program ID '{}' is already deployed", deployment.program_id())
+                }
                 // Ensure the program does not already exist in the process.
-                // if self.contains_program(deployment.program_id()) {
-                //     bail!("Program ID '{}' already exists", deployment.program_id());
-                // }
+                #[cfg(not(feature = "test_skip_tx_checks"))]
+                if self.contains_program(deployment.program_id()) {
+                    bail!("Program ID '{}' already exists", deployment.program_id());
+                }
                 // Verify the deployment if it has not been verified before.
-                // if !is_partially_verified {
-                //     match try_vm_runtime!(|| self.check_deployment_internal(deployment, rng)) {
-                //         Ok(result) => result?,
-                //         Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
-                //     }
-                // }
+                #[cfg(not(feature = "test_skip_tx_checks"))]
+                if !is_partially_verified {
+                    match try_vm_runtime!(|| self.check_deployment_internal(deployment, rng)) {
+                        Ok(result) => result?,
+                        Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
+                    }
+                }
             }
             Transaction::Execute(id, execution, _) => {
                 // Compute the execution ID.
-                // let Ok(execution_id) = execution.to_execution_id() else {
-                //     bail!("Failed to compute the Merkle root for an execution transaction '{id}'")
-                // };
+                #[cfg(not(feature = "test_skip_tx_checks"))]
+                let Ok(execution_id) = execution.to_execution_id() else {
+                    bail!("Failed to compute the Merkle root for an execution transaction '{id}'")
+                };
                 // Ensure the execution was not previously rejected (replay attack prevention).
-                // if self.block_store().contains_rejected_deployment_or_execution_id(&execution_id)? {
-                //     bail!("Transaction '{id}' contains a previously rejected execution")
-                // }
+                #[cfg(not(feature = "test_skip_tx_checks"))]
+                if self.block_store().contains_rejected_deployment_or_execution_id(&execution_id)? {
+                    bail!("Transaction '{id}' contains a previously rejected execution")
+                }
                 // Verify the execution.
-                // match try_vm_runtime!(|| self.check_execution_internal(execution, is_partially_verified)) {
-                //     Ok(result) => result?,
-                //     Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
-                // }
+                #[cfg(not(feature = "test_skip_tx_checks"))]
+                match try_vm_runtime!(|| self.check_execution_internal(execution, is_partially_verified)) {
+                    Ok(result) => result?,
+                    Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
+                }
             }
             Transaction::Fee(..) => { /* no-op */ }
         }
 
         // If the above checks have passed and this is not a fee transaction,
         // then add the transaction ID to the partially-verified transactions cache.
-        // if !matches!(transaction, Transaction::Fee(..)) && !is_partially_verified {
-        //     self.partially_verified_transactions.write().push(transaction.id(), ());
-        // }
-
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        if !matches!(transaction, Transaction::Fee(..)) && !is_partially_verified {
+            self.partially_verified_transactions.write().push(transaction.id(), checksum);
+        }
+    
         finish!(timer, "Verify the transaction");
         Ok(())
     }
