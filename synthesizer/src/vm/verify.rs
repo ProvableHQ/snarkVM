@@ -74,7 +74,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ) -> Result<()> {
         let timer = timer!("VM::check_transaction");
 
-        /* Transaction */
+        #[cfg(not(feature = "test_skip_tx_checks"))]
+        info!("In check_transaction - test_skip_tx_checks is not active");
+        #[cfg(feature = "test_skip_tx_checks")]
+        info!("In check_transaction - test_skip_tx_checks is active");
+    
 
         // Allocate a buffer to write the transaction.
         let mut buffer: Vec<u8> = Vec::with_capacity(N::MAX_TRANSACTION_SIZE);
@@ -107,12 +111,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         #[cfg(not(feature = "test_skip_tx_checks"))]
         ensure_is_unique!("transition ID", self, contains_transition_id, transaction.transition_ids());
     
-        // info! log hello world
-        #[cfg(not(feature = "test_skip_tx_checks"))]
-        info!("Hello, world! - test_skip_tx_checks not active");
-        #[cfg(feature = "test_skip_tx_checks")]
-        info!("Hello, world! - test_skip_tx_checks is active");
-
         /* Input */
 
         // Ensure the input IDs are unique.
