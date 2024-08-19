@@ -68,7 +68,7 @@ impl<N: Network> BatchHeader<N> {
     /// Note: This limit is set to 50 as part of safety measures to prevent DoS attacks.
     /// This limit can be increased in the future as performance improves. Alternatively,
     /// the rate of block production can be sped up to compensate for the limit set here.
-    pub const MAX_TRANSMISSIONS_PER_BATCH: usize = 50;
+    pub const MAX_TRANSMISSIONS_PER_BATCH: usize = 30;
 }
 
 impl<N: Network> BatchHeader<N> {
