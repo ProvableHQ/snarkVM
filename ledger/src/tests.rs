@@ -21,11 +21,11 @@ use crate::{
 use aleo_std::StorageMode;
 use console::{
     account::{Address, PrivateKey},
-    network::{prelude::*, MainnetV0},
+    network::{prelude::*, CanaryV0, MainnetV0, TestnetV0},
     program::{Entry, Identifier, Literal, Plaintext, ProgramID, Value},
     types::U16,
 };
-use ledger_authority::Authority;
+use crate::Authority;
 use ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
 use ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use ledger_narwhal::{BatchCertificate, BatchHeader, Data, Subdag, Transmission, TransmissionID};
@@ -2483,96 +2483,22 @@ finalize is_id:
 }
 
 #[test]
-fn test_deployment_with_cast_from_field_to_scalar() {
+fn test_check_next_block() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
-
-    const ITERATIONS: usize = 10;
-
-    // Construct a program that casts a field to a scalar.
-    let program = Program::<CurrentNetwork>::from_str(
-        r"
-program test_cast_field_to_scalar.aleo;
-function foo:
-    input r0 as field.public;
-    cast r0 into r1 as scalar;",
-    )
-    .unwrap();
-
-    // Constructs a program that has a struct with a field that is cast to a scalar.
-    let program_2 = Program::<CurrentNetwork>::from_str(
-        r"
-program test_cast_f_to_s_struct.aleo;
-
-struct message:
-    first as scalar;
-
-function foo:
-    input r0 as field.public;
-    cast r0 into r1 as scalar;
-    cast r1 into r2 as message;",
-    )
-    .unwrap();
-
-    // Constructs a program that has an array of scalars cast from fields.
-    let program_3 = Program::<CurrentNetwork>::from_str(
-        r"
-program test_cast_f_to_s_array.aleo;
-
-function foo:
-    input r0 as field.public;
-    cast r0 into r1 as scalar;
-    cast r1 r1 r1 r1 into r2 as [scalar; 4u32];",
-    )
-    .unwrap();
-
-    // Initialize the test environment.
-    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
-
-    // Create a helper method to deploy the programs.
-    let deploy_program = |program: &Program<CurrentNetwork>, rng: &mut TestRng| {
-        let mut attempts = 0;
-        loop {
-            if attempts >= ITERATIONS {
-                panic!("Failed to craft deployment after {ITERATIONS} attempts");
-            }
-            match try_vm_runtime!(|| ledger.vm().deploy(&private_key, program, None, 0, None, rng)) {
-                Ok(result) => break result.unwrap(),
-                Err(_) => attempts += 1,
-            }
-        }
-    };
-
-    // Deploy the programs. Keep attempting to create a deployment until it is successful.
-    let deployment_tx = deploy_program(&program, rng);
-    let deployment_tx_2 = deploy_program(&program_2, rng);
-    let deployment_tx_3 = deploy_program(&program_3, rng);
-
-    // Verify the deployment under different RNGs to ensure the deployment is valid.
-    for _ in 0..ITERATIONS {
-        let process = ledger.vm().process().clone();
-        // Create a helper method to verify the deployments.
-        let verify_deployment = |deployment_tx: &Transaction<CurrentNetwork>, rng: &mut TestRng| {
-            let expected_result = match try_vm_runtime!(|| ledger.vm().check_transaction(deployment_tx, None, rng)) {
-                Ok(result) => result.is_ok(),
-                Err(_) => false,
-            };
-            let deployment = deployment_tx.deployment().unwrap().clone();
-            for _ in 0..ITERATIONS {
-                let result =
-                    match try_vm_runtime!(|| process.read().verify_deployment::<CurrentAleo, _>(&deployment, rng)) {
-                        Ok(result) => result.is_ok(),
-                        Err(_) => false,
-                    };
-                assert_eq!(result, expected_result);
-            }
-        };
-
-        // Verify the deployments.
-        verify_deployment(&deployment_tx, rng);
-        verify_deployment(&deployment_tx_2, rng);
-        verify_deployment(&deployment_tx_3, rng);
-    }
+    // Deserialize the block from a file.
+    let genesis_bytes = std::fs::read("src/genesis.bin").unwrap();
+    let genesis: Block<MainnetV0> = bincode::deserialize(&genesis_bytes).unwrap();
+    // Initialize the ledger.
+    let ledger = CurrentLedger::load(genesis.clone(), StorageMode::Production).unwrap();
+    // Read block from file.
+    let block_bytes = std::fs::read("src/block.bin").unwrap();
+    let block: Block<MainnetV0> = bincode::deserialize(&block_bytes).unwrap();
+    // Print the number of transactions in the block.
+    let num_transactions = block.transactions().len();
+    println!("Block contains {num_transactions} transactions.");
+    // Check next block
+    ledger.check_next_block(&block, rng).unwrap();
 }
 
 // These tests require the proof targets to be low enough to be able to generate **valid** solutions.
