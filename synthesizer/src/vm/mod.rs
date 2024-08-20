@@ -274,6 +274,44 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns a new genesis block for a beacon chain.
+    pub fn large_genesis_beacon<R: Rng + CryptoRng>(
+        &self,
+        private_key: &PrivateKey<N>,
+        rng: &mut R,
+        committee_size: u16,
+    ) -> Result<Block<N>> {
+        let private_keys = [Ok(*private_key)]
+            .into_iter()
+            .chain((1..committee_size).map(|_| Ok(PrivateKey::new(rng)?)))
+            .collect::<Result<Vec<_>>>()?;
+        let addresses =
+            private_keys.iter().map(|private_key| Address::try_from(private_key)).collect::<Result<Vec<_>>>()?;
+        // Construct the committee members.
+        let members = addresses
+            .iter()
+            .map(|address| (*address, (ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8)))
+            .collect::<IndexMap<_, _>>();
+        // Construct the committee.
+        let committee = Committee::<N>::new_genesis(members)?;
+
+        // Compute the remaining supply.
+        let remaining_supply = N::STARTING_SUPPLY - (ledger_committee::MIN_VALIDATOR_STAKE * committee_size as u64);
+        // Construct the public balances.
+        let public_balances = addresses
+            .iter()
+            .map(|address| (*address, remaining_supply / committee_size as u64))
+            .collect::<IndexMap<_, _>>();
+        // Construct the bonded balances.
+        let bonded_balances = committee
+            .members()
+            .iter()
+            .map(|(address, (amount, _, _))| (*address, (*address, *address, *amount)))
+            .collect();
+        // Return the genesis block.
+        self.genesis_quorum(private_key, committee, public_balances, bonded_balances, rng)
+    }
+
+    /// Returns a new genesis block for a beacon chain.
     pub fn genesis_beacon<R: Rng + CryptoRng>(&self, private_key: &PrivateKey<N>, rng: &mut R) -> Result<Block<N>> {
         let private_keys = [*private_key, PrivateKey::new(rng)?, PrivateKey::new(rng)?, PrivateKey::new(rng)?];
 
