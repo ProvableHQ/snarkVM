@@ -21,11 +21,11 @@ use crate::{
 use aleo_std::StorageMode;
 use console::{
     account::{Address, PrivateKey},
-    network::{prelude::*, MainnetV0},
+    network::{prelude::*, CanaryV0, MainnetV0, TestnetV0},
     program::{Entry, Identifier, Literal, Plaintext, ProgramID, Value},
     types::U16,
 };
-use ledger_block::{ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
+use ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
 use ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use ledger_store::{helpers::memory::ConsensusMemory, ConsensusStore};
 use synthesizer::{program::Program, vm::VM, Stack};
@@ -2344,6 +2344,25 @@ finalize is_id:
         .unwrap();
     // Advance to the next block.
     ledger.advance_to_next_block(&block_3).unwrap();
+}
+
+#[test]
+fn test_check_next_block() {
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+    // Deserialize the block from a file.
+    let genesis_bytes = std::fs::read("src/genesis.bin").unwrap();
+    let genesis: Block<MainnetV0> = bincode::deserialize(&genesis_bytes).unwrap();
+    // Initialize the ledger.
+    let ledger = CurrentLedger::load(genesis.clone(), StorageMode::Production).unwrap();
+    // Read block from file.
+    let block_bytes = std::fs::read("src/block.bin").unwrap();
+    let block: Block<MainnetV0> = bincode::deserialize(&block_bytes).unwrap();
+    // Print the number of transactions in the block.
+    let num_transactions = block.transactions().len();
+    println!("Block contains {num_transactions} transactions.");
+    // Check next block
+    ledger.check_next_block(&block, rng).unwrap();
 }
 
 // These tests require the proof targets to be low enough to be able to generate **valid** solutions.
