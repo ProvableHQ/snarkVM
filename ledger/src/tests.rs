@@ -2360,7 +2360,9 @@ fn test_deployment_with_cast_from_field_to_scalar() {
 program test_cast_field_to_scalar.aleo;
 function foo:
     input r0 as field.public;
-    cast r0 into r1 as scalar;",
+    cast r0 into r1 as scalar;
+    cast r1 r1 r1 r1 into r2 as [scalar; 4u32];
+    ",
     )
     .unwrap();
 
