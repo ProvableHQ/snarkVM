@@ -2346,6 +2346,34 @@ finalize is_id:
     ledger.advance_to_next_block(&block_3).unwrap();
 }
 
+#[test]
+fn test_deployment_with_cast_from_field_to_scalar() {
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
+    // Initialize the test environment.
+    let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
+
+    // Construct a program that casts a field to a scalar.
+    let program = Program::<CurrentNetwork>::from_str(
+        r"
+program test_cast_field_to_scalar.aleo;
+function foo:
+    input r0 as field.public;
+    cast r0 into r1 as scalar;",
+    )
+    .unwrap();
+
+    // Deploy the program.
+    let deployment = ledger.vm().deploy(&private_key, &program, None, 0, None, rng).unwrap();
+
+    // Verify the deployment under different RNGs to ensure the deployment is valid.
+    for _ in 0..20 {
+        let rng = &mut TestRng::default();
+        assert!(ledger.vm().check_transaction(&deployment, None, rng).is_ok());
+    }
+}
+
 // These tests require the proof targets to be low enough to be able to generate **valid** solutions.
 // This requires the 'test' feature to be enabled for the `console` dependency.
 #[cfg(feature = "test")]
