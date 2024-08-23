@@ -36,6 +36,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             }
         }
 
+        // Ensure the transactions do not already exist.
+        for transaction_id in block.transactions().transaction_ids() {
+            if self.contains_transaction_id(transaction_id)? {
+                bail!("Transaction ID {transaction_id} already exists in the ledger");
+            }
+        }
+
         // TODO (howardwu): Remove this after moving the total supply into credits.aleo.
         {
             // // Retrieve the latest total supply.
