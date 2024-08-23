@@ -20,7 +20,7 @@ mod store;
 use crate::{CallStack, RegisterTypes, RegistersCall};
 use console::{
     network::prelude::*,
-    program::{Entry, Literal, LiteralType, Plaintext, PlaintextType, Register, RegisterType, Value},
+    program::{Entry, Literal, Plaintext, Register, Value},
     types::{Address, Field},
 };
 use synthesizer_program::{
