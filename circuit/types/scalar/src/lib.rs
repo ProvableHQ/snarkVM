@@ -73,10 +73,18 @@ impl<E: Environment> Eject for Scalar<E> {
 
     /// Ejects the scalar circuit as a console scalar.
     fn eject_value(&self) -> Self::Primitive {
-        console::Scalar::<E::Network>::from_bits_le(
-            &self.field.eject_value().to_bits_le()[..console::Scalar::<E::Network>::size_in_bits()],
-        )
-        .unwrap()
+        // If the field value is larger than the scalar modulus, truncate it.
+        // This is to ensure that an ejection does not halt.
+        if self.field.eject_value().to_bigint() > (-console::Scalar::<E::Network>::one()).to_bigint() {
+            // This unwrap is safe because the field value is truncated to be less than the scalar modulus.
+            console::Scalar::<E::Network>::from_bits_le(
+                &self.field.eject_value().to_bits_le()[..console::Scalar::<E::Network>::size_in_data_bits()],
+            )
+            .unwrap()
+        } else {
+            // This unwrap is safe because the field value is guaranteed to be less than the scalar modulus.
+            console::Scalar::<E::Network>::from_bits_le(&self.field.eject_value().to_bits_le()).unwrap()
+        }
     }
 }
 
