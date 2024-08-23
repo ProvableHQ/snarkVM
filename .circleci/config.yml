@@ -972,6 +972,7 @@ workflows:
       - synthesizer-program-integration-instruction-is
       - synthesizer-program-integration-instruction-equal
       - synthesizer-program-integration-instruction-commit
+      - synthesizer-program-integration-instruction-cast
       - synthesizer-snark
       - utilities
       - utilities-derives
