@@ -159,23 +159,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersLoadCircuit<N, A> for R
         match self.register_types.get_type(stack, register) {
             // Ensure the stack value matches the register type.
             Ok(register_type) => {
-                // Check if the register type and circuit value are both scalar.
-                let register_type_is_scalar =
-                    matches!(register_type, RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Scalar)));
-                let circuit_value_is_scalar = matches!(
-                    circuit_value,
-                    circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Scalar(_), _))
-                );
-
-                // Check if the register type matches the type in the circuit value.
-                // We do a special check for scalar values, as there is a possibility of an overflow via
-                // field to scalar conversion in deployment verification.
-                match register_type_is_scalar && circuit_value_is_scalar {
-                    true => {}
-                    false => {
-                        stack.matches_register_type(&circuit::Eject::eject_value(&circuit_value), &register_type)?
-                    }
-                }
+                stack.matches_register_type(&circuit::Eject::eject_value(&circuit_value), &register_type)?
             }
             // Ensure the register is defined.
             Err(error) => bail!("Register '{register}' is not a member of the function: {error}"),
