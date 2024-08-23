@@ -73,10 +73,7 @@ impl<E: Environment> Eject for Scalar<E> {
 
     /// Ejects the scalar circuit as a console scalar.
     fn eject_value(&self) -> Self::Primitive {
-        match console::Scalar::<E::Network>::from_bits_le(&self.field.eject_value().to_bits_le()) {
-            Ok(scalar) => scalar,
-            Err(error) => E::halt(format!("Failed to eject scalar value: {error}")),
-        }
+        console::Scalar::<E::Network>::from_field_lossy(&self.field.eject_value())
     }
 }
 
