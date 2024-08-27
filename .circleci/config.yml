@@ -15,7 +15,7 @@ parameters:
     default: xlarge
   twoxlarge:
     type: string
-    default: aleonet/2xlarge
+    default: 2xlarge+
 
 orbs:
   windows: circleci/windows@5.0
@@ -686,7 +686,7 @@ jobs:
   synthesizer-process:
     docker:
       - image: cimg/rust:1.76.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.large >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           workspace_member: synthesizer/process
