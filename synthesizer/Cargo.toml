@@ -32,7 +32,7 @@ aleo-cli = [ ]
 async = [ "ledger-query/async", "synthesizer-process/async" ]
 cuda = [ "algorithms/cuda" ]
 history = [ "serde" ]
-rocks = ["ledger-store/rocks", "synthesizer-process/rocks"]
+rocks = [ "ledger-store/rocks" ]
 serial = [
   "console/serial",
   "ledger-block/serial",

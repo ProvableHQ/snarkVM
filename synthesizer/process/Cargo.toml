@@ -78,9 +78,6 @@ package = "snarkvm-ledger-store"
 path = "../../ledger/store"
 version = "=0.16.19"
 
-[dependencies.lru]
-version = "0.12"
-
 [dependencies.synthesizer-program]
 package = "snarkvm-synthesizer-program"
 path = "../../synthesizer/program"
@@ -96,12 +93,9 @@ package = "snarkvm-utilities"
 path = "../../utilities"
 version = "=0.16.19"
 
-[dependencies.tracing]
-version = "0.1"
-
 [dependencies.aleo-std]
 version = "0.1.24"
-features = ["storage"]
+default-features = false
 
 [dependencies.colored]
 version = "2"
