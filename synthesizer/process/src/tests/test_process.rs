@@ -62,29 +62,37 @@ function compute:
     output r2 as u32.public;",
     )
     .unwrap();
-    // Initialize a new process.
-    let mut process = crate::test_helpers::sample_process(&program1);
-    assert!(process.contains_program(program1.id()));
-
-    for i in 2..=65 {
-        let source = format!(
-            r"
-program testing{i}.aleo;
+    let (_, program2) = Program::<CurrentNetwork>::parse(
+        r"
+program testing2.aleo;
 
 function compute:
     input r0 as u32.private;
     input r1 as u32.public;
     add r0 r1 into r2;
-    output r2 as u32.public;"
-        );
-        // Program1 should still be cached
-        assert!(process.contains_program(program1.id()));
-        let (_, program) = Program::<CurrentNetwork>::parse(&source).unwrap();
-        process.add_program(&program).unwrap();
-        assert!(process.contains_program(program.id()));
-    }
+    output r2 as u32.public;",
+    )
+    .unwrap();
+    let (_, program3) = Program::<CurrentNetwork>::parse(
+        r"
+program testing3.aleo;
 
-    // only 64 programs are cached, so program1 should be evicted
+function compute:
+    input r0 as u32.private;
+    input r1 as u32.public;
+    add r0 r1 into r2;
+    output r2 as u32.public;",
+    )
+    .unwrap();
+
+    // Initialize a new process.
+    let mut process = crate::test_helpers::sample_process(&program1);
+    assert!(process.contains_program(program1.id()));
+    process.add_program(&program2).unwrap();
+    assert!(process.contains_program(program2.id()));
+    process.add_program(&program3).unwrap();
+    assert!(process.contains_program(program3.id()));
+    // only 2 programs are cached, so program1 should be evicted
     assert!(!process.contains_program(program1.id()));
     // test we still have credits.aleo
     let credits_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();

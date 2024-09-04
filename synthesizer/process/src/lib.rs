@@ -91,10 +91,8 @@ use ledger_store::helpers::rocksdb::ConsensusDB;
 const MAX_STACKS: usize = 1000;
 
 #[cfg(any(test, feature = "test"))]
-// This must be at least 64 (same as MAX_IMPORTS) to avoid breaking test_max_imports.
-const MAX_STACKS: usize = 64;
+const MAX_STACKS: usize = 2;
 
-#[cfg(feature = "rocks")]
 #[derive(Clone)]
 pub struct Process<N: Network> {
     /// The universal SRS.
@@ -103,21 +101,8 @@ pub struct Process<N: Network> {
     credits: Option<Arc<Stack<N>>>,
     /// The mapping of program IDs to stacks.
     stacks: Arc<Mutex<LruCache<ProgramID<N>, Arc<Stack<N>>>>>,
-    /// The storage.
-    store: Option<ConsensusStore<N, ConsensusDB<N>>>,
-}
-
-#[cfg(not(feature = "rocks"))]
-#[derive(Clone)]
-pub struct Process<N: Network> {
-    /// The universal SRS.
-    universal_srs: Arc<UniversalSRS<N>>,
-    /// The Stack for credits.aleo
-    credits: Option<Arc<Stack<N>>>,
-    /// The mapping of program IDs to stacks.
-    stacks: Arc<Mutex<LruCache<ProgramID<N>, Arc<Stack<N>>>>>,
-    /// The storage.
-    store: Option<ConsensusStore<N, ConsensusMemory<N>>>,
+    /// The storage mode.
+    storage_mode: Option<StorageMode>,
 }
 
 impl<N: Network> Process<N> {
@@ -125,12 +110,13 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn setup<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(rng: &mut R) -> Result<Self> {
         let timer = timer!("Process:setup");
+
         // Initialize the process.
         let mut process = Self {
             universal_srs: Arc::new(UniversalSRS::load()?),
             credits: None,
             stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(MAX_STACKS).unwrap()))),
-            store: None,
+            storage_mode: None,
         };
         lap!(timer, "Initialize process");
 
@@ -187,8 +173,7 @@ impl<N: Network> Process<N> {
     /// Initializes a new process.
     #[inline]
     pub fn load() -> Result<Self> {
-        // Assumption: this is only called in test code.
-        Process::load_from_storage(Some(aleo_std::StorageMode::Development(0)))
+        Process::load_from_storage(None)
     }
 
     /// Initializes a new process.
@@ -196,26 +181,12 @@ impl<N: Network> Process<N> {
     pub fn load_from_storage(storage_mode: Option<StorageMode>) -> Result<Self> {
         let timer = timer!("Process::load");
 
-        debug!("Opening storage");
-        let storage_mode = storage_mode.as_ref().ok_or_else(|| anyhow!("Failed to get storage mode"))?.clone();
-        // try to lazy load the stack
-        #[cfg(feature = "rocks")]
-        let store = ConsensusStore::<N, ConsensusDB<N>>::open(storage_mode);
-        #[cfg(not(feature = "rocks"))]
-        let store = ConsensusStore::<N, ConsensusMemory<N>>::open(storage_mode);
-
-        let store = match store {
-            Ok(store) => store,
-            Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
-        };
-        debug!("Opened storage");
-
         // Initialize the process.
         let mut process = Self {
             universal_srs: Arc::new(UniversalSRS::load()?),
             credits: None,
             stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(MAX_STACKS).unwrap()))),
-            store: Some(store),
+            storage_mode,
         };
         lap!(timer, "Initialize process");
 
@@ -258,7 +229,7 @@ impl<N: Network> Process<N> {
             universal_srs: Arc::new(UniversalSRS::load()?),
             credits: None,
             stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(MAX_STACKS).unwrap()))),
-            store: None,
+            storage_mode: None,
         };
 
         // Initialize the 'credits.aleo' program.
@@ -296,7 +267,17 @@ impl<N: Network> Process<N> {
     fn load_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<()> {
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
         info!("Lazy loading stack for {program_id}");
-        let store = self.store.as_ref().ok_or_else(|| anyhow!("Failed to get store"))?;
+        let storage_mode = self.storage_mode.as_ref().ok_or_else(|| anyhow!("Failed to get storage mode"))?.clone();
+        // try to lazy load the stack
+        #[cfg(feature = "rocks")]
+        let store = ConsensusStore::<N, ConsensusDB<N>>::open(storage_mode);
+        #[cfg(not(feature = "rocks"))]
+        let store = ConsensusStore::<N, ConsensusMemory<N>>::open(storage_mode);
+
+        let store = match store {
+            Ok(store) => store,
+            Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
+        };
         // Retrieve the transaction store.
         let transaction_store = store.transaction_store();
         let deployment_store = transaction_store.deployment_store();

@@ -2371,7 +2371,7 @@ fn test_process_deploy_credits_program() {
         universal_srs: Arc::new(UniversalSRS::<CurrentNetwork>::load().unwrap()),
         credits: None,
         stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(MAX_STACKS).unwrap()))),
-        store: None,
+        storage_mode: None,
     };
 
     // Construct the process.
