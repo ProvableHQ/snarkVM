@@ -88,7 +88,7 @@ use ledger_store::helpers::memory::ConsensusMemory;
 use ledger_store::helpers::rocksdb::ConsensusDB;
 
 #[cfg(not(any(test, feature = "test")))]
-const MAX_STACKS: usize = 1000;
+const MAX_STACKS: usize = 50;
 
 #[cfg(any(test, feature = "test"))]
 const MAX_STACKS: usize = 2;
