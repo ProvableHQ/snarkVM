@@ -21,7 +21,7 @@ use crate::{
 use aleo_std::StorageMode;
 use console::{
     account::{Address, PrivateKey},
-    network::{prelude::*, CanaryV0, MainnetV0, TestnetV0},
+    network::{prelude::*, MainnetV0},
     program::{Entry, Identifier, Literal, Plaintext, ProgramID, Value},
     types::U16,
 };

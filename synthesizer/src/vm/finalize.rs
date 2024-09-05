@@ -769,12 +769,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is another deployment in the block from the same public fee payer.
     fn should_abort_transaction(
         &self,
-        transaction: &Transaction<N>,
-        transition_ids: &IndexSet<N::TransitionID>,
-        input_ids: &IndexSet<Field<N>>,
-        output_ids: &IndexSet<Field<N>>,
-        tpks: &IndexSet<Group<N>>,
-        deployment_payers: &IndexSet<Address<N>>,
+        _transaction: &Transaction<N>,
+        _transition_ids: &IndexSet<N::TransitionID>,
+        _input_ids: &IndexSet<Field<N>>,
+        _output_ids: &IndexSet<Field<N>>,
+        _tpks: &IndexSet<Group<N>>,
+        _deployment_payers: &IndexSet<Address<N>>,
     ) -> Option<String> {
         // Ensure that the transaction is not producing a duplicate transition.
         #[cfg(not(feature = "test_skip_tx_checks"))]
