@@ -69,8 +69,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn check_transaction<R: CryptoRng + Rng>(
         &self,
         transaction: &Transaction<N>,
-        rejected_id: Option<Field<N>>,
-        rng: &mut R,
+        _rejected_id: Option<Field<N>>,
+        _rng: &mut R,
     ) -> Result<()> {
         let timer = timer!("VM::check_transaction");
 
@@ -79,23 +79,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         info!("In check_transaction - test_skip_tx_checks is not active");
         #[cfg(feature = "test_skip_tx_checks")]
         info!("In check_transaction - test_skip_tx_checks is active");
-    
+
         /* Transaction */
 
         // Allocate a buffer to write the transaction.
-        let mut buffer: Vec<u8> = Vec::with_capacity(N::MAX_TRANSACTION_SIZE);
+        let _buffer: Vec<u8> = Vec::with_capacity(N::MAX_TRANSACTION_SIZE);
         // Ensure that the transaction is well formed and does not exceed the maximum size.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         if let Err(error) = transaction.write_le(LimitedWriter::new(&mut buffer, N::MAX_TRANSACTION_SIZE)) {
             bail!("Transaction '{}' is not well-formed: {error}", transaction.id())
         }
-    
+
         // Ensure the transaction ID is unique.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         if self.block_store().contains_transaction_id(&transaction.id())? {
             bail!("Transaction '{}' already exists in the ledger", transaction.id())
         }
-    
+
         // Compute the Merkle root of the transaction.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         match transaction.to_root() {
@@ -106,15 +106,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         };
         lap!(timer, "Verify the transaction ID");
-    
+
         /* Transition */
-    
+
         // Ensure the transition IDs are unique.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         ensure_is_unique!("transition ID", self, contains_transition_id, transaction.transition_ids());
-    
+
         /* Input */
-    
+
         // Ensure the input IDs are unique.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         ensure_is_unique!("input ID", self, contains_input_id, transaction.input_ids());
@@ -124,9 +124,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure the tags are unique.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         ensure_is_unique!("tag", self, contains_tag, transaction.tags());
-    
+
         /* Output */
-    
+
         // Ensure the output IDs are unique.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         ensure_is_unique!("output ID", self, contains_output_id, transaction.output_ids());
@@ -136,18 +136,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure the nonces are unique.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         ensure_is_unique!("nonce", self, contains_nonce, transaction.nonces());
-    
+
         /* Metadata */
-    
+
         // Ensure the transition public keys are unique.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         ensure_is_unique!("transition public key", self, contains_tpk, transaction.transition_public_keys());
         // Ensure the transition commitments are unique.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         ensure_is_unique!("transition commitment", self, contains_tcm, transaction.transition_commitments());
-    
+
         lap!(timer, "Check for duplicate elements");
-    
+
         // First, verify the fee.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         self.check_fee(transaction, rejected_id)?;
@@ -155,14 +155,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Construct the transaction checksum.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
-    
+
         // Check if the transaction exists in the partially-verified cache.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         let is_partially_verified = self.partially_verified_transactions.read().peek(&transaction.id()).is_some();
-    
+
         // Next, verify the deployment or execution.
         match transaction {
-            Transaction::Deploy(id, owner, deployment, _) => {
+            Transaction::Deploy(_id, _owner, _deployment, _) => {
                 // Compute the deployment ID.
                 #[cfg(not(feature = "test_skip_tx_checks"))]
                 let Ok(deployment_id) = deployment.to_deployment_id() else {
@@ -195,7 +195,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     }
                 }
             }
-            Transaction::Execute(id, execution, _) => {
+            Transaction::Execute(_id, _execution, _) => {
                 // Compute the execution ID.
                 #[cfg(not(feature = "test_skip_tx_checks"))]
                 let Ok(execution_id) = execution.to_execution_id() else {
@@ -215,14 +215,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
             Transaction::Fee(..) => { /* no-op */ }
         }
-    
+
         // If the above checks have passed and this is not a fee transaction,
         // then add the transaction ID to the partially-verified transactions cache.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         if !matches!(transaction, Transaction::Fee(..)) && !is_partially_verified {
             self.partially_verified_transactions.write().push(transaction.id(), checksum);
         }
-    
+
         finish!(timer, "Verify the transaction");
         Ok(())
     }
