@@ -44,7 +44,7 @@ use ledger_block::{
     Transactions,
 };
 use ledger_committee::Committee;
-
+use ledger_narwhal_data::Data;
 use ledger_puzzle::Puzzle;
 use ledger_query::Query;
 use ledger_store::{
@@ -60,7 +60,7 @@ use ledger_store::{
 };
 use synthesizer_process::{deployment_cost, execution_cost, Authorization, Process, Trace};
 use synthesizer_program::{FinalizeGlobalState, FinalizeOperation, FinalizeStoreTrait, Program};
-
+use utilities::try_vm_runtime;
 
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::{IndexMap, IndexSet};
@@ -281,10 +281,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ) -> Result<Block<N>> {
         let private_keys = [Ok(*private_key)]
             .into_iter()
-            .chain((1..committee_size).map(|_| PrivateKey::new(rng)))
+            .chain((1..committee_size).map(|_| Ok(PrivateKey::new(rng)?)))
             .collect::<Result<Vec<_>>>()?;
         let addresses =
-            private_keys.iter().map(Address::try_from).collect::<Result<Vec<_>>>()?;
+            private_keys.iter().map(|private_key| Address::try_from(private_key)).collect::<Result<Vec<_>>>()?;
         // Construct the committee members.
         let members = addresses
             .iter()
