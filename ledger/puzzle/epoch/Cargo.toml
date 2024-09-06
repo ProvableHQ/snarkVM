@@ -31,7 +31,7 @@ synthesis = [
   "aleo-std",
   "circuit",
   "lru",
-  "parking_lot",
+  "locktick",
   "snarkvm-synthesizer-process",
   "snarkvm-synthesizer-program"
 ]
@@ -82,8 +82,8 @@ features = [ "serde", "rayon" ]
 version = "0.12"
 optional = true
 
-[dependencies.parking_lot]
-version = "0.12"
+[dependencies.locktick]
+version = "0.2"
 optional = true
 
 [dependencies.rand]

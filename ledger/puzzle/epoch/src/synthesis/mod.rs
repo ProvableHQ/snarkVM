@@ -25,8 +25,8 @@ use snarkvm_ledger_puzzle::PuzzleTrait;
 
 use anyhow::{Result, bail};
 use core::{marker::PhantomData, num::NonZeroUsize};
+use locktick::parking_lot::RwLock;
 use lru::LruCache;
-use parking_lot::RwLock;
 use rand_chacha::ChaChaRng;
 use std::sync::Arc;
 

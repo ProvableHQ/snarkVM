@@ -21,7 +21,7 @@ use console::{network::prelude::*, program::Request, types::Field};
 use ledger_block::{Transaction, Transition};
 
 use indexmap::IndexMap;
-use parking_lot::RwLock;
+use locktick::parking_lot::RwLock;
 use std::{collections::VecDeque, sync::Arc};
 
 #[derive(Clone)]

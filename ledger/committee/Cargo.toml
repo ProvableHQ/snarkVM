@@ -86,8 +86,8 @@ optional = true
 [dev-dependencies.bincode]
 version = "1.3"
 
-[dev-dependencies.parking_lot]
-version = "0.12"
+[dev-dependencies.locktick]
+version = "0.2"
 
 [dev-dependencies.rand_distr]
 version = "0.4"

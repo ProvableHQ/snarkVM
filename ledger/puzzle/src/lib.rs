@@ -52,8 +52,8 @@ use console::{
 use aleo_std::prelude::*;
 use core::num::NonZeroUsize;
 use indexmap::IndexMap;
+use locktick::parking_lot::RwLock;
 use lru::LruCache;
-use parking_lot::RwLock;
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
 use std::sync::Arc;

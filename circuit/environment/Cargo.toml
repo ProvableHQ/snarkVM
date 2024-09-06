@@ -50,6 +50,9 @@ version = "2.0.0"
 [dependencies.itertools]
 version = "0.11.0"
 
+[dependencies.locktick]
+version = "0.2"
+
 [dependencies.nom]
 version = "7.1"
 

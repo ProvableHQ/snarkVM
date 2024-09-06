@@ -70,7 +70,7 @@ use aleo_std::{
 use anyhow::Result;
 use core::ops::Range;
 use indexmap::IndexMap;
-use parking_lot::RwLock;
+use locktick::parking_lot::RwLock;
 use rand::{prelude::IteratorRandom, rngs::OsRng};
 use std::{borrow::Cow, sync::Arc};
 use time::OffsetDateTime;

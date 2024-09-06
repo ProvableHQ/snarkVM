@@ -48,7 +48,7 @@ use synthesizer_program::{FinalizeOperation, Program};
 
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
-use parking_lot::RwLock;
+use locktick::parking_lot::RwLock;
 use std::{borrow::Cow, sync::Arc};
 
 #[cfg(not(feature = "serial"))]
