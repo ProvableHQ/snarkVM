@@ -15,6 +15,7 @@
 use crate::{
     advance::split_candidate_solutions,
     test_helpers::{CurrentAleo, CurrentLedger, CurrentNetwork},
+    Authority,
     Ledger,
     RecordsFilter,
 };
@@ -25,7 +26,6 @@ use console::{
     program::{Entry, Identifier, Literal, Plaintext, ProgramID, Value},
     types::U16,
 };
-use crate::Authority;
 use ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
 use ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use ledger_narwhal::{BatchCertificate, BatchHeader, Data, Subdag, Transmission, TransmissionID};
