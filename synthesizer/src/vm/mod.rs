@@ -62,7 +62,6 @@ use ledger_store::{
 use synthesizer_process::{deployment_cost, execution_cost, Authorization, Process, Trace};
 use synthesizer_program::{FinalizeGlobalState, FinalizeOperation, FinalizeStoreTrait, Program};
 
-
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Either;
@@ -284,8 +283,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .into_iter()
             .chain((1..committee_size).map(|_| PrivateKey::new(rng)))
             .collect::<Result<Vec<_>>>()?;
-        let addresses =
-            private_keys.iter().map(Address::try_from).collect::<Result<Vec<_>>>()?;
+        let addresses = private_keys.iter().map(Address::try_from).collect::<Result<Vec<_>>>()?;
         // Construct the committee members.
         let members = addresses
             .iter()

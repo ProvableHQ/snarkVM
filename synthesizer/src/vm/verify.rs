@@ -70,8 +70,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn check_transaction<R: CryptoRng + Rng>(
         &self,
         transaction: &Transaction<N>,
-        _rejected_id: Option<Field<N>>,
-        _rng: &mut R,
+        rejected_id: Option<Field<N>>,
+        rng: &mut R,
     ) -> Result<()> {
         let timer = timer!("VM::check_transaction");
 
@@ -84,7 +84,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         /* Transaction */
 
         // Allocate a buffer to write the transaction.
-        let _buffer: Vec<u8> = Vec::with_capacity(N::MAX_TRANSACTION_SIZE);
+        let mut buffer: Vec<u8> = Vec::with_capacity(N::MAX_TRANSACTION_SIZE);
         // Ensure that the transaction is well formed and does not exceed the maximum size.
         #[cfg(not(feature = "test_skip_tx_checks"))]
         if let Err(error) = transaction.write_le(LimitedWriter::new(&mut buffer, N::MAX_TRANSACTION_SIZE)) {
@@ -155,7 +155,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Construct the transaction checksum.
         #[cfg(not(feature = "test_skip_tx_checks"))]
-        let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
+        let checksum = ledger_narwhal_data::Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into())
+            .to_checksum::<N>()?;
 
         // Check if the transaction exists in the partially-verified cache.
         #[cfg(not(feature = "test_skip_tx_checks"))]
@@ -163,7 +164,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Next, verify the deployment or execution.
         match transaction {
-            Transaction::Deploy(_id, _owner, _deployment, _) => {
+            Transaction::Deploy(id, owner, deployment, _) => {
                 // Compute the deployment ID.
                 #[cfg(not(feature = "test_skip_tx_checks"))]
                 let Ok(deployment_id) = deployment.to_deployment_id() else {
@@ -190,13 +191,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Verify the deployment if it has not been verified before.
                 #[cfg(not(feature = "test_skip_tx_checks"))]
                 if !is_partially_verified {
-                    match try_vm_runtime!(|| self.check_deployment_internal(deployment, rng)) {
+                    match utilities::try_vm_runtime!(|| self.check_deployment_internal(deployment, rng)) {
                         Ok(result) => result?,
                         Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
                     }
                 }
             }
-            Transaction::Execute(_id, _execution, _) => {
+            Transaction::Execute(id, execution, _) => {
                 // Compute the execution ID.
                 #[cfg(not(feature = "test_skip_tx_checks"))]
                 let Ok(execution_id) = execution.to_execution_id() else {
@@ -209,7 +210,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }
                 // Verify the execution.
                 #[cfg(not(feature = "test_skip_tx_checks"))]
-                match try_vm_runtime!(|| self.check_execution_internal(execution, is_partially_verified)) {
+                match utilities::try_vm_runtime!(|| self.check_execution_internal(execution, is_partially_verified)) {
                     Ok(result) => result?,
                     Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
                 }
