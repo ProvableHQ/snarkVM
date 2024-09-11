@@ -2992,6 +2992,7 @@ version = "0.16.19"
 dependencies = [
  "bincode",
  "serde_json",
+ "smallvec",
  "snarkvm-console-network-environment",
  "snarkvm-console-types-boolean",
  "zeroize",
@@ -3055,6 +3056,7 @@ dependencies = [
  "rayon",
  "rustc_version",
  "serde",
+ "smallvec",
  "snarkvm-fields",
  "snarkvm-utilities",
  "thiserror",

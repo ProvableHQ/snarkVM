@@ -15,6 +15,8 @@
 
 use super::*;
 
+use smallvec::{smallvec, SmallVec};
+
 impl<E: Environment> FromBits for Field<E> {
     /// Initializes a new field from a list of **little-endian** bits.
     ///   - If `bits_le` is longer than `E::Field::size_in_bits()`, the excess bits are enforced to be `0`s.
@@ -47,7 +49,7 @@ impl<E: Environment> FromBits for Field<E> {
             Ok(Field { field: E::Field::from_bigint(field).ok_or_else(|| anyhow!("Invalid field from bits"))? })
         } else {
             // Construct the sanitized list of bits padded with `false`
-            let mut sanitized_bits = vec![false; size_in_bits];
+            let mut sanitized_bits: SmallVec<[bool; 384]> = smallvec![false; size_in_bits];
             // Note: This is safe, because we just checked that the length of bits isn't bigger
             // than `size_in_data_bits` which is equal to `size_in_bits - 1`.
             sanitized_bits[..num_bits].copy_from_slice(bits_le);

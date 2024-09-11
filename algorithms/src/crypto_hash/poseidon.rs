@@ -465,7 +465,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
         };
         let bits = self.get_bits(num_bits_per_nonnative * num_elements);
 
-        let mut lookup_table = Vec::<TargetField>::with_capacity(num_bits_per_nonnative);
+        let mut lookup_table: SmallVec<[TargetField; 256]> = SmallVec::new();
         let mut cur = TargetField::one();
         for _ in 0..num_bits_per_nonnative {
             lookup_table.push(cur);

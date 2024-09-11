@@ -28,6 +28,7 @@ use crate::{
     ProjectiveCurve,
 };
 
+use smallvec::SmallVec;
 use std::ops::Neg;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -146,8 +147,8 @@ impl ShortWeierstrassParameters for Bls12_377G1Parameters {
             let d_mod_window_size = i64::try_from(d & MASK_FOR_MOD_TABLE_SIZE).unwrap();
             if d_mod_window_size >= HALF_TABLE_SIZE { d_mod_window_size - TABLE_SIZE } else { d_mod_window_size }
         };
-        let to_wnaf = |e: Self::ScalarField| -> Vec<i32> {
-            let mut naf = vec![];
+        let to_wnaf = |e: Self::ScalarField| -> SmallVec<[i32; 128]> {
+            let mut naf: SmallVec<[i32; 128]> = SmallVec::new();
             let mut e = e.to_bigint();
             while !e.is_zero() {
                 let next = if e.is_odd() {
@@ -168,7 +169,11 @@ impl ShortWeierstrassParameters for Bls12_377G1Parameters {
             naf
         };
 
-        let wnaf = |k1: Self::ScalarField, k2: Self::ScalarField, s1: bool, s2: bool| -> (Vec<i32>, Vec<i32>) {
+        let wnaf = |k1: Self::ScalarField,
+                    k2: Self::ScalarField,
+                    s1: bool,
+                    s2: bool|
+         -> (SmallVec<[i32; 128]>, SmallVec<[i32; 128]>) {
             let mut wnaf_1 = to_wnaf(k1);
             let mut wnaf_2 = to_wnaf(k2);
 

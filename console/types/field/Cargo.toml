@@ -16,6 +16,11 @@ version = "=0.16.19"
 path = "../boolean"
 version = "=0.16.19"
 
+[dependencies.smallvec]
+version = "1.11"
+features = [ "const_new" ]
+default-features = false
+
 [dependencies.zeroize]
 version = "1"
 features = [ "derive" ]

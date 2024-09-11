@@ -56,6 +56,11 @@ version = "1.0.188"
 default-features = false
 features = [ "derive" ]
 
+[dependencies.smallvec]
+version = "1.11"
+features = [ "const_new" ]
+default-features = false
+
 [dependencies.thiserror]
 version = "1.0"
 
