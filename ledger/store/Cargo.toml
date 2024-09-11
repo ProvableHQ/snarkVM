@@ -107,7 +107,7 @@ optional = true
 [dependencies.rocksdb]
 version = "0.21"
 default-features = false
-features = [ "lz4" ]
+features = [ "jemalloc", "lz4" ]
 optional = true
 
 [dependencies.serde]
