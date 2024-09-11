@@ -46,8 +46,6 @@ impl<N: Network> Parser for RecordType<N> {
             Ok((string, (identifier, value_type)))
         }
 
-        // Parse the whitespace and comments from the string.
-        let (string, _) = Sanitizer::parse(string)?;
         // Parse the type name from the string.
         let (string, _) = tag(Self::type_name())(string)?;
         // Parse the whitespace from the string.

@@ -45,58 +45,70 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
         // Parse the semicolon ';' keyword from the string.
         let (string, _) = tag(";")(string)?;
 
+        fn intermediate<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>>(
+            string: &str,
+        ) -> ParserResult<P<N, Instruction, Command>> {
+            // Parse the whitespace and comments from the string.
+            let (string, _) = Sanitizer::parse(string)?;
+
+            if string.starts_with(Mapping::<N>::type_name()) {
+                map(Mapping::parse, |mapping| P::<N, Instruction, Command>::M(mapping))(string)
+            } else if string.starts_with(StructType::<N>::type_name()) {
+                map(StructType::parse, |struct_| P::<N, Instruction, Command>::I(struct_))(string)
+            } else if string.starts_with(RecordType::<N>::type_name()) {
+                map(RecordType::parse, |record| P::<N, Instruction, Command>::R(record))(string)
+            } else if string.starts_with(ClosureCore::<N, Instruction>::type_name()) {
+                map(ClosureCore::parse, |closure| P::<N, Instruction, Command>::C(closure))(string)
+            } else if string.starts_with(FunctionCore::<N, Instruction, Command>::type_name()) {
+                map(FunctionCore::parse, |function| P::<N, Instruction, Command>::F(function))(string)
+            } else {
+                Err(Err::Error(make_error(string, ErrorKind::Alt)))
+            }
+        }
+
         // Parse the struct or function from the string.
-        let (string, components) = many1(alt((
-            map(Mapping::parse, |mapping| P::<N, Instruction, Command>::M(mapping)),
-            map(StructType::parse, |struct_| P::<N, Instruction, Command>::I(struct_)),
-            map(RecordType::parse, |record| P::<N, Instruction, Command>::R(record)),
-            map(ClosureCore::parse, |closure| P::<N, Instruction, Command>::C(closure)),
-            map(FunctionCore::parse, |function| P::<N, Instruction, Command>::F(function)),
-        )))(string)?;
+        let (string, components) = many1(intermediate)(string)?;
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
 
-        // Return the program.
-        map_res(take(0usize), move |_| {
-            // Initialize a new program.
-            let mut program = match ProgramCore::<N, Instruction, Command>::new(id) {
-                Ok(program) => program,
+        // Initialize a new program.
+        let mut program = match ProgramCore::<N, Instruction, Command>::new(id) {
+            Ok(program) => program,
+            Err(error) => {
+                eprintln!("{error}");
+                return map_res(take(0usize), move |error| Err(error))(string);
+            }
+        };
+        // Construct the program with the parsed components.
+        for component in components {
+            let result = match component {
+                P::M(mapping) => program.add_mapping(mapping),
+                P::I(struct_) => program.add_struct(struct_),
+                P::R(record) => program.add_record(record),
+                P::C(closure) => program.add_closure(closure),
+                P::F(function) => program.add_function(function),
+            };
+
+            match result {
+                Ok(_) => (),
                 Err(error) => {
                     eprintln!("{error}");
-                    return Err(error);
+                    return map_res(take(0usize), move |error| Err(error))(string);
                 }
-            };
-            // Construct the program with the parsed components.
-            for component in components.iter() {
-                let result = match component {
-                    P::M(mapping) => program.add_mapping(mapping.clone()),
-                    P::I(struct_) => program.add_struct(struct_.clone()),
-                    P::R(record) => program.add_record(record.clone()),
-                    P::C(closure) => program.add_closure(closure.clone()),
-                    P::F(function) => program.add_function(function.clone()),
-                };
+            }
+        }
+        // Lastly, add the imports (if any) to the program.
+        for import in imports {
+            match program.add_import(import) {
+                Ok(_) => (),
+                Err(error) => {
+                    eprintln!("{error}");
+                    return map_res(take(0usize), move |error| Err(error))(string);
+                }
+            }
+        }
 
-                match result {
-                    Ok(_) => (),
-                    Err(error) => {
-                        eprintln!("{error}");
-                        return Err(error);
-                    }
-                }
-            }
-            // Lastly, add the imports (if any) to the program.
-            for import in imports.iter() {
-                match program.add_import(import.clone()) {
-                    Ok(_) => (),
-                    Err(error) => {
-                        eprintln!("{error}");
-                        return Err(error);
-                    }
-                }
-            }
-            // Output the program.
-            Ok::<_, Error>(program)
-        })(string)
+        Ok((string, program))
     }
 }
 

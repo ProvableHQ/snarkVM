@@ -49,13 +49,13 @@ mod serialize;
 
 use console::{
     network::prelude::{
-        alt,
         anyhow,
         bail,
         de,
         ensure,
         error,
         fmt,
+        make_error,
         many0,
         many1,
         map,
@@ -66,7 +66,9 @@ use console::{
         Deserialize,
         Deserializer,
         Display,
+        Err,
         Error,
+        ErrorKind,
         Formatter,
         FromBytes,
         FromBytesDeserializer,

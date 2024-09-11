@@ -21,8 +21,6 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
     /// Parses a string into a function.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
-        // Parse the whitespace and comments from the string.
-        let (string, _) = Sanitizer::parse(string)?;
         // Parse the 'function' keyword from the string.
         let (string, _) = tag(Self::type_name())(string)?;
         // Parse the whitespace from the string.

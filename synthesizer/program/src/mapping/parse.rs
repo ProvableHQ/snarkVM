@@ -19,8 +19,6 @@ impl<N: Network> Parser for Mapping<N> {
     /// Parses a string into a mapping.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
-        // Parse the whitespace and comments from the string.
-        let (string, _) = Sanitizer::parse(string)?;
         // Parse the 'mapping' keyword from the string.
         let (string, _) = tag(Self::type_name())(string)?;
         // Parse the whitespace from the string.
