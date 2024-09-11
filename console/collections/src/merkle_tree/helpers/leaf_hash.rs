@@ -46,7 +46,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> LeafHash for 
         let mut input = Vec::with_capacity(1 + leaf.len());
         // Prepend the leaf with a `false` bit.
         input.push(false);
-        input.extend(leaf);
+        Vec::extend_from_slice(&mut input, leaf);
         // Hash the input.
         Hash::hash(self, &input)
     }

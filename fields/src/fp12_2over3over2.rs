@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::{fp6_3over2::*, Field, Fp2, Fp2Parameters, One, Zero};
-use snarkvm_utilities::{bititerator::BitIteratorBE, rand::Uniform, serialize::*, FromBytes, ToBits, ToBytes};
+use snarkvm_utilities::{bititerator::BitIteratorBE, rand::Uniform, serialize::*, FromBytes, ToBits, ToBytes, VecLike};
 
 use rand::{
     distributions::{Distribution, Standard},
@@ -470,7 +470,7 @@ impl<P: Fp12Parameters> From<u8> for Fp12<P> {
 }
 
 impl<P: Fp12Parameters> ToBits for Fp12<P> {
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         self.c0.write_bits_le(vec);
         self.c1.write_bits_le(vec);
     }

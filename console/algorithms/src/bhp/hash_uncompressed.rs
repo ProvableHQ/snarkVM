@@ -15,6 +15,8 @@
 
 use super::*;
 
+use smallvec::SmallVec;
+
 impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompressed
     for BHP<E, NUM_WINDOWS, WINDOW_SIZE>
 {
@@ -40,7 +42,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
         let mut digest = Group::<E>::zero();
 
         // Prepare a reusable vector for the preimage.
-        let mut preimage = Vec::with_capacity(num_hasher_bits);
+        let mut preimage: SmallVec<[bool; 2048]> = SmallVec::new();
 
         // Compute the hash of the input.
         for (i, input_bits) in input.chunks(max_input_bits_per_iteration).enumerate() {
@@ -49,16 +51,16 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
                 // Construct the first iteration as: [ 0...0 || DOMAIN || LENGTH(INPUT) || INPUT[0..BLOCK_SIZE] ].
                 true => {
                     // Initialize a vector for the hash preimage.
-                    preimage.extend(&self.domain);
+                    VecLike::extend_from_slice(&mut preimage, &self.domain);
                     (input.len() as u64).write_bits_le(&mut preimage);
-                    preimage.extend(input_bits);
+                    VecLike::extend_from_slice(&mut preimage, input_bits);
                 }
                 // Construct the subsequent iterations as: [ PREVIOUS_HASH[0..DATA_BITS] || INPUT[I * BLOCK_SIZE..(I + 1) * BLOCK_SIZE] ].
                 false => {
                     // Initialize a vector for the hash preimage.
                     digest.to_x_coordinate().write_bits_le(&mut preimage);
                     preimage.truncate(num_data_bits);
-                    preimage.extend(input_bits);
+                    VecLike::extend_from_slice(&mut preimage, input_bits);
                 }
             }
             // Hash the preimage for this iteration.

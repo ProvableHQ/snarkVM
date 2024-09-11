@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> ToBits for Future<N> {
     /// Returns the future as a list of **little-endian** bits.
     #[inline]
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         // Write the bits for the program ID.
         let program_id_bits = self.program_id.to_bits_le();
         u16::try_from(program_id_bits.len()).or_halt_with::<N>("Program ID exceeds u16::MAX bits").write_bits_le(vec);

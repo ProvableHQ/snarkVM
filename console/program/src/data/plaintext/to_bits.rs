@@ -17,7 +17,7 @@ use super::*;
 
 impl<N: Network> ToBits for Plaintext<N> {
     /// Returns this plaintext as a list of **little-endian** bits.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         match self {
             Self::Literal(literal, bits_le) => {
                 // Compute the bits.
@@ -79,7 +79,7 @@ impl<N: Network> ToBits for Plaintext<N> {
                             .write_bits_le(&mut bits_le);
 
                         // Write the element.
-                        bits_le.extend(element_bits);
+                        VecLike::extend(&mut bits_le, element_bits);
                     }
                     bits_le
                 });
@@ -153,7 +153,7 @@ impl<N: Network> ToBits for Plaintext<N> {
                             .write_bits_be(&mut bits_be);
 
                         // Write the element.
-                        bits_be.extend(element_bits);
+                        VecLike::extend(&mut bits_be, element_bits);
                     }
                     bits_be
                 });

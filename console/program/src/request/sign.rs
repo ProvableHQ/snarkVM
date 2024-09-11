@@ -79,8 +79,8 @@ impl<N: Network> Request<N> {
 
         // Construct the hash input as `(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, input IDs])`.
         let mut message = Vec::with_capacity(9 + 2 * inputs.len());
-        message.extend([g_r, pk_sig, pr_sig, *signer].map(|point| point.to_x_coordinate()));
-        message.extend([tvk, tcm, function_id, is_root]);
+        Extend::extend(&mut message, [g_r, pk_sig, pr_sig, *signer].map(|point| point.to_x_coordinate()));
+        Extend::extend(&mut message, [tvk, tcm, function_id, is_root]);
 
         // Initialize a vector to store the prepared inputs.
         let mut prepared_inputs = Vec::with_capacity(inputs.len());

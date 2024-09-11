@@ -18,7 +18,7 @@ edition = "2021"
 
 [features]
 default = [ "indexmap/rayon", "rayon" ]
-rocks = [ "once_cell", "rocksdb", "smallvec", "tracing" ]
+rocks = [ "once_cell", "rocksdb", "tracing" ]
 serial = [
   "console/serial",
   "ledger-block/serial",
@@ -120,8 +120,7 @@ features = [ "preserve_order" ]
 [dependencies.smallvec]
 version = "1.11"
 default-features = false
-features = [ "write" ]
-optional = true
+features = [ "const_new", "write" ]
 
 [dependencies.tracing]
 version = "0.1"

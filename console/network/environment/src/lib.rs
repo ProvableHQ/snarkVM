@@ -83,6 +83,7 @@ pub mod prelude {
         ToBytes,
         ToBytesSerializer,
         Uniform,
+        VecLike,
     };
 
     pub use core::{

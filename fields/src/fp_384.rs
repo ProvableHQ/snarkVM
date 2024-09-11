@@ -34,6 +34,7 @@ use snarkvm_utilities::{
     FromBytes,
     ToBits,
     ToBytes,
+    VecLike,
 };
 
 use std::{
@@ -590,7 +591,7 @@ impl_add_sub_from_field_ref!(Fp384, Fp384Parameters);
 impl_mul_div_from_field_ref!(Fp384, Fp384Parameters);
 
 impl<P: Fp384Parameters> ToBits for Fp384<P> {
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         let initial_len = vec.len();
         self.to_bigint().write_bits_le(vec);
         vec.truncate(initial_len + P::MODULUS_BITS as usize);

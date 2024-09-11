@@ -35,8 +35,8 @@ impl<N: Network> Signature<N> {
 
         // Construct the hash input as (r * G, pk_sig, pr_sig, address, message).
         let mut preimage = Vec::with_capacity(4 + message.len());
-        preimage.extend([g_r, pk_sig, pr_sig, **address].map(|point| point.to_x_coordinate()));
-        preimage.extend(message);
+        Extend::extend(&mut preimage, [g_r, pk_sig, pr_sig, **address].map(|point| point.to_x_coordinate()));
+        Extend::extend(&mut preimage, message);
 
         // Hash to derive the verifier challenge, and return `false` if this operation fails.
         let candidate_challenge = match N::hash_to_scalar_psd8(&preimage) {

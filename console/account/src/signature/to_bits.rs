@@ -17,7 +17,7 @@ use super::*;
 
 impl<N: Network> ToBits for Signature<N> {
     /// Returns the little-endian bits of the signature.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         // Write the challenge bits.
         self.challenge.write_bits_le(vec);
         // Write the response bits.

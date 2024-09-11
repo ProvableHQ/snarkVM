@@ -17,7 +17,7 @@ use super::*;
 
 impl<E: Environment> ToBits for Group<E> {
     /// Outputs the little-endian bit representation of `self.to_x_coordinate()` *without* trailing zeros.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         self.to_x_coordinate().write_bits_le(vec);
     }
 

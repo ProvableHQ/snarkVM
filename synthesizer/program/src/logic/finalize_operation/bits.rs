@@ -155,7 +155,7 @@ impl<N: Network> FromBits for FinalizeOperation<N> {
 
 impl<N: Network> ToBits for FinalizeOperation<N> {
     /// Returns the little-endian bits of the finalize operation.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+    fn write_bits_le<T: VecLike>(&self, vec: &mut T) {
         match self {
             Self::InitializeMapping(mapping_id) => {
                 // Write the variant.
