@@ -61,7 +61,7 @@ pub trait StackMatches<N: Network> {
 
 pub trait StackProgram<N: Network> {
     /// Returns the program.
-    fn program(&self) -> &Program<N>;
+    fn program(&self) -> &Arc<Program<N>>;
 
     /// Returns the program ID.
     fn program_id(&self) -> &ProgramID<N>;
@@ -76,7 +76,7 @@ pub trait StackProgram<N: Network> {
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<&Arc<Self>>;
 
     /// Returns the external program for the given program ID.
-    fn get_external_program(&self, program_id: &ProgramID<N>) -> Result<&Program<N>>;
+    fn get_external_program(&self, program_id: &ProgramID<N>) -> Result<&Arc<Program<N>>>;
 
     /// Returns `true` if the stack contains the external record.
     fn get_external_record(&self, locator: &Locator<N>) -> Result<&RecordType<N>>;

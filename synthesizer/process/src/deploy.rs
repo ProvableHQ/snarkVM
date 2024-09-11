@@ -15,12 +15,14 @@
 
 use super::*;
 
+use std::sync::Arc;
+
 impl<N: Network> Process<N> {
     /// Deploys the given program ID, if it does not exist.
     #[inline]
     pub fn deploy<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
-        program: &Program<N>,
+        program: &Arc<Program<N>>,
         rng: &mut R,
     ) -> Result<Deployment<N>> {
         let timer = timer!("Process::deploy");

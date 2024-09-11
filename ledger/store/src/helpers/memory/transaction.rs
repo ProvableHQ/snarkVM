@@ -32,6 +32,8 @@ use console::{
 use synthesizer_program::Program;
 use synthesizer_snark::{Certificate, Proof, VerifyingKey};
 
+use std::sync::Arc;
+
 /// An in-memory transaction storage.
 #[derive(Clone)]
 pub struct TransactionMemory<N: Network> {
@@ -99,7 +101,7 @@ pub struct DeploymentMemory<N: Network> {
     /// The owner map.
     owner_map: MemoryMap<(ProgramID<N>, u16), ProgramOwner<N>>,
     /// The program map.
-    program_map: MemoryMap<(ProgramID<N>, u16), Program<N>>,
+    program_map: MemoryMap<(ProgramID<N>, u16), Arc<Program<N>>>,
     /// The verifying key map.
     verifying_key_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>,
     /// The certificate map.
@@ -114,7 +116,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
     type EditionMap = MemoryMap<ProgramID<N>, u16>;
     type ReverseIDMap = MemoryMap<(ProgramID<N>, u16), N::TransactionID>;
     type OwnerMap = MemoryMap<(ProgramID<N>, u16), ProgramOwner<N>>;
-    type ProgramMap = MemoryMap<(ProgramID<N>, u16), Program<N>>;
+    type ProgramMap = MemoryMap<(ProgramID<N>, u16), Arc<Program<N>>>;
     type VerifyingKeyMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     type CertificateMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     type FeeStorage = FeeMemory<N>;

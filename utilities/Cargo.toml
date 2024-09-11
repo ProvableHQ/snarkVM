@@ -57,6 +57,7 @@ version = "1"
 [dependencies.serde]
 version = "1.0"
 default-features = false
+features = [ "rc" ]
 
 [dependencies.serde_json]
 version = "1.0"

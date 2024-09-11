@@ -324,7 +324,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn create_deploy<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
-        program: &Program<N>,
+        program: &Arc<Program<N>>,
         priority_fee_in_microcredits: u64,
         query: Option<Query<N, C::BlockStorage>>,
         rng: &mut R,

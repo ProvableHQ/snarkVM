@@ -25,6 +25,7 @@ use std::{
     fs::{self, File},
     io::Write,
     path::Path,
+    sync::Arc,
 };
 
 static ALEO_FILE_EXTENSION: &str = "aleo";
@@ -35,7 +36,7 @@ pub struct AleoFile<N: Network> {
     /// The program as a string.
     program_string: String,
     /// The program.
-    program: Program<N>,
+    program: Arc<Program<N>>,
 }
 
 impl<N: Network> FromStr for AleoFile<N> {
@@ -44,7 +45,7 @@ impl<N: Network> FromStr for AleoFile<N> {
     /// Reads the file from a string.
     #[inline]
     fn from_str(s: &str) -> Result<Self> {
-        let program = Program::from_str(s)?;
+        let program = Arc::new(Program::from_str(s)?);
         let program_string = s.to_string();
 
         // The file name is defined as the string up to the extension (excluding the extension).
@@ -159,7 +160,7 @@ function hello:
     }
 
     /// Returns the program.
-    pub const fn program(&self) -> &Program<N> {
+    pub fn program(&self) -> &Arc<Program<N>> {
         &self.program
     }
 
@@ -231,7 +232,7 @@ impl<N: Network> AleoFile<N> {
         // Read the program string.
         let program_string = fs::read_to_string(file)?;
         // Parse the program string.
-        let program = Program::from_str(&program_string)?;
+        let program = Arc::new(Program::from_str(&program_string)?);
 
         Ok(Self { file_name, program_string, program })
     }

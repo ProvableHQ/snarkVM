@@ -23,6 +23,7 @@ use std::{
     fs::{self, File},
     io::Write,
     path::Path,
+    sync::Arc,
 };
 
 static AVM_FILE_EXTENSION: &str = "avm";
@@ -31,12 +32,12 @@ pub struct AVMFile<N: Network> {
     /// The file name (without the extension).
     file_name: String,
     /// The program.
-    program: Program<N>,
+    program: Arc<Program<N>>,
 }
 
 impl<N: Network> AVMFile<N> {
     /// Creates a new AVM program file, given the directory path, program ID, and `is_main` indicator.
-    pub fn create(directory: &Path, program: Program<N>, is_main: bool) -> Result<Self> {
+    pub fn create(directory: &Path, program: Arc<Program<N>>, is_main: bool) -> Result<Self> {
         // Ensure the directory path exists.
         ensure!(directory.exists(), "The program directory does not exist: '{}'", directory.display());
         // Ensure the program name is valid.
@@ -99,7 +100,7 @@ impl<N: Network> AVMFile<N> {
     }
 
     /// Returns the program.
-    pub const fn program(&self) -> &Program<N> {
+    pub const fn program(&self) -> &Arc<Program<N>> {
         &self.program
     }
 
@@ -153,7 +154,7 @@ impl<N: Network> AVMFile<N> {
         // Read the program bytes.
         let program_bytes = fs::read(file)?;
         // Parse the program bytes.
-        let program = Program::from_bytes_le(&program_bytes)?;
+        let program = Arc::new(Program::from_bytes_le(&program_bytes)?);
 
         Ok(Self { file_name, program })
     }

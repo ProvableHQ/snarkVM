@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Stack<N> {
     /// Initializes a new stack, given the process and program.
     #[inline]
-    pub(crate) fn initialize(process: &Process<N>, program: &Program<N>) -> Result<Self> {
+    pub(crate) fn initialize(process: &Process<N>, program: &Arc<Program<N>>) -> Result<Self> {
         // Construct the stack for the program.
         let mut stack = Self {
             program: program.clone(),

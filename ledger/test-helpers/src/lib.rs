@@ -40,6 +40,7 @@ use synthesizer_process::Process;
 use synthesizer_program::Program;
 
 use once_cell::sync::OnceCell;
+use std::sync::Arc;
 
 type CurrentNetwork = console::network::MainnetV0;
 type CurrentAleo = circuit::network::AleoV0;
@@ -148,6 +149,7 @@ function compute:
             )
             .unwrap();
             assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+            let program = Arc::new(program);
 
             // Construct the process.
             let process = Process::load().unwrap();
@@ -164,7 +166,7 @@ function compute:
 pub fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
     // Sample a deploy transaction.
     let deployment = match crate::sample_deployment_transaction(is_fee_private, rng) {
-        Transaction::Deploy(_, _, deployment, _) => (*deployment).clone(),
+        Transaction::Deploy(_, _, deployment, _) => deployment.clone(),
         _ => unreachable!(),
     };
 
@@ -396,7 +398,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
     let execution = INSTANCE
         .get_or_init(|| {
             // Initialize a program that produces large transactions.
-            let program = large_transaction_program();
+            let program = Arc::new(large_transaction_program());
 
             // Construct the process.
             let mut process = synthesizer_process::Process::load().unwrap();

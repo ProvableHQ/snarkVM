@@ -32,7 +32,7 @@ use synthesizer_snark::{Certificate, VerifyingKey};
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 /// A trait for deployment storage.
 pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
@@ -45,7 +45,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `(program ID, edition)` to `ProgramOwner`.
     type OwnerMap: for<'a> Map<'a, (ProgramID<N>, u16), ProgramOwner<N>>;
     /// The mapping of `(program ID, edition)` to `program`.
-    type ProgramMap: for<'a> Map<'a, (ProgramID<N>, u16), Program<N>>;
+    type ProgramMap: for<'a> Map<'a, (ProgramID<N>, u16), Arc<Program<N>>>;
     /// The mapping of `(program ID, function name, edition)` to `verifying key`.
     type VerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     /// The mapping of `(program ID, function name, edition)` to `certificate`.
@@ -311,7 +311,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the program for the given `program ID`.
-    fn get_program(&self, program_id: &ProgramID<N>) -> Result<Option<Program<N>>> {
+    fn get_program(&self, program_id: &ProgramID<N>) -> Result<Option<Arc<Program<N>>>> {
         // Check if the program ID is for 'credits.aleo'.
         // This case is handled separately, as it is a default program of the VM.
         // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
@@ -582,7 +582,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns the program for the given `program ID`.
-    pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Option<Program<N>>> {
+    pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Option<Arc<Program<N>>>> {
         self.storage.get_program(program_id)
     }
 
@@ -647,7 +647,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns an iterator over the programs, for all deployments.
-    pub fn programs(&self) -> impl '_ + Iterator<Item = Cow<'_, Program<N>>> {
+    pub fn programs(&self) -> impl '_ + Iterator<Item = Cow<'_, Arc<Program<N>>>> {
         self.storage.program_map().values_confirmed().map(|program| match program {
             Cow::Borrowed(program) => Cow::Borrowed(program),
             Cow::Owned(program) => Cow::Owned(program),

@@ -1292,7 +1292,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     }
 
     /// Returns the program for the given `program ID`.
-    pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Option<Program<N>>> {
+    pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Option<Arc<Program<N>>>> {
         self.storage.transaction_store().get_program(program_id)
     }
 

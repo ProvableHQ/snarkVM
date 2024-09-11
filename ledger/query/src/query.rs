@@ -22,6 +22,8 @@ use console::{
 use ledger_store::{BlockStorage, BlockStore};
 use synthesizer_program::Program;
 
+use std::sync::Arc;
+
 #[derive(Clone)]
 pub enum Query<N: Network, B: BlockStorage<N>> {
     /// The block store from the VM.
@@ -143,7 +145,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
 
 impl<N: Network, B: BlockStorage<N>> Query<N, B> {
     /// Returns the program for the given program ID.
-    pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Program<N>> {
+    pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Arc<Program<N>>> {
         match self {
             Self::VM(block_store) => {
                 block_store.get_program(program_id)?.ok_or_else(|| anyhow!("Program {program_id} not found in storage"))
@@ -165,7 +167,7 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
 
     /// Returns the program for the given program ID.
     #[cfg(feature = "async")]
-    pub async fn get_program_async(&self, program_id: &ProgramID<N>) -> Result<Program<N>> {
+    pub async fn get_program_async(&self, program_id: &ProgramID<N>) -> Result<Arc<Program<N>>> {
         match self {
             Self::VM(block_store) => {
                 block_store.get_program(program_id)?.ok_or_else(|| anyhow!("Program {program_id} not found in storage"))

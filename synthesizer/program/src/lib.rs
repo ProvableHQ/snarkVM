@@ -89,6 +89,7 @@ use console::{
 };
 
 use indexmap::IndexMap;
+use std::sync::Arc;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 enum ProgramDefinition {
@@ -104,7 +105,7 @@ enum ProgramDefinition {
     Function,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct ProgramCore<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> {
     /// The ID of the program.
     id: ProgramID<N>,
@@ -145,8 +146,8 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
 
     /// Initializes the credits program.
     #[inline]
-    pub fn credits() -> Result<Self> {
-        Self::from_str(include_str!("./resources/credits.aleo"))
+    pub fn credits() -> Result<Arc<Self>> {
+        Self::from_str(include_str!("./resources/credits.aleo")).map(Arc::new)
     }
 
     /// Returns the ID of the program.
