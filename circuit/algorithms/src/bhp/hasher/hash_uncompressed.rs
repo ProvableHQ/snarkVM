@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -157,7 +158,8 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
                         // Otherwise, call `montgomery_add` to add  to the accumulating sum.
                         Some((sum_x, sum_y)) => {
                             // Sum the new Montgomery point into the accumulating sum.
-                            sum = Some(montgomery_add((sum_x, sum_y), (&montgomery_x, &montgomery_y))); // 3 constraints
+                            sum = Some(montgomery_add((sum_x, sum_y), (&montgomery_x, &montgomery_y)));
+                            // 3 constraints
                         }
                     }
                 });
@@ -168,7 +170,8 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
                         // Convert the accumulated sum into a point on the twisted Edwards curve.
                         let edwards_x = sum_x.div_unchecked(sum_y); // 1 constraint (`sum_y` is never 0)
                         let edwards_y = (sum_x - &one).div_unchecked(&(sum_x + &one)); // 1 constraint (numerator & denominator are never both 0)
-                        Group::from_xy_coordinates_unchecked(edwards_x, edwards_y) // 0 constraints (this is safe)
+                        Group::from_xy_coordinates_unchecked(edwards_x, edwards_y)
+                        // 0 constraints (this is safe)
                     }
                     None => E::halt("Invalid iteration of BHP detected, a window was not evaluated"),
                 }

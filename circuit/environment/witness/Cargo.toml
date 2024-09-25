@@ -3,6 +3,8 @@ name = "snarkvm-circuit-environment-witness"
 version = "0.16.19"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A procedural macro to construct a witness in an environment"
+homepage = "https://aleo.org"
+repository = "https://github.com/AleoNet/snarkVM"
 license = "Apache-2.0"
 edition = "2018"
 

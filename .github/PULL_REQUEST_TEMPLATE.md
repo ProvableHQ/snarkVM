@@ -17,7 +17,7 @@
 
 <!--
     If this PR adds or changes functionality, please take some time to
-    update the docs at https://github.com/AleoHQ/snarkVM and https://github.com/AleoHQ/protocol-docs,
+    update the docs at https://github.com/AleoNet/snarkVM and https://github.com/AleoHQ/protocol-docs,
     and link to your PR here.
 -->
 

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -332,7 +333,7 @@ where
 
     /// This is the main entrypoint for creating proofs.
     /// You can find a specification of the prover algorithm in:
-    /// https://github.com/AleoHQ/protocol-docs
+    /// https://github.com/AleoNet/protocol-docs
     fn prove_batch<C: ConstraintSynthesizer<E::Fr>, R: Rng + CryptoRng>(
         universal_prover: &Self::UniversalProver,
         fs_parameters: &Self::FSParameters,
@@ -621,7 +622,7 @@ where
 
     /// This is the main entrypoint for verifying proofs.
     /// You can find a specification of the verifier algorithm in:
-    /// https://github.com/AleoHQ/protocol-docs
+    /// https://github.com/AleoNet/protocol-docs
     fn verify_batch<B: Borrow<Self::VerifierInput>>(
         universal_verifier: &Self::UniversalVerifier,
         fs_parameters: &Self::FSParameters,

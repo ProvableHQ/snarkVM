@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -32,7 +33,7 @@ static WORKSPACE_ROOT: OnceCell<PathBuf> = OnceCell::new();
 
 /// To update the arguments to `count_is!`, run cargo test with the `UPDATE_COUNT` flag set to the name of the file containing the macro invocation.
 /// e.g. `UPDATE_COUNT=boolean cargo test
-/// See https://github.com/AleoHQ/snarkVM/pull/1688 for more details.
+/// See https://github.com/AleoNet/snarkVM/pull/1688 for more details.
 #[macro_export]
 macro_rules! count_is {
     ($num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
@@ -50,7 +51,7 @@ macro_rules! count_is {
 
 /// To update the arguments to `count_less_than!`, run cargo test with the `UPDATE_COUNT` flag set to the name of the file containing the macro invocation.
 /// e.g. `UPDATE_COUNT=boolean cargo test
-/// See https://github.com/AleoHQ/snarkVM/pull/1688 for more details.
+/// See https://github.com/AleoNet/snarkVM/pull/1688 for more details.
 #[macro_export]
 macro_rules! count_less_than {
     ($num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
@@ -498,7 +499,7 @@ mod test {
     fn check_position() {
         let count = count_is!(0, 0, 0, 0);
         assert_eq!(count.file, "circuit/environment/src/helpers/updatable_count.rs");
-        assert_eq!(count.line, 499);
+        assert_eq!(count.line, 500);
         assert_eq!(count.column, 21);
     }
 

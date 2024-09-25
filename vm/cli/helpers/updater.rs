@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -24,7 +25,7 @@ pub struct Updater;
 impl Updater {
     const SNARKVM_BIN_NAME: &'static str = "snarkvm";
     const SNARKVM_REPO_NAME: &'static str = "snarkvm";
-    const SNARKVM_REPO_OWNER: &'static str = "AleoHQ";
+    const SNARKVM_REPO_OWNER: &'static str = "AleoNet";
 
     /// Show all available releases for `snarkvm`.
     #[allow(clippy::format_push_string)]

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -328,7 +329,8 @@ mod tests {
         check_true_sub_false_with_false(Mode::Public, Mode::Constant, Mode::Constant, 0, 0, 0, 0);
         check_true_sub_false_with_true(Mode::Public, Mode::Constant, Mode::Constant, 0, 0, 0, 0);
         check_true_sub_true_with_false(Mode::Public, Mode::Constant, Mode::Constant, 0, 0, 0, 0);
-        check_true_sub_true_with_true(Mode::Public, Mode::Constant, Mode::Constant, 0, 0, 1, 1); // <- Differs
+        check_true_sub_true_with_true(Mode::Public, Mode::Constant, Mode::Constant, 0, 0, 1, 1);
+        // <- Differs
     }
 
     #[test]
@@ -340,7 +342,8 @@ mod tests {
         check_true_sub_false_with_false(Mode::Public, Mode::Constant, Mode::Public, 0, 0, 2, 2);
         check_true_sub_false_with_true(Mode::Public, Mode::Constant, Mode::Public, 0, 0, 2, 2);
         check_true_sub_true_with_false(Mode::Public, Mode::Constant, Mode::Public, 0, 0, 3, 3); // <- Differs
-        check_true_sub_true_with_true(Mode::Public, Mode::Constant, Mode::Public, 0, 0, 3, 3); // <- Differs
+        check_true_sub_true_with_true(Mode::Public, Mode::Constant, Mode::Public, 0, 0, 3, 3);
+        // <- Differs
     }
 
     #[test]
@@ -352,7 +355,8 @@ mod tests {
         check_true_sub_false_with_false(Mode::Public, Mode::Constant, Mode::Private, 0, 0, 2, 2);
         check_true_sub_false_with_true(Mode::Public, Mode::Constant, Mode::Private, 0, 0, 2, 2);
         check_true_sub_true_with_false(Mode::Public, Mode::Constant, Mode::Private, 0, 0, 3, 3); // <- Differs
-        check_true_sub_true_with_true(Mode::Public, Mode::Constant, Mode::Private, 0, 0, 3, 3); // <- Differs
+        check_true_sub_true_with_true(Mode::Public, Mode::Constant, Mode::Private, 0, 0, 3, 3);
+        // <- Differs
     }
 
     #[test]
@@ -364,7 +368,8 @@ mod tests {
         check_true_sub_false_with_false(Mode::Public, Mode::Public, Mode::Constant, 0, 0, 2, 2);
         check_true_sub_false_with_true(Mode::Public, Mode::Public, Mode::Constant, 0, 0, 3, 3); // <- Differs
         check_true_sub_true_with_false(Mode::Public, Mode::Public, Mode::Constant, 0, 0, 2, 2);
-        check_true_sub_true_with_true(Mode::Public, Mode::Public, Mode::Constant, 0, 0, 3, 3); // <- Differs
+        check_true_sub_true_with_true(Mode::Public, Mode::Public, Mode::Constant, 0, 0, 3, 3);
+        // <- Differs
     }
 
     #[test]
@@ -400,7 +405,8 @@ mod tests {
         check_true_sub_false_with_false(Mode::Public, Mode::Private, Mode::Constant, 0, 0, 2, 2);
         check_true_sub_false_with_true(Mode::Public, Mode::Private, Mode::Constant, 0, 0, 3, 3); // <- Differs
         check_true_sub_true_with_false(Mode::Public, Mode::Private, Mode::Constant, 0, 0, 2, 2);
-        check_true_sub_true_with_true(Mode::Public, Mode::Private, Mode::Constant, 0, 0, 3, 3); // <- Differs
+        check_true_sub_true_with_true(Mode::Public, Mode::Private, Mode::Constant, 0, 0, 3, 3);
+        // <- Differs
     }
 
     #[test]

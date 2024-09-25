@@ -3,6 +3,8 @@ name = "snarkvm-console-types-scalar"
 version = "0.16.19"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Type operations for a decentralized virtual machine"
+homepage = "https://aleo.org"
+repository = "https://github.com/AleoNet/snarkVM"
 license = "Apache-2.0"
 edition = "2021"
 
