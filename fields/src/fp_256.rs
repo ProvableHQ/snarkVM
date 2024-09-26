@@ -768,7 +768,7 @@ impl<'a, P: Fp256Parameters> MulAssign<&'a Self> for Fp256<P> {
 
         r[3] = fa::mac_with_carry(r[3], (self.0).0[3], (other.0).0[0], &mut carry1);
         r[2] = fa::mac_with_carry(r[3], k, P::MODULUS.0[3], &mut carry2);
-        r[3] = carry1 + carry2;
+        r[3] = carry1.wrapping_add(carry2);
 
         // Iteration 1.
         r[0] = fa::mac(r[0], (self.0).0[0], (other.0).0[1], &mut carry1);
@@ -782,7 +782,7 @@ impl<'a, P: Fp256Parameters> MulAssign<&'a Self> for Fp256<P> {
 
         r[3] = fa::mac_with_carry(r[3], (self.0).0[3], (other.0).0[1], &mut carry1);
         r[2] = fa::mac_with_carry(r[3], k, P::MODULUS.0[3], &mut carry2);
-        r[3] = carry1 + carry2;
+        r[3] = carry1.wrapping_add(carry2);
 
         // Iteration 2.
         r[0] = fa::mac(r[0], (self.0).0[0], (other.0).0[2], &mut carry1);
@@ -796,7 +796,7 @@ impl<'a, P: Fp256Parameters> MulAssign<&'a Self> for Fp256<P> {
 
         r[3] = fa::mac_with_carry(r[3], (self.0).0[3], (other.0).0[2], &mut carry1);
         r[2] = fa::mac_with_carry(r[3], k, P::MODULUS.0[3], &mut carry2);
-        r[3] = carry1 + carry2;
+        r[3] = carry1.wrapping_add(carry2);
 
         // Iteration 3.
         r[0] = fa::mac(r[0], (self.0).0[0], (other.0).0[3], &mut carry1);
@@ -810,7 +810,7 @@ impl<'a, P: Fp256Parameters> MulAssign<&'a Self> for Fp256<P> {
 
         r[3] = fa::mac_with_carry(r[3], (self.0).0[3], (other.0).0[3], &mut carry1);
         r[2] = fa::mac_with_carry(r[3], k, P::MODULUS.0[3], &mut carry2);
-        r[3] = carry1 + carry2;
+        r[3] = carry1.wrapping_add(carry2);
 
         (self.0).0 = r;
         self.reduce();
