@@ -571,7 +571,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Acquire the write lock on the process.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
             // we choose to acquire the write lock for the entire duration of this atomic batch.
-            let mut process = self.process.write();
+            let process = self.process.write();
 
             // Initialize a list for the deployed stacks.
             let mut stacks = Vec::new();

@@ -3443,6 +3443,7 @@ dependencies = [
  "colored",
  "criterion",
  "indexmap 2.2.6",
+ "lru",
  "once_cell",
  "parking_lot",
  "rand",
@@ -3460,6 +3461,7 @@ dependencies = [
  "snarkvm-synthesizer-snark",
  "snarkvm-utilities",
  "tempfile",
+ "tracing",
 ]
 
 [[package]]
