@@ -208,6 +208,7 @@ pub mod test_helpers {
     /// Returns a sample batch certificate with previous certificates, sampled at random.
     pub fn sample_batch_certificate_with_previous_certificates(
         round: u64,
+        num_previous_certificates: usize,
         rng: &mut TestRng,
     ) -> (BatchCertificate<CurrentNetwork>, Vec<BatchCertificate<CurrentNetwork>>) {
         assert!(round > 1, "Round must be greater than 1");
@@ -219,12 +220,10 @@ pub mod test_helpers {
         assert_eq!(previous_round % 2, 0, "Previous round must be even");
 
         // Sample the previous certificates.
-        let previous_certificates = vec![
-            sample_batch_certificate_for_round(previous_round, rng),
-            sample_batch_certificate_for_round(previous_round, rng),
-            sample_batch_certificate_for_round(previous_round, rng),
-            sample_batch_certificate_for_round(previous_round, rng),
-        ];
+        let mut previous_certificates = Vec::with_capacity(num_previous_certificates);
+        for _ in 0..num_previous_certificates {
+            previous_certificates.push(sample_batch_certificate_for_round(previous_round, rng));
+        }
         // Construct the previous certificate IDs.
         let previous_certificate_ids: IndexSet<_> = previous_certificates.iter().map(|c| c.id()).collect();
         // Sample the leader certificate.
