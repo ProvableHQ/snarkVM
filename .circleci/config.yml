@@ -60,7 +60,7 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: snarkvm-stable-cache
+        default: v1-rust-1.81.0-snarkvm-stable-cache
     steps:
       - run: set -e
       - run:
@@ -88,7 +88,7 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: snarkvm-stable-cache
+        default: v1-rust-1.81.0-snarkvm-stable-cache
     steps:
       - run: (sccache -s || true)
       - run: set +e
