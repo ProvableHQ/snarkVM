@@ -50,9 +50,7 @@ impl<'de, N: Network> Deserialize<'de> for Metadata<N> {
                     DeserializeExt::take_from_value::<D>(&mut metadata, "height")?,
                     {
                         let number: serde_json::Number = DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_weight")?;
-                        if number.is_i64() {
-                            return Err(de::Error::custom("cumulative_weight must be a u128"))
-                        } else if number.is_u64() {
+                        if number.is_u64() {
                             // This unwrap is safe because we have already checked that the number is representable as a u64
                             number.as_u64().unwrap() as u128
                         } else if number.is_f64() {
@@ -60,7 +58,8 @@ impl<'de, N: Network> Deserialize<'de> for Metadata<N> {
                             // Note that we have to parse the string representation of the f64 since a cast results in a loss of precision
                             number.as_f64().unwrap().to_string().parse::<u128>().map_err(de::Error::custom)?
                         } else {
-                            return Err(de::Error::custom("cumulative_weight must be representable as a number"))
+                            // Get the string representation of the number and attempt to parse it as a u128
+                            number.to_string().parse::<u128>().map_err(de::Error::custom)?
                         }
                     },
                     DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_proof_target")?,
