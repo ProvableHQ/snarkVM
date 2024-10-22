@@ -131,6 +131,8 @@ impl<N: Network, Instruction: InstructionTrait<N>> ClosureCore<N, Instruction> {
     fn add_output(&mut self, output: Output<N>) -> Result<()> {
         // Ensure the maximum number of outputs has not been exceeded.
         ensure!(self.outputs.len() < N::MAX_OUTPUTS, "Cannot add more than {} outputs", N::MAX_OUTPUTS);
+        // Ensure the output statement was not previously added.
+        ensure!(!self.outputs.contains(&output), "Cannot add duplicate output statement");
 
         // Ensure the closure output register is not a record.
         ensure!(!matches!(output.register_type(), RegisterType::Record(..)), "Output register cannot be a record");
