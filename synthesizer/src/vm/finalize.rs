@@ -792,7 +792,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is producing a duplicate output
     /// - The transaction is producing a duplicate transition public key
     /// - The transaction is another deployment in the block from the same public fee payer.
-    /// - The transaction is an execution that exceeds the block spend limit.
+    /// - The transaction exceeds the block spend limit.
     #[allow(clippy::too_many_arguments)]
     fn should_abort_transaction(
         &self,
@@ -864,14 +864,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
-        // If the transaction is an execution, ensure that the total finalize cost does not exceed the block spend limit.
-        if let Transaction::Execute(_, execution, _) = transaction {
-            // Get the root transition from the execution.
-            let Ok(root) = execution.peek() else {
-                return Some("Failed to get root transition".to_string());
-            };
-            // Activate extra checks from CONSENSUS_V2_HEIGHT onwards.
-            if current_block_height >= N::CONSENSUS_V2_HEIGHT {
+        // Activate extra checks from CONSENSUS_V2_HEIGHT onwards.
+        if current_block_height >= N::CONSENSUS_V2_HEIGHT {
+            // If the transaction is an execution, ensure that the total finalize cost does not exceed the block spend limit.
+            if let Transaction::Execute(_, execution, _) = transaction {
+                // Get the root transition from the execution.
+                let Ok(root) = execution.peek() else {
+                    return Some("Failed to get root transition".to_string());
+                };
                 // Get the finalize cost from the process.
                 let Ok(finalize_cost) = process.get_finalize_cost(root.program_id(), root.function_name()) else {
                     return Some("Failed to get finalize cost".to_string());
