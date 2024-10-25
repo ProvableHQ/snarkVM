@@ -851,7 +851,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
                 }
             }
-            // Activate extra checks from CONSENSUS_V2_HEIGHT onwards.
+            // Activate deployment checks from CONSENSUS_V2_HEIGHT onwards.
             if current_block_height >= N::CONSENSUS_V2_HEIGHT {
                 // Check that the synthesis cost does not exceed the maximum.
                 let Ok(synthesis_cost) = synthesis_cost(deployment) else {
@@ -864,10 +864,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
-        // Activate extra checks from CONSENSUS_V2_HEIGHT onwards.
-        if current_block_height >= N::CONSENSUS_V2_HEIGHT {
-            // If the transaction is an execution, ensure that the total finalize cost does not exceed the block spend limit.
-            if let Transaction::Execute(_, execution, _) = transaction {
+        // If the transaction is an execution, ensure that the total finalize cost does not exceed the block spend limit.
+        if let Transaction::Execute(_, execution, _) = transaction {
+            // Activate execute checks from CONSENSUS_V2_HEIGHT onwards.
+            if current_block_height >= N::CONSENSUS_V2_HEIGHT {
                 // Get the root transition from the execution.
                 let Ok(root) = execution.peek() else {
                     return Some("Failed to get root transition".to_string());
