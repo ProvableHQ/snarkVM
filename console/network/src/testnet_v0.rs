@@ -133,6 +133,9 @@ impl Network for TestnetV0 {
     /// The transmission checksum type.
     type TransmissionChecksum = u128;
 
+    /// The block height from which new consensus rules apply.
+    // TODO: adjust based on testnet height.
+    const CONSENSUS_V2_HEIGHT: u32 = 1_000;
     /// The network edition.
     const EDITION: u16 = 0;
     /// The genesis block coinbase target.

@@ -802,6 +802,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         deployment_payers: &IndexSet<Address<N>>,
         microcredits_spent_on_compute: u64,
     ) -> Option<String> {
+        // Get the current block height to help determine which checks to perform.
+        let current_block_height = self.block_store().current_block_height();
+
         // Ensure that the transaction is not producing a duplicate transition.
         for transition_id in transaction.transition_ids() {
             // If the transition ID is already produced in this block or previous blocks, abort the transaction.
@@ -845,13 +848,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
                 }
             }
-            // Check that the synthesis cost does not exceed the maximum.
-            let Ok(synthesis_cost) = synthesis_cost(deployment) else {
-                return Some("Failed to get synthesis cost".to_string());
-            };
-            // If the synthesis cost exceeds the block spend limit, abort the transaction.
-            if synthesis_cost.saturating_add(microcredits_spent_on_compute) > N::BLOCK_SPEND_LIMIT {
-                return Some("Exceeds block spend limit".to_string());
+            // Activate extra checks from CONSENSUS_V2_HEIGHT onwards.
+            if current_block_height >= N::CONSENSUS_V2_HEIGHT {
+                // Check that the synthesis cost does not exceed the maximum.
+                let Ok(synthesis_cost) = synthesis_cost(deployment) else {
+                    return Some("Failed to get synthesis cost".to_string());
+                };
+                // If the synthesis cost exceeds the block spend limit, abort the transaction.
+                if synthesis_cost.saturating_add(microcredits_spent_on_compute) > N::BLOCK_SPEND_LIMIT {
+                    return Some("Exceeds block spend limit".to_string());
+                }
             }
         }
 
@@ -861,13 +867,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let Ok(root) = execution.peek() else {
                 return Some("Failed to get root transition".to_string());
             };
-            // Get the finalize cost from the process.
-            let Ok(finalize_cost) = process.get_finalize_cost(root.program_id(), root.function_name()) else {
-                return Some("Failed to get finalize cost".to_string());
-            };
-            // If the finalize cost exceeds the block spend limit, abort the transaction.
-            if finalize_cost.saturating_add(microcredits_spent_on_compute) > N::BLOCK_SPEND_LIMIT {
-                return Some("Exceeds block spend limit".to_string());
+            // Activate extra checks from CONSENSUS_V2_HEIGHT onwards.
+            if current_block_height >= N::CONSENSUS_V2_HEIGHT {
+                // Get the finalize cost from the process.
+                let Ok(finalize_cost) = process.get_finalize_cost(root.program_id(), root.function_name()) else {
+                    return Some("Failed to get finalize cost".to_string());
+                };
+                // If the finalize cost exceeds the block spend limit, abort the transaction.
+                if finalize_cost.saturating_add(microcredits_spent_on_compute) > N::BLOCK_SPEND_LIMIT {
+                    return Some("Exceeds block spend limit".to_string());
+                }
             }
         }
 

@@ -203,6 +203,8 @@ pub trait Network:
 
     /// The maximum number of certificates in a batch.
     const MAX_CERTIFICATES: u16;
+    /// The block height from which new consensus rules apply.
+    const CONSENSUS_V2_HEIGHT: u32;
 
     /// The maximum number of bytes in a transaction.
     // Note: This value must **not** be decreased as it would invalidate existing transactions.
