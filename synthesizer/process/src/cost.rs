@@ -91,7 +91,7 @@ fn execution_storage_cost<N: Network>(size_in_bytes: u64) -> u64 {
 
 /// Returns the fixed cost for an execution.
 /// NOTE: this constant reflects the compute cost of an execution, but is not required to be paid by the user.
-pub fn execution_fixed_cost<N: Network>() -> u64 {
+pub const fn execution_fixed_cost<N: Network>() -> u64 {
     N::EXECUTION_FIXED_COST
 }
 
