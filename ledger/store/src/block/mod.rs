@@ -1197,7 +1197,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns the current block height.
     pub fn current_block_height(&self) -> u32 {
-        u32::try_from(self.tree.read().number_of_leaves()).unwrap() - 1
+        u32::try_from(self.tree.read().number_of_leaves()).unwrap().saturating_sub(1)
     }
 
     /// Returns the state root that contains the given `block height`.
