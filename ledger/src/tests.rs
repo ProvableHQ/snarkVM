@@ -3242,7 +3242,7 @@ fn test_transactions_exceed_block_spend_limit() {
 }
 
 #[test]
-fn test_exceed_block_constraint_limit() {
+fn test_exceed_block_spend_limit_deployments() {
     let rng = &mut TestRng::default();
 
     // Initialize the test environment.

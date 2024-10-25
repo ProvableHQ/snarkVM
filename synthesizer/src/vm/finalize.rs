@@ -16,7 +16,7 @@
 use super::*;
 
 use ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
-use synthesizer_process::synthesis_cost;
+use synthesizer_process::{execution_fixed_cost, synthesis_cost};
 use utilities::cfg_sort_by_cached_key;
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -459,8 +459,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             let finalize_cost = process
                                 .get_finalize_cost(root_transition.program_id(), root_transition.function_name())
                                 .map_err(|e| e.to_string())?;
-                            // Add the finalize cost to the total microcredits spent on compute.
-                            microcredits_spent_on_compute = microcredits_spent_on_compute.saturating_add(finalize_cost);
+                            // Add the fixed execution cost.
+                            let execution_cost = finalize_cost.saturating_add(execution_fixed_cost::<N>());
+                            // Add the execution cost to the total microcredits spent on compute.
+                            microcredits_spent_on_compute =
+                                microcredits_spent_on_compute.saturating_add(execution_cost);
                         }
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
@@ -873,8 +876,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let Ok(finalize_cost) = process.get_finalize_cost(root.program_id(), root.function_name()) else {
                     return Some("Failed to get finalize cost".to_string());
                 };
-                // If the finalize cost exceeds the block spend limit, abort the transaction.
-                if finalize_cost.saturating_add(microcredits_spent_on_compute) > N::BLOCK_SPEND_LIMIT {
+                // Add the fixed execution cost.
+                let execution_cost = finalize_cost.saturating_add(execution_fixed_cost::<N>());
+                // If the execution cost exceeds the block spend limit, abort the transaction.
+                if execution_cost.saturating_add(microcredits_spent_on_compute) > N::BLOCK_SPEND_LIMIT {
                     return Some("Exceeds block spend limit".to_string());
                 }
             }
@@ -963,8 +968,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             .process
                             .read()
                             .get_finalize_cost(root_transition.program_id(), root_transition.function_name())?;
-                        // Add the finalize cost to the total microcredits spent on compute.
-                        microcredits_spent_on_compute = microcredits_spent_on_compute.saturating_add(finalize_cost);
+                        // Add the fixed execution cost.
+                        let execution_cost = finalize_cost.saturating_add(execution_fixed_cost::<N>());
+                        // Add the execution cost to the total microcredits spent on compute.
+                        microcredits_spent_on_compute = microcredits_spent_on_compute.saturating_add(execution_cost);
                     }
 
                     // Add the transaction to the list of transactions to verify.

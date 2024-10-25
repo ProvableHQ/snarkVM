@@ -54,8 +54,8 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
     Ok((total_cost, (storage_cost, synthesis_cost, namespace_cost)))
 }
 
+/// Returns the cost in microcredits to synthesize a deployment.
 pub fn synthesis_cost<N: Network>(deployment: &Deployment<N>) -> Result<u64> {
-    // Compute the synthesis cost in microcredits.
     let num_combined_variables = deployment.num_combined_variables()?;
     let num_combined_constraints = deployment.num_combined_constraints()?;
     Ok(num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER)
@@ -87,6 +87,12 @@ fn execution_storage_cost<N: Network>(size_in_bytes: u64) -> u64 {
     } else {
         size_in_bytes
     }
+}
+
+/// Returns the fixed cost for an execution.
+/// NOTE: this constant reflects the compute cost of an execution, but is not required to be paid by the user.
+pub fn execution_fixed_cost<N: Network>() -> u64 {
+    N::EXECUTION_FIXED_COST
 }
 
 /// Finalize costs for compute heavy operations, derived as:
