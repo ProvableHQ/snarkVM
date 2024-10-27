@@ -44,7 +44,7 @@ use ledger_block::{
     Transaction,
     Transactions,
 };
-use ledger_committee::Committee;
+use ledger_committee::{Committee, MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
 use ledger_narwhal_data::Data;
 use ledger_puzzle::Puzzle;
 use ledger_query::Query;
@@ -59,9 +59,9 @@ use ledger_store::{
     TransitionStore,
     atomic_finalize,
 };
-use synthesizer_process::{Authorization, Process, Trace, deployment_cost, execution_cost};
+use process::{Authorization, Process, Trace, deployment_cost, execution_cost, execution_fixed_cost, synthesis_cost};
 use synthesizer_program::{FinalizeGlobalState, FinalizeOperation, FinalizeStoreTrait, Program};
-use utilities::try_vm_runtime;
+use utilities::{cfg_sort_by_cached_key, try_vm_runtime};
 
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::{IndexMap, IndexSet};

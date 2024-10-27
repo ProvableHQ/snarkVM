@@ -15,9 +15,62 @@
 
 use super::*;
 
-use ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
-use synthesizer_process::{execution_fixed_cost, synthesis_cost};
-use utilities::cfg_sort_by_cached_key;
+/// Helper struct to store the details of previously seen transactions.
+/// Transactions with duplicate information must be aborted.
+struct SeenTransactionDetails<N: Network> {
+    transition_ids: IndexSet<N::TransitionID>,
+    input_ids: IndexSet<Field<N>>,
+    output_ids: IndexSet<Field<N>>,
+    tpks: IndexSet<Group<N>>,
+    deployment_payers: IndexSet<Address<N>>,
+}
+
+impl<N: Network> SeenTransactionDetails<N> {
+    fn new() -> Self {
+        Self {
+            transition_ids: IndexSet::new(),
+            input_ids: IndexSet::new(),
+            output_ids: IndexSet::new(),
+            tpks: IndexSet::new(),
+            deployment_payers: IndexSet::new(),
+        }
+    }
+
+    fn transition_ids(&self) -> &IndexSet<N::TransitionID> {
+        &self.transition_ids
+    }
+
+    fn input_ids(&self) -> &IndexSet<Field<N>> {
+        &self.input_ids
+    }
+
+    fn output_ids(&self) -> &IndexSet<Field<N>> {
+        &self.output_ids
+    }
+
+    fn tpks(&self) -> &IndexSet<Group<N>> {
+        &self.tpks
+    }
+
+    fn deployment_payers(&self) -> &IndexSet<Address<N>> {
+        &self.deployment_payers
+    }
+
+    fn insert_transaction_details(&mut self, transaction: &Transaction<N>) {
+        // Add the transition IDs to the set of produced transition IDs.
+        self.transition_ids.extend(transaction.transition_ids());
+        // Add the input IDs to the set of spent input IDs.
+        self.input_ids.extend(transaction.input_ids());
+        // Add the output IDs to the set of produced output IDs.
+        self.output_ids.extend(transaction.output_ids());
+        // Add the transition public keys to the set of produced transition public keys.
+        self.tpks.extend(transaction.transition_public_keys());
+        // Add any public deployment payer to the set of deployment payers.
+        if let Transaction::Deploy(_, _, _, fee) = transaction {
+            fee.payer().map(|payer| self.deployment_payers.insert(payer));
+        }
+    }
+}
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Speculates on the given list of transactions in the VM.
@@ -277,16 +330,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut deployments = IndexSet::new();
             // Initialize a counter for the confirmed transaction index.
             let mut counter = 0u32;
-            // Initialize a list of created transition IDs.
-            let mut transition_ids: IndexSet<N::TransitionID> = IndexSet::new();
-            // Initialize a list of spent input IDs.
-            let mut input_ids: IndexSet<Field<N>> = IndexSet::new();
-            // Initialize a list of created output IDs.
-            let mut output_ids: IndexSet<Field<N>> = IndexSet::new();
-            // Initialize the list of created transition public keys.
-            let mut tpks: IndexSet<Group<N>> = IndexSet::new();
-            // Initialize the list of deployment payers.
-            let mut deployment_payers: IndexSet<Address<N>> = IndexSet::new();
+            // Initialize seen transaction details.
+            let mut tx_details = SeenTransactionDetails::new();
             // Initialize a counter for the total amount of microcredits spent on compute.
             let mut microcredits_spent_on_compute = 0u64;
 
@@ -302,16 +347,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }
 
                 // Determine if the transaction should be aborted.
-                if let Some(reason) = self.should_abort_transaction(
-                    &process,
-                    transaction,
-                    &transition_ids,
-                    &input_ids,
-                    &output_ids,
-                    &tpks,
-                    &deployment_payers,
-                    microcredits_spent_on_compute,
-                ) {
+                if let Some(reason) =
+                    self.should_abort_transaction(&process, transaction, &tx_details, microcredits_spent_on_compute)
+                {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), reason));
                     // Continue to the next transaction.
@@ -434,17 +472,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 match outcome {
                     // If the transaction succeeded, store it and continue to the next transaction.
                     Ok(confirmed_transaction) => {
-                        // Add the transition IDs to the set of produced transition IDs.
-                        transition_ids.extend(confirmed_transaction.transaction().transition_ids());
-                        // Add the input IDs to the set of spent input IDs.
-                        input_ids.extend(confirmed_transaction.transaction().input_ids());
-                        // Add the output IDs to the set of produced output IDs.
-                        output_ids.extend(confirmed_transaction.transaction().output_ids());
-                        // Add the transition public keys to the set of produced transition public keys.
-                        tpks.extend(confirmed_transaction.transaction().transition_public_keys());
-                        if let Transaction::Deploy(_, _, deployment, fee) = confirmed_transaction.transaction() {
-                            // Add any public deployment payer to the set of deployment payers.
-                            fee.payer().map(|payer| deployment_payers.insert(payer));
+                        // Add the transaction details to the seen transaction details.
+                        tx_details.insert_transaction_details(confirmed_transaction.transaction());
+                        // Add any synthesis cost to the total microcredits spent on compute.
+                        if let Transaction::Deploy(_, _, deployment, _) = confirmed_transaction.transaction() {
                             // Compute the synthesis cost.
                             let synthesis_cost = synthesis_cost(deployment).map_err(|e| e.to_string())?;
                             // Add the synthesis cost to the total microcredits spent on compute.
@@ -793,16 +824,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is producing a duplicate transition public key
     /// - The transaction is another deployment in the block from the same public fee payer.
     /// - The transaction exceeds the block spend limit.
-    #[allow(clippy::too_many_arguments)]
     fn should_abort_transaction(
         &self,
         process: &Process<N>,
         transaction: &Transaction<N>,
-        transition_ids: &IndexSet<N::TransitionID>,
-        input_ids: &IndexSet<Field<N>>,
-        output_ids: &IndexSet<Field<N>>,
-        tpks: &IndexSet<Group<N>>,
-        deployment_payers: &IndexSet<Address<N>>,
+        tx_details: &SeenTransactionDetails<N>,
         microcredits_spent_on_compute: u64,
     ) -> Option<String> {
         // Get the current block height to help determine which checks to perform.
@@ -811,7 +837,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure that the transaction is not producing a duplicate transition.
         for transition_id in transaction.transition_ids() {
             // If the transition ID is already produced in this block or previous blocks, abort the transaction.
-            if transition_ids.contains(transition_id)
+            if tx_details.transition_ids().contains(transition_id)
                 || self.transition_store().contains_transition_id(transition_id).unwrap_or(true)
             {
                 return Some(format!("Duplicate transition {transition_id}"));
@@ -821,7 +847,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure that the transaction is not double-spending an input.
         for input_id in transaction.input_ids() {
             // If the input ID is already spent in this block or previous blocks, abort the transaction.
-            if input_ids.contains(input_id) || self.transition_store().contains_input_id(input_id).unwrap_or(true) {
+            if tx_details.input_ids().contains(input_id)
+                || self.transition_store().contains_input_id(input_id).unwrap_or(true)
+            {
                 return Some(format!("Double-spending input {input_id}"));
             }
         }
@@ -829,7 +857,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure that the transaction is not producing a duplicate output.
         for output_id in transaction.output_ids() {
             // If the output ID is already produced in this block or previous blocks, abort the transaction.
-            if output_ids.contains(output_id) || self.transition_store().contains_output_id(output_id).unwrap_or(true) {
+            if tx_details.output_ids().contains(output_id)
+                || self.transition_store().contains_output_id(output_id).unwrap_or(true)
+            {
                 return Some(format!("Duplicate output {output_id}"));
             }
         }
@@ -838,7 +868,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Note that the tpk and tcm are corresponding, so a uniqueness check for just the tpk is sufficient.
         for tpk in transaction.transition_public_keys() {
             // If the transition public key is already produced in this block or previous blocks, abort the transaction.
-            if tpks.contains(tpk) || self.transition_store().contains_tpk(tpk).unwrap_or(true) {
+            if tx_details.tpks().contains(tpk) || self.transition_store().contains_tpk(tpk).unwrap_or(true) {
                 return Some(format!("Duplicate transition public key {tpk}"));
             }
         }
@@ -847,7 +877,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         if let Transaction::Deploy(_, _, deployment, fee) = transaction {
             // If any public deployment payer has already deployed in this block, abort the transaction.
             if let Some(payer) = fee.payer() {
-                if deployment_payers.contains(&payer) {
+                if tx_details.deployment_payers().contains(&payer) {
                     return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
                 }
             }
@@ -905,16 +935,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut valid_transactions = Vec::with_capacity(transactions.len());
         let mut aborted_transactions = Vec::with_capacity(transactions.len());
 
-        // Initialize a list of created transition IDs.
-        let mut transition_ids: IndexSet<N::TransitionID> = Default::default();
-        // Initialize a list of spent input IDs.
-        let mut input_ids: IndexSet<Field<N>> = Default::default();
-        // Initialize a list of created output IDs.
-        let mut output_ids: IndexSet<Field<N>> = Default::default();
-        // Initialize the list of created transition public keys.
-        let mut tpks: IndexSet<Group<N>> = Default::default();
-        // Initialize the list of deployment payers.
-        let mut deployment_payers: IndexSet<Address<N>> = Default::default();
+        // Initialize seen transaction details.
+        let mut tx_details = SeenTransactionDetails::new();
         // Initialize a counter for the total amount of microcredits spent on compute.
         let mut microcredits_spent_on_compute = 0u64;
 
@@ -931,29 +953,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             match self.should_abort_transaction(
                 &self.process.read(),
                 transaction,
-                &transition_ids,
-                &input_ids,
-                &output_ids,
-                &tpks,
-                &deployment_payers,
+                &tx_details,
                 microcredits_spent_on_compute,
             ) {
                 // Store the aborted transaction.
                 Some(reason) => aborted_transactions.push((*transaction, reason.to_string())),
                 // Track the transaction state.
                 None => {
-                    // Add the transition IDs to the set of produced transition IDs.
-                    transition_ids.extend(transaction.transition_ids());
-                    // Add the input IDs to the set of spent input IDs.
-                    input_ids.extend(transaction.input_ids());
-                    // Add the output IDs to the set of produced output IDs.
-                    output_ids.extend(transaction.output_ids());
-                    // Add the transition public keys to the set of produced transition public keys.
-                    tpks.extend(transaction.transition_public_keys());
+                    // Add the transaction details to the seen transaction details.
+                    tx_details.insert_transaction_details(*transaction);
 
-                    if let Transaction::Deploy(_, _, deployment, fee) = transaction {
-                        // Add any public deployment payer to the set of deployment payers.
-                        fee.payer().map(|payer| deployment_payers.insert(payer));
+                    if let Transaction::Deploy(_, _, deployment, _) = transaction {
                         // Compute the synthesis cost.
                         let synthesis_cost = synthesis_cost(deployment)?;
                         // Add the synthesis cost to the total microcredits spent on compute.
