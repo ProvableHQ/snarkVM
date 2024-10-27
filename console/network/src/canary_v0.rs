@@ -135,7 +135,11 @@ impl Network for CanaryV0 {
 
     /// The block height from which new consensus rules apply.
     // TODO: adjust based on canary height.
+    #[cfg(not(any(test, feature = "test")))]
     const CONSENSUS_V2_HEIGHT: u32 = 1_000;
+    /// The block height from which new consensus rules apply.
+    #[cfg(any(test, feature = "test"))]
+    const CONSENSUS_V2_HEIGHT: u32 = 0;
     /// The network edition.
     const EDITION: u16 = 0;
     /// The genesis block coinbase target.

@@ -497,6 +497,7 @@ jobs:
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
+          flags: --features=test
           workspace_member: ledger
           cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-cache
 

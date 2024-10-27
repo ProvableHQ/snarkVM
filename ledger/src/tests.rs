@@ -32,7 +32,12 @@ use ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use ledger_narwhal::{BatchCertificate, BatchHeader, Data, Subdag, Transmission, TransmissionID};
 use ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
 use snarkvm_utilities::try_vm_runtime;
-use synthesizer::{Stack, prelude::cost_in_microcredits, process::synthesis_cost, program::Program, vm::VM};
+use synthesizer::{
+    Stack,
+    process::synthesis_cost,
+    program::{Program, StackProgram},
+    vm::VM,
+};
 
 use indexmap::{IndexMap, IndexSet};
 use rand::seq::SliceRandom;
@@ -3144,7 +3149,7 @@ fn test_forged_block_subdags() {
 }
 
 #[test]
-fn test_transactions_exceed_block_spend_limit() {
+fn test_executions_exceed_block_spend_limit() {
     let rng = &mut TestRng::default();
 
     // Initialize the test environment.
@@ -3170,18 +3175,15 @@ fn test_transactions_exceed_block_spend_limit() {
         .unwrap();
 
         // Initialize a stack for the program.
-        let stack = Stack::<CurrentNetwork>::new(&ledger.vm().process().read(), &program).unwrap();
-
-        // Check the finalize cost.
-        let finalize_cost = cost_in_microcredits(&stack, &Identifier::from_str("foo").unwrap()).unwrap();
-
-        // If the finalize cost exceeds the maximum transaction spend, assign the program to the exceeding program and break.
-        // Otherwise, assign the program to the allowed program and continue.
-        if finalize_cost > <CurrentNetwork as Network>::TRANSACTION_SPEND_LIMIT {
-            break;
-        } else {
+        // If we succeed, the finalize cost must be below the TRANSACTION_SPEND_LIMIT.
+        if let Ok(stack) = Stack::<CurrentNetwork>::new(&ledger.vm().process().read(), &program) {
+            // Get the finalize cost from the stack.
+            let finalize_cost = stack.get_finalize_cost(&Identifier::from_str("foo").unwrap()).unwrap();
+            // Set the program and finalize cost.
             allowed_program = Some(program);
             allowed_finalize_cost = Some(finalize_cost);
+        } else {
+            break;
         }
     }
 
@@ -3242,7 +3244,7 @@ fn test_transactions_exceed_block_spend_limit() {
 }
 
 #[test]
-fn test_exceed_block_spend_limit_deployments() {
+fn test_deployments_exceed_block_spend_limit() {
     let rng = &mut TestRng::default();
 
     // Initialize the test environment.
@@ -3263,7 +3265,8 @@ fn test_exceed_block_spend_limit_deployments() {
     // Get the synthesis cost.
     let synthesis_cost = synthesis_cost(deployment.deployment().unwrap()).unwrap();
 
-    println!("synthesis_cost: {synthesis_cost}");
+    // Determine number of deployments that cannot be included in a block.
+    let num_deployments = usize::try_from(<CurrentNetwork as Network>::BLOCK_SPEND_LIMIT / synthesis_cost + 1).unwrap();
 
     // Construct the next block.
     let block =
@@ -3275,8 +3278,41 @@ fn test_exceed_block_spend_limit_deployments() {
     // Add the block to the ledger.
     ledger.advance_to_next_block(&block).unwrap();
 
-    // Construct enough deployment transactions to exceed the block constraint limit.
-    let mut transactions = Vec::new();
+    // Prepare unique addresses to fund.
+    // Deployments need to come from unique identities in order to be accepted in a block.
+    let mut new_private_keys = Vec::with_capacity(num_deployments);
+    let mut new_addresses = Vec::with_capacity(num_deployments);
+    let mut funding_transactions = Vec::with_capacity(num_deployments);
+
+    // Generate funding transactions.
+    for _ in 0..num_deployments {
+        // Sample recipients.
+        let recipient_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        new_private_keys.push(recipient_private_key);
+        let recipient_address = Address::try_from(&recipient_private_key).unwrap();
+        new_addresses.push(recipient_address);
+
+        // Fund the recipient with 1 million credits.
+        let inputs =
+            [Value::from_str(&format!("{recipient_address}")).unwrap(), Value::from_str("1000000000000u64").unwrap()];
+        let transaction = ledger
+            .vm
+            .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
+            .unwrap();
+
+        funding_transactions.push(transaction);
+    }
+    // Generate block funding recipients.
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], funding_transactions, rng).unwrap();
+
+    // Check that the next block is valid.
+    ledger.check_next_block(&block, rng).unwrap();
+    // Add the deployment block to the ledger.
+    ledger.advance_to_next_block(&block).unwrap();
+
+    // Construct enough deployment transactions to exceed the block spend limit.
+    let mut deployment_transactions = Vec::with_capacity(num_deployments);
     for i in 0..(<CurrentNetwork as Network>::BLOCK_SPEND_LIMIT / synthesis_cost + 1) {
         let program = Program::from_str(&format!(
             r"program test_max_deployment_limit_{}.aleo;
@@ -3287,15 +3323,18 @@ fn test_exceed_block_spend_limit_deployments() {
         ))
         .unwrap();
 
-        let deployment = ledger.vm().deploy(&private_key, &program, None, 0, None, rng).unwrap();
-        transactions.push(deployment)
+        let deployment =
+            ledger.vm().deploy(&new_private_keys[usize::try_from(i).unwrap()], &program, None, 0, None, rng).unwrap();
+        deployment_transactions.push(deployment)
     }
 
     // Get the number of transactions.
-    let num_transactions = transactions.len();
+    let num_transactions = deployment_transactions.len();
 
     // Construct the next block.
-    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], transactions, rng).unwrap();
+    let block = ledger
+        .prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], deployment_transactions, rng)
+        .unwrap();
 
     // Check that all but one transaction is accepted.
     assert_eq!(block.transactions().num_accepted(), num_transactions - 1);
