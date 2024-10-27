@@ -333,7 +333,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Initialize seen transaction details.
             let mut tx_details = SeenTransactionDetails::new();
             // Initialize a counter for the total amount of microcredits spent on compute.
-            let mut microcredits_spent_on_compute = 0u64;
+            let mut total_compute_spend = 0u64;
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
@@ -346,9 +346,19 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     continue 'outer;
                 }
 
+                // Collect the Optional Stack corresponding to the transaction.
+                let stack = if let Transaction::Execute(_, execution, _) = transaction {
+                    // Get the root transition from the execution.
+                    let root_transition = execution.peek().map_err(|e| e.to_string())?;
+                    // Get the stack from the process.
+                    Some(process.get_stack(root_transition.program_id()).map_err(|e| e.to_string())?.clone())
+                } else {
+                    None
+                };
+
                 // Determine if the transaction should be aborted.
                 if let Some(reason) =
-                    self.should_abort_transaction(&process, transaction, &tx_details, microcredits_spent_on_compute)
+                    self.should_abort_transaction(transaction, &tx_details, total_compute_spend, &stack)
                 {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), reason));
@@ -474,28 +484,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     Ok(confirmed_transaction) => {
                         // Add the transaction details to the seen transaction details.
                         tx_details.insert_transaction_details(confirmed_transaction.transaction());
-                        // Add any synthesis cost to the total microcredits spent on compute.
-                        if let Transaction::Deploy(_, _, deployment, _) = confirmed_transaction.transaction() {
-                            // Compute the synthesis cost.
-                            let synthesis_cost = synthesis_cost(deployment).map_err(|e| e.to_string())?;
-                            // Add the synthesis cost to the total microcredits spent on compute.
-                            microcredits_spent_on_compute =
-                                microcredits_spent_on_compute.saturating_add(synthesis_cost);
-                        }
-                        // Add any finalize cost to the total finalize cost.
-                        if let Transaction::Execute(_, execution, _) = confirmed_transaction.transaction() {
-                            // Get the root transition from the execution.
-                            let root_transition = execution.peek().map_err(|e| e.to_string())?;
-                            // Get the finalize cost from the process.
-                            let finalize_cost = process
-                                .get_finalize_cost(root_transition.program_id(), root_transition.function_name())
+                        // Compute the transaction cost.
+                        let tx_compute_cost =
+                            compute_cost_in_microcredits::<N>(confirmed_transaction.transaction(), &stack)
                                 .map_err(|e| e.to_string())?;
-                            // Add the fixed execution cost.
-                            let execution_cost = finalize_cost.saturating_add(execution_fixed_cost::<N>());
-                            // Add the execution cost to the total microcredits spent on compute.
-                            microcredits_spent_on_compute =
-                                microcredits_spent_on_compute.saturating_add(execution_cost);
-                        }
+                        // Add the transaction cost to the total microcredits spent on compute.
+                        total_compute_spend = total_compute_spend.saturating_add(tx_compute_cost);
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
                         // Increment the transaction index counter.
@@ -826,10 +820,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction exceeds the block spend limit.
     fn should_abort_transaction(
         &self,
-        process: &Process<N>,
         transaction: &Transaction<N>,
         tx_details: &SeenTransactionDetails<N>,
-        microcredits_spent_on_compute: u64,
+        total_compute_spend: u64,
+        stack: &Option<Arc<Stack<N>>>,
     ) -> Option<String> {
         // Get the current block height to help determine which checks to perform.
         let current_block_height = self.block_store().current_block_height();
@@ -874,44 +868,24 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // If the transaction is a deployment, ensure that it is not another deployment in the block from the same public fee payer.
-        if let Transaction::Deploy(_, _, deployment, fee) = transaction {
+        if let Transaction::Deploy(_, _, _, fee) = transaction {
             // If any public deployment payer has already deployed in this block, abort the transaction.
             if let Some(payer) = fee.payer() {
                 if tx_details.deployment_payers().contains(&payer) {
                     return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
                 }
             }
-            // Activate deployment checks from CONSENSUS_V2_HEIGHT onwards.
-            if current_block_height >= N::CONSENSUS_V2_HEIGHT {
-                // Check that the synthesis cost does not exceed the maximum.
-                let Ok(synthesis_cost) = synthesis_cost(deployment) else {
-                    return Some("Failed to get synthesis cost".to_string());
-                };
-                // If the synthesis cost exceeds the block spend limit, abort the transaction.
-                if synthesis_cost.saturating_add(microcredits_spent_on_compute) > N::BLOCK_SPEND_LIMIT {
-                    return Some("Exceeds block spend limit".to_string());
-                }
-            }
         }
 
-        // If the transaction is an execution, ensure that the total finalize cost does not exceed the block spend limit.
-        if let Transaction::Execute(_, execution, _) = transaction {
-            // Activate execute checks from CONSENSUS_V2_HEIGHT onwards.
-            if current_block_height >= N::CONSENSUS_V2_HEIGHT {
-                // Get the root transition from the execution.
-                let Ok(root) = execution.peek() else {
-                    return Some("Failed to get root transition".to_string());
-                };
-                // Get the finalize cost from the process.
-                let Ok(finalize_cost) = process.get_finalize_cost(root.program_id(), root.function_name()) else {
-                    return Some("Failed to get finalize cost".to_string());
-                };
-                // Add the fixed execution cost.
-                let execution_cost = finalize_cost.saturating_add(execution_fixed_cost::<N>());
-                // If the execution cost exceeds the block spend limit, abort the transaction.
-                if execution_cost.saturating_add(microcredits_spent_on_compute) > N::BLOCK_SPEND_LIMIT {
-                    return Some("Exceeds block spend limit".to_string());
-                }
+        // Activate compute spend check from CONSENSUS_V2_HEIGHT onwards.
+        if current_block_height >= N::CONSENSUS_V2_HEIGHT {
+            // Compute the transaction compute cost.
+            let Ok(tx_compute_cost) = compute_cost_in_microcredits::<N>(transaction, stack) else {
+                return Some("Failed to compute the transaction compute cost".to_string());
+            };
+            // If the transaction compute cost exceeds the block spend limit, abort the transaction.
+            if tx_compute_cost.saturating_add(total_compute_spend) > N::BLOCK_SPEND_LIMIT {
+                return Some("Exceeds block spend limit".to_string());
             }
         }
 
@@ -938,7 +912,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Initialize seen transaction details.
         let mut tx_details = SeenTransactionDetails::new();
         // Initialize a counter for the total amount of microcredits spent on compute.
-        let mut microcredits_spent_on_compute = 0u64;
+        let mut total_compute_spend = 0u64;
 
         // Abort the transactions that are have duplicates or are invalid. This will prevent the VM from performing
         // verification on transactions that would have been aborted in `VM::atomic_speculate`.
@@ -949,40 +923,28 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 continue;
             }
 
+            // Collect the Optional Stack corresponding to the transaction if its an Execution.
+            let stack = if let Transaction::Execute(_, execution, _) = transaction {
+                // Get the root transition from the execution.
+                let root_transition = execution.peek()?;
+                // Get the stack from the process.
+                Some(self.process.read().get_stack(root_transition.program_id())?.clone())
+            } else {
+                None
+            };
+
             // Determine if the transaction should be aborted.
-            match self.should_abort_transaction(
-                &self.process.read(),
-                transaction,
-                &tx_details,
-                microcredits_spent_on_compute,
-            ) {
+            match self.should_abort_transaction(transaction, &tx_details, total_compute_spend, &stack) {
                 // Store the aborted transaction.
                 Some(reason) => aborted_transactions.push((*transaction, reason.to_string())),
                 // Track the transaction state.
                 None => {
                     // Add the transaction details to the seen transaction details.
                     tx_details.insert_transaction_details(*transaction);
-
-                    if let Transaction::Deploy(_, _, deployment, _) = transaction {
-                        // Compute the synthesis cost.
-                        let synthesis_cost = synthesis_cost(deployment)?;
-                        // Add the synthesis cost to the total microcredits spent on compute.
-                        microcredits_spent_on_compute = microcredits_spent_on_compute.saturating_add(synthesis_cost);
-                    }
-                    // Add any finalize cost to the total finalize cost.
-                    if let Transaction::Execute(_, execution, _) = transaction {
-                        // Get the root transition from the execution.
-                        let root_transition = execution.peek()?;
-                        // Get the finalize cost from the process.
-                        let finalize_cost = self
-                            .process
-                            .read()
-                            .get_finalize_cost(root_transition.program_id(), root_transition.function_name())?;
-                        // Add the fixed execution cost.
-                        let execution_cost = finalize_cost.saturating_add(execution_fixed_cost::<N>());
-                        // Add the execution cost to the total microcredits spent on compute.
-                        microcredits_spent_on_compute = microcredits_spent_on_compute.saturating_add(execution_cost);
-                    }
+                    // Compute the transaction cost.
+                    let tx_compute_cost = compute_cost_in_microcredits::<N>(transaction, &stack)?;
+                    // Add the transaction cost to the total microcredits spent on compute.
+                    total_compute_spend = total_compute_spend.saturating_add(tx_compute_cost);
 
                     // Add the transaction to the list of transactions to verify.
                     transactions_to_verify.push(transaction);

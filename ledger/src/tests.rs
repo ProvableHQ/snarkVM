@@ -34,7 +34,7 @@ use ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
 use snarkvm_utilities::try_vm_runtime;
 use synthesizer::{
     Stack,
-    process::synthesis_cost,
+    process::deployment_synthesis_cost,
     program::{Program, StackProgram},
     vm::VM,
 };
@@ -3263,7 +3263,7 @@ fn test_deployments_exceed_block_spend_limit() {
     let deployment = ledger.vm().deploy(&private_key, &program, None, 0, None, rng).unwrap();
 
     // Get the synthesis cost.
-    let synthesis_cost = synthesis_cost(deployment.deployment().unwrap()).unwrap();
+    let synthesis_cost = deployment_synthesis_cost(deployment.deployment().unwrap()).unwrap();
 
     // Determine number of deployments that cannot be included in a block.
     let num_deployments = usize::try_from(<CurrentNetwork as Network>::BLOCK_SPEND_LIMIT / synthesis_cost + 1).unwrap();

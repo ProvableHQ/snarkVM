@@ -133,9 +133,9 @@ pub trait Network:
     const MAX_FEE: u64 = 1_000_000_000_000_000;
     /// The maximum number of microcredits that can be spent on a finalize block.
     const TRANSACTION_SPEND_LIMIT: u64 = 100_000_000;
-    /// The fixed cost in microcredits to verify an execution.
-    // NOTE: this constant reflects the compute cost of an execution, but is not required to be paid by the user.
-    const EXECUTION_FIXED_COST: u64 = 2_000_000; // 2 million microcredits
+    /// The base cost in microcredits to verify an execution.
+    /// NOTE: this constant reflects the compute cost of an execution, but is not required to be paid by the user.
+    const EXECUTION_BASE_COST: u64 = 2_000_000; // 2 million microcredits
     /// The maximum number of microcredits that can be spent in a block.
     const BLOCK_SPEND_LIMIT: u64 = 950_000_000;
 

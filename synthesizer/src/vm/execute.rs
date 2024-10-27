@@ -216,7 +216,7 @@ mod tests {
     };
     use ledger_block::Transition;
     use ledger_store::helpers::memory::ConsensusMemory;
-    use synthesizer_process::cost_per_command;
+    use synthesizer_process::finalize_cost_per_command;
     use synthesizer_program::StackProgram;
 
     use indexmap::IndexMap;
@@ -753,7 +753,7 @@ finalize test:
                     finalize_logic
                         .commands()
                         .iter()
-                        .map(|command| cost_per_command(&stack, finalize_logic, command))
+                        .map(|command| finalize_cost_per_command(&stack, finalize_logic, command))
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })
@@ -888,7 +888,7 @@ finalize test:
                     finalize_logic
                         .commands()
                         .iter()
-                        .map(|command| cost_per_command(&stack, finalize_logic, command))
+                        .map(|command| finalize_cost_per_command(&stack, finalize_logic, command))
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })

@@ -13,13 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use crate::{Process, Stack, StackProgramTypes};
 
 use console::{
     prelude::*,
     program::{FinalizeType, Identifier, LiteralType, PlaintextType},
 };
-use ledger_block::{Deployment, Execution};
+use ledger_block::{Deployment, Execution, Transaction};
 use synthesizer_program::{CastType, Command, Finalize, Instruction, Operand, StackProgram};
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, namespace cost)).
@@ -37,7 +39,7 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
         .ok_or(anyhow!("The storage cost computation overflowed for a deployment"))?;
 
     // Compute the synthesis cost in microcredits.
-    let synthesis_cost = synthesis_cost(deployment)?;
+    let synthesis_cost = deployment_synthesis_cost(deployment)?;
 
     // Compute the namespace cost in credits: 10^(10 - num_characters).
     let namespace_cost = 10u64
@@ -55,7 +57,7 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
 }
 
 /// Returns the cost in microcredits to synthesize a deployment.
-pub fn synthesis_cost<N: Network>(deployment: &Deployment<N>) -> Result<u64> {
+pub fn deployment_synthesis_cost<N: Network>(deployment: &Deployment<N>) -> Result<u64> {
     let num_combined_variables = deployment.num_combined_variables()?;
     let num_combined_constraints = deployment.num_combined_constraints()?;
     Ok(num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER)
@@ -87,12 +89,6 @@ fn execution_storage_cost<N: Network>(size_in_bytes: u64) -> u64 {
     } else {
         size_in_bytes
     }
-}
-
-/// Returns the fixed cost for an execution.
-/// NOTE: this constant reflects the compute cost of an execution, but is not required to be paid by the user.
-pub const fn execution_fixed_cost<N: Network>() -> u64 {
-    N::EXECUTION_FIXED_COST
 }
 
 /// Finalize costs for compute heavy operations, derived as:
@@ -177,7 +173,11 @@ fn cost_in_size<'a, N: Network>(
 }
 
 /// Returns the the cost of a command in a finalize scope.
-pub fn cost_per_command<N: Network>(stack: &Stack<N>, finalize: &Finalize<N>, command: &Command<N>) -> Result<u64> {
+pub fn finalize_cost_per_command<N: Network>(
+    stack: &Stack<N>,
+    finalize: &Finalize<N>,
+    command: &Command<N>,
+) -> Result<u64> {
     match command {
         Command::Instruction(Instruction::Abs(_)) => Ok(500),
         Command::Instruction(Instruction::AbsWrapped(_)) => Ok(500),
@@ -376,7 +376,7 @@ pub fn cost_per_command<N: Network>(stack: &Stack<N>, finalize: &Finalize<N>, co
 }
 
 /// Returns the minimum number of microcredits required to run the finalize.
-pub fn cost_in_microcredits<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
+pub fn finalize_cost_in_microcredits<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
     // Retrieve the finalize logic.
     let Some(finalize) = stack.get_function_ref(function_name)?.finalize_logic() else {
         // Return a finalize cost of 0, if the function does not have a finalize scope.
@@ -398,10 +398,36 @@ pub fn cost_in_microcredits<N: Network>(stack: &Stack<N>, function_name: &Identi
     finalize
         .commands()
         .iter()
-        .map(|command| cost_per_command(stack, finalize, command))
+        .map(|command| finalize_cost_per_command(stack, finalize, command))
         .try_fold(future_cost, |acc, res| {
             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
         })
+}
+
+/// Returns the compute cost for a transaction.
+/// This allows the VM to determine whether a transaction surpasses the BLOCK_SPEND_LIMIT.
+/// This does NOT represent the full costs which a user has to pay.
+pub fn compute_cost_in_microcredits<N: Network>(
+    transaction: &Transaction<N>,
+    stack: &Option<Arc<Stack<N>>>,
+) -> Result<u64> {
+    match transaction {
+        // Deploy transaction compute is dominated by synthesis costs.
+        Transaction::Deploy(_, _, deployment, _) => deployment_synthesis_cost(deployment),
+        // Execute transaction compute is dominated by a base cost and finalize costs.
+        Transaction::Execute(_, execution, _) => {
+            // Get the root transition.
+            let root_transition = execution.peek()?;
+            // Ensure that a stack was provided.
+            let stack = stack.as_ref().ok_or(anyhow!("Expected a Stack containing the Execution's finalize cost."))?;
+            // Get the finalize cost from the process.
+            let finalize_cost = stack.get_finalize_cost(root_transition.function_name())?;
+            // Add the base execution cost.
+            Ok(finalize_cost.saturating_add(N::EXECUTION_BASE_COST))
+        }
+        // Fee transactions cannot be sent to the VM by outside parties so do not have a compute cost.
+        Transaction::Fee(..) => Ok(0),
+    }
 }
 
 #[cfg(test)]
