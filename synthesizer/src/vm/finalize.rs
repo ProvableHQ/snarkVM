@@ -230,9 +230,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[cfg(not(any(test, feature = "test")))]
     pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = Transactions::<N>::MAX_TRANSACTIONS;
     /// The maximum number of confirmed transactions allowed in a block.
-    /// This is deliberately set to a low value (8) for testing purposes only.
+    /// This is deliberately set to a low value (32) for testing purposes only.
     #[cfg(any(test, feature = "test"))]
-    pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = 256;
+    pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = 32;
 
     /// Performs atomic speculation over a list of transactions.
     ///
