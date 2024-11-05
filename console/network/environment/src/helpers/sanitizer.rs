@@ -129,7 +129,7 @@ impl Sanitizer {
                 if !contains_unsafe_chars {
                     Ok((after, before))
                 } else {
-                    recognize(Self::till(value((), Sanitizer::parse_safe_char), Self::eol))(before)
+                    recognize(Self::till(value((), Sanitizer::parse_safe_char), Self::eoi))(before)
                 }
             } else {
                 map(
