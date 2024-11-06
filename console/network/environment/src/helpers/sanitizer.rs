@@ -280,6 +280,23 @@ mod tests {
             ("hello world", "// hel\u{4141}lo\n"),
             Sanitizer::parse_comments("// hel\u{4141}lo\nhello world").unwrap()
         );
+        assert_eq!(
+            ("hello world", "/* multi\n   line comment\n*/\n"),
+            Sanitizer::parse_comments("/* multi\n   line comment\n*/\nhello world").unwrap()
+        );
+        assert_eq!(
+            ("hello world", "// multiple\n// line\n// comments\n"),
+            Sanitizer::parse_comments("// multiple\n// line\n// comments\nhello world").unwrap()
+        );
+        assert_eq!(
+            ("hello world", "/* multi\n   line comment\n*/\n/* and\n   another\n   one\n*/\n"),
+            Sanitizer::parse_comments("/* multi\n   line comment\n*/\n/* and\n   another\n   one\n*/\nhello world")
+                .unwrap()
+        );
+        assert_eq!(
+            ("hello world", "/* multi\n   line comment\n*/\n// two single\n// line comments\n/* and\n   another\n   multi-liner\n*/\n"),
+            Sanitizer::parse_comments("/* multi\n   line comment\n*/\n// two single\n// line comments\n/* and\n   another\n   multi-liner\n*/\nhello world").unwrap()
+        );
         assert!(Sanitizer::parse_comments("// hel\x08lo\nhello world").is_err());
         assert!(Sanitizer::parse_comments("// hel\u{2066}lo\nhello world").is_err());
         assert!(Sanitizer::parse_comments("/* hel\x7flo */\nhello world").is_err());
