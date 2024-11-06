@@ -129,6 +129,8 @@ impl Sanitizer {
                 if !contains_unsafe_chars {
                     Ok((after, before))
                 } else {
+                    // `eoi` is used here instead of `eol`, since the earlier call to `split_once`
+                    // already removed the newline
                     recognize(Self::till(value((), Sanitizer::parse_safe_char), Self::eoi))(before)
                 }
             } else {
