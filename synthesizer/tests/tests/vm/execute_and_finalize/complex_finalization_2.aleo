@@ -84,3 +84,5 @@ finalize call_mid:
     await r0;
     await r1;
 
+function dummy:
+

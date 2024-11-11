@@ -104,7 +104,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Verify the number of transitions");
 
         // Construct the call graph.
-        let call_graph = if state.block_height() > N::CONSENSUS_V2_HEIGHT {
+        let call_graph = if state.block_height() >= N::CONSENSUS_V2_HEIGHT {
             Default::default()
         } else {
             self.construct_call_graph(execution)?
@@ -164,10 +164,12 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     fee: &Fee<N>,
 ) -> Result<Vec<FinalizeOperation<N>>> {
     // Construct the call graph.
-    let call_graph = if state.block_height() > N::CONSENSUS_V2_HEIGHT {
+    let call_graph = if state.block_height() >= N::CONSENSUS_V2_HEIGHT {
         Default::default()
     } else {
-        HashMap::from([*fee.transition_id(), Vec::new()])
+        let mut call_graph = HashMap::new();
+        call_graph.insert(*fee.transition_id(), vec![]);
+        call_graph
     };
 
     // Finalize the transition.
@@ -272,9 +274,9 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                         await_.register()
                     );
 
-                    // Get the finalize transition ID.
-                    let finalize_transition_id =
-                        finalize_transition_id(&state, &call_graph, call_counter, *transition.id())?;
+                    // Get the child transition ID.
+                    let child_transition_id =
+                        child_transition_id::<N>(&state, &registers, &call_graph, *transition.id(), call_counter)?;
 
                     // Increment the nonce.
                     nonce += 1;
@@ -285,7 +287,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                         await_,
                         stack,
                         &registers,
-                        finalize_transition_id,
+                        child_transition_id,
                         nonce
                     )) {
                         Ok(Ok(callee_state)) => callee_state,
@@ -459,27 +461,28 @@ fn branch_to<N: Network, const VARIANT: u8>(
 }
 
 // A helper function to compute the transition ID for the finalize registers.
-fn finalize_transition_id<N: Network>(
+fn child_transition_id<N: Network>(
     state: &FinalizeGlobalState,
+    registers: &FinalizeRegisters<N>,
     call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
-    call_counter: usize,
     transition_id: N::TransitionID,
+    call_counter: usize,
 ) -> Result<N::TransitionID> {
-    if state.block_height() > N::CONSENSUS_V2_HEIGHT {
-        transition_id
+    if state.block_height() >= N::CONSENSUS_V2_HEIGHT {
+        Ok(transition_id)
     } else {
         // If the block height is greater than
         // Get the current transition ID.
         let transition_id = registers.transition_id();
         // Get the child transition ID.
-        let finalize_transition_id = match call_graph.get(transition_id) {
+        let child_transition_id = match call_graph.get(&transition_id) {
             Some(transitions) => match transitions.get(call_counter) {
                 Some(transition_id) => *transition_id,
                 None => bail!("Child transition ID not found."),
             },
             None => bail!("Transition ID '{transition_id}' not found in call graph"),
         };
-        Ok(finalize_transition_id)
+        Ok(child_transition_id)
     }
 }
 
