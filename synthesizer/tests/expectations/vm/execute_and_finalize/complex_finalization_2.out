@@ -1,0 +1,25 @@
+errors: []
+outputs:
+- verified: true
+  execute:
+    outer.aleo/call_mid:
+      outputs:
+      - '{"type":"public","id":"2301587965105966754142050666046677107364996949797815128474709473266430416696field","value":"1000000field"}'
+      - '{"type":"future","id":"4716145591704663568310612342512104696544794498128591386306943309631776159538field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    },\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
+  speculate: the execution was accepted
+  add_next_block: succeeded.
+additional:
+- child_outputs:
+    nofin.aleo/do:
+      outputs:
+      - '{"type":"public","id":"2810059825165621756282482599752302608445186100857886652592226912460016272227field","value":"1000000field"}'
+    inner.aleo/save_inner_rand:
+      outputs:
+      - '{"type":"future","id":"6884849811807685148611729637432856195626491894347218521923234795128862008412field","value":"{\n  program_id: inner.aleo,\n  function_name: save_inner_rand,\n  arguments: [\n    0field\n  ]\n}"}'
+    mid.aleo/save_mid_rand:
+      outputs:
+      - '{"type":"public","id":"7516379094769281711358210337281452603173569591363079692252867720859252600938field","value":"0field"}'
+      - '{"type":"future","id":"1742421082873735534027207523675220648019822559721953111508825497611161628034field","value":"{\n  program_id: mid.aleo,\n  function_name: save_mid_rand,\n  arguments: [\n    {\n      program_id: inner.aleo,\n      function_name: save_inner_rand,\n      arguments: [\n        0field\n      ]\n    }\n  \n  ]\n}"}'
+    credits.aleo/fee_public:
+      outputs:
+      - '{"type":"future","id":"553990883457289109173422070562273818924424033377397745297633641139928117144field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    160403u64\n  ]\n}"}'

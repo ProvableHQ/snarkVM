@@ -46,6 +46,8 @@ pub struct FinalizeRegisters<N: Network> {
     finalize_types: FinalizeTypes<N>,
     /// The mapping of assigned registers to their values.
     registers: IndexMap<u64, Value<N>>,
+    /// A nonce for finalize registers.
+    nonce: u64,
     /// The tracker for the last register locator.
     last_register: Option<u64>,
 }
@@ -58,8 +60,17 @@ impl<N: Network> FinalizeRegisters<N> {
         transition_id: N::TransitionID,
         function_name: Identifier<N>,
         finalize_types: FinalizeTypes<N>,
+        nonce: u64,
     ) -> Self {
-        Self { state, transition_id, finalize_types, function_name, registers: IndexMap::new(), last_register: None }
+        Self {
+            state,
+            transition_id,
+            finalize_types,
+            function_name,
+            registers: IndexMap::new(),
+            nonce,
+            last_register: None,
+        }
     }
 }
 
@@ -80,5 +91,11 @@ impl<N: Network> FinalizeRegistersState<N> for FinalizeRegisters<N> {
     #[inline]
     fn function_name(&self) -> &Identifier<N> {
         &self.function_name
+    }
+
+    /// Returns the nonce for the finalize registers.
+    #[inline]
+    fn nonce(&self) -> u64 {
+        self.nonce
     }
 }

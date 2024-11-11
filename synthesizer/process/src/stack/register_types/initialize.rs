@@ -158,7 +158,7 @@ impl<N: Network> RegisterTypes<N> {
         }
 
         /* Additional checks. */
-        // - All futures produces before the `async` call must be consumed by the `async` call.
+        // - All futures produced before the `async` call must be consumed by the `async` call.
 
         // Get all registers containing futures.
         let mut future_registers: IndexSet<(Register<N>, Locator<N>)> = register_types

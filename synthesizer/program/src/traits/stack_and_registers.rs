@@ -120,6 +120,9 @@ pub trait FinalizeRegistersState<N: Network> {
 
     /// Returns the function name for the finalize scope.
     fn function_name(&self) -> &Identifier<N>;
+
+    /// Returns the nonce for the finalize registers.
+    fn nonce(&self) -> u64;
 }
 
 pub trait RegistersSigner<N: Network> {

@@ -73,6 +73,7 @@ pub fn sample_finalize_registers(
         <CurrentNetwork as Network>::TransitionID::default(),
         *function_name,
         stack.get_finalize_types(function_name)?.clone(),
+        0u64,
     );
 
     // For each literal,
