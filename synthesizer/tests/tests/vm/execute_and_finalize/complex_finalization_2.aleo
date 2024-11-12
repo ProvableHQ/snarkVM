@@ -4,6 +4,9 @@ cases:
   - program: outer.aleo
     function: call_mid
     inputs: [0field]
+  - program: outer.aleo
+    function: call_mid_2
+    inputs: [0field]
 */
 
 program nofin.aleo;
@@ -83,6 +86,24 @@ finalize call_mid:
     input r1 as mid.aleo/save_mid_rand.future;
     await r0;
     await r1;
+
+function call_mid_2:
+    input r0 as field.public;
+    add r0 1field into r1;
+    call nofin.aleo/do r1 into r2;
+    call mid.aleo/save_mid_rand r0 into r3 r4;
+    call nofin.aleo/do r2 into r5;
+    call mid.aleo/save_mid_rand r3 into r6 r7;
+    call nofin.aleo/do r5 into r8;
+    async call_mid_2 r4 r7 into r9;
+    output r8 as field.public;
+    output r9 as outer.aleo/call_mid_2.future;
+
+finalize call_mid_2:
+    input r0 as mid.aleo/save_mid_rand.future;
+    input r1 as mid.aleo/save_mid_rand.future;
+    await r1;
+    await r0;
 
 function dummy:
 
