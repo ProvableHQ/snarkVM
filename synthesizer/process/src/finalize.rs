@@ -274,28 +274,36 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                         await_.register()
                     );
 
-                    // Get the child transition ID.
-                    let child_transition_id =
-                        child_transition_id::<N>(&state, &registers, &call_graph, *transition.id(), call_counter)?;
+                    // Get the transition ID used to initialize the finalize registers.
+                    // If the block height is greater than the consensus V2 height, return the main transition ID.
+                    // Otherwise, query the call graph for the child transition ID corresponding to the future that is being awaited.
+                    let transition_id = if state.block_height() >= N::CONSENSUS_V2_HEIGHT {
+                        *transition.id()
+                    } else {
+                        // Get the current transition ID.
+                        let transition_id = registers.transition_id();
+                        // Get the child transition ID.
+                        match call_graph.get(transition_id) {
+                            Some(transitions) => match transitions.get(call_counter) {
+                                Some(transition_id) => *transition_id,
+                                None => bail!("Child transition ID not found."),
+                            },
+                            None => bail!("Transition ID '{transition_id}' not found in call graph"),
+                        }
+                    };
 
                     // Increment the nonce.
                     nonce += 1;
 
                     // Set up the finalize state for the await.
-                    let callee_state = match try_vm_runtime!(|| setup_await(
-                        state,
-                        await_,
-                        stack,
-                        &registers,
-                        child_transition_id,
-                        nonce
-                    )) {
-                        Ok(Ok(callee_state)) => callee_state,
-                        // If the evaluation fails, bail and return the error.
-                        Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
-                        // If the evaluation fails, bail and return the error.
-                        Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
-                    };
+                    let callee_state =
+                        match try_vm_runtime!(|| setup_await(state, await_, stack, &registers, transition_id, nonce)) {
+                            Ok(Ok(callee_state)) => callee_state,
+                            // If the evaluation fails, bail and return the error.
+                            Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
+                            // If the evaluation fails, bail and return the error.
+                            Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
+                        };
 
                     // Increment the call counter.
                     call_counter += 1;
@@ -457,32 +465,6 @@ fn branch_to<N: Network, const VARIANT: u8>(
         1 if first == second => Ok(counter + 1),
         1 if first != second => get_position_index(branch.position()),
         _ => bail!("Invalid 'branch' variant: {VARIANT}"),
-    }
-}
-
-// A helper function to compute the transition ID for the finalize registers.
-fn child_transition_id<N: Network>(
-    state: &FinalizeGlobalState,
-    registers: &FinalizeRegisters<N>,
-    call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
-    transition_id: N::TransitionID,
-    call_counter: usize,
-) -> Result<N::TransitionID> {
-    if state.block_height() >= N::CONSENSUS_V2_HEIGHT {
-        Ok(transition_id)
-    } else {
-        // If the block height is greater than
-        // Get the current transition ID.
-        let transition_id = registers.transition_id();
-        // Get the child transition ID.
-        let child_transition_id = match call_graph.get(&transition_id) {
-            Some(transitions) => match transitions.get(call_counter) {
-                Some(transition_id) => *transition_id,
-                None => bail!("Child transition ID not found."),
-            },
-            None => bail!("Transition ID '{transition_id}' not found in call graph"),
-        };
-        Ok(child_transition_id)
     }
 }
 

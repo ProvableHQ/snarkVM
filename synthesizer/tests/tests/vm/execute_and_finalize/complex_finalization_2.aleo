@@ -7,6 +7,21 @@ cases:
   - program: outer.aleo
     function: call_mid_2
     inputs: [0field]
+  - program: outer.aleo
+    function: dummy
+    inputs: []
+  - program: outer.aleo
+    function: dummy
+    inputs: []
+  - program: outer.aleo
+    function: dummy
+    inputs: []
+  - program: outer.aleo
+    function: call_mid
+    inputs: [0field]
+  - program: outer.aleo
+    function: call_mid_2
+    inputs: [0field]
 */
 
 program nofin.aleo;
