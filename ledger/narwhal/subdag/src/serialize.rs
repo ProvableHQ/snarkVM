@@ -39,7 +39,7 @@ impl<'de, N: Network> Deserialize<'de> for Subdag<N> {
                 Ok(Self::from(DeserializeExt::take_from_value::<D>(&mut value, "subdag")?)
                     .map_err(de::Error::custom)?)
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "subdag"),
+            false => FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "subdag"),
         }
     }
 }

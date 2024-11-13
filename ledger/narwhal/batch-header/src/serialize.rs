@@ -65,7 +65,9 @@ impl<'de, N: Network> Deserialize<'de> for BatchHeader<N> {
                     )))),
                 }
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "batch header"),
+            false => {
+                FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "batch header")
+            }
         }
     }
 }

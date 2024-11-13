@@ -182,7 +182,7 @@ impl<N: Network> BatchHeader<N> {
             bail!("Invalid signature for the batch header");
         }
         // Return the batch header.
-        Ok(Self {
+        Ok(Self::from_unchecked(
             author,
             batch_id,
             round,
@@ -191,7 +191,22 @@ impl<N: Network> BatchHeader<N> {
             transmission_ids,
             previous_certificate_ids,
             signature,
-        })
+        ))
+    }
+
+    /// Initializes a new batch header.
+    pub fn from_unchecked(
+        author: Address<N>,
+        batch_id: Field<N>,
+        round: u64,
+        timestamp: i64,
+        committee_id: Field<N>,
+        transmission_ids: IndexSet<TransmissionID<N>>,
+        previous_certificate_ids: IndexSet<Field<N>>,
+        signature: Signature<N>,
+    ) -> Self {
+        // Return the batch header.
+        Self { author, batch_id, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, signature }
     }
 }
 

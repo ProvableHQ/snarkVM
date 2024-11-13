@@ -35,6 +35,7 @@ use console::{
         Formatter,
         FromBytes,
         FromBytesDeserializer,
+        FromBytesUnchecked,
         FromStr,
         IoResult,
         Read,

@@ -64,7 +64,7 @@ impl<'de, N: Network> Deserialize<'de> for Block<N> {
                     false => Err(de::Error::custom(error("Mismatching block hash, possible data corruption"))),
                 }
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "block"),
+            false => FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "block"),
         }
     }
 }
