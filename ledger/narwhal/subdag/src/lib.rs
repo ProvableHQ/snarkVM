@@ -150,6 +150,11 @@ impl<N: Network> Subdag<N> {
         // Ensure the leader certificate is an even round.
         Ok(Self { subdag })
     }
+
+    /// Initializes a new subdag.
+    pub fn from_unchecked(subdag: BTreeMap<u64, IndexSet<BatchCertificate<N>>>) -> Self {
+        Self { subdag }
+    }
 }
 
 impl<N: Network> Subdag<N> {

@@ -80,6 +80,22 @@ pub trait FromBytes {
     }
 }
 
+pub trait FromBytesUnchecked {
+    /// Reads `Self` from `reader` as little-endian bytes.
+    /// Does not perform input validation.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self>
+    where
+        Self: Sized;
+
+    /// Returns `Self` from a byte array in little-endian order.
+    fn from_bytes_le_unchecked(bytes: &[u8]) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self::read_le_unchecked(bytes)?)
+    }
+}
+
 pub struct ToBytesSerializer<T: ToBytes>(PhantomData<T>);
 
 impl<T: ToBytes> ToBytesSerializer<T> {
@@ -163,6 +179,17 @@ impl<'de, T: FromBytes> FromBytesDeserializer<T> {
                 false => Err(error),
             },
         }
+    }
+}
+
+pub struct FromBytesUncheckedDeserializer<T: FromBytesUnchecked>(PhantomData<T>);
+
+impl<'de, T: FromBytesUnchecked> FromBytesUncheckedDeserializer<T> {
+    /// Deserializes a dynamically-sized byte array.
+    pub fn deserialize_with_size_encoding<D: Deserializer<'de>>(deserializer: D, name: &str) -> Result<T, D::Error> {
+        let mut buffer = Vec::with_capacity(32);
+        deserializer.deserialize_bytes(FromBytesVisitor::new(&mut buffer, name))?;
+        FromBytesUnchecked::read_le_unchecked(&*buffer).map_err(de::Error::custom)
     }
 }
 

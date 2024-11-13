@@ -25,6 +25,18 @@ impl<N: Network> FromBytes for ComputeKey<N> {
     }
 }
 
+impl<N: Network> FromBytesUnchecked for ComputeKey<N> {
+    /// Reads an account compute key from a buffer.
+    #[inline]
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        let pk_sig = Group::from_x_coordinate_unchecked(Field::new(N::Field::read_le(&mut reader)?))
+            .map_err(|e| error(format!("{e}")))?;
+        let pr_sig = Group::from_x_coordinate_unchecked(Field::new(N::Field::read_le(&mut reader)?))
+            .map_err(|e| error(format!("{e}")))?;
+        Self::try_from((pk_sig, pr_sig)).map_err(|e| error(format!("{e}")))
+    }
+}
+
 impl<N: Network> ToBytes for ComputeKey<N> {
     /// Writes an account compute key to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
@@ -54,7 +66,9 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, ComputeKey::read_le(&expected_bytes[..])?);
+            assert_eq!(expected, ComputeKey::read_le_unchecked(&expected_bytes[..])?);
             assert!(ComputeKey::<CurrentNetwork>::read_le(&expected_bytes[1..]).is_err());
+            assert!(ComputeKey::<CurrentNetwork>::read_le_unchecked(&expected_bytes[1..]).is_err());
         }
         Ok(())
     }

@@ -26,6 +26,17 @@ impl<N: Network> FromBytes for Signature<N> {
     }
 }
 
+impl<N: Network> FromBytesUnchecked for Signature<N> {
+    /// Reads an account signature from a buffer.
+    #[inline]
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        let challenge = Scalar::new(FromBytes::read_le(&mut reader)?);
+        let response = Scalar::new(FromBytes::read_le(&mut reader)?);
+        let compute_key = ComputeKey::read_le_unchecked(&mut reader)?;
+        Ok(Self { challenge, response, compute_key })
+    }
+}
+
 impl<N: Network> ToBytes for Signature<N> {
     /// Writes an account signature to a buffer.
     #[inline]
@@ -56,7 +67,9 @@ mod tests {
             // Check the byte representation.
             let signature_bytes = signature.to_bytes_le()?;
             assert_eq!(signature, Signature::read_le(&signature_bytes[..])?);
+            assert_eq!(signature, Signature::read_le_unchecked(&signature_bytes[..])?);
             assert!(Signature::<CurrentNetwork>::read_le(&signature_bytes[1..]).is_err());
+            assert!(Signature::<CurrentNetwork>::read_le_unchecked(&signature_bytes[1..]).is_err());
         }
         Ok(())
     }
