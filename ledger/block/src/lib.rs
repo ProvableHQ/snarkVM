@@ -707,7 +707,7 @@ pub mod test_helpers {
         (block, transaction, private_key)
     }
 
-    pub(crate) fn sample_metadata(rng: &mut TestRng) -> Metadata<CurrentNetwork> {
+    pub(crate) fn sample_metadata() -> Metadata<CurrentNetwork> {
         let network = CurrentNetwork::ID;
         let round = u64::MAX;
         let height = u32::MAX;
@@ -719,7 +719,7 @@ pub mod test_helpers {
         let timestamp = i64::MAX - 1;
         let last_coinbase_timestamp = timestamp - 1;
         Metadata::new(
-            CurrentNetwork::ID,
+            network,
             round,
             height,
             cumulative_weight,
@@ -881,9 +881,8 @@ mod tests {
 
     #[test]
     fn test_serde_metadata() {
-        let rng = &mut TestRng::default();
-        let metadata = crate::test_helpers::sample_metadata(rng);
+        let metadata = crate::test_helpers::sample_metadata();
         let json_metadata = serde_json::to_string(&metadata).unwrap();
-        let deserialized_metadata: Metadata<CurrentNetwork> = serde_json::from_str(&json_metadata).unwrap();
+        let _deserialized_metadata: Metadata<CurrentNetwork> = serde_json::from_str(&json_metadata).unwrap();
     }
 }
