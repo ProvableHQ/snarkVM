@@ -28,4 +28,12 @@ impl<E: Environment> Group<E> {
         }
         bail!("Failed to recover an affine group from an x-coordinate of {x_coordinate}")
     }
+
+    /// Attempts to recover an affine group element from a given x-coordinate field element.
+    pub fn from_x_coordinate_unchecked(x_coordinate: Field<E>) -> Result<Self> {
+        if let Some((p1, _p2)) = E::Affine::pair_from_x_coordinate(*x_coordinate) {
+            return Ok(Self::new(p1));
+        }
+        bail!("Failed to recover an affine group from an x-coordinate of {x_coordinate}")
+    }
 }

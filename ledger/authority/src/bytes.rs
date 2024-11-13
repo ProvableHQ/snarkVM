@@ -29,6 +29,20 @@ impl<N: Network> FromBytes for Authority<N> {
     }
 }
 
+impl<N: Network> FromBytesUnchecked for Authority<N> {
+    /// Reads the authority from the buffer.
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the variant.
+        let variant = u8::read_le(&mut reader)?;
+        // Match the variant.
+        match variant {
+            0 => Ok(Self::Beacon(FromBytes::read_le(&mut reader)?)),
+            1 => Ok(Self::Quorum(FromBytesUnchecked::read_le_unchecked(&mut reader)?)),
+            2.. => Err(error("Invalid authority variant")),
+        }
+    }
+}
+
 impl<N: Network> ToBytes for Authority<N> {
     /// Writes the authority to the buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
@@ -63,6 +77,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, Authority::read_le(&expected_bytes[..]).unwrap());
+            assert_eq!(expected, Authority::read_le_unchecked(&expected_bytes[..]).unwrap());
         }
     }
 }

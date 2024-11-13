@@ -90,6 +90,76 @@ impl<N: Network> FromBytes for Block<N> {
     }
 }
 
+impl<N: Network> FromBytesUnchecked for Block<N> {
+    /// Reads the block from the buffer without performing expensive input validation.
+    #[inline]
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the version.
+        let version = u8::read_le(&mut reader)?;
+        // Ensure the version is valid.
+        if version != 1 {
+            return Err(error("Invalid block version"));
+        }
+
+        // Read the block hash.
+        let block_hash: N::BlockHash = FromBytes::read_le(&mut reader)?;
+        // Read the previous block hash.
+        let previous_hash = FromBytes::read_le(&mut reader)?;
+        // Read the header.
+        let header = FromBytes::read_le(&mut reader)?;
+
+        // Write the authority.
+        let authority = FromBytesUnchecked::read_le_unchecked(&mut reader)?;
+
+        // Read the number of ratifications.
+        let ratifications = Ratifications::read_le(&mut reader)?;
+
+        // Read the solutions.
+        let solutions: Solutions<N> = FromBytes::read_le(&mut reader)?;
+
+        // Read the number of aborted solution IDs.
+        let num_aborted_solutions = u32::read_le(&mut reader)?;
+        // Ensure the number of aborted solutions IDs is within bounds (this is an early safety check).
+        if num_aborted_solutions as usize > Solutions::<N>::MAX_ABORTED_SOLUTIONS {
+            return Err(error("Invalid number of aborted solutions IDs in the block"));
+        }
+        // Read the aborted solution IDs.
+        let mut aborted_solution_ids = Vec::with_capacity(num_aborted_solutions as usize);
+        for _ in 0..num_aborted_solutions {
+            aborted_solution_ids.push(FromBytes::read_le(&mut reader)?);
+        }
+
+        // Read the transactions.
+        let transactions = FromBytes::read_le(&mut reader)?;
+
+        // Read the number of aborted transaction IDs.
+        let num_aborted_transactions = u32::read_le(&mut reader)?;
+        // Ensure the number of aborted transaction IDs is within bounds (this is an early safety check).
+        if num_aborted_transactions as usize > Transactions::<N>::MAX_ABORTED_TRANSACTIONS {
+            return Err(error("Invalid number of aborted transaction IDs in the block"));
+        }
+        // Read the aborted transaction IDs.
+        let mut aborted_transaction_ids = Vec::with_capacity(num_aborted_transactions as usize);
+        for _ in 0..num_aborted_transactions {
+            aborted_transaction_ids.push(FromBytes::read_le(&mut reader)?);
+        }
+
+        // Construct the block.
+        Self::from_unchecked(
+            block_hash,
+            previous_hash,
+            header,
+            authority,
+            ratifications,
+            solutions,
+            aborted_solution_ids,
+            transactions,
+            aborted_transaction_ids,
+        )
+        .map_err(error)
+    }
+}
+
 impl<N: Network> ToBytes for Block<N> {
     /// Writes the block to the buffer.
     #[inline]
@@ -141,6 +211,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, Block::read_le(&expected_bytes[..])?);
+            assert_eq!(expected, Block::read_le_unchecked(&expected_bytes[..])?);
         }
         Ok(())
     }
@@ -153,6 +224,7 @@ mod tests {
         // Check the byte representation.
         let expected_bytes = genesis_block.to_bytes_le()?;
         assert_eq!(genesis_block, Block::read_le(&expected_bytes[..])?);
+        assert_eq!(genesis_block, Block::read_le_unchecked(&expected_bytes[..])?);
 
         Ok(())
     }

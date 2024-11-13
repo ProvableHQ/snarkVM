@@ -42,7 +42,10 @@ impl<'de, N: Network> Deserialize<'de> for BatchCertificate<N> {
                 )
                 .map_err(de::Error::custom)
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "batch certificate"),
+            false => FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(
+                deserializer,
+                "batch certificate",
+            ),
         }
     }
 }
