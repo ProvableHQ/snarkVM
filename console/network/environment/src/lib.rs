@@ -73,6 +73,7 @@ pub mod prelude {
         ToBytes,
         ToBytesSerializer,
         Uniform,
+        Verified,
         cfg_chunks,
         cfg_find,
         cfg_find_map,

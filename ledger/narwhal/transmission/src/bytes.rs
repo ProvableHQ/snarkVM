@@ -37,6 +37,28 @@ impl<N: Network> FromBytes for Transmission<N> {
     }
 }
 
+impl<N: Network> FromBytesUnchecked for Transmission<N> {
+    /// Reads the transmission from the buffer.
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the version.
+        let version = u8::read_le(&mut reader)?;
+        // Ensure the version is valid.
+        if version != 1 {
+            return Err(error("Invalid transmission version"));
+        }
+
+        // Read the variant.
+        let variant = u8::read_le(&mut reader)?;
+        // Match the variant.
+        match variant {
+            0 => Ok(Self::Ratification),
+            1 => Ok(Self::Solution(Data::read_le(&mut reader)?)),
+            2 => Ok(Self::Transaction(Data::read_le(&mut reader)?)),
+            3.. => Err(error("Invalid transmission variant")),
+        }
+    }
+}
+
 impl<N: Network> ToBytes for Transmission<N> {
     /// Writes the transmission to the buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
