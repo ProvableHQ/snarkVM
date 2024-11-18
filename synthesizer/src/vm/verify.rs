@@ -233,8 +233,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 if let Some(fee) = fee {
                     // If the fee is required, then check that the base fee amount is satisfied.
                     if is_fee_required {
-                        // Compute the execution cost.
-                        let (cost, _) = execution_cost(&self.process().read(), execution)?;
+                        // Compute the execution cost based on the block height
+                        let block_height = self
+                            .block_store()
+                            .find_block_height_from_state_root(execution.global_state_root())?
+                            .unwrap_or_default();
+                        let (cost, (_, _)) = match block_height < N::CONSENSUS_V2_HEIGHT {
+                            true => execution_cost_v1(&self.process().read(), execution)?,
+                            false => execution_cost_v2(&self.process().read(), execution)?,
+                        };
                         // Ensure the fee is sufficient to cover the cost.
                         if *fee.base_amount()? < cost {
                             bail!(
@@ -723,5 +730,94 @@ function compute:
 
         // Ensure that the mutated transaction fails verification due to an extra output.
         assert!(vm.check_transaction(&mutated_transaction, None, rng).is_err());
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_fee_migration() {
+        // This test will fail if the consensus v2 height is 0
+        assert_ne!(0, CurrentNetwork::CONSENSUS_V2_HEIGHT);
+
+        let minimum_credits_transfer_public_fee = 34_060;
+        let old_minimum_credits_transfer_public_fee = 51_060;
+
+        let rng = &mut TestRng::default();
+
+        // Initialize the VM.
+        let vm = crate::vm::test_helpers::sample_vm();
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        // Update the VM.
+        vm.add_next_block(&genesis).unwrap();
+
+        // Create the base transaction
+        let transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
+
+        // Try to submit a tx with the new fee before the migration block height
+        let fee_too_low_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
+            rng,
+            transaction.clone(),
+            minimum_credits_transfer_public_fee,
+        );
+        assert!(vm.check_transaction(&fee_too_low_transaction, None, rng).is_err());
+
+        // Try to submit a tx with the old fee before the migration block height
+        let old_valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
+            rng,
+            transaction.clone(),
+            old_minimum_credits_transfer_public_fee,
+        );
+        assert!(vm.check_transaction(&old_valid_transaction, None, rng).is_ok());
+
+        // Update the VM to the migration block height
+        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let transactions: [Transaction<CurrentNetwork>; 0] = [];
+        for _ in 0..CurrentNetwork::CONSENSUS_V2_HEIGHT {
+            // Call the function
+            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&next_block).unwrap();
+        }
+
+        // Create a new transaction with the new stateroot post migration block height
+        let transaction = {
+            let address = Address::try_from(&private_key).unwrap();
+            let inputs = [
+                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+            ]
+            .into_iter();
+
+            // Execute.
+            let transaction_without_fee =
+                vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs, None, 0, None, rng).unwrap();
+            let execution = transaction_without_fee.execution().unwrap().clone();
+
+            // Authorize the fee.
+            let authorization = vm
+                .authorize_fee_public(&private_key, 10_000_000, 100, execution.to_execution_id().unwrap(), rng)
+                .unwrap();
+            // Compute the fee.
+            let fee = vm.execute_fee_authorization(authorization, None, rng).unwrap();
+
+            // Construct the transaction.
+            Transaction::from_execution(execution, Some(fee)).unwrap()
+        };
+
+        // Try to submit a tx with the old fee after the migration block height
+        // Should work as now the fee is just too high
+        let fee_too_high_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
+            rng,
+            transaction.clone(),
+            old_minimum_credits_transfer_public_fee,
+        );
+        assert!(vm.check_transaction(&fee_too_high_transaction, None, rng).is_ok());
+
+        // Try to submit a tx with the new fee after the migration block height
+        let valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
+            rng,
+            transaction.clone(),
+            minimum_credits_transfer_public_fee,
+        );
+        assert!(vm.check_transaction(&valid_transaction, None, rng).is_ok());
     }
 }

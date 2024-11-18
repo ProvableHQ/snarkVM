@@ -139,14 +139,14 @@ impl Network for MainnetV0 {
     const CONSENSUS_V2_HEIGHT: u32 = 2_800_000;
     /// The block height from which consensus V2 rules apply.
     #[cfg(any(test, feature = "test"))]
-    const CONSENSUS_V2_HEIGHT: u32 = 0;
+    const CONSENSUS_V2_HEIGHT: u32 = 10;
     // TODO: Update this value based on the desired mainnet height.
     /// The block height from which consensus V3 rules apply.
     #[cfg(not(any(test, feature = "test")))]
     const CONSENSUS_V3_HEIGHT: u32 = 3_800_000;
     /// The block height from which consensus V3 rules apply.
     #[cfg(any(test, feature = "test"))]
-    const CONSENSUS_V3_HEIGHT: u32 = 10;
+    const CONSENSUS_V3_HEIGHT: u32 = 11;
     /// The network edition.
     const EDITION: u16 = 0;
     /// The genesis block coinbase target.

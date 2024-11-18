@@ -426,7 +426,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         }
                                     }
                                 }
+
                                 // This is a foundational bug - the caller is violating protocol rules.
+                                // It is possible that a `credits.aleo/split` transaction has no fee. However, it
+                                // is a simple transition without finalize operations and should not fail here.
                                 // Note: This will abort the entire atomic batch.
                                 None => Err("Rejected execute transaction has no fee".to_string()),
                             },
@@ -585,7 +588,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Acquire the write lock on the process.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
             // we choose to acquire the write lock for the entire duration of this atomic batch.
-            let mut process = self.process.write();
+            let process = self.process.write();
 
             // Initialize a list for the deployed stacks.
             let mut stacks = Vec::new();

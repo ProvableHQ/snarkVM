@@ -20,6 +20,9 @@ cases:
     function: dummy
     inputs: []
   - program: outer.aleo
+    function: dummy
+    inputs: []
+  - program: outer.aleo
     function: call_mid
     inputs: [0field]
   - program: outer.aleo

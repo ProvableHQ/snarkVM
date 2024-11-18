@@ -41,8 +41,8 @@ impl<N: Network> Process<N> {
     /// Adds the newly-deployed program.
     /// This method assumes the given deployment **is valid**.
     #[inline]
-    pub fn load_deployment(&mut self, deployment: &Deployment<N>) -> Result<()> {
-        let timer = timer!("Process::load_deployment");
+    pub fn load_deployment(&self, deployment: &Deployment<N>) -> Result<()> {
+        let timer = timer!("Process::load_testing_only_deployment");
 
         // Compute the program stack.
         let stack = Stack::new(self, deployment.program())?;

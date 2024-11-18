@@ -151,7 +151,7 @@ impl<N: Network> Package<N> {
     /// Returns a new process for the package.
     pub fn get_process(&self) -> Result<Process<N>> {
         // Create the process.
-        let mut process = Process::load()?;
+        let mut process = Process::load_testing_only()?;
 
         // Prepare the imports directory.
         let imports_directory = self.imports_directory();

@@ -72,7 +72,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize the process.
-        let process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load_testing_only().unwrap();
 
         // Sample a private key.
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -124,7 +124,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize the process.
-        let process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load_testing_only().unwrap();
 
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();

@@ -86,7 +86,7 @@ impl<N: Network> Stack<N> {
             stack.number_of_calls.insert(*function.name(), num_calls);
 
             // Get the finalize cost.
-            let finalize_cost = cost_in_microcredits(&stack, function.name())?;
+            let finalize_cost = cost_in_microcredits_v2(&stack, function.name())?;
             // Check that the finalize cost does not exceed the maximum.
             ensure!(
                 finalize_cost <= N::TRANSACTION_SPEND_LIMIT,

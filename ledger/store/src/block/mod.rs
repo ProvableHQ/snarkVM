@@ -1009,21 +1009,13 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
         // Compute the block tree.
         let tree = {
-            // Find the maximum block height.
-            let max_height = storage.id_map().len_confirmed().checked_sub(1).map(u32::try_from);
-            // Prepare the leaves of the block tree.
-            let hashes = match max_height {
-                Some(height) => {
-                    let height = height?;
-                    cfg_into_iter!(0..=height)
-                        .map(|height| match storage.get_block_hash(height)? {
-                            Some(hash) => Ok(hash.to_bits_le()),
-                            None => bail!("Missing block hash for block {height}"),
-                        })
-                        .collect::<Result<Vec<Vec<bool>>>>()?
-                }
-                None => vec![],
-            };
+            // Prepare an iterator over the block heights and prepare the leaves of the block tree.
+            let hashes = storage
+                .id_map()
+                .iter_confirmed()
+                .sorted_unstable_by(|(h1, _), (h2, _)| h1.cmp(h2))
+                .map(|(_, hash)| hash.to_bits_le())
+                .collect::<Vec<Vec<bool>>>();
             // Construct the block tree.
             Arc::new(RwLock::new(N::merkle_tree_bhp(&hashes)?))
         };

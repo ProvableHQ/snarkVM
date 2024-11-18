@@ -30,4 +30,11 @@ pub trait QueryTrait<N: Network> {
     /// Returns a state path for the given `commitment`.
     #[cfg(feature = "async")]
     async fn get_state_path_for_commitment_async(&self, commitment: &Field<N>) -> Result<StatePath<N>>;
+
+    /// Returns the current block height
+    fn current_block_height(&self) -> Result<u32>;
+
+    /// Returns the current block height
+    #[cfg(feature = "async")]
+    async fn current_block_height_async(&self) -> Result<u32>;
 }

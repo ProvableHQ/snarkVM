@@ -139,6 +139,45 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
             },
         }
     }
+
+    /// Returns a state path for the given `commitment`.
+    fn current_block_height(&self) -> Result<u32> {
+        match self {
+            Self::VM(block_store) => Ok(block_store.max_height().unwrap_or_default()),
+            Self::REST(url) => match N::ID {
+                console::network::MainnetV0::ID => {
+                    Ok(Self::get_request(&format!("{url}/mainnet/block/height/latest"))?.into_json()?)
+                }
+                console::network::TestnetV0::ID => {
+                    Ok(Self::get_request(&format!("{url}/testnet/block/height/latest"))?.into_json()?)
+                }
+                console::network::CanaryV0::ID => {
+                    Ok(Self::get_request(&format!("{url}/canary/block/height/latest"))?.into_json()?)
+                }
+                _ => bail!("Unsupported network ID in inclusion query"),
+            },
+        }
+    }
+
+    /// Returns a state path for the given `commitment`.
+    #[cfg(feature = "async")]
+    async fn current_block_height_async(&self) -> Result<u32> {
+        match self {
+            Self::VM(block_store) => Ok(block_store.max_height().unwrap_or_default()),
+            Self::REST(url) => match N::ID {
+                console::network::MainnetV0::ID => {
+                    Ok(Self::get_request_async(&format!("{url}/mainnet/block/height/latest")).await?.json().await?)
+                }
+                console::network::TestnetV0::ID => {
+                    Ok(Self::get_request_async(&format!("{url}/testnet/block/height/latest")).await?.json().await?)
+                }
+                console::network::CanaryV0::ID => {
+                    Ok(Self::get_request_async(&format!("{url}/canary/block/height/latest")).await?.json().await?)
+                }
+                _ => bail!("Unsupported network ID in inclusion query"),
+            },
+        }
+    }
 }
 
 impl<N: Network, B: BlockStorage<N>> Query<N, B> {

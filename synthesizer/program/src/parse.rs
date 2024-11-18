@@ -143,56 +143,55 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Deb
     }
 }
 
-#[allow(clippy::format_push_string)]
 impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Display
     for ProgramCore<N, Instruction, Command>
 {
     /// Prints the program as a string.
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        // Initialize a string for the program.
-        let mut program = String::new();
-
         if !self.imports.is_empty() {
             // Print the imports.
             for import in self.imports.values() {
-                program.push_str(&format!("{import}\n"));
+                writeln!(f, "{import}")?;
             }
 
             // Print a newline.
-            program.push('\n');
+            writeln!(f)?;
         }
 
         // Print the program name.
-        program += &format!("{} {};\n\n", Self::type_name(), self.id);
+        write!(f, "{} {};\n\n", Self::type_name(), self.id)?;
 
-        for (identifier, definition) in self.identifiers.iter() {
+        let mut identifier_iter = self.identifiers.iter().peekable();
+        while let Some((identifier, definition)) = identifier_iter.next() {
             match definition {
                 ProgramDefinition::Mapping => match self.mappings.get(identifier) {
-                    Some(mapping) => program.push_str(&format!("{mapping}\n\n")),
+                    Some(mapping) => writeln!(f, "{mapping}")?,
                     None => return Err(fmt::Error),
                 },
                 ProgramDefinition::Struct => match self.structs.get(identifier) {
-                    Some(struct_) => program.push_str(&format!("{struct_}\n\n")),
+                    Some(struct_) => writeln!(f, "{struct_}")?,
                     None => return Err(fmt::Error),
                 },
                 ProgramDefinition::Record => match self.records.get(identifier) {
-                    Some(record) => program.push_str(&format!("{record}\n\n")),
+                    Some(record) => writeln!(f, "{record}")?,
                     None => return Err(fmt::Error),
                 },
                 ProgramDefinition::Closure => match self.closures.get(identifier) {
-                    Some(closure) => program.push_str(&format!("{closure}\n\n")),
+                    Some(closure) => writeln!(f, "{closure}")?,
                     None => return Err(fmt::Error),
                 },
                 ProgramDefinition::Function => match self.functions.get(identifier) {
-                    Some(function) => program.push_str(&format!("{function}\n\n")),
+                    Some(function) => writeln!(f, "{function}")?,
                     None => return Err(fmt::Error),
                 },
             }
+            // Omit the last newline.
+            if identifier_iter.peek().is_some() {
+                writeln!(f)?;
+            }
         }
-        // Remove the last newline.
-        program.pop();
 
-        write!(f, "{program}")
+        Ok(())
     }
 }
 

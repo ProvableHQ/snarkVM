@@ -24,8 +24,8 @@ impl<N: Network> Serialize for Metadata<N> {
                 metadata.serialize_field("network", &self.network)?;
                 metadata.serialize_field("round", &self.round)?;
                 metadata.serialize_field("height", &self.height)?;
-                metadata.serialize_field("cumulative_weight", &self.cumulative_weight)?;
-                metadata.serialize_field("cumulative_proof_target", &self.cumulative_proof_target)?;
+                metadata.serialize_field("cumulative_weight", &self.cumulative_weight.to_string())?;
+                metadata.serialize_field("cumulative_proof_target", &self.cumulative_proof_target.to_string())?;
                 metadata.serialize_field("coinbase_target", &self.coinbase_target)?;
                 metadata.serialize_field("proof_target", &self.proof_target)?;
                 metadata.serialize_field("last_coinbase_target", &self.last_coinbase_target)?;
@@ -44,12 +44,18 @@ impl<'de, N: Network> Deserialize<'de> for Metadata<N> {
         match deserializer.is_human_readable() {
             true => {
                 let mut metadata = serde_json::Value::deserialize(deserializer)?;
+                let cumulative_weight: String =
+                    DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_weight")?;
+                let cumulative_proof_target: String =
+                    DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_proof_target")?;
+                let cumulative_weight = cumulative_weight.parse::<u128>().map_err(de::Error::custom)?;
+                let cumulative_proof_target = cumulative_proof_target.parse::<u128>().map_err(de::Error::custom)?;
                 Ok(Self::new(
                     DeserializeExt::take_from_value::<D>(&mut metadata, "network")?,
                     DeserializeExt::take_from_value::<D>(&mut metadata, "round")?,
                     DeserializeExt::take_from_value::<D>(&mut metadata, "height")?,
-                    DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_weight")?,
-                    DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_proof_target")?,
+                    cumulative_weight,
+                    cumulative_proof_target,
                     DeserializeExt::take_from_value::<D>(&mut metadata, "coinbase_target")?,
                     DeserializeExt::take_from_value::<D>(&mut metadata, "proof_target")?,
                     DeserializeExt::take_from_value::<D>(&mut metadata, "last_coinbase_target")?,

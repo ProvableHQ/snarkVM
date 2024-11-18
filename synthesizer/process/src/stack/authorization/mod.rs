@@ -261,7 +261,7 @@ pub(crate) mod test_helpers {
     /// Returns a sample authorization.
     pub fn sample_authorization(rng: &mut TestRng) -> Authorization<CurrentNetwork> {
         // Initialize the process.
-        let process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load_testing_only().unwrap();
 
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
