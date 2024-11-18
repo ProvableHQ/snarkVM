@@ -104,7 +104,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Verify the number of transitions");
 
         // Construct the call graph.
-        let call_graph = if state.block_height() >= N::CONSENSUS_V2_HEIGHT {
+        let call_graph = if state.block_height() >= N::CONSENSUS_V3_HEIGHT {
             Default::default()
         } else {
             self.construct_call_graph(execution)?
@@ -164,7 +164,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     fee: &Fee<N>,
 ) -> Result<Vec<FinalizeOperation<N>>> {
     // Construct the call graph.
-    let call_graph = if state.block_height() >= N::CONSENSUS_V2_HEIGHT {
+    let call_graph = if state.block_height() >= N::CONSENSUS_V3_HEIGHT {
         Default::default()
     } else {
         let mut call_graph = HashMap::new();
@@ -275,9 +275,9 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     );
 
                     // Get the transition ID used to initialize the finalize registers.
-                    // If the block height is greater than the consensus V2 height, return the main transition ID.
+                    // If the block height is greater than or equal to the consensus V3 height, return the main transition ID.
                     // Otherwise, query the call graph for the child transition ID corresponding to the future that is being awaited.
-                    let transition_id = if state.block_height() >= N::CONSENSUS_V2_HEIGHT {
+                    let transition_id = if state.block_height() >= N::CONSENSUS_V3_HEIGHT {
                         *transition.id()
                     } else {
                         // Get the current transition ID.

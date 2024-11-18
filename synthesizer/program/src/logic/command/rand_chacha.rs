@@ -89,7 +89,7 @@ impl<N: Network> RandChaCha<N> {
         let seeds: Vec<_> = self.operands.iter().map(|operand| registers.load(stack, operand)).try_collect()?;
 
         // Construct the random seed.
-        let preimage = if registers.state().block_height() >= N::CONSENSUS_V2_HEIGHT {
+        let preimage = if registers.state().block_height() >= N::CONSENSUS_V3_HEIGHT {
             to_bits_le![
                 registers.state().random_seed(),
                 **registers.transition_id(),
