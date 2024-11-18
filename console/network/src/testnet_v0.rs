@@ -136,10 +136,16 @@ impl Network for TestnetV0 {
     /// The block height from which consensus V2 rules apply.
     #[cfg(not(any(test, feature = "test")))]
     const CONSENSUS_V2_HEIGHT: u32 = 2_950_000;
-    // TODO (raychu86): Update this value based on the desired testnet height.
     /// The block height from which consensus V2 rules apply.
     #[cfg(any(test, feature = "test"))]
-    const CONSENSUS_V2_HEIGHT: u32 = 10;
+    const CONSENSUS_V2_HEIGHT: u32 = 0;
+    // TODO: Update this value based on the desired testnet height.
+    /// The block height from which consensus V3 rules apply.
+    #[cfg(not(any(test, feature = "test")))]
+    const CONSENSUS_V3_HEIGHT: u32 = 3_950_000;
+    /// The block height from which consensus V3 rules apply.
+    #[cfg(any(test, feature = "test"))]
+    const CONSENSUS_V3_HEIGHT: u32 = 10;
     /// The network edition.
     const EDITION: u16 = 0;
     /// The genesis block coinbase target.
