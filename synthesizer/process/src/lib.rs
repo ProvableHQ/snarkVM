@@ -50,7 +50,7 @@ use console::{
     types::{Field, U16, U64},
 };
 use ledger_block::{Deployment, Execution, Fee, Input, Transition};
-use ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
+use ledger_store::{ConsensusStore, FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use synthesizer_program::{
     Branch,
     Closure,
@@ -65,16 +65,15 @@ use synthesizer_program::{
     StackProgram,
 };
 use synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
-use tracing::debug;
 
 use aleo_std::{
     StorageMode,
     prelude::{finish, lap, timer},
 };
-use ledger_store::{ConsensusStore, TransactionStorage, TransactionStore};
 use lru::LruCache;
 use parking_lot::{Mutex, RwLock};
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
+use tracing::debug;
 
 #[cfg(feature = "aleo-cli")]
 use colored::Colorize;
@@ -155,17 +154,65 @@ impl<N: Network> Process<N> {
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
         if program.id() != &credits_program_id {
-            self.add_stack(Stack::new(self, program)?);
+            self.add_stack(Arc::new(Stack::new(self, program)?))?;
         }
         Ok(())
     }
 
-    /// Adds a new stack to the process.
+    /// Adds a new stack to the LRU cache in the process.
     /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
     #[inline]
-    pub fn add_stack(&self, stack: Stack<N>) {
-        // Add the stack to the process.
-        self.stacks.lock().put(*stack.program_id(), Arc::new(stack));
+    pub fn add_stack(&self, stack: Arc<Stack<N>>) -> Result<()> {
+        // Collect all direct and indirect external stacks.
+        let external_stacks = stack.all_external_stacks();
+        // Obtain the lock on the stacks.
+        let mut stacks = self.stacks.lock();
+        // Determine which stacks still need to be added into the process.
+        let programs_to_add = external_stacks
+            .into_iter()
+            .unique_by(|(id, _)|*id) // indirect imports might contain duplicates.
+            .chain(std::iter::once((*stack.program_id(), stack))) // add the root stack.
+            .filter(|(program_id, _)| !stacks.contains(program_id)) // remove stacks present in the cache.
+            .collect::<Vec<_>>();
+        // Determine the required capacity.
+        let current_capacity = stacks.cap().get().saturating_sub(stacks.len());
+        let mut required_capacity = programs_to_add.len().saturating_sub(current_capacity);
+        if required_capacity > 0 {
+            debug!("Evicting {required_capacity} stacks from the cache.");
+        }
+        // If the new stacks require more capacity, attempt to remove the least recently used stacks.
+        while required_capacity > 0 {
+            // To avoid dangling stacks, we only remove stacks that do not have more than 1 reference (e.g. as external stack).
+            // For this not to loop endlessly, we assume to always quickly find stacks with just one reference, so:
+            // 1. queried stacks must be short-lived, which is essential anyway to avoid memory leaks.
+            // 2. queried stacks must expire before a querying thread queries the next stack.
+            let root_program_ids = stacks
+                .iter()
+                .rev()
+                .filter_map(|(program_id, stack)| (std::sync::Arc::<_>::strong_count(stack) == 1).then_some(program_id))
+                .take(required_capacity)
+                .cloned()
+                .collect::<Vec<_>>();
+            // Lower the required capacity.
+            required_capacity = required_capacity.saturating_sub(root_program_ids.len());
+            // Evict the old stacks from the cache.
+            for program_id in root_program_ids {
+                if stacks.pop(&program_id).is_none() {
+                    bail!("Could not find expected program id in cache.")
+                }
+            }
+        }
+        // Add a new stacks into the cache.
+        for (program_id, stack) in programs_to_add {
+            stacks.put(program_id, stack);
+        }
+        Ok(())
+    }
+
+    /// Returns the size of the cache.
+    #[inline]
+    pub fn num_stacks(&self) -> usize {
+        self.stacks.lock().len()
     }
 }
 
@@ -281,37 +328,37 @@ impl<N: Network> Process<N> {
         &self.universal_srs
     }
 
-    /// Returns `true` if the process contains the program with the given ID.
+    /// Returns `true` if the process or storage contains the program with the given ID.
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
+        // Check if the program is in memory.
+        if self.contains_program_in_memory(program_id) {
+            return true;
+        }
+        // Retrieve the stores.
+        if let Some(store) = self.store.as_ref() {
+            let transaction_store = store.transaction_store();
+            let deployment_store = transaction_store.deployment_store();
+            // Check if the program ID exists in the storage.
+            match deployment_store.find_transaction_id_from_program_id(program_id) {
+                Ok(Some(_)) => return true,
+                Ok(None) => debug!("Program ID not found in storage"),
+                Err(err) => debug!("Could not retrieve transaction ID for program ID: {err}"),
+            }
+        }
+
+        false
+    }
+
+    /// Returns `true` if the process contains the program with the given ID.
+    #[inline]
+    pub fn contains_program_in_memory(&self, program_id: &ProgramID<N>) -> bool {
+        // Check if the program ID is 'credits.aleo'.
         if self.credits.as_ref().map_or(false, |stack| stack.program_id() == program_id) {
             return true;
         }
+        // Check if the program ID exists in the cache.
         self.stacks.lock().contains(program_id)
-    }
-
-    /// Loads the Stack and imported Stacks for the given program ID into memory.
-    #[inline]
-    fn load_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<()> {
-        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
-        debug!("Lazy loading stack for {program_id}");
-        // Retrieve the stores.
-        let store = self.store.as_ref().ok_or_else(|| anyhow!("Failed to get store"))?;
-        let transaction_store = store.transaction_store();
-        let deployment_store = transaction_store.deployment_store();
-        // Retrieve the transaction ID.
-        let transaction_id = deployment_store
-            .find_transaction_id_from_program_id(&program_id)
-            .map_err(|e| anyhow!("Program ID not found in storage: {e}"))?
-            .ok_or_else(|| anyhow!("Program ID not found in storage"))?;
-        // Collect the deployment and imports.
-        let deployments = load_deployment_and_imports(self, transaction_store, transaction_id)?;
-        // Load the deployment into memory.
-        for deployment in deployments {
-            self.load_deployment(&deployment.1)?;
-        }
-        debug!("Loaded stack for {program_id}");
-        Ok(())
     }
 
     /// Returns the stack for the given program ID.
@@ -323,17 +370,21 @@ impl<N: Network> Process<N> {
         if program_id == ProgramID::<N>::from_str("credits.aleo")? {
             return self.credits.clone().ok_or_else(|| anyhow!("Failed to get stack for 'credits.aleo'"));
         }
-        // Maybe lazy load the stack
-        if !self.contains_program(&program_id) {
-            self.load_stack(program_id)?;
+        // Try to retrieve the stack from the LRU cache.
+        if let Some(stack) = self.stacks.lock().get(&program_id) {
+            // Ensure the program ID matches.
+            ensure!(
+                stack.program_id() == &program_id,
+                "Expected program '{}', found '{program_id}'",
+                stack.program_id()
+            );
+            // Return the stack.
+            Ok(stack.clone())
+        // Otherwise, retrieve the stack from the storage.
+        } else {
+            // Try to load and return the stack.
+            self.load_stack(program_id)
         }
-        // Retrieve the stack.
-        let mut lru_cache = self.stacks.lock();
-        let stack = lru_cache.get(&program_id).ok_or_else(|| anyhow!("Failed to load stack"))?;
-        // Ensure the program ID matches.
-        ensure!(stack.program_id() == &program_id, "Expected program '{}', found '{program_id}'", stack.program_id());
-        // Return the stack.
-        Ok(stack.clone())
     }
 
     /// Returns the program for the given program ID.
@@ -402,52 +453,6 @@ impl<N: Network> Process<N> {
         // Synthesize the proving and verifying key.
         self.get_stack(program_id)?.synthesize_key::<A, R>(function_name, rng)
     }
-}
-
-// A helper function to retrieve all the deployments.
-fn load_deployment_and_imports<N: Network, T: TransactionStorage<N>>(
-    process: &Process<N>,
-    transaction_store: &TransactionStore<N, T>,
-    transaction_id: N::TransactionID,
-) -> Result<Vec<(ProgramID<N>, Deployment<N>)>> {
-    // Retrieve the deployment from the transaction ID.
-    let deployment = match transaction_store.get_deployment(&transaction_id)? {
-        Some(deployment) => deployment,
-        None => bail!("Deployment transaction '{transaction_id}' is not found in storage."),
-    };
-
-    // Fetch the program from the deployment.
-    let program = deployment.program();
-    let program_id = program.id();
-
-    // Return early if the program is already loaded.
-    if process.contains_program(program_id) {
-        return Ok(vec![]);
-    }
-
-    // Prepare a vector for the deployments.
-    let mut deployments = vec![];
-
-    // Iterate through the program imports.
-    for import_program_id in program.imports().keys() {
-        // Add the imports to the process if does not exist yet.
-        if !process.contains_program(import_program_id) {
-            // Fetch the deployment transaction ID.
-            let Some(transaction_id) =
-                transaction_store.deployment_store().find_transaction_id_from_program_id(import_program_id)?
-            else {
-                bail!("Transaction ID for '{program_id}' is not found in storage.");
-            };
-
-            // Add the deployment and its imports found recursively.
-            deployments.extend_from_slice(&load_deployment_and_imports(process, transaction_store, transaction_id)?);
-        }
-    }
-
-    // Once all the imports have been included, add the parent deployment.
-    deployments.push((*program_id, deployment));
-
-    Ok(deployments)
 }
 
 #[cfg(test)]

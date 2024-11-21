@@ -140,7 +140,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
         }
     }
 
-    /// Returns a state path for the given `commitment`.
+    /// Returns the current block height.
     fn current_block_height(&self) -> Result<u32> {
         match self {
             Self::VM(block_store) => Ok(block_store.max_height().unwrap_or_default()),
@@ -159,7 +159,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
         }
     }
 
-    /// Returns a state path for the given `commitment`.
+    /// Returns the current block height.
     #[cfg(feature = "async")]
     async fn current_block_height_async(&self) -> Result<u32> {
         match self {

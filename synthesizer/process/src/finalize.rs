@@ -514,7 +514,7 @@ function compute:
         let (stack, _) =
             process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
         // Add the stack *manually* to the process.
-        process.add_stack(stack);
+        process.add_stack(Arc::new(stack)).unwrap();
 
         // Ensure the program exists.
         assert!(process.contains_program(program.id()));

@@ -442,6 +442,23 @@ impl<N: Network> Stack<N> {
 }
 
 impl<N: Network> Stack<N> {
+    /// Returns all direct and indirect external stacks.
+    /// Note that this may contain duplicates.
+    #[inline]
+    pub fn all_external_stacks(&self) -> Vec<(ProgramID<N>, Arc<Stack<N>>)> {
+        let mut stacks = vec![];
+        // Iterate through the program imports.
+        for (program_id, external_stack) in &self.external_stacks {
+            // Insert imports of the import.
+            stacks.extend_from_slice(&external_stack.all_external_stacks());
+            // Insert the import itself.
+            stacks.push((*program_id, external_stack.clone()));
+        }
+        stacks
+    }
+}
+
+impl<N: Network> Stack<N> {
     /// Inserts the proving key if the program ID is 'credits.aleo'.
     fn try_insert_credits_function_proving_key(&self, function_name: &Identifier<N>) -> Result<()> {
         // If the program is 'credits.aleo' and it does not exist yet, load the proving key directly.
