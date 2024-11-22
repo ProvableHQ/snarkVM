@@ -95,7 +95,9 @@ import mid.aleo;
 
 program outer.aleo;
 
-// A call to `call_mid` should be rejected because the complex non-async call is before the async ones.
+// A call to `call_mid` will be rejected if called before the `CONSENSUS_V3_HEIGHT` because the complex non-async call
+// is before the async ones, triggering a known failure.
+// If it is called after the `CONSENSUS_V3_HEIGHT`, then it should be accepted.
 function call_mid:
     input r0 as field.public;
     call mid.aleo/dummy;
@@ -108,7 +110,9 @@ finalize call_mid:
     input r0 as mid.aleo/save_mid_rand.future;
     await r0;
 
-// A call to `call_mid_2` should be rejected because the complex non-async call is before the async ones.
+// A call to `call_mid_2` will be rejected if called before the `CONSENSUS_V3_HEIGHT` because the complex non-async call
+// is before the async ones, triggering a known failure.
+// If it is called after the `CONSENSUS_V3_HEIGHT`, then it should be accepted.
 function call_mid_2:
     input r0 as field.public;
     call mid.aleo/save_mid_rand r0 into r1;
