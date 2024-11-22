@@ -167,9 +167,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     let call_graph = if state.block_height() >= N::CONSENSUS_V3_HEIGHT {
         Default::default()
     } else {
-        let mut call_graph = HashMap::new();
-        call_graph.insert(*fee.transition_id(), vec![]);
-        call_graph
+        HashMap::from([(*fee.transition_id(), Vec::new())])
     };
 
     // Finalize the transition.
