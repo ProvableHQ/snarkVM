@@ -64,6 +64,8 @@ pub enum LiteralType {
     Signature,
     /// The string type.
     String,
+    /// The bytes type.
+    Bytes,
 }
 
 impl LiteralType {
@@ -87,6 +89,7 @@ impl LiteralType {
             Self::Scalar => "scalar",
             Self::Signature => "signature",
             Self::String => "string",
+            Self::Bytes => "bytes",
         }
     }
 

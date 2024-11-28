@@ -33,6 +33,9 @@ pub use from_field::*;
 pub mod parse;
 pub use parse::*;
 
+pub mod parse_encoded_bytes;
+pub use parse_encoded_bytes::hex_parser;
+
 pub mod parse_string;
 pub use parse_string::string_parser;
 

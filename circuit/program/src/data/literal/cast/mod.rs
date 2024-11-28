@@ -115,6 +115,9 @@ macro_rules! impl_cast_body {
             LiteralType::String => {
                 bail!(concat!("Cannot cast a ", stringify!($type_name), " literal to a string type."))
             }
+            LiteralType::Bytes => {
+                bail!(concat!("Cannot cast a ", stringify!($type_name), " literal to a bytes type."))
+            }
         }
     };
 }

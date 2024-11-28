@@ -57,6 +57,11 @@ pub trait Environment:
     /// The maximum number of bytes allowed in a string.
     const MAX_STRING_BYTES: u32 = u8::MAX as u32;
 
+    /// The maximum number of bytes allowed in a hex-encoded string of bytes.
+    const MAX_ENCODED_BYTES: u32 = u16::MAX as u32 - 1; // must be even
+    /// The maximum number of bytes allowed in a hex-encoded string of bytes when decoded.
+    const MAX_DECODED_BYTES: u32 = Self::MAX_ENCODED_BYTES / 2;
+
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
     fn halt<S: Into<String>, T>(message: S) -> T {
         panic!("{}", message.into())

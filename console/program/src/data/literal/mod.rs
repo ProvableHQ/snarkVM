@@ -72,4 +72,6 @@ pub enum Literal<N: Network> {
     Signature(Box<Signature<N>>),
     /// The string type.
     String(StringType<N>),
+    /// The binary type.
+    Bytes(BytesType<N>),
 }

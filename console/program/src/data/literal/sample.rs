@@ -41,6 +41,7 @@ impl<N: Network> Literal<N> {
                     .expect("ComputeKey::try_from failed."),
             )))),
             LiteralType::String => Literal::String(StringType::rand(rng)),
+            LiteralType::Bytes => Literal::Bytes(BytesType::rand(rng)),
         }
     }
 }

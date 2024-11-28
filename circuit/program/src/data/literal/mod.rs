@@ -96,6 +96,7 @@ impl<A: Aleo> Inject for Literal<A> {
             Self::Primitive::Scalar(scalar) => Self::Scalar(Scalar::new(mode, scalar)),
             Self::Primitive::Signature(signature) => Self::Signature(Box::new(Signature::new(mode, *signature))),
             Self::Primitive::String(string) => Self::String(StringType::new(mode, string)),
+            Self::Primitive::Bytes(_) => unimplemented!(),
         }
     }
 }

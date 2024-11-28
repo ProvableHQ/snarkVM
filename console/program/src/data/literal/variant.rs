@@ -36,6 +36,7 @@ impl<N: Network> Literal<N> {
             Self::Scalar(..) => 14,
             Self::Signature(..) => 15,
             Self::String(..) => 16,
+            Self::Bytes(..) => 17,
         }
     }
 }

@@ -39,6 +39,10 @@ impl<N: Network> Literal<N> {
                 Some(size) => size,
                 None => N::halt("String exceeds usize::MAX bits."),
             },
+            Self::Bytes(bytes) => match bytes.len().checked_mul(8) {
+                Some(size) => size,
+                None => N::halt("Bytes exceed usize::MAX bits."),
+            },
         };
         u16::try_from(size).or_halt_with::<N>("Literal exceeds u16::MAX bits.")
     }

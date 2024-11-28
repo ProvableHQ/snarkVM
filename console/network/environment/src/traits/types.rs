@@ -210,6 +210,12 @@ pub trait StringTrait:
 {
 }
 
+/// Representation of bytes.
+pub trait BytesTrait:
+    Clone + Debug + Display + Eq + Equal + FromBytes + Parser + Send + Sync + ToBytes + TypeName + Uniform
+{
+}
+
 /// Representation of an integer.
 pub trait IntegerTrait<I: integer_type::IntegerType, U8: IntegerCore<u8>, U16: IntegerCore<u16>, U32: IntegerCore<u32>>:
     IntegerCore<I>

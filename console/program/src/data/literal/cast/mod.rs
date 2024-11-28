@@ -62,6 +62,7 @@ impl<N: Network> Literal<N> {
             Self::Scalar(scalar) => cast_scalar_to_type(scalar, to_type),
             Self::Signature(..) => bail!("Cannot cast a signature literal to another type."),
             Self::String(..) => bail!("Cannot cast a string literal to another type."),
+            Self::Bytes(..) => bail!("Cannot cast a bytes literal to another type."),
         }
     }
 }
@@ -90,6 +91,9 @@ macro_rules! impl_cast_body {
             }
             LiteralType::String => {
                 bail!(concat!("Cannot cast a ", stringify!($type_name), " literal to a string type."))
+            }
+            LiteralType::Bytes => {
+                bail!(concat!("Cannot cast a ", stringify!($type_name), " literal to a bytes type."))
             }
         }
     };

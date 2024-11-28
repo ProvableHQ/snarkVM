@@ -61,4 +61,9 @@ pub mod modules {
     pub use snarkvm_console_types_string as string;
     #[cfg(feature = "string")]
     pub use snarkvm_console_types_string::StringType;
+
+    #[cfg(feature = "bytes")]
+    pub use snarkvm_console_types_bytes as bytes;
+    #[cfg(feature = "bytes")]
+    pub use snarkvm_console_types_bytes::BytesType;
 }

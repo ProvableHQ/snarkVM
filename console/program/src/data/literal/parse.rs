@@ -87,6 +87,7 @@ impl<N: Network> Display for Literal<N> {
             Self::Scalar(literal) => Display::fmt(literal, f),
             Self::Signature(literal) => Display::fmt(literal, f),
             Self::String(literal) => Display::fmt(literal, f),
+            Self::Bytes(literal) => Display::fmt(literal, f),
         }
     }
 }

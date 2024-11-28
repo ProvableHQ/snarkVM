@@ -130,6 +130,7 @@ impl<N: Network> RandChaCha<N> {
             LiteralType::Scalar => Literal::Scalar(Scalar::rand(&mut rng)),
             LiteralType::Signature => bail!("Cannot 'rand.chacha' into a 'signature'"),
             LiteralType::String => bail!("Cannot 'rand.chacha' into a 'string'"),
+            LiteralType::Bytes => bail!("Cannot 'rand.chacha' into a 'bytes'"),
         };
 
         // Assign the value to the destination register.

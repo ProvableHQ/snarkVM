@@ -123,6 +123,11 @@ impl<'de, T: FromBytes> FromBytesDeserializer<T> {
         deserializer.deserialize_tuple(1usize << 16usize, FromBytesWithU16Visitor::<T>::new(name))
     }
 
+    /// Deserializes a static-sized byte array, with a u16 length encoding at the start.
+    pub fn deserialize_with_u32<D: Deserializer<'de>>(deserializer: D, name: &str) -> Result<T, D::Error> {
+        deserializer.deserialize_tuple(1usize << 32usize, FromBytesWithU32Visitor::<T>::new(name))
+    }
+
     /// Deserializes a dynamically-sized byte array.
     pub fn deserialize_with_size_encoding<D: Deserializer<'de>>(deserializer: D, name: &str) -> Result<T, D::Error> {
         let mut buffer = Vec::with_capacity(32);
@@ -258,6 +263,40 @@ impl<'de, T: FromBytes> Visitor<'de> for FromBytesWithU16Visitor<T> {
         for i in 0..length {
             // Push the next byte into the vector.
             bytes.push(seq.next_element()?.ok_or_else(|| Error::invalid_length((i as usize) + 2, &self))?);
+        }
+        // Deserialize the vector.
+        FromBytes::read_le(&*bytes).map_err(de::Error::custom)
+    }
+}
+
+struct FromBytesWithU32Visitor<T: FromBytes>(String, PhantomData<T>);
+
+impl<T: FromBytes> FromBytesWithU32Visitor<T> {
+    /// Initializes a new `FromBytesWithU32Visitor` with the given `name`.
+    pub fn new(name: &str) -> Self {
+        Self(name.to_string(), PhantomData)
+    }
+}
+
+impl<'de, T: FromBytes> Visitor<'de> for FromBytesWithU32Visitor<T> {
+    type Value = T;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str(&format!("a valid {} ", self.0))
+    }
+
+    fn visit_seq<V: SeqAccess<'de>>(self, mut seq: V) -> Result<Self::Value, V::Error> {
+        // Read the size of the object.
+        let length: u32 = seq.next_element()?.ok_or_else(|| Error::invalid_length(0, &self))?;
+
+        // Initialize the vector with the correct length.
+        let mut bytes: Vec<u8> = Vec::with_capacity((length as usize) + 4);
+        // Push the length into the vector.
+        bytes.extend(length.to_le_bytes());
+        // Read the bytes.
+        for i in 0..length {
+            // Push the next byte into the vector.
+            bytes.push(seq.next_element()?.ok_or_else(|| Error::invalid_length((i as usize) + 4, &self))?);
         }
         // Deserialize the vector.
         FromBytes::read_le(&*bytes).map_err(de::Error::custom)
