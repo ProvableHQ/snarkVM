@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit-types-string"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "String circuit for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -11,24 +11,24 @@ edition = "2021"
 [dependencies.console]
 package = "snarkvm-console-types-string"
 path = "../../../console/types/string"
-version = "=1.0.0"
+version = "=1.1.0"
 optional = true
 
 [dependencies.snarkvm-circuit-environment]
 path = "../../environment"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-circuit-types-boolean]
 path = "../boolean"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-circuit-types-field]
 path = "../field"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-circuit-types-integers]
 path = "../integers"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dev-dependencies.snarkvm-utilities]
 path = "../../../utilities"

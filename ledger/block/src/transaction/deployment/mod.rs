@@ -198,7 +198,7 @@ function compute:
                 assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
                 // Construct the process.
-                let process = Process::load_testing_only().unwrap();
+                let process = Process::load().unwrap();
                 // Compute the deployment.
                 let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
                 // Return the deployment.

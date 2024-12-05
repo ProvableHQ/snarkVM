@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-test-helpers"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Test helpers for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -19,39 +19,39 @@ edition = "2021"
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../console"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.circuit]
 package = "snarkvm-circuit"
 path = "../../circuit"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-block]
 package = "snarkvm-ledger-block"
 path = "../block"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-query]
 package = "snarkvm-ledger-query"
 path = "../query"
-version = "=1.0.0"
+version = "=1.1.0"
 default-features = false
 features = [ "query" ]
 
 [dependencies.ledger-store]
 package = "snarkvm-ledger-store"
 path = "../store"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.synthesizer-program]
 package = "snarkvm-synthesizer-program"
 path = "../../synthesizer/program"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.synthesizer-process]
 package = "snarkvm-synthesizer-process"
 path = "../../synthesizer/process"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.once_cell]
 version = "1.18"

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A node ledger for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -62,54 +62,54 @@ timer = [ "aleo-std/timer" ]
 [dependencies.console]
 package = "snarkvm-console"
 path = "../console"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-authority]
 package = "snarkvm-ledger-authority"
 path = "./authority"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-block]
 package = "snarkvm-ledger-block"
 path = "./block"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-committee]
 package = "snarkvm-ledger-committee"
 path = "./committee"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-narwhal]
 package = "snarkvm-ledger-narwhal"
 path = "./narwhal"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-puzzle]
 package = "snarkvm-ledger-puzzle"
 path = "puzzle"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-query]
 package = "snarkvm-ledger-query"
 path = "./query"
-version = "=1.0.0"
+version = "=1.1.0"
 features = [ "query" ]
 
 [dependencies.ledger-store]
 package = "snarkvm-ledger-store"
 path = "./store"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-test-helpers]
 package = "snarkvm-ledger-test-helpers"
 path = "./test-helpers"
-version = "=1.0.0"
+version = "=1.1.0"
 optional = true
 
 [dependencies.synthesizer]
 package = "snarkvm-synthesizer"
 path = "../synthesizer"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.aleo-std]
 version = "0.1.24"

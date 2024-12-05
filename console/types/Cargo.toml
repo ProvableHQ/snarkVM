@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-types"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console types for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -15,41 +15,41 @@ harness = false
 
 [dependencies.snarkvm-console-network-environment]
 path = "../network/environment"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-console-types-address]
 path = "./address"
-version = "=1.0.0"
+version = "=1.1.0"
 optional = true
 
 [dependencies.snarkvm-console-types-boolean]
 path = "./boolean"
-version = "=1.0.0"
+version = "=1.1.0"
 optional = true
 
 [dependencies.snarkvm-console-types-field]
 path = "./field"
-version = "=1.0.0"
+version = "=1.1.0"
 optional = true
 
 [dependencies.snarkvm-console-types-group]
 path = "./group"
-version = "=1.0.0"
+version = "=1.1.0"
 optional = true
 
 [dependencies.snarkvm-console-types-integers]
 path = "./integers"
-version = "=1.0.0"
+version = "=1.1.0"
 optional = true
 
 [dependencies.snarkvm-console-types-scalar]
 path = "./scalar"
-version = "=1.0.0"
+version = "=1.1.0"
 optional = true
 
 [dependencies.snarkvm-console-types-string]
 path = "./string"
-version = "=1.0.0"
+version = "=1.1.0"
 optional = true
 
 [dev-dependencies.criterion]

@@ -28,7 +28,7 @@ use crate::{
 };
 use console::{
     network::prelude::*,
-    program::{Identifier, Register, ValueType},
+    program::{Identifier, Register, ValueType, Variant},
 };
 
 use indexmap::IndexSet;
@@ -69,6 +69,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fun
         self.inputs.iter().map(|input| input.value_type()).cloned().collect()
     }
 
+    /// Returns the function input type variants.
+    pub fn input_variants(&self) -> Vec<Variant> {
+        self.inputs.iter().map(|input| input.value_type().variant()).collect()
+    }
+
     /// Returns the function instructions.
     pub fn instructions(&self) -> &[Instruction] {
         &self.instructions
@@ -82,6 +87,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fun
     /// Returns the function output types.
     pub fn output_types(&self) -> Vec<ValueType<N>> {
         self.outputs.iter().map(|output| output.value_type()).cloned().collect()
+    }
+
+    /// Returns the function output type variants.
+    pub fn output_variants(&self) -> Vec<Variant> {
+        self.outputs.iter().map(|output| output.value_type().variant()).collect()
     }
 
     /// Returns the function finalize logic.

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-narwhal-transmission-id"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A transmission ID for a Narwhal-style memory pool in a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -32,12 +32,12 @@ test-helpers = [ ]
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../../console"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-puzzle]
 package = "snarkvm-ledger-puzzle"
 path = "../../puzzle"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dev-dependencies.bincode]
 version = "1.3"

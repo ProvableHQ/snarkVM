@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Circuits for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -25,28 +25,28 @@ edition = "2021"
 
 [dependencies.snarkvm-circuit-account]
 path = "./account"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-circuit-algorithms]
 path = "./algorithms"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-circuit-collections]
 path = "./collections"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-circuit-environment]
 path = "./environment"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-circuit-network]
 path = "./network"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-circuit-program]
 path = "./program"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-circuit-types]
 path = "./types"
-version = "=1.0.0"
+version = "=1.1.0"

@@ -87,7 +87,7 @@ pub fn execution_cost_v1<N: Network>(process: &Process<N>, execution: &Execution
 
     // Get the finalize cost for the root transition.
     let stack = process.get_stack(transition.program_id())?;
-    let finalize_cost = cost_in_microcredits_v1(&stack, transition.function_name())?;
+    let finalize_cost = cost_in_microcredits_v1(stack, transition.function_name())?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -522,7 +522,7 @@ function over_five_thousand:
         let threshold = MainnetV0::EXECUTION_STORAGE_PENALTY_THRESHOLD;
 
         // Test the cost of an execution.
-        let mut process = Process::load_testing_only().unwrap();
+        let mut process = Process::load().unwrap();
 
         // Get the program.
         let program = Program::from_str(SIZE_BOUNDARY_PROGRAM).unwrap();

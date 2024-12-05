@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-parameters"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Parameters for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -31,12 +31,12 @@ wasm = [ "encoding", "js-sys", "web-sys" ]
 
 [dependencies.snarkvm-curves]
 path = "../curves"
-version = "=1.0.0"
+version = "=1.1.0"
 default-features = false
 
 [dependencies.snarkvm-utilities]
 path = "../utilities"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.aleo-std]
 version = "0.1.24"

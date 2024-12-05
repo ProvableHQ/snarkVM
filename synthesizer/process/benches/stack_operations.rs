@@ -41,7 +41,7 @@ fn bench_stack_new(c: &mut Criterion) {
     let mut rng = TestRng::default();
 
     // Initialize a process.
-    let mut process = Process::load_testing_only().unwrap();
+    let mut process = Process::load().unwrap();
 
     // Benchmark the base case.
     c.bench_function("Depth 0 | Stack::new", |b| {
@@ -98,7 +98,7 @@ fn bench_stack_get_number_of_calls(c: &mut Criterion) {
     const DEPTHS: [usize; 6] = [1, 2, 4, 8, 16, 30];
 
     // Initialize a process.
-    let mut process = Process::load_testing_only().unwrap();
+    let mut process = Process::load().unwrap();
 
     // Add the 0th program to the process.
     add_program_at_depth(&mut process, 0);

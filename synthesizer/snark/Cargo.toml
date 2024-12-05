@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer-snark"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "SNARK wrappers for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -33,18 +33,18 @@ wasm = [ "console/wasm", "snarkvm-algorithms/wasm" ]
 [dependencies.circuit]
 package = "snarkvm-circuit"
 path = "../../circuit"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../console"
-version = "=1.0.0"
+version = "=1.1.0"
 default-features = false
 features = [ "network" ]
 
 [dependencies.snarkvm-algorithms]
 path = "../../algorithms"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.bincode]
 version = "1"

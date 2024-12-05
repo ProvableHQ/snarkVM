@@ -68,7 +68,7 @@ pub enum LiteralType {
 
 impl LiteralType {
     /// Returns the literal type name.
-    pub fn type_name(&self) -> &str {
+    pub const fn type_name(&self) -> &str {
         match self {
             Self::Address => "address",
             Self::Boolean => "boolean",

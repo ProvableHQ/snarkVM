@@ -22,6 +22,8 @@ use snarkvm_console_network::prelude::*;
 
 use enum_index::EnumIndex;
 
+pub type Variant = u8;
+
 #[derive(Clone, PartialEq, Eq, Hash, EnumIndex)]
 pub enum ValueType<N: Network> {
     /// A constant type.
@@ -36,6 +38,20 @@ pub enum ValueType<N: Network> {
     ExternalRecord(Locator<N>),
     /// A publicly-visible future.
     Future(Locator<N>),
+}
+
+impl<N: Network> ValueType<N> {
+    /// Returns the variant of the value type.
+    pub const fn variant(&self) -> Variant {
+        match self {
+            ValueType::Constant(..) => 0,
+            ValueType::Public(..) => 1,
+            ValueType::Private(..) => 2,
+            ValueType::Record(..) => 3,
+            ValueType::ExternalRecord(..) => 4,
+            ValueType::Future(..) => 5,
+        }
+    }
 }
 
 impl<N: Network> From<EntryType<N>> for ValueType<N> {

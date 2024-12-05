@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit-environment"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Circuit environment for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -16,32 +16,32 @@ harness = false
 [dependencies.console]
 package = "snarkvm-console-network"
 path = "../../console/network"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.snarkvm-algorithms]
 path = "../../algorithms"
-version = "=1.0.0"
+version = "=1.1.0"
 default-features = false
 features = [ "r1cs" ]
 
 [dependencies.snarkvm-circuit-environment-witness]
 path = "./witness"
-version = "=1.0.0"
+version = "=1.1.0"
 default-features = false
 
 [dependencies.snarkvm-curves]
 path = "../../curves"
-version = "=1.0.0"
+version = "=1.1.0"
 default-features = false
 
 [dependencies.snarkvm-fields]
 path = "../../fields"
-version = "=1.0.0"
+version = "=1.1.0"
 default-features = false
 
 [dependencies.snarkvm-utilities]
 path = "../../utilities"
-version = "=1.0.0"
+version = "=1.1.0"
 default-features = false
 
 [dependencies.indexmap]

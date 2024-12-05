@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-types-boolean"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Type operations for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -10,7 +10,7 @@ edition = "2021"
 
 [dependencies.snarkvm-console-network-environment]
 path = "../../network/environment"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dev-dependencies.bincode]
 version = "1.3"

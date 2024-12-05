@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer-process"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A process for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -53,49 +53,49 @@ harness = false
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../console"
-version = "=1.0.0"
+version = "=1.1.0"
 default-features = false
 features = [ "network", "program", "types" ]
 
 [dependencies.circuit]
 package = "snarkvm-circuit"
 path = "../../circuit"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-block]
 package = "snarkvm-ledger-block"
 path = "../../ledger/block"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-query]
 package = "snarkvm-ledger-query"
 path = "../../ledger/query"
-version = "=1.0.0"
+version = "=1.1.0"
 default-features = false
 
 [dependencies.ledger-store]
 package = "snarkvm-ledger-store"
 path = "../../ledger/store"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.synthesizer-program]
 package = "snarkvm-synthesizer-program"
 path = "../../synthesizer/program"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.synthesizer-snark]
 package = "snarkvm-synthesizer-snark"
 path = "../../synthesizer/snark"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.utilities]
 package = "snarkvm-utilities"
 path = "../../utilities"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.aleo-std]
 version = "0.1.24"
-features = ["storage"]
+default-features = false
 
 [dependencies.colored]
 version = "2"
@@ -103,9 +103,6 @@ version = "2"
 [dependencies.indexmap]
 version = "2.0"
 features = [ "serde" ]
-
-[dependencies.lru]
-version = "0.12"
 
 [dependencies.once_cell]
 version = "1.18"
@@ -126,9 +123,6 @@ optional = true
 [dependencies.serde_json]
 version = "1.0"
 features = [ "preserve_order" ]
-
-[dependencies.tracing]
-version = "0.1"
 
 [dev-dependencies.bincode]
 version = "1.3"

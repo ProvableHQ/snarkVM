@@ -112,6 +112,14 @@ impl<N: Network> Process<N> {
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
             ensure!(function.outputs().len() == num_outputs, "The number of transition outputs is incorrect");
 
+            // Ensure the input and output types are equivalent to the ones defined in the function.
+            // We only need to check that the variant type matches because we already check the hashes in
+            // the `Input::verify` and `Output::verify` functions.
+            let transition_input_variants = transition.inputs().iter().map(Input::variant).collect::<Vec<_>>();
+            let transition_output_variants = transition.outputs().iter().map(Output::variant).collect::<Vec<_>>();
+            ensure!(function.input_variants() == transition_input_variants, "The input variants do not match");
+            ensure!(function.output_variants() == transition_output_variants, "The output variants do not match");
+
             // Retrieve the parent program ID.
             // Note: The last transition in the execution does not have a parent, by definition.
             let parent = reverse_call_graph.get(transition.id()).and_then(|tid| execution.get_program_id(tid));

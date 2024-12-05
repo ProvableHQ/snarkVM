@@ -808,9 +808,17 @@ function swap:
         assert_eq!(function.inputs().len(), 2);
         assert_eq!(function.input_types().len(), 2);
 
+        // Declare the expected input types.
+        let expected_input_type_1 = ValueType::ExternalRecord(Locator::from_str("eth.aleo/eth")?);
+        let expected_input_type_2 = ValueType::ExternalRecord(Locator::from_str("usdc.aleo/usdc")?);
+
         // Ensure the inputs are external records.
-        assert_eq!(function.input_types()[0], ValueType::ExternalRecord(Locator::from_str("eth.aleo/eth")?));
-        assert_eq!(function.input_types()[1], ValueType::ExternalRecord(Locator::from_str("usdc.aleo/usdc")?));
+        assert_eq!(function.input_types()[0], expected_input_type_1);
+        assert_eq!(function.input_types()[1], expected_input_type_2);
+
+        // Ensure the input variants are correct.
+        assert_eq!(function.input_types()[0].variant(), expected_input_type_1.variant());
+        assert_eq!(function.input_types()[1].variant(), expected_input_type_2.variant());
 
         // Ensure there are two instructions.
         assert_eq!(function.instructions().len(), 2);
@@ -823,9 +831,17 @@ function swap:
         assert_eq!(function.outputs().len(), 2);
         assert_eq!(function.output_types().len(), 2);
 
+        // Declare the expected output types.
+        let expected_output_type_1 = ValueType::ExternalRecord(Locator::from_str("eth.aleo/eth")?);
+        let expected_output_type_2 = ValueType::ExternalRecord(Locator::from_str("usdc.aleo/usdc")?);
+
         // Ensure the outputs are external records.
-        assert_eq!(function.output_types()[0], ValueType::ExternalRecord(Locator::from_str("eth.aleo/eth")?));
-        assert_eq!(function.output_types()[1], ValueType::ExternalRecord(Locator::from_str("usdc.aleo/usdc")?));
+        assert_eq!(function.output_types()[0], expected_output_type_1);
+        assert_eq!(function.output_types()[1], expected_output_type_2);
+
+        // Ensure the output variants are correct.
+        assert_eq!(function.output_types()[0].variant(), expected_output_type_1.variant());
+        assert_eq!(function.output_types()[1].variant(), expected_output_type_2.variant());
 
         Ok(())
     }

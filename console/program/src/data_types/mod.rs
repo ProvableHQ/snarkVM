@@ -35,4 +35,4 @@ mod struct_type;
 pub use struct_type::StructType;
 
 mod value_type;
-pub use value_type::ValueType;
+pub use value_type::{ValueType, Variant};

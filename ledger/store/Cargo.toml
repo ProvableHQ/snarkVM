@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-store"
-version = "1.0.0"
+version = "1.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A data store for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -42,42 +42,42 @@ test = [ ]
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../console"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-authority]
 package = "snarkvm-ledger-authority"
 path = "../authority"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-block]
 package = "snarkvm-ledger-block"
 path = "../block"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-committee]
 package = "snarkvm-ledger-committee"
 path = "../committee"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-narwhal-batch-certificate]
 package = "snarkvm-ledger-narwhal-batch-certificate"
 path = "../narwhal/batch-certificate"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.ledger-puzzle]
 package = "snarkvm-ledger-puzzle"
 path = "../puzzle"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.synthesizer-program]
 package = "snarkvm-synthesizer-program"
 path = "../../synthesizer/program"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.synthesizer-snark]
 package = "snarkvm-synthesizer-snark"
 path = "../../synthesizer/snark"
-version = "=1.0.0"
+version = "=1.1.0"
 
 [dependencies.aleo-std-storage]
 version = "0.1.7"
