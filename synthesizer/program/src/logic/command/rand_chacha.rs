@@ -89,8 +89,19 @@ impl<N: Network> RandChaCha<N> {
         let seeds: Vec<_> = self.operands.iter().map(|operand| registers.load(stack, operand)).try_collect()?;
 
         // Construct the random seed.
-        let preimage = if registers.state().block_height() >= N::CONSENSUS_V3_HEIGHT {
-            to_bits_le![
+        // If the height is greater than or equal to `CONSENSUS_V3_HEIGHT`, then use the new preimage definition.
+        // The difference is that a nonce is also included in the new definition.
+        let preimage = match registers.state().block_height() < N::CONSENSUS_V3_HEIGHT {
+            true => to_bits_le![
+                registers.state().random_seed(),
+                **registers.transition_id(),
+                stack.program_id(),
+                registers.function_name(),
+                self.destination.locator(),
+                self.destination_type.type_id(),
+                seeds
+            ],
+            false => to_bits_le![
                 registers.state().random_seed(),
                 **registers.transition_id(),
                 stack.program_id(),
@@ -99,17 +110,7 @@ impl<N: Network> RandChaCha<N> {
                 self.destination.locator(),
                 self.destination_type.type_id(),
                 seeds
-            ]
-        } else {
-            to_bits_le![
-                registers.state().random_seed(),
-                **registers.transition_id(),
-                stack.program_id(),
-                registers.function_name(),
-                self.destination.locator(),
-                self.destination_type.type_id(),
-                seeds
-            ]
+            ],
         };
 
         // Hash the preimage.
