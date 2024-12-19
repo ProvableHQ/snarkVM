@@ -31,6 +31,7 @@ impl<N: Network> Stack<N> {
             number_of_calls: Default::default(),
             finalize_costs: Default::default(),
             program_depth: 0,
+            program_address: program.id().to_address()?,
         };
 
         // Add all the imports into the stack.

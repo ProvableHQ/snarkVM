@@ -20,7 +20,7 @@ use crate::{
     polycommit::sonic_pc::LabeledPolynomial,
     r1cs::{ConstraintSystem, Index as VarIndex},
     snark::varuna::{
-        VarunaHidingMode,
+        SNARKMode,
         ahp::{AHPForR1CS, CircuitId, indexer::Matrix},
     },
 };
@@ -210,7 +210,11 @@ pub struct MatrixArithmetization<F: PrimeField> {
 
 impl<F: PrimeField> MatrixArithmetization<F> {
     /// Create a new MatrixArithmetization
-    pub fn new(id: &CircuitId, label: &str, matrix_evals: &MatrixEvals<F>) -> Result<MatrixArithmetization<F>> {
+    pub fn new<SM: SNARKMode>(
+        id: &CircuitId,
+        label: &str,
+        matrix_evals: &MatrixEvals<F>,
+    ) -> Result<MatrixArithmetization<F>> {
         let interpolate_time = start_timer!(|| "Interpolating on K");
         let non_zero_domain = matrix_evals.domain()?;
         let row = matrix_evals.row.clone().interpolate();
@@ -228,7 +232,7 @@ impl<F: PrimeField> MatrixArithmetization<F> {
         let row_col_val = matrix_evals.row_col_val.clone().interpolate();
         end_timer!(interpolate_time);
 
-        let mut labels = AHPForR1CS::<F, VarunaHidingMode>::index_polynomial_labels_single(label, id);
+        let mut labels = AHPForR1CS::<F, SM>::index_polynomial_labels_single(label, id);
         ensure!(labels.len() == 4);
 
         Ok(MatrixArithmetization {
@@ -266,7 +270,7 @@ pub(crate) fn transpose<F: PrimeField>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snark::varuna::num_non_zero;
+    use crate::snark::varuna::{VarunaHidingMode, num_non_zero};
     use snarkvm_curves::bls12_377::Fr as F;
     use snarkvm_fields::{One, Zero};
     use std::{borrow::Cow, collections::HashMap};
@@ -332,7 +336,7 @@ mod tests {
             )
             .unwrap();
             let dummy_id = CircuitId([0; 32]);
-            let arith = MatrixArithmetization::new(&dummy_id, label, &evals).unwrap();
+            let arith = MatrixArithmetization::new::<VarunaHidingMode>(&dummy_id, label, &evals).unwrap();
 
             for (k_index, k) in interpolation_domain.elements().enumerate() {
                 let row_val = arith.row.evaluate(k);

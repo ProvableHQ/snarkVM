@@ -193,6 +193,8 @@ pub struct Stack<N: Network> {
     finalize_costs: IndexMap<Identifier<N>, u64>,
     /// The program depth.
     program_depth: usize,
+    /// The program address.
+    program_address: Address<N>,
 }
 
 impl<N: Network> Stack<N> {
@@ -238,6 +240,12 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     #[inline]
     fn program_depth(&self) -> usize {
         self.program_depth
+    }
+
+    /// Returns the program address.
+    #[inline]
+    fn program_address(&self) -> &Address<N> {
+        &self.program_address
     }
 
     /// Returns `true` if the stack contains the external record.
