@@ -15,7 +15,7 @@ parameters:
     default: xlarge
   twoxlarge:
     type: string
-    default: aleonet/2xlarge
+    default: 2xlarge
 
 orbs:
   windows: circleci/windows@5.0
@@ -682,7 +682,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: --lib --bins -- --test-threads=2
+          flags: --lib --bins -- --test-threads=1
           workspace_member: synthesizer
           cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-cache
 
