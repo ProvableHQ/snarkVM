@@ -38,7 +38,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id()?;
         // Construct the owner.
-        let owner = ProgramOwner::new(private_key, deployment_id, rng)?;
+        let owner = ProgramOwner::new_v1(private_key, deployment_id, rng)?;
 
         // Compute the minimum deployment cost.
         let (minimum_deployment_cost, _) = deployment_cost(&deployment)?;

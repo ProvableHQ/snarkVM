@@ -17,16 +17,26 @@ use super::*;
 
 use snarkvm_utilities::DeserializeExt;
 
+// TODO (@d0cd) This could use cleanup.
 impl<N: Network> Serialize for ProgramOwner<N> {
     /// Serializes the program owner into string or bytes.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
-            true => {
-                let mut owner = serializer.serialize_struct("ProgramOwner", 2)?;
-                owner.serialize_field("address", &self.address)?;
-                owner.serialize_field("signature", &self.signature)?;
-                owner.end()
-            }
+            true => match &self {
+                Self::V1(program_owner_v1) => {
+                    let mut owner = serializer.serialize_struct("ProgramOwnerV1", 2)?;
+                    owner.serialize_field("address", &program_owner_v1.address())?;
+                    owner.serialize_field("signature", &program_owner_v1.signature())?;
+                    owner.end()
+                }
+                Self::V2(program_owner_v2) => {
+                    let mut owner = serializer.serialize_struct("ProgramOwnerV2", 3)?;
+                    owner.serialize_field("address", &program_owner_v2.address())?;
+                    owner.serialize_field("authority", &program_owner_v2.authority())?;
+                    owner.serialize_field("signature", &program_owner_v2.signature())?;
+                    owner.end()
+                }
+            },
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
         }
     }
@@ -37,18 +47,19 @@ impl<'de, N: Network> Deserialize<'de> for ProgramOwner<N> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         match deserializer.is_human_readable() {
             true => {
-                // Parse the program owner from a string into a value.
                 let mut owner = serde_json::Value::deserialize(deserializer)?;
-
-                // Recover the program owner.
-                let owner = Self::from(
-                    // Retrieve the address.
-                    DeserializeExt::take_from_value::<D>(&mut owner, "address")?,
-                    // Retrieve the signature.
-                    DeserializeExt::take_from_value::<D>(&mut owner, "signature")?,
-                );
-
-                Ok(owner)
+                if owner.get("authority").is_some() {
+                    // If the `authority` field is present, then use the V2 format.
+                    let address = DeserializeExt::take_from_value::<D>(&mut owner, "address")?;
+                    let authority = DeserializeExt::take_from_value::<D>(&mut owner, "authority")?;
+                    let signature = DeserializeExt::take_from_value::<D>(&mut owner, "signature")?;
+                    Ok(Self::V2(ProgramOwnerV2::from(address, authority, signature)))
+                } else {
+                    // Otherwise, use the V1 format.
+                    let address = DeserializeExt::take_from_value::<D>(&mut owner, "address")?;
+                    let signature = DeserializeExt::take_from_value::<D>(&mut owner, "signature")?;
+                    Ok(Self::V1(ProgramOwnerV1::from(address, signature)))
+                }
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "program owner"),
         }
@@ -60,9 +71,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_serde_json() -> Result<()> {
+    fn test_serde_json_v1() -> Result<()> {
         // Sample the program owner.
-        let expected = test_helpers::sample_program_owner();
+        let expected = test_helpers::sample_program_owner_v1();
 
         // Serialize
         let expected_string = &expected.to_string();
@@ -77,9 +88,43 @@ mod tests {
     }
 
     #[test]
-    fn test_bincode() -> Result<()> {
+    fn test_serde_json_v2() -> Result<()> {
         // Sample the program owner.
-        let expected = test_helpers::sample_program_owner();
+        let expected = test_helpers::sample_program_owner_v2();
+
+        // Serialize
+        let expected_string = &expected.to_string();
+        let candidate_string = serde_json::to_string(&expected)?;
+        assert_eq!(expected, serde_json::from_str(&candidate_string)?);
+
+        // Deserialize
+        assert_eq!(expected, ProgramOwner::from_str(expected_string)?);
+        assert_eq!(expected, serde_json::from_str(&candidate_string)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bincode_v1() -> Result<()> {
+        // Sample the program owner.
+        let expected = test_helpers::sample_program_owner_v1();
+
+        // Serialize
+        let expected_bytes = expected.to_bytes_le()?;
+        let expected_bytes_with_size_encoding = bincode::serialize(&expected)?;
+        assert_eq!(&expected_bytes[..], &expected_bytes_with_size_encoding[8..]);
+
+        // Deserialize
+        assert_eq!(expected, ProgramOwner::read_le(&expected_bytes[..])?);
+        assert_eq!(expected, bincode::deserialize(&expected_bytes_with_size_encoding[..])?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bincode_v2() -> Result<()> {
+        // Sample the program owner.
+        let expected = test_helpers::sample_program_owner_v2();
 
         // Serialize
         let expected_bytes = expected.to_bytes_le()?;
