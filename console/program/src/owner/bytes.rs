@@ -36,11 +36,13 @@ impl<N: Network> FromBytes for ProgramOwner<N> {
                 let address = Address::read_le(&mut reader)?;
                 // Read the authority.
                 let authority = Address::read_le(&mut reader)?;
+                // Read the edition.
+                let edition = U16::read_le(&mut reader)?;
                 // Read the signature.
                 let signature = Signature::read_le(&mut reader)?;
 
                 // Return the program owner.
-                Ok(Self::V2(ProgramOwnerV2::from(address, authority, signature)))
+                Ok(Self::V2(ProgramOwnerV2::from(address, authority, edition, signature)))
             }
             _ => Err(error("Invalid program owner version")),
         }
@@ -66,6 +68,8 @@ impl<N: Network> ToBytes for ProgramOwner<N> {
                 owner.address.write_le(&mut writer)?;
                 // Write the authority.
                 owner.authority.write_le(&mut writer)?;
+                // Write the edition.
+                owner.edition.write_le(&mut writer)?;
                 // Write the signature.
                 owner.signature.write_le(&mut writer)
             }

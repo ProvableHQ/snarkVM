@@ -30,9 +30,10 @@ impl<N: Network> Serialize for ProgramOwner<N> {
                     owner.end()
                 }
                 Self::V2(program_owner_v2) => {
-                    let mut owner = serializer.serialize_struct("ProgramOwnerV2", 3)?;
+                    let mut owner = serializer.serialize_struct("ProgramOwnerV2", 4)?;
                     owner.serialize_field("address", &program_owner_v2.address())?;
                     owner.serialize_field("authority", &program_owner_v2.authority())?;
+                    owner.serialize_field("edition", &program_owner_v2.edition())?;
                     owner.serialize_field("signature", &program_owner_v2.signature())?;
                     owner.end()
                 }
@@ -52,8 +53,9 @@ impl<'de, N: Network> Deserialize<'de> for ProgramOwner<N> {
                     // If the `authority` field is present, then use the V2 format.
                     let address = DeserializeExt::take_from_value::<D>(&mut owner, "address")?;
                     let authority = DeserializeExt::take_from_value::<D>(&mut owner, "authority")?;
+                    let edition = DeserializeExt::take_from_value::<D>(&mut owner, "edition")?;
                     let signature = DeserializeExt::take_from_value::<D>(&mut owner, "signature")?;
-                    Ok(Self::V2(ProgramOwnerV2::from(address, authority, signature)))
+                    Ok(Self::V2(ProgramOwnerV2::from(address, authority, edition, signature)))
                 } else {
                     // Otherwise, use the V1 format.
                     let address = DeserializeExt::take_from_value::<D>(&mut owner, "address")?;

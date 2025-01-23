@@ -57,13 +57,6 @@ impl<N: Network> Deployment<N> {
     pub fn check_is_ordered(&self) -> Result<()> {
         let program_id = self.program.id();
 
-        // Ensure the edition matches.
-        ensure!(
-            self.edition == N::EDITION,
-            "Deployed the wrong edition (expected '{}', found '{}').",
-            N::EDITION,
-            self.edition
-        );
         // Ensure the program contains functions.
         ensure!(
             !self.program.functions().is_empty(),
@@ -162,6 +155,12 @@ impl<N: Network> Deployment<N> {
     /// Returns the deployment ID.
     pub fn to_deployment_id(&self) -> Result<Field<N>> {
         Ok(*Transaction::deployment_tree(self, None)?.root())
+    }
+
+    // TODO (@d0cd) Contemplate design.
+    /// Updates the deployment edition.
+    pub fn update_edition(&mut self, edition: u16) {
+        self.edition = edition;
     }
 }
 

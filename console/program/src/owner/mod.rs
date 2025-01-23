@@ -44,10 +44,11 @@ impl<N: Network> ProgramOwner<N> {
     pub fn new_v2<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
         authority: Address<N>,
+        edition: U16<N>,
         deployment_id: Field<N>,
         rng: &mut R,
     ) -> Result<Self> {
-        Ok(Self::V2(ProgramOwnerV2::new(private_key, authority, deployment_id, rng)?))
+        Ok(Self::V2(ProgramOwnerV2::new(private_key, authority, edition, deployment_id, rng)?))
     }
 
     /// Returns the program owner as a V1 owner.
@@ -159,6 +160,8 @@ pub struct ProgramOwnerV2<N: Network> {
     address: Address<N>,
     /// The address of the authority allowed to update the program.
     authority: Address<N>,
+    /// The edition of the program.
+    edition: U16<N>,
     /// The signature of the program owner, over the deployment transaction ID.
     signature: Signature<N>,
 }
@@ -168,20 +171,22 @@ impl<N: Network> ProgramOwnerV2<N> {
     pub fn new<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
         authority: Address<N>,
+        edition: U16<N>,
         deployment_id: Field<N>,
         rng: &mut R,
     ) -> Result<Self> {
         // Derive the address.
         let address = Address::try_from(private_key)?;
         // Sign the transaction ID.
-        let signature = private_key.sign(&[authority.to_x_coordinate(), deployment_id], rng)?;
+        let signature =
+            private_key.sign(&[authority.to_x_coordinate(), Field::from_u16(*edition), deployment_id], rng)?;
         // Return the program owner.
-        Ok(Self { address, authority, signature })
+        Ok(Self { address, authority, edition, signature })
     }
 
     /// Initializes a new V2 program owner from an address, authority, and signature.
-    pub fn from(address: Address<N>, authority: Address<N>, signature: Signature<N>) -> Self {
-        Self { address, authority, signature }
+    pub fn from(address: Address<N>, authority: Address<N>, edition: U16<N>, signature: Signature<N>) -> Self {
+        Self { address, authority, edition, signature }
     }
 
     /// Returns the address of the V2 program owner.
@@ -194,6 +199,11 @@ impl<N: Network> ProgramOwnerV2<N> {
         &self.authority
     }
 
+    /// Returns the edition of the V2 program owner.
+    pub const fn edition(&self) -> U16<N> {
+        self.edition
+    }
+
     /// Returns the signature of the V2 program owner.
     pub const fn signature(&self) -> &Signature<N> {
         &self.signature
@@ -201,7 +211,11 @@ impl<N: Network> ProgramOwnerV2<N> {
 
     /// Verify that the signature is valid for the given deployment ID.
     pub fn verify(&self, deployment_id: Field<N>) -> bool {
-        self.signature.verify(&self.address, &[self.authority.to_x_coordinate(), deployment_id])
+        self.signature.verify(&self.address, &[
+            self.authority.to_x_coordinate(),
+            Field::from_u16(*self.edition),
+            deployment_id,
+        ])
     }
 }
 
@@ -243,11 +257,14 @@ pub(crate) mod test_helpers {
             // Initialize an authority.
             let authority = Address::<CurrentNetwork>::try_from(&private_key).unwrap();
 
+            // Initialize an edition.
+            let edition = U16::<CurrentNetwork>::rand(rng);
+
             // Initialize a deployment ID.
             let deployment_id: Field<CurrentNetwork> = rng.gen();
 
             // Return the program owner.
-            ProgramOwner::new_v2(&private_key, authority, deployment_id, rng).unwrap()
+            ProgramOwner::new_v2(&private_key, authority, edition, deployment_id, rng).unwrap()
         })
     }
 
@@ -283,11 +300,14 @@ pub(crate) mod test_helpers {
         // Initialize an authority.
         let authority = Address::<CurrentNetwork>::try_from(&private_key).unwrap();
 
+        // Initialize an edition.
+        let edition = U16::<CurrentNetwork>::rand(rng);
+
         // Initialize a deployment ID.
         let deployment_id: Field<CurrentNetwork> = rng.gen();
 
         // Construct the program owner.
-        let owner = ProgramOwner::new_v2(&private_key, authority, deployment_id, rng).unwrap();
+        let owner = ProgramOwner::new_v2(&private_key, authority, edition, deployment_id, rng).unwrap();
         // Ensure that the program owner is verified for the given deployment ID.
         assert!(owner.verify(deployment_id));
 

@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use console::types::U16;
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns a new deploy transaction.
@@ -75,10 +76,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ///
     /// The `priority_fee_in_microcredits` is an additional fee **on top** of the deployment fee.
     #[allow(clippy::too_many_arguments)]
-    pub fn deploy_with_authority<R: Rng + CryptoRng>(
+    // TODO (@d0cd) Better name.
+    pub fn deploy_with_authority_and_edition<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
         authority: Address<N>,
+        edition: U16<N>,
         program: &Program<N>,
         fee_record: Option<Record<N, Plaintext<N>>>,
         priority_fee_in_microcredits: u64,
@@ -86,13 +89,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         rng: &mut R,
     ) -> Result<Transaction<N>> {
         // Compute the deployment.
-        let deployment = self.deploy_raw(program, rng)?;
+        let mut deployment = self.deploy_raw(program, rng)?;
+        // Update the edition.
+        deployment.update_edition(*edition);
         // Ensure the transaction is not empty.
         ensure!(!deployment.program().functions().is_empty(), "Attempted to create an empty transaction deployment");
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id()?;
         // Construct the owner with authority.
-        let owner = ProgramOwner::new_v2(private_key, authority, deployment_id, rng)?;
+        let owner = ProgramOwner::new_v2(private_key, authority, edition, deployment_id, rng)?;
 
         // Compute the minimum deployment cost.
         let (minimum_deployment_cost, _) = deployment_cost(&deployment)?;
