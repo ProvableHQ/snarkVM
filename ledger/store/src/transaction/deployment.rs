@@ -212,6 +212,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Removes the deployment transaction for the given `transaction ID`.
+    // TODO (@d0cd) This removal needs to be done with the reverse map.
     fn remove(&self, transaction_id: &N::TransactionID) -> Result<()> {
         // Retrieve the program ID.
         let program_id = match self.get_program_id(transaction_id)? {

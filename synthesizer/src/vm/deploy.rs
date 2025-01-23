@@ -66,6 +66,59 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Return the deploy transaction.
         Transaction::from_deployment(owner, deployment, fee)
     }
+
+    /// Returns a new deploy transaction with an authority address.
+    /// The authority address is allowed to update the program in a subsequent deployment.
+    ///
+    /// If a `fee_record` is provided, then a private fee will be included in the transaction;
+    /// otherwise, a public fee will be included in the transaction.
+    ///
+    /// The `priority_fee_in_microcredits` is an additional fee **on top** of the deployment fee.
+    pub fn deploy_with_authority<R: Rng + CryptoRng>(
+        &self,
+        private_key: &PrivateKey<N>,
+        authority: Address<N>,
+        program: &Program<N>,
+        fee_record: Option<Record<N, Plaintext<N>>>,
+        priority_fee_in_microcredits: u64,
+        query: Option<Query<N, C::BlockStorage>>,
+        rng: &mut R,
+    ) -> Result<Transaction<N>> {
+        // Compute the deployment.
+        let deployment = self.deploy_raw(program, rng)?;
+        // Ensure the transaction is not empty.
+        ensure!(!deployment.program().functions().is_empty(), "Attempted to create an empty transaction deployment");
+        // Compute the deployment ID.
+        let deployment_id = deployment.to_deployment_id()?;
+        // Construct the owner with authority.
+        let owner = ProgramOwner::new_v2(private_key, authority, deployment_id, rng)?;
+
+        // Compute the minimum deployment cost.
+        let (minimum_deployment_cost, _) = deployment_cost(&deployment)?;
+        // Authorize the fee.
+        let fee_authorization = match fee_record {
+            Some(record) => self.authorize_fee_private(
+                private_key,
+                record,
+                minimum_deployment_cost,
+                priority_fee_in_microcredits,
+                deployment_id,
+                rng,
+            )?,
+            None => self.authorize_fee_public(
+                private_key,
+                minimum_deployment_cost,
+                priority_fee_in_microcredits,
+                deployment_id,
+                rng,
+            )?,
+        };
+        // Compute the fee.
+        let fee = self.execute_fee_authorization(fee_authorization, query, rng)?;
+
+        // Return the deploy transaction.
+        Transaction::from_deployment(owner, deployment, fee)
+    }
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
