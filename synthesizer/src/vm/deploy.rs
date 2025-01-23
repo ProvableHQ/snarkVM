@@ -74,6 +74,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// otherwise, a public fee will be included in the transaction.
     ///
     /// The `priority_fee_in_microcredits` is an additional fee **on top** of the deployment fee.
+    #[allow(clippy::too_many_arguments)]
     pub fn deploy_with_authority<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
