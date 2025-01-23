@@ -577,6 +577,11 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         self.storage.get_edition(program_id)
     }
 
+    /// Returns the owner for the given `program ID`.
+    pub fn get_owner(&self, program_id: &ProgramID<N>) -> Result<Option<ProgramOwner<N>>> {
+        self.storage.get_owner(program_id)
+    }
+
     /// Returns the program ID for the given `transaction ID`.
     pub fn get_program_id(&self, transaction_id: &N::TransactionID) -> Result<Option<ProgramID<N>>> {
         self.storage.get_program_id(transaction_id)

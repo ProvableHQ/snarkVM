@@ -155,14 +155,56 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 if deployment.edition() != N::EDITION {
                     bail!("Invalid deployment transaction '{id}' - expected edition {}", N::EDITION)
                 }
-                // Ensure the program ID does not already exist in the store.
-                if self.transaction_store().contains_program_id(deployment.program_id())? {
-                    bail!("Program ID '{}' is already deployed", deployment.program_id())
+                // TODO (@d0cd) This check may not be needed here.
+                // If the owner is a V1 owner, then check that:
+                //  - The program ID does not already exist in the store.
+                //  - The program does not already exist in the process.
+                // Otherwise, if the owner is a V2 owner, then either:
+                //  - The program ID does not already exist in the store and process.
+                //  - The program ID exists in the store and process, and the new owner address matches the authority address.
+                let store_contains_program = self.transaction_store().contains_program_id(deployment.program_id())?;
+                let process_contains_program = self.contains_program(deployment.program_id());
+                match &owner {
+                    ProgramOwner::V1(_) => {
+                        ensure!(
+                            !store_contains_program,
+                            "Program ID '{}' is already deployed",
+                            deployment.program_id()
+                        );
+                        ensure!(!process_contains_program, "Program ID '{}' already exists", deployment.program_id());
+                    }
+                    ProgramOwner::V2(owner) => {
+                        match (store_contains_program, process_contains_program) {
+                            (false, false) => {} // Do nothing as the program is being deployed for the first time.
+                            (true, true) => {
+                                match self.transaction_store().deployment_store().get_owner(deployment.program_id())? {
+                                    Some(ProgramOwner::V2(old_owner)) => ensure!(
+                                        owner.address() == old_owner.authority(),
+                                        "Invalid authority for the program ID '{}' - expected authority address to be '{}'",
+                                        deployment.program_id(),
+                                        owner.authority()
+                                    ),
+                                    _ => bail!(
+                                        "Invalid program owner for the program ID '{:?}', expected a V2 program owner",
+                                        deployment.program_id()
+                                    ),
+                                }
+                            }
+                            // TODO (@d0cd): Is this the correct failure mode?
+                            _ => bail!(
+                                "Inconsistent VM and storage state for the program ID '{:?}'",
+                                deployment.program_id()
+                            ),
+                        }
+                        ensure!(
+                            !store_contains_program,
+                            "Program ID '{}' is already deployed",
+                            deployment.program_id()
+                        );
+                        ensure!(!process_contains_program, "Program ID '{}' already exists", deployment.program_id());
+                    }
                 }
-                // Ensure the program does not already exist in the process.
-                if self.contains_program(deployment.program_id()) {
-                    bail!("Program ID '{}' already exists", deployment.program_id());
-                }
+
                 // Verify the deployment if it has not been verified before.
                 if !is_partially_verified {
                     // Verify the deployment.

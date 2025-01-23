@@ -22,10 +22,64 @@ use std::collections::HashSet;
 
 impl<N: Network> Process<N> {
     /// Finalizes the deployment and fee.
+    // TODO (@d0cd) We should specify what valid here means, because `Stack::new` performs a number of checks
     /// This method assumes the given deployment **is valid**.
     /// This method should **only** be called by `VM::finalize()`.
     #[inline]
     pub fn finalize_deployment<P: FinalizeStorage<N>>(
+        &self,
+        state: FinalizeGlobalState,
+        store: &FinalizeStore<N, P>,
+        deployment: &Deployment<N>,
+        fee: &Fee<N>,
+    ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>)> {
+        let timer = timer!("Process::finalize_deployment");
+
+        // Compute the program stack.
+        let stack = Stack::new(self, deployment.program())?;
+        lap!(timer, "Compute the stack");
+
+        // Insert the verifying keys.
+        for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
+            stack.insert_verifying_key(function_name, verifying_key.clone())?;
+        }
+        lap!(timer, "Insert the verifying keys");
+
+        // Initialize the mappings, and store their finalize operations.
+        atomic_batch_scope!(store, {
+            // Initialize a list for the finalize operations.
+            let mut finalize_operations = Vec::with_capacity(deployment.program().mappings().len());
+
+            /* Finalize the fee. */
+
+            // Retrieve the fee stack.
+            let fee_stack = self.get_stack(fee.program_id())?;
+            // Finalize the fee transition.
+            finalize_operations.extend(finalize_fee_transition(state, store, fee_stack, fee)?);
+            lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+
+            /* Finalize the deployment. */
+
+            // Retrieve the program ID.
+            let program_id = deployment.program_id();
+            // Iterate over the mappings.
+            for mapping in deployment.program().mappings().values() {
+                // Initialize the mapping.
+                finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
+            }
+            finish!(timer, "Initialize the program mappings");
+
+            // Return the stack and finalize operations.
+            Ok((stack, finalize_operations))
+        })
+    }
+
+    /// Finalizes the deployment and fee.
+    // TODO (@d0cd) We should specify what valid here means, because `Stack::new` performs a number of checks
+    /// This method assumes the given deployment **is valid**.
+    /// This method should **only** be called by `VM::finalize()`.
+    #[inline]
+    pub fn finalize_update<P: FinalizeStorage<N>>(
         &self,
         state: FinalizeGlobalState,
         store: &FinalizeStore<N, P>,
