@@ -90,7 +90,7 @@ impl<N: Network> ProgramOwner<N> {
     pub const fn authority(&self) -> Option<&Address<N>> {
         match self {
             Self::V1(_) => None,
-            Self::V2(owner) => Some(&owner.authority()),
+            Self::V2(owner) => Some(owner.authority()),
         }
     }
 

@@ -42,9 +42,7 @@ impl<N: Network> FromBytes for ProgramOwner<N> {
                 // Return the program owner.
                 Ok(Self::V2(ProgramOwnerV2::from(address, authority, signature)))
             }
-            _ => {
-                return Err(error("Invalid program owner version"));
-            }
+            _ => Err(error("Invalid program owner version")),
         }
     }
 }
