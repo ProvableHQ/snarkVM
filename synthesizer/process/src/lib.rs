@@ -51,7 +51,20 @@ use console::{
 };
 use ledger_block::{Deployment, Execution, Fee, Input, Output, Transition};
 use ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
-use synthesizer_program::{Branch, Closure, Command, Finalize, FinalizeGlobalState, FinalizeOperation, Instruction, ProcessDriver, Program, RegistersLoad, RegistersStore, StackProgram};
+use synthesizer_program::{
+    Branch,
+    Closure,
+    Command,
+    Finalize,
+    FinalizeGlobalState,
+    FinalizeOperation,
+    Instruction,
+    ProcessProgram,
+    Program,
+    RegistersLoad,
+    RegistersStore,
+    StackProgram,
+};
 use synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -277,7 +290,7 @@ impl<N: Network> Process<N> {
     }
 }
 
-impl<N: Network> ProcessDriver<N> for Process<N> {}
+impl<N: Network> ProcessProgram<N> for Process<N> {}
 
 #[cfg(test)]
 pub mod test_helpers {

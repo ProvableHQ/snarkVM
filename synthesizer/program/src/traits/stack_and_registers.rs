@@ -59,8 +59,13 @@ pub trait StackMatches<N: Network> {
     fn matches_future(&self, future: &Future<N>, locator: &Locator<N>) -> Result<()>;
 }
 
-// TODO (@d0cd) Better name.
-pub trait ProcessDriver<N: Network> {}
+pub trait ProcessProgram<N: Network> {
+    /// Returns the stack for the given program ID.
+    fn get_stack(&self, program_id: &ProgramID<N>) -> Result<&Arc<Self>>;
+
+    /// Returns the program for the given program ID.
+    fn get_program(&self, program_id: &ProgramID<N>) -> Result<&Program<N>>;
+}
 
 pub trait StackProgram<N: Network> {
     /// Returns the program.
@@ -77,12 +82,6 @@ pub trait StackProgram<N: Network> {
 
     /// Returns `true` if the stack contains the external record.
     fn contains_external_record(&self, locator: &Locator<N>) -> bool;
-
-    /// Returns the external stack for the given program ID.
-    fn get_external_stack(&self, process: &impl ProcessDriver<N>, program_id: &ProgramID<N>) -> Result<&Arc<Self>>;
-
-    /// Returns the external program for the given program ID.
-    fn get_external_program(&self, process: &impl ProcessDriver<N>, program_id: &ProgramID<N>) -> Result<&Program<N>>;
 
     /// Returns `true` if the stack contains the external record.
     fn get_external_record(&self, locator: &Locator<N>) -> Result<&RecordType<N>>;
@@ -102,6 +101,7 @@ pub trait StackProgram<N: Network> {
     /// Samples a value for the given value_type.
     fn sample_value<R: Rng + CryptoRng>(
         &self,
+        process: &impl ProcessProgram<N>,
         burner_address: &Address<N>,
         value_type: &ValueType<N>,
         rng: &mut R,

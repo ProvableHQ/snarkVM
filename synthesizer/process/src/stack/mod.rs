@@ -15,8 +15,8 @@
 
 mod authorization;
 
-use std::rc::Weak;
 pub use authorization::*;
+use std::rc::Weak;
 
 mod call;
 pub use call::*;
@@ -259,23 +259,6 @@ impl<N: Network> StackProgram<N> for Stack<N> {
         todo!("@d0cd get from cache")
     }
 
-    /// Returns the external stack for the given program ID.
-    #[inline]
-    fn get_external_stack(&self, process: &Process<N>, program_id: &ProgramID<N>) -> Result<Arc<Stack<N>>> {
-        // Retrieve the external stack.
-        process.get_stack(program_id)
-    }
-
-    /// Returns the external program for the given program ID.
-    #[inline]
-    fn get_external_program(&self, process: &Process<N>, program_id: &ProgramID<N>) -> Result<&Program<N>> {
-        match self.program.id() == program_id {
-            true => bail!("Attempted to get the main program '{}' as an external program", self.program.id()),
-            // Retrieve the external stack, and return the external program.
-            false => Ok(self.get_external_stack(process, program_id)?.program()),
-        }
-    }
-
     /// Returns the external record if the stack contains the external record.
     #[inline]
     fn get_external_record(&self, locator: &Locator<N>) -> Result<&RecordType<N>> {
@@ -315,6 +298,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     /// Returns a value for the given value type.
     fn sample_value<R: Rng + CryptoRng>(
         &self,
+        process: &Process<N>,
         burner_address: &Address<N>,
         value_type: &ValueType<N>,
         rng: &mut R,
@@ -329,7 +313,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
             ValueType::ExternalRecord(locator) => {
                 todo!("@d0cd use cached state to get external record")
             }
-            ValueType::Future(locator) => Ok(Value::Future(self.sample_future(locator, rng)?)),
+            ValueType::Future(locator) => Ok(Value::Future(self.sample_future(process, locator, rng)?)),
         }
     }
 

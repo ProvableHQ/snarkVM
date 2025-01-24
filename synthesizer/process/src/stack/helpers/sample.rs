@@ -31,9 +31,14 @@ impl<N: Network> Stack<N> {
     }
 
     /// Samples a future value according to the given future type.
-    pub fn sample_future<R: Rng + CryptoRng>(&self, locator: &Locator<N>, rng: &mut R) -> Result<Future<N>> {
+    pub fn sample_future<R: Rng + CryptoRng>(
+        &self,
+        process: &Process<N>,
+        locator: &Locator<N>,
+        rng: &mut R,
+    ) -> Result<Future<N>> {
         // Sample a future value.
-        let future = self.sample_future_internal(locator, 0, rng)?;
+        let future = self.sample_future_internal(process, locator, 0, rng)?;
         // Ensure the future value matches the future type.
         self.matches_future(&future, locator)?;
         // Return the future value.
@@ -157,6 +162,7 @@ impl<N: Network> Stack<N> {
     /// Samples a future value according to the given locator.
     fn sample_future_internal<R: Rng + CryptoRng>(
         &self,
+        process: &Process<N>,
         locator: &Locator<N>,
         depth: usize,
         rng: &mut R,
@@ -164,7 +170,7 @@ impl<N: Network> Stack<N> {
         // Retrieve the associated function.
         let function = match locator.program_id() == self.program_id() {
             true => self.get_function_ref(locator.resource())?,
-            false => self.get_external_program(locator.program_id())?.get_function_ref(locator.resource())?,
+            false => process.program(locator.program_id())?.get_function_ref(locator.resource())?,
         };
 
         // Retrieve the finalize inputs.
@@ -185,7 +191,7 @@ impl<N: Network> Stack<N> {
                     }
                     FinalizeType::Future(locator) => {
                         // Sample the future value.
-                        let future = self.sample_future_internal(locator, depth + 1, rng)?;
+                        let future = self.sample_future_internal(process, locator, depth + 1, rng)?;
                         // Return the argument.
                         Ok(Argument::Future(future))
                     }

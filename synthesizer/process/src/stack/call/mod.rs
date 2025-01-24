@@ -20,13 +20,26 @@ use console::{
     network::prelude::*,
     program::{Register, Request, Value, ValueType},
 };
-use synthesizer_program::{Call, CallOperator, Operand, ProcessDriver, RegistersLoad, RegistersLoadCircuit, RegistersSigner, RegistersSignerCircuit, RegistersStore, RegistersStoreCircuit, StackMatches, StackProgram};
+use synthesizer_program::{
+    Call,
+    CallOperator,
+    Operand,
+    ProcessProgram,
+    RegistersLoad,
+    RegistersLoadCircuit,
+    RegistersSigner,
+    RegistersSignerCircuit,
+    RegistersStore,
+    RegistersStoreCircuit,
+    StackMatches,
+    StackProgram,
+};
 
 pub trait CallTrait<N: Network> {
     /// Evaluates the instruction.
     fn evaluate<A: circuit::Aleo<Network = N>>(
         &self,
-        process: &impl ProcessDriver<N>,
+        process: &impl ProcessProgram<N>,
         stack: &(impl StackEvaluate<N> + StackMatches<N> + StackProgram<N>),
         registers: &mut Registers<N, A>,
     ) -> Result<()>;
@@ -34,7 +47,7 @@ pub trait CallTrait<N: Network> {
     /// Executes the instruction.
     fn execute<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
         &self,
-        process: &impl ProcessDriver<N>,
+        process: &impl ProcessProgram<N>,
         stack: &(impl StackEvaluate<N> + StackExecute<N> + StackMatches<N> + StackProgram<N>),
         registers: &mut (
                  impl RegistersCall<N>
@@ -52,7 +65,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
     #[inline]
     fn evaluate<A: circuit::Aleo<Network = N>>(
         &self,
-        process: &impl ProcessDriver<N>,
+        process: &impl ProcessProgram<N>,
         stack: &(impl StackEvaluate<N> + StackMatches<N> + StackProgram<N>),
         registers: &mut Registers<N, A>,
     ) -> Result<()> {
@@ -64,9 +77,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         // Retrieve the substack and resource.
         let (substack, resource) = match self.operator() {
             // Retrieve the call stack and resource from the locator.
-            CallOperator::Locator(locator) => {
-                (stack.get_external_stack(process, locator.program_id())?.as_ref(), locator.resource())
-            }
+            CallOperator::Locator(locator) => (process.get_stack(locator.program_id())?.as_ref(), locator.resource()),
             CallOperator::Resource(resource) => {
                 // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
                 //  But there are legitimate uses for passing a record through to an internal function.
@@ -129,7 +140,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
     #[inline]
     fn execute<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
-        process: &impl ProcessDriver<N>,
+        process: &impl ProcessProgram<N>,
         stack: &(impl StackEvaluate<N> + StackExecute<N> + StackMatches<N> + StackProgram<N>),
         registers: &mut (
                  impl RegistersCall<N>
@@ -160,7 +171,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 if is_credits_program && (is_fee_private || is_fee_public) {
                     bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
                 } else {
-                    (stack.get_external_stack(process, locator.program_id())?.as_ref(), locator.resource())
+                    (process.get_stack(locator.program_id())?.as_ref(), locator.resource())
                 }
             }
             CallOperator::Resource(resource) => {

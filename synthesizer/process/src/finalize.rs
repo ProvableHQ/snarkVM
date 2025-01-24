@@ -360,14 +360,21 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     nonce += 1;
 
                     // Set up the finalize state for the await.
-                    let callee_state =
-                        match try_vm_runtime!(|| setup_await(process, state, await_, stack, &registers, transition_id, nonce)) {
-                            Ok(Ok(callee_state)) => callee_state,
-                            // If the evaluation fails, bail and return the error.
-                            Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
-                            // If the evaluation fails, bail and return the error.
-                            Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
-                        };
+                    let callee_state = match try_vm_runtime!(|| setup_await(
+                        process,
+                        state,
+                        await_,
+                        stack,
+                        &registers,
+                        transition_id,
+                        nonce
+                    )) {
+                        Ok(Ok(callee_state)) => callee_state,
+                        // If the evaluation fails, bail and return the error.
+                        Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
+                        // If the evaluation fails, bail and return the error.
+                        Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
+                    };
 
                     // Increment the call counter.
                     call_counter += 1;
@@ -438,7 +445,7 @@ struct FinalizeState<'a, N: Network> {
 
 // A helper function to initialize the finalize state.
 fn initialize_finalize_state<'a, N: Network>(
-    process: &Process<N>,
+    process: &'a Process<N>,
     state: FinalizeGlobalState,
     future: &Future<N>,
     stack: &'a Stack<N>,
@@ -449,7 +456,7 @@ fn initialize_finalize_state<'a, N: Network>(
     let (finalize, stack) = match stack.program_id() == future.program_id() {
         true => (stack.get_function_ref(future.function_name())?.finalize_logic(), stack),
         false => {
-            let stack = stack.get_external_stack(process, future.program_id())?.as_ref();
+            let stack = process.get_stack(future.program_id())?.as_ref();
             (stack.get_function_ref(future.function_name())?.finalize_logic(), stack)
         }
     };
@@ -485,7 +492,7 @@ fn initialize_finalize_state<'a, N: Network>(
 // A helper function that sets up the await operation.
 #[inline]
 fn setup_await<'a, N: Network>(
-    process: &Process<N>,
+    process: &'a Process<N>,
     state: FinalizeGlobalState,
     await_: &Await<N>,
     stack: &'a Stack<N>,

@@ -58,6 +58,7 @@ impl<N: Network> Stack<N> {
     #[inline]
     pub fn verify_deployment<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
+        process: &Process<N>,
         deployment: &Deployment<N>,
         rng: &mut R,
     ) -> Result<()> {
@@ -120,7 +121,7 @@ impl<N: Network> Stack<N> {
                         // Sample the input.
                         stack.sample_value(&burner_address, &ValueType::Record(*locator.resource()), &mut seeded_rng)
                     }
-                    _ => self.sample_value(&burner_address, input_type, &mut seeded_rng),
+                    _ => self.sample_value(process, &burner_address, input_type, &mut seeded_rng),
                 })
                 .collect::<Result<Vec<_>>>()?;
             lap!(timer, "Sample the inputs");

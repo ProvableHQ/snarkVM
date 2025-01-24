@@ -42,10 +42,7 @@ impl<N: Network> Stack<N> {
             .iter()
             .map(|input_type| match input_type {
                 ValueType::ExternalRecord(locator) => {
-                    // Retrieve the external stack.
-                    let stack = self.get_external_stack(locator.program_id())?;
-                    // Sample the input.
-                    stack.sample_value(&burner_address, &ValueType::Record(*locator.resource()), rng)
+                    todo!("@d0cd, use stack cache")
                 }
                 _ => self.sample_value(&burner_address, input_type, rng),
             })

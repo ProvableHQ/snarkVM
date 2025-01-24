@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use synthesizer_program::ProcessProgram;
 
 impl<N: Network> RegisterTypes<N> {
     /// Initializes a new instance of `RegisterTypes` for the given closure.
@@ -297,6 +298,7 @@ impl<N: Network> RegisterTypes<N> {
     #[inline]
     fn check_output(
         &self,
+        process: &impl ProcessProgram<N>,
         stack: &(impl StackMatches<N> + StackProgram<N>),
         operand: &Operand<N>,
         register_type: &RegisterType<N>,
