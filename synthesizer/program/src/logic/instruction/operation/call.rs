@@ -13,11 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    Opcode,
-    Operand,
-    traits::{RegistersLoad, RegistersLoadCircuit, StackMatches, StackProgram},
-};
+use crate::{Opcode, Operand, ProcessDriver, traits::{RegistersLoad, RegistersLoadCircuit, StackMatches, StackProgram}};
 use console::{
     network::prelude::*,
     program::{Identifier, Locator, Register, RegisterType, ValueType},
@@ -150,12 +146,12 @@ impl<N: Network> Call<N> {
 impl<N: Network> Call<N> {
     /// Returns `true` if the instruction is a function call.
     #[inline]
-    pub fn is_function_call(&self, stack: &impl StackProgram<N>) -> Result<bool> {
+    pub fn is_function_call(&self, process: &impl ProcessDriver<N>, stack: &impl StackProgram<N>) -> Result<bool> {
         match self.operator() {
             // Check if the locator is for a function.
             CallOperator::Locator(locator) => {
                 // Retrieve the program.
-                let program = stack.get_external_program(locator.program_id())?;
+                let program = stack.get_external_program(process, locator.program_id())?;
                 // Check if the resource is a function.
                 Ok(program.contains_function(locator.resource()))
             }
@@ -199,7 +195,8 @@ impl<N: Network> Call<N> {
         let (is_external, program, resource) = match &self.operator {
             // Retrieve the program and resource from the locator.
             CallOperator::Locator(locator) => {
-                (true, stack.get_external_program(locator.program_id())?, locator.resource())
+                todo!("@d0cd, cache more metadata in the stack so that a lookup is not needed here")
+                //(true, stack.get_external_program(process, locator.program_id())?, locator.resource())
             }
             CallOperator::Resource(resource) => {
                 // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.

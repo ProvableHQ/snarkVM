@@ -25,6 +25,7 @@ impl<N: Network> Stack<N> {
             external_stacks: Default::default(),
             register_types: Default::default(),
             finalize_types: Default::default(),
+            external_records: Default::default(),
             universal_srs: process.universal_srs().clone(),
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
@@ -33,6 +34,8 @@ impl<N: Network> Stack<N> {
             program_depth: 0,
             program_address: program.id().to_address()?,
         };
+
+        // TODO (@d0cd) Add external records.
 
         // Add all the imports into the stack.
         for import in program.imports().keys() {

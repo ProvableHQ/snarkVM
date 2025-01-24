@@ -59,6 +59,9 @@ pub trait StackMatches<N: Network> {
     fn matches_future(&self, future: &Future<N>, locator: &Locator<N>) -> Result<()>;
 }
 
+// TODO (@d0cd) Better name.
+pub trait ProcessDriver<N: Network> {}
+
 pub trait StackProgram<N: Network> {
     /// Returns the program.
     fn program(&self) -> &Program<N>;
@@ -76,10 +79,10 @@ pub trait StackProgram<N: Network> {
     fn contains_external_record(&self, locator: &Locator<N>) -> bool;
 
     /// Returns the external stack for the given program ID.
-    fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<&Arc<Self>>;
+    fn get_external_stack(&self, process: &impl ProcessDriver<N>, program_id: &ProgramID<N>) -> Result<&Arc<Self>>;
 
     /// Returns the external program for the given program ID.
-    fn get_external_program(&self, program_id: &ProgramID<N>) -> Result<&Program<N>>;
+    fn get_external_program(&self, process: &impl ProcessDriver<N>, program_id: &ProgramID<N>) -> Result<&Program<N>>;
 
     /// Returns `true` if the stack contains the external record.
     fn get_external_record(&self, locator: &Locator<N>) -> Result<&RecordType<N>>;

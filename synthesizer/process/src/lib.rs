@@ -51,19 +51,7 @@ use console::{
 };
 use ledger_block::{Deployment, Execution, Fee, Input, Output, Transition};
 use ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
-use synthesizer_program::{
-    Branch,
-    Closure,
-    Command,
-    Finalize,
-    FinalizeGlobalState,
-    FinalizeOperation,
-    Instruction,
-    Program,
-    RegistersLoad,
-    RegistersStore,
-    StackProgram,
-};
+use synthesizer_program::{Branch, Closure, Command, Finalize, FinalizeGlobalState, FinalizeOperation, Instruction, ProcessDriver, Program, RegistersLoad, RegistersStore, StackProgram};
 use synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -288,6 +276,8 @@ impl<N: Network> Process<N> {
         self.get_stack(program_id)?.synthesize_key::<A, R>(function_name, rng)
     }
 }
+
+impl<N: Network> ProcessDriver<N> for Process<N> {}
 
 #[cfg(test)]
 pub mod test_helpers {

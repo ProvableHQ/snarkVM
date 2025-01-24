@@ -55,7 +55,7 @@ impl<N: Network> Process<N> {
             // Retrieve the fee stack.
             let fee_stack = self.get_stack(fee.program_id())?;
             // Finalize the fee transition.
-            finalize_operations.extend(finalize_fee_transition(state, store, fee_stack, fee)?);
+            finalize_operations.extend(finalize_fee_transition(self, state, store, fee_stack, fee)?);
             lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
 
             /* Finalize the deployment. */
@@ -116,7 +116,7 @@ impl<N: Network> Process<N> {
             // Retrieve the fee stack.
             let fee_stack = self.get_stack(fee.program_id())?;
             // Finalize the fee transition.
-            finalize_operations.extend(finalize_fee_transition(state, store, fee_stack, fee)?);
+            finalize_operations.extend(finalize_fee_transition(&self, state, store, fee_stack, fee)?);
             lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
 
             /* Finalize the deployment. */
@@ -176,7 +176,7 @@ impl<N: Network> Process<N> {
             // Finalize the root transition.
             // Note that this will result in all the remaining transitions being finalized, since the number
             // of calls matches the number of transitions.
-            let mut finalize_operations = finalize_transition(state, store, stack, transition, call_graph)?;
+            let mut finalize_operations = finalize_transition(&self, state, store, stack, transition, call_graph)?;
 
             /* Finalize the fee. */
 
@@ -184,7 +184,7 @@ impl<N: Network> Process<N> {
                 // Retrieve the fee stack.
                 let fee_stack = self.get_stack(fee.program_id())?;
                 // Finalize the fee transition.
-                finalize_operations.extend(finalize_fee_transition(state, store, fee_stack, fee)?);
+                finalize_operations.extend(finalize_fee_transition(&self, state, store, fee_stack, fee)?);
                 lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
             }
 
@@ -210,7 +210,7 @@ impl<N: Network> Process<N> {
             // Retrieve the stack.
             let stack = self.get_stack(fee.program_id())?;
             // Finalize the fee transition.
-            let result = finalize_fee_transition(state, store, stack, fee);
+            let result = finalize_fee_transition(self, state, store, stack, fee);
             finish!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
             // Return the result.
             result
@@ -220,6 +220,7 @@ impl<N: Network> Process<N> {
 
 /// Finalizes the given fee transition.
 fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
+    process: &Process<N>,
     state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
     stack: &Stack<N>,
@@ -233,7 +234,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     };
 
     // Finalize the transition.
-    match finalize_transition(state, store, stack, fee, call_graph) {
+    match finalize_transition(process, state, store, stack, fee, call_graph) {
         // If the evaluation succeeds, return the finalize operations.
         Ok(finalize_operations) => Ok(finalize_operations),
         // If the evaluation fails, bail and return the error.
@@ -243,6 +244,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
 
 /// Finalizes the given transition.
 fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
+    process: &Process<N>,
     state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
     stack: &Stack<N>,
@@ -281,7 +283,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     let mut nonce = 0;
 
     // Initialize the top-level finalize state.
-    states.push(initialize_finalize_state(state, future, stack, *transition.id(), nonce)?);
+    states.push(initialize_finalize_state(process, state, future, stack, *transition.id(), nonce)?);
 
     // While there are active finalize states, finalize them.
     'outer: while let Some(FinalizeState {
@@ -359,7 +361,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
 
                     // Set up the finalize state for the await.
                     let callee_state =
-                        match try_vm_runtime!(|| setup_await(state, await_, stack, &registers, transition_id, nonce)) {
+                        match try_vm_runtime!(|| setup_await(process, state, await_, stack, &registers, transition_id, nonce)) {
                             Ok(Ok(callee_state)) => callee_state,
                             // If the evaluation fails, bail and return the error.
                             Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
@@ -436,6 +438,7 @@ struct FinalizeState<'a, N: Network> {
 
 // A helper function to initialize the finalize state.
 fn initialize_finalize_state<'a, N: Network>(
+    process: &Process<N>,
     state: FinalizeGlobalState,
     future: &Future<N>,
     stack: &'a Stack<N>,
@@ -446,7 +449,7 @@ fn initialize_finalize_state<'a, N: Network>(
     let (finalize, stack) = match stack.program_id() == future.program_id() {
         true => (stack.get_function_ref(future.function_name())?.finalize_logic(), stack),
         false => {
-            let stack = stack.get_external_stack(future.program_id())?.as_ref();
+            let stack = stack.get_external_stack(process, future.program_id())?.as_ref();
             (stack.get_function_ref(future.function_name())?.finalize_logic(), stack)
         }
     };
@@ -482,6 +485,7 @@ fn initialize_finalize_state<'a, N: Network>(
 // A helper function that sets up the await operation.
 #[inline]
 fn setup_await<'a, N: Network>(
+    process: &Process<N>,
     state: FinalizeGlobalState,
     await_: &Await<N>,
     stack: &'a Stack<N>,
@@ -495,7 +499,7 @@ fn setup_await<'a, N: Network>(
         _ => bail!("The input to 'await' is not a future"),
     };
     // Initialize the state.
-    initialize_finalize_state(state, &future, stack, transition_id, nonce)
+    initialize_finalize_state(process, state, &future, stack, transition_id, nonce)
 }
 
 // A helper function that returns the index to branch to.

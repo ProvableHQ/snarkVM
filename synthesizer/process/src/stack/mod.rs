@@ -14,6 +14,8 @@
 // limitations under the License.
 
 mod authorization;
+
+use std::rc::Weak;
 pub use authorization::*;
 
 mod call;
@@ -181,6 +183,8 @@ pub struct Stack<N: Network> {
     register_types: IndexMap<Identifier<N>, RegisterTypes<N>>,
     /// The mapping of finalize names to their register types.
     finalize_types: IndexMap<Identifier<N>, FinalizeTypes<N>>,
+    /// The mapping of program ID and identifiers to their external record definitions.
+    external_records: IndexMap<(ProgramID<N>, Identifier<N>), RecordType<N>>,
     /// The universal SRS.
     universal_srs: Arc<UniversalSRS<N>>,
     /// The mapping of function name to proving key.
@@ -195,6 +199,7 @@ pub struct Stack<N: Network> {
     program_depth: usize,
     /// The program address.
     program_address: Address<N>,
+    // TODO (@d0cd) Add a program edition
 }
 
 impl<N: Network> Stack<N> {
@@ -251,39 +256,30 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     /// Returns `true` if the stack contains the external record.
     #[inline]
     fn contains_external_record(&self, locator: &Locator<N>) -> bool {
-        // Retrieve the external program.
-        match self.get_external_program(locator.program_id()) {
-            // Return `true` if the external record exists.
-            Ok(external_program) => external_program.contains_record(locator.resource()),
-            // Return `false` otherwise.
-            Err(_) => false,
-        }
+        todo!("@d0cd get from cache")
     }
 
     /// Returns the external stack for the given program ID.
     #[inline]
-    fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<&Arc<Stack<N>>> {
+    fn get_external_stack(&self, process: &Process<N>, program_id: &ProgramID<N>) -> Result<Arc<Stack<N>>> {
         // Retrieve the external stack.
-        self.external_stacks.get(program_id).ok_or_else(|| anyhow!("External program '{program_id}' does not exist."))
+        process.get_stack(program_id)
     }
 
     /// Returns the external program for the given program ID.
     #[inline]
-    fn get_external_program(&self, program_id: &ProgramID<N>) -> Result<&Program<N>> {
+    fn get_external_program(&self, process: &Process<N>, program_id: &ProgramID<N>) -> Result<&Program<N>> {
         match self.program.id() == program_id {
             true => bail!("Attempted to get the main program '{}' as an external program", self.program.id()),
             // Retrieve the external stack, and return the external program.
-            false => Ok(self.get_external_stack(program_id)?.program()),
+            false => Ok(self.get_external_stack(process, program_id)?.program()),
         }
     }
 
     /// Returns the external record if the stack contains the external record.
     #[inline]
     fn get_external_record(&self, locator: &Locator<N>) -> Result<&RecordType<N>> {
-        // Retrieve the external program.
-        let external_program = self.get_external_program(locator.program_id())?;
-        // Return the external record, if it exists.
-        external_program.get_record(locator.resource())
+        todo!("@d0cd get from cache")
     }
 
     /// Returns the expected finalize cost for the given function name.
@@ -331,10 +327,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
                 Ok(Value::Record(self.sample_record(burner_address, record_name, Group::rand(rng), rng)?))
             }
             ValueType::ExternalRecord(locator) => {
-                // Retrieve the external stack.
-                let stack = self.get_external_stack(locator.program_id())?;
-                // Sample the output.
-                Ok(Value::Record(stack.sample_record(burner_address, locator.resource(), Group::rand(rng), rng)?))
+                todo!("@d0cd use cached state to get external record")
             }
             ValueType::Future(locator) => Ok(Value::Future(self.sample_future(locator, rng)?)),
         }
