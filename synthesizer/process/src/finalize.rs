@@ -88,9 +88,17 @@ impl<N: Network> Process<N> {
     ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>)> {
         let timer = timer!("Process::finalize_deployment");
 
+        // Get the existing stack.
+        let old_stack = self.get_stack(deployment.program_id())?;
+
+        // Check that the update is valid.
+        old_stack.check_update(deployment.program())?;
+
         // Compute the program stack.
         let stack = Stack::new(self, deployment.program())?;
-        lap!(timer, "Compute the stack");
+        lap!(timer, "Update the stack");
+
+        // TODO (@d0cd) Add the mappings.
 
         // Insert the verifying keys.
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {

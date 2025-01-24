@@ -15,6 +15,7 @@
 
 use super::*;
 
+mod check_update;
 mod initialize;
 mod matches;
 mod sample;

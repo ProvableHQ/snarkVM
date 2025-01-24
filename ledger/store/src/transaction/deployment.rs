@@ -183,6 +183,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // Retrieve the program ID.
         let program_id = *program.id();
 
+        // TODO (@d0cd) Should we add a safety check for incremental update on the edition map?
+
         atomic_batch_scope!(self, {
             // Store the program ID.
             self.id_map().insert(*transaction_id, program_id)?;
@@ -259,6 +261,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the transaction ID that contains the given `program ID`.
+    // TODO (@d0cd) Define semantics, OG deployment or latest?
     fn find_transaction_id_from_program_id(&self, program_id: &ProgramID<N>) -> Result<Option<N::TransactionID>> {
         // Check if the program ID is for 'credits.aleo'.
         // This case is handled separately, as it is a default program of the VM.
@@ -390,6 +393,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the deployment for the given `transaction ID`.
+    // TODO (@d0cd) This should be done with IDMapV2.
     fn get_deployment(&self, transaction_id: &N::TransactionID) -> Result<Option<Deployment<N>>> {
         // Retrieve the program ID.
         let program_id = match self.get_program_id(transaction_id)? {
@@ -645,6 +649,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns an iterator over the program IDs, for all deployments.
+    // TODO (@d0cd) This can have duplicates.
     pub fn program_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, ProgramID<N>>> {
         self.storage.id_map().values_confirmed().map(|id| match id {
             Cow::Borrowed(id) => Cow::Borrowed(id),
@@ -653,6 +658,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns an iterator over the programs, for all deployments.
+    // TODO (@d0cd) This would contain all versions of the program
     pub fn programs(&self) -> impl '_ + Iterator<Item = Cow<'_, Program<N>>> {
         self.storage.program_map().values_confirmed().map(|program| match program {
             Cow::Borrowed(program) => Cow::Borrowed(program),
