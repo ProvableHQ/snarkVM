@@ -166,13 +166,13 @@ impl<N: Network> Package<N> {
                 // Open the Aleo program file.
                 let import_program_file = AleoFile::open(&imports_directory, program_id, false)?;
                 // Add the import program.
-                process.add_program(import_program_file.program())?;
+                process.add_program(import_program_file.program(), 0)?;
             }
             Ok::<_, Error>(())
         })?;
 
         // Add the program to the process.
-        process.add_program(self.program())?;
+        process.add_program(self.program(), 0)?;
 
         Ok(process)
     }

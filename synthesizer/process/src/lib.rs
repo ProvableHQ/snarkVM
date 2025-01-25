@@ -79,7 +79,9 @@ pub struct Process<N: Network> {
     /// The universal SRS.
     universal_srs: Arc<UniversalSRS<N>>,
     /// The mapping of program IDs to stacks.
-    stacks: IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+    stacks: IndexMap<(ProgramID<N>, u16), Arc<Stack<N>>>,
+    /// The mapping of program IDs to the latest edition.
+    editions: IndexMap<ProgramID<N>, u16>,
 }
 
 impl<N: Network> Process<N> {
@@ -89,7 +91,8 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process:setup");
 
         // Initialize the process.
-        let mut process = Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new() };
+        let mut process =
+            Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new(), editions: IndexMap::new() };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -97,7 +100,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Load credits program");
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new(&process, &program, 0)?;
         lap!(timer, "Initialize stack");
 
         // Synthesize the 'credits.aleo' circuit keys.
@@ -118,12 +121,12 @@ impl<N: Network> Process<N> {
     /// Adds a new program to the process.
     /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
     #[inline]
-    pub fn add_program(&mut self, program: &Program<N>) -> Result<()> {
+    pub fn add_program(&mut self, program: &Program<N>, edition: u16) -> Result<()> {
         // Initialize the 'credits.aleo' program ID.
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
         if program.id() != &credits_program_id {
-            self.add_stack(Stack::new(self, program)?);
+            self.add_stack(Stack::new(self, program, edition)?);
         }
         Ok(())
     }
@@ -132,8 +135,13 @@ impl<N: Network> Process<N> {
     /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
     #[inline]
     pub fn add_stack(&mut self, stack: Stack<N>) {
+        // Get the program ID.
+        let program_id = *stack.program_id();
+        // Get the edition.
+        let edition = stack.edition();
         // Add the stack to the process.
-        self.stacks.insert(*stack.program_id(), Arc::new(stack));
+        self.stacks.insert((program_id, edition), Arc::new(stack));
+        self.editions.insert(program_id, edition);
     }
 }
 
@@ -144,7 +152,8 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load");
 
         // Initialize the process.
-        let mut process = Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new() };
+        let mut process =
+            Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new(), editions: IndexMap::new() };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -152,7 +161,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Load credits program");
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new(&process, &program, 0)?;
         lap!(timer, "Initialize stack");
 
         // Synthesize the 'credits.aleo' verifying keys.
@@ -182,13 +191,14 @@ impl<N: Network> Process<N> {
     #[cfg(feature = "wasm")]
     pub fn load_web() -> Result<Self> {
         // Initialize the process.
-        let mut process = Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new() };
+        let mut process =
+            Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new(), editions: IndexMap::new() };
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new(&process, &program, 0)?;
 
         // Add the stack to the process.
         process.add_stack(stack);
@@ -206,7 +216,7 @@ impl<N: Network> Process<N> {
     /// Returns `true` if the process contains the program with the given ID.
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
-        self.stacks.contains_key(program_id)
+        self.editions.contains_key(program_id)
     }
 
     /// Returns the stack for the given program ID.
@@ -214,8 +224,12 @@ impl<N: Network> Process<N> {
     pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<&Arc<Stack<N>>> {
         // Prepare the program ID.
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
+        // Get the latest edition.
+        let edition =
+            *self.editions.get(&program_id).ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?;
         // Retrieve the stack.
-        let stack = self.stacks.get(&program_id).ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?;
+        let stack =
+            self.stacks.get(&(program_id, edition)).ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?;
         // Ensure the program ID matches.
         ensure!(stack.program_id() == &program_id, "Expected program '{}', found '{program_id}'", stack.program_id());
         // Return the stack.
@@ -318,7 +332,7 @@ pub mod test_helpers {
 
         // Add the program to the process if doesn't yet exist.
         if !process.contains_program(program.id()) {
-            process.add_program(program).unwrap();
+            process.add_program(program, 0).unwrap();
         }
 
         // Compute the authorization.
@@ -452,7 +466,7 @@ function compute:
         // Construct a new process.
         let mut process = Process::load().unwrap();
         // Add the program to the process.
-        process.add_program(program).unwrap();
+        process.add_program(program, 0).unwrap();
         // Return the process.
         process
     }

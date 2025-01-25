@@ -401,7 +401,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             // Construct the process.
             let mut process = synthesizer_process::Process::load().unwrap();
             // Add the program.
-            process.add_program(&program).unwrap();
+            process.add_program(&program, 0).unwrap();
 
             // Initialize a private key.
             let private_key = PrivateKey::new(rng).unwrap();

@@ -36,7 +36,7 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::finalize_deployment");
 
         // Compute the program stack.
-        let stack = Stack::new(self, deployment.program())?;
+        let stack = Stack::new(self, deployment.program(), deployment.edition())?;
         lap!(timer, "Compute the stack");
 
         // Insert the verifying keys.
@@ -95,7 +95,7 @@ impl<N: Network> Process<N> {
         old_stack.check_update(deployment.program())?;
 
         // Compute the program stack.
-        let stack = Stack::new(self, deployment.program())?;
+        let stack = Stack::new(self, deployment.program(), deployment.edition())?;
         lap!(timer, "Update the stack");
 
         // TODO (@d0cd) Add the mappings.

@@ -195,12 +195,14 @@ pub struct Stack<N: Network> {
     program_depth: usize,
     /// The program address.
     program_address: Address<N>,
+    /// The program edition.
+    edition: u16,
 }
 
 impl<N: Network> Stack<N> {
     /// Initializes a new stack, if it does not already exist, given the process and the program.
     #[inline]
-    pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
+    pub fn new(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
         // Retrieve the program ID.
         let program_id = program.id();
         // Ensure the program does not already exist in the process.
@@ -219,7 +221,7 @@ impl<N: Network> Stack<N> {
         ensure!(program == &Program::from_str(&program_string)?, "Program string serialization failed");
 
         // Return the stack.
-        Stack::initialize(process, program)
+        Stack::initialize(process, program, edition)
     }
 }
 
@@ -246,6 +248,12 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     #[inline]
     fn program_address(&self) -> &Address<N> {
         &self.program_address
+    }
+
+    /// Returns the program edition.
+    #[inline]
+    fn edition(&self) -> u16 {
+        self.edition
     }
 
     /// Returns `true` if the stack contains the external record.

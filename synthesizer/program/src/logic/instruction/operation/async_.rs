@@ -391,7 +391,7 @@ mod tests {
     //     let operands = vec![operand_a, operand_b];
     //
     //     // Initialize the stack.
-    //     let stack = Stack::new(&Process::load()?, &program)?;
+    //     let stack = Stack::new(&Process::load()?, &program, 0)?;
     //
     //     Ok((stack, operands))
     // }

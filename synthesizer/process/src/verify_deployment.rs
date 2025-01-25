@@ -31,7 +31,7 @@ impl<N: Network> Process<N> {
         ensure!(!self.contains_program(program_id), "Program '{program_id}' already exists");
 
         // Ensure the program is well-formed, by computing the stack.
-        let stack = Stack::new(self, deployment.program())?;
+        let stack = Stack::new(self, deployment.program(), deployment.edition())?;
         lap!(timer, "Compute the stack");
 
         // Ensure the verifying keys are well-formed and the certificates are valid.

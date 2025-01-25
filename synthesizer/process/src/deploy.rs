@@ -26,7 +26,8 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::deploy");
 
         // Compute the stack.
-        let stack = Stack::new(self, program)?;
+        // TODO (@d0cd) Should we be using a zero edition?
+        let stack = Stack::new(self, program, 0)?;
         lap!(timer, "Compute the stack");
 
         // Return the deployment.
@@ -45,7 +46,7 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load_deployment");
 
         // Compute the program stack.
-        let stack = Stack::new(self, deployment.program())?;
+        let stack = Stack::new(self, deployment.program(), deployment.edition())?;
         lap!(timer, "Compute the stack");
 
         // Insert the verifying keys.

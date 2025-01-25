@@ -72,6 +72,9 @@ pub trait StackProgram<N: Network> {
     /// Returns the program address.
     fn program_address(&self) -> &Address<N>;
 
+    /// Returns the program edition.
+    fn edition(&self) -> u16;
+
     /// Returns `true` if the stack contains the external record.
     fn contains_external_record(&self, locator: &Locator<N>) -> bool;
 
