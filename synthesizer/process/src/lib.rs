@@ -81,7 +81,7 @@ pub struct Process<N: Network> {
     /// The mapping of program IDs to stacks.
     stacks: IndexMap<(ProgramID<N>, u16), Arc<Stack<N>>>,
     /// The mapping of program IDs to the latest edition.
-    editions: IndexMap<ProgramID<N>, u16>,
+    editions: Arc<RwLock<IndexMap<ProgramID<N>, u16>>>,
 }
 
 impl<N: Network> Process<N> {
@@ -91,8 +91,11 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process:setup");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new(), editions: IndexMap::new() };
+        let mut process = Self {
+            universal_srs: Arc::new(UniversalSRS::load()?),
+            stacks: IndexMap::new(),
+            editions: Arc::new(RwLock::new(IndexMap::new())),
+        };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -139,9 +142,11 @@ impl<N: Network> Process<N> {
         let program_id = *stack.program_id();
         // Get the edition.
         let edition = stack.edition();
+        // Acquire the write lock.
+        let mut editions = self.editions.write();
         // Add the stack to the process.
         self.stacks.insert((program_id, edition), Arc::new(stack));
-        self.editions.insert(program_id, edition);
+        editions.insert(program_id, edition);
     }
 }
 
@@ -152,8 +157,11 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new(), editions: IndexMap::new() };
+        let mut process = Self {
+            universal_srs: Arc::new(UniversalSRS::load()?),
+            stacks: IndexMap::new(),
+            editions: Arc::new(RwLock::new(IndexMap::new())),
+        };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -191,8 +199,11 @@ impl<N: Network> Process<N> {
     #[cfg(feature = "wasm")]
     pub fn load_web() -> Result<Self> {
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new(), editions: IndexMap::new() };
+        let mut process = Self {
+            universal_srs: Arc::new(UniversalSRS::load()?),
+            stacks: IndexMap::new(),
+            editions: Arc::new(RwLock::new(IndexMap::new())),
+        };
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
@@ -216,7 +227,7 @@ impl<N: Network> Process<N> {
     /// Returns `true` if the process contains the program with the given ID.
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
-        self.editions.contains_key(program_id)
+        self.editions.read().contains_key(program_id)
     }
 
     /// Returns the stack for the given program ID.
@@ -226,7 +237,7 @@ impl<N: Network> Process<N> {
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
         // Get the latest edition.
         let edition =
-            *self.editions.get(&program_id).ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?;
+            *self.editions.read().get(&program_id).ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?;
         // Retrieve the stack.
         let stack =
             self.stacks.get(&(program_id, edition)).ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?;
