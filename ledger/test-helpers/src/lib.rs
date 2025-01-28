@@ -150,7 +150,7 @@ function compute:
             assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
             // Construct the process.
-            let process = Process::load().unwrap();
+            let process = Process::load_testing_only().unwrap();
             // Compute the deployment.
             let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Return the deployment.
@@ -230,7 +230,7 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
     let priority_fee_in_microcredits = 1_000;
 
     // Initialize the process.
-    let process = Process::load().unwrap();
+    let process = Process::load_testing_only().unwrap();
     // Authorize the fee.
     let authorization = process
         .authorize_fee_private::<CurrentAleo, _>(
@@ -284,7 +284,7 @@ pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng:
     let priority_fee_in_microcredits = 1_000;
 
     // Initialize the process.
-    let process = Process::load().unwrap();
+    let process = Process::load_testing_only().unwrap();
     // Authorize the fee.
     let authorization = process
         .authorize_fee_public::<CurrentAleo, _>(
@@ -399,7 +399,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             let program = large_transaction_program();
 
             // Construct the process.
-            let mut process = synthesizer_process::Process::load().unwrap();
+            let mut process = synthesizer_process::Process::load_testing_only().unwrap();
             // Add the program.
             process.add_program(&program).unwrap();
 
@@ -510,7 +510,7 @@ fn sample_genesis_block_and_components_raw(
     let inputs = [address.to_string(), format!("{amount}_u64")];
 
     // Initialize the process.
-    let process = Process::load().unwrap();
+    let process = Process::load_testing_only().unwrap();
     // Authorize the function.
     let authorization =
         process.authorize::<CurrentAleo, _>(&private_key, locator.0, locator.1, inputs.iter(), rng).unwrap();

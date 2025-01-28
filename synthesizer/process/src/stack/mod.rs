@@ -204,7 +204,7 @@ impl<N: Network> Stack<N> {
         // Retrieve the program ID.
         let program_id = program.id();
         // Ensure the program does not already exist in the process.
-        ensure!(!process.contains_program(program_id), "Program '{program_id}' already exists");
+        ensure!(!process.contains_program_in_cache(program_id), "Program '{program_id}' already exists");
         // Ensure the program contains functions.
         ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{program_id}'");
 
@@ -446,6 +446,39 @@ impl<N: Network> Stack<N> {
     #[inline]
     pub fn remove_verifying_key(&self, function_name: &Identifier<N>) {
         self.verifying_keys.write().shift_remove(function_name);
+    }
+}
+
+impl<N: Network> Stack<N> {
+    /// Returns all direct and indirect external stacks.
+    /// Note that this may contain duplicates.
+    #[inline]
+    pub fn all_external_stacks(&self) -> Vec<(ProgramID<N>, Arc<Stack<N>>)> {
+        // Allocate a container on a simple best-effort basis.
+        let mut stacks = Vec::with_capacity(self.num_external_stacks());
+        // Iterate through the program imports.
+        for (program_id, external_stack) in &self.external_stacks {
+            // Insert imports of the import.
+            stacks.extend_from_slice(&external_stack.all_external_stacks());
+            // Insert the import itself.
+            stacks.push((*program_id, external_stack.clone()));
+        }
+        stacks
+    }
+
+    /// Returns the number of direct and indirect external stacks.
+    /// Note that this may contain duplicates.
+    #[inline]
+    fn num_external_stacks(&self) -> usize {
+        let mut num_external_stacks = 0;
+        // Iterate through the program imports.
+        for (_, external_stack) in &self.external_stacks {
+            // Insert number of imports of the import.
+            num_external_stacks += external_stack.num_external_stacks();
+            // Insert the import itself.
+            num_external_stacks += 1;
+        }
+        num_external_stacks
     }
 }
 

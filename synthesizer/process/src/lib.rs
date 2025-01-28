@@ -50,7 +50,7 @@ use console::{
     types::{Field, U16, U64},
 };
 use ledger_block::{Deployment, Execution, Fee, Input, Output, Transition};
-use ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
+use ledger_store::{ConsensusStore, FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use synthesizer_program::{
     Branch,
     Closure,
@@ -66,20 +66,38 @@ use synthesizer_program::{
 };
 use synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 
-use aleo_std::prelude::{finish, lap, timer};
-use indexmap::IndexMap;
-use parking_lot::RwLock;
-use std::{collections::HashMap, sync::Arc};
+use aleo_std::{
+    StorageMode,
+    prelude::{finish, lap, timer},
+};
+use lru::LruCache;
+use parking_lot::{Mutex, RwLock};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
+use tracing::{debug, warn};
 
 #[cfg(feature = "aleo-cli")]
 use colored::Colorize;
+
+#[cfg(not(feature = "rocks"))]
+use ledger_store::helpers::memory::ConsensusMemory;
+#[cfg(feature = "rocks")]
+use ledger_store::helpers::rocksdb::ConsensusDB;
+
+type NumParentsInMemory = usize;
 
 #[derive(Clone)]
 pub struct Process<N: Network> {
     /// The universal SRS.
     universal_srs: Arc<UniversalSRS<N>>,
-    /// The mapping of program IDs to stacks.
-    stacks: IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+    /// The Stack for credits.aleo
+    credits: Option<Arc<Stack<N>>>,
+    /// The mapping of program IDs to stacks and its number of parents in memory.
+    stacks: Arc<Mutex<LruCache<ProgramID<N>, (Arc<Stack<N>>, NumParentsInMemory)>>>,
+    /// The storage.
+    #[cfg(feature = "rocks")]
+    store: Option<ConsensusStore<N, ConsensusDB<N>>>,
+    #[cfg(not(feature = "rocks"))]
+    store: Option<ConsensusStore<N, ConsensusMemory<N>>>,
 }
 
 impl<N: Network> Process<N> {
@@ -87,9 +105,8 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn setup<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(rng: &mut R) -> Result<Self> {
         let timer = timer!("Process:setup");
-
         // Initialize the process.
-        let mut process = Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new() };
+        let mut process = Self::load_no_storage()?;
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -108,7 +125,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Synthesize credits program keys");
 
         // Add the 'credits.aleo' stack to the process.
-        process.add_stack(stack);
+        process.credits = Some(Arc::new(stack));
 
         finish!(timer);
         // Return the process.
@@ -123,28 +140,125 @@ impl<N: Network> Process<N> {
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
         if program.id() != &credits_program_id {
-            self.add_stack(Stack::new(self, program)?);
+            self.add_stack(Arc::new(Stack::new(self, program)?))?;
         }
         Ok(())
     }
 
-    /// Adds a new stack to the process.
+    /// Adds a new stack to the LRU cache in the process.
     /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
     #[inline]
-    pub fn add_stack(&mut self, stack: Stack<N>) {
-        // Add the stack to the process.
-        self.stacks.insert(*stack.program_id(), Arc::new(stack));
+    pub fn add_stack(&self, stack: Arc<Stack<N>>) -> Result<()> {
+        // Construct the 'credits.aleo' program ID.
+        let credits_id = self
+            .credits
+            .as_ref()
+            .map_or(ProgramID::<N>::from_str("credits.aleo").unwrap(), |stack| *stack.program_id());
+        // Collect all direct and indirect external stacks.
+        let programs_to_add = stack.all_external_stacks();
+        // Obtain the lock on the stacks.
+        let mut stacks = self.stacks.lock();
+        // Determine which stacks still need to be added into the process.
+        let programs_to_add = programs_to_add
+            .into_iter()
+            .chain(std::iter::once((*stack.program_id(), stack))) // add the root stack.
+            .unique_by(|(id, _)|*id) // don't add duplicates.
+            .filter(|(program_id, _)| {
+                *program_id != credits_id // don't add the credits.aleo stack.
+                && !stacks.contains(program_id) // don't add stacks present in the cache.
+            })
+            .collect::<Vec<_>>();
+        // Determine the required capacity.
+        let remaining_capacity = stacks.cap().get().saturating_sub(stacks.len());
+        let mut required_capacity = programs_to_add.len().saturating_sub(remaining_capacity);
+        if required_capacity != 0 {
+            debug!("Evicting {required_capacity} stacks from the cache.");
+        }
+        // If the new stacks require more capacity, attempt to remove the least recently used stacks.
+        while required_capacity != 0 {
+            // To avoid dangling stacks, we only remove stacks which are not imported by any other stack.
+            let root_program_ids = stacks
+                .iter()
+                .rev()
+                .filter_map(|(program_id, (_, num_parents))| (*num_parents == 0).then_some(program_id))
+                .take(required_capacity)
+                .cloned()
+                .collect::<Vec<_>>();
+            // Evict the old stacks from the cache.
+            for program_id in root_program_ids {
+                if let Some((removed_stack, _)) = stacks.pop(&program_id) {
+                    // Decrement the number of tracked parents of the external stacks.
+                    for (import_program_id, _) in
+                        removed_stack.program().imports().into_iter().filter(|(id, _)| **id != credits_id)
+                    {
+                        if let Some((_, num_parents)) = stacks.get_mut(import_program_id) {
+                            *num_parents = num_parents.saturating_sub(1);
+                        } else {
+                            bail!("Could not find expected import program id {} in cache.", import_program_id)
+                        }
+                    }
+                } else {
+                    bail!("Could not find expected program id {program_id} in cache.")
+                }
+                // Lower the required capacity.
+                required_capacity = required_capacity.saturating_sub(1);
+            }
+        }
+        // Add new stacks into the cache, from lowest the highest level.
+        for (program_id, stack) in programs_to_add {
+            // Increment the tracked number of parents of the external stacks.
+            for (import_program_id, _) in stack.program().imports().into_iter().filter(|(id, _)| **id != credits_id) {
+                if let Some((_, num_parents)) = stacks.get_mut(import_program_id) {
+                    *num_parents += 1;
+                } else {
+                    bail!("Could not find expected import program id {} in cache.", import_program_id)
+                }
+            }
+            // Add the stack itself into the cache.
+            stacks.put(program_id, (stack, 0));
+        }
+        Ok(())
+    }
+
+    /// Returns the size of the cache.
+    #[inline]
+    pub fn num_stacks_in_memory(&self) -> usize {
+        self.stacks.lock().len()
     }
 }
 
 impl<N: Network> Process<N> {
     /// Initializes a new process.
+    /// Assumption: this is only called in test code.
     #[inline]
-    pub fn load() -> Result<Self> {
-        let timer = timer!("Process::load");
+    pub fn load_testing_only() -> Result<Self> {
+        Process::load_from_storage(Some(aleo_std::StorageMode::Development(0)))
+    }
+
+    /// Initializes a new process.
+    #[inline]
+    pub fn load_from_storage(storage_mode: Option<StorageMode>) -> Result<Self> {
+        let timer = timer!("Process::load_from_storage");
+
+        let storage_mode = storage_mode.ok_or_else(|| anyhow!("Failed to get storage mode"))?;
+
+        #[cfg(feature = "rocks")]
+        let store = ConsensusStore::<N, ConsensusDB<N>>::open(storage_mode);
+        #[cfg(not(feature = "rocks"))]
+        let store = ConsensusStore::<N, ConsensusMemory<N>>::open(storage_mode);
+
+        let store = match store {
+            Ok(store) => store,
+            Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
+        };
 
         // Initialize the process.
-        let mut process = Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new() };
+        let mut process = Self {
+            universal_srs: Arc::new(UniversalSRS::load()?),
+            credits: None,
+            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(N::MAX_STACKS).unwrap()))),
+            store: Some(store),
+        };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -170,9 +284,24 @@ impl<N: Network> Process<N> {
         lap!(timer, "Load circuit keys");
 
         // Add the stack to the process.
-        process.add_stack(stack);
+        process.credits = Some(Arc::new(stack));
 
-        finish!(timer, "Process::load");
+        finish!(timer, "Process::load_from_storage");
+        // Return the process.
+        Ok(process)
+    }
+
+    /// Initializes a new process without creating the 'credits.aleo' program.
+    #[inline]
+    pub fn load_no_storage() -> Result<Self> {
+        // Initialize the process.
+        let process = Self {
+            universal_srs: Arc::new(UniversalSRS::load()?),
+            credits: None,
+            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(N::MAX_STACKS).unwrap()))),
+            store: None,
+        };
+
         // Return the process.
         Ok(process)
     }
@@ -182,7 +311,12 @@ impl<N: Network> Process<N> {
     #[cfg(feature = "wasm")]
     pub fn load_web() -> Result<Self> {
         // Initialize the process.
-        let mut process = Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: IndexMap::new() };
+        let mut process = Self {
+            universal_srs: Arc::new(UniversalSRS::load()?),
+            credits: None,
+            stacks: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(N::MAX_STACKS).unwrap()))),
+            store: None,
+        };
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
@@ -191,7 +325,7 @@ impl<N: Network> Process<N> {
         let stack = Stack::new(&process, &program)?;
 
         // Add the stack to the process.
-        process.add_stack(stack);
+        process.credits = Some(Arc::new(stack));
 
         // Return the process.
         Ok(process)
@@ -203,29 +337,63 @@ impl<N: Network> Process<N> {
         &self.universal_srs
     }
 
-    /// Returns `true` if the process contains the program with the given ID.
+    /// Returns `true` if the process or storage contains the program with the given ID.
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
-        self.stacks.contains_key(program_id)
+        // Check if the program is in memory.
+        if self.contains_program_in_cache(program_id) {
+            return true;
+        }
+        // Retrieve the stores.
+        if let Some(store) = self.store.as_ref() {
+            let transaction_store = store.transaction_store();
+            let deployment_store = transaction_store.deployment_store();
+            // Check if the program ID exists in the storage.
+            match deployment_store.find_transaction_id_from_program_id(program_id) {
+                Ok(Some(_)) => return true,
+                Ok(None) => debug!("Program ID {program_id} not found in storage"),
+                Err(err) => warn!("Could not retrieve transaction ID for program ID {program_id}: {err}"),
+            }
+        }
+
+        false
+    }
+
+    /// Returns `true` if the process contains the program with the given ID.
+    #[inline]
+    pub fn contains_program_in_cache(&self, program_id: &ProgramID<N>) -> bool {
+        // Check if the program ID is 'credits.aleo'.
+        if self.credits.as_ref().map_or(false, |stack| stack.program_id() == program_id) {
+            return true;
+        }
+        // Check if the program ID exists in the cache.
+        self.stacks.lock().contains(program_id)
     }
 
     /// Returns the stack for the given program ID.
+    /// Note: stacks are large, so queried stacks should be short-lived to avoid memory leaks.
     #[inline]
-    pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<&Arc<Stack<N>>> {
+    pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<Arc<Stack<N>>> {
         // Prepare the program ID.
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
-        // Retrieve the stack.
-        let stack = self.stacks.get(&program_id).ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?;
-        // Ensure the program ID matches.
-        ensure!(stack.program_id() == &program_id, "Expected program '{}', found '{program_id}'", stack.program_id());
-        // Return the stack.
-        Ok(stack)
+        // Check if the program is 'credits.aleo'.
+        if self.credits.as_ref().map_or(false, |stack| *stack.program_id() == program_id) {
+            return self.credits.clone().ok_or_else(|| anyhow!("Failed to get stack for 'credits.aleo'"));
+        }
+        // Try to retrieve the stack from the LRU cache.
+        if let Some((stack, _)) = self.stacks.lock().get(&program_id) {
+            // Return the stack.
+            return Ok(stack.clone());
+        }
+        // Otherwise, retrieve the stack from the storage.
+        self.load_stack(program_id)
     }
 
     /// Returns the program for the given program ID.
     #[inline]
-    pub fn get_program(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<&Program<N>> {
-        Ok(self.get_stack(program_id)?.program())
+    pub fn get_program(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<Program<N>> {
+        let stack = self.get_stack(program_id)?;
+        Ok(stack.program().clone())
     }
 
     /// Returns the proving key for the given program ID and function name.
@@ -450,7 +618,7 @@ function compute:
     /// Initializes a new process with the given program.
     pub(crate) fn sample_process(program: &Program<CurrentNetwork>) -> Process<CurrentNetwork> {
         // Construct a new process.
-        let mut process = Process::load().unwrap();
+        let mut process = Process::load_testing_only().unwrap();
         // Add the program to the process.
         process.add_program(program).unwrap();
         // Return the process.

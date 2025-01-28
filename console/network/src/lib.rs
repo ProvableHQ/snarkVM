@@ -203,6 +203,10 @@ pub trait Network:
     //  Increasing this value will require a migration to prevent forking during network upgrades.
     const MAX_CERTIFICATES: u16;
 
+    /// The maximum number of stacks in the process.
+    /// Must be at least Self::MAX_PROGRAM_DEPTH * Self::MAX_IMPORTS to be safe.
+    const MAX_STACKS: usize = Self::MAX_PROGRAM_DEPTH * Self::MAX_IMPORTS * 10;
+
     /// The maximum number of bytes in a transaction.
     // Note: This value must **not** be decreased as it would invalidate existing transactions.
     const MAX_TRANSACTION_SIZE: usize = 128_000; // 128 kB

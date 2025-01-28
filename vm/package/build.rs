@@ -178,11 +178,8 @@ impl<N: Network> Package<N> {
         let process = self.get_process()?;
 
         // Retrieve the imported programs.
-        let imported_programs = program
-            .imports()
-            .keys()
-            .map(|program_id| process.get_program(program_id).cloned())
-            .collect::<Result<Vec<_>>>()?;
+        let imported_programs =
+            program.imports().keys().map(|program_id| process.get_program(program_id)).collect::<Result<Vec<_>>>()?;
 
         // Synthesize each proving and verifying key.
         for function_name in program.functions().keys() {
@@ -231,7 +228,7 @@ impl<N: Network> Package<N> {
                         CallOperator::Locator(locator) => {
                             (process.get_program(locator.program_id())?, locator.resource())
                         }
-                        CallOperator::Resource(resource) => (program, resource),
+                        CallOperator::Resource(resource) => (program.clone(), resource),
                     };
                     // If this is a function call, save its corresponding prover and verifier files.
                     if program.contains_function(resource) {

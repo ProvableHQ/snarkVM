@@ -503,7 +503,7 @@ jobs:
   ledger-with-rocksdb:
     docker:
       - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.medium >>
+    resource_class: << pipeline.parameters.large >>
     steps:
       - run_serial:
           flags: --features=rocks
@@ -692,7 +692,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: -- --ignored test_deployment_synthesis_overload test_deep_nested_execution_cost
+          flags: -- --ignored test_deployment_synthesis_overload test_deep_nested_execution_cost --test-threads=1
           workspace_member: synthesizer
           cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-mem-heavy-cache
 

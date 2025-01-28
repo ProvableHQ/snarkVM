@@ -32,7 +32,7 @@ fn test_process_execute() {
     // Load the tests.
     let tests = load_tests::<_, ProgramTest>("./tests/process/execute", "./expectations/process/execute");
     // Initialize a process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_testing_only().unwrap();
 
     // Run each test and compare it against its corresponding expectation.
     tests.par_iter().for_each(|test| {

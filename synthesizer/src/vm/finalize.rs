@@ -588,7 +588,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Acquire the write lock on the process.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
             // we choose to acquire the write lock for the entire duration of this atomic batch.
-            let mut process = self.process.write();
+            let process = self.process.write();
 
             // Initialize a list for the deployed stacks.
             let mut stacks = Vec::new();
@@ -768,7 +768,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             // Commit all of the stacks to the process.
             if !stacks.is_empty() {
-                stacks.into_iter().for_each(|stack| process.add_stack(stack))
+                for stack in stacks {
+                    process.add_stack(Arc::new(stack)).map_err(|e| format!("{e}"))?;
+                }
             }
 
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
