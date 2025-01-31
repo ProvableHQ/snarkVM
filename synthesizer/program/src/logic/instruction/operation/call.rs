@@ -154,8 +154,10 @@ impl<N: Network> Call<N> {
         match self.operator() {
             // Check if the locator is for a function.
             CallOperator::Locator(locator) => {
+                // Get the external stack.
+                let external_stack = stack.get_external_stack(locator.program_id())?;
                 // Retrieve the program.
-                let program = stack.get_external_program(locator.program_id())?;
+                let program = external_stack.program();
                 // Check if the resource is a function.
                 Ok(program.contains_function(locator.resource()))
             }
@@ -195,11 +197,10 @@ impl<N: Network> Call<N> {
         stack: &impl StackProgram<N>,
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
-        // Retrieve the program and resource.
-        let (is_external, program, resource) = match &self.operator {
-            // Retrieve the program and resource from the locator.
+        // Retrieve the external stack, if needed, and the resource.
+        let (external_stack, resource) = match &self.operator {
             CallOperator::Locator(locator) => {
-                (true, stack.get_external_program(locator.program_id())?, locator.resource())
+                (Some(stack.get_external_stack(locator.program_id())?), locator.resource())
             }
             CallOperator::Resource(resource) => {
                 // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
@@ -208,11 +209,14 @@ impl<N: Network> Call<N> {
                 if stack.program().contains_function(resource) {
                     bail!("Cannot call '{resource}'. Use a closure ('closure {resource}:') instead.")
                 }
-
-                (false, stack.program(), resource)
+                (None, resource)
             }
         };
-
+        // Retrieve the program.
+        let (is_external, program) = match &external_stack {
+            Some(external_stack) => (true, external_stack.program()),
+            None => (false, stack.program()),
+        };
         // If the operator is a closure, retrieve the closure and compute the output types.
         if let Ok(closure) = program.get_closure(resource) {
             // Ensure the number of operands matches the number of input statements.

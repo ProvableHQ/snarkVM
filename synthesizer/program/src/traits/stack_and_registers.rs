@@ -29,7 +29,6 @@ use console::{
         PlaintextType,
         ProgramID,
         Record,
-        RecordType,
         Register,
         RegisterType,
         Value,
@@ -75,17 +74,8 @@ pub trait StackProgram<N: Network> {
     /// Returns the program edition.
     fn edition(&self) -> u16;
 
-    /// Returns `true` if the stack contains the external record.
-    fn contains_external_record(&self, locator: &Locator<N>) -> bool;
-
     /// Returns the external stack for the given program ID.
-    fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<&Arc<Self>>;
-
-    /// Returns the external program for the given program ID.
-    fn get_external_program(&self, program_id: &ProgramID<N>) -> Result<&Program<N>>;
-
-    /// Returns `true` if the stack contains the external record.
-    fn get_external_record(&self, locator: &Locator<N>) -> Result<&RecordType<N>>;
+    fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
 
     /// Returns the expected finalize cost for the given function name.
     fn get_finalize_cost(&self, function_name: &Identifier<N>) -> Result<u64>;

@@ -133,11 +133,11 @@ impl<N: Network> RegisterTypes<N> {
         .iter();
 
         // A helper enum to track the type of the register.
-        enum RegisterRefType<'a, N: Network> {
+        enum RegisterAccessType<N: Network> {
             /// A plaintext type.
-            Plaintext(&'a PlaintextType<N>),
+            Plaintext(PlaintextType<N>),
             /// A future.
-            Future(&'a Locator<N>),
+            Future(Locator<N>),
         }
 
         // A literal address type.
@@ -147,7 +147,7 @@ impl<N: Network> RegisterTypes<N> {
         // We perform a single access, if the register type is a record.
         // This is done to minimize the number of `clone` operations and simplify the code.
         let mut register_type = match register_type {
-            RegisterType::Plaintext(plaintext_type) => RegisterRefType::Plaintext(plaintext_type),
+            RegisterType::Plaintext(plaintext_type) => RegisterAccessType::Plaintext(plaintext_type.clone()),
             RegisterType::Record(record_name) => {
                 // Ensure the record type exists.
                 ensure!(stack.program().contains_record(record_name), "Record '{record_name}' does not exist");
@@ -157,7 +157,7 @@ impl<N: Network> RegisterTypes<N> {
                 // Retrieve the member type from the record.
                 if access == &Access::Member(Identifier::from_str("owner")?) {
                     // If the member is the owner, then output the address type.
-                    RegisterRefType::Plaintext(&literal_address_type)
+                    RegisterAccessType::Plaintext(literal_address_type)
                 } else {
                     // Retrieve the path name.
                     let path_name = match access {
@@ -167,21 +167,23 @@ impl<N: Network> RegisterTypes<N> {
                     // Retrieve the entry type from the record.
                     match stack.program().get_record(record_name)?.entries().get(path_name) {
                         // Retrieve the plaintext type.
-                        Some(entry_type) => RegisterRefType::Plaintext(entry_type.plaintext_type()),
+                        Some(entry_type) => RegisterAccessType::Plaintext(entry_type.plaintext_type().clone()),
                         None => bail!("'{path_name}' does not exist in record '{record_name}'"),
                     }
                 }
             }
             RegisterType::ExternalRecord(locator) => {
-                // Ensure the external record type exists.
-                ensure!(stack.contains_external_record(locator), "External record '{locator}' does not exist");
+                // Get the external stack.
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                // Get the external record.
+                let external_record = external_stack.program().get_record(locator.resource())?;
                 // Retrieve the first access.
                 // Note: this unwrap is safe since the path is checked to be non-empty above.
                 let access = path_iter.next().unwrap();
                 // Retrieve the member type from the external record.
                 if access == &Access::Member(Identifier::from_str("owner")?) {
                     // If the member is the owner, then output the address type.
-                    RegisterRefType::Plaintext(&literal_address_type)
+                    RegisterAccessType::Plaintext(literal_address_type)
                 } else {
                     // Retrieve the path name.
                     let path_name = match access {
@@ -189,48 +191,51 @@ impl<N: Network> RegisterTypes<N> {
                         Access::Index(_) => bail!("Attempted to index into an external record"),
                     };
                     // Retrieve the entry type from the external record.
-                    match stack.get_external_record(locator)?.entries().get(path_name) {
+                    match external_record.entries().get(path_name) {
                         // Retrieve the plaintext type.
-                        Some(entry_type) => RegisterRefType::Plaintext(entry_type.plaintext_type()),
+                        Some(entry_type) => RegisterAccessType::Plaintext(entry_type.plaintext_type().clone()),
                         None => bail!("'{path_name}' does not exist in external record '{locator}'"),
                     }
                 }
             }
-            RegisterType::Future(locator) => RegisterRefType::Future(locator),
+            RegisterType::Future(locator) => RegisterAccessType::Future(*locator),
         };
 
         // Traverse the path to find the register type.
         for access in path_iter {
             // Update the plaintext type at each step.
-            match (register_type, access) {
+            match (&register_type, access) {
                 // Ensure the plaintext type is not a literal, as the register references an access.
-                (RegisterRefType::Plaintext(PlaintextType::Literal(..)), _) => {
+                (RegisterAccessType::Plaintext(PlaintextType::Literal(..)), _) => {
                     bail!("'{register}' references a literal.")
                 }
                 // Traverse the path to output the register type.
-                (RegisterRefType::Plaintext(PlaintextType::Struct(struct_name)), Access::Member(identifier)) => {
+                (RegisterAccessType::Plaintext(PlaintextType::Struct(struct_name)), Access::Member(identifier)) => {
                     // Retrieve the member type from the struct.
                     match stack.program().get_struct(struct_name)?.members().get(identifier) {
                         // Update the member type.
-                        Some(member_type) => register_type = RegisterRefType::Plaintext(member_type),
+                        Some(member_type) => register_type = RegisterAccessType::Plaintext(member_type.clone()),
                         None => bail!("'{identifier}' does not exist in struct '{struct_name}'"),
                     }
                 }
                 // Traverse the path to output the register type.
-                (RegisterRefType::Plaintext(PlaintextType::Array(array_type)), Access::Index(index)) => {
+                (RegisterAccessType::Plaintext(PlaintextType::Array(array_type)), Access::Index(index)) => {
                     match index < array_type.length() {
-                        true => register_type = RegisterRefType::Plaintext(array_type.next_element_type()),
+                        true => register_type = RegisterAccessType::Plaintext(array_type.next_element_type().clone()),
                         false => bail!("'{index}' is out of bounds for '{register}'"),
                     }
                 }
                 // Access the input to the future to output the register type and check that it is in bounds.
-                (RegisterRefType::Future(locator), Access::Index(index)) => {
+                (RegisterAccessType::Future(locator), Access::Index(index)) => {
+                    // Retrieve the external stack, if needed.
+                    let external_stack = match locator.program_id() == stack.program_id() {
+                        true => None,
+                        false => Some(stack.get_external_stack(locator.program_id())?),
+                    };
                     // Retrieve the associated function.
-                    let function = match locator.program_id() == stack.program_id() {
-                        true => stack.get_function_ref(locator.resource())?,
-                        false => {
-                            stack.get_external_program(locator.program_id())?.get_function_ref(locator.resource())?
-                        }
+                    let function = match &external_stack {
+                        Some(external_stack) => external_stack.get_function_ref(locator.resource())?,
+                        None => stack.get_function_ref(locator.resource())?,
                     };
                     // Retrieve the finalize inputs.
                     let finalize_inputs = match function.finalize_logic() {
@@ -242,17 +247,19 @@ impl<N: Network> RegisterTypes<N> {
                         // Retrieve the input type and update `finalize_type` for the next iteration.
                         Some(input) => {
                             register_type = match input.finalize_type() {
-                                FinalizeType::Plaintext(plaintext_type) => RegisterRefType::Plaintext(plaintext_type),
-                                FinalizeType::Future(locator) => RegisterRefType::Future(locator),
+                                FinalizeType::Plaintext(plaintext_type) => {
+                                    RegisterAccessType::Plaintext(plaintext_type.clone())
+                                }
+                                FinalizeType::Future(locator) => RegisterAccessType::Future(*locator),
                             }
                         }
                         // Halts if the index is out of bounds.
                         None => bail!("Index out of bounds"),
                     }
                 }
-                (RegisterRefType::Plaintext(PlaintextType::Struct(..)), Access::Index(..))
-                | (RegisterRefType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (RegisterRefType::Future(..), Access::Member(..)) => {
+                (RegisterAccessType::Plaintext(PlaintextType::Struct(..)), Access::Index(..))
+                | (RegisterAccessType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
+                | (RegisterAccessType::Future(..), Access::Member(..)) => {
                     bail!("Invalid access `{access}`")
                 }
             }
@@ -260,8 +267,8 @@ impl<N: Network> RegisterTypes<N> {
 
         // Output the register type.
         Ok(match register_type {
-            RegisterRefType::Plaintext(plaintext_type) => RegisterType::Plaintext(plaintext_type.clone()),
-            RegisterRefType::Future(locator) => RegisterType::Future(*locator),
+            RegisterAccessType::Plaintext(plaintext_type) => RegisterType::Plaintext(plaintext_type.clone()),
+            RegisterAccessType::Future(locator) => RegisterType::Future(locator),
         })
     }
 }

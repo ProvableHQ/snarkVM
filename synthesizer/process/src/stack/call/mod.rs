@@ -70,11 +70,11 @@ impl<N: Network> CallTrait<N> for Call<N> {
         // Load the operands values.
         let inputs: Vec<_> = self.operands().iter().map(|operand| registers.load(stack, operand)).try_collect()?;
 
-        // Retrieve the substack and resource.
-        let (substack, resource) = match self.operator() {
+        // Retrieve the optional external stack and resource.
+        let (external_stack, resource) = match self.operator() {
             // Retrieve the call stack and resource from the locator.
             CallOperator::Locator(locator) => {
-                (stack.get_external_stack(locator.program_id())?.as_ref(), locator.resource())
+                (Some(stack.get_external_stack(locator.program_id())?), locator.resource())
             }
             CallOperator::Resource(resource) => {
                 // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
@@ -83,9 +83,13 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 if stack.program().contains_function(resource) {
                     bail!("Cannot call '{resource}'. Use a closure ('closure {resource}:') instead.")
                 }
-
-                (stack, resource)
+                (None, resource)
             }
+        };
+        // Retrieve the substack.
+        let substack = match &external_stack {
+            Some(external_stack) => external_stack.as_ref(),
+            None => stack,
         };
         lap!(timer, "Retrieved the substack and resource");
 
@@ -154,8 +158,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
         let inputs: Vec<_> =
             self.operands().iter().map(|operand| registers.load_circuit(stack, operand)).try_collect()?;
 
-        // Retrieve the substack and resource.
-        let (substack, resource) = match self.operator() {
+        // Retrieve the optional external stack and resource.
+        let (external_stack, resource) = match self.operator() {
             // Retrieve the call stack and resource from the locator.
             CallOperator::Locator(locator) => {
                 // Check the external call locator.
@@ -168,7 +172,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 if is_credits_program && (is_fee_private || is_fee_public) {
                     bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
                 } else {
-                    (stack.get_external_stack(locator.program_id())?.as_ref(), locator.resource())
+                    (Some(stack.get_external_stack(locator.program_id())?), locator.resource())
                 }
             }
             CallOperator::Resource(resource) => {
@@ -178,9 +182,13 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 if stack.program().contains_function(resource) {
                     bail!("Cannot call '{resource}'. Use a closure ('closure {resource}:') instead.")
                 }
-
-                (stack, resource)
+                (None, resource)
             }
+        };
+        // Retrieve the substack.
+        let substack = match &external_stack {
+            Some(external_stack) => external_stack.as_ref(),
+            None => stack,
         };
         lap!(timer, "Retrieve the substack and resource");
 

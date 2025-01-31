@@ -831,7 +831,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             // Commit all of the stacks to the process.
             if !stacks.is_empty() {
-                stacks.into_iter().for_each(|stack| process.add_stack(stack))
+                for stack in stacks {
+                    if let Err(e) = process.add_stack(stack) {
+                        eprintln!("Critical bug in finalize: {e}");
+                        // Note: This will abort the entire atomic batch.
+                        return Err(format!("Failed to commit the stack - {e}"));
+                    }
+                }
             }
 
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.

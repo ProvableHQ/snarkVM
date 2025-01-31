@@ -22,7 +22,7 @@ impl<N: Network> Stack<N> {
         // Construct the stack for the program.
         let mut stack = Self {
             program: program.clone(),
-            external_stacks: Default::default(),
+            stacks: Arc::downgrade(&process.stacks),
             register_types: Default::default(),
             finalize_types: Default::default(),
             universal_srs: process.universal_srs().clone(),
@@ -44,7 +44,7 @@ impl<N: Network> Stack<N> {
             // Retrieve the external stack for the import program ID.
             let external_stack = process.get_stack(import)?;
             // Add the external stack to the stack.
-            stack.insert_external_stack(external_stack.clone())?;
+            // TODO (@d0cd): Handle bookkeeping here.
             // Update the program depth, checking that it does not exceed the maximum call depth.
             stack.program_depth = std::cmp::max(stack.program_depth, external_stack.program_depth() + 1);
             ensure!(
@@ -105,23 +105,6 @@ impl<N: Network> Stack<N> {
 }
 
 impl<N: Network> Stack<N> {
-    /// Inserts the given external stack to the stack.
-    #[inline]
-    fn insert_external_stack(&mut self, external_stack: Arc<Stack<N>>) -> Result<()> {
-        // Retrieve the program ID.
-        let program_id = *external_stack.program_id();
-        // Ensure the external stack is not already added.
-        ensure!(!self.external_stacks.contains_key(&program_id), "Program '{program_id}' already exists");
-        // Ensure the program exists in the main program imports.
-        ensure!(self.program.contains_import(&program_id), "'{program_id}' does not exist in the main program imports");
-        // Ensure the external stack is not for the main program.
-        ensure!(self.program.id() != external_stack.program_id(), "External stack program cannot be the main program");
-        // Add the external stack to the stack.
-        self.external_stacks.insert(program_id, external_stack);
-        // Return success.
-        Ok(())
-    }
-
     /// Inserts the given closure to the stack.
     #[inline]
     fn insert_closure(&mut self, closure: &Closure<N>) -> Result<()> {

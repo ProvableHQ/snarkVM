@@ -159,7 +159,7 @@ pub struct ProgramOwnerV2<N: Network> {
     /// The address of the program owner.
     address: Address<N>,
     /// The address of the authority allowed to update the program.
-    authority: Option<Address<N>>,
+    authority: Address<N>,
     /// The edition of the program.
     edition: U16<N>,
     /// The signature of the program owner, over the deployment transaction ID.

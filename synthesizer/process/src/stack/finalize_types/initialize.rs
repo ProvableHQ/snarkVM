@@ -266,7 +266,8 @@ impl<N: Network> FinalizeTypes<N> {
                     bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
                 }
                 // Retrieve the program.
-                let external = stack.get_external_program(program_id)?;
+                let external_stack = stack.get_external_stack(program_id)?;
+                let external = external_stack.program();
                 // Ensure the mapping exists in the program.
                 if !external.contains_mapping(mapping_name) {
                     bail!("Mapping '{mapping_name}' in '{program_id}' is not defined.")
@@ -328,7 +329,8 @@ impl<N: Network> FinalizeTypes<N> {
                     bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
                 }
                 // Retrieve the program.
-                let external = stack.get_external_program(program_id)?;
+                let external_stack = stack.get_external_stack(program_id)?;
+                let external = external_stack.program();
                 // Ensure the mapping exists in the program.
                 if !external.contains_mapping(mapping_name) {
                     bail!("Mapping '{mapping_name}' in '{program_id}' is not defined.")
@@ -394,7 +396,8 @@ impl<N: Network> FinalizeTypes<N> {
                     bail!("External program '{locator}' is not imported by '{program_id}'.");
                 }
                 // Retrieve the program.
-                let external = stack.get_external_program(program_id)?;
+                let external_stack = stack.get_external_stack(program_id)?;
+                let external = external_stack.program();
                 // Ensure the mapping exists in the program.
                 if !external.contains_mapping(mapping_name) {
                     bail!("Mapping '{mapping_name}' in '{program_id}' is not defined.")

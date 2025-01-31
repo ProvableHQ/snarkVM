@@ -26,7 +26,6 @@ use console::{
         FinalizeType,
         Identifier,
         LiteralType,
-        Locator,
         PlaintextType,
         Register,
         RegisterType,
@@ -123,14 +122,6 @@ impl<N: Network> FinalizeTypes<N> {
             self.destinations.get(&register.locator()).ok_or_else(|| anyhow!("Register '{register}' does not exist"))?
         };
 
-        // A helper enum to track the type of the register.
-        enum FinalizeRefType<'a, N: Network> {
-            /// A plaintext type.
-            Plaintext(&'a PlaintextType<N>),
-            /// A finalize type.
-            Future(&'a Locator<N>),
-        }
-
         // Retrieve the path if the register is an access. Otherwise, return the type.
         let (mut finalize_type, path) = match (finalize_type, register) {
             // If the register is a locator, then output the register type.
@@ -140,10 +131,7 @@ impl<N: Network> FinalizeTypes<N> {
                 // Ensure the path is valid.
                 ensure!(!path.is_empty(), "Register '{register}' references no accesses.");
                 // Return the finalize type and path.
-                match finalize_type {
-                    FinalizeType::Plaintext(plaintext_type) => (FinalizeRefType::Plaintext(plaintext_type), path),
-                    FinalizeType::Future(locator) => (FinalizeRefType::Future(locator), path),
-                }
+                (finalize_type.clone(), path)
             }
         };
 
@@ -151,36 +139,39 @@ impl<N: Network> FinalizeTypes<N> {
         for access in path.iter() {
             match (&finalize_type, access) {
                 // Ensure the plaintext type is not a literal, as the register references an access.
-                (FinalizeRefType::Plaintext(PlaintextType::Literal(..)), _) => {
+                (FinalizeType::Plaintext(PlaintextType::Literal(..)), _) => {
                     bail!("'{register}' references a literal.")
                 }
                 // Access the member on the path to output the register type.
-                (FinalizeRefType::Plaintext(PlaintextType::Struct(struct_name)), Access::Member(identifier)) => {
+                (FinalizeType::Plaintext(PlaintextType::Struct(struct_name)), Access::Member(identifier)) => {
                     // Retrieve the member type from the struct and check that it exists.
                     match stack.program().get_struct(struct_name)?.members().get(identifier) {
                         // Retrieve the member and update `finalize_type` for the next iteration.
-                        Some(member_type) => finalize_type = FinalizeRefType::Plaintext(member_type),
+                        Some(member_type) => finalize_type = FinalizeType::Plaintext(member_type.clone()),
                         // Halts if the member does not exist.
                         None => bail!("'{identifier}' does not exist in struct '{struct_name}'"),
                     }
                 }
                 // Access the member on the path to output the register type and check that it is in bounds.
-                (FinalizeRefType::Plaintext(PlaintextType::Array(array_type)), Access::Index(index)) => {
+                (FinalizeType::Plaintext(PlaintextType::Array(array_type)), Access::Index(index)) => {
                     match index < array_type.length() {
                         // Retrieve the element type and update `finalize_type` for the next iteration.
-                        true => finalize_type = FinalizeRefType::Plaintext(array_type.next_element_type()),
+                        true => finalize_type = FinalizeType::Plaintext(array_type.next_element_type().clone()),
                         // Halts if the index is out of bounds.
                         false => bail!("Index out of bounds"),
                     }
                 }
                 // Access the input to the future to output the register type and check that it is in bounds.
-                (FinalizeRefType::Future(locator), Access::Index(index)) => {
+                (FinalizeType::Future(locator), Access::Index(index)) => {
+                    // Get the external stack, if needed.
+                    let external_stack = match locator.program_id() == stack.program_id() {
+                        true => None,
+                        false => Some(stack.get_external_stack(locator.program_id())?),
+                    };
                     // Retrieve the associated function.
-                    let function = match locator.program_id() == stack.program_id() {
-                        true => stack.get_function_ref(locator.resource())?,
-                        false => {
-                            stack.get_external_program(locator.program_id())?.get_function_ref(locator.resource())?
-                        }
+                    let function = match &external_stack {
+                        Some(external_stack) => external_stack.get_function_ref(locator.resource())?,
+                        None => stack.get_function_ref(locator.resource())?,
                     };
                     // Retrieve the finalize inputs.
                     let finalize_inputs = match function.finalize_logic() {
@@ -192,26 +183,25 @@ impl<N: Network> FinalizeTypes<N> {
                         // Retrieve the input type and update `finalize_type` for the next iteration.
                         Some(input) => {
                             finalize_type = match input.finalize_type() {
-                                FinalizeType::Plaintext(plaintext_type) => FinalizeRefType::Plaintext(plaintext_type),
-                                FinalizeType::Future(locator) => FinalizeRefType::Future(locator),
+                                FinalizeType::Plaintext(plaintext_type) => {
+                                    FinalizeType::Plaintext(plaintext_type.clone())
+                                }
+                                FinalizeType::Future(locator) => FinalizeType::Future(*locator),
                             }
                         }
                         // Halts if the index is out of bounds.
                         None => bail!("Index out of bounds"),
                     }
                 }
-                (FinalizeRefType::Plaintext(PlaintextType::Struct(..)), Access::Index(..))
-                | (FinalizeRefType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (FinalizeRefType::Future(..), Access::Member(..)) => {
+                (FinalizeType::Plaintext(PlaintextType::Struct(..)), Access::Index(..))
+                | (FinalizeType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
+                | (FinalizeType::Future(..), Access::Member(..)) => {
                     bail!("Invalid access `{access}`")
                 }
             }
         }
 
         // Return the output type.
-        Ok(match finalize_type {
-            FinalizeRefType::Plaintext(plaintext_type) => FinalizeType::Plaintext(plaintext_type.clone()),
-            FinalizeRefType::Future(locator) => FinalizeType::Future(*locator),
-        })
+        Ok(finalize_type)
     }
 }

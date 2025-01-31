@@ -57,8 +57,10 @@ impl<N: Network> StackMatches<N> for Stack<N> {
         // Ensure the record name is valid.
         ensure!(!Program::is_reserved_keyword(record_name), "Record name '{record_name}' is reserved");
 
+        // Retrieve the external stack.
+        let external_stack = self.get_external_stack(locator.program_id())?;
         // Retrieve the record type from the program.
-        let Ok(record_type) = self.get_external_record(locator) else {
+        let Ok(record_type) = external_stack.program().get_record(locator.resource()) else {
             bail!("External '{locator}' is not defined in the program")
         };
 
@@ -296,10 +298,15 @@ impl<N: Network> Stack<N> {
         // Ensure that the function names match.
         ensure!(future.function_name() == locator.resource(), "Future name does not match");
 
+        // Retrieve the external stack, if needed.
+        let external_stack = match locator.program_id() == self.program_id() {
+            true => None,
+            false => Some(self.get_external_stack(locator.program_id())?),
+        };
         // Retrieve the associated function.
-        let function = match locator.program_id() == self.program_id() {
-            true => self.get_function_ref(locator.resource())?,
-            false => self.get_external_program(locator.program_id())?.get_function_ref(locator.resource())?,
+        let function = match external_stack {
+            Some(external_stack) => external_stack.get_function(locator.resource())?,
+            None => self.get_function(locator.resource())?,
         };
         // Retrieve the finalize inputs.
         let inputs = match function.finalize_logic() {

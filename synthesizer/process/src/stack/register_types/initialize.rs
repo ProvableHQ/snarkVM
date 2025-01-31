@@ -275,8 +275,10 @@ impl<N: Network> RegisterTypes<N> {
                 }
             }
             RegisterType::ExternalRecord(locator) => {
+                // Get the external stack.
+                let external_stack = stack.get_external_stack(locator.program_id())?;
                 // Ensure the external record type is defined in the program.
-                if !stack.contains_external_record(locator) {
+                if !external_stack.program().contains_record(locator.resource()) {
                     bail!("External record '{locator}' in '{}' is not defined.", stack.program_id())
                 }
             }
@@ -327,8 +329,10 @@ impl<N: Network> RegisterTypes<N> {
                 }
             }
             RegisterType::ExternalRecord(locator) => {
+                // Get the external stack.
+                let external_stack = stack.get_external_stack(locator.program_id())?;
                 // Ensure the external record type is defined in the program.
-                if !stack.contains_external_record(locator) {
+                if !external_stack.program().contains_record(locator.resource()) {
                     bail!("External record '{locator}' in '{}' is not defined.", stack.program_id())
                 }
             }
@@ -336,7 +340,9 @@ impl<N: Network> RegisterTypes<N> {
                 // Ensure that the locator is defined.
                 match locator.program_id() == stack.program_id() {
                     true => stack.get_function(locator.resource())?,
-                    false => stack.get_external_program(locator.program_id())?.get_function(locator.resource())?,
+                    false => {
+                        stack.get_external_stack(locator.program_id())?.program().get_function(locator.resource())?
+                    }
                 };
             }
         };
@@ -456,7 +462,8 @@ impl<N: Network> RegisterTypes<N> {
                         }
 
                         // Retrieve the program.
-                        let external = stack.get_external_program(program_id)?;
+                        let external_stack = stack.get_external_stack(program_id)?;
+                        let external = external_stack.program();
                         // Check that function exists in the program.
                         if let Ok(child_function) = external.get_function_ref(resource) {
                             // If the child function contains a finalize block, then the parent function must also contain a finalize block.
