@@ -100,8 +100,10 @@ impl<N: Network> TransactionStorage<N> for TransactionDB<N> {
 #[derive(Clone)]
 #[allow(clippy::type_complexity)]
 pub struct DeploymentDB<N: Network> {
-    /// The ID map.
-    id_map: DataMap<N::TransactionID, ProgramID<N>>,
+    /// The V1 ID map.
+    id_map_v1: DataMap<N::TransactionID, ProgramID<N>>,
+    /// The V2 ID map.
+    id_map_v2: DataMap<N::TransactionID, (ProgramID<N>, u16)>,
     /// The edition map.
     edition_map: DataMap<ProgramID<N>, u16>,
     /// The reverse ID map.
@@ -120,7 +122,8 @@ pub struct DeploymentDB<N: Network> {
 
 #[rustfmt::skip]
 impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
-    type IDMap = DataMap<N::TransactionID, ProgramID<N>>;
+    type IDMapV1 = DataMap<N::TransactionID, ProgramID<N>>;
+    type IDMapV2 = DataMap<N::TransactionID, (ProgramID<N>, u16)>;
     type EditionMap = DataMap<ProgramID<N>, u16>;
     type ReverseIDMap = DataMap<(ProgramID<N>, u16), N::TransactionID>;
     type OwnerMap = DataMap<(ProgramID<N>, u16), ProgramOwner<N>>;
@@ -134,7 +137,8 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
         // Retrieve the storage mode.
         let storage_mode = fee_store.storage_mode();
         Ok(Self {
-            id_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::ID))?,
+            id_map_v1: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::ID))?,
+            id_map_v2: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::IDV2))?,
             edition_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Edition))?,
             reverse_id_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::ReverseID))?,
             owner_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Owner))?,
@@ -145,10 +149,15 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
         })
     }
 
-    /// Returns the ID map.
-    fn id_map(&self) -> &Self::IDMap {
-        &self.id_map
+    /// Returns the V1 ID map.
+    fn id_map_v1(&self) -> &Self::IDMapV1 {
+        &self.id_map_v1
     }
+
+    /// Returns the V2 ID map.
+    fn id_map_v2(&self) -> &Self::IDMapV2 {
+        &self.id_map_v2
+    }       
 
     /// Returns the edition map.
     fn edition_map(&self) -> &Self::EditionMap {
