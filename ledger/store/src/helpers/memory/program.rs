@@ -35,6 +35,8 @@ use indexmap::IndexSet;
 pub struct FinalizeMemory<N: Network> {
     /// The committee store.
     committee_store: CommitteeStore<N, CommitteeMemory<N>>,
+    /// The global map.
+    global_map: NestedMemoryMap<ProgramID<N>, Identifier<N>, Value<N>>,
     /// The program ID map.
     program_id_map: MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
@@ -46,6 +48,7 @@ pub struct FinalizeMemory<N: Network> {
 #[rustfmt::skip]
 impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type CommitteeStorage = CommitteeMemory<N>;
+    type GlobalMap = NestedMemoryMap<ProgramID<N>, Identifier<N>, Value<N>>;
     type ProgramIDMap = MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
 
@@ -56,6 +59,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         // Return the finalize store.
         Ok(Self {
             committee_store,
+            global_map: NestedMemoryMap::default(),
             program_id_map: MemoryMap::default(),
             key_value_map: NestedMemoryMap::default(),
             storage_mode: storage.into(),
@@ -71,6 +75,11 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     /// Returns the committee store.
     fn committee_store(&self) -> &CommitteeStore<N, Self::CommitteeStorage> {
         &self.committee_store
+    }
+
+    /// Returns the global map.
+    fn global_map(&self) -> &Self::GlobalMap {
+        &self.global_map
     }
 
     /// Returns the program ID map.

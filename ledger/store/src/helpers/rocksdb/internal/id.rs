@@ -200,6 +200,7 @@ pub enum TransitionMap {
 pub enum ProgramMap {
     ProgramID = DataID::ProgramIDMap as u16,
     KeyValueID = DataID::KeyValueMap as u16,
+    GlobalValueID = DataID::GlobalValueMap as u16,
 }
 
 /// The RocksDB map prefix for test-related entries.
@@ -309,4 +310,5 @@ enum DataID {
 
     // Additional
     DeploymentIDV2Map,
+    GlobalValueMap,
 }

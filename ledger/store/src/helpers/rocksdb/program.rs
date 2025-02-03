@@ -35,6 +35,8 @@ use indexmap::IndexSet;
 pub struct FinalizeDB<N: Network> {
     /// The committee store.
     committee_store: CommitteeStore<N, CommitteeDB<N>>,
+    /// The global map.
+    global_map: NestedDataMap<ProgramID<N>, Identifier<N>, Value<N>>,
     /// The program ID map.
     program_id_map: DataMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
@@ -46,6 +48,7 @@ pub struct FinalizeDB<N: Network> {
 #[rustfmt::skip]
 impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type CommitteeStorage = CommitteeDB<N>;
+    type GlobalMap = NestedDataMap<ProgramID<N>, Identifier<N>, Value<N>>;
     type ProgramIDMap = DataMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
 
@@ -56,6 +59,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         // Return the finalize storage.
         Ok(Self {
             committee_store,
+            global_map: rocksdb::RocksDB::open_nested_map(N::ID, storage.clone(), MapID::Program(ProgramMap::GlobalValueID))?,
             program_id_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::ProgramID))?,
             key_value_map: rocksdb::RocksDB::open_nested_map(N::ID, storage.clone(), MapID::Program(ProgramMap::KeyValueID))?,
             storage_mode: storage.into(),
@@ -70,6 +74,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         // Return the finalize storage.
         Ok(Self {
             committee_store,
+            global_map: rocksdb::RocksDB::open_nested_map_testing(temp_dir.clone(), dev, MapID::Program(ProgramMap::GlobalValueID))?,
             program_id_map: rocksdb::RocksDB::open_map_testing(temp_dir.clone(), dev, MapID::Program(ProgramMap::ProgramID))?,
             key_value_map: rocksdb::RocksDB::open_nested_map_testing(temp_dir, dev, MapID::Program(ProgramMap::KeyValueID))?,
             storage_mode: dev.into(),
@@ -79,6 +84,11 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     /// Returns the committee store.
     fn committee_store(&self) -> &CommitteeStore<N, Self::CommitteeStorage> {
         &self.committee_store
+    }
+
+    /// Returns the global map.
+    fn global_map(&self) -> &Self::GlobalMap {
+        &self.global_map
     }
 
     /// Returns the program ID map.

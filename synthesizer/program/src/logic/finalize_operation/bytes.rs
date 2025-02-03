@@ -68,7 +68,29 @@ impl<N: Network> FromBytes for FinalizeOperation<N> {
                 // Return the finalize operation.
                 Ok(Self::RemoveMapping(mapping_id))
             }
-            6.. => Err(error(format!("Failed to decode finalize operation variant {variant}"))),
+            6 => {
+                // Read the global ID.
+                let global_id = Field::read_le(&mut reader)?;
+                // Read the value ID.
+                let value_id = Field::read_le(&mut reader)?;
+                // Return the finalize operation.
+                Ok(Self::InsertGlobal(global_id, value_id))
+            }
+            7 => {
+                // Read the global ID.
+                let global_id = Field::read_le(&mut reader)?;
+                // Read the value ID.
+                let value_id = Field::read_le(&mut reader)?;
+                // Return the finalize operation.
+                Ok(Self::UpdateGlobal(global_id, value_id))
+            }
+            8 => {
+                // Read the global ID.
+                let global_id = Field::read_le(&mut reader)?;
+                // Return the finalize operation.
+                Ok(Self::RemoveGlobal(global_id))
+            }
+            9.. => Err(error(format!("Failed to decode finalize operation variant {variant}"))),
         }
     }
 }
@@ -122,6 +144,28 @@ impl<N: Network> ToBytes for FinalizeOperation<N> {
                 5u8.write_le(&mut writer)?;
                 // Write the mapping ID.
                 mapping_id.write_le(&mut writer)?;
+            }
+            Self::InsertGlobal(global_id, value_id) => {
+                // Write the variant.
+                6u8.write_le(&mut writer)?;
+                // Write the global ID.
+                global_id.write_le(&mut writer)?;
+                // Write the value ID.
+                value_id.write_le(&mut writer)?;
+            }
+            Self::UpdateGlobal(global_id, value_id) => {
+                // Write the variant.
+                7u8.write_le(&mut writer)?;
+                // Write the global ID.
+                global_id.write_le(&mut writer)?;
+                // Write the value ID.
+                value_id.write_le(&mut writer)?;
+            }
+            Self::RemoveGlobal(global_id) => {
+                // Write the variant.
+                8u8.write_le(&mut writer)?;
+                // Write the global ID.
+                global_id.write_le(&mut writer)?;
             }
         }
         Ok(())

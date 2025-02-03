@@ -56,6 +56,7 @@ impl<N: Network> ConfirmedTransaction<N> {
             finalize_operations.iter().try_fold((0, 0), |(init, update), operation| match operation {
                 FinalizeOperation::InitializeMapping(..) => Ok((init + 1, update)),
                 FinalizeOperation::UpdateKeyValue(..) => Ok((init, update + 1)),
+                FinalizeOperation::UpdateGlobal(..) => Ok((init, update + 1)),
                 op => {
                     bail!("Transaction '{}' (deploy) contains an invalid finalize operation ({op})", transaction.id())
                 }
@@ -103,8 +104,11 @@ impl<N: Network> ConfirmedTransaction<N> {
         for operation in finalize_operations.iter() {
             // Ensure the finalize operation is an insert or update key-value operation.
             match operation {
-                FinalizeOperation::InsertKeyValue(..)
+                FinalizeOperation::InsertGlobal(..)
+                | FinalizeOperation::InsertKeyValue(..)
+                | FinalizeOperation::UpdateGlobal(..)
                 | FinalizeOperation::UpdateKeyValue(..)
+                | FinalizeOperation::RemoveGlobal(..)
                 | FinalizeOperation::RemoveKeyValue(..) => (),
                 FinalizeOperation::InitializeMapping(..)
                 | FinalizeOperation::ReplaceMapping(..)
@@ -133,8 +137,11 @@ impl<N: Network> ConfirmedTransaction<N> {
         for operation in finalize_operations.iter() {
             // Ensure the finalize operation is an insert or update key-value operation.
             match operation {
-                FinalizeOperation::InsertKeyValue(..)
+                FinalizeOperation::InsertGlobal(..)
+                | FinalizeOperation::InsertKeyValue(..)
+                | FinalizeOperation::UpdateGlobal(..)
                 | FinalizeOperation::UpdateKeyValue(..)
+                | FinalizeOperation::RemoveGlobal(..)
                 | FinalizeOperation::RemoveKeyValue(..) => (),
                 FinalizeOperation::InitializeMapping(..)
                 | FinalizeOperation::ReplaceMapping(..)
@@ -163,8 +170,11 @@ impl<N: Network> ConfirmedTransaction<N> {
         for operation in finalize_operations.iter() {
             // Ensure the finalize operation is an insert or update key-value operation.
             match operation {
-                FinalizeOperation::InsertKeyValue(..)
+                FinalizeOperation::InsertGlobal(..)
+                | FinalizeOperation::InsertKeyValue(..)
+                | FinalizeOperation::UpdateGlobal(..)
                 | FinalizeOperation::UpdateKeyValue(..)
+                | FinalizeOperation::RemoveGlobal(..)
                 | FinalizeOperation::RemoveKeyValue(..) => (),
                 FinalizeOperation::InitializeMapping(..)
                 | FinalizeOperation::ReplaceMapping(..)

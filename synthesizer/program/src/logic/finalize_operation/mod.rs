@@ -23,14 +23,22 @@ use console::{network::prelude::*, types::Field};
 /// Enum to represent the allowed set of Merkle tree operations.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum FinalizeOperation<N: Network> {
+    /// Inserts a value into the global tree,
+    /// as (`global ID`, `value ID`).
+    InsertGlobal(Field<N>, Field<N>),
     /// Appends a mapping to the program tree, as (`mapping ID`).
     InitializeMapping(Field<N>),
     /// Inserts a key-value leaf into the mapping tree,
     /// as (`mapping ID`, `key ID`, `value ID`).
     InsertKeyValue(Field<N>, Field<N>, Field<N>),
+    /// Updates a value in the global tree,
+    /// as (`global ID`, `value ID`).
+    UpdateGlobal(Field<N>, Field<N>),
     /// Updates the key-value leaf in the mapping tree,
     /// as (`mapping ID`, `key ID`, `value ID`).
     UpdateKeyValue(Field<N>, Field<N>, Field<N>),
+    /// Removes a value from the global tree, as (`global ID`).
+    RemoveGlobal(Field<N>),
     /// Removes the key-value leaf in the mapping tree,
     /// as (`mapping ID`, `key ID`).
     RemoveKeyValue(Field<N>, Field<N>),
@@ -52,14 +60,29 @@ pub(crate) mod test_helpers {
         FinalizeOperation::InitializeMapping(Uniform::rand(rng))
     }
 
+    /// Samples a random `InsertGlobal`.
+    pub(crate) fn sample_insert_global(rng: &mut TestRng) -> FinalizeOperation<CurrentNetwork> {
+        FinalizeOperation::InsertGlobal(Uniform::rand(rng), Uniform::rand(rng))
+    }
+
     /// Samples a random `InsertKeyValue`.
     pub(crate) fn sample_insert_key_value(rng: &mut TestRng) -> FinalizeOperation<CurrentNetwork> {
         FinalizeOperation::InsertKeyValue(Uniform::rand(rng), Uniform::rand(rng), Uniform::rand(rng))
     }
 
+    /// Samples a random `UpdateGlobal`.
+    pub(crate) fn sample_update_global(rng: &mut TestRng) -> FinalizeOperation<CurrentNetwork> {
+        FinalizeOperation::UpdateGlobal(Uniform::rand(rng), Uniform::rand(rng))
+    }
+
     /// Samples a random `UpdateKeyValue`.
     pub(crate) fn sample_update_key_value(rng: &mut TestRng) -> FinalizeOperation<CurrentNetwork> {
         FinalizeOperation::UpdateKeyValue(Uniform::rand(rng), Uniform::rand(rng), Uniform::rand(rng))
+    }
+
+    /// Samples a random `RemoveGlobal`.
+    pub(crate) fn sample_remove_global(rng: &mut TestRng) -> FinalizeOperation<CurrentNetwork> {
+        FinalizeOperation::RemoveGlobal(Uniform::rand(rng))
     }
 
     /// Samples a random `RemoveKeyValue`.
@@ -83,14 +106,20 @@ pub(crate) mod test_helpers {
 
         vec![
             sample_initialize_mapping(rng),
+            sample_insert_global(rng),
             sample_insert_key_value(rng),
+            sample_update_global(rng),
             sample_update_key_value(rng),
+            sample_remove_global(rng),
             sample_remove_key_value(rng),
             sample_replace_mapping(rng),
             sample_remove_mapping(rng),
             sample_initialize_mapping(rng),
+            sample_insert_global(rng),
             sample_insert_key_value(rng),
+            sample_update_global(rng),
             sample_update_key_value(rng),
+            sample_remove_global(rng),
             sample_remove_key_value(rng),
             sample_replace_mapping(rng),
             sample_remove_mapping(rng),

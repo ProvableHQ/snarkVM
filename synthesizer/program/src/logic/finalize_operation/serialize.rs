@@ -63,6 +63,26 @@ impl<N: Network> Serialize for FinalizeOperation<N> {
                         operation.serialize_field("mapping_id", mapping_id)?;
                         operation.end()
                     }
+                    Self::InsertGlobal(global_id, value_id) => {
+                        let mut operation = serializer.serialize_struct("FinalizeOperation", 3)?;
+                        operation.serialize_field("type", "insert_global")?;
+                        operation.serialize_field("global_id", global_id)?;
+                        operation.serialize_field("value_id", value_id)?;
+                        operation.end()
+                    }
+                    Self::UpdateGlobal(global_id, value_id) => {
+                        let mut operation = serializer.serialize_struct("FinalizeOperation", 3)?;
+                        operation.serialize_field("type", "update_global")?;
+                        operation.serialize_field("global_id", global_id)?;
+                        operation.serialize_field("value_id", value_id)?;
+                        operation.end()
+                    }
+                    Self::RemoveGlobal(global_id) => {
+                        let mut operation = serializer.serialize_struct("FinalizeOperation", 2)?;
+                        operation.serialize_field("type", "remove_global")?;
+                        operation.serialize_field("global_id", global_id)?;
+                        operation.end()
+                    }
                 }
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
@@ -123,6 +143,28 @@ impl<'de, N: Network> Deserialize<'de> for FinalizeOperation<N> {
                         let mapping_id = DeserializeExt::take_from_value::<D>(&mut operation, "mapping_id")?;
                         // Return the operation.
                         Self::RemoveMapping(mapping_id)
+                    }
+                    Some("insert_global") => {
+                        // Deserialize the global ID.
+                        let global_id = DeserializeExt::take_from_value::<D>(&mut operation, "global_id")?;
+                        // Deserialize the value ID.
+                        let value_id = DeserializeExt::take_from_value::<D>(&mut operation, "value_id")?;
+                        // Return the operation.
+                        Self::InsertGlobal(global_id, value_id)
+                    }
+                    Some("update_global") => {
+                        // Deserialize the global ID.
+                        let global_id = DeserializeExt::take_from_value::<D>(&mut operation, "global_id")?;
+                        // Deserialize the value ID.
+                        let value_id = DeserializeExt::take_from_value::<D>(&mut operation, "value_id")?;
+                        // Return the operation.
+                        Self::UpdateGlobal(global_id, value_id)
+                    }
+                    Some("remove_global") => {
+                        // Deserialize the global ID.
+                        let global_id = DeserializeExt::take_from_value::<D>(&mut operation, "global_id")?;
+                        // Return the operation.
+                        Self::RemoveGlobal(global_id)
                     }
                     _ => return Err(de::Error::custom("Invalid finalize operation type")),
                 };

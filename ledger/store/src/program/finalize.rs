@@ -30,8 +30,8 @@ use synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
-use std::borrow::Cow;
 use indexmap::IndexSet;
+use std::borrow::Cow;
 
 /// TODO (howardwu): Remove this.
 /// Returns the named ID for the given `program ID` and `identifier`.
@@ -75,12 +75,12 @@ fn to_key_id<N: Network>(
 pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// The committee storage.
     type CommitteeStorage: CommitteeStorage<N>;
+    /// The mapping of `(program ID, identifier)` to `value`.
+    type GlobalMap: for<'a> NestedMap<'a, ProgramID<N>, Identifier<N>, Value<N>>;
     /// The mapping of `program ID` to `[mapping name]`.
     type ProgramIDMap: for<'a> Map<'a, ProgramID<N>, IndexSet<Identifier<N>>>;
     /// The mapping of `(program ID, mapping name)` to `[(key, value)]`.
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
-    /// The mapping of `(program ID, identifier)` to `value`.
-    type GlobalMap: for<'a> NestedMap<'a, ProgramID<N>, Identifier<N>, Value<N>>;
 
     /// Initializes the program state storage.
     fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -197,7 +197,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         &self,
         program_id: ProgramID<N>,
         global: Identifier<N>,
-        value: Value<N>
+        value: Value<N>,
     ) -> Result<FinalizeOperation<N>> {
         // Ensure the global name does not already exist.
         if self.global_map().contains_key_speculative(&program_id, &global)? {
@@ -264,7 +264,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         &self,
         program_id: ProgramID<N>,
         global: Identifier<N>,
-        value: Value<N>
+        value: Value<N>,
     ) -> Result<FinalizeOperation<N>> {
         // Ensure the global name exists.
         if !self.global_map().contains_key_speculative(&program_id, &global)? {
@@ -321,22 +321,18 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Removes the `value` at the given `program ID` and `global` from storage.
     /// If the `global` does not exist, `None` is returned.
-    fn remove_global(
-        &self,
-        program_id: ProgramID<N>,
-        global: Identifier<N>
-    ) -> Result<Option<FinalizeOperation<N>>> {
+    fn remove_global(&self, program_id: &ProgramID<N>, global: &Identifier<N>) -> Result<Option<FinalizeOperation<N>>> {
         // Ensure the global name exists.
-        if !self.global_map().contains_key_speculative(&(program_id, global))? {
+        if !self.global_map().contains_key_speculative(program_id, global)? {
             return Ok(None);
         }
 
         // Compute the named ID.
-        let named_id = to_named_id(&program_id, &global)?;
+        let named_id = to_named_id(program_id, global)?;
 
         atomic_batch_scope!(self, {
             // Remove the global.
-            self.global_map().remove(&(program_id, global))?;
+            self.global_map().remove_key(program_id, global)?;
 
             Ok(())
         })?;
@@ -456,12 +452,12 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Returns `true` if the given `program ID` and `global` exist.
     fn contains_global_confirmed(&self, program_id: &ProgramID<N>, global: &Identifier<N>) -> Result<bool> {
-        Ok(self.global_map().contains_key_confirmed(&(program_id, global))?)
+        self.global_map().contains_key_confirmed(program_id, global)
     }
 
     /// Returns `true` if the given `program ID` and `global` exist.
     fn contains_global_speculative(&self, program_id: &ProgramID<N>, global: &Identifier<N>) -> Result<bool> {
-        Ok(self.global_map().contains_key_speculative(&(program_id, global))?)
+        self.global_map().contains_key_speculative(program_id, global)
     }
 
     /// Returns `true` if the given `program ID` exist.
@@ -510,16 +506,16 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the confirmed global entry for the given `program ID` and `global`.
-    fn get_global_confirmed(&self, program_id: ProgramID<N>, global: Identifier<N>) -> Result<Option<Value<N>>> {
-        match self.global_map().get_value_confirmed(&(program_id, global))? {
+    fn get_global_confirmed(&self, program_id: &ProgramID<N>, global: &Identifier<N>) -> Result<Option<Value<N>>> {
+        match self.global_map().get_value_confirmed(program_id, global)? {
             Some(value) => Ok(Some(cow_to_cloned!(value))),
             None => Ok(None),
         }
     }
 
     /// Returns the speculative global entry for the given `program ID` and `global`.
-    fn get_global_speculative(&self, program_id: ProgramID<N>, global: Identifier<N>) -> Result<Option<Value<N>>> {
-        match self.global_map().get_value_speculative(&(program_id, global))? {
+    fn get_global_speculative(&self, program_id: &ProgramID<N>, global: &Identifier<N>) -> Result<Option<Value<N>>> {
+        match self.global_map().get_value_speculative(program_id, global)? {
             Some(value) => Ok(Some(cow_to_cloned!(value))),
             None => Ok(None),
         }
@@ -581,12 +577,14 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Returns the confirmed checksum of the finalize storage.
     fn get_checksum_confirmed(&self) -> Result<Field<N>> {
-        // A helper to take the checksum of an entry of a `NestedMap`.
-        fn checksum_entry<'a, N: Network, M, K, V>(m: Cow<'_, M>, k: Cow<'_, K>, v: Cow<'_, V>) -> Result<(Field<N>, Field<N>)>
-            where
-                M: 'a + Clone + ToBits,
-                K: 'a + Clone + ToBits,
-                V: 'a + Clone + ToBits,
+        // A helper to take the checksum of a confirmed entry in a `NestedMap`.
+        fn checksum_entry<'a, N: Network, M, K, V>(
+            (m, k, v): (Cow<'_, M>, Cow<'_, K>, Cow<'_, V>),
+        ) -> Result<(Field<N>, Vec<bool>)>
+        where
+            M: 'a + Copy + Clone + ToBits,
+            K: 'a + Clone + ToBits,
+            V: 'a + Clone + ToBits,
         {
             let m = cow_to_copied!(m);
             let k = cow_to_cloned!(k);
@@ -606,23 +604,17 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
             // Compute the entry checksum as `Hash( m || k || v )`.
             let entry_checksum = N::hash_bhp1024(&preimage)?;
-            Ok((mapping_checksum, entry_checksum))
+
+            // Return the mapping checksum and entry checksum.
+            Ok::<_, Error>((mapping_checksum, entry_checksum.to_bits_le()))
         }
 
         // Compute all mapping checksums.
         let preimage: std::collections::BTreeMap<_, _> = self
             .key_value_map()
             .iter_confirmed()
-            .map(|(m, k, v)| {
-                let (mapping_checksum, entry_checksum) = checksum_entry::<N, _, _, _>(m, k, v)?;
-                // Return the mapping checksum and entry checksum.
-                Ok::<_, Error>((mapping_checksum, entry_checksum.to_bits_le()))
-            })
-            .chain(self.global_map().iter_confirmed().map(|(m, k, v)| {
-                let (mapping_checksum, entry_checksum) = checksum_entry::<N, _, _, _>(m, k, v)?;
-                // Return the mapping checksum and entry checksum.
-                Ok::<_, Error>((mapping_checksum, entry_checksum.to_bits_le()))
-            }))
+            .map(checksum_entry::<N, _, _, _>)
+            .chain(self.global_map().iter_confirmed().map(checksum_entry::<N, _, _, _>))
             .try_collect()?;
         // Compute the checksum as `Hash( all mapping checksums )`.
         N::hash_bhp1024(&preimage.into_values().flatten().collect::<Vec<_>>())
@@ -630,34 +622,44 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Returns the pending checksum of the finalize storage.
     fn get_checksum_pending(&self) -> Result<Field<N>> {
+        // A helper to take the checksum of a pending entry in a `NestedMap`.
+        fn checksum_entry<'a, N: Network, M, K, V>(
+            (m, k, v): (Cow<'_, M>, Option<Cow<'_, K>>, Option<Cow<'_, V>>),
+        ) -> Result<(Field<N>, Vec<bool>)>
+        where
+            M: 'a + Copy + Clone + ToBits,
+            K: 'a + Clone + ToBits,
+            V: 'a + Clone + ToBits,
+        {
+            let m = cow_to_copied!(m);
+
+            let mut preimage = Vec::new();
+            m.write_bits_le(&mut preimage);
+            false.write_bits_le(&mut preimage); // Separator.
+            if let Some(k) = k {
+                cow_to_cloned!(k).write_bits_le(&mut preimage);
+            }
+            false.write_bits_le(&mut preimage); // Separator.
+
+            // Compute the mapping checksum as `Hash( m || k )`.
+            let mapping_checksum = N::hash_bhp1024(&preimage)?;
+
+            if let Some(v) = v {
+                cow_to_cloned!(v).write_bits_le(&mut preimage);
+            }
+            false.write_bits_le(&mut preimage); // Separator.
+
+            // Compute the entry checksum as `Hash( m || k || v )`.
+            let entry_checksum = N::hash_bhp1024(&preimage)?;
+            // Return the mapping checksum and entry checksum.
+            Ok::<_, Error>((mapping_checksum, entry_checksum.to_bits_le()))
+        }
         // Compute all mapping checksums.
         let preimage: std::collections::BTreeMap<_, _> = self
             .key_value_map()
             .iter_pending()
-            .map(|(m, k, v)| {
-                let m = cow_to_copied!(m);
-
-                let mut preimage = Vec::new();
-                m.write_bits_le(&mut preimage);
-                false.write_bits_le(&mut preimage); // Separator.
-                if let Some(k) = k {
-                    cow_to_cloned!(k).write_bits_le(&mut preimage);
-                }
-                false.write_bits_le(&mut preimage); // Separator.
-
-                // Compute the mapping checksum as `Hash( m || k )`.
-                let mapping_checksum = N::hash_bhp1024(&preimage)?;
-
-                if let Some(v) = v {
-                    cow_to_cloned!(v).write_bits_le(&mut preimage);
-                }
-                false.write_bits_le(&mut preimage); // Separator.
-
-                // Compute the entry checksum as `Hash( m || k || v )`.
-                let entry_checksum = N::hash_bhp1024(&preimage)?;
-                // Return the mapping checksum and entry checksum.
-                Ok::<_, Error>((mapping_checksum, entry_checksum.to_bits_le()))
-            })
+            .map(checksum_entry::<N, _, _, _>)
+            .chain(self.global_map().iter_pending().map(checksum_entry::<N, _, _, _>))
             .try_collect()?;
         // Compute the checksum as `Hash( all mapping checksums )`.
         N::hash_bhp1024(&preimage.into_values().flatten().collect::<Vec<_>>())

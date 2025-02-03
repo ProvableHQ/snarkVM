@@ -80,7 +80,29 @@ impl<N: Network> FromBits for FinalizeOperation<N> {
                 // Return the finalize operation.
                 Ok(Self::RemoveMapping(mapping_id))
             }
-            6.. => bail!("Invalid finalize operation variant '{variant}'"),
+            6 => {
+                // Read the global ID.
+                let global_id = Field::from_bits_le(&next_bits(Field::<N>::size_in_bits())?)?;
+                // Read the value ID.
+                let value_id = Field::from_bits_le(&next_bits(Field::<N>::size_in_bits())?)?;
+                // Return the finalize operation
+                Ok(Self::InsertGlobal(global_id, value_id))
+            }
+            7 => {
+                // Read the global ID.
+                let global_id = Field::from_bits_le(&next_bits(Field::<N>::size_in_bits())?)?;
+                // Read the value ID.
+                let value_id = Field::from_bits_le(&next_bits(Field::<N>::size_in_bits())?)?;
+                // Return the finalize operation.
+                Ok(Self::UpdateGlobal(global_id, value_id))
+            }
+            8 => {
+                // Read the global ID.
+                let global_id = Field::from_bits_le(&next_bits(Field::<N>::size_in_bits())?)?;
+                // Return the finalize operation.
+                Ok(Self::RemoveGlobal(global_id))
+            }
+            9.. => bail!("Invalid finalize operation variant '{variant}'"),
         }
     }
 
@@ -148,7 +170,29 @@ impl<N: Network> FromBits for FinalizeOperation<N> {
                 // Return the finalize operation.
                 Ok(Self::RemoveMapping(mapping_id))
             }
-            6.. => bail!("Invalid finalize operation variant '{variant}'"),
+            6 => {
+                // Read the global ID.
+                let global_id = Field::from_bits_be(&next_bits(Field::<N>::size_in_bits())?)?;
+                // Read the value ID.
+                let value_id = Field::from_bits_be(&next_bits(Field::<N>::size_in_bits())?)?;
+                // Return the finalize operation.
+                Ok(Self::InsertGlobal(global_id, value_id))
+            }
+            7 => {
+                // Read the global ID.
+                let global_id = Field::from_bits_be(&next_bits(Field::<N>::size_in_bits())?)?;
+                // Read the value ID.
+                let value_id = Field::from_bits_be(&next_bits(Field::<N>::size_in_bits())?)?;
+                // Return the finalize operation.
+                Ok(Self::UpdateGlobal(global_id, value_id))
+            }
+            8 => {
+                // Read the global ID.
+                let global_id = Field::from_bits_be(&next_bits(Field::<N>::size_in_bits())?)?;
+                // Return the finalize operation.
+                Ok(Self::RemoveGlobal(global_id))
+            }
+            9.. => bail!("Invalid finalize operation variant '{variant}'"),
         }
     }
 }
@@ -203,6 +247,28 @@ impl<N: Network> ToBits for FinalizeOperation<N> {
                 // Write the mapping ID.
                 mapping_id.write_bits_le(vec);
             }
+            Self::InsertGlobal(global_id, value_id) => {
+                // Write the variant.
+                6u8.write_bits_le(vec);
+                // Write the global ID.
+                global_id.write_bits_le(vec);
+                // Write the value ID.
+                value_id.write_bits_le(vec);
+            }
+            Self::UpdateGlobal(global_id, value_id) => {
+                // Write the variant.
+                7u8.write_bits_le(vec);
+                // Write the global ID.
+                global_id.write_bits_le(vec);
+                // Write the value ID.
+                value_id.write_bits_le(vec);
+            }
+            Self::RemoveGlobal(global_id) => {
+                // Write the variant.
+                8u8.write_bits_le(vec);
+                // Write the global ID.
+                global_id.write_bits_le(vec);
+            }
         }
     }
 
@@ -254,6 +320,28 @@ impl<N: Network> ToBits for FinalizeOperation<N> {
                 5u8.write_bits_be(vec);
                 // Write the mapping ID.
                 mapping_id.write_bits_be(vec);
+            }
+            Self::InsertGlobal(global_id, value_id) => {
+                // Write the variant.
+                6u8.write_bits_be(vec);
+                // Write the global ID.
+                global_id.write_bits_be(vec);
+                // Write the value ID.
+                value_id.write_bits_be(vec);
+            }
+            Self::UpdateGlobal(global_id, value_id) => {
+                // Write the variant.
+                7u8.write_bits_be(vec);
+                // Write the global ID.
+                global_id.write_bits_be(vec);
+                // Write the value ID.
+                value_id.write_bits_be(vec);
+            }
+            Self::RemoveGlobal(global_id) => {
+                // Write the variant.
+                8u8.write_bits_be(vec);
+                // Write the global ID.
+                global_id.write_bits_be(vec);
             }
         }
     }
