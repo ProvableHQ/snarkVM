@@ -30,17 +30,18 @@ use synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
+use std::borrow::Cow;
 use indexmap::IndexSet;
 
 /// TODO (howardwu): Remove this.
-/// Returns the mapping ID for the given `program ID` and `mapping name`.
-fn to_mapping_id<N: Network>(program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<Field<N>> {
+/// Returns the named ID for the given `program ID` and `identifier`.
+fn to_named_id<N: Network>(program_id: &ProgramID<N>, identifier: &Identifier<N>) -> Result<Field<N>> {
     // Construct the preimage.
     let mut preimage = Vec::new();
     program_id.write_bits_le(&mut preimage);
     false.write_bits_le(&mut preimage); // Separator
-    mapping_name.write_bits_le(&mut preimage);
-    // Compute the mapping ID.
+    identifier.write_bits_le(&mut preimage);
+    // Compute the named ID.
     N::hash_bhp1024(&preimage)
 }
 
@@ -78,6 +79,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     type ProgramIDMap: for<'a> Map<'a, ProgramID<N>, IndexSet<Identifier<N>>>;
     /// The mapping of `(program ID, mapping name)` to `[(key, value)]`.
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    /// The mapping of `(program ID, identifier)` to `value`.
+    type GlobalMap: for<'a> NestedMap<'a, ProgramID<N>, Identifier<N>, Value<N>>;
 
     /// Initializes the program state storage.
     fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -92,6 +95,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     fn program_id_map(&self) -> &Self::ProgramIDMap;
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap;
+    /// Returns the global map.
+    fn global_map(&self) -> &Self::GlobalMap;
 
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode;
@@ -101,6 +106,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().start_atomic();
         self.program_id_map().start_atomic();
         self.key_value_map().start_atomic();
+        self.global_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
@@ -108,6 +114,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().is_atomic_in_progress()
             || self.program_id_map().is_atomic_in_progress()
             || self.key_value_map().is_atomic_in_progress()
+            || self.global_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -115,6 +122,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_checkpoint();
         self.program_id_map().atomic_checkpoint();
         self.key_value_map().atomic_checkpoint();
+        self.global_map().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
@@ -122,6 +130,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().clear_latest_checkpoint();
         self.program_id_map().clear_latest_checkpoint();
         self.key_value_map().clear_latest_checkpoint();
+        self.global_map().clear_latest_checkpoint();
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
@@ -129,6 +138,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_rewind();
         self.program_id_map().atomic_rewind();
         self.key_value_map().atomic_rewind();
+        self.global_map().atomic_rewind();
     }
 
     /// Aborts an atomic batch write operation.
@@ -136,13 +146,15 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().abort_atomic();
         self.program_id_map().abort_atomic();
         self.key_value_map().abort_atomic();
+        self.global_map().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
     fn finish_atomic(&self) -> Result<()> {
         self.committee_store().finish_atomic()?;
         self.program_id_map().finish_atomic()?;
-        self.key_value_map().finish_atomic()
+        self.key_value_map().finish_atomic()?;
+        self.global_map().finish_atomic()
     }
 
     /// Initializes the given `program ID` and `mapping name` in storage.
@@ -176,7 +188,36 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         })?;
 
         // Return the finalize operation.
-        Ok(FinalizeOperation::InitializeMapping(to_mapping_id(&program_id, &mapping_name)?))
+        Ok(FinalizeOperation::InitializeMapping(to_named_id(&program_id, &mapping_name)?))
+    }
+
+    /// Store the given `value` at the given `program ID` and `global` in storage.
+    /// If the `global` already exists, the method returns an error.
+    fn insert_global(
+        &self,
+        program_id: ProgramID<N>,
+        global: Identifier<N>,
+        value: Value<N>
+    ) -> Result<FinalizeOperation<N>> {
+        // Ensure the global name does not already exist.
+        if self.global_map().contains_key_speculative(&program_id, &global)? {
+            bail!("Illegal operation: global name '{global}' already exists in storage - cannot insert global.")
+        }
+
+        // Compute the named ID.
+        let named_id = to_named_id(&program_id, &global)?;
+        // Compute the value ID.
+        let value_id = N::hash_bhp1024(&(named_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
+
+        atomic_batch_scope!(self, {
+            // Update the global map with the new global.
+            self.global_map().insert(program_id, global, value)?;
+
+            Ok(())
+        })?;
+
+        // Return the finalize operation.
+        Ok(FinalizeOperation::InsertGlobal(named_id, value_id))
     }
 
     /// Stores the given `(key, value)` pair at the given `program ID` and `mapping name` in storage.
@@ -213,7 +254,37 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         })?;
 
         // Return the finalize operation.
-        Ok(FinalizeOperation::InsertKeyValue(to_mapping_id(&program_id, &mapping_name)?, key_id, value_id))
+        Ok(FinalizeOperation::InsertKeyValue(to_named_id(&program_id, &mapping_name)?, key_id, value_id))
+    }
+
+    /// Stores the given `value` at the given `program ID` and `global` in storage.
+    /// If the `global` does not exist, the `value` is initialized.
+    /// If the `global` already exists, the `value` is overwritten.
+    fn update_global(
+        &self,
+        program_id: ProgramID<N>,
+        global: Identifier<N>,
+        value: Value<N>
+    ) -> Result<FinalizeOperation<N>> {
+        // Ensure the global name exists.
+        if !self.global_map().contains_key_speculative(&program_id, &global)? {
+            bail!("Illegal operation: global name '{global}' is not initialized - cannot update global.")
+        }
+
+        // Compute the named ID.
+        let named_id = to_named_id(&program_id, &global)?;
+        // Compute the value ID.
+        let value_id = N::hash_bhp1024(&(named_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
+
+        atomic_batch_scope!(self, {
+            // Update the global map with the new global.
+            self.global_map().insert(program_id, global, value)?;
+
+            Ok(())
+        })?;
+
+        // Return the finalize operation.
+        Ok(FinalizeOperation::UpdateGlobal(named_id, value_id))
     }
 
     /// Stores the given `(key, value)` pair at the given `program ID` and `mapping name` in storage.
@@ -245,7 +316,33 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         })?;
 
         // Return the finalize operation.
-        Ok(FinalizeOperation::UpdateKeyValue(to_mapping_id(&program_id, &mapping_name)?, key_id, value_id))
+        Ok(FinalizeOperation::UpdateKeyValue(to_named_id(&program_id, &mapping_name)?, key_id, value_id))
+    }
+
+    /// Removes the `value` at the given `program ID` and `global` from storage.
+    /// If the `global` does not exist, `None` is returned.
+    fn remove_global(
+        &self,
+        program_id: ProgramID<N>,
+        global: Identifier<N>
+    ) -> Result<Option<FinalizeOperation<N>>> {
+        // Ensure the global name exists.
+        if !self.global_map().contains_key_speculative(&(program_id, global))? {
+            return Ok(None);
+        }
+
+        // Compute the named ID.
+        let named_id = to_named_id(&program_id, &global)?;
+
+        atomic_batch_scope!(self, {
+            // Remove the global.
+            self.global_map().remove(&(program_id, global))?;
+
+            Ok(())
+        })?;
+
+        // Return the finalize operation.
+        Ok(Some(FinalizeOperation::RemoveGlobal(named_id)))
     }
 
     /// Removes the key-value pair for the given `program ID`, `mapping name`, and `key` from storage.
@@ -276,7 +373,55 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         })?;
 
         // Return the finalize operation.
-        Ok(Some(FinalizeOperation::RemoveKeyValue(to_mapping_id(&program_id, &mapping_name)?, key_id)))
+        Ok(Some(FinalizeOperation::RemoveKeyValue(to_named_id(&program_id, &mapping_name)?, key_id)))
+    }
+
+    /// Removes the mapping for the given `program ID` and `mapping name` from storage,
+    /// along with all associated key-value pairs in storage.
+    fn remove_mapping(&self, program_id: ProgramID<N>, mapping_name: Identifier<N>) -> Result<FinalizeOperation<N>> {
+        // Retrieve the mapping names.
+        let mut mapping_names = match self.program_id_map().get_speculative(&program_id)? {
+            Some(mapping_names) => cow_to_cloned!(mapping_names),
+            None => bail!("Illegal operation: program ID '{program_id}' is not initialized - cannot remove mapping."),
+        };
+        // Remove the mapping name.
+        if !mapping_names.shift_remove(&mapping_name) {
+            bail!("Illegal operation: mapping '{mapping_name}' does not exist in storage - cannot remove mapping.");
+        }
+
+        atomic_batch_scope!(self, {
+            // Update the mapping names.
+            self.program_id_map().insert(program_id, mapping_names)?;
+            // Remove the mapping.
+            self.key_value_map().remove_map(&(program_id, mapping_name))?;
+
+            Ok(())
+        })?;
+
+        // Return the finalize operation.
+        Ok(FinalizeOperation::RemoveMapping(to_named_id(&program_id, &mapping_name)?))
+    }
+
+    /// Removes the program for the given `program ID` from storage,
+    /// along with all associated mappings and key-value pairs in storage.
+    fn remove_program(&self, program_id: &ProgramID<N>) -> Result<()> {
+        // Retrieve the mapping names.
+        let Some(mapping_names) = self.program_id_map().get_speculative(program_id)? else {
+            bail!("Illegal operation: program ID '{program_id}' is not initialized - cannot remove mapping.")
+        };
+
+        atomic_batch_scope!(self, {
+            // Update the mapping names.
+            self.program_id_map().remove(program_id)?;
+            // Remove the globals.
+            self.global_map().remove_map(program_id)?;
+            // Remove each mapping.
+            for mapping_name in mapping_names.iter() {
+                // Remove the mapping.
+                self.key_value_map().remove_map(&(*program_id, *mapping_name))?;
+            }
+            Ok(())
+        })
     }
 
     /// Replaces the mapping for the given `program ID` and `mapping name` from storage,
@@ -306,54 +451,17 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         })?;
 
         // Return the finalize operation.
-        Ok(FinalizeOperation::ReplaceMapping(to_mapping_id(&program_id, &mapping_name)?))
+        Ok(FinalizeOperation::ReplaceMapping(to_named_id(&program_id, &mapping_name)?))
     }
 
-    /// Removes the mapping for the given `program ID` and `mapping name` from storage,
-    /// along with all associated key-value pairs in storage.
-    fn remove_mapping(&self, program_id: ProgramID<N>, mapping_name: Identifier<N>) -> Result<FinalizeOperation<N>> {
-        // Retrieve the mapping names.
-        let mut mapping_names = match self.program_id_map().get_speculative(&program_id)? {
-            Some(mapping_names) => cow_to_cloned!(mapping_names),
-            None => bail!("Illegal operation: program ID '{program_id}' is not initialized - cannot remove mapping."),
-        };
-        // Remove the mapping name.
-        if !mapping_names.shift_remove(&mapping_name) {
-            bail!("Illegal operation: mapping '{mapping_name}' does not exist in storage - cannot remove mapping.");
-        }
-
-        atomic_batch_scope!(self, {
-            // Update the mapping names.
-            self.program_id_map().insert(program_id, mapping_names)?;
-            // Remove the mapping.
-            self.key_value_map().remove_map(&(program_id, mapping_name))?;
-
-            Ok(())
-        })?;
-
-        // Return the finalize operation.
-        Ok(FinalizeOperation::RemoveMapping(to_mapping_id(&program_id, &mapping_name)?))
+    /// Returns `true` if the given `program ID` and `global` exist.
+    fn contains_global_confirmed(&self, program_id: &ProgramID<N>, global: &Identifier<N>) -> Result<bool> {
+        Ok(self.global_map().contains_key_confirmed(&(program_id, global))?)
     }
 
-    /// Removes the program for the given `program ID` from storage,
-    /// along with all associated mappings and key-value pairs in storage.
-    fn remove_program(&self, program_id: &ProgramID<N>) -> Result<()> {
-        // Retrieve the mapping names.
-        let Some(mapping_names) = self.program_id_map().get_speculative(program_id)? else {
-            bail!("Illegal operation: program ID '{program_id}' is not initialized - cannot remove mapping.")
-        };
-
-        atomic_batch_scope!(self, {
-            // Update the mapping names.
-            self.program_id_map().remove(program_id)?;
-
-            // Remove each mapping.
-            for mapping_name in mapping_names.iter() {
-                // Remove the mapping.
-                self.key_value_map().remove_map(&(*program_id, *mapping_name))?;
-            }
-            Ok(())
-        })
+    /// Returns `true` if the given `program ID` and `global` exist.
+    fn contains_global_speculative(&self, program_id: &ProgramID<N>, global: &Identifier<N>) -> Result<bool> {
+        Ok(self.global_map().contains_key_speculative(&(program_id, global))?)
     }
 
     /// Returns `true` if the given `program ID` exist.
@@ -399,6 +507,22 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns the speculative mapping names for the given `program ID`.
     fn get_mapping_names_speculative(&self, program_id: &ProgramID<N>) -> Result<Option<IndexSet<Identifier<N>>>> {
         Ok(self.program_id_map().get_speculative(program_id)?.map(|names| cow_to_cloned!(names)))
+    }
+
+    /// Returns the confirmed global entry for the given `program ID` and `global`.
+    fn get_global_confirmed(&self, program_id: ProgramID<N>, global: Identifier<N>) -> Result<Option<Value<N>>> {
+        match self.global_map().get_value_confirmed(&(program_id, global))? {
+            Some(value) => Ok(Some(cow_to_cloned!(value))),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns the speculative global entry for the given `program ID` and `global`.
+    fn get_global_speculative(&self, program_id: ProgramID<N>, global: Identifier<N>) -> Result<Option<Value<N>>> {
+        match self.global_map().get_value_speculative(&(program_id, global))? {
+            Some(value) => Ok(Some(cow_to_cloned!(value))),
+            None => Ok(None),
+        }
     }
 
     /// Returns the confirmed mapping entries for the given `program ID` and `mapping name`.
@@ -457,32 +581,48 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Returns the confirmed checksum of the finalize storage.
     fn get_checksum_confirmed(&self) -> Result<Field<N>> {
+        // A helper to take the checksum of an entry of a `NestedMap`.
+        fn checksum_entry<'a, N: Network, M, K, V>(m: Cow<'_, M>, k: Cow<'_, K>, v: Cow<'_, V>) -> Result<(Field<N>, Field<N>)>
+            where
+                M: 'a + Clone + ToBits,
+                K: 'a + Clone + ToBits,
+                V: 'a + Clone + ToBits,
+        {
+            let m = cow_to_copied!(m);
+            let k = cow_to_cloned!(k);
+            let v = cow_to_cloned!(v);
+
+            let mut preimage = Vec::new();
+            m.write_bits_le(&mut preimage);
+            false.write_bits_le(&mut preimage); // Separator.
+            k.write_bits_le(&mut preimage);
+            false.write_bits_le(&mut preimage); // Separator.
+
+            // Compute the mapping checksum as `Hash( m || k )`.
+            let mapping_checksum = N::hash_bhp1024(&preimage)?;
+
+            v.write_bits_le(&mut preimage);
+            false.write_bits_le(&mut preimage); // Separator.
+
+            // Compute the entry checksum as `Hash( m || k || v )`.
+            let entry_checksum = N::hash_bhp1024(&preimage)?;
+            Ok((mapping_checksum, entry_checksum))
+        }
+
         // Compute all mapping checksums.
         let preimage: std::collections::BTreeMap<_, _> = self
             .key_value_map()
             .iter_confirmed()
             .map(|(m, k, v)| {
-                let m = cow_to_copied!(m);
-                let k = cow_to_cloned!(k);
-                let v = cow_to_cloned!(v);
-
-                let mut preimage = Vec::new();
-                m.write_bits_le(&mut preimage);
-                false.write_bits_le(&mut preimage); // Separator.
-                k.write_bits_le(&mut preimage);
-                false.write_bits_le(&mut preimage); // Separator.
-
-                // Compute the mapping checksum as `Hash( m || k )`.
-                let mapping_checksum = N::hash_bhp1024(&preimage)?;
-
-                v.write_bits_le(&mut preimage);
-                false.write_bits_le(&mut preimage); // Separator.
-
-                // Compute the entry checksum as `Hash( m || k || v )`.
-                let entry_checksum = N::hash_bhp1024(&preimage)?;
+                let (mapping_checksum, entry_checksum) = checksum_entry::<N, _, _, _>(m, k, v)?;
                 // Return the mapping checksum and entry checksum.
                 Ok::<_, Error>((mapping_checksum, entry_checksum.to_bits_le()))
             })
+            .chain(self.global_map().iter_confirmed().map(|(m, k, v)| {
+                let (mapping_checksum, entry_checksum) = checksum_entry::<N, _, _, _>(m, k, v)?;
+                // Return the mapping checksum and entry checksum.
+                Ok::<_, Error>((mapping_checksum, entry_checksum.to_bits_le()))
+            }))
             .try_collect()?;
         // Compute the checksum as `Hash( all mapping checksums )`.
         N::hash_bhp1024(&preimage.into_values().flatten().collect::<Vec<_>>())
