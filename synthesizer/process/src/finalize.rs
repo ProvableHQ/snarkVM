@@ -36,75 +36,39 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::finalize_deployment");
 
         // Compute the program stack.
-        let stack = Stack::new(self, deployment.program(), deployment.edition())?;
+        let stack = Stack::new(self, deployment.program())?;
         lap!(timer, "Compute the stack");
 
+        // Ensure that the computed stack's edition matches the deployment edition.
+        ensure!(
+            stack.edition() == deployment.edition(),
+            "The computed stack's edition does not match the deployment's edition"
+        );
+
         // Insert the verifying keys.
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
             stack.insert_verifying_key(function_name, verifying_key.clone())?;
         }
         lap!(timer, "Insert the verifying keys");
 
-        // Initialize the mappings, and store their finalize operations.
-        atomic_batch_scope!(store, {
-            // Initialize a list for the finalize operations.
-            let mut finalize_operations = Vec::with_capacity(deployment.program().mappings().len());
-
-            /* Finalize the fee. */
-
-            // Retrieve the fee stack.
-            let fee_stack = self.get_stack(fee.program_id())?;
-            // Finalize the fee transition.
-            finalize_operations.extend(finalize_fee_transition(state, store, fee_stack, fee)?);
-            lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
-
-            /* Finalize the deployment. */
-
-            // Retrieve the program ID.
-            let program_id = deployment.program_id();
-            // Iterate over the mappings.
-            for mapping in deployment.program().mappings().values() {
-                // Initialize the mapping.
-                finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
+        // Determine which mappings must be initialized.
+        let mappings = match deployment.edition().is_zero() {
+            true => deployment.program().mappings().values().collect::<Vec<_>>(),
+            false => {
+                // Get the existing stack.
+                let existing_stack = self.get_stack(deployment.program_id())?;
+                // Get the existing mappings.
+                let existing_mappings = existing_stack.program().mappings();
+                // Determine and return the new mappings
+                let mut new_mappings = Vec::new();
+                for mapping in deployment.program().mappings().values() {
+                    if !existing_mappings.contains_key(mapping.name()) {
+                        new_mappings.push(mapping);
+                    }
+                }
+                new_mappings
             }
-            finish!(timer, "Initialize the program mappings");
-
-            // Return the stack and finalize operations.
-            Ok((stack, finalize_operations))
-        })
-    }
-
-    /// Finalizes the deployment and fee.
-    // TODO (@d0cd) We should specify what valid here means, because `Stack::new` performs a number of checks
-    /// This method assumes the given deployment **is valid**.
-    /// This method should **only** be called by `VM::finalize()`.
-    #[inline]
-    pub fn finalize_update<P: FinalizeStorage<N>>(
-        &self,
-        state: FinalizeGlobalState,
-        store: &FinalizeStore<N, P>,
-        deployment: &Deployment<N>,
-        fee: &Fee<N>,
-    ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>)> {
-        let timer = timer!("Process::finalize_deployment");
-
-        // Get the existing stack.
-        let old_stack = self.get_stack(deployment.program_id())?;
-
-        // Check that the update is valid.
-        old_stack.check_update(deployment.program())?;
-
-        // Compute the program stack.
-        let stack = Stack::new(self, deployment.program(), deployment.edition())?;
-        lap!(timer, "Update the stack");
-
-        // TODO (@d0cd) Add the mappings.
-
-        // Insert the verifying keys.
-        for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-            stack.insert_verifying_key(function_name, verifying_key.clone())?;
-        }
-        lap!(timer, "Insert the verifying keys");
+        };
 
         // Initialize the mappings, and store their finalize operations.
         atomic_batch_scope!(store, {
@@ -123,8 +87,8 @@ impl<N: Network> Process<N> {
 
             // Retrieve the program ID.
             let program_id = deployment.program_id();
-            // Iterate over the mappings.
-            for mapping in deployment.program().mappings().values() {
+            // Iterate over the mappings that must be initialized.
+            for mapping in mappings {
                 // Initialize the mapping.
                 finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
             }

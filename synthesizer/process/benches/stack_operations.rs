@@ -52,7 +52,7 @@ fn bench_stack_new(c: &mut Criterion) {
                 // Construct the program.
                 Program::from_str(&format!("program {identifier}.aleo; function foo:")).unwrap()
             },
-            |program| Stack::<CurrentNetwork>::new(&process, program, 0),
+            |program| Stack::<CurrentNetwork>::new(&process, program),
             BatchSize::PerIteration,
         )
     });
@@ -86,7 +86,7 @@ fn bench_stack_new(c: &mut Criterion) {
                     ))
                     .unwrap()
                 },
-                |program| Stack::<CurrentNetwork>::new(&process, program, 0),
+                |program| Stack::<CurrentNetwork>::new(&process, program),
                 BatchSize::PerIteration,
             )
         });
@@ -150,7 +150,7 @@ fn add_program_at_depth(process: &mut Process<CurrentNetwork>, depth: usize) {
     };
 
     // Add the program to the process.
-    process.add_program(&program, 0).unwrap();
+    process.add_program(&program).unwrap();
 }
 
 // Samples a random identifier as a string.

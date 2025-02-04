@@ -366,7 +366,11 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
         // Retrieve the edition.
         match transaction_type {
             TransactionType::Deploy => {
-                todo!("@d0cd Use IDMapV2")
+                // Return the edition.
+                match self.storage.deployment_store().get_program_id_and_edition(transaction_id)? {
+                    Some((_, edition)) => Ok(Some(edition)),
+                    None => bail!("Failed to get the edition for deployment transaction '{transaction_id}'"),
+                }
             }
             // Return 'None'.
             TransactionType::Execute => Ok(None),

@@ -510,7 +510,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the deployment for the given `transaction ID`.
-    // TODO (@d0cd) This should be done with IDMapV2.
     fn get_deployment(&self, transaction_id: &N::TransactionID) -> Result<Option<Deployment<N>>> {
         // Retrieve the program ID and edition.
         let (program_id, edition) = match self.get_program_id_and_edition(transaction_id)? {
@@ -721,6 +720,11 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     /// Returns the program ID for the given `transaction ID`.
     pub fn get_program_id(&self, transaction_id: &N::TransactionID) -> Result<Option<ProgramID<N>>> {
         self.storage.get_program_id(transaction_id)
+    }
+
+    /// Returns the program ID and edition for the given `transaction ID`.
+    pub fn get_program_id_and_edition(&self, transaction_id: &N::TransactionID) -> Result<Option<(ProgramID<N>, u16)>> {
+        self.storage.get_program_id_and_edition(transaction_id)
     }
 
     /// Returns the latest program for the given `program ID`.

@@ -156,12 +156,6 @@ impl<N: Network> Deployment<N> {
     pub fn to_deployment_id(&self) -> Result<Field<N>> {
         Ok(*Transaction::deployment_tree(self, None)?.root())
     }
-
-    // TODO (@d0cd) Contemplate design.
-    /// Updates the deployment edition.
-    pub fn update_edition(&mut self, edition: u16) {
-        self.edition = edition;
-    }
 }
 
 #[cfg(test)]

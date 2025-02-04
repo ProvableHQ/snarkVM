@@ -57,7 +57,7 @@ fn run_test(process: Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml:
     // Add the programs into the process.
     let mut process = process.clone();
     for program in test.programs() {
-        if let Err(err) = process.add_program(program, 0) {
+        if let Err(err) = process.add_program(program) {
             output
                 .get_mut(serde_yaml::Value::String("errors".to_string()))
                 .unwrap()

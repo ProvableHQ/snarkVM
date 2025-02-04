@@ -76,8 +76,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ///
     /// The `priority_fee_in_microcredits` is an additional fee **on top** of the deployment fee.
     #[allow(clippy::too_many_arguments)]
-    // TODO (@d0cd) Better name.
-    pub fn deploy_with_authority_and_edition<R: Rng + CryptoRng>(
+    pub fn deploy_updatable<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
         authority: Address<N>,
@@ -89,9 +88,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         rng: &mut R,
     ) -> Result<Transaction<N>> {
         // Compute the deployment.
-        let mut deployment = self.deploy_raw(program, rng)?;
-        // Update the edition.
-        deployment.update_edition(*edition);
+        let deployment = self.deploy_raw(program, rng)?;
+        // Ensure that the deployment edition matches the expected edition.
+        ensure!(
+            deployment.edition() == *edition,
+            "The deployment edition ({}) does not match the expected edition ({})",
+            deployment.edition(),
+            *edition
+        );
         // Ensure the transaction is not empty.
         ensure!(!deployment.program().functions().is_empty(), "Attempted to create an empty transaction deployment");
         // Compute the deployment ID.

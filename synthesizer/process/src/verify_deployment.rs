@@ -31,8 +31,14 @@ impl<N: Network> Process<N> {
         ensure!(!self.contains_program(program_id), "Program '{program_id}' already exists");
 
         // Ensure the program is well-formed, by computing the stack.
-        let stack = Stack::new(self, deployment.program(), deployment.edition())?;
+        let stack = Stack::new(self, deployment.program())?;
         lap!(timer, "Compute the stack");
+
+        // Check that the computed stack's edition matches the deployment edition.
+        ensure!(
+            stack.edition() == deployment.edition(),
+            "The computed stack's edition does not match the deployment's edition"
+        );
 
         // Ensure the verifying keys are well-formed and the certificates are valid.
         let verification = stack.verify_deployment::<A, R>(deployment, rng);

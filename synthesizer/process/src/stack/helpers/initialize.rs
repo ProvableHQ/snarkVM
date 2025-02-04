@@ -43,8 +43,8 @@ impl<N: Network> Stack<N> {
             }
             // Retrieve the external stack for the import program ID.
             let external_stack = process.get_stack(import)?;
-            // Add the external stack to the stack.
             // TODO (@d0cd): Handle bookkeeping here.
+            // TODO (@d0cd). Program depth is now useless.
             // Update the program depth, checking that it does not exceed the maximum call depth.
             stack.program_depth = std::cmp::max(stack.program_depth, external_stack.program_depth() + 1);
             ensure!(

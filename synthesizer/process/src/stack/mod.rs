@@ -200,16 +200,26 @@ pub struct Stack<N: Network> {
 }
 
 impl<N: Network> Stack<N> {
-    /// Initializes a new stack, if it does not already exist, given the process and the program.
+    /// Initializes a new stack given the process and the program.
     #[inline]
-    pub fn new(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
+    pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
         // Retrieve the program ID.
         let program_id = program.id();
-        // Ensure the program does not already exist in the process.
-        ensure!(!process.contains_program(program_id), "Program '{program_id}' already exists");
+        // Determine the program edition.
+        let edition = match process.get_stack(program_id) {
+            // If the program does not exist, then the edition is zero.
+            Err(_) => 0,
+            // Otherwise, check that the update is valid, then retrieve the old program edition and increment it.
+            Ok(stack) => {
+                Stack::check_update(process, program)?;
+                match stack.edition.checked_add(1) {
+                    Some(edition) => edition,
+                    None => bail!("The program cannot be updated past the current edition `{}`", stack.edition),
+                }
+            }
+        };
         // Ensure the program contains functions.
         ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{program_id}'");
-
         // Serialize the program into bytes.
         let program_bytes = program.to_bytes_le()?;
         // Ensure the program deserializes from bytes correctly.
@@ -259,7 +269,8 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     /// Returns the external stack for the given program ID.
     #[inline]
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Stack<N>>> {
-        // TODO (@d0cd), Check that stack is in imports
+        // Check that the program ID is imported by the program.
+        ensure!(self.program.contains_import(program_id), "External program '{program_id}' is not imported.");
         // Upgrade the reference to the global stack map.
         let stacks = self.stacks.upgrade().ok_or_else(|| anyhow!("Global stack map does not exist."))?;
         // Retrieve the stack.

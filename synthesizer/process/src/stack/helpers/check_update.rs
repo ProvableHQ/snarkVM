@@ -18,9 +18,11 @@ use super::*;
 impl<N: Network> Stack<N> {
     /// Updates an existing stack, given the process and program.
     #[inline]
-    pub(crate) fn check_update(&self, program: &Program<N>) -> Result<()> {
+    pub(crate) fn check_update(process: &Process<N>, program: &Program<N>) -> Result<()> {
+        // Get the existing stack.
+        let stack = process.get_stack(program.id())?;
         // Get the old program.
-        let old_program = self.program();
+        let old_program = stack.program();
         // Ensure the program ID matches.
         ensure!(old_program.id() == program.id(), "Cannot update program with different program ID");
 

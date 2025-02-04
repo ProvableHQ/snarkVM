@@ -180,11 +180,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             for (program_id, deployment) in deployments.iter().flatten() {
                 // Load the deployment if it does not exist in the process yet.
-                // Otherwise, update the existing program with the new deployment.
                 if !process.contains_program(program_id) {
                     process.load_deployment(deployment)?;
-                } else {
-                    todo!("@d0cd")
                 }
             }
         }

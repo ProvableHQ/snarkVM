@@ -2183,7 +2183,7 @@ fn test_deployment_exceeding_max_transaction_spend() {
 
         // Attempt to initialize a `Stack` for the program.
         // If this fails, then by `Stack::initialize` the finalize cost exceeds the `TRANSACTION_SPEND_LIMIT`.
-        if Stack::<CurrentNetwork>::new(&ledger.vm().process().read(), &program, 0).is_err() {
+        if Stack::<CurrentNetwork>::new(&ledger.vm().process().read(), &program).is_err() {
             exceeding_program = Some(program);
             break;
         } else {

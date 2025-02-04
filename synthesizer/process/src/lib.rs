@@ -97,8 +97,11 @@ impl<N: Network> Process<N> {
         lap!(timer, "Load credits program");
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program, 0)?;
+        let stack = Stack::new(&process, &program)?;
         lap!(timer, "Initialize stack");
+
+        // Check that the edition is zero.
+        ensure!(stack.edition() == 0, "The 'credits.aleo' program must have edition 0");
 
         // Synthesize the 'credits.aleo' circuit keys.
         for function_name in program.functions().keys() {
@@ -118,12 +121,12 @@ impl<N: Network> Process<N> {
     /// Adds a new program to the process.
     /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
     #[inline]
-    pub fn add_program(&mut self, program: &Program<N>, edition: u16) -> Result<()> {
+    pub fn add_program(&mut self, program: &Program<N>) -> Result<()> {
         // Initialize the 'credits.aleo' program ID.
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
         if program.id() != &credits_program_id {
-            self.add_stack(Stack::new(self, program, edition)?)?;
+            self.add_stack(Stack::new(self, program)?)?;
         }
         Ok(())
     }
@@ -158,8 +161,11 @@ impl<N: Network> Process<N> {
         lap!(timer, "Load credits program");
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program, 0)?;
+        let stack = Stack::new(&process, &program)?;
         lap!(timer, "Initialize stack");
+
+        // Check that the edition is zero.
+        ensure!(stack.edition() == 0, "The 'credits.aleo' program must have edition 0");
 
         // Synthesize the 'credits.aleo' verifying keys.
         for function_name in program.functions().keys() {
@@ -194,7 +200,10 @@ impl<N: Network> Process<N> {
         let program = Program::credits()?;
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program, 0)?;
+        let stack = Stack::new(&process, &program)?;
+
+        // Check that the edition is zero.
+        ensure!(stack.edition() == 0, "The 'credits.aleo' program must have edition 0");
 
         // Add the stack to the process.
         process.add_stack(stack)?;
@@ -324,7 +333,7 @@ pub mod test_helpers {
 
         // Add the program to the process if doesn't yet exist.
         if !process.contains_program(program.id()) {
-            process.add_program(program, 0).unwrap();
+            process.add_program(program).unwrap();
         }
 
         // Compute the authorization.
@@ -458,7 +467,7 @@ function compute:
         // Construct a new process.
         let mut process = Process::load().unwrap();
         // Add the program to the process.
-        process.add_program(program, 0).unwrap();
+        process.add_program(program).unwrap();
         // Return the process.
         process
     }

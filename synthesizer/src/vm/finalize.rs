@@ -365,66 +365,28 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 }
                             },
                             // If the program has not yet been deployed, attempt to deploy it.
-                            false => {
-                                // Handle initial deployments and updates via `finalize_deployment` and `finalize_update` respectively.
-                                // TODO (@d0cd) Dedup logic
-                                let is_initial_deployment = deployment.edition() == 0;
-                                if is_initial_deployment {
-                                    match process.finalize_deployment(state, store, deployment, fee) {
-                                        // Construct the accepted deploy transaction.
-                                        Ok((_, finalize)) => {
-                                            // Add the program id to the list of deployments.
-                                            deployments.insert(*deployment.program_id());
-                                            ConfirmedTransaction::accepted_deploy(
-                                                counter,
-                                                transaction.clone(),
-                                                finalize,
-                                            )
-                                            .map_err(|e| e.to_string())
-                                        }
-                                        // Construct the rejected deploy transaction.
-                                        Err(_error) => match process_rejected_deployment(fee, *deployment.clone()) {
-                                            Ok(result) => result,
-                                            Err(error) => {
-                                                // Note: On failure, skip this transaction, and continue speculation.
-                                                #[cfg(debug_assertions)]
-                                                eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
-                                                // Store the aborted transaction.
-                                                aborted.push((transaction.clone(), error.to_string()));
-                                                // Continue to the next transaction.
-                                                continue 'outer;
-                                            }
-                                        },
-                                    }
-                                } else {
-                                    match process.finalize_update(state, store, deployment, fee) {
-                                        // Construct the accepted deploy transaction.
-                                        Ok((_, finalize)) => {
-                                            // Add the program id to the list of deployments.
-                                            deployments.insert(*deployment.program_id());
-                                            ConfirmedTransaction::accepted_deploy(
-                                                counter,
-                                                transaction.clone(),
-                                                finalize,
-                                            )
-                                            .map_err(|e| e.to_string())
-                                        }
-                                        // Construct the rejected deploy transaction.
-                                        Err(_error) => match process_rejected_deployment(fee, *deployment.clone()) {
-                                            Ok(result) => result,
-                                            Err(error) => {
-                                                // Note: On failure, skip this transaction, and continue speculation.
-                                                #[cfg(debug_assertions)]
-                                                eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
-                                                // Store the aborted transaction.
-                                                aborted.push((transaction.clone(), error.to_string()));
-                                                // Continue to the next transaction.
-                                                continue 'outer;
-                                            }
-                                        },
-                                    }
+                            false => match process.finalize_deployment(state, store, deployment, fee) {
+                                // Construct the accepted deploy transaction.
+                                Ok((_, finalize)) => {
+                                    // Add the program id to the list of deployments.
+                                    deployments.insert(*deployment.program_id());
+                                    ConfirmedTransaction::accepted_deploy(counter, transaction.clone(), finalize)
+                                        .map_err(|e| e.to_string())
                                 }
-                            }
+                                // Construct the rejected deploy transaction.
+                                Err(_error) => match process_rejected_deployment(fee, *deployment.clone()) {
+                                    Ok(result) => result,
+                                    Err(error) => {
+                                        // Note: On failure, skip this transaction, and continue speculation.
+                                        #[cfg(debug_assertions)]
+                                        eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                        // Store the aborted transaction.
+                                        aborted.push((transaction.clone(), error.to_string()));
+                                        // Continue to the next transaction.
+                                        continue 'outer;
+                                    }
+                                },
+                            },
                         }
                     }
                     // The finalize operation here involves calling 'update_key_value',
@@ -652,48 +614,24 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             // Note: This will abort the entire atomic batch.
                             _ => return Err("Expected deploy transaction".to_string()),
                         };
-                        // Handle initial deployments and updates via `finalize_deployment` and `finalize_update` respectively.
-                        // TODO (@d0cd) Dedup logic
-                        let is_initial_deployment = deployment.edition() == 0;
-                        if is_initial_deployment {
-                            // The finalize operation here involves appending the 'stack', and adding the program to the finalize tree.
-                            match process.finalize_deployment(state, store, deployment, fee) {
-                                // Ensure the finalize operations match the expected.
-                                Ok((stack, finalize_operations)) => match finalize == &finalize_operations {
-                                    // Store the stack.
-                                    true => stacks.push(stack),
-                                    // Note: This will abort the entire atomic batch.
-                                    false => {
-                                        return Err(format!(
-                                            "Mismatch in finalize operations for an accepted deploy - (found: {finalize_operations:?}, expected: {finalize:?})"
-                                        ));
-                                    }
-                                },
+                        // The finalize operation here involves appending the 'stack', and adding the program to the finalize tree.
+                        match process.finalize_deployment(state, store, deployment, fee) {
+                            // Ensure the finalize operations match the expected.
+                            Ok((stack, finalize_operations)) => match finalize == &finalize_operations {
+                                // Store the stack.
+                                true => stacks.push(stack),
                                 // Note: This will abort the entire atomic batch.
-                                Err(error) => {
-                                    return Err(format!("Failed to finalize an accepted deploy transaction - {error}"));
+                                false => {
+                                    return Err(format!(
+                                        "Mismatch in finalize operations for an accepted deploy - (found: {finalize_operations:?}, expected: {finalize:?})"
+                                    ));
                                 }
-                            };
-                        } else {
-                            // The finalize operation here involves updating the 'stack', and updating the program in the finalize tree.
-                            match process.finalize_update(state, store, deployment, fee) {
-                                // Ensure the finalize operations match the expected.
-                                Ok((stack, finalize_operations)) => match finalize == &finalize_operations {
-                                    // Store the stack.
-                                    true => stacks.push(stack),
-                                    // Note: This will abort the entire atomic batch.
-                                    false => {
-                                        return Err(format!(
-                                            "Mismatch in finalize operations for an accepted deploy - (found: {finalize_operations:?}, expected: {finalize:?})"
-                                        ));
-                                    }
-                                },
-                                // Note: This will abort the entire atomic batch.
-                                Err(error) => {
-                                    return Err(format!("Failed to finalize an accepted deploy transaction - {error}"));
-                                }
-                            };
-                        }
+                            },
+                            // Note: This will abort the entire atomic batch.
+                            Err(error) => {
+                                return Err(format!("Failed to finalize an accepted deploy transaction - {error}"));
+                            }
+                        };
 
                         Ok(())
                     }

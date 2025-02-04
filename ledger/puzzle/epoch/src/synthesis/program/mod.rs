@@ -106,7 +106,7 @@ function synthesize:
         // Initialize a new process.
         let process = Process::<N>::load()?;
         // Initialize the stack with the synthesis challenge program.
-        let stack = Stack::new(&process, &program, 0)?;
+        let stack = Stack::new(&process, &program)?;
 
         Ok(Self { stack, register_table, epoch_hash })
     }
