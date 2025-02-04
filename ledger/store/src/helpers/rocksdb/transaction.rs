@@ -137,7 +137,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
         // Retrieve the storage mode.
         let storage_mode = fee_store.storage_mode();
         Ok(Self {
-            id_map_v1: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::ID))?,
+            id_map_v1: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::IDV1))?,
             id_map_v2: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::IDV2))?,
             edition_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Edition))?,
             reverse_id_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::ReverseID))?,
