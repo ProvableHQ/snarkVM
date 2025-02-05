@@ -29,7 +29,6 @@ impl<N: Network> Stack<N> {
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
             number_of_calls: Default::default(),
-            finalize_costs: Default::default(),
             program_depth: 0,
             program_address: program.id().to_address()?,
             edition,
@@ -69,12 +68,7 @@ impl<N: Network> Stack<N> {
                     // Determine if this is a function call.
                     if call.is_function_call(&stack)? {
                         // Increment by the number of calls.
-                        num_calls += match call.operator() {
-                            CallOperator::Locator(locator) => stack
-                                .get_external_stack(locator.program_id())?
-                                .get_number_of_calls(locator.resource())?,
-                            CallOperator::Resource(resource) => stack.get_number_of_calls(resource)?,
-                        };
+                        num_calls += 1
                     }
                 }
             }

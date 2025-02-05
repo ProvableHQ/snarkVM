@@ -187,7 +187,7 @@ pub struct Stack<N: Network> {
     proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
     /// The mapping of function name to verifying key.
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
-    /// The mapping of function names to the number of calls.
+    /// The mapping of function names to the number of function calls.
     number_of_calls: IndexMap<Identifier<N>, usize>,
     /// The mapping of function names to finalize cost.
     finalize_costs: IndexMap<Identifier<N>, u64>,
@@ -211,7 +211,7 @@ impl<N: Network> Stack<N> {
             Err(_) => 0,
             // Otherwise, check that the update is valid, then retrieve the old program edition and increment it.
             Ok(stack) => {
-                Stack::check_update(process, program)?;
+                Stack::check_update_is_valid(process, program)?;
                 match stack.edition.checked_add(1) {
                     Some(edition) => edition,
                     None => bail!("The program cannot be updated past the current edition `{}`", stack.edition),

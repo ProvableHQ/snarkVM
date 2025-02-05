@@ -431,7 +431,7 @@ pub fn cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Ide
         })
 }
 
-/// Returns the minimum number of microcredits required to run the finalize (depcrated).
+/// Returns the minimum number of microcredits required to run the finalize (deprecated).
 pub fn cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
     // Retrieve the finalize logic.
     let Some(finalize) = stack.get_function_ref(function_name)?.finalize_logic() else {

@@ -144,7 +144,13 @@ impl<N: Network> FinalizeTypes<N> {
                 RegisterTypes::check_struct(stack, struct_name)?
             }
             FinalizeType::Plaintext(PlaintextType::Array(array_type)) => RegisterTypes::check_array(stack, array_type)?,
-            FinalizeType::Future(..) => (),
+            FinalizeType::Future(locator) => {
+                ensure!(
+                    stack.program().contains_import(locator.program_id()),
+                    "Program '{locator}' is not imported by '{}'.",
+                    stack.program().id()
+                )
+            },
         };
 
         // Insert the input register.
