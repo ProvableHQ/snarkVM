@@ -65,9 +65,6 @@ pub trait StackProgram<N: Network> {
     /// Returns the program ID.
     fn program_id(&self) -> &ProgramID<N>;
 
-    /// Returns the program depth.
-    fn program_depth(&self) -> usize;
-
     /// Returns the program address.
     fn program_address(&self) -> &Address<N>;
 

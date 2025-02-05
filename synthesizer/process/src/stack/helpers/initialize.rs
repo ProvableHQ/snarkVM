@@ -15,6 +15,9 @@
 
 use super::*;
 
+// TODO: @d0cd. Check the MAX_PROGRAM_DEPTH at runtime?
+// TODO: @d0cd. Recursion safety for the number of calls and costs at runtime?
+
 impl<N: Network> Stack<N> {
     /// Initializes a new stack, given the process and program.
     #[inline]
@@ -29,7 +32,6 @@ impl<N: Network> Stack<N> {
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
             number_of_calls: Default::default(),
-            program_depth: 0,
             program_address: program.id().to_address()?,
             edition,
         };
@@ -40,17 +42,8 @@ impl<N: Network> Stack<N> {
             if !process.contains_program(import) {
                 bail!("Cannot add program '{}' because its import '{import}' must be added first", program.id())
             }
-            // Retrieve the external stack for the import program ID.
-            let external_stack = process.get_stack(import)?;
-            // TODO (@d0cd): Handle bookkeeping here.
-            // TODO (@d0cd). Program depth is now useless.
-            // Update the program depth, checking that it does not exceed the maximum call depth.
-            stack.program_depth = std::cmp::max(stack.program_depth, external_stack.program_depth() + 1);
-            ensure!(
-                stack.program_depth <= N::MAX_PROGRAM_DEPTH,
-                "Program depth exceeds the maximum allowed call depth"
-            );
         }
+
         // Add the program closures to the stack.
         for closure in program.closures().values() {
             // Add the closure to the stack.

@@ -65,7 +65,7 @@ use console::{
     types::{Field, Group},
 };
 use ledger_block::{Deployment, Transition};
-use synthesizer_program::{Closure, Function, Instruction, Operand, Program, traits::*};
+use synthesizer_program::{CallOperator, Closure, Function, Instruction, Operand, Program, traits::*};
 use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -189,8 +189,6 @@ pub struct Stack<N: Network> {
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The mapping of function names to the number of function calls.
     number_of_calls: IndexMap<Identifier<N>, usize>,
-    /// The program depth.
-    program_depth: usize,
     /// The program address.
     program_address: Address<N>,
     /// The program edition.
@@ -246,12 +244,6 @@ impl<N: Network> StackProgram<N> for Stack<N> {
         self.program.id()
     }
 
-    /// Returns the program depth.
-    #[inline]
-    fn program_depth(&self) -> usize {
-        self.program_depth
-    }
-
     /// Returns the program address.
     #[inline]
     fn program_address(&self) -> &Address<N> {
@@ -290,10 +282,25 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     /// Returns the expected number of calls for the given function name.
     #[inline]
     fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize> {
-        self.number_of_calls
-            .get(function_name)
-            .copied()
-            .ok_or_else(|| anyhow!("Function '{function_name}' does not exist"))
+        // Initialize the base number of calls.
+        let mut num_calls = 1;
+        // Determine the number of calls for the function.
+        for instruction in self.program.get_function_ref(function_name)?.instructions() {
+            if let Instruction::Call(call) = instruction {
+                // Determine if this is a function call.
+                if call.is_function_call(self)? {
+                    // Increment by the number of calls.
+                    num_calls += match call.operator() {
+                        CallOperator::Locator(locator) => {
+                            self.get_external_stack(locator.program_id())?.get_number_of_calls(locator.resource())?
+                        }
+                        CallOperator::Resource(resource) => self.get_number_of_calls(resource)?,
+                    };
+                }
+            }
+        }
+        // Return the number of calls.
+        Ok(num_calls)
     }
 
     /// Returns a value for the given value type.
