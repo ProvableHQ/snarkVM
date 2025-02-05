@@ -67,7 +67,8 @@ pub fn execution_cost_v2<N: Network>(process: &Process<N>, execution: &Execution
     let transition = execution.peek()?;
 
     // Get the finalize cost for the root transition.
-    let finalize_cost = process.get_stack(transition.program_id())?.get_finalize_cost(transition.function_name())?;
+    let stack = process.get_stack(transition.program_id())?;
+    let finalize_cost = cost_in_microcredits_v2(stack, transition.function_name())?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -417,7 +418,7 @@ pub fn cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Ide
             let stack = stack.get_external_stack(future.program_id())?;
             // Accumulate the finalize cost of the future.
             future_cost = future_cost
-                .checked_add(stack.get_finalize_cost(future.resource())?)
+                .checked_add(cost_in_microcredits_v2(&stack, future.resource())?)
                 .ok_or(anyhow!("Finalize cost overflowed"))?;
         }
     }

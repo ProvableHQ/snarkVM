@@ -37,7 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace, cost_in_microcredits_v2, traits::*};
+use crate::{CallMetrics, Process, Trace, traits::*};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -65,7 +65,7 @@ use console::{
     types::{Field, Group},
 };
 use ledger_block::{Deployment, Transition};
-use synthesizer_program::{CallOperator, Closure, Function, Instruction, Operand, Program, traits::*};
+use synthesizer_program::{Closure, Function, Instruction, Operand, Program, traits::*};
 use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -189,8 +189,6 @@ pub struct Stack<N: Network> {
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The mapping of function names to the number of function calls.
     number_of_calls: IndexMap<Identifier<N>, usize>,
-    /// The mapping of function names to finalize cost.
-    finalize_costs: IndexMap<Identifier<N>, u64>,
     /// The program depth.
     program_depth: usize,
     /// The program address.
@@ -275,15 +273,6 @@ impl<N: Network> StackProgram<N> for Stack<N> {
         let stacks = self.stacks.upgrade().ok_or_else(|| anyhow!("Global stack map does not exist."))?;
         // Retrieve the stack.
         stacks.get(program_id).cloned().ok_or_else(|| anyhow!("External program '{program_id}' does not exist."))
-    }
-
-    /// Returns the expected finalize cost for the given function name.
-    #[inline]
-    fn get_finalize_cost(&self, function_name: &Identifier<N>) -> Result<u64> {
-        self.finalize_costs
-            .get(function_name)
-            .copied()
-            .ok_or_else(|| anyhow!("Function '{function_name}' does not exist"))
     }
 
     /// Returns the function with the given function name.

@@ -318,12 +318,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             true => execution_cost_v1(&self.process().read(), execution)?,
                             false => execution_cost_v2(&self.process().read(), execution)?,
                         };
+                        // Ensure the cost does not exceed the transaction spend limit.
+                        ensure!(
+                            cost <= N::TRANSACTION_SPEND_LIMIT,
+                            "Transaction '{id}' exceeds the transaction spend limit '{}'",
+                            N::TRANSACTION_SPEND_LIMIT
+                        );
                         // Ensure the fee is sufficient to cover the cost.
-                        if *fee.base_amount()? < cost {
-                            bail!(
-                                "Transaction '{id}' has an insufficient base fee (execution) - requires {cost} microcredits"
-                            )
-                        }
+                        ensure!(
+                            cost <= *fee.base_amount()?,
+                            "Transaction '{id}' has an insufficient base fee (execution) - requires {cost} microcredits"
+                        );
                     } else {
                         // Ensure the base fee amount is zero.
                         ensure!(*fee.base_amount()? == 0, "Transaction '{id}' has a non-zero base fee (execution)");

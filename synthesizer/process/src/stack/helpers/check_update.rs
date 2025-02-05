@@ -90,7 +90,9 @@ impl<N: Network> Stack<N> {
                         );
                     }
                     None => {
-                        bail!("Cannot update '{program_id}' because the function '{function_name}' is missing a finalize block")
+                        bail!(
+                            "Cannot update '{program_id}' because the function '{function_name}' is missing a finalize block"
+                        )
                     }
                 }
             }

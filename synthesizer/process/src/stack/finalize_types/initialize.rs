@@ -150,7 +150,7 @@ impl<N: Network> FinalizeTypes<N> {
                     "Program '{locator}' is not imported by '{}'.",
                     stack.program().id()
                 )
-            },
+            }
         };
 
         // Insert the input register.
