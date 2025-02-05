@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use synthesizer_program::GlobalGet;
 
 impl<N: Network> FinalizeTypes<N> {
     /// Initializes a new instance of `FinalizeTypes` for the given finalize.
@@ -178,6 +179,7 @@ impl<N: Network> FinalizeTypes<N> {
             Command::Contains(contains) => self.check_contains(stack, contains)?,
             Command::Get(get) => self.check_get(stack, get)?,
             Command::GetOrUse(get_or_use) => self.check_get_or_use(stack, get_or_use)?,
+            Command::GlobalGet(global_get) => self.check_global_get(stack, global_get)?,
             Command::RandChaCha(rand_chacha) => self.check_rand_chacha(stack, finalize.name(), rand_chacha)?,
             Command::Remove(remove) => self.check_remove(stack, finalize.name(), remove)?,
             Command::Set(set) => self.check_set(stack, finalize.name(), set)?,
@@ -457,6 +459,41 @@ impl<N: Network> FinalizeTypes<N> {
         ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
         // Insert the destination register.
         self.add_destination(destination, FinalizeType::Plaintext(default_value_type))?;
+        Ok(())
+    }
+
+    /// Ensures the given `global.get` command is well-formed.
+    #[inline]
+    fn check_global_get(
+        &mut self,
+        stack: &(impl StackMatches<N> + StackProgram<N>),
+        global_get: &GlobalGet<N>,
+    ) -> Result<()> {
+        // Ensure that the global name is `edition`.
+        let global_name = match global_get.global() {
+            CallOperator::Locator(locator) => {
+                // Retrieve the program ID.
+                let program_id = locator.program_id();
+                // Ensure the locator does not reference the current program.
+                if stack.program_id() == program_id {
+                    bail!("Locator '{locator}' does not reference an external mapping.");
+                }
+                // Ensure the current program contains an import for this external program.
+                if !stack.program().imports().keys().contains(program_id) {
+                    bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
+                }
+                locator.resource()
+            }
+            CallOperator::Resource(global_name) => global_name,
+        };
+        ensure!(global_name.to_string() == "edition", "Invalid global name: {global_name}");
+
+        // Get the destination register.
+        let destination = global_get.destination().clone();
+        // Ensure the destination register is a locator (and does not reference an access).
+        ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
+        // Insert the destination register.
+        self.add_destination(destination, FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U16)))?;
         Ok(())
     }
 
