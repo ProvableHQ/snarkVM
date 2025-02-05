@@ -2366,7 +2366,7 @@ fn test_process_deploy_credits_program() {
     // Initialize an empty process without the `credits` program.
     let empty_process = Process {
         universal_srs: Arc::new(UniversalSRS::<CurrentNetwork>::load().unwrap()),
-        stacks: Arc::new(IndexMap::new()),
+        stacks: Arc::new(RwLock::new(IndexMap::new())),
     };
 
     // Construct the process.

@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use snarkvm_synthesizer::program::StackProgram;
 
 impl<N: Network> Package<N> {
     /// Executes a program function with the given inputs.
@@ -52,16 +53,24 @@ impl<N: Network> Package<N> {
         let authorization = process.authorize::<A, R>(private_key, program_id, function_name, inputs.iter(), rng)?;
 
         // Retrieve the program.
-        let program = process.get_program(program_id)?;
+        let stack = process.get_stack(program_id)?;
+        let program = stack.program();
         // Retrieve the function from the program.
         let function = program.get_function(&function_name)?;
         // Save all the prover and verifier files for any function calls that are made.
         for instruction in function.instructions() {
             if let Instruction::Call(call) = instruction {
-                // Retrieve the program and resource.
-                let (program, resource) = match call.operator() {
-                    CallOperator::Locator(locator) => (process.get_program(locator.program_id())?, locator.resource()),
-                    CallOperator::Resource(resource) => (program, resource),
+                // Retrieve the external stack and resource.
+                let (external_stack, resource) = match call.operator() {
+                    CallOperator::Locator(locator) => {
+                        (Some(process.get_stack(locator.program_id())?), locator.resource())
+                    }
+                    CallOperator::Resource(resource) => (None, resource),
+                };
+                // Retrieve the program.
+                let program = match &external_stack {
+                    Some(external_stack) => external_stack.program(),
+                    None => program,
                 };
                 // If this is a function call, save its corresponding prover and verifier files.
                 if program.contains_function(resource) {

@@ -80,7 +80,7 @@ impl<N: Network> Process<N> {
             // Retrieve the fee stack.
             let fee_stack = self.get_stack(fee.program_id())?;
             // Finalize the fee transition.
-            finalize_operations.extend(finalize_fee_transition(state, store, fee_stack, fee)?);
+            finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
             lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
 
             /* Finalize the deployment. */
@@ -140,7 +140,7 @@ impl<N: Network> Process<N> {
             // Finalize the root transition.
             // Note that this will result in all the remaining transitions being finalized, since the number
             // of calls matches the number of transitions.
-            let mut finalize_operations = finalize_transition(state, store, stack, transition, call_graph)?;
+            let mut finalize_operations = finalize_transition(state, store, &stack, transition, call_graph)?;
 
             /* Finalize the fee. */
 
@@ -148,7 +148,7 @@ impl<N: Network> Process<N> {
                 // Retrieve the fee stack.
                 let fee_stack = self.get_stack(fee.program_id())?;
                 // Finalize the fee transition.
-                finalize_operations.extend(finalize_fee_transition(state, store, fee_stack, fee)?);
+                finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
                 lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
             }
 
@@ -174,7 +174,7 @@ impl<N: Network> Process<N> {
             // Retrieve the stack.
             let stack = self.get_stack(fee.program_id())?;
             // Finalize the fee transition.
-            let result = finalize_fee_transition(state, store, stack, fee);
+            let result = finalize_fee_transition(state, store, &stack, fee);
             finish!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
             // Return the result.
             result

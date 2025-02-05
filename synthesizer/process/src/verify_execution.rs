@@ -195,7 +195,8 @@ impl<N: Network> Process<N> {
         };
 
         // Retrieve the adress belonging to the parent.
-        let parent_address = self.get_stack(parent)?.program_address();
+        let stack = self.get_stack(parent)?;
+        let parent_address = stack.program_address();
 
         // Compute the x- and y-coordinate of `parent`.
         let (parent_x, parent_y) = parent_address.to_xy_coordinates();

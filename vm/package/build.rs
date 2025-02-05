@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use snarkvm_synthesizer::program::StackProgram;
 
 use snarkvm_utilities::DeserializeExt;
 
@@ -181,7 +182,7 @@ impl<N: Network> Package<N> {
         let imported_programs = program
             .imports()
             .keys()
-            .map(|program_id| process.get_program(program_id).cloned())
+            .map(|program_id| process.get_stack(program_id).map(|stack| stack.program().clone()))
             .collect::<Result<Vec<_>>>()?;
 
         // Synthesize each proving and verifying key.
@@ -220,18 +221,24 @@ impl<N: Network> Package<N> {
         // Load each function circuit.
         for function_name in program.functions().keys() {
             // Retrieve the program.
-            let program = process.get_program(program_id)?;
+            let stack = process.get_stack(program_id)?;
+            let program = stack.program();
             // Retrieve the function from the program.
             let function = program.get_function(function_name)?;
             // Save all the prover and verifier files for any function calls that are made.
             for instruction in function.instructions() {
                 if let Instruction::Call(call) = instruction {
-                    // Retrieve the program and resource.
-                    let (program, resource) = match call.operator() {
+                    // Get the external stack and resource.
+                    let (external_stack, resource) = match call.operator() {
                         CallOperator::Locator(locator) => {
-                            (process.get_program(locator.program_id())?, locator.resource())
+                            (Some(process.get_stack(locator.program_id())?), locator.resource())
                         }
-                        CallOperator::Resource(resource) => (program, resource),
+                        CallOperator::Resource(resource) => (None, resource),
+                    };
+                    // Retrieve the program.
+                    let program = match &external_stack {
+                        Some(external_stack) => external_stack.program(),
+                        None => program,
                     };
                     // If this is a function call, save its corresponding prover and verifier files.
                     if program.contains_function(resource) {

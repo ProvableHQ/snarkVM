@@ -22,7 +22,8 @@ impl<N: Network> Stack<N> {
         // Get the new program ID.
         let program_id = program.id();
         // Get the old program.
-        let old_program = process.get_stack(program.id())?.program();
+        let stack = process.get_stack(program_id)?;
+        let old_program = stack.program();
         // Ensure the program ID matches.
         ensure!(old_program.id() == program.id(), "Cannot update '{program_id}' with different program ID");
 

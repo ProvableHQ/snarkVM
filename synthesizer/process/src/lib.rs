@@ -79,7 +79,7 @@ pub struct Process<N: Network> {
     /// The universal SRS.
     universal_srs: Arc<UniversalSRS<N>>,
     /// The mapping of program IDs to stacks.
-    stacks: Arc<IndexMap<ProgramID<N>, Arc<Stack<N>>>>,
+    stacks: Arc<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
 }
 
 impl<N: Network> Process<N> {
@@ -89,7 +89,8 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process:setup");
 
         // Initialize the process.
-        let mut process = Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: Arc::new(IndexMap::new()) };
+        let mut process =
+            Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: Arc::new(RwLock::new(IndexMap::new())) };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -137,11 +138,10 @@ impl<N: Network> Process<N> {
     pub fn add_stack(&mut self, stack: Stack<N>) -> Result<()> {
         // Get the program ID.
         let program_id = *stack.program_id();
-        // Add the stack to the process.
-        Arc::get_mut(&mut self.stacks)
-            .ok_or_else(|| anyhow!("Failed to add stack"))?
-            .insert(program_id, Arc::new(stack));
-
+        // Acquire the write lock.
+        let mut stacks = self.stacks.write();
+        // Insert the stack into the process, replacing the existing stack if it exists.
+        stacks.insert(program_id, Arc::new(stack));
         Ok(())
     }
 }
@@ -153,7 +153,8 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load");
 
         // Initialize the process.
-        let mut process = Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: Arc::new(IndexMap::new()) };
+        let mut process =
+            Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: Arc::new(RwLock::new(IndexMap::new())) };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -194,7 +195,8 @@ impl<N: Network> Process<N> {
     #[cfg(feature = "wasm")]
     pub fn load_web() -> Result<Self> {
         // Initialize the process.
-        let mut process = Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: Arc::new(IndexMap::new()) };
+        let mut process =
+            Self { universal_srs: Arc::new(UniversalSRS::load()?), stacks: Arc::new(RwLock::new(IndexMap::new())) };
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
@@ -221,26 +223,22 @@ impl<N: Network> Process<N> {
     /// Returns `true` if the process contains the program with the given ID.
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
-        self.stacks.contains_key(program_id)
+        self.stacks.read().contains_key(program_id)
     }
 
     /// Returns the stack for the given program ID.
     #[inline]
-    pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<&Arc<Stack<N>>> {
+    pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<Arc<Stack<N>>> {
         // Prepare the program ID.
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
+        // Acquire the read lock.
+        let stacks = self.stacks.read();
         // Retrieve the stack.
-        let stack = self.stacks.get(&program_id).ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?;
+        let stack = stacks.get(&program_id).ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?;
         // Ensure the program ID matches.
         ensure!(stack.program_id() == &program_id, "Expected program '{}', found '{program_id}'", stack.program_id());
         // Return the stack.
-        Ok(stack)
-    }
-
-    /// Returns the program for the given program ID.
-    #[inline]
-    pub fn get_program(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<&Program<N>> {
-        Ok(self.get_stack(program_id)?.program())
+        Ok(stack.clone())
     }
 
     /// Returns the proving key for the given program ID and function name.

@@ -97,7 +97,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub fn from(store: ConsensusStore<N, C>) -> Result<Self> {
         // Initialize a new process.
+        println!("Initializing new process");
         let mut process = Process::load()?;
+        println!("Finished initializing new process");
 
         // Initialize the store for 'credits.aleo'.
         let credits = Program::<N>::credits()?;
@@ -180,6 +182,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             for (program_id, deployment) in deployments.iter().flatten() {
                 // Load the deployment if it does not exist in the process yet.
+                println!("Loading: {program_id}");
                 if !process.contains_program(program_id) {
                     process.load_deployment(deployment)?;
                 }
