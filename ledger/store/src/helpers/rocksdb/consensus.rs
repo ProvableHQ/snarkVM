@@ -22,6 +22,8 @@ use crate::{
 use console::prelude::*;
 
 use aleo_std_storage::StorageMode;
+#[cfg(any(test, feature = "test"))]
+use std::sync::Arc;
 
 /// An RocksDB consensus storage.
 #[derive(Clone)]
@@ -30,6 +32,9 @@ pub struct ConsensusDB<N: Network> {
     finalize_store: FinalizeStore<N, FinalizeDB<N>>,
     /// The block store.
     block_store: BlockStore<N, BlockDB<N>>,
+    /// A test-only instance of TempDir which is cleaned up afterwards.
+    #[cfg(any(test, feature = "test"))]
+    _temp_dir: Arc<tempfile::TempDir>,
 }
 
 #[rustfmt::skip]
@@ -40,6 +45,7 @@ impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {
     type TransitionStorage = TransitionDB<N>;
 
     /// Initializes the consensus storage.
+    #[cfg(not(any(test, feature = "test")))]
     fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
         // Initialize the finalize store.
         let finalize_store = FinalizeStore::<N, FinalizeDB<N>>::open(storage.clone())?;
@@ -49,6 +55,25 @@ impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {
         Ok(Self {
             finalize_store,
             block_store,
+        })
+    }
+
+    /// Initializes a test-only consensus storage.
+    #[cfg(any(test, feature = "test"))]
+    fn open<S: Clone + Into<StorageMode>>(_storage: S) -> Result<Self> {
+        // Overwrite any given storage mode with a path to a temporary directory.
+        let temp_dir = Arc::new(tempfile::TempDir::with_prefix("snarkos_test_")?);
+        let storage = StorageMode::Custom(temp_dir.path().to_owned());
+
+        // Initialize the finalize store.
+        let finalize_store = FinalizeStore::<N, FinalizeDB<N>>::open(storage.clone())?;
+        // Initialize the block store.
+        let block_store = BlockStore::<N, BlockDB<N>>::open(storage)?;
+        // Return the consensus storage.
+        Ok(Self {
+            finalize_store,
+            block_store,
+            _temp_dir: temp_dir,
         })
     }
 

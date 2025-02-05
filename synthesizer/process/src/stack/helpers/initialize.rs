@@ -36,16 +36,18 @@ impl<N: Network> Stack<N> {
 
         // Add all the imports into the stack.
         for import in program.imports().keys() {
-            // Ensure the program imports all exist in the process already.
+            // Ensure the program imports all exist in the process or storage already.
             if !process.contains_program(import) {
                 bail!("Cannot add program '{}' because its import '{import}' must be added first", program.id())
             }
             // Retrieve the external stack for the import program ID.
             let external_stack = process.get_stack(import)?;
+            // Determine the external program depth.
+            let external_stack_program_depth = external_stack.program_depth;
             // Add the external stack to the stack.
-            stack.insert_external_stack(external_stack.clone())?;
+            stack.insert_external_stack(external_stack)?;
             // Update the program depth, checking that it does not exceed the maximum call depth.
-            stack.program_depth = std::cmp::max(stack.program_depth, external_stack.program_depth() + 1);
+            stack.program_depth = std::cmp::max(stack.program_depth, external_stack_program_depth + 1);
             ensure!(
                 stack.program_depth <= N::MAX_PROGRAM_DEPTH,
                 "Program depth exceeds the maximum allowed call depth"

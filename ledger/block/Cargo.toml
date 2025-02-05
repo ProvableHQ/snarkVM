@@ -34,7 +34,7 @@ wasm = [
   "synthesizer-program/wasm",
   "synthesizer-snark/wasm"
 ]
-test = [ ]
+test = [ "console/test" ]
 
 [dependencies.console]
 package = "snarkvm-console"

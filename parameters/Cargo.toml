@@ -27,6 +27,7 @@ edition = "2021"
 default = [ "colored", "remote" ]
 no_std_out = [ ]
 remote = [ "curl" ]
+rocks = [ "snarkvm-ledger-store/rocks" ]
 wasm = [ "encoding", "js-sys", "web-sys" ]
 
 [dependencies.snarkvm-curves]

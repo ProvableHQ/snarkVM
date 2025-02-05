@@ -78,6 +78,11 @@ use time::OffsetDateTime;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
+#[cfg(not(feature = "rocks"))]
+use ledger_store::helpers::memory::ConsensusMemory;
+#[cfg(feature = "rocks")]
+use ledger_store::helpers::rocksdb::ConsensusDB;
+
 pub type RecordMap<N> = IndexMap<Field<N>, Record<N, Plaintext<N>>>;
 
 #[derive(Copy, Clone, Debug)]
@@ -108,93 +113,111 @@ pub struct Ledger<N: Network, C: ConsensusStorage<N>> {
     current_block: Arc<RwLock<Block<N>>>,
 }
 
+macro_rules! impl_load {
+    ($store_type:ty) => {
+        impl<N: Network> Ledger<N, $store_type> {
+            /// Loads the ledger from storage.
+            pub fn load(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
+                let timer = timer!("Ledger::load");
+
+                // Retrieve the genesis hash.
+                let genesis_hash = genesis_block.hash();
+                // Initialize the ledger.
+                let ledger = Self::load_unchecked(genesis_block, storage_mode)?;
+
+                // Ensure the ledger contains the correct genesis block.
+                if !ledger.contains_block_hash(&genesis_hash)? {
+                    bail!("Incorrect genesis block (run 'snarkos clean' and try again)")
+                }
+
+                // Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
+                const NUM_BLOCKS: usize = 10;
+                // Retrieve the latest height.
+                let latest_height = ledger.current_block.read().height();
+                debug_assert_eq!(
+                    latest_height,
+                    ledger.vm.block_store().max_height().unwrap(),
+                    "Mismatch in latest height"
+                );
+                // Sample random block heights.
+                let block_heights: Vec<u32> =
+                    (0..=latest_height).choose_multiple(&mut OsRng, (latest_height as usize).min(NUM_BLOCKS));
+                cfg_into_iter!(block_heights).try_for_each(|height| {
+                    ledger.get_block(height)?;
+                    Ok::<_, Error>(())
+                })?;
+                lap!(timer, "Check existence of {NUM_BLOCKS} random blocks");
+
+                finish!(timer);
+                Ok(ledger)
+            }
+
+            /// Loads the ledger from storage, without performing integrity checks.
+            pub fn load_unchecked(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
+                let timer = timer!("Ledger::load_unchecked");
+
+                info!("Loading the ledger from storage...");
+                // Initialize the consensus store.
+                let store = match ConsensusStore::<N, _>::open(storage_mode) {
+                    Ok(store) => store,
+                    Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
+                };
+                lap!(timer, "Load consensus store");
+
+                // Initialize a new VM.
+                let vm = VM::from(store)?;
+                lap!(timer, "Initialize a new VM");
+
+                // Retrieve the current committee.
+                let current_committee = vm.finalize_store().committee_store().current_committee().ok();
+
+                // Initialize the ledger.
+                let mut ledger = Self {
+                    vm,
+                    genesis_block: genesis_block.clone(),
+                    current_epoch_hash: Default::default(),
+                    current_committee: Arc::new(RwLock::new(current_committee)),
+                    current_block: Arc::new(RwLock::new(genesis_block.clone())),
+                };
+
+                // If the block store is empty, initialize the genesis block.
+                if ledger.vm.block_store().max_height().is_none() {
+                    // Add the genesis block.
+                    ledger.advance_to_next_block(&genesis_block)?;
+                }
+                lap!(timer, "Initialize genesis");
+
+                // Retrieve the latest height.
+                let latest_height = ledger
+                    .vm
+                    .block_store()
+                    .max_height()
+                    .ok_or_else(|| anyhow!("Failed to load blocks from the ledger"))?;
+                // Fetch the latest block.
+                let block = ledger
+                    .get_block(latest_height)
+                    .map_err(|_| anyhow!("Failed to load block {latest_height} from the ledger"))?;
+
+                // Set the current block.
+                ledger.current_block = Arc::new(RwLock::new(block));
+                // Set the current committee (and ensures the latest committee exists).
+                ledger.current_committee = Arc::new(RwLock::new(Some(ledger.latest_committee()?)));
+                // Set the current epoch hash.
+                ledger.current_epoch_hash = Arc::new(RwLock::new(Some(ledger.get_epoch_hash(latest_height)?)));
+
+                finish!(timer, "Initialize ledger");
+                Ok(ledger)
+            }
+        }
+    };
+}
+
+#[cfg(feature = "rocks")]
+impl_load!(ConsensusDB<N>);
+#[cfg(not(feature = "rocks"))]
+impl_load!(ConsensusMemory<N>);
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
-    /// Loads the ledger from storage.
-    pub fn load(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
-        let timer = timer!("Ledger::load");
-
-        // Retrieve the genesis hash.
-        let genesis_hash = genesis_block.hash();
-        // Initialize the ledger.
-        let ledger = Self::load_unchecked(genesis_block, storage_mode)?;
-
-        // Ensure the ledger contains the correct genesis block.
-        if !ledger.contains_block_hash(&genesis_hash)? {
-            bail!("Incorrect genesis block (run 'snarkos clean' and try again)")
-        }
-
-        // Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
-        const NUM_BLOCKS: usize = 10;
-        // Retrieve the latest height.
-        let latest_height = ledger.current_block.read().height();
-        debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
-        // Sample random block heights.
-        let block_heights: Vec<u32> =
-            (0..=latest_height).choose_multiple(&mut OsRng, (latest_height as usize).min(NUM_BLOCKS));
-        cfg_into_iter!(block_heights).try_for_each(|height| {
-            ledger.get_block(height)?;
-            Ok::<_, Error>(())
-        })?;
-        lap!(timer, "Check existence of {NUM_BLOCKS} random blocks");
-
-        finish!(timer);
-        Ok(ledger)
-    }
-
-    /// Loads the ledger from storage, without performing integrity checks.
-    pub fn load_unchecked(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
-        let timer = timer!("Ledger::load_unchecked");
-
-        info!("Loading the ledger from storage...");
-        // Initialize the consensus store.
-        let store = match ConsensusStore::<N, C>::open(storage_mode) {
-            Ok(store) => store,
-            Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
-        };
-        lap!(timer, "Load consensus store");
-
-        // Initialize a new VM.
-        let vm = VM::from(store)?;
-        lap!(timer, "Initialize a new VM");
-
-        // Retrieve the current committee.
-        let current_committee = vm.finalize_store().committee_store().current_committee().ok();
-
-        // Initialize the ledger.
-        let mut ledger = Self {
-            vm,
-            genesis_block: genesis_block.clone(),
-            current_epoch_hash: Default::default(),
-            current_committee: Arc::new(RwLock::new(current_committee)),
-            current_block: Arc::new(RwLock::new(genesis_block.clone())),
-        };
-
-        // If the block store is empty, initialize the genesis block.
-        if ledger.vm.block_store().max_height().is_none() {
-            // Add the genesis block.
-            ledger.advance_to_next_block(&genesis_block)?;
-        }
-        lap!(timer, "Initialize genesis");
-
-        // Retrieve the latest height.
-        let latest_height =
-            ledger.vm.block_store().max_height().ok_or_else(|| anyhow!("Failed to load blocks from the ledger"))?;
-        // Fetch the latest block.
-        let block = ledger
-            .get_block(latest_height)
-            .map_err(|_| anyhow!("Failed to load block {latest_height} from the ledger"))?;
-
-        // Set the current block.
-        ledger.current_block = Arc::new(RwLock::new(block));
-        // Set the current committee (and ensures the latest committee exists).
-        ledger.current_committee = Arc::new(RwLock::new(Some(ledger.latest_committee()?)));
-        // Set the current epoch hash.
-        ledger.current_epoch_hash = Arc::new(RwLock::new(Some(ledger.get_epoch_hash(latest_height)?)));
-
-        finish!(timer, "Initialize ledger");
-        Ok(ledger)
-    }
-
     /// Returns the VM.
     pub const fn vm(&self) -> &VM<N, C> {
         &self.vm

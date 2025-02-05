@@ -62,20 +62,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         })
     }
 
-    /// Initializes the test-variant of the storage.
-    #[cfg(any(test, feature = "test"))]
-    fn open_testing(temp_dir: std::path::PathBuf, dev: Option<u16>) -> Result<Self> {
-        // Initialize the committee store.
-        let committee_store = CommitteeStore::<N, CommitteeDB<N>>::open_testing(temp_dir.clone(), dev)?;
-        // Return the finalize storage.
-        Ok(Self {
-            committee_store,
-            program_id_map: rocksdb::RocksDB::open_map_testing(temp_dir.clone(), dev, MapID::Program(ProgramMap::ProgramID))?,
-            key_value_map: rocksdb::RocksDB::open_nested_map_testing(temp_dir, dev, MapID::Program(ProgramMap::KeyValueID))?,
-            storage_mode: dev.into(),
-        })
-    }
-
     /// Returns the committee store.
     fn committee_store(&self) -> &CommitteeStore<N, Self::CommitteeStorage> {
         &self.committee_store
@@ -123,17 +109,6 @@ impl<N: Network> CommitteeStorage<N> for CommitteeDB<N> {
             round_to_height_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Committee(CommitteeMap::RoundToHeight))?,
             committee_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Committee(CommitteeMap::Committee))?,
             storage_mode: storage.into(),
-        })
-    }
-
-    /// Initializes the test-variant of the storage.
-    #[cfg(any(test, feature = "test"))]
-    fn open_testing(temp_dir: std::path::PathBuf, dev: Option<u16>) -> Result<Self> {
-        Ok(Self {
-            current_round_map: rocksdb::RocksDB::open_map_testing(temp_dir.clone(), dev, MapID::Committee(CommitteeMap::CurrentRound))?,
-            round_to_height_map: rocksdb::RocksDB::open_map_testing(temp_dir.clone(), dev, MapID::Committee(CommitteeMap::RoundToHeight))?,
-            committee_map: rocksdb::RocksDB::open_map_testing(temp_dir, dev, MapID::Committee(CommitteeMap::Committee))?,
-            storage_mode: dev.into(),
         })
     }
 

@@ -82,10 +82,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Initializes the program state storage.
     fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self>;
 
-    /// Initializes the test-variant of the storage.
-    #[cfg(any(test, feature = "test"))]
-    fn open_testing(temp_dir: std::path::PathBuf, dev: Option<u16>) -> Result<Self>;
-
     /// Returns the committee storage.
     fn committee_store(&self) -> &CommitteeStore<N, Self::CommitteeStorage>;
     /// Returns the program ID map.
@@ -539,12 +535,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         Self::from(P::open(storage)?)
     }
 
-    /// Initializes the test-variant of the storage.
-    #[cfg(any(test, feature = "test"))]
-    pub fn open_testing(temp_dir: std::path::PathBuf, dev: Option<u16>) -> Result<Self> {
-        Self::from(P::open_testing(temp_dir, dev)?)
-    }
-
     /// Initializes a finalize store from storage.
     pub fn from(storage: P) -> Result<Self> {
         // Return the finalize store.
@@ -773,6 +763,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 mod tests {
     use super::*;
     use crate::helpers::memory::FinalizeMemory;
+    #[cfg(feature = "rocks")]
+    use crate::{ConsensusStore, consensus::ConsensusStorage};
     use console::{network::MainnetV0, program::Literal, types::U64};
 
     type CurrentNetwork = MainnetV0;
@@ -1298,13 +1290,15 @@ mod tests {
             FinalizeStore::from(program_memory).unwrap()
         };
 
-        // Initialize a new finalize store.
+        // Initialize a new finalize store; it is done via the consensus store, as that one
+        // is the primary storage object, and it has a dedicated test version.
         #[cfg(feature = "rocks")]
-        let finalize_store = {
-            let temp_dir = tempfile::tempdir().expect("Failed to open temporary directory").into_path();
-            let program_rocksdb = crate::helpers::rocksdb::FinalizeDB::open_testing(temp_dir, None).unwrap();
-            FinalizeStore::from(program_rocksdb).unwrap()
+        let consensus_store = {
+            let consensus_db = crate::helpers::rocksdb::ConsensusDB::open(None).unwrap();
+            ConsensusStore::from(consensus_db)
         };
+        #[cfg(feature = "rocks")]
+        let finalize_store = consensus_store.finalize_store();
 
         // Now, initialize the mapping.
         let timer = std::time::Instant::now();

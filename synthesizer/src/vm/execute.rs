@@ -220,18 +220,21 @@ mod tests {
         types::Field,
     };
     use ledger_block::Transition;
-    use ledger_store::helpers::memory::ConsensusMemory;
     use synthesizer_process::{ConsensusFeeVersion, cost_per_command, execution_cost_v2};
     use synthesizer_program::StackProgram;
 
     use indexmap::IndexMap;
 
     type CurrentNetwork = MainnetV0;
+    #[cfg(not(feature = "rocks"))]
+    type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    #[cfg(feature = "rocks")]
+    type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     fn prepare_vm(
         rng: &mut TestRng,
     ) -> Result<(
-        VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        VM<CurrentNetwork, LedgerType>,
         IndexMap<Field<CurrentNetwork>, Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
     )> {
         // Initialize the genesis block.

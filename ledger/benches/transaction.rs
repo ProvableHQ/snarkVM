@@ -24,16 +24,21 @@ use console::{
     program::{Plaintext, Record, Value},
 };
 use ledger_block::Transition;
-use ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
+use ledger_store::ConsensusStore;
 use synthesizer::{VM, program::Program};
 
 use criterion::Criterion;
 use indexmap::IndexMap;
 
+#[cfg(not(feature = "rocks"))]
+type LedgerType<N> = ledger_store::helpers::memory::ConsensusMemory<N>;
+#[cfg(feature = "rocks")]
+type LedgerType<N> = ledger_store::helpers::rocksdb::ConsensusDB<N>;
+
 fn initialize_vm<R: Rng + CryptoRng>(
     private_key: &PrivateKey<MainnetV0>,
     rng: &mut R,
-) -> (VM<MainnetV0, ConsensusMemory<MainnetV0>>, Vec<Record<MainnetV0, Plaintext<MainnetV0>>>) {
+) -> (VM<MainnetV0, LedgerType<MainnetV0>>, Vec<Record<MainnetV0, Plaintext<MainnetV0>>>) {
     // Initialize the VM.
     let vm = VM::from(ConsensusStore::open(None).unwrap()).unwrap();
 

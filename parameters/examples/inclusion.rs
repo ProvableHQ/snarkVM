@@ -22,7 +22,13 @@ use snarkvm_console::{
     program::{Plaintext, Record, StatePath},
     types::Field,
 };
-use snarkvm_ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
+use snarkvm_ledger_store::ConsensusStore;
+
+#[cfg(not(feature = "rocks"))]
+type LedgerType<N> = snarkvm_ledger_store::helpers::memory::ConsensusMemory<N>;
+#[cfg(feature = "rocks")]
+type LedgerType<N> = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<N>;
+
 use snarkvm_synthesizer::{VM, process::InclusionAssignment, snark::UniversalSRS};
 
 use anyhow::{Result, anyhow};
@@ -70,7 +76,7 @@ fn write_metadata(filename: &str, metadata: &Value) -> Result<()> {
 #[allow(clippy::type_complexity)]
 pub fn sample_assignment<N: Network, A: Aleo<Network = N>>() -> Result<(Assignment<N::Field>, StatePath<N>, Field<N>)> {
     // Initialize the consensus store.
-    let store = ConsensusStore::<N, ConsensusMemory<N>>::open(None)?;
+    let store = ConsensusStore::<N, LedgerType<N>>::open(None)?;
     // Initialize a new VM.
     let vm = VM::from(store)?;
 

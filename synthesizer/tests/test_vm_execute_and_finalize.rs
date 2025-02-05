@@ -31,7 +31,7 @@ use ledger_block::{
     Transactions,
     Transition,
 };
-use ledger_store::{ConsensusStorage, ConsensusStore, helpers::memory::ConsensusMemory};
+use ledger_store::{ConsensusStorage, ConsensusStore};
 use snarkvm_synthesizer::{VM, program::FinalizeOperation};
 use synthesizer_program::FinalizeGlobalState;
 
@@ -40,6 +40,11 @@ use console::account::Address;
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use utilities::*;
+
+#[cfg(not(feature = "rocks"))]
+type LedgerType<N> = ledger_store::helpers::memory::ConsensusMemory<N>;
+#[cfg(feature = "rocks")]
+type LedgerType<N> = ledger_store::helpers::rocksdb::ConsensusDB<N>;
 
 #[test]
 fn test_vm_execute_and_finalize() {
@@ -365,10 +370,9 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
 fn initialize_vm<R: Rng + CryptoRng>(
     private_key: &PrivateKey<CurrentNetwork>,
     rng: &mut R,
-) -> (VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>, Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>) {
+) -> (VM<CurrentNetwork, LedgerType<CurrentNetwork>>, Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>) {
     // Initialize a VM.
-    let vm: VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>> =
-        VM::from(ConsensusStore::open(None).unwrap()).unwrap();
+    let vm: VM<CurrentNetwork, LedgerType<CurrentNetwork>> = VM::from(ConsensusStore::open(None).unwrap()).unwrap();
 
     // Initialize the genesis block.
     let genesis = vm.genesis_beacon(private_key, rng).unwrap();

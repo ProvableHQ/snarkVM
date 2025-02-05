@@ -16,6 +16,9 @@ parameters:
   twoxlarge:
     type: string
     default: 2xlarge
+  twoxlargeplus:
+    type: string
+    default: 2xlarge+
 
 orbs:
   windows: circleci/windows@5.0
@@ -503,10 +506,10 @@ jobs:
   ledger-with-rocksdb:
     docker:
       - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.medium >>
+    resource_class: << pipeline.parameters.large >>
     steps:
       - run_serial:
-          flags: --features=rocks
+          flags: --features=rocks,test -- --test-threads=2
           workspace_member: ledger
           cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-with-rocksdb-cache
 
@@ -643,7 +646,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: --features=rocks
+          flags: --features=rocks,test
           workspace_member: ledger/store
           cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-store-cache
 
@@ -679,10 +682,10 @@ jobs:
   synthesizer:
     docker:
       - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.twoxlarge >>
+    resource_class: << pipeline.parameters.twoxlargeplus >>
     steps:
       - run_serial:
-          flags: --lib --bins
+          flags: --lib --bins -- --test-threads=1
           workspace_member: synthesizer
           cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-cache
 
@@ -692,7 +695,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: -- --ignored test_deployment_synthesis_overload test_deep_nested_execution_cost
+          flags: -- --ignored test_deployment_synthesis_overload test_deep_nested_execution_cost --test-threads=1
           workspace_member: synthesizer
           cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-mem-heavy-cache
 
@@ -722,7 +725,7 @@ jobs:
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
-          flags: --features=rocks
+          flags: --features=rocks,test
           workspace_member: synthesizer/process
           cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-process-cache
 
@@ -955,8 +958,7 @@ workflows:
       - curves
       - fields
       - ledger
-# TODO (howardwu) - Implement `open_testing` on all storage, update to `CurrentConsensusStore::open_testing`, then re-enable.
-#      - ledger-with-rocksdb
+      - ledger-with-rocksdb
       - ledger-with-valid-solutions
       - ledger-authority
       - ledger-block

@@ -61,7 +61,7 @@ impl<N: Network> Package<N> {
                 // Retrieve the program and resource.
                 let (program, resource) = match call.operator() {
                     CallOperator::Locator(locator) => (process.get_program(locator.program_id())?, locator.resource()),
-                    CallOperator::Resource(resource) => (program, resource),
+                    CallOperator::Resource(resource) => (program.clone(), resource),
                 };
                 // If this is a function call, save its corresponding prover and verifier files.
                 if program.contains_function(resource) {

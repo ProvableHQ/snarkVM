@@ -37,7 +37,7 @@ wasm = [
   "synthesizer-program/wasm",
   "synthesizer-snark/wasm"
 ]
-test = [ ]
+test = [ "console/test", "ledger-block/test", "dep:tempfile" ]
 
 [dependencies.console]
 package = "snarkvm-console"
@@ -123,6 +123,10 @@ default-features = false
 features = [ "write" ]
 optional = true
 
+[dependencies.tempfile]
+version = "3.8"
+optional = true
+
 [dependencies.tracing]
 version = "0.1"
 optional = true
@@ -135,12 +139,6 @@ features = [ "test-helpers" ]
 [dev-dependencies.ledger-test-helpers]
 package = "snarkvm-ledger-test-helpers"
 path = "../../ledger/test-helpers"
-
-[dev-dependencies.serial_test]
-version = "2"
-
-[dev-dependencies.tempfile]
-version = "3.8"
 
 [dev-dependencies.tracing-test]
 version = "0.2"

@@ -39,7 +39,7 @@ async = [
   "synthesizer/async"
 ]
 metrics = [ "ledger-committee/metrics" ]
-rocks = [ "ledger-store/rocks" ]
+rocks = [ "ledger-store/rocks", "synthesizer/rocks" ]
 serial = [
   "console/serial",
   "ledger-authority/serial",
@@ -51,7 +51,7 @@ serial = [
   "ledger-store/serial",
   "synthesizer/serial"
 ]
-test = [ "console/test", "ledger-block/test", "ledger-store/test" ]
+test = [ "console/test", "ledger-block/test", "ledger-store/test", "synthesizer/test" ]
 test-helpers = [
   "ledger-test-helpers",
   "ledger-committee/test-helpers",

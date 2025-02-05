@@ -54,7 +54,6 @@ use ledger_store::{
     ConsensusStore,
     FinalizeMode,
     FinalizeStore,
-    TransactionStorage,
     TransactionStore,
     TransitionStore,
     atomic_finalize,
@@ -74,6 +73,11 @@ use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
+#[cfg(not(feature = "rocks"))]
+use ledger_store::helpers::memory::ConsensusMemory;
+#[cfg(feature = "rocks")]
+use ledger_store::helpers::rocksdb::ConsensusDB;
+
 #[derive(Clone)]
 pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// The process.
@@ -92,114 +96,48 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     block_lock: Arc<Mutex<()>>,
 }
 
-impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
-    /// Initializes the VM from storage.
-    #[inline]
-    pub fn from(store: ConsensusStore<N, C>) -> Result<Self> {
-        // Initialize a new process.
-        let mut process = Process::load()?;
+macro_rules! impl_from_store {
+    ($store_type:ty) => {
+        impl<N: Network> VM<N, $store_type> {
+            /// Initializes the VM from storage.
+            #[inline]
+            pub fn from(store: ConsensusStore<N, $store_type>) -> Result<Self> {
+                // Initialize a new process.
+                let process = Process::load_from_store(store.clone())?;
 
-        // Initialize the store for 'credits.aleo'.
-        let credits = Program::<N>::credits()?;
-        for mapping in credits.mappings().values() {
-            // Ensure that all mappings are initialized.
-            if !store.finalize_store().contains_mapping_confirmed(credits.id(), mapping.name())? {
-                // Initialize the mappings for 'credits.aleo'.
-                store.finalize_store().initialize_mapping(*credits.id(), *mapping.name())?;
-            }
-        }
-
-        // A helper function to retrieve all the deployments.
-        fn load_deployment_and_imports<N: Network, T: TransactionStorage<N>>(
-            process: &Process<N>,
-            transaction_store: &TransactionStore<N, T>,
-            transaction_id: N::TransactionID,
-        ) -> Result<Vec<(ProgramID<N>, Deployment<N>)>> {
-            // Retrieve the deployment from the transaction ID.
-            let deployment = match transaction_store.get_deployment(&transaction_id)? {
-                Some(deployment) => deployment,
-                None => bail!("Deployment transaction '{transaction_id}' is not found in storage."),
-            };
-
-            // Fetch the program from the deployment.
-            let program = deployment.program();
-            let program_id = program.id();
-
-            // Return early if the program is already loaded.
-            if process.contains_program(program_id) {
-                return Ok(vec![]);
-            }
-
-            // Prepare a vector for the deployments.
-            let mut deployments = vec![];
-
-            // Iterate through the program imports.
-            for import_program_id in program.imports().keys() {
-                // Add the imports to the process if does not exist yet.
-                if !process.contains_program(import_program_id) {
-                    // Fetch the deployment transaction ID.
-                    let Some(transaction_id) =
-                        transaction_store.deployment_store().find_transaction_id_from_program_id(import_program_id)?
-                    else {
-                        bail!("Transaction ID for '{program_id}' is not found in storage.");
-                    };
-
-                    // Add the deployment and its imports found recursively.
-                    deployments.extend_from_slice(&load_deployment_and_imports(
-                        process,
-                        transaction_store,
-                        transaction_id,
-                    )?);
+                // Initialize the store for 'credits.aleo'.
+                let credits = Program::<N>::credits()?;
+                for mapping in credits.mappings().values() {
+                    // Ensure that all mappings are initialized.
+                    if !store.finalize_store().contains_mapping_confirmed(credits.id(), mapping.name())? {
+                        // Initialize the mappings for 'credits.aleo'.
+                        store.finalize_store().initialize_mapping(*credits.id(), *mapping.name())?;
+                    }
                 }
-            }
 
-            // Once all the imports have been included, add the parent deployment.
-            deployments.push((*program_id, deployment));
-
-            Ok(deployments)
-        }
-
-        // Retrieve the transaction store.
-        let transaction_store = store.transaction_store();
-        // Retrieve the list of deployment transaction IDs.
-        let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
-        // Load the deployments from the store.
-        for (i, chunk) in deployment_ids.chunks(256).enumerate() {
-            debug!(
-                "Loading deployments {}-{} (of {})...",
-                i * 256,
-                ((i + 1) * 256).min(deployment_ids.len()),
-                deployment_ids.len()
-            );
-            let deployments = cfg_iter!(chunk)
-                .map(|transaction_id| {
-                    // Load the deployment and its imports.
-                    load_deployment_and_imports(&process, transaction_store, **transaction_id)
+                // Return the new VM.
+                Ok(Self {
+                    process: Arc::new(RwLock::new(process)),
+                    puzzle: Self::new_puzzle()?,
+                    store,
+                    partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
+                        NonZeroUsize::new(Transactions::<N>::MAX_TRANSACTIONS).unwrap(),
+                    ))),
+                    restrictions: Restrictions::load()?,
+                    atomic_lock: Arc::new(Mutex::new(())),
+                    block_lock: Arc::new(Mutex::new(())),
                 })
-                .collect::<Result<Vec<_>>>()?;
-
-            for (program_id, deployment) in deployments.iter().flatten() {
-                // Load the deployment if it does not exist in the process yet.
-                if !process.contains_program(program_id) {
-                    process.load_deployment(deployment)?;
-                }
             }
         }
+    };
+}
 
-        // Return the new VM.
-        Ok(Self {
-            process: Arc::new(RwLock::new(process)),
-            puzzle: Self::new_puzzle()?,
-            store,
-            partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
-                NonZeroUsize::new(Transactions::<N>::MAX_TRANSACTIONS).unwrap(),
-            ))),
-            restrictions: Restrictions::load()?,
-            atomic_lock: Arc::new(Mutex::new(())),
-            block_lock: Arc::new(Mutex::new(())),
-        })
-    }
+#[cfg(feature = "rocks")]
+impl_from_store!(ConsensusDB<N>);
+#[cfg(not(feature = "rocks"))]
+impl_from_store!(ConsensusMemory<N>);
 
+impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns `true` if a program with the given program ID exists.
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
@@ -471,34 +409,27 @@ pub(crate) mod test_helpers {
         types::Field,
     };
     use ledger_block::{Block, Header, Metadata, Transition};
-    use ledger_store::helpers::memory::ConsensusMemory;
-    #[cfg(feature = "rocks")]
-    use ledger_store::helpers::rocksdb::ConsensusDB;
     use ledger_test_helpers::{large_transaction_program, small_transaction_program};
     use synthesizer_program::Program;
 
     use indexmap::IndexMap;
     use once_cell::sync::OnceCell;
-    #[cfg(feature = "rocks")]
-    use std::path::Path;
     use synthesizer_snark::VerifyingKey;
 
     pub(crate) type CurrentNetwork = MainnetV0;
+    #[cfg(not(feature = "rocks"))]
+    type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    #[cfg(feature = "rocks")]
+    type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     /// Samples a new finalize state.
     pub(crate) fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
         FinalizeGlobalState::from(block_height as u64, block_height, [0u8; 32])
     }
 
-    pub(crate) fn sample_vm() -> VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>> {
+    pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
         // Initialize a new VM.
         VM::from(ConsensusStore::open(None).unwrap()).unwrap()
-    }
-
-    #[cfg(feature = "rocks")]
-    pub(crate) fn sample_vm_rocks(path: &Path) -> VM<CurrentNetwork, ConsensusDB<CurrentNetwork>> {
-        // Initialize a new VM.
-        VM::from(ConsensusStore::open(path.to_owned()).unwrap()).unwrap()
     }
 
     pub(crate) fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
@@ -523,9 +454,7 @@ pub(crate) mod test_helpers {
             .clone()
     }
 
-    pub(crate) fn sample_vm_with_genesis_block(
-        rng: &mut TestRng,
-    ) -> VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>> {
+    pub(crate) fn sample_vm_with_genesis_block(rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
@@ -784,7 +713,7 @@ function compute:
     }
 
     pub fn sample_next_block<R: Rng + CryptoRng>(
-        vm: &VM<MainnetV0, ConsensusMemory<MainnetV0>>,
+        vm: &VM<MainnetV0, LedgerType>,
         private_key: &PrivateKey<MainnetV0>,
         transactions: &[Transaction<MainnetV0>],
         rng: &mut R,
@@ -2564,8 +2493,7 @@ finalize transfer_public_to_private:
         let block2 = sample_next_block(&vm, &genesis_private_key, &[], rng).unwrap();
 
         // Create a new, rocks-based VM shadowing the 1st one.
-        let tempdir = tempfile::tempdir().unwrap();
-        let vm = sample_vm_rocks(tempdir.path());
+        let vm = sample_vm();
         vm.add_next_block(&genesis).unwrap();
         // This time, however, try to insert the 2nd block first, which fails due to height.
         assert!(vm.add_next_block(&block2).is_err());

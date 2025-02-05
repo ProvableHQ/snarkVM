@@ -188,11 +188,11 @@ impl<N: Network> Process<N> {
             None => (Field::one(), *transition.program_id()),
         };
 
-        // Retrieve the adress belonging to the parent.
-        let parent_address = self.get_stack(parent)?.program_address();
+        // Retrieve the stack belonging to the parent.
+        let parent_stack = self.get_stack(parent)?;
 
         // Compute the x- and y-coordinate of `parent`.
-        let (parent_x, parent_y) = parent_address.to_xy_coordinates();
+        let (parent_x, parent_y) = parent_stack.program_address().to_xy_coordinates();
 
         // [Inputs] Construct the verifier inputs to verify the proof.
         let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **transition.tcm(), **transition.scm()];

@@ -241,7 +241,7 @@ pub mod test_helpers {
         let priority_fee_in_microcredits = 1_000;
 
         // Initialize the process.
-        let process = Process::load().unwrap();
+        let process = Process::load_testing_only().unwrap();
         // Authorize the fee.
         let authorization = process
             .authorize_fee_private::<CurrentAleo, _>(
@@ -298,7 +298,7 @@ pub mod test_helpers {
         let priority_fee = 1_000;
 
         // Initialize the process.
-        let process = Process::load().unwrap();
+        let process = Process::load_testing_only().unwrap();
         // Authorize the fee.
         let authorization = process
             .authorize_fee_public::<CurrentAleo, _>(
