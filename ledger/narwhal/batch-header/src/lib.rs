@@ -37,7 +37,7 @@ use rayon::prelude::*;
 #[derive(Clone, PartialEq, Eq)]
 pub struct BatchHeader<N: Network> {
     /// The batch ID, defined as the hash of the author, round number, timestamp, transmission IDs,
-    /// committee ID, previous batch certificate IDs, and last election certificate IDs.
+    /// committee ID, and previous batch certificate IDs.
     batch_id: Field<N>,
     /// The author of the batch.
     author: Address<N>,
