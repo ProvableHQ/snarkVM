@@ -101,6 +101,7 @@ impl<N: Network> Process<N> {
 
     /// Finalizes the execution and fee.
     /// This method assumes the given execution **is valid**.
+    /// TODO: We should specify what valid means here.
     /// This method should **only** be called by `VM::finalize()`.
     #[inline]
     pub fn finalize_execution<P: FinalizeStorage<N>>(

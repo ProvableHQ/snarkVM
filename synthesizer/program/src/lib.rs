@@ -294,7 +294,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// # Errors
     /// This method will halt if the imported program was previously added.
     #[inline]
-    fn add_import(&mut self, import: Import<N>) -> Result<()> {
+    pub fn add_import(&mut self, import: Import<N>) -> Result<()> {
         // Retrieve the imported program name.
         let import_name = *import.name();
 
@@ -328,7 +328,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the mapping name is already in use.
     /// This method will halt if the mapping name is a reserved opcode or keyword.
     #[inline]
-    fn add_mapping(&mut self, mapping: Mapping<N>) -> Result<()> {
+    pub fn add_mapping(&mut self, mapping: Mapping<N>) -> Result<()> {
         // Retrieve the mapping name.
         let mapping_name = *mapping.name();
 
@@ -361,7 +361,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the struct name is a reserved opcode or keyword.
     /// This method will halt if any structs in the struct's members are not already defined.
     #[inline]
-    fn add_struct(&mut self, struct_: StructType<N>) -> Result<()> {
+    pub fn add_struct(&mut self, struct_: StructType<N>) -> Result<()> {
         // Retrieve the struct name.
         let struct_name = *struct_.name();
 
@@ -422,7 +422,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the record name is a reserved opcode or keyword.
     /// This method will halt if any records in the record's members are not already defined.
     #[inline]
-    fn add_record(&mut self, record: RecordType<N>) -> Result<()> {
+    pub fn add_record(&mut self, record: RecordType<N>) -> Result<()> {
         // Retrieve the record name.
         let record_name = *record.name();
 
@@ -485,7 +485,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if an output register does not already exist.
     /// This method will halt if an output type references a non-existent definition.
     #[inline]
-    fn add_closure(&mut self, closure: ClosureCore<N, Instruction>) -> Result<()> {
+    pub fn add_closure(&mut self, closure: ClosureCore<N, Instruction>) -> Result<()> {
         // Retrieve the closure name.
         let closure_name = *closure.name();
 
@@ -533,7 +533,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if an output register does not already exist.
     /// This method will halt if an output type references a non-existent definition.
     #[inline]
-    fn add_function(&mut self, function: FunctionCore<N, Instruction, Command>) -> Result<()> {
+    pub fn add_function(&mut self, function: FunctionCore<N, Instruction, Command>) -> Result<()> {
         // Retrieve the function name.
         let function_name = *function.name();
 
