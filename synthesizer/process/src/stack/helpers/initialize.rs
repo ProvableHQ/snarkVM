@@ -38,6 +38,8 @@ impl<N: Network> Stack<N> {
 
         // Add all the imports into the stack.
         for import in program.imports().keys() {
+            // Ensure that the program does not import itself.
+            ensure!(import != program.id(), "Program cannot import itself");
             // Ensure the program imports all exist in the process already.
             if !process.contains_program(import) {
                 bail!("Cannot add program '{}' because its import '{import}' must be added first", program.id())

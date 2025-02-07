@@ -558,8 +558,7 @@ fn test_add_import_cycle() -> Result<()> {
     // Verify that self-import cycles are not allowed.
     let mut new_program = default_program();
     new_program.add_import(Import::from_str("import basic.aleo;")?)?;
-    process.add_program(&new_program)?;
-    assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
+    assert!(process.add_program(&new_program).is_err());
 
     // Add a program dependent on `basic.aleo`.
     let dependent_program = Program::from_str(
@@ -577,9 +576,10 @@ function foo:
 
     // Update basic.aleo to import dependent.aleo.
     // This is allowed since we do not do cycle detection across programs.
+    let mut new_program = default_program();
     new_program.add_import(Import::from_str("import dependent.aleo;")?)?;
     process.add_program(&new_program)?;
-    assert_eq!(process.get_stack("basic.aleo")?.edition(), 2);
+    assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
 
     // Update basic.aleo's adder to call dependent.aleo/foo.
     new_program.remove_function(&Identifier::from_str("adder")?)?;
@@ -593,7 +593,7 @@ function adder:
     )?;
     new_program.add_function(new_function.clone())?;
     process.add_program(&new_program)?;
-    assert_eq!(process.get_stack("basic.aleo")?.edition(), 3);
+    assert_eq!(process.get_stack("basic.aleo")?.edition(), 2);
 
     Ok(())
 }
