@@ -2576,8 +2576,6 @@ function foo:
     }
 }
 
-
-
 // These tests require the proof targets to be low enough to be able to generate **valid** solutions.
 // This requires the 'test' feature to be enabled for the `console` dependency.
 #[cfg(feature = "test")]

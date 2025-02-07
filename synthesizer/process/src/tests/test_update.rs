@@ -16,7 +16,7 @@
 use crate::Process;
 use console::{
     network::{MainnetV0, prelude::*},
-    program::{Identifier, RecordType, StructType},
+    program::{Identifier, ProgramID, RecordType, StructType},
 };
 use synthesizer_program::{Closure, Function, Import, Mapping, Program, StackProgram};
 
@@ -203,7 +203,7 @@ fn test_add_function() -> Result<()> {
 }
 
 #[test]
-fn test_modify_function() -> Result<()> {
+fn test_modify_function_logic() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
     // Get the default program.
@@ -227,7 +227,25 @@ fn test_modify_function() -> Result<()> {
 }
 
 #[test]
-fn test_modify_finalize() -> Result<()> {
+fn test_modify_function_signature() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Remove the `adder` function and add a new `adder` function.
+    new_program.remove_function(&Identifier::from_str("adder")?)?;
+    // Modify the program to change the signature of the `adder` function.
+    let new_function = Function::from_str(
+        "function adder:input r0 as u16.private;input r1 as u16.private;add r0 r1 into r2;output r2 as u16.private;",
+    )?;
+    new_program.add_function(new_function.clone())?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_modify_finalize_logic() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
     // Get the default program.
@@ -257,6 +275,193 @@ finalize store_data:
     assert_eq!(stack.program().functions().len(), 3);
     let updated_function = stack.program().get_function(&new_function.name())?;
     assert_eq!(updated_function, new_function);
+    Ok(())
+}
+
+#[test]
+fn test_modify_finalize_signature() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Remove the `store_data` function and add a new `store_data` function.
+    new_program.remove_function(&Identifier::from_str("store_data")?)?;
+    let new_function = Function::from_str(
+        r"
+function store_data:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    async store_data 0u16 1u16 into r2;
+    output r2 as basic.aleo/store_data.future;
+
+finalize store_data:
+    input r0 as u16.public;
+    input r1 as u16.public;
+    assert.eq r0 r1;",
+    )?;
+    new_program.add_function(new_function.clone())?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_modify_struct() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Modify the program to add a new struct.
+    new_program.remove_struct(&Identifier::from_str("bundle")?)?;
+    new_program.add_struct(StructType::from_str("struct bundle:first as u8;second as u8;third as u8;")?)?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_modify_record() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Modify the program to add a new record.
+    new_program.remove_record(&Identifier::from_str("data")?)?;
+    new_program.add_record(RecordType::from_str(
+        "record data:owner as address.private;data as bundle.private;counter as u8.private;",
+    )?)?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_modify_mapping() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Modify the program to add a new mapping.
+    new_program.remove_mapping(&Identifier::from_str("onchain")?)?;
+    new_program.add_mapping(Mapping::from_str("mapping onchain:key as u8.public;value as u16.public;")?)?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_modify_closure_logic() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Remove the `sum` closure and add a new `sum` closure.
+    new_program.remove_closure(&Identifier::from_str("sum")?)?;
+    // Modify the `sum` closure to add a new instruction.
+    let new_closure = Closure::from_str(
+        "closure sum:input r0 as u8;input r1 as u8;add r0 r1 into r2;sub r2 r1 into r3;output r3 as u8;",
+    )?;
+    new_program.add_closure(new_closure.clone())?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_modify_closure_signature() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Remove the `sum` closure and add a new `sum` closure.
+    new_program.remove_closure(&Identifier::from_str("sum")?)?;
+    // Modify the `sum` closure to add a new instruction.
+    let new_closure =
+        Closure::from_str("closure sum:input r0 as u16;input r1 as u16;add r0 r1 into r2;output r2 as u16;")?;
+    new_program.add_closure(new_closure.clone())?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_remove_import() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Add a dummy program to the process.
+    let dummy_program = Program::from_str("program dummy.aleo;function foo:")?;
+    process.add_program(&dummy_program)?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Modify the program to remove an import.
+    new_program.remove_import(&ProgramID::from_str("credits.aleo")?)?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_remove_struct() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Modify the program to remove a struct.
+    new_program.remove_struct(&Identifier::from_str("bundle")?)?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_remove_record() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Modify the program to remove a record.
+    new_program.remove_record(&Identifier::from_str("data")?)?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_remove_mapping() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Modify the program to remove a mapping.
+    new_program.remove_mapping(&Identifier::from_str("onchain")?)?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_remove_closure() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Modify the program to remove a closure.
+    new_program.remove_closure(&Identifier::from_str("sum")?)?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_remove_function() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Modify the program to remove a function.
+    new_program.remove_function(&Identifier::from_str("adder")?)?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -295,5 +500,100 @@ function foo:
     assert_eq!(stack.program().functions().len(), 3);
     let updated_function = stack.program().get_function(&new_function.name())?;
     assert_eq!(updated_function, new_function);
+    Ok(())
+}
+
+#[test]
+fn test_add_call_to_async_transition() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Add a program with a non-async transition.
+    let new_program = Program::from_str(
+        r"
+program async_example.aleo;
+
+function foo:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    async foo r0 r1 into r2;
+    add r0 r1 into r3;
+    output r3 as u8.private;
+    output r2 as async_example.aleo/foo.future;
+finalize foo:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    assert.eq r0 r1;",
+    )?;
+    process.add_program(&new_program)?;
+    // Get the default program.
+    let mut new_program = default_program();
+    // Add an import of `non_async.aleo` to the default program.
+    new_program.add_import(Import::from_str("import async_example.aleo;")?)?;
+    // Remove the `adder` function and add a new `adder` function.
+    new_program.remove_function(&Identifier::from_str("adder")?)?;
+    let new_function = Function::from_str(
+        r"
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call async_example.aleo/foo r0 r1 into r2 r3;
+    async adder r3 into r4;
+    output r2 as u8.private;
+    output r4 as basic.aleo/adder.future;
+finalize adder:
+    input r0 as async_example.aleo/foo.future;
+    await r0;",
+    )?;
+    new_program.add_function(new_function.clone())?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_add_import_cycle() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+
+    // Verify that self-import cycles are not allowed.
+    let mut new_program = default_program();
+    new_program.add_import(Import::from_str("import basic.aleo;")?)?;
+    process.add_program(&new_program)?;
+    assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
+
+    // Add a program dependent on `basic.aleo`.
+    let dependent_program = Program::from_str(
+        r"
+import basic.aleo;
+program dependent.aleo;
+function foo:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call basic.aleo/adder r0 r1 into r2;
+    output r2 as u8.private;",
+    )?;
+    process.add_program(&dependent_program)?;
+    assert_eq!(process.get_stack("dependent.aleo")?.edition(), 0);
+
+    // Update basic.aleo to import dependent.aleo.
+    // This is allowed since we do not do cycle detection across programs.
+    new_program.add_import(Import::from_str("import dependent.aleo;")?)?;
+    process.add_program(&new_program)?;
+    assert_eq!(process.get_stack("basic.aleo")?.edition(), 2);
+
+    // Update basic.aleo's adder to call dependent.aleo/foo.
+    new_program.remove_function(&Identifier::from_str("adder")?)?;
+    let new_function = Function::from_str(
+        r"
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call dependent.aleo/foo r0 r1 into r2;
+    output r2 as u8.private;",
+    )?;
+    new_program.add_function(new_function.clone())?;
+    process.add_program(&new_program)?;
+    assert_eq!(process.get_stack("basic.aleo")?.edition(), 3);
+
     Ok(())
 }

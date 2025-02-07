@@ -82,19 +82,19 @@ impl<N: Network> Stack<N> {
                 function.outputs() == new_function.outputs(),
                 "Cannot update '{program_id}' because the outputs of the function '{function_name}' do not match"
             );
-            if let Some(finalize) = function.finalize_logic() {
-                match new_function.finalize_logic() {
-                    Some(new_finalize) => {
-                        ensure!(
-                            finalize.inputs() == new_finalize.inputs(),
-                            "Cannot update '{program_id}' because the finalize inputs to the function '{function_name}' do not match"
-                        );
-                    }
-                    None => {
-                        bail!(
-                            "Cannot update '{program_id}' because the function '{function_name}' is missing a finalize block"
-                        )
-                    }
+            match (function.finalize_logic(), new_function.finalize_logic()) {
+                (None, None) => {} // Do nothing
+                (None, Some(_)) => bail!(
+                    "Cannot update '{program_id}' because the function '{function_name}' should not have a finalize block"
+                ),
+                (Some(_), None) => bail!(
+                    "Cannot update '{program_id}' because the function '{function_name}' should have a finalize block"
+                ),
+                (Some(finalize), Some(new_finalize)) => {
+                    ensure!(
+                        finalize.inputs() == new_finalize.inputs(),
+                        "Cannot update '{program_id}' because the finalize inputs to the function '{function_name}' do not match"
+                    );
                 }
             }
         }
