@@ -75,11 +75,11 @@ impl<N: Network> Stack<N> {
             }
             let new_function = program.get_function(function.name())?;
             ensure!(
-                function.inputs() == new_function.inputs(),
+                function.input_types() == new_function.input_types(),
                 "Cannot update '{program_id}' because the inputs to the function '{function_name}' do not match"
             );
             ensure!(
-                function.outputs() == new_function.outputs(),
+                function.output_types() == new_function.output_types(),
                 "Cannot update '{program_id}' because the outputs of the function '{function_name}' do not match"
             );
             match (function.finalize_logic(), new_function.finalize_logic()) {
@@ -92,13 +92,12 @@ impl<N: Network> Stack<N> {
                 ),
                 (Some(finalize), Some(new_finalize)) => {
                     ensure!(
-                        finalize.inputs() == new_finalize.inputs(),
+                        finalize.input_types() == new_finalize.input_types(),
                         "Cannot update '{program_id}' because the finalize inputs to the function '{function_name}' do not match"
                     );
                 }
             }
         }
-
         Ok(())
     }
 }

@@ -60,6 +60,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             false => self.prepare_for_speculate(&candidate_transactions, rng)?,
         };
 
+        println!("Verification aborted transactions: {:?}", verification_aborted_transactions);
+
         // Performs a **dry-run** over the list of ratifications, solutions, and transactions.
         let (ratifications, confirmed_transactions, speculation_aborted_transactions, ratified_finalize_operations) =
             self.atomic_speculate(
@@ -70,6 +72,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 candidate_solutions,
                 verified_transactions.into_iter(),
             )?;
+
+        println!("Speculation aborted transactions: {:?}", speculation_aborted_transactions);
 
         // Get the aborted transaction ids.
         let verification_aborted_transaction_ids = verification_aborted_transactions.iter().map(|(tx, e)| (tx.id(), e));

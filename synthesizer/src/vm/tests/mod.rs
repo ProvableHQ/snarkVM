@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod test_update;
-mod test_vm;
+mod test_vm_standard;
+mod test_vm_update;
 
 use super::*;
 

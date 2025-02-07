@@ -33,6 +33,7 @@ impl<N: Network> Process<N> {
         deployment: &Deployment<N>,
         fee: &Fee<N>,
     ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>)> {
+        println!("1");
         let timer = timer!("Process::finalize_deployment");
 
         // Compute the program stack.
@@ -50,6 +51,8 @@ impl<N: Network> Process<N> {
             stack.insert_verifying_key(function_name, verifying_key.clone())?;
         }
         lap!(timer, "Insert the verifying keys");
+
+        println!("2");
 
         // Determine which mappings must be initialized.
         let mappings = match deployment.edition().is_zero() {
@@ -93,6 +96,8 @@ impl<N: Network> Process<N> {
                 finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
             }
             finish!(timer, "Initialize the program mappings");
+
+            println!("3");
 
             // Return the stack and finalize operations.
             Ok((stack, finalize_operations))

@@ -80,7 +80,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         &self,
         private_key: &PrivateKey<N>,
         authority: Address<N>,
-        edition: U16<N>,
+        edition: u16,
         program: &Program<N>,
         fee_record: Option<Record<N, Plaintext<N>>>,
         priority_fee_in_microcredits: u64,
@@ -91,17 +91,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let deployment = self.deploy_raw(program, rng)?;
         // Ensure that the deployment edition matches the expected edition.
         ensure!(
-            deployment.edition() == *edition,
+            deployment.edition() == edition,
             "The deployment edition ({}) does not match the expected edition ({})",
             deployment.edition(),
-            *edition
+            edition
         );
         // Ensure the transaction is not empty.
         ensure!(!deployment.program().functions().is_empty(), "Attempted to create an empty transaction deployment");
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id()?;
         // Construct the owner with authority.
-        let owner = ProgramOwner::new_v2(private_key, authority, edition, deployment_id, rng)?;
+        let owner = ProgramOwner::new_v2(private_key, authority, U16::new(edition), deployment_id, rng)?;
 
         // Compute the minimum deployment cost.
         let (minimum_deployment_cost, _) = deployment_cost(&deployment)?;

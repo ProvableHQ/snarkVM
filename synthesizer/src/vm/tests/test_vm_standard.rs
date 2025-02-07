@@ -20,11 +20,11 @@ fn test_multiple_deployments_and_multiple_executions() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key(rng);
     let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
     // Initialize the genesis block.
-    let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+    let genesis = sample_genesis_block(rng);
 
     // Fetch the unspent records.
     let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
@@ -174,7 +174,7 @@ fn test_load_deployments_with_imports() {
     let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM.
-    let vm = crate::vm::test_helpers::sample_vm();
+    let vm = sample_vm();
     // Initialize the genesis block.
     let genesis = vm.genesis_beacon(&caller_private_key, rng).unwrap();
     // Update the VM.
@@ -282,12 +282,12 @@ fn test_multiple_external_calls() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key(rng);
     let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
     let address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the genesis block.
-    let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+    let genesis = sample_genesis_block(rng);
 
     // Fetch the unspent records.
     let records = genesis.transitions().cloned().flat_map(Transition::into_records).take(3).collect::<IndexMap<_, _>>();
@@ -913,7 +913,7 @@ fn test_transfer_public_from_user() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize a recipient.
@@ -921,10 +921,10 @@ fn test_transfer_public_from_user() {
     let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
     // Initialize the genesis block.
-    let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+    let genesis = sample_genesis_block(rng);
 
     // Initialize the VM.
-    let vm = crate::vm::test_helpers::sample_vm();
+    let vm = sample_vm();
 
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
@@ -1004,7 +1004,7 @@ fn test_transfer_public_as_signer_from_user() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize a recipient.
@@ -1012,10 +1012,10 @@ fn test_transfer_public_as_signer_from_user() {
     let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
     // Initialize the genesis block.
-    let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+    let genesis = sample_genesis_block(rng);
 
     // Initialize the VM.
-    let vm = crate::vm::test_helpers::sample_vm();
+    let vm = sample_vm();
 
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
@@ -1095,7 +1095,7 @@ fn transfer_public_from_program() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize a recipient.
@@ -1103,10 +1103,10 @@ fn transfer_public_from_program() {
     let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
     // Initialize the genesis block.
-    let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+    let genesis = sample_genesis_block(rng);
 
     // Initialize the VM.
-    let vm = crate::vm::test_helpers::sample_vm();
+    let vm = sample_vm();
 
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
@@ -1286,7 +1286,7 @@ fn transfer_public_as_signer_from_program() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize a recipient.
@@ -1294,10 +1294,10 @@ fn transfer_public_as_signer_from_program() {
     let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
     // Initialize the genesis block.
-    let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+    let genesis = sample_genesis_block(rng);
 
     // Initialize the VM.
-    let vm = crate::vm::test_helpers::sample_vm();
+    let vm = sample_vm();
 
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
@@ -1421,7 +1421,7 @@ fn test_transfer_public_to_private_from_program() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize a recipient.
@@ -1429,10 +1429,10 @@ fn test_transfer_public_to_private_from_program() {
     let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
     // Initialize the genesis block.
-    let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+    let genesis = sample_genesis_block(rng);
 
     // Initialize the VM.
-    let vm = crate::vm::test_helpers::sample_vm();
+    let vm = sample_vm();
 
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
@@ -1604,13 +1604,13 @@ fn test_large_transaction_is_aborted() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_private_key = sample_genesis_private_key(rng);
 
     // Initialize the genesis block.
-    let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+    let genesis = sample_genesis_block(rng);
 
     // Initialize the VM.
-    let vm = crate::vm::test_helpers::sample_vm();
+    let vm = sample_vm();
 
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
