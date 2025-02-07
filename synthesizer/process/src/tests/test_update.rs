@@ -221,7 +221,7 @@ fn test_modify_function_logic() -> Result<()> {
     // Check that the update was successful.
     let stack = process.get_stack("basic.aleo")?;
     assert_eq!(stack.program().functions().len(), 3);
-    let updated_function = stack.program().get_function(&new_function.name())?;
+    let updated_function = stack.program().get_function(new_function.name())?;
     assert_eq!(updated_function, new_function);
     Ok(())
 }
@@ -273,7 +273,7 @@ finalize store_data:
     // Check that the update was successful.
     let stack = process.get_stack("basic.aleo")?;
     assert_eq!(stack.program().functions().len(), 3);
-    let updated_function = stack.program().get_function(&new_function.name())?;
+    let updated_function = stack.program().get_function(new_function.name())?;
     assert_eq!(updated_function, new_function);
     Ok(())
 }
@@ -498,7 +498,7 @@ function foo:
     // Check that the update was successful.
     let stack = process.get_stack("basic.aleo")?;
     assert_eq!(stack.program().functions().len(), 3);
-    let updated_function = stack.program().get_function(&new_function.name())?;
+    let updated_function = stack.program().get_function(new_function.name())?;
     assert_eq!(updated_function, new_function);
     Ok(())
 }

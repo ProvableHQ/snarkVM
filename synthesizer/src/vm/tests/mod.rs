@@ -26,12 +26,8 @@ use console::{
     program::{Entry, Value},
 };
 use ledger_block::Transition;
-#[cfg(feature = "rocks")]
-use ledger_store::helpers::rocksdb::ConsensusDB;
 use ledger_test_helpers::{large_transaction_program, small_transaction_program};
 use synthesizer_program::Program;
 
 use indexmap::IndexMap;
-#[cfg(feature = "rocks")]
-use std::path::Path;
 use synthesizer_snark::VerifyingKey;
