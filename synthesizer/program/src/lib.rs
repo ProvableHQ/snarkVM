@@ -93,7 +93,7 @@ use console::{
 use indexmap::IndexMap;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-enum ProgramDefinition {
+pub enum ProgramDefinition {
     /// A program mapping.
     Mapping,
     /// A program struct.
@@ -563,6 +563,95 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             bail!("'{function_name}' already exists in the program.")
         }
         Ok(())
+    }
+}
+
+impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
+    /// Removes an import from the program.
+    ///
+    /// # Errors
+    /// This method will halt if the imported program is not in the program.
+    #[inline]
+    pub fn remove_import(&mut self, program_id: &ProgramID<N>) -> Result<Import<N>> {
+        match self.imports.shift_remove(program_id) {
+            Some(import) => Ok(import),
+            None => bail!("Import '{}' not found.", program_id),
+        }
+    }
+
+    /// Removes a mapping from the program.
+    ///
+    /// # Errors
+    /// This method will halt if the mapping is not in the program.
+    #[inline]
+    pub fn remove_mapping(&mut self, mapping_name: &Identifier<N>) -> Result<Mapping<N>> {
+        // Remove the mapping from `identifiers`.
+        self.identifiers.shift_remove(mapping_name);
+        // Remove and return the mapping.
+        match self.mappings.shift_remove(mapping_name) {
+            Some(mapping) => Ok(mapping),
+            None => bail!("Mapping '{}' not found.", mapping_name),
+        }
+    }
+
+    /// Removes a struct from the program.
+    ///
+    /// # Errors
+    /// This method will halt if the struct is not in the program.
+    #[inline]
+    pub fn remove_struct(&mut self, struct_name: &Identifier<N>) -> Result<StructType<N>> {
+        // Remove the struct from `identifiers`.
+        self.identifiers.shift_remove(struct_name);
+        // Remove and return the struct.
+        match self.structs.shift_remove(struct_name) {
+            Some(struct_) => Ok(struct_),
+            None => bail!("Struct '{}' not found.", struct_name),
+        }
+    }
+
+    /// Removes a record from the program.
+    ///
+    /// # Errors
+    /// This method will halt if the record is not in the program.
+    #[inline]
+    pub fn remove_record(&mut self, record_name: &Identifier<N>) -> Result<RecordType<N>> {
+        // Remove the record from `identifiers`.
+        self.identifiers.shift_remove(record_name);
+        // Remove and return the record.
+        match self.records.shift_remove(record_name) {
+            Some(record) => Ok(record),
+            None => bail!("Record '{}' not found.", record_name),
+        }
+    }
+
+    /// Removes a closure from the program.
+    ///
+    /// # Errors
+    /// This method will halt if the closure is not in the program.
+    #[inline]
+    pub fn remove_closure(&mut self, closure_name: &Identifier<N>) -> Result<ClosureCore<N, Instruction>> {
+        // Remove the closure from `identifiers`.
+        self.identifiers.shift_remove(closure_name);
+        // Remove and return the closure.
+        match self.closures.shift_remove(closure_name) {
+            Some(closure) => Ok(closure),
+            None => bail!("Closure '{}' not found.", closure_name),
+        }
+    }
+
+    /// Removes a function from the program.
+    ///
+    /// # Errors
+    /// This method will halt if the function is not in the program.
+    #[inline]
+    pub fn remove_function(&mut self, function_name: &Identifier<N>) -> Result<FunctionCore<N, Instruction, Command>> {
+        // Remove the function from `identifiers`.
+        self.identifiers.shift_remove(function_name);
+        // Remove and return the function.
+        match self.functions.shift_remove(function_name) {
+            Some(function) => Ok(function),
+            None => bail!("Function '{}' not found.", function_name),
+        }
     }
 }
 
