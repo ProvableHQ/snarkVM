@@ -71,10 +71,10 @@ impl<N: Network> ConfirmedTransaction<N> {
                     finalize_operations.len()
                 );
             }
-            // Ensure the number of program mappings matches the number of 'InitializeMapping' finalize operations.
-            if num_initialize_mappings != program.mappings().len() {
+            // Ensure the number of program mappings bounds the number of 'InitializeMapping' finalize operations.
+            if num_initialize_mappings > program.mappings().len() {
                 bail!(
-                    "Transaction '{}' (deploy) must contain '{}' 'InitializeMapping' operations (found '{num_initialize_mappings}')",
+                    "Transaction '{}' (deploy) must contain at most '{}' 'InitializeMapping' operations (found '{num_initialize_mappings}')",
                     transaction.id(),
                     program.mappings().len(),
                 )
