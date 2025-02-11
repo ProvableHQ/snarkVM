@@ -385,7 +385,6 @@ function burn:
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     let mut v1_records = block
         .records()
-        .into_iter()
         .map(|(_, record)| record.decrypt(&caller_view_key))
         .collect::<Result<Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>>>()?;
     assert_eq!(v1_records.len(), 2);
@@ -426,7 +425,6 @@ function burn:
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     let mut v2_records = block
         .records()
-        .into_iter()
         .map(|(_, record)| record.decrypt(&caller_view_key))
         .collect::<Result<Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>>>()?;
     assert_eq!(v2_records.len(), 1);
