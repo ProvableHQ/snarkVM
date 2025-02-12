@@ -152,22 +152,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Verify the signature corresponds to the transaction ID.
                 ensure!(owner.verify(deployment_id), "Invalid owner signature for deployment transaction '{id}'");
 
-                // If the owner is a V1 owner, then check that:
-                //  - The deployment's edition matches the network's edition.
+                // If the edition is zero, then check that:
                 //  - The program does not exist in the store or process.
-                // Otherwise, if the owner is a V2 owner, then check that:
-                //  - The deployment's edition matches the owner's edition.
-                //  - If the edition is 0, then program ID does not exist in the store or process.
-                //  - If the edition is not zero, then the program ID exists in the store and process, the new owner matches the old authority, and the new edition increments the old edition.
+                // Otherwise, check that:
+                //  - The new edition increments the old edition.
+                //  - The program exists in the store and process.
                 let store_contains_program = self.transaction_store().contains_program_id(deployment.program_id())?;
                 let process_contains_program = self.contains_program(deployment.program_id());
-                match &owner {
-                    ProgramOwner::V1(_) => {
-                        ensure!(
-                            deployment.edition() == N::EDITION,
-                            "Invalid deployment transaction '{id}' - expected edition {}",
-                            N::EDITION
-                        );
+                match deployment.edition() {
+                    0 => {
                         ensure!(
                             !store_contains_program,
                             "Program ID '{}' is already deployed",
@@ -175,65 +168,29 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         );
                         ensure!(!process_contains_program, "Program ID '{}' already exists", deployment.program_id());
                     }
-                    ProgramOwner::V2(owner) => {
+                    edition => {
+                        // Ensure the program exists in the store.
                         ensure!(
-                            deployment.edition() == *owner.edition(),
-                            "Invalid deployment transaction '{id}' - deployment and owner editions do not match"
+                            store_contains_program,
+                            "Invalid deployment transaction '{id}' - program does not exist in the store"
                         );
-                        match deployment.edition() {
-                            0 => {
-                                ensure!(
-                                    !store_contains_program,
-                                    "Program ID '{}' is already deployed",
-                                    deployment.program_id()
-                                );
-                                ensure!(
-                                    !process_contains_program,
-                                    "Program ID '{}' already exists",
-                                    deployment.program_id()
-                                );
-                            }
-                            edition => {
-                                // Ensure the program exists in the store.
-                                ensure!(
-                                    store_contains_program,
-                                    "Invalid deployment transaction '{id}' - program does not exist in the store"
-                                );
-                                // Ensure the program exists in the process.
-                                ensure!(
-                                    process_contains_program,
-                                    "Invalid deployment transaction '{id}' - program does not exist in the process"
-                                );
-                                // Ensure the new owner matches the old authority.
-                                match self.transaction_store().deployment_store().get_owner(deployment.program_id())? {
-                                    Some(ProgramOwner::V2(old_owner)) => ensure!(
-                                        old_owner.authority() == owner.address(),
-                                        "Invalid deployment transaction '{id}' - new owner does not match old authority"
-                                    ),
-                                    _ => bail!(
-                                        "Invalid deployment transaction '{id}' - expected V2 owner for program ID '{}'",
-                                        deployment.program_id()
-                                    ),
-                                }
-                                // Ensure the new edition increments the old edition.
-                                match self
-                                    .transaction_store()
-                                    .deployment_store()
-                                    .get_edition(deployment.program_id())?
-                                {
-                                    Some(old_edition) => ensure!(
-                                        old_edition < edition && old_edition.saturating_add(1) == edition,
-                                        "Invalid deployment transaction '{id}' - new edition does not increment old edition"
-                                    ),
-                                    None => bail!(
-                                        "Invalid deployment transaction '{id}' - program does not exist in the store"
-                                    ),
-                                }
+                        // Ensure the program exists in the process.
+                        ensure!(
+                            process_contains_program,
+                            "Invalid deployment transaction '{id}' - program does not exist in the process"
+                        );
+                        // Ensure the new edition increments the old edition.
+                        match self.transaction_store().deployment_store().get_edition(deployment.program_id())? {
+                            Some(old_edition) => ensure!(
+                                old_edition < edition && old_edition.saturating_add(1) == edition,
+                                "Invalid deployment transaction '{id}' - new edition does not increment old edition"
+                            ),
+                            None => {
+                                bail!("Invalid deployment transaction '{id}' - program does not exist in the store")
                             }
                         }
                     }
                 }
-
                 // Verify the deployment if it has not been verified before.
                 if !is_partially_verified {
                     // Verify the deployment.

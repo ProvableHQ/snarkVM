@@ -422,7 +422,7 @@ pub mod test_helpers {
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id().unwrap();
         // Construct a program owner.
-        let owner = ProgramOwner::new_v1(&private_key, deployment_id, rng).unwrap();
+        let owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
         // Sample the fee.
         let fee = match is_fee_private {

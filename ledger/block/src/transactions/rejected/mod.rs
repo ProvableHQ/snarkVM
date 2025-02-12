@@ -110,7 +110,7 @@ pub mod test_helpers {
         // Sample a new program owner.
         let private_key = PrivateKey::new(rng).unwrap();
         let deployment_id = deployment.to_deployment_id().unwrap();
-        let program_owner = ProgramOwner::new_v1(&private_key, deployment_id, rng).unwrap();
+        let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
         // Return the rejected deployment.
         Rejected::new_deployment(program_owner, deployment)

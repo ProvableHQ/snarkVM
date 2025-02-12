@@ -39,7 +39,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id()?;
         // Construct the owner.
-        let owner = ProgramOwner::new_v1(private_key, deployment_id, rng)?;
+        let owner = ProgramOwner::new(private_key, deployment_id, rng)?;
 
         // Compute the minimum deployment cost.
         let (minimum_deployment_cost, _) = deployment_cost(&deployment)?;
@@ -87,47 +87,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         query: Option<Query<N, C::BlockStorage>>,
         rng: &mut R,
     ) -> Result<Transaction<N>> {
-        // Compute the deployment.
-        let deployment = self.deploy_raw(program, rng)?;
-        // Ensure that the deployment edition matches the expected edition.
-        ensure!(
-            deployment.edition() == edition,
-            "The deployment edition ({}) does not match the expected edition ({})",
-            deployment.edition(),
-            edition
-        );
-        // Ensure the transaction is not empty.
-        ensure!(!deployment.program().functions().is_empty(), "Attempted to create an empty transaction deployment");
-        // Compute the deployment ID.
-        let deployment_id = deployment.to_deployment_id()?;
-        // Construct the owner with authority.
-        let owner = ProgramOwner::new_v2(private_key, authority, U16::new(edition), deployment_id, rng)?;
-
-        // Compute the minimum deployment cost.
-        let (minimum_deployment_cost, _) = deployment_cost(&deployment)?;
-        // Authorize the fee.
-        let fee_authorization = match fee_record {
-            Some(record) => self.authorize_fee_private(
-                private_key,
-                record,
-                minimum_deployment_cost,
-                priority_fee_in_microcredits,
-                deployment_id,
-                rng,
-            )?,
-            None => self.authorize_fee_public(
-                private_key,
-                minimum_deployment_cost,
-                priority_fee_in_microcredits,
-                deployment_id,
-                rng,
-            )?,
-        };
-        // Compute the fee.
-        let fee = self.execute_fee_authorization(fee_authorization, query, rng)?;
-
-        // Return the deploy transaction.
-        Transaction::from_deployment(owner, deployment, fee)
+        todo!("Clean up later")
     }
 }
 

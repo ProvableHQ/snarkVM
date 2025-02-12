@@ -171,7 +171,7 @@ pub fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Re
     // Sample a new program owner.
     let private_key = PrivateKey::new(rng).unwrap();
     let deployment_id = deployment.to_deployment_id().unwrap();
-    let program_owner = ProgramOwner::new_v1(&private_key, deployment_id, rng).unwrap();
+    let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
     // Return the rejected deployment.
     Rejected::new_deployment(program_owner, deployment)
@@ -360,7 +360,7 @@ pub fn sample_deployment_transaction(is_fee_private: bool, rng: &mut TestRng) ->
     // Compute the deployment ID.
     let deployment_id = deployment.to_deployment_id().unwrap();
     // Construct a program owner.
-    let owner = ProgramOwner::new_v1(&private_key, deployment_id, rng).unwrap();
+    let owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
     // Sample the fee.
     let fee = match is_fee_private {
