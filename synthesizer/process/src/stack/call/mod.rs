@@ -256,7 +256,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         call_stack.push(request.clone())?;
 
                         // Add the request to the authorization.
-                        authorization.push(request.clone());
+                        authorization.push(request.clone())?;
 
                         // Execute the request.
                         let response = substack.execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;

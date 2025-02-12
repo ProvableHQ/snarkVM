@@ -145,8 +145,16 @@ impl<N: Network> Authorization<N> {
     }
 
     /// Appends the given `Request` to the authorization.
-    pub fn push(&self, request: Request<N>) {
+    pub fn push(&self, request: Request<N>) -> Result<()> {
+        // Check that the number of requests is less than the maximum.
+        ensure!(
+            self.len() < Transaction::<N>::MAX_TRANSITIONS,
+            "The number of requests in the authorization cannot exceed '{}'.",
+            Transaction::<N>::MAX_TRANSITIONS
+        );
+        // Append the request to the authorization.
         self.requests.write().push_back(request);
+        Ok(())
     }
 
     /// Returns the requests in the authorization.

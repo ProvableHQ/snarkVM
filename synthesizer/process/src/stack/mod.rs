@@ -64,7 +64,7 @@ use console::{
     },
     types::{Field, Group},
 };
-use ledger_block::{Deployment, Transition};
+use ledger_block::{Deployment, Transaction, Transition};
 use synthesizer_program::{CallOperator, Closure, Function, Instruction, Operand, Program, traits::*};
 use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
@@ -135,9 +135,18 @@ impl<N: Network> CallStack<N> {
             CallStack::Authorize(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
-            | CallStack::PackageRun(requests, ..) => requests.push(request),
-            CallStack::Evaluate(authorization) => authorization.push(request),
-            CallStack::Execute(authorization, ..) => authorization.push(request),
+            | CallStack::PackageRun(requests, ..) => {
+                // Check that the number of requests does not exceed the maximum.
+                ensure!(
+                    requests.len() < Transaction::<N>::MAX_TRANSITIONS,
+                    "The number of requests in the authorization cannot exceed '{}'.",
+                    Transaction::<N>::MAX_TRANSITIONS
+                );
+                // Push the request to the stack.
+                requests.push(request)
+            }
+            CallStack::Evaluate(authorization) => authorization.push(request)?,
+            CallStack::Execute(authorization, ..) => authorization.push(request)?,
         }
         Ok(())
     }

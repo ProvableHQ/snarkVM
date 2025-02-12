@@ -1066,7 +1066,6 @@ function foo:
     vm.add_next_block(&block)?;
 
     // Update the first program to create mutual recursion.
-    println!("Attempting to deploy first_v2");
     let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 2, &first_v2, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
@@ -1085,8 +1084,6 @@ function foo:
         )
         .is_err()
     );
-
-    // TODO: Mutate the transition to work correctly and attempt to execute.
 
     Ok(())
 }
