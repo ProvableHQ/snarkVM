@@ -476,7 +476,7 @@ impl<N: Network> FinalizeTypes<N> {
                 let program_id = locator.program_id();
                 // Ensure the locator does not reference the current program.
                 if stack.program_id() == program_id {
-                    bail!("Locator '{locator}' does not reference an external mapping.");
+                    bail!("Locator '{locator}' does not reference an external program.");
                 }
                 // Ensure the current program contains an import for this external program.
                 if !stack.program().imports().keys().contains(program_id) {

@@ -14,11 +14,12 @@
 // limitations under the License.
 
 use super::*;
+use std::panic::AssertUnwindSafe;
 use synthesizer_program::StackProgram;
 
 // This test checks that:
 //  - the logic of a simple transition without records can be updated.
-//  - once a program is updated, the old transitions are no longer valid.
+//  - once a program is updated, the old executions are no longer valid.
 //  - an invalid authority cannot update a program.
 #[test]
 fn test_simple_update() -> Result<()> {
@@ -76,7 +77,7 @@ function binary_add:
         None,
         rng,
     )?;
-    vm.check_transaction(&original_execution, None, rng)?;
+    assert!(vm.check_transaction(&original_execution, None, rng).is_ok());
 
     // Check that the output is correct.
     let output = match original_execution.transitions().next().unwrap().outputs().last().unwrap() {
@@ -93,9 +94,8 @@ program adder.aleo;
 function binary_add:
     input r0 as u8.public;
     input r1 as u8.public;
-    add r0 r1 into r2;
-    add r2 1u8 into r3;
-    output r3 as u8.public;
+    add.w r0 r1 into r2;
+    output r2 as u8.public;
     ",
     )?;
 
@@ -128,7 +128,7 @@ function binary_add:
     )?;
     assert_eq!(transaction.deployment().unwrap().edition(), 1);
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Check that the program is updated.
@@ -137,7 +137,8 @@ function binary_add:
     assert_eq!(stack.edition(), 1);
 
     // Check that the old execution is no longer valid.
-    vm.check_transaction(&original_execution, None, rng)?;
+    vm.partially_verified_transactions().write().clear();
+    assert!(vm.check_transaction(&original_execution, None, rng).is_err());
 
     // Execute the updated program.
     let new_execution = vm.execute(
@@ -149,14 +150,14 @@ function binary_add:
         None,
         rng,
     )?;
-    vm.check_transaction(&new_execution, None, rng)?;
+    assert!(vm.check_transaction(&new_execution, None, rng).is_ok());
 
     // Check that the output is correct.
     let output = match new_execution.transitions().next().unwrap().outputs().last().unwrap() {
         Output::Public(_, Some(Plaintext::Literal(Literal::U8(value), _))) => **value,
         output => bail!(format!("Unexpected output: {output}")),
     };
-    assert_eq!(output, 3u8);
+    assert_eq!(output, 2u8);
 
     Ok(())
 }
@@ -261,7 +262,7 @@ fn test_editions_are_sequential() -> Result<()> {
 
     // This deployment should pass.
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v0_pass], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     on_chain_vm.add_next_block(&block)?;
     let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
     assert_eq!(stack.edition(), 0);
@@ -273,7 +274,7 @@ fn test_editions_are_sequential() -> Result<()> {
 
     // This deployment should pass.
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v1_pass], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     on_chain_vm.add_next_block(&block)?;
     let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
     assert_eq!(stack.edition(), 1);
@@ -285,7 +286,7 @@ fn test_editions_are_sequential() -> Result<()> {
 
     // This deployment should pass.
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v2_pass], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     on_chain_vm.add_next_block(&block)?;
     let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
     assert_eq!(stack.edition(), 2);
@@ -359,7 +360,7 @@ function burn:
     // Deploy the first version of the program.
     let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 0, &program_v0, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Execute the mint function twice.
@@ -382,7 +383,7 @@ function burn:
         rng,
     )?;
     let block = sample_next_block(&vm, &caller_private_key, &[mint_execution_0, mint_execution_1], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 2);
     let mut v1_records = block
         .records()
         .map(|(_, record)| record.decrypt(&caller_view_key))
@@ -393,7 +394,7 @@ function burn:
     // Update the program.
     let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 1, &program_v1, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Attempt to execute the mint function.
@@ -422,7 +423,7 @@ function burn:
         rng,
     )?;
     let block = sample_next_block(&vm, &caller_private_key, &[convert_execution], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     let mut v2_records = block
         .records()
         .map(|(_, record)| record.decrypt(&caller_view_key))
@@ -442,7 +443,7 @@ function burn:
         rng,
     )?;
     let block = sample_next_block(&vm, &caller_private_key, &[burn_execution], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Attempt to execute the burn function with the remaining v1 record.
@@ -548,7 +549,7 @@ finalize store_data_v2:
     // Deploy the first version of the program.
     let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 0, &program_v0, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Execute the store_data_v1 function.
@@ -562,7 +563,7 @@ finalize store_data_v2:
         rng,
     )?;
     let block = sample_next_block(&vm, &caller_private_key, &[store_data_v1_execution], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Check that the value was stored correctly.
@@ -579,7 +580,7 @@ finalize store_data_v2:
     // Update the program.
     let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 1, &program_v1, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Attempt to execute the store_data_v1 function.
@@ -607,7 +608,7 @@ finalize store_data_v2:
         rng,
     )?;
     let block = sample_next_block(&vm, &caller_private_key, &[migrate_data_v1_to_v2_execution], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Check that the value was migrated correctly.
@@ -643,7 +644,7 @@ finalize store_data_v2:
         rng,
     )?;
     let block = sample_next_block(&vm, &caller_private_key, &[store_data_v2_execution], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Check that the value was stored correctly.
@@ -656,6 +657,279 @@ finalize store_data_v2:
         value => bail!(format!("Unexpected value: {:?}", value)),
     };
     assert_eq!(value, 1u8);
+
+    Ok(())
+}
+
+// This test checks that:
+//  - a dependent program accepts an update to off-chain logic
+//  - a dependent program accepts an update to on-chain logic
+//  - a dependent program can fix a specific version of the dependency
+//  - old executions of the dependent program are no longer valid after an update
+#[test]
+fn test_update_with_dependents() -> Result<()> {
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    // Initialize the genesis block.
+    let genesis = sample_genesis_block(rng);
+
+    // Initialize the VM.
+    let vm = sample_vm();
+    vm.add_next_block(&genesis)?;
+
+    // Define the two versions of the dependency program.
+    let dependency_v0 = Program::from_str(
+        r"
+program dependency.aleo;
+
+function sum:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    add r0 r1 into r2;
+    output r0 as u8.public;
+
+function sum_and_check:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    add r0 r1 into r2;
+    async sum_and_check into r3;
+    output r2 as u8.public;
+    output r3 as dependency.aleo/sum_and_check.future;
+finalize sum_and_check:
+    assert.eq true true;",
+    )?;
+
+    let dependency_v1 = Program::from_str(
+        r"
+program dependency.aleo;
+
+function sum:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    add.w r0 r1 into r2;
+    output r0 as u8.public;
+
+function sum_and_check:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    add.w r0 r1 into r2;
+    async sum_and_check into r3;
+    output r2 as u8.public;
+    output r3 as dependency.aleo/sum_and_check.future;
+finalize sum_and_check:
+    assert.eq true false;",
+    )?;
+
+    // Define the two versions of the dependent program.
+    let dependent_v0 = Program::from_str(
+        r"
+import dependency.aleo;
+
+program dependent.aleo;
+
+function sum_unchecked:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    call dependency.aleo/sum r0 r1 into r2;
+    output r2 as u8.public;
+
+function sum:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    call dependency.aleo/sum r0 r1 into r2;
+    async sum into r3;
+    output r2 as u8.public;
+    output r3 as dependent.aleo/sum.future;
+finalize sum:
+    global.get dependency.aleo/edition into r0;
+    assert.eq r0 0u16;
+
+function sum_and_check:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    call dependency.aleo/sum_and_check r0 r1 into r2 r3;
+    async sum_and_check r3 into r4;
+    output r2 as u8.public;
+    output r4 as dependent.aleo/sum_and_check.future;
+finalize sum_and_check:
+    input r0 as dependency.aleo/sum_and_check.future;
+    await r0;",
+    )?;
+
+    let dependent_v1 = Program::from_str(
+        r"
+import dependency.aleo;
+
+program dependent.aleo;
+
+function sum_unchecked:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    call dependency.aleo/sum r0 r1 into r2;
+    output r2 as u8.public;
+
+function sum:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    call dependency.aleo/sum r0 r1 into r2;
+    async sum into r3;
+    output r2 as u8.public;
+    output r3 as dependent.aleo/sum.future;
+finalize sum:
+    global.get dependency.aleo/edition into r0;
+    assert.eq r0 1u16;
+
+function sum_and_check:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    call dependency.aleo/sum_and_check r0 r1 into r2 r3;
+    async sum_and_check r3 into r4;
+    output r2 as u8.public;
+    output r4 as dependent.aleo/sum_and_check.future;
+finalize sum_and_check:
+    input r0 as dependency.aleo/sum_and_check.future;
+    await r0;",
+    )?;
+
+    // At a high level, this test will:
+    // 1. Deploy the v0 dependency and v0 dependent.
+    // 2. Verify that the the dependent program can be correctly executed.
+    // 3. Update the dependency to v1.
+    // 4. Verify that the call to `sum_and_check` automatically uses the new logic, however, the call `sum` fails because the edition is not 0.
+    // 5. Update the dependent to v1.
+    // 6. Verify that the call to `sum` now passes because the edition is 1.
+
+    // Deploy the v0 dependency.
+    let transaction =
+        vm.deploy_updatable(&caller_private_key, caller_address, 0, &dependency_v0, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Deploy the v0 dependent.
+    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 0, &dependent_v0, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Execute the functions.
+    let tx_1 = vm.execute(
+        &caller_private_key,
+        ("dependent.aleo", "sum"),
+        vec![Value::from_str("1u8")?, Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let tx_2 = vm.execute(
+        &caller_private_key,
+        ("dependent.aleo", "sum_and_check"),
+        vec![Value::from_str("1u8")?, Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 2);
+    vm.add_next_block(&block)?;
+
+    // Verify that the sum function fails on overflow.
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        vm.execute(
+            &caller_private_key,
+            ("dependent.aleo", "sum"),
+            vec![Value::from_str("255u8")?, Value::from_str("1u8")?].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+    }));
+    assert!(result.is_err());
+
+    // Get a valid execution before the dependency update.
+    let sum_unchecked = vm.execute(
+        &caller_private_key,
+        ("dependent.aleo", "sum_unchecked"),
+        vec![Value::from_str("1u8")?, Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    assert!(vm.check_transaction(&sum_unchecked, None, rng).is_ok());
+
+    // Update the dependency to v1.
+    let transaction =
+        vm.deploy_updatable(&caller_private_key, caller_address, 1, &dependency_v1, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Verify that the original sum transaction fails after the dependency update.
+    vm.partially_verified_transactions().write().clear();
+    assert!(vm.check_transaction(&sum_unchecked, None, rng).is_err());
+    let block = sample_next_block(&vm, &caller_private_key, &[sum_unchecked], rng)?;
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    vm.add_next_block(&block)?;
+
+    // Verify that the sum function fails on edition check.
+    let tx_1 = vm.execute(
+        &caller_private_key,
+        ("dependent.aleo", "sum"),
+        vec![Value::from_str("1u8")?, Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let tx_2 = vm.execute(
+        &caller_private_key,
+        ("dependent.aleo", "sum_and_check"),
+        vec![Value::from_str("1u8")?, Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng)?;
+    assert_eq!(block.transactions().num_rejected(), 2);
+    vm.add_next_block(&block)?;
+
+    // Update the dependent to v1.
+    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 1, &dependent_v1, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Verify that the sum function passes.
+    let tx_1 = vm.execute(
+        &caller_private_key,
+        ("dependent.aleo", "sum"),
+        vec![Value::from_str("1u8")?, Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let tx_2 = vm.execute(
+        &caller_private_key,
+        ("dependent.aleo", "sum"),
+        vec![Value::from_str("255u8")?, Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 2);
+    vm.add_next_block(&block)?;
 
     Ok(())
 }
