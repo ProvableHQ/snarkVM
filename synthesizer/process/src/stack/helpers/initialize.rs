@@ -31,7 +31,6 @@ impl<N: Network> Stack<N> {
             universal_srs: process.universal_srs().clone(),
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
-            number_of_calls: Default::default(),
             program_address: program.id().to_address()?,
             edition,
         };
@@ -57,24 +56,8 @@ impl<N: Network> Stack<N> {
             // Add the function to the stack.
             stack.insert_function(function)?;
             // Determine the number of calls for the function.
-            let mut num_calls = 1;
-            for instruction in function.instructions() {
-                if let Instruction::Call(call) = instruction {
-                    // Determine if this is a function call.
-                    if call.is_function_call(&stack)? {
-                        // Increment by the number of calls.
-                        num_calls += 1
-                    }
-                }
-            }
-            // Check that the number of calls does not exceed the maximum.
-            // Note that one transition is reserved for the fee.
-            ensure!(
-                num_calls < ledger_block::Transaction::<N>::MAX_TRANSITIONS,
-                "Number of calls exceeds the maximum allowed number of transitions"
-            );
-            // Add the number of calls to the stack.
-            stack.number_of_calls.insert(*function.name(), num_calls);
+            // This includes a safety check for the maximum number of calls.
+            stack.get_number_of_calls(function.name())?;
         }
 
         // Return the stack.
