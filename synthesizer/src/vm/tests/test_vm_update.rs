@@ -933,3 +933,160 @@ finalize sum_and_check:
 
     Ok(())
 }
+
+// This test checks that:
+//  - programs can be updated to create cycles in the dependency graph.
+//  - programs can be updated to create cycles in the call graph.
+//  - executions of cyclic programs w.r.t. to the call graph are rejected.
+#[test]
+fn test_update_with_cycles() -> Result<()> {
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    // Initialize the genesis block.
+    let genesis = sample_genesis_block(rng);
+
+    // Initialize the VM.
+    let vm = sample_vm();
+    vm.add_next_block(&genesis)?;
+
+    // Define the programs.
+    let first_v0 = Program::from_str(
+        r"
+program first.aleo;
+
+function foo:
+    input r0 as u8.public;
+    output r0 as u8.public;
+    ",
+    )?;
+
+    let second_v0 = Program::from_str(
+        r"
+import first.aleo;
+
+program second.aleo;
+
+function foo:
+    input r0 as u8.public;
+    call first.aleo/foo r0 into r1;
+    output r1 as u8.public;
+    ",
+    )?;
+
+    let first_v1 = Program::from_str(
+        r"
+import second.aleo;
+
+program first.aleo;
+
+function foo:
+    input r0 as u8.public;
+    output r0 as u8.public;
+    ",
+    )?;
+
+    let first_v2 = Program::from_str(
+        r"
+import second.aleo;
+
+program first.aleo;
+
+function foo:
+    input r0 as u8.public;
+    call second.aleo/foo r0 into r1;
+    output r1 as u8.public;
+    ",
+    )?;
+
+    // Deploy the first version of the programs.
+    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 0, &first_v0, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 0, &second_v0, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Verify that both can be executed correctly.
+    let tx_1 = vm.execute(
+        &caller_private_key,
+        ("first.aleo", "foo"),
+        vec![Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let tx_2 = vm.execute(
+        &caller_private_key,
+        ("second.aleo", "foo"),
+        vec![Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 2);
+    vm.add_next_block(&block)?;
+
+    // Update the first program to create a cycle in the dependency graph.
+    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 1, &first_v1, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Verify that both programs can be executed correctly.
+    let tx_1 = vm.execute(
+        &caller_private_key,
+        ("first.aleo", "foo"),
+        vec![Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let tx_2 = vm.execute(
+        &caller_private_key,
+        ("second.aleo", "foo"),
+        vec![Value::from_str("1u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 2);
+    vm.add_next_block(&block)?;
+
+    // Update the first program to create mutual recursion.
+    println!("Attempting to deploy first_v2");
+    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 2, &first_v2, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Verify that the first program is no longer executable.
+    assert!(
+        vm.execute(
+            &caller_private_key,
+            ("first.aleo", "foo"),
+            vec![Value::from_str("1u8")?].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .is_err()
+    );
+
+    // TODO: Mutate the transition to work correctly and attempt to execute.
+
+    Ok(())
+}
