@@ -745,7 +745,7 @@ function sum:
     output r2 as u8.public;
     output r3 as dependent.aleo/sum.future;
 finalize sum:
-    global.get dependency.aleo/edition into r0;
+    metadata.get dependency.aleo/edition into r0;
     assert.eq r0 0u16;
 
 function sum_and_check:
@@ -780,7 +780,7 @@ function sum:
     output r2 as u8.public;
     output r3 as dependent.aleo/sum.future;
 finalize sum:
-    global.get dependency.aleo/edition into r0;
+    metadata.get dependency.aleo/edition into r0;
     assert.eq r0 1u16;
 
 function sum_and_check:

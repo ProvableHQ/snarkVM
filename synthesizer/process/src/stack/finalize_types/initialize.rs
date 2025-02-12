@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use synthesizer_program::GlobalGet;
+use synthesizer_program::MetadataGet;
 
 impl<N: Network> FinalizeTypes<N> {
     /// Initializes a new instance of `FinalizeTypes` for the given finalize.
@@ -179,7 +179,7 @@ impl<N: Network> FinalizeTypes<N> {
             Command::Contains(contains) => self.check_contains(stack, contains)?,
             Command::Get(get) => self.check_get(stack, get)?,
             Command::GetOrUse(get_or_use) => self.check_get_or_use(stack, get_or_use)?,
-            Command::GlobalGet(global_get) => self.check_global_get(stack, global_get)?,
+            Command::MetadataGet(metadata_get) => self.check_metadata_get(stack, metadata_get)?,
             Command::RandChaCha(rand_chacha) => self.check_rand_chacha(stack, finalize.name(), rand_chacha)?,
             Command::Remove(remove) => self.check_remove(stack, finalize.name(), remove)?,
             Command::Set(set) => self.check_set(stack, finalize.name(), set)?,
@@ -462,15 +462,15 @@ impl<N: Network> FinalizeTypes<N> {
         Ok(())
     }
 
-    /// Ensures the given `global.get` command is well-formed.
+    /// Ensures the given `metadata.get` command is well-formed.
     #[inline]
-    fn check_global_get(
+    fn check_metadata_get(
         &mut self,
         stack: &(impl StackMatches<N> + StackProgram<N>),
-        global_get: &GlobalGet<N>,
+        metadata_get: &MetadataGet<N>,
     ) -> Result<()> {
         // Ensure that the global name is `edition`.
-        let global_name = match global_get.global() {
+        let global_name = match metadata_get.global() {
             CallOperator::Locator(locator) => {
                 // Retrieve the program ID.
                 let program_id = locator.program_id();
@@ -489,7 +489,7 @@ impl<N: Network> FinalizeTypes<N> {
         ensure!(global_name.to_string() == "edition", "Invalid global name: {global_name}");
 
         // Get the destination register.
-        let destination = global_get.destination().clone();
+        let destination = metadata_get.destination().clone();
         // Ensure the destination register is a locator (and does not reference an access).
         ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
         // Insert the destination register.

@@ -24,17 +24,17 @@ use console::{
     types::U16,
 };
 
-/// A global get command, e.g. `global.get owner into r1;`.
+/// A command to get metadata about a program, e.g. `metadata.get owner into r1;`.
 /// Gets the value stored at `global` and stores the result in `destination`.
 #[derive(Clone)]
-pub struct GlobalGet<N: Network> {
+pub struct MetadataGet<N: Network> {
     /// The global ID.
     global: CallOperator<N>,
     /// The destination register.
     destination: Register<N>,
 }
 
-impl<N: Network> PartialEq for GlobalGet<N> {
+impl<N: Network> PartialEq for MetadataGet<N> {
     /// Returns true if the two objects are equal.
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -42,9 +42,9 @@ impl<N: Network> PartialEq for GlobalGet<N> {
     }
 }
 
-impl<N: Network> Eq for GlobalGet<N> {}
+impl<N: Network> Eq for MetadataGet<N> {}
 
-impl<N: Network> std::hash::Hash for GlobalGet<N> {
+impl<N: Network> std::hash::Hash for MetadataGet<N> {
     /// Returns the hash of the object.
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -53,11 +53,11 @@ impl<N: Network> std::hash::Hash for GlobalGet<N> {
     }
 }
 
-impl<N: Network> GlobalGet<N> {
+impl<N: Network> MetadataGet<N> {
     /// Returns the opcode.
     #[inline]
     pub const fn opcode() -> Opcode {
-        Opcode::Command("global.get")
+        Opcode::Command("metadata.get")
     }
 
     /// Returns the global ID.
@@ -73,11 +73,8 @@ impl<N: Network> GlobalGet<N> {
     }
 }
 
-impl<N: Network> GlobalGet<N> {
+impl<N: Network> MetadataGet<N> {
     /// Finalizes the command.
-    // Note that this implementation is specifically tailored for `global.get edition into r<i>;`.
-    // This was done to minimize the number of changes introduced to the code base.
-    // When global values are introduced in the `FinalizeStoreTrait`, this implementation should be refactored.
     #[inline]
     pub fn finalize(
         &self,
@@ -94,7 +91,7 @@ impl<N: Network> GlobalGet<N> {
         };
 
         // Ensure that the global name is `edition`.
-        // This is presently the only valid use of `global.get`.
+        // This is presently the only valid use of `metadata.get`.
         ensure!(global_name.to_string() == "edition", "Invalid global name: {global_name}");
 
         // Lookup the edition in the appropriate stack.
@@ -110,7 +107,7 @@ impl<N: Network> GlobalGet<N> {
     }
 }
 
-impl<N: Network> Parser for GlobalGet<N> {
+impl<N: Network> Parser for MetadataGet<N> {
     /// Parses a string into the command.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
@@ -142,7 +139,7 @@ impl<N: Network> Parser for GlobalGet<N> {
     }
 }
 
-impl<N: Network> FromStr for GlobalGet<N> {
+impl<N: Network> FromStr for MetadataGet<N> {
     type Err = Error;
 
     /// Parses a string into the command.
@@ -160,14 +157,14 @@ impl<N: Network> FromStr for GlobalGet<N> {
     }
 }
 
-impl<N: Network> Debug for GlobalGet<N> {
+impl<N: Network> Debug for MetadataGet<N> {
     /// Prints the command as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network> Display for GlobalGet<N> {
+impl<N: Network> Display for MetadataGet<N> {
     /// Prints the command to a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the command.
@@ -179,7 +176,7 @@ impl<N: Network> Display for GlobalGet<N> {
     }
 }
 
-impl<N: Network> FromBytes for GlobalGet<N> {
+impl<N: Network> FromBytes for MetadataGet<N> {
     /// Reads the command from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the global ID.
@@ -191,7 +188,7 @@ impl<N: Network> FromBytes for GlobalGet<N> {
     }
 }
 
-impl<N: Network> ToBytes for GlobalGet<N> {
+impl<N: Network> ToBytes for MetadataGet<N> {
     /// Writes the command to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the global ID.
@@ -210,24 +207,24 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let (string, global_get) = GlobalGet::<CurrentNetwork>::parse("global.get edition into r1;").unwrap();
+        let (string, metadata_get) = MetadataGet::<CurrentNetwork>::parse("metadata.get edition into r1;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-        assert_eq!(global_get.global(), &CallOperator::from_str("edition").unwrap());
-        assert_eq!(global_get.destination, Register::Locator(1), "The destination is incorrect");
+        assert_eq!(metadata_get.global(), &CallOperator::from_str("edition").unwrap());
+        assert_eq!(metadata_get.destination, Register::Locator(1), "The destination is incorrect");
 
-        let (string, global_get) =
-            GlobalGet::<CurrentNetwork>::parse("global.get token.aleo/edition into r1;").unwrap();
+        let (string, metadata_get) =
+            MetadataGet::<CurrentNetwork>::parse("metadata.get token.aleo/edition into r1;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-        assert_eq!(global_get.global(), &CallOperator::from_str("token.aleo/edition").unwrap());
-        assert_eq!(global_get.destination, Register::Locator(1), "The destination is incorrect");
+        assert_eq!(metadata_get.global(), &CallOperator::from_str("token.aleo/edition").unwrap());
+        assert_eq!(metadata_get.destination, Register::Locator(1), "The destination is incorrect");
     }
 
     #[test]
     fn test_from_bytes() {
-        let (string, get) = GlobalGet::<CurrentNetwork>::parse("global.get edition into r1;").unwrap();
+        let (string, get) = MetadataGet::<CurrentNetwork>::parse("metadata.get edition into r1;").unwrap();
         assert!(string.is_empty());
         let bytes_le = get.to_bytes_le().unwrap();
-        let result = GlobalGet::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);
+        let result = MetadataGet::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);
         assert!(result.is_ok())
     }
 }

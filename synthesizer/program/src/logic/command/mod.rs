@@ -28,8 +28,8 @@ pub use get::*;
 mod get_or_use;
 pub use get_or_use::*;
 
-mod global_get;
-pub use global_get::*;
+mod metadata_get;
+pub use metadata_get::*;
 
 mod rand_chacha;
 pub use crate::command::rand_chacha::*;
@@ -77,7 +77,7 @@ pub enum Command<N: Network> {
     /// If the key is not present, `default` is stored `destination`.
     GetOrUse(GetOrUse<N>),
     /// Gets the value stored at `global` and stores the result into `destination`.
-    GlobalGet(GlobalGet<N>),
+    MetadataGet(MetadataGet<N>),
     /// Generates a random value using the `rand.chacha` command and stores the result into `destination`.
     RandChaCha(RandChaCha<N>),
     /// Removes the (`key`, `value`) entry from the `mapping`.
@@ -101,7 +101,7 @@ impl<N: Network> CommandTrait<N> for Command<N> {
             Command::Contains(contains) => vec![contains.destination().clone()],
             Command::Get(get) => vec![get.destination().clone()],
             Command::GetOrUse(get_or_use) => vec![get_or_use.destination().clone()],
-            Command::GlobalGet(global_get) => vec![global_get.destination().clone()],
+            Command::MetadataGet(metadata_get) => vec![metadata_get.destination().clone()],
             Command::RandChaCha(rand_chacha) => vec![rand_chacha.destination().clone()],
             Command::Await(_)
             | Command::BranchEq(_)
@@ -171,8 +171,8 @@ impl<N: Network> Command<N> {
             Command::Get(get) => get.finalize(stack, store, registers).map(|_| None),
             // Finalize the 'get.or_use' command, and return no finalize operation.
             Command::GetOrUse(get_or_use) => get_or_use.finalize(stack, store, registers).map(|_| None),
-            // Finalize the 'global.get' command, and return no finalize operation.
-            Command::GlobalGet(global_get) => global_get.finalize(stack, store, registers).map(|_| None),
+            // Finalize the 'metadata.get' command, and return no finalize operation.
+            Command::MetadataGet(metadata_get) => metadata_get.finalize(stack, store, registers).map(|_| None),
             // Finalize the `rand.chacha` command, and return no finalize operation.
             Command::RandChaCha(rand_chacha) => rand_chacha.finalize(stack, registers).map(|_| None),
             // Finalize the 'remove' command, and return the finalize operation.
@@ -217,8 +217,8 @@ impl<N: Network> FromBytes for Command<N> {
             9 => Ok(Self::BranchNeq(BranchNeq::read_le(&mut reader)?)),
             // Read the `position` command.
             10 => Ok(Self::Position(Position::read_le(&mut reader)?)),
-            // Read the `global.get` command.
-            11 => Ok(Self::GlobalGet(GlobalGet::read_le(&mut reader)?)),
+            // Read the `metadata.get` command.
+            11 => Ok(Self::MetadataGet(MetadataGet::read_le(&mut reader)?)),
             // Invalid variant.
             12.. => Err(error(format!("Invalid command variant: {variant}"))),
         }
@@ -295,11 +295,11 @@ impl<N: Network> ToBytes for Command<N> {
                 // Write the position command.
                 position.write_le(&mut writer)
             }
-            Self::GlobalGet(global_get) => {
+            Self::MetadataGet(metadata_get) => {
                 // Write the variant.
                 11u8.write_le(&mut writer)?;
-                // Write the `global.get` command.
-                global_get.write_le(&mut writer)
+                // Write the `metadata.get` command.
+                metadata_get.write_le(&mut writer)
             }
         }
     }
@@ -316,7 +316,7 @@ impl<N: Network> Parser for Command<N> {
             map(Contains::parse, |contains| Self::Contains(contains)),
             map(GetOrUse::parse, |get_or_use| Self::GetOrUse(get_or_use)),
             map(Get::parse, |get| Self::Get(get)),
-            map(GlobalGet::parse, |global_get| Self::GlobalGet(global_get)),
+            map(MetadataGet::parse, |metadata_get| Self::MetadataGet(metadata_get)),
             map(RandChaCha::parse, |rand_chacha| Self::RandChaCha(rand_chacha)),
             map(Remove::parse, |remove| Self::Remove(remove)),
             map(Set::parse, |set| Self::Set(set)),
@@ -362,7 +362,7 @@ impl<N: Network> Display for Command<N> {
             Self::Contains(contains) => Display::fmt(contains, f),
             Self::Get(get) => Display::fmt(get, f),
             Self::GetOrUse(get_or_use) => Display::fmt(get_or_use, f),
-            Self::GlobalGet(global_get) => Display::fmt(global_get, f),
+            Self::MetadataGet(metadata_get) => Display::fmt(metadata_get, f),
             Self::RandChaCha(rand_chacha) => Display::fmt(rand_chacha, f),
             Self::Remove(remove) => Display::fmt(remove, f),
             Self::Set(set) => Display::fmt(set, f),
@@ -420,8 +420,8 @@ mod tests {
         let bytes = command.to_bytes_le().unwrap();
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
 
-        // GlobalGet
-        let expected = "global.get edition into r0;";
+        // MetadataGet
+        let expected = "metadata.get edition into r0;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         let bytes = command.to_bytes_le().unwrap();
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
@@ -503,10 +503,10 @@ mod tests {
         assert_eq!(Command::GetOrUse(GetOrUse::from_str(expected).unwrap()), command);
         assert_eq!(expected, command.to_string());
 
-        // GlobalGet
-        let expected = "global.get edition into r0;";
+        // MetadataGet
+        let expected = "metadata.get edition into r0;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
-        assert_eq!(Command::GlobalGet(GlobalGet::from_str(expected).unwrap()), command);
+        assert_eq!(Command::MetadataGet(MetadataGet::from_str(expected).unwrap()), command);
         assert_eq!(expected, command.to_string());
 
         // RandChaCha
