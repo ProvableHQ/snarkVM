@@ -19,6 +19,9 @@ pub use authorization::*;
 mod call;
 pub use call::*;
 
+mod constructor_types;
+pub use constructor_types::*;
+
 mod finalize_registers;
 pub use finalize_registers::*;
 
@@ -65,7 +68,7 @@ use console::{
     types::{Field, Group},
 };
 use ledger_block::{Deployment, Transaction, Transition};
-use synthesizer_program::{CallOperator, Closure, Function, Instruction, Operand, Program, traits::*};
+use synthesizer_program::{CallOperator, Closure, Constructor, Function, Instruction, Operand, Program, traits::*};
 use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -190,6 +193,8 @@ pub struct Stack<N: Network> {
     register_types: IndexMap<Identifier<N>, RegisterTypes<N>>,
     /// The mapping of finalize names to their register types.
     finalize_types: IndexMap<Identifier<N>, FinalizeTypes<N>>,
+    /// The register types in a constructor.
+    constructor_types: ConstructorTypes<N>,
     /// The universal SRS.
     universal_srs: Arc<UniversalSRS<N>>,
     /// The mapping of function name to proving key.

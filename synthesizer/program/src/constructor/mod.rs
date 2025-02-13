@@ -36,9 +36,20 @@ pub struct ConstructorCore<N: Network, Command: CommandTrait<N>> {
 }
 
 impl<N: Network, Command: CommandTrait<N>> ConstructorCore<N, Command> {
-    /// Initializes a new constructor with the given name.
+    /// Initializes a new constructor.
     pub fn new() -> Self {
         Self { commands: Vec::new(), num_writes: 0, positions: HashMap::new() }
+    }
+
+    /// Initializes the default constructor.
+    // Note this cannot be changed without a migration.
+    pub fn default() -> Result<Self> {
+        Self::from_str(
+            r"
+init:
+    metadata.get edition into r0;
+    assert.eq r0 0u8;",
+        )
     }
 
     /// Returns the constructor commands.
@@ -73,6 +84,8 @@ impl<N: Network, Command: CommandTrait<N>> ConstructorCore<N, Command> {
         ensure!(!command.is_call(), "Forbidden operation: Constructor cannot invoke a 'call'");
         // Ensure the command is not a cast to record instruction.
         ensure!(!command.is_cast_to_record(), "Forbidden operation: Constructor cannot cast to a record");
+        // Ensure the command is not an await instruction.
+        ensure!(!command.is_await(), "Forbidden operation: Constructor cannot 'await'");
 
         // Check the destination registers.
         for register in command.destinations() {
@@ -113,12 +126,6 @@ impl<N: Network, Command: CommandTrait<N>> TypeName for ConstructorCore<N, Comma
     #[inline]
     fn type_name() -> &'static str {
         "init"
-    }
-}
-
-impl<N: Network, Command: CommandTrait<N>> Default for ConstructorCore<N, Command> {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

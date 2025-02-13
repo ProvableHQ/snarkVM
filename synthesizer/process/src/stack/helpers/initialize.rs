@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use synthesizer_program::Constructor;
 
 // TODO: @d0cd. Check the MAX_PROGRAM_DEPTH at runtime?
 // TODO: @d0cd. Recursion safety for the number of calls and costs at runtime?
@@ -28,6 +29,7 @@ impl<N: Network> Stack<N> {
             stacks: process.stacks.clone(),
             register_types: Default::default(),
             finalize_types: Default::default(),
+            constructor_types: Default::default(),
             universal_srs: process.universal_srs().clone(),
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
@@ -59,6 +61,9 @@ impl<N: Network> Stack<N> {
             // This includes a safety check for the maximum number of calls.
             stack.get_number_of_calls(function.name())?;
         }
+
+        // Add the constructor to the stack.
+        stack.insert_constructor(program.constructor())?;
 
         // Return the stack.
         Ok(stack)
@@ -102,6 +107,22 @@ impl<N: Network> Stack<N> {
             // Add the finalize name and finalize types to the stack.
             self.finalize_types.insert(*name, finalize_types);
         }
+        // Return success.
+        Ok(())
+    }
+
+    /// Adds the constructor to the stack. If none is specified for a the program, a default constructor is added.
+    /// The default constructor ensures that a program cannot be updated.
+    // Note that the default constructor **cannot** be changed without a migration.
+    #[inline]
+    fn insert_constructor(&mut self, constructor: &Option<Constructor<N>>) -> Result<()> {
+        // Compute the constructor types.
+        let constructor_types = match constructor {
+            Some(constructor) => ConstructorTypes::from_constructor(self, constructor),
+            None => ConstructorTypes::from_constructor(self, &Constructor::default()?),
+        }?;
+        // Add the constructor types to the stack.
+        self.constructor_types = constructor_types;
         // Return success.
         Ok(())
     }
