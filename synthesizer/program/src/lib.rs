@@ -18,12 +18,16 @@
 #![warn(clippy::cast_possible_truncation)]
 
 pub type Program<N> = crate::ProgramCore<N, Instruction<N>, Command<N>>;
+pub type Constructor<N> = crate::ConstructorCore<N, Command<N>>;
 pub type Function<N> = crate::FunctionCore<N, Instruction<N>, Command<N>>;
 pub type Finalize<N> = crate::FinalizeCore<N, Command<N>>;
 pub type Closure<N> = crate::ClosureCore<N, Instruction<N>>;
 
 mod closure;
 pub use closure::*;
+
+mod constructor;
+pub use constructor::*;
 
 pub mod finalize;
 pub use finalize::*;
@@ -89,7 +93,6 @@ use console::{
     },
     program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
 };
-
 use indexmap::IndexMap;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -124,6 +127,8 @@ pub struct ProgramCore<N: Network, Instruction: InstructionTrait<N>, Command: Co
     closures: IndexMap<Identifier<N>, ClosureCore<N, Instruction>>,
     /// A map of the declared functions for the program.
     functions: IndexMap<Identifier<N>, FunctionCore<N, Instruction, Command>>,
+    /// A constructor for the program.
+    constructor: Option<ConstructorCore<N, Command>>,
 }
 
 impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
@@ -142,6 +147,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             records: IndexMap::new(),
             closures: IndexMap::new(),
             functions: IndexMap::new(),
+            constructor: None,
         })
     }
 
@@ -184,6 +190,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Returns the functions in the program.
     pub const fn functions(&self) -> &IndexMap<Identifier<N>, FunctionCore<N, Instruction, Command>> {
         &self.functions
+    }
+
+    /// Returns the constructor in the program.
+    pub const fn constructor(&self) -> &Option<ConstructorCore<N, Command>> {
+        &self.constructor
     }
 
     /// Returns `true` if the program contains an import with the given program ID.
@@ -292,7 +303,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Adds a new import statement to the program.
     ///
     /// # Errors
-    /// This method will halt if the imported program was previously added.
+    /// This method will halt if the import is already in use.
     #[inline]
     pub fn add_import(&mut self, import: Import<N>) -> Result<()> {
         // Retrieve the imported program name.
@@ -356,7 +367,6 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Adds a new struct to the program.
     ///
     /// # Errors
-    /// This method will halt if the struct was previously added.
     /// This method will halt if the struct name is already in use in the program.
     /// This method will halt if the struct name is a reserved opcode or keyword.
     /// This method will halt if any structs in the struct's members are not already defined.
@@ -417,7 +427,6 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Adds a new record to the program.
     ///
     /// # Errors
-    /// This method will halt if the record was previously added.
     /// This method will halt if the record name is already in use in the program.
     /// This method will halt if the record name is a reserved opcode or keyword.
     /// This method will halt if any records in the record's members are not already defined.
@@ -474,7 +483,6 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Adds a new closure to the program.
     ///
     /// # Errors
-    /// This method will halt if the closure was previously added.
     /// This method will halt if the closure name is already in use in the program.
     /// This method will halt if the closure name is a reserved opcode or keyword.
     /// This method will halt if any registers are assigned more than once.
@@ -503,8 +511,9 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         ensure!(!closure.inputs().is_empty(), "Cannot evaluate a closure without input statements");
         // Ensure the number of inputs is within the allowed range.
         ensure!(closure.inputs().len() <= N::MAX_INPUTS, "Closure exceeds maximum number of inputs");
-        // Ensure there are instructions in the closure.
+        // Ensure the number of instructions are within the allowed range.
         ensure!(!closure.instructions().is_empty(), "Cannot evaluate a closure without instructions");
+        ensure!(closure.instructions().len() <= N::MAX_INSTRUCTIONS, "Closure exceeds maximum instructions");
         // Ensure the number of outputs is within the allowed range.
         ensure!(closure.outputs().len() <= N::MAX_OUTPUTS, "Closure exceeds maximum number of outputs");
 
@@ -522,7 +531,6 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Adds a new function to the program.
     ///
     /// # Errors
-    /// This method will halt if the function was previously added.
     /// This method will halt if the function name is already in use in the program.
     /// This method will halt if the function name is a reserved opcode or keyword.
     /// This method will halt if any registers are assigned more than once.
@@ -562,6 +570,18 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         if self.functions.insert(function_name, function).is_some() {
             bail!("'{function_name}' already exists in the program.")
         }
+        Ok(())
+    }
+
+    /// Updates the constructor in the program.
+    ///
+    /// # Errors
+    /// This method will halt if a constructor has already been added.
+    pub fn add_constructor(&mut self, constructor: ConstructorCore<N, Command>) -> Result<()> {
+        // Ensure there is no constructor in memory.
+        ensure!(self.constructor().is_none(), "Cannot add multiple constructors to the program");
+        // Insert the constructor.
+        self.constructor = Some(constructor);
         Ok(())
     }
 }
@@ -653,6 +673,19 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             None => bail!("Function '{}' not found.", function_name),
         }
     }
+
+    /// Removes the constructor from the program.
+    ///
+    /// # Errors
+    /// This method will halt if the constructor is not in the program.
+    #[inline]
+    pub fn remove_constructor(&mut self) -> Result<ConstructorCore<N, Command>> {
+        // Remove the constructor from the program.
+        match self.constructor.take() {
+            Some(constructor) => Ok(constructor),
+            None => bail!("Constructor not found."),
+        }
+    }
 }
 
 impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
@@ -730,6 +763,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         "impl",
         "type",
         "future",
+        "init",
     ];
 
     /// Returns `true` if the given name does not already exist in the program.

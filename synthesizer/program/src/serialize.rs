@@ -55,6 +55,9 @@ struct message:
     first as field;
     second as field;
 
+init:
+    assert.eq true false;
+
 function compute:
     input r0 as message.private;
     add r0.first r0.second into r1;
@@ -82,6 +85,9 @@ function compute:
 struct message:
     first as field;
     second as field;
+
+init:
+    assert.eq true false;
 
 function compute:
     input r0 as message.private;

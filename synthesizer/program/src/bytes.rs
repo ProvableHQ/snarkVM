@@ -56,6 +56,10 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fro
                 3 => program.add_closure(ClosureCore::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?,
                 // Read the function.
                 4 => program.add_function(FunctionCore::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?,
+                // Read the constructor.
+                5 => {
+                    program.add_constructor(ConstructorCore::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?
+                }
                 // Invalid variant.
                 _ => return Err(error(format!("Failed to parse program. Invalid component variant '{variant}'"))),
             }
@@ -83,8 +87,12 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
         }
 
         // Write the number of components.
-        u16::try_from(self.identifiers.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
-        // Write the components.
+        let num_components = match self.constructor.is_none() {
+            true => self.identifiers.len(),
+            false => self.identifiers.len() + 1,
+        };
+        u16::try_from(num_components).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        // Write the named components.
         for (identifier, definition) in self.identifiers.iter() {
             match definition {
                 ProgramDefinition::Mapping => match self.mappings.get(identifier) {
@@ -134,6 +142,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
                 },
             }
         }
+        // Write the constructor if it exists.
+        if let Some(constructor) = &self.constructor {
+            5u8.write_le(&mut writer)?;
+            constructor.write_le(&mut writer)?;
+        }
 
         Ok(())
     }
@@ -155,6 +168,9 @@ program token.aleo;
 record token:
     owner as address.private;
     token_amount as u64.private;
+
+init:
+    assert.eq true false;
 
 function compute:
     input r0 as token.record;

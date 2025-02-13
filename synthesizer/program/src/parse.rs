@@ -28,6 +28,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
             R(RecordType<N>),
             C(ClosureCore<N, Instruction>),
             F(FunctionCore<N, Instruction, Command>),
+            Con(ConstructorCore<N, Command>),
         }
 
         // Parse the imports from the string.
@@ -61,6 +62,8 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
                 map(ClosureCore::parse, |closure| P::<N, Instruction, Command>::C(closure))(string)
             } else if string.starts_with(FunctionCore::<N, Instruction, Command>::type_name()) {
                 map(FunctionCore::parse, |function| P::<N, Instruction, Command>::F(function))(string)
+            } else if string.starts_with(ConstructorCore::<N, Command>::type_name()) {
+                map(ConstructorCore::parse, |constructor| P::<N, Instruction, Command>::Con(constructor))(string)
             } else {
                 Err(Err::Error(make_error(string, ErrorKind::Alt)))
             }
@@ -87,6 +90,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
                 P::R(record) => program.add_record(record),
                 P::C(closure) => program.add_closure(closure),
                 P::F(function) => program.add_function(function),
+                P::Con(constructor) => program.add_constructor(constructor),
             };
 
             match result {
@@ -161,6 +165,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Dis
         // Print the program name.
         write!(f, "{} {};\n\n", Self::type_name(), self.id)?;
 
+        // Print the named components.
         let mut identifier_iter = self.identifiers.iter().peekable();
         while let Some((identifier, definition)) = identifier_iter.next() {
             match definition {
@@ -191,6 +196,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Dis
             }
         }
 
+        // Print the constructor, if it exists.
+        if let Some(constructor) = &self.constructor {
+            writeln!(f, "\n{constructor}")?;
+        }
+
         Ok(())
     }
 }
@@ -213,6 +223,9 @@ program to_parse.aleo;
 struct message:
     first as field;
     second as field;
+
+init:
+    add 1u8 1u8 into 2u8;
 
 function compute:
     input r0 as message.private;
@@ -262,6 +275,9 @@ function compute:
     input r0 as message.private;
     add r0.first r0.second into r1;
     output r1 as field.private;
+
+init:
+    assert.eq 0u8 1u8;
 ";
         // Parse a new program.
         let program = Program::<CurrentNetwork>::from_str(expected)?;
@@ -346,6 +362,16 @@ function compute:
             s
         };
 
+        // Helper function to generate constructors.
+        let gen_constructor_string = |n: usize| -> String {
+            let mut s = String::with_capacity(CurrentNetwork::MAX_PROGRAM_SIZE);
+            for i in 0..n {
+                s.push_str("init:\n");
+                s.push_str(&format!("    add {i}u8 {i}u8 into r0;\n"));
+            }
+            s
+        };
+
         // Helper function to generate and parse a program.
         let test_parse = |imports: &str, body: &str, should_succeed: bool| {
             let program = format!("{imports}\nprogram to_parse.aleo;\n\n{body}");
@@ -380,6 +406,12 @@ function compute:
         test_parse("", &gen_function_string(CurrentNetwork::MAX_FUNCTIONS), true);
         // A program with more than MAX_FUNCTIONS should fail.
         test_parse("", &gen_function_string(CurrentNetwork::MAX_FUNCTIONS + 1), false);
+        // A program with no constructor should succeed.
+        test_parse("", &gen_constructor_string(0), true);
+        // A program with a constructor should succeed.
+        test_parse("", &gen_constructor_string(1), true);
+        // A program with more than one constructor should fail.
+        test_parse("", &gen_constructor_string(2), false);
 
         // Initialize a program which is too big.
         let program_too_big = format!(
