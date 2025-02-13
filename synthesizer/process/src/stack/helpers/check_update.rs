@@ -57,6 +57,13 @@ impl<N: Network> Stack<N> {
                 bail!("Cannot update '{program_id}' because it is missing the original import '{import}'");
             }
         }
+        // Ensure that the constructors in both programs are exactly the same.
+        let old_constructor = old_program.constructor();
+        let new_constructor = program.constructor();
+        ensure!(
+            old_constructor == new_constructor,
+            "Cannot update '{program_id}' because the constructor does not match"
+        );
         // Ensure that the old program closures exist in the new program, with the exact same definition
         for closure in old_program.closures().values() {
             let closure_name = closure.name();
