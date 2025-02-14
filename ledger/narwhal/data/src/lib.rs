@@ -251,23 +251,46 @@ mod tests {
 
         // Sample transactions
         let transactions = [
-            ledger_test_helpers::sample_deployment_transaction(true, rng),
-            ledger_test_helpers::sample_deployment_transaction(false, rng),
-            ledger_test_helpers::sample_execution_transaction_with_fee(true, rng),
-            ledger_test_helpers::sample_execution_transaction_with_fee(false, rng),
-            ledger_test_helpers::sample_fee_private_transaction(rng),
-            ledger_test_helpers::sample_fee_public_transaction(rng),
+            {
+                println!("Sampling 0");
+                ledger_test_helpers::sample_deployment_transaction(true, rng)
+            },
+            {
+                println!("Sampling 1");
+                ledger_test_helpers::sample_deployment_transaction(false, rng)
+            },
+            {
+                println!("Sampling 2");
+                ledger_test_helpers::sample_execution_transaction_with_fee(true, rng)
+            },
+            {
+                println!("Sampling 3");
+                ledger_test_helpers::sample_execution_transaction_with_fee(false, rng)
+            },
+            {
+                println!("Sampling 4");
+                ledger_test_helpers::sample_fee_private_transaction(rng)
+            },
+            {
+                println!("Sampling 5");
+                ledger_test_helpers::sample_fee_public_transaction(rng)
+            },
         ];
 
         for transaction in transactions.into_iter() {
+            println!("START");
             // Convert the transaction to a Data buffer.
             let data_bytes: Data<Transaction<MainnetV0>> = Data::Buffer(transaction.to_bytes_le().unwrap().into());
+            println!("0");
             // Convert the transaction to a data object.
             let data = Data::Object(transaction);
 
             // Compute the checksums.
+            println!("1");
             let checksum_1 = data_bytes.to_checksum::<MainnetV0>().unwrap();
+            println!("2");
             let checksum_2 = data.to_checksum::<MainnetV0>().unwrap();
+            println!("END");
 
             // Ensure the checksums are equal.
             assert_eq!(checksum_1, checksum_2);
