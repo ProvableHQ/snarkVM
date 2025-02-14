@@ -479,7 +479,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 mod tests {
     use super::*;
 
-    use crate::vm::test_helpers::sample_finalize_state;
+    use crate::vm::test_helpers::{sample_finalize_state, sample_next_block};
     use console::{
         account::{Address, ViewKey},
         types::Field,
@@ -757,13 +757,28 @@ mod tests {
     #[test]
     fn test_failed_credits_deployment() {
         let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+
+        // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
+        vm.add_next_block(&genesis).unwrap();
 
         // Fetch the credits program
         let program = Program::credits().unwrap();
 
-        // Ensure that the program can't be deployed.
-        assert!(vm.deploy_raw(&program, rng).is_err());
+        // Ensure that the program can't be deployed successfully.
+        // In this case the deployment can be successfully generated as it is a valid update to `credits.aleo`.
+        // However, when the transaction fails to verify and is not accepted when added to the block.
+        let deployment = vm.deploy(&caller_private_key, &program, None, 0u64, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment, None, rng).is_err());
+        let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 0);
+        vm.add_next_block(&block).unwrap();
 
         // Create a new `credits.aleo` program.
         let program = Program::from_str(
@@ -781,8 +796,9 @@ function compute:
         )
         .unwrap();
 
-        // Ensure that the program can't be deployed.
-        assert!(vm.deploy_raw(&program, rng).is_err());
+        // Ensure that the program can't be deployed successfully.
+        // In this case, the deployment cannot be successfully generated as it is an invalid update to `credits.aleo`.
+        assert!(vm.deploy(&caller_private_key, &program, None, 0u64, None, rng).is_err());
     }
 
     #[test]
