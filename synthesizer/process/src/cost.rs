@@ -13,8 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Process, Stack, StackProgramTypes};
-use std::sync::Arc;
+use crate::{Process, Stack, StackProgramTypes, StackRef};
 
 use console::{
     prelude::*,
@@ -410,13 +409,6 @@ pub fn cost_per_command<N: Network>(
 pub fn cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
     // Initialize the base cost.
     let mut finalize_cost = 0u64;
-    // A helper enum to track stacks.
-    enum StackRef<'a, N: Network> {
-        // Self's stack.
-        Internal(&'a Stack<N>),
-        // An external stack.
-        External(Arc<Stack<N>>),
-    }
     // Initialize a queue of finalize blocks to tally.
     let mut finalizes = vec![(StackRef::Internal(stack), *function_name)];
     // Initialize a counter for the number of finalize blocks seen.
@@ -425,27 +417,31 @@ pub fn cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Ide
     while let Some((stack_ref, function_name)) = finalizes.pop() {
         // Ensure that the number of finalize blocks does not exceed the maximum.
         // Note that one transition is reserved for the fee.
-        ensure!(num_finalizes < Transaction::<N>::MAX_TRANSITIONS, "The number of finalize blocks cannot ");
+        ensure!(
+            num_finalizes < Transaction::<N>::MAX_TRANSITIONS,
+            "The number of finalize blocks must be less than '{}'",
+            Transaction::<N>::MAX_TRANSITIONS
+        );
         // Get the finalize logic. If the function does not have a finalize scope then no cost is incurred.
         if let Some(finalize) = match &stack_ref {
-            StackRef::Internal(stack) => stack.get_function_ref(&function_name)?.finalize_logic(),
-            StackRef::External(stack) => stack.get_function_ref(&function_name)?.finalize_logic(),
+            StackRef::Internal(stack_ref) => stack_ref.get_function_ref(&function_name)?.finalize_logic(),
+            StackRef::External(stack_ref) => stack_ref.get_function_ref(&function_name)?.finalize_logic(),
         } {
             // Queue the futures to be tallied.
             for input in finalize.inputs() {
                 if let FinalizeType::Future(future) = input.finalize_type() {
                     // Get the external stack for the future.
-                    let stack = stack.get_external_stack(future.program_id())?;
+                    let external_stack = stack_ref.get_external_stack(future.program_id())?;
                     // Increment the number of finalize blocks seen.
                     num_finalizes += 1;
                     // Queue the future.
-                    finalizes.push((StackRef::External(stack), *future.resource()));
+                    finalizes.push((StackRef::External(external_stack), *future.resource()));
                 }
             }
             // Sum the cost of all commands in the current block.
             for command in finalize.commands() {
                 finalize_cost = finalize_cost
-                    .checked_add(cost_per_command(stack, finalize, command, ConsensusFeeVersion::V2)?)
+                    .checked_add(cost_per_command(&stack_ref, finalize, command, ConsensusFeeVersion::V2)?)
                     .ok_or(anyhow!("Finalize cost overflowed"))?;
             }
         }
@@ -457,13 +453,6 @@ pub fn cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Ide
 pub fn cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
     // Initialize the base cost.
     let mut finalize_cost = 0u64;
-    // A helper enum to track stacks.
-    enum StackRef<'a, N: Network> {
-        // Self's stack.
-        Internal(&'a Stack<N>),
-        // An external stack.
-        External(Arc<Stack<N>>),
-    }
     // Initialize a queue of finalize blocks to tally.
     let mut finalizes = vec![(StackRef::Internal(stack), *function_name)];
     // Initialize a counter for the number of finalize blocks seen.
@@ -472,27 +461,31 @@ pub fn cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Ide
     while let Some((stack_ref, function_name)) = finalizes.pop() {
         // Ensure that the number of finalize blocks does not exceed the maximum.
         // Note that one transition is reserved for the fee.
-        ensure!(num_finalizes < Transaction::<N>::MAX_TRANSITIONS, "The number of finalize blocks cannot ");
+        ensure!(
+            num_finalizes < Transaction::<N>::MAX_TRANSITIONS,
+            "The number of finalize blocks must be less than '{}'",
+            Transaction::<N>::MAX_TRANSITIONS
+        );
         // Get the finalize logic. If the function does not have a finalize scope then no cost is incurred.
         if let Some(finalize) = match &stack_ref {
-            StackRef::Internal(stack) => stack.get_function_ref(&function_name)?.finalize_logic(),
-            StackRef::External(stack) => stack.get_function_ref(&function_name)?.finalize_logic(),
+            StackRef::Internal(stack_ref) => stack_ref.get_function_ref(&function_name)?.finalize_logic(),
+            StackRef::External(stack_ref) => stack_ref.get_function_ref(&function_name)?.finalize_logic(),
         } {
             // Queue the futures to be tallied.
             for input in finalize.inputs() {
                 if let FinalizeType::Future(future) = input.finalize_type() {
                     // Get the external stack for the future.
-                    let stack = stack.get_external_stack(future.program_id())?;
+                    let external_stack = stack_ref.get_external_stack(future.program_id())?;
                     // Increment the number of finalize blocks seen.
                     num_finalizes += 1;
                     // Queue the future.
-                    finalizes.push((StackRef::External(stack), *future.resource()));
+                    finalizes.push((StackRef::External(external_stack), *future.resource()));
                 }
             }
             // Sum the cost of all commands in the current block.
             for command in finalize.commands() {
                 finalize_cost = finalize_cost
-                    .checked_add(cost_per_command(stack, finalize, command, ConsensusFeeVersion::V1)?)
+                    .checked_add(cost_per_command(&stack_ref, finalize, command, ConsensusFeeVersion::V1)?)
                     .ok_or(anyhow!("Finalize cost overflowed"))?;
             }
         }

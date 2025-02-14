@@ -214,7 +214,7 @@ impl<N: Network> Transaction<N> {
         // Ensure the number of functions is within the allowed range.
         ensure!(
             num_transitions < Self::MAX_TRANSITIONS, // Note: Observe we hold back 1 for the fee.
-            "Execution must contain less than {num_transitions} transitions, found {}",
+            "Execution must contain less than {} transitions, found {num_transitions}",
             Self::MAX_TRANSITIONS,
         );
         Ok(())

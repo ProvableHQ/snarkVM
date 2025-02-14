@@ -3152,8 +3152,8 @@ fn test_record_creation_and_consumption_in_call() {
 
     // A helper function to get the record counts.
     let get_record_counts = || {
-        let slow_spent_filter = RecordsFilter::SlowSpent(private_key.clone());
-        let slow_unspent_filter = RecordsFilter::SlowUnspent(private_key.clone());
+        let slow_spent_filter = RecordsFilter::SlowSpent(private_key);
+        let slow_unspent_filter = RecordsFilter::SlowUnspent(private_key);
         let spent_records = ledger.find_records(&view_key, RecordsFilter::Spent).unwrap().collect_vec().len();
         let slow_spent_records = ledger.find_records(&view_key, slow_spent_filter).unwrap().collect_vec().len();
         let unspent_records = ledger.find_records(&view_key, RecordsFilter::Unspent).unwrap().collect_vec().len();
@@ -3163,7 +3163,13 @@ fn test_record_creation_and_consumption_in_call() {
     };
 
     // Check the initial record counts.
-    let (initial_spent_records, initial_slow_spent_records, initial_unspent_records, initial_slow_unspent_records, initial_records) = get_record_counts();
+    let (
+        initial_spent_records,
+        initial_slow_spent_records,
+        initial_unspent_records,
+        initial_slow_unspent_records,
+        initial_records,
+    ) = get_record_counts();
     assert_eq!(0, initial_spent_records);
     assert_eq!(0, initial_slow_spent_records);
     assert_eq!(4, initial_unspent_records);
@@ -3185,7 +3191,9 @@ function mint:
 
 function burn:
     input r0 as data.record;
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 
     let program_1 = Program::from_str(
         r"
@@ -3210,38 +3218,37 @@ function consume:
 function create_and_consume:
     call child.aleo/mint into r0;
     call child.aleo/burn r0;
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 
     // Deploy the programs.
     let deployment_0 = ledger.vm().deploy(&private_key, &program_0, None, 0, None, rng).unwrap();
-    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![deployment_0], rng).unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![deployment_0], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     ledger.advance_to_next_block(&block).unwrap();
 
     let deployment_1 = ledger.vm().deploy(&private_key, &program_1, None, 0, None, rng).unwrap();
-    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![deployment_1], rng).unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![deployment_1], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     ledger.advance_to_next_block(&block).unwrap();
 
     // Call the `mint` function.
-    let transaction = ledger.vm()
-        .execute(
-            &private_key,
-            ("child.aleo", "mint"),
-            Vec::<Value<CurrentNetwork>>::new().iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+    let transaction = ledger
+        .vm()
+        .execute(&private_key, ("child.aleo", "mint"), Vec::<Value<CurrentNetwork>>::new().iter(), None, 0, None, rng)
         .unwrap();
-    let record = transaction.records().last().unwrap().1.decrypt(&view_key).unwrap();
-    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
+    let mint_record = transaction.records().last().unwrap().1.decrypt(&view_key).unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     ledger.advance_to_next_block(&block).unwrap();
 
     // Check the record counts.
-    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) = get_record_counts();
+    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
+        get_record_counts();
     assert_eq!(num_spent_records, initial_spent_records);
     assert_eq!(num_slow_spent_records, initial_slow_spent_records);
     assert_eq!(num_unspent_records, initial_unspent_records + 1);
@@ -3249,7 +3256,8 @@ function create_and_consume:
     assert_eq!(num_records, initial_records + 1);
 
     // Call the `create_without_output` function.
-    let transaction = ledger.vm()
+    let transaction = ledger
+        .vm()
         .execute(
             &private_key,
             ("parent.aleo", "create_without_output"),
@@ -3261,20 +3269,43 @@ function create_and_consume:
         )
         .unwrap();
 
-    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     ledger.advance_to_next_block(&block).unwrap();
 
-    // Ensure that no new records were created or spent for the view key.
-    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) = get_record_counts();
+    // Check the record counts.
+    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
+        get_record_counts();
     assert_eq!(num_spent_records, initial_spent_records);
     assert_eq!(num_slow_spent_records, initial_slow_spent_records);
     assert_eq!(num_unspent_records, initial_unspent_records + 2);
     assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 2);
     assert_eq!(num_records, initial_records + 2);
 
+    // Call the `burn` function on record created by `create_without_output`.
+    let record = block.records().collect_vec().last().unwrap().1.decrypt(&view_key).unwrap();
+    let transaction = ledger
+        .vm()
+        .execute(&private_key, ("child.aleo", "burn"), vec![Value::Record(record)].iter(), None, 0, None, rng)
+        .unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    ledger.advance_to_next_block(&block).unwrap();
+
+    // Check the record counts.
+    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
+        get_record_counts();
+    assert_eq!(num_spent_records, initial_spent_records + 1);
+    assert_eq!(num_slow_spent_records, initial_slow_spent_records + 1);
+    assert_eq!(num_unspent_records, initial_unspent_records + 1);
+    assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 1);
+    assert_eq!(num_records, initial_records + 2);
+
     // Call the `create` function.
-    let transaction = ledger.vm()
+    let transaction = ledger
+        .vm()
         .execute(
             &private_key,
             ("parent.aleo", "create"),
@@ -3285,68 +3316,69 @@ function create_and_consume:
             rng,
         )
         .unwrap();
-    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     ledger.advance_to_next_block(&block).unwrap();
 
     // Ensure that a record was created and spent.
-    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) = get_record_counts();
-    assert_eq!(num_spent_records, initial_spent_records);
-    assert_eq!(num_slow_spent_records, initial_slow_spent_records);
-    assert_eq!(num_unspent_records, initial_unspent_records + 3);
-    assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 3);
-    assert_eq!(num_records, initial_records + 3);
-
-    // Call the `consume_without_call` function.
-    let transaction = ledger.vm()
-        .execute(
-            &private_key,
-            ("parent.aleo", "consume_without_call"),
-            vec![Value::Record(record.clone())].iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
-        .unwrap();
-    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 1);
-    ledger.advance_to_next_block(&block).unwrap();
-
-    // Ensure that no records were created or spent.
-    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) = get_record_counts();
-    assert_eq!(num_spent_records, initial_spent_records);
-    assert_eq!(num_slow_spent_records, initial_slow_spent_records);
-    assert_eq!(num_unspent_records, initial_unspent_records + 3);
-    assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 3);
-    assert_eq!(num_records, initial_records + 3);
-
-    // Call the `consume` function.
-    let transaction = ledger.vm()
-        .execute(
-            &private_key,
-            ("parent.aleo", "consume"),
-            vec![Value::Record(record)].iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
-        .unwrap();
-    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 1);
-    ledger.advance_to_next_block(&block).unwrap();
-
-    // Ensure that the record was spent.
-    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) = get_record_counts();
+    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
+        get_record_counts();
     assert_eq!(num_spent_records, initial_spent_records + 1);
     assert_eq!(num_slow_spent_records, initial_slow_spent_records + 1);
     assert_eq!(num_unspent_records, initial_unspent_records + 2);
     assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 2);
     assert_eq!(num_records, initial_records + 3);
 
+    // Call the `consume_without_call` function.
+    let transaction = ledger
+        .vm()
+        .execute(
+            &private_key,
+            ("parent.aleo", "consume_without_call"),
+            vec![Value::Record(mint_record.clone())].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    ledger.advance_to_next_block(&block).unwrap();
+
+    // Ensure that no records were created or spent.
+    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
+        get_record_counts();
+    assert_eq!(num_spent_records, initial_spent_records + 1);
+    assert_eq!(num_slow_spent_records, initial_slow_spent_records + 1);
+    assert_eq!(num_unspent_records, initial_unspent_records + 2);
+    assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 2);
+    assert_eq!(num_records, initial_records + 3);
+
+    // Call the `consume` function.
+    let transaction = ledger
+        .vm()
+        .execute(&private_key, ("parent.aleo", "consume"), vec![Value::Record(mint_record)].iter(), None, 0, None, rng)
+        .unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    ledger.advance_to_next_block(&block).unwrap();
+
+    // Ensure that the record was spent.
+    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
+        get_record_counts();
+    assert_eq!(num_spent_records, initial_spent_records + 2);
+    assert_eq!(num_slow_spent_records, initial_slow_spent_records + 2);
+    assert_eq!(num_unspent_records, initial_unspent_records + 1);
+    assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 1);
+    assert_eq!(num_records, initial_records + 3);
+
     // Call the `create_and_consume` function.
-    let transaction = ledger.vm()
+    let transaction = ledger
+        .vm()
         .execute(
             &private_key,
             ("parent.aleo", "create_and_consume"),
@@ -3357,15 +3389,17 @@ function create_and_consume:
             rng,
         )
         .unwrap();
-    let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
+    let block =
+        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     ledger.advance_to_next_block(&block).unwrap();
 
     // Ensure that a record was created and spent.
-    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) = get_record_counts();
-    assert_eq!(num_spent_records, initial_spent_records + 2);
-    assert_eq!(num_slow_spent_records, initial_slow_spent_records + 2);
-    assert_eq!(num_unspent_records, initial_unspent_records + 2);
-    assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 2);
+    let (num_spent_records, num_slow_spent_records, num_unspent_records, num_slow_unspent_records, num_records) =
+        get_record_counts();
+    assert_eq!(num_spent_records, initial_spent_records + 3);
+    assert_eq!(num_slow_spent_records, initial_slow_spent_records + 3);
+    assert_eq!(num_unspent_records, initial_unspent_records + 1);
+    assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 1);
     assert_eq!(num_records, initial_records + 4);
 }

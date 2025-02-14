@@ -149,7 +149,7 @@ impl<N: Network> Authorization<N> {
         // Check that the number of requests is less than the maximum.
         ensure!(
             self.len() < Transaction::<N>::MAX_TRANSITIONS,
-            "The number of requests in the authorization cannot exceed '{}'.",
+            "The number of requests in the authorization must be less than '{}'.",
             Transaction::<N>::MAX_TRANSITIONS
         );
         // Append the request to the authorization.

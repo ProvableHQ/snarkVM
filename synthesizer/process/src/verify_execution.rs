@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use ledger_block::Transaction;
 
 impl<N: Network> Process<N> {
     /// Verifies the given execution is valid.
@@ -27,8 +26,9 @@ impl<N: Network> Process<N> {
         ensure!(!execution.is_empty(), "There are no transitions in the execution");
         // Ensure that the execution does not exceed the maximum number of transitions.
         ensure!(
-            execution.len() <= Transaction::<N>::MAX_TRANSITIONS,
-            "The execution exceeded the maximum number of transitions"
+            execution.len() < Transaction::<N>::MAX_TRANSITIONS,
+            "The number of transitions in an execution must be less than '{}'",
+            Transaction::<N>::MAX_TRANSITIONS
         );
 
         // Ensure the number of transitions matches the program function.

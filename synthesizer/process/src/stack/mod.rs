@@ -139,7 +139,7 @@ impl<N: Network> CallStack<N> {
                 // Check that the number of requests does not exceed the maximum.
                 ensure!(
                     requests.len() < Transaction::<N>::MAX_TRANSITIONS,
-                    "The number of requests in the authorization cannot exceed '{}'.",
+                    "The number of requests in the authorization must be less than '{}'.",
                     Transaction::<N>::MAX_TRANSITIONS
                 );
                 // Push the request to the stack.
@@ -221,6 +221,7 @@ impl<N: Network> Stack<N> {
                 }
             }
         };
+        println!("Program edition: {}", edition);
         // Ensure the program contains functions.
         ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{program_id}'");
         // Serialize the program into bytes.
@@ -293,13 +294,6 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize> {
         // Initialize the base number of calls.
         let mut num_calls = 1;
-        // A helper enum to track stacks.
-        enum StackRef<'a, N: Network> {
-            // Self's stack.
-            Internal(&'a Stack<N>),
-            // An external stack.
-            External(Arc<Stack<N>>),
-        }
         // Initialize a queue of functions to check.
         let mut queue = vec![(StackRef::Internal(self), *function_name)];
         // Iterate over the queue.
@@ -308,9 +302,9 @@ impl<N: Network> StackProgram<N> for Stack<N> {
             // Note that one transition is reserved for the fee.
             ensure!(
                 num_calls < Transaction::<N>::MAX_TRANSITIONS,
-                "Number of calls exceeds the maximum allowed number of transitions"
+                "Number of calls must be less than '{}'",
+                Transaction::<N>::MAX_TRANSITIONS
             );
-
             // Determine the number of calls for the function.
             for instruction in match &stack_ref {
                 StackRef::Internal(stack) => stack.get_function_ref(&function_name)?.instructions(),
@@ -318,19 +312,19 @@ impl<N: Network> StackProgram<N> for Stack<N> {
             } {
                 if let Instruction::Call(call) = instruction {
                     // Determine if this is a function call.
-                    if call.is_function_call(self)? {
+                    if call.is_function_call(&*stack_ref)? {
                         // Increment by the number of calls.
                         num_calls += 1;
                         // Add the function to the queue.
                         match call.operator() {
                             CallOperator::Locator(locator) => {
                                 queue.push((
-                                    StackRef::External(self.get_external_stack(locator.program_id())?),
+                                    StackRef::External(stack_ref.get_external_stack(locator.program_id())?),
                                     *locator.resource(),
                                 ));
                             }
                             CallOperator::Resource(resource) => {
-                                queue.push((StackRef::Internal(self), *resource));
+                                queue.push((stack_ref.clone(), *resource));
                             }
                         }
                     }
@@ -499,3 +493,23 @@ impl<N: Network> PartialEq for Stack<N> {
 }
 
 impl<N: Network> Eq for Stack<N> {}
+
+// A helper enum to avoid cloning stacks.
+#[derive(Clone)]
+pub(crate) enum StackRef<'a, N: Network> {
+    // Self's stack.
+    Internal(&'a Stack<N>),
+    // An external stack.
+    External(Arc<Stack<N>>),
+}
+
+impl<N: Network> Deref for StackRef<'_, N> {
+    type Target = Stack<N>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            StackRef::Internal(stack) => stack,
+            StackRef::External(stack) => stack,
+        }
+    }
+}
