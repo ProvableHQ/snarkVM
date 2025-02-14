@@ -258,12 +258,12 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
         states.pop()
     {
         // Get the finalize logic.
-        let finalize = match stack.get_function_ref(future.function_name())?.finalize_logic() {
+        let finalize = match stack.get_function_ref(registers.function_name())?.finalize_logic() {
             Some(finalize) => finalize,
             None => bail!(
                 "The function '{}/{}' does not have an associated finalize block",
-                future.program_id(),
-                future.function_name()
+                stack.program_id(),
+                registers.function_name()
             ),
         };
         // Evaluate the commands.
