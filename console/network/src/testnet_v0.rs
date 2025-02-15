@@ -133,19 +133,16 @@ impl Network for TestnetV0 {
     /// The transmission checksum type.
     type TransmissionChecksum = u128;
 
-    /// The block height from which consensus V2 rules apply.
+    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
+    /// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
     #[cfg(not(any(test, feature = "test")))]
-    const CONSENSUS_V2_HEIGHT: u32 = 2_950_000;
-    /// The block height from which consensus V2 rules apply.
+    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 3] =
+        [(ConsensusVersion::V1, 0), (ConsensusVersion::V2, 2_950_000), (ConsensusVersion::V3, 4_800_000)];
+    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
+    /// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
     #[cfg(any(test, feature = "test"))]
-    const CONSENSUS_V2_HEIGHT: u32 = 10;
-    // TODO: (raychu86): Update this value based on the desired testnet height.
-    // The block height from which consensus V3 rules apply.
-    #[cfg(not(any(test, feature = "test")))]
-    const CONSENSUS_V3_HEIGHT: u32 = 4_800_000;
-    /// The block height from which consensus V3 rules apply.
-    #[cfg(any(test, feature = "test"))]
-    const CONSENSUS_V3_HEIGHT: u32 = 11;
+    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 3] =
+        [(ConsensusVersion::V1, 0), (ConsensusVersion::V2, 10), (ConsensusVersion::V3, 11)];
     /// The network edition.
     const EDITION: u16 = 0;
     /// The genesis block coinbase target.
@@ -164,10 +161,12 @@ impl Network for TestnetV0 {
     const ID: u16 = 1;
     /// The function name for the inclusion circuit.
     const INCLUSION_FUNCTION_NAME: &'static str = MainnetV0::INCLUSION_FUNCTION_NAME;
-    /// The maximum number of certificates in a batch.
-    const MAX_CERTIFICATES: u16 = 100;
-    /// The maximum number of certificates in a batch before consensus V3 rules apply.
-    const MAX_CERTIFICATES_BEFORE_V3: u16 = 100;
+    /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
+    #[cfg(not(any(test, feature = "test")))]
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 16), (ConsensusVersion::V3, 25)];
+    /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
+    #[cfg(any(test, feature = "test"))]
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 100), (ConsensusVersion::V3, 100)];
     /// The network name.
     const NAME: &'static str = "Aleo Testnet (v0)";
 

@@ -2529,7 +2529,9 @@ fn test_long_import_chain() {
     ))
     .unwrap();
     let result = process.add_program(&program);
-    assert!(result.is_err());
+    // Programs may create long import chains as long as number of calls does not exceed the maximum number of transitions.
+    // TODO (@d0cd) Determine whether that this is okay
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -2640,11 +2642,11 @@ fn test_program_exceeding_transaction_spend_limit() {
     // Initialize a `Process`.
     let mut process = Process::<CurrentNetwork>::load().unwrap();
 
-    // Attempt to add the program to the process, which should fail.
+    // Attempt to add the program to the process should pass, as the check happens during finalization.
     let result = process.add_program(&program);
-    assert!(result.is_err());
+    assert!(result.is_ok());
 
-    // Attempt to initialize a `Stack` directly with the program, which should fail.
+    // Initialize a `Stack` directly with the program should pass, as the check happens during finalization.
     let result = Stack::initialize(&process, &program, 0);
-    assert!(result.is_err());
+    assert!(result.is_ok());
 }

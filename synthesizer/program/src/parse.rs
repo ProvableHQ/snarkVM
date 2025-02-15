@@ -124,7 +124,12 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fro
     /// Returns a program from a string literal.
     fn from_str(string: &str) -> Result<Self> {
         // Ensure the raw program string is less than MAX_PROGRAM_SIZE.
-        ensure!(string.len() <= N::MAX_PROGRAM_SIZE, "Program length exceeds N::MAX_PROGRAM_SIZE.");
+        ensure!(
+            string.len() <= N::MAX_PROGRAM_SIZE,
+            "Program length '{}' exceeds '{}'.",
+            string.len(),
+            N::MAX_PROGRAM_SIZE
+        );
 
         match Self::parse(string) {
             Ok((remainder, object)) => {

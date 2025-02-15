@@ -92,4 +92,4 @@ additional:
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"8401929608727184541382889469312440652682460087199782119730570970943355959220field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1xe2fps8f9xpdas2q0fqy22uraenk84tvvzetrsyxgnwy6445h59s6wv78x,\n    12331u64\n  ]\n}"}'
+      - '{"type":"future","id":"4369745470310636653607709784601243833431868722463490242434780063887791579010field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1xe2fps8f9xpdas2q0fqy22uraenk84tvvzetrsyxgnwy6445h59s6wv78x,\n    3831u64\n  ]\n}"}'

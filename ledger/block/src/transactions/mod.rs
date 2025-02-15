@@ -170,12 +170,15 @@ impl<N: Network> Transactions<N> {
 }
 
 impl<N: Network> Transactions<N> {
-    /// The maximum number of aborted transactions allowed in a block.
-    pub const MAX_ABORTED_TRANSACTIONS: usize = BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH
-        * BatchHeader::<N>::MAX_GC_ROUNDS
-        * Committee::<N>::MAX_COMMITTEE_SIZE as usize;
     /// The maximum number of transactions allowed in a block.
     pub const MAX_TRANSACTIONS: usize = usize::pow(2, TRANSACTIONS_DEPTH as u32).saturating_sub(1);
+
+    /// The maximum number of aborted transactions allowed in a block.
+    pub fn max_aborted_transactions() -> Result<usize> {
+        Ok(BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH
+            * BatchHeader::<N>::MAX_GC_ROUNDS
+            * Committee::<N>::max_committee_size()? as usize)
+    }
 
     /// Returns an iterator over all transactions, for all transactions in `self`.
     pub fn iter(&self) -> impl '_ + ExactSizeIterator<Item = &ConfirmedTransaction<N>> {
@@ -360,7 +363,7 @@ mod tests {
         // Determine the maximum number of transmissions in a block.
         let max_transmissions_per_block = BatchHeader::<CurrentNetwork>::MAX_TRANSMISSIONS_PER_BATCH
             * BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS
-            * BatchHeader::<CurrentNetwork>::MAX_CERTIFICATES as usize;
+            * CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap() as usize;
 
         // Note: The maximum number of *transmissions* in a block cannot exceed the maximum number of *transactions* in a block.
         // If you intended to change the number of 'MAX_TRANSACTIONS', note that this will break the inclusion proof,

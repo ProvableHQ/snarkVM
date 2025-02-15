@@ -39,11 +39,8 @@ impl<N: Network> FromBytes for Subdag<N> {
             // Read the number of certificates.
             let num_certificates = u16::read_le(&mut reader)?;
             // Ensure the number of certificates is within bounds.
-            if num_certificates > BatchHeader::<N>::MAX_CERTIFICATES {
-                return Err(error(format!(
-                    "Number of certificates ({num_certificates}) exceeds the maximum ({})",
-                    BatchHeader::<N>::MAX_CERTIFICATES
-                )));
+            if num_certificates > N::LATEST_MAX_CERTIFICATES().map_err(error)? {
+                return Err(error(format!("Number of certificates ({num_certificates}) exceeds the maximum.",)));
             }
             // Read the certificates.
             let mut certificates = IndexSet::new();

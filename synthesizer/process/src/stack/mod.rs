@@ -74,7 +74,7 @@ use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -142,7 +142,7 @@ impl<N: Network> CallStack<N> {
                 // Check that the number of requests does not exceed the maximum.
                 ensure!(
                     requests.len() < Transaction::<N>::MAX_TRANSITIONS,
-                    "The number of requests in the authorization cannot exceed '{}'.",
+                    "The number of requests in the authorization must be less than '{}'.",
                     Transaction::<N>::MAX_TRANSITIONS
                 );
                 // Push the request to the stack.
@@ -188,7 +188,7 @@ pub struct Stack<N: Network> {
     /// The program (record types, structs, functions).
     program: Program<N>,
     /// A reference to the global stack map.
-    stacks: Arc<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
+    stacks: Weak<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
     /// The mapping of closure and function names to their register types.
     register_types: IndexMap<Identifier<N>, RegisterTypes<N>>,
     /// The mapping of finalize names to their register types.
@@ -273,12 +273,17 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Stack<N>>> {
         // Check that the program ID is imported by the program.
         ensure!(self.program.contains_import(program_id), "External program '{program_id}' is not imported.");
-        // Retrieve the stack.
-        self.stacks
+        // Upgrade the weak reference to the process-level stack map and retrieve the external stack.
+        let result = self
+            .stacks
+            .upgrade()
+            .ok_or_else(|| anyhow!("Process-level stack map does not exist"))?
             .read()
             .get(program_id)
             .cloned()
-            .ok_or_else(|| anyhow!("External program '{program_id}' does not exist."))
+            .ok_or_else(|| anyhow!("External stack for '{program_id}' does not exist"));
+        // Return the external stack.
+        result
     }
 
     /// Returns the function with the given function name.
@@ -298,13 +303,6 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize> {
         // Initialize the base number of calls.
         let mut num_calls = 1;
-        // A helper enum to track stacks.
-        enum StackRef<'a, N: Network> {
-            // Self's stack.
-            Internal(&'a Stack<N>),
-            // An external stack.
-            External(Arc<Stack<N>>),
-        }
         // Initialize a queue of functions to check.
         let mut queue = vec![(StackRef::Internal(self), *function_name)];
         // Iterate over the queue.
@@ -313,9 +311,9 @@ impl<N: Network> StackProgram<N> for Stack<N> {
             // Note that one transition is reserved for the fee.
             ensure!(
                 num_calls < Transaction::<N>::MAX_TRANSITIONS,
-                "Number of calls exceeds the maximum allowed number of transitions"
+                "Number of calls must be less than '{}'",
+                Transaction::<N>::MAX_TRANSITIONS
             );
-
             // Determine the number of calls for the function.
             for instruction in match &stack_ref {
                 StackRef::Internal(stack) => stack.get_function_ref(&function_name)?.instructions(),
@@ -323,19 +321,19 @@ impl<N: Network> StackProgram<N> for Stack<N> {
             } {
                 if let Instruction::Call(call) = instruction {
                     // Determine if this is a function call.
-                    if call.is_function_call(self)? {
+                    if call.is_function_call(&*stack_ref)? {
                         // Increment by the number of calls.
                         num_calls += 1;
                         // Add the function to the queue.
                         match call.operator() {
                             CallOperator::Locator(locator) => {
                                 queue.push((
-                                    StackRef::External(self.get_external_stack(locator.program_id())?),
+                                    StackRef::External(stack_ref.get_external_stack(locator.program_id())?),
                                     *locator.resource(),
                                 ));
                             }
                             CallOperator::Resource(resource) => {
-                                queue.push((StackRef::Internal(self), *resource));
+                                queue.push((stack_ref.clone(), *resource));
                             }
                         }
                     }
@@ -504,3 +502,23 @@ impl<N: Network> PartialEq for Stack<N> {
 }
 
 impl<N: Network> Eq for Stack<N> {}
+
+// A helper enum to avoid cloning stacks.
+#[derive(Clone)]
+pub(crate) enum StackRef<'a, N: Network> {
+    // Self's stack.
+    Internal(&'a Stack<N>),
+    // An external stack.
+    External(Arc<Stack<N>>),
+}
+
+impl<N: Network> Deref for StackRef<'_, N> {
+    type Target = Stack<N>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            StackRef::Internal(stack) => stack,
+            StackRef::External(stack) => stack,
+        }
+    }
+}

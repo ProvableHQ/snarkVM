@@ -36,7 +36,7 @@ mod testnet_v0;
 pub use testnet_v0::*;
 
 pub mod prelude {
-    pub use crate::{Network, environment::prelude::*};
+    pub use crate::{ConsensusVersion, Network, consensus_config_value, environment::prelude::*};
 }
 
 use crate::environment::prelude::*;
@@ -69,6 +69,15 @@ pub type FiatShamirParameters<N> = <FiatShamir<N> as AlgebraicSponge<Fq<N>, 2>>:
 pub(crate) type VarunaProvingKey<N> = CircuitProvingKey<<N as Environment>::PairingCurve, VarunaHidingMode>;
 pub(crate) type VarunaVerifyingKey<N> = CircuitVerifyingKey<<N as Environment>::PairingCurve>;
 
+/// The different consensus versions.
+/// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
+pub enum ConsensusVersion {
+    V1 = 1,
+    V2 = 2,
+    V3 = 3,
+}
+
 pub trait Network:
     'static
     + Environment
@@ -90,11 +99,6 @@ pub trait Network:
     const NAME: &'static str;
     /// The network edition.
     const EDITION: u16;
-
-    /// The block height from which consensus V2 rules apply.
-    const CONSENSUS_V2_HEIGHT: u32;
-    /// The block height from which consensus V3 rules apply.
-    const CONSENSUS_V3_HEIGHT: u32;
 
     /// The function name for the inclusion circuit.
     const INCLUSION_FUNCTION_NAME: &'static str;
@@ -190,18 +194,10 @@ pub trait Network:
     const MAX_OUTPUTS: usize = 16;
 
     /// The maximum program depth.
+    /// Note. This is unused.
     const MAX_PROGRAM_DEPTH: usize = 64;
     /// The maximum number of imports.
     const MAX_IMPORTS: usize = 64;
-
-    /// The maximum number of certificates in a batch before consensus V3 rules apply.
-    const MAX_CERTIFICATES_BEFORE_V3: u16;
-    /// The maximum number of certificates in a batch.
-    // Note: This value must **not** be changed without considering the impact on serialization.
-    //  Decreasing this value will break backwards compatibility of serialization without explicit
-    //  declaration of migration based on round number rather than block height.
-    //  Increasing this value will require a migration to prevent forking during network upgrades.
-    const MAX_CERTIFICATES: u16;
 
     /// The maximum number of bytes in a transaction.
     // Note: This value must **not** be decreased as it would invalidate existing transactions.
@@ -219,6 +215,50 @@ pub trait Network:
     type TransitionID: Bech32ID<Field<Self>>;
     /// The transmission checksum type.
     type TransmissionChecksum: IntegerType;
+
+    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
+    /// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
+    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 3];
+    ///  A list of (consensus_version, size) pairs indicating the maximum number of validators in a committee.
+    //  Note: This value must **not** decrease without considering the impact on serialization.
+    //  Decreasing this value will break backwards compatibility of serialization without explicit
+    //  declaration of migration based on round number rather than block height.
+    //  Increasing this value will require a migration to prevent forking during network upgrades.
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2];
+
+    /// Returns the consensus version which is active at the given height.
+    ///
+    /// V1: The initial genesis consensus version.
+    ///
+    /// V2: Update to the block reward and execution cost algorithms.
+    ///
+    /// V3: Update to the number of validators and finalize scope RNG seed.
+    #[allow(non_snake_case)]
+    fn CONSENSUS_VERSION(seek_height: u32) -> anyhow::Result<ConsensusVersion> {
+        match Self::CONSENSUS_VERSION_HEIGHTS.binary_search_by(|(_, height)| height.cmp(&seek_height)) {
+            // If a consensus version was found at this height, return it.
+            Ok(index) => Ok(Self::CONSENSUS_VERSION_HEIGHTS[index].0),
+            // If the specified height was not found, determine whether to return an appropriate version.
+            Err(index) => {
+                if index == 0 {
+                    Err(anyhow!("Expected consensus version 1 to exist at height 0."))
+                } else {
+                    // Return the appropriate version belonging to the height *lower* than the sought height.
+                    Ok(Self::CONSENSUS_VERSION_HEIGHTS[index - 1].0)
+                }
+            }
+        }
+    }
+    /// Returns the height at which a specified consensus version becomes active.
+    #[allow(non_snake_case)]
+    fn CONSENSUS_HEIGHT(version: ConsensusVersion) -> Result<u32> {
+        Ok(Self::CONSENSUS_VERSION_HEIGHTS.get(version as usize - 1).ok_or(anyhow!("Invalid consensus version"))?.1)
+    }
+    /// Returns the last `MAX_CERTIFICATES` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_CERTIFICATES() -> Result<u16> {
+        Self::MAX_CERTIFICATES.last().map_or(Err(anyhow!("No MAX_CERTIFICATES defined.")), |(_, value)| Ok(*value))
+    }
 
     /// Returns the genesis block bytes.
     fn genesis_bytes() -> &'static [u8];
@@ -409,4 +449,133 @@ pub trait Network:
         root: &Field<Self>,
         leaf: &Vec<Field<Self>>,
     ) -> bool;
+}
+
+/// Returns the consensus configuration value for the specified height.
+///
+/// Arguments:
+/// - `$network`: The network to use the constant of.
+/// - `$constant`: The constant to search a value of.
+/// - `$seek_height`: The block height to search the value for.
+#[macro_export]
+macro_rules! consensus_config_value {
+    ($network:ident, $constant:ident, $seek_height:expr) => {
+        // Search the consensus version enacted at the specified height.
+        $network::CONSENSUS_VERSION($seek_height).map_or(None, |seek_version| {
+            // Search the consensus value for the specified version.
+            match $network::$constant.binary_search_by(|(version, _)| version.cmp(&seek_version)) {
+                // If a value was found for this consensus version, return it.
+                Ok(index) => Some($network::$constant[index].1),
+                // If the specified version was not found exactly, determine whether to return an appropriate value anyway.
+                Err(index) => {
+                    // This constant is not yet in effect at this consensus version.
+                    if index == 0 {
+                        None
+                    // Return the appropriate value belonging to the consensus version *lower* than the sought version.
+                    } else {
+                        Some($network::$constant[index - 1].1)
+                    }
+                }
+            }
+        })
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Ensure that the consensus constants are defined and correct at genesis.
+    /// It is possible this invariant no longer holds in the future, e.g. due to pruning or novel types of constants.
+    fn consensus_constants_at_genesis<N: Network>() {
+        let height = N::CONSENSUS_VERSION_HEIGHTS.first().unwrap().1;
+        assert_eq!(height, 0);
+        let consensus_version = N::CONSENSUS_VERSION_HEIGHTS.first().unwrap().0;
+        assert_eq!(consensus_version, ConsensusVersion::V1);
+        assert_eq!(consensus_version as usize, 1);
+    }
+
+    /// Ensure that the consensus *versions* are unique, incrementing and start with 1.
+    fn consensus_versions<N: Network>() {
+        let mut previous_version = N::CONSENSUS_VERSION_HEIGHTS.first().unwrap().0;
+        // Ensure that the consensus versions start with 1.
+        assert_eq!(previous_version as usize, 1);
+        // Ensure that the consensus versions are unique and incrementing by 1.
+        for (version, _) in N::CONSENSUS_VERSION_HEIGHTS.iter().skip(1) {
+            assert_eq!(*version as usize, previous_version as usize + 1);
+            previous_version = *version;
+        }
+        // Ensure that the consensus versions are unique and incrementing.
+        let mut previous_version = N::MAX_CERTIFICATES.first().unwrap().0;
+        for (version, _) in N::MAX_CERTIFICATES.iter().skip(1) {
+            assert!(*version > previous_version);
+            previous_version = *version;
+        }
+    }
+
+    /// Ensure that consensus *heights* are unique and incrementing.
+    fn consensus_constants_increasing_heights<N: Network>() {
+        let mut previous_height = N::CONSENSUS_VERSION_HEIGHTS.first().unwrap().1;
+        for (version, height) in N::CONSENSUS_VERSION_HEIGHTS.iter().skip(1) {
+            assert!(*height > previous_height);
+            previous_height = *height;
+            // Ensure that N::CONSENSUS_VERSION returns the expected value.
+            assert_eq!(N::CONSENSUS_VERSION(*height).unwrap(), *version);
+            // Ensure that N::CONSENSUS_HEIGHT returns the expected value.
+            assert_eq!(N::CONSENSUS_HEIGHT(*version).unwrap(), *height);
+        }
+    }
+
+    /// Ensure that version of all consensus-relevant constants are present in the consensus version heights.
+    fn consensus_constants_valid_heights<N: Network>() {
+        for (version, value) in N::MAX_CERTIFICATES.iter() {
+            // Ensure that the height at which an update occurs are present in CONSENSUS_VERSION_HEIGHTS.
+            let height = N::CONSENSUS_VERSION_HEIGHTS.iter().find(|(c_version, _)| *c_version == *version).unwrap().1;
+            // Double-check that consensus_config_value returns the correct value.
+            assert_eq!(consensus_config_value!(N, MAX_CERTIFICATES, height).unwrap(), *value);
+        }
+    }
+
+    /// Ensure that `MAX_CERTIFICATES` increases and is correctly defined.
+    /// See the constant declaration for an explanation why.
+    fn max_certificates_increasing<N: Network>() {
+        let mut previous_value = N::MAX_CERTIFICATES.first().unwrap().1;
+        for (_, value) in N::MAX_CERTIFICATES.iter().skip(1) {
+            assert!(*value >= previous_value);
+            previous_value = *value;
+        }
+    }
+
+    /// Ensure that the number of constant definitions is the same across networks.
+    fn constants_equal_length<N1: Network, N2: Network, N3: Network>() {
+        // If we can construct an array, that means the underlying types must be the same.
+        let _ = [N1::CONSENSUS_VERSION_HEIGHTS, N2::CONSENSUS_VERSION_HEIGHTS, N3::CONSENSUS_VERSION_HEIGHTS];
+        let _ = [N1::MAX_CERTIFICATES, N2::MAX_CERTIFICATES, N3::MAX_CERTIFICATES];
+    }
+
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn test_consensus_constants() {
+        consensus_constants_at_genesis::<MainnetV0>();
+        consensus_constants_at_genesis::<TestnetV0>();
+        consensus_constants_at_genesis::<CanaryV0>();
+
+        consensus_versions::<MainnetV0>();
+        consensus_versions::<TestnetV0>();
+        consensus_versions::<CanaryV0>();
+
+        consensus_constants_increasing_heights::<MainnetV0>();
+        consensus_constants_increasing_heights::<TestnetV0>();
+        consensus_constants_increasing_heights::<CanaryV0>();
+
+        consensus_constants_valid_heights::<MainnetV0>();
+        consensus_constants_valid_heights::<TestnetV0>();
+        consensus_constants_valid_heights::<CanaryV0>();
+
+        max_certificates_increasing::<MainnetV0>();
+        max_certificates_increasing::<TestnetV0>();
+        max_certificates_increasing::<CanaryV0>();
+
+        constants_equal_length::<MainnetV0, TestnetV0, CanaryV0>();
+    }
 }

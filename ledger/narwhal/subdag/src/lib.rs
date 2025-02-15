@@ -311,7 +311,7 @@ mod tests {
     fn test_max_certificates() {
         // Determine the maximum number of certificates in a block.
         let max_certificates_per_block =
-            BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS * BatchHeader::<CurrentNetwork>::MAX_CERTIFICATES as usize;
+            BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS * CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap() as usize;
 
         // Note: The maximum number of certificates in a block must be able to be Merklized.
         assert!(

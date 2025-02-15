@@ -271,9 +271,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             .block_store()
                             .find_block_height_from_state_root(execution.global_state_root())?
                             .unwrap_or_default();
-                        let (cost, (_, _)) = match block_height < N::CONSENSUS_V2_HEIGHT {
-                            true => execution_cost_v1(&self.process().read(), execution)?,
-                            false => execution_cost_v2(&self.process().read(), execution)?,
+                        let consensus_version = N::CONSENSUS_VERSION(block_height)?;
+                        let (cost, (_, _)) = if consensus_version == ConsensusVersion::V1 {
+                            execution_cost_v1(&self.process().read(), execution)?
+                        } else {
+                            execution_cost_v2(&self.process().read(), execution)?
                         };
                         // Ensure the cost does not exceed the transaction spend limit.
                         ensure!(
@@ -436,7 +438,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 mod tests {
     use super::*;
 
-    use crate::vm::test_helpers::sample_finalize_state;
+    use crate::vm::test_helpers::{sample_finalize_state, sample_next_block};
     use console::{
         account::{Address, ViewKey},
         types::Field,
@@ -714,13 +716,28 @@ mod tests {
     #[test]
     fn test_failed_credits_deployment() {
         let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+
+        // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
+        vm.add_next_block(&genesis).unwrap();
 
         // Fetch the credits program
         let program = Program::credits().unwrap();
 
-        // Ensure that the program can't be deployed.
-        assert!(vm.deploy_raw(&program, rng).is_err());
+        // Ensure that the program can't be deployed successfully.
+        // In this case the deployment can be successfully generated as it is a valid update to `credits.aleo`.
+        // However, when the transaction fails to verify and is not accepted when added to the block.
+        let deployment = vm.deploy(&caller_private_key, &program, None, 0u64, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment, None, rng).is_err());
+        let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 0);
+        vm.add_next_block(&block).unwrap();
 
         // Create a new `credits.aleo` program.
         let program = Program::from_str(
@@ -738,8 +755,9 @@ function compute:
         )
         .unwrap();
 
-        // Ensure that the program can't be deployed.
-        assert!(vm.deploy_raw(&program, rng).is_err());
+        // Ensure that the program can't be deployed successfully.
+        // In this case, the deployment cannot be successfully generated as it is an invalid update to `credits.aleo`.
+        assert!(vm.deploy(&caller_private_key, &program, None, 0u64, None, rng).is_err());
     }
 
     #[test]
@@ -818,9 +836,6 @@ function compute:
     #[cfg(feature = "test")]
     #[test]
     fn test_fee_migration() {
-        // This test will fail if the consensus v2 height is 0
-        assert_ne!(0, CurrentNetwork::CONSENSUS_V2_HEIGHT);
-
         let minimum_credits_transfer_public_fee = 34_060;
         let old_minimum_credits_transfer_public_fee = 51_060;
 
@@ -859,7 +874,7 @@ function compute:
         // Update the VM to the migration block height
         let private_key = test_helpers::sample_genesis_private_key(rng);
         let transactions: [Transaction<CurrentNetwork>; 0] = [];
-        for _ in 0..CurrentNetwork::CONSENSUS_V2_HEIGHT {
+        for _ in 0..CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap() {
             // Call the function
             let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
             vm.add_next_block(&next_block).unwrap();
