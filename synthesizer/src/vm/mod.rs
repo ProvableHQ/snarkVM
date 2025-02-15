@@ -2631,8 +2631,10 @@ finalize transfer_public_to_private:
                 rng,
             )
             .unwrap();
+        let fee_amount = transaction.base_fee_amount().unwrap();
+        assert!(*fee_amount > CurrentNetwork::TRANSACTION_SPEND_LIMIT);
         let block = sample_next_block(&vm, &private_key, &[transaction], rng).unwrap();
-        assert_eq!(block.transactions().num_rejected(), 1);
+        assert_eq!(block.aborted_transaction_ids().len(), 1);
         vm.add_next_block(&block).unwrap();
     }
 }

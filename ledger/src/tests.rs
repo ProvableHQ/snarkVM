@@ -32,7 +32,7 @@ use ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use ledger_narwhal::{BatchCertificate, BatchHeader, Data, Subdag, Transmission, TransmissionID};
 use ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
 use snarkvm_utilities::try_vm_runtime;
-use synthesizer::{Stack, program::Program, vm::VM};
+use synthesizer::{Function, program::Program, vm::VM};
 
 use indexmap::{IndexMap, IndexSet};
 use rand::seq::SliceRandom;
@@ -2155,73 +2155,77 @@ fn test_max_committee_limit_with_bonds() {
 }
 
 #[test]
-fn test_deployment_exceeding_max_transaction_spend() {
+fn test_deployment_and_execution_exceeding_max_transaction_spend() {
     let rng = &mut TestRng::default();
 
     // Initialize the test environment.
     let crate::test_helpers::TestEnv { ledger, private_key, .. } = crate::test_helpers::sample_test_env(rng);
 
-    // Construct two programs, one that is allowed and one that exceeds the maximum transaction spend.
-    let mut allowed_program = None;
-    let mut exceeding_program = None;
+    // Initialize a tracker for whether the max spend limit was exceeded.
+    let mut max_spend_limit_exceeded = false;
 
     for i in 0..<CurrentNetwork as Network>::MAX_COMMANDS.ilog2() {
-        // Construct the finalize body.
-        let finalize_body =
-            (0..2.pow(i)).map(|i| format!("hash.bhp256 0field into r{i} as field;")).collect::<Vec<_>>().join("\n");
+        // Initialize the program.
+        let mut program =
+            Program::new(ProgramID::from_str(&format!("test_max_spend_limit_{i}.aleo")).unwrap()).unwrap();
+        // Construct a finalize body whose finalize cost is excessively large.
+        let mut function = format!(
+            r"
+function foo:
+    async foo into r0;
+    output r0 as test_max_spend_limit_{i}.aleo/foo.future;
+finalize foo:
+    cast  0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 into r0 as [u8; 16u32];
+    cast  r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r1 as [[u8; 16u32]; 16u32];
+    cast  r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 into r2 as [[[u8; 16u32]; 16u32]; 16u32];"
+        );
+        (0..(2.pow(i))).for_each(|i| {
+            function.push_str(&format!("\n    hash.bhp256 r2 into r{} as field;", i + 3));
+        });
 
-        // Construct the program.
-        let program = Program::from_str(&format!(
-            r"program test_max_spend_limit_{i}.aleo;
-          function foo:
-          async foo into r0;
-          output r0 as test_max_spend_limit_{i}.aleo/foo.future;
+        // Parse the function and add it to the program.
+        let function = Function::from_str(&function).unwrap();
+        program.add_function(function).unwrap();
 
-          finalize foo:{finalize_body}",
-        ))
-        .unwrap();
-
-        // Attempt to initialize a `Stack` for the program.
-        // If this fails, then by `Stack::initialize` the finalize cost exceeds the `TRANSACTION_SPEND_LIMIT`.
-        if Stack::<CurrentNetwork>::new(&ledger.vm().process().read(), &program).is_err() {
-            exceeding_program = Some(program);
+        // If the program length exceeds the maximum length, break.
+        if program.to_string().len() > CurrentNetwork::MAX_PROGRAM_SIZE {
             break;
-        } else {
-            allowed_program = Some(program);
         }
+
+        // Deploy the program.
+        let deployment = ledger.vm().deploy(&private_key, &program, None, 0, None, rng).unwrap();
+        // Add the deployment to the ledger.
+        let block =
+            ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![deployment], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 1);
+        ledger.advance_to_next_block(&block).unwrap();
+
+        // Execute the program.
+        let execution = ledger
+            .vm()
+            .execute(
+                &private_key,
+                (format!("test_max_spend_limit_{i}.aleo"), "foo"),
+                Vec::<Value<CurrentNetwork>>::new().iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
+        let is_allowed = *execution.base_fee_amount().unwrap() <= CurrentNetwork::TRANSACTION_SPEND_LIMIT;
+        let block =
+            ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![execution], rng).unwrap();
+        if is_allowed {
+            assert_eq!(block.transactions().num_accepted(), 1);
+        } else {
+            assert_eq!(block.aborted_transaction_ids().len(), 1);
+            max_spend_limit_exceeded = true;
+        }
+        ledger.advance_to_next_block(&block).unwrap();
     }
-
-    // Ensure that the allowed and exceeding programs are not None.
-    assert!(allowed_program.is_some());
-    assert!(exceeding_program.is_some());
-
-    let allowed_program = allowed_program.unwrap();
-    let exceeding_program = exceeding_program.unwrap();
-
-    // Deploy the allowed program.
-    let deployment = ledger.vm().deploy(&private_key, &allowed_program, None, 0, None, rng).unwrap();
-
-    // Verify the deployment transaction.
-    assert!(ledger.vm().check_transaction(&deployment, None, rng).is_ok());
-
-    // Construct the next block.
-    let block =
-        ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![deployment], rng).unwrap();
-
-    // Check that the next block is valid.
-    ledger.check_next_block(&block, rng).unwrap();
-
-    // Add the block to the ledger.
-    ledger.advance_to_next_block(&block).unwrap();
-
-    // Check that the program exists in the VM.
-    assert!(ledger.vm().contains_program(allowed_program.id()));
-
-    // Attempt to deploy the exceeding program.
-    let result = ledger.vm().deploy(&private_key, &exceeding_program, None, 0, None, rng);
-
-    // Check that the deployment failed.
-    assert!(result.is_err());
+    // Verify that the max spend limit was exceeded at least once.
+    assert_eq!(max_spend_limit_exceeded, true);
 }
 
 #[test]

@@ -51,8 +51,6 @@ impl<N: Network> Stack<N> {
             stack.insert_closure(closure)?;
         }
 
-        println!("TWO");
-
         // Add the program functions to the stack.
         for function in program.functions().values() {
             // Add the function to the stack.
@@ -61,8 +59,6 @@ impl<N: Network> Stack<N> {
             // This includes a safety check for the maximum number of calls.
             stack.get_number_of_calls(function.name())?;
         }
-
-        println!("THREE");
 
         // Return the stack.
         Ok(stack)
