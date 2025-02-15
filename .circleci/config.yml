@@ -580,7 +580,6 @@ jobs:
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
-          flags: -- --nocapture
           workspace_member: ledger/narwhal/data
           cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-narwhal-data-cache
 

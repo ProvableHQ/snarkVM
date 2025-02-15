@@ -221,7 +221,6 @@ impl<N: Network> Stack<N> {
                 }
             }
         };
-        println!("Program edition: {}", edition);
         // Ensure the program contains functions.
         ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{program_id}'");
         // Serialize the program into bytes.
