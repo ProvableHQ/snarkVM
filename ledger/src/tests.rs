@@ -1924,7 +1924,8 @@ fn test_max_committee_limit_with_bonds() {
     let vm = sample_vm();
 
     // Construct the validators, one less than the maximum committee size.
-    let validators = (0..Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE_BEFORE_V3 - 1)
+    let max_committee_size = consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, 0).unwrap();
+    let validators = (0..max_committee_size - 1)
         .map(|_| {
             let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
             let amount = MIN_VALIDATOR_STAKE;

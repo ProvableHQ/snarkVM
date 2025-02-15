@@ -131,10 +131,12 @@ impl<N: Network> Process<N> {
         lap!(timer, "Verify the number of transitions");
 
         // Construct the call graph.
-        // If the height is greater than or equal to `CONSENSUS_V3_HEIGHT`, then provide an empty call graph, as it is no longer used during finalization.
-        let call_graph = match state.block_height() < N::CONSENSUS_V3_HEIGHT {
-            true => self.construct_call_graph(execution)?,
-            false => HashMap::new(),
+        let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
+        let call_graph = if (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
+            self.construct_call_graph(execution)?
+        // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
+        } else {
+            HashMap::new()
         };
 
         atomic_batch_scope!(store, {
@@ -191,10 +193,12 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     fee: &Fee<N>,
 ) -> Result<Vec<FinalizeOperation<N>>> {
     // Construct the call graph.
-    // If the height is greater than or equal to `CONSENSUS_V3_HEIGHT`, then provide an empty call graph, as it is no longer used during finalization.
-    let call_graph = match state.block_height() < N::CONSENSUS_V3_HEIGHT {
-        true => HashMap::from([(*fee.transition_id(), Vec::new())]),
-        false => HashMap::new(),
+    let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
+    let call_graph = if (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
+        HashMap::from([(*fee.transition_id(), Vec::new())])
+    } else {
+        // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
+        HashMap::new()
     };
 
     // Finalize the transition.
@@ -305,22 +309,22 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     );
 
                     // Get the transition ID used to initialize the finalize registers.
-                    // If the block height is greater than or equal to `CONSENSUS_V3_HEIGHT`, then use the top-level transition ID.
+                    // If the block height is greater than or equal to `ConsensusVersion::V3`, then use the top-level transition ID.
                     // Otherwise, query the call graph for the child transition ID corresponding to the future that is being awaited.
-                    let transition_id = match state.block_height() < N::CONSENSUS_V3_HEIGHT {
-                        true => {
-                            // Get the current transition ID.
-                            let transition_id = registers.transition_id();
-                            // Get the child transition ID.
-                            match call_graph.get(transition_id) {
-                                Some(transitions) => match transitions.get(call_counter) {
-                                    Some(transition_id) => *transition_id,
-                                    None => bail!("Child transition ID not found."),
-                                },
-                                None => bail!("Transition ID '{transition_id}' not found in call graph"),
-                            }
+                    let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
+                    let transition_id = if (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
+                        // Get the current transition ID.
+                        let transition_id = registers.transition_id();
+                        // Get the child transition ID.
+                        match call_graph.get(transition_id) {
+                            Some(transitions) => match transitions.get(call_counter) {
+                                Some(transition_id) => *transition_id,
+                                None => bail!("Child transition ID not found."),
+                            },
+                            None => bail!("Transition ID '{transition_id}' not found in call graph"),
                         }
-                        false => *transition.id(),
+                    } else {
+                        *transition.id()
                     };
 
                     // Increment the nonce.

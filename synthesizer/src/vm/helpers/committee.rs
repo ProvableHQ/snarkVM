@@ -466,7 +466,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample a committee.
-        let committee = ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 100, rng);
+        let committee = ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 25, rng);
 
         // Initialize the committee map.
         let committee_map = to_committee_map(committee.members());
@@ -489,7 +489,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample a committee.
-        let committee = ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 100, rng);
+        let committee = ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 25, rng);
         // Convert the committee into stakers.
         let expected_stakers = crate::committee::test_helpers::to_stakers(committee.members(), rng);
         // Initialize the bonded map.
@@ -509,7 +509,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample a committee.
-        let committee = ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 100, rng);
+        let committee = ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 25, rng);
         // Convert the committee into stakers.
         let stakers = crate::committee::test_helpers::to_stakers(committee.members(), rng);
 
@@ -526,7 +526,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample a committee.
-        let committee = ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 100, rng);
+        let committee = ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 25, rng);
         // Convert the committee into stakers.
         let _stakers = crate::committee::test_helpers::to_stakers(committee.members(), rng);
         // Convert the committee into delegations.

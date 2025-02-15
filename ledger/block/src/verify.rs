@@ -329,10 +329,9 @@ impl<N: Network> Block<N> {
         );
         // Ensure the number of aborted solution IDs is within the allowed range.
         ensure!(
-            self.aborted_solution_ids.len() <= Solutions::<N>::MAX_ABORTED_SOLUTIONS,
-            "Block {height} contains too many aborted solution IDs (found '{}', expected '{}')",
+            self.aborted_solution_ids.len() <= Solutions::<N>::max_aborted_solutions()?,
+            "Block {height} contains too many aborted solution IDs (found '{}')",
             self.aborted_solution_ids.len(),
-            Solutions::<N>::MAX_ABORTED_SOLUTIONS
         );
 
         // Ensure there are no duplicate solution IDs.
@@ -415,7 +414,7 @@ impl<N: Network> Block<N> {
             time_since_last_block,
             expected_coinbase_reward,
             expected_transaction_fees,
-        );
+        )?;
         // Compute the expected puzzle reward.
         let expected_puzzle_reward = puzzle_reward(expected_coinbase_reward);
 
@@ -444,10 +443,10 @@ impl<N: Network> Block<N> {
         }
 
         // Ensure the number of aborted transaction IDs is within the allowed range.
-        if self.aborted_transaction_ids.len() > Transactions::<N>::MAX_ABORTED_TRANSACTIONS {
+        if self.aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
             bail!(
                 "Cannot validate a block with more than {} aborted transaction IDs",
-                Transactions::<N>::MAX_ABORTED_TRANSACTIONS
+                Transactions::<N>::max_aborted_transactions()?
             );
         }
 

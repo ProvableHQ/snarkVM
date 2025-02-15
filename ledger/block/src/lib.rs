@@ -154,11 +154,8 @@ impl<N: Network> Block<N> {
         aborted_transaction_ids: Vec<N::TransactionID>,
     ) -> Result<Self> {
         // Ensure the number of aborted solutions IDs is within the allowed range.
-        if aborted_solution_ids.len() > Solutions::<N>::MAX_ABORTED_SOLUTIONS {
-            bail!(
-                "Cannot initialize a block with more than {} aborted solutions IDs",
-                Solutions::<N>::MAX_ABORTED_SOLUTIONS
-            );
+        if aborted_solution_ids.len() > Solutions::<N>::max_aborted_solutions()? {
+            bail!("Cannot initialize a block with {} aborted solutions IDs", aborted_solution_ids.len());
         }
 
         // Ensure the number of transactions is within the allowed range.
@@ -170,10 +167,10 @@ impl<N: Network> Block<N> {
         }
 
         // Ensure the number of aborted transaction IDs is within the allowed range.
-        if aborted_transaction_ids.len() > Transactions::<N>::MAX_ABORTED_TRANSACTIONS {
+        if aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
             bail!(
                 "Cannot initialize a block with more than {} aborted transaction IDs",
-                Transactions::<N>::MAX_ABORTED_TRANSACTIONS
+                Transactions::<N>::max_aborted_transactions()?
             );
         }
 

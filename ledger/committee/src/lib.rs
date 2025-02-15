@@ -61,10 +61,11 @@ pub struct Committee<N: Network> {
 impl<N: Network> Committee<N> {
     /// The committee lookback range.
     pub const COMMITTEE_LOOKBACK_RANGE: u64 = BatchHeader::<N>::MAX_GC_ROUNDS as u64;
+
     /// The maximum number of members that may be in a committee.
-    pub const MAX_COMMITTEE_SIZE: u16 = BatchHeader::<N>::MAX_CERTIFICATES;
-    /// The maximum number of members that may be in a committee before consensus V3 rules apply.
-    pub const MAX_COMMITTEE_SIZE_BEFORE_V3: u16 = BatchHeader::<N>::MAX_CERTIFICATES_BEFORE_V3;
+    pub fn max_committee_size() -> Result<u16> {
+        N::LATEST_MAX_CERTIFICATES()
+    }
 
     /// Initializes a new `Committee` instance.
     pub fn new_genesis(members: IndexMap<Address<N>, (u64, bool, u8)>) -> Result<Self> {
@@ -78,9 +79,9 @@ impl<N: Network> Committee<N> {
         ensure!(members.len() >= 3, "Committee must have at least 3 members");
         // Ensure there are no more than the maximum number of members.
         ensure!(
-            members.len() <= Self::MAX_COMMITTEE_SIZE as usize,
+            members.len() <= Self::max_committee_size()? as usize,
             "Committee must have no more than {} members",
-            Self::MAX_COMMITTEE_SIZE
+            Self::max_committee_size()?
         );
         // Ensure all members have the minimum required stake.
         ensure!(
@@ -438,7 +439,7 @@ mod tests {
         // Set the number of rounds.
         const NUM_ROUNDS: u64 = 256 * 2_000;
         // Sample the number of members.
-        let num_members = rng.gen_range(3..=Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE);
+        let num_members = rng.gen_range(3..=Committee::<CurrentNetwork>::max_committee_size().unwrap());
         // Sample a committee.
         let committee = crate::test_helpers::sample_committee_custom(num_members, rng);
         // Check the leader distribution.
@@ -450,8 +451,10 @@ mod tests {
         // Initialize the RNG.
         let rng = &mut TestRng::default();
         // Sample a committee.
-        let committee =
-            crate::test_helpers::sample_committee_custom(Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE, rng);
+        let committee = crate::test_helpers::sample_committee_custom(
+            Committee::<CurrentNetwork>::max_committee_size().unwrap(),
+            rng,
+        );
 
         // Start a timer.
         let timer = std::time::Instant::now();
@@ -464,21 +467,5 @@ mod tests {
             let (address2, (_, _, _)) = sorted_members[i + 1];
             assert!(address1.to_x_coordinate() > address2.to_x_coordinate());
         }
-    }
-
-    #[test]
-    #[allow(clippy::assertions_on_constants)]
-    fn test_maximum_committee_size() {
-        assert_eq!(
-            Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE_BEFORE_V3,
-            BatchHeader::<CurrentNetwork>::MAX_CERTIFICATES_BEFORE_V3
-        );
-        assert_eq!(Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE, BatchHeader::<CurrentNetwork>::MAX_CERTIFICATES);
-        // Adding explicit check that updates to the maximum committee size are strictly increasing. A decreasing maximum will
-        // require additional migration logic based on a `round` number.
-        assert!(
-            Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE_BEFORE_V3
-                <= Committee::<CurrentNetwork>::MAX_COMMITTEE_SIZE
-        );
     }
 }
