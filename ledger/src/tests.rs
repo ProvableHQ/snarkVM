@@ -2225,7 +2225,7 @@ finalize foo:
         ledger.advance_to_next_block(&block).unwrap();
     }
     // Verify that the max spend limit was exceeded at least once.
-    assert_eq!(max_spend_limit_exceeded, true);
+    assert!(max_spend_limit_exceeded);
 }
 
 #[test]
