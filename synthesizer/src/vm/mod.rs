@@ -2579,4 +2579,60 @@ finalize transfer_public_to_private:
         // It should still be possible to insert the 1st block afterwards.
         vm.add_next_block(&block1).unwrap();
     }
+
+    #[test]
+    fn test_program_exceeding_transaction_spend_limit() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a private key.
+        let private_key = sample_genesis_private_key(rng);
+
+        // Initialize the genesis block.
+        let genesis = sample_genesis_block(rng);
+
+        // Initialize the VM.
+        let vm = sample_vm();
+        vm.add_next_block(&genesis).unwrap();
+
+        // Construct a finalize body whose finalize cost is excessively large.
+        let mut finalize_body = r"
+    cast  0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 into r0 as [u8; 16u32];
+    cast  r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r1 as [[u8; 16u32]; 16u32];
+    cast  r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 r1 into r2 as [[[u8; 16u32]; 16u32]; 16u32];"
+            .to_string();
+        (3..500).for_each(|i| {
+            finalize_body.push_str(&format!("hash.bhp256 r2 into r{i} as field;\n"));
+        });
+        // Construct the program.
+        let program = Program::from_str(&format!(
+            r"program test_max_spend_limit.aleo;
+      function foo:
+      async foo into r0;
+      output r0 as test_max_spend_limit.aleo/foo.future;
+      finalize foo:{finalize_body}",
+        ))
+        .unwrap();
+
+        // Deploy the program.
+        let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
+        let block = sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 1);
+        vm.add_next_block(&block).unwrap();
+
+        // Execute the program.
+        let transaction = vm
+            .execute(
+                &private_key,
+                ("test_max_spend_limit.aleo", "foo"),
+                Vec::<Value<CurrentNetwork>>::new().iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
+        let block = sample_next_block(&vm, &private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_rejected(), 1);
+        vm.add_next_block(&block).unwrap();
+    }
 }

@@ -71,7 +71,7 @@ use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -185,7 +185,7 @@ pub struct Stack<N: Network> {
     /// The program (record types, structs, functions).
     program: Program<N>,
     /// A reference to the global stack map.
-    stacks: Arc<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
+    stacks: Weak<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
     /// The mapping of closure and function names to their register types.
     register_types: IndexMap<Identifier<N>, RegisterTypes<N>>,
     /// The mapping of finalize names to their register types.
@@ -269,12 +269,17 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Stack<N>>> {
         // Check that the program ID is imported by the program.
         ensure!(self.program.contains_import(program_id), "External program '{program_id}' is not imported.");
-        // Retrieve the stack.
-        self.stacks
+        // Upgrade the weak reference to the process-level stack map and retrieve the external stack.
+        let result = self
+            .stacks
+            .upgrade()
+            .ok_or_else(|| anyhow!("Process-level stack map does not exist"))?
             .read()
             .get(program_id)
             .cloned()
-            .ok_or_else(|| anyhow!("External program '{program_id}' does not exist."))
+            .ok_or_else(|| anyhow!("External stack for '{program_id}' does not exist"));
+        // Return the external stack.
+        result
     }
 
     /// Returns the function with the given function name.
