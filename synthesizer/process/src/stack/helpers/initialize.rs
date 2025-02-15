@@ -45,8 +45,6 @@ impl<N: Network> Stack<N> {
             }
         }
 
-        println!("ONE");
-
         // Add the program closures to the stack.
         for closure in program.closures().values() {
             // Add the closure to the stack.
