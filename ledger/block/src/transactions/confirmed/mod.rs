@@ -45,7 +45,7 @@ impl<N: Network> ConfirmedTransaction<N> {
     ) -> Result<Self> {
         // Retrieve the program and fee from the deployment transaction, and ensure the transaction is a deploy transaction.
         let (program, fee) = match &transaction {
-            Transaction::Deploy(_, _, deployment, fee) => (deployment.program(), fee),
+            Transaction::Deploy(_, _, _, deployment, fee) => (deployment.program(), fee),
             Transaction::Execute(..) | Transaction::Fee(..) => {
                 bail!("Transaction '{}' is not a deploy transaction", transaction.id())
             }

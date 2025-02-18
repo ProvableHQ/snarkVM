@@ -346,7 +346,7 @@ impl<P: Fp12Parameters> Neg for Fp12<P> {
 impl_add_sub_from_field_ref!(Fp12, Fp12Parameters);
 impl_mul_div_from_field_ref!(Fp12, Fp12Parameters);
 
-impl<'a, P: Fp12Parameters> Add<&'a Self> for Fp12<P> {
+impl<P: Fp12Parameters> Add<&'_ Self> for Fp12<P> {
     type Output = Self;
 
     #[inline]
@@ -357,7 +357,7 @@ impl<'a, P: Fp12Parameters> Add<&'a Self> for Fp12<P> {
     }
 }
 
-impl<'a, P: Fp12Parameters> Sub<&'a Self> for Fp12<P> {
+impl<P: Fp12Parameters> Sub<&'_ Self> for Fp12<P> {
     type Output = Self;
 
     #[inline]
@@ -368,7 +368,7 @@ impl<'a, P: Fp12Parameters> Sub<&'a Self> for Fp12<P> {
     }
 }
 
-impl<'a, P: Fp12Parameters> Mul<&'a Self> for Fp12<P> {
+impl<P: Fp12Parameters> Mul<&'_ Self> for Fp12<P> {
     type Output = Self;
 
     #[inline]
@@ -379,7 +379,7 @@ impl<'a, P: Fp12Parameters> Mul<&'a Self> for Fp12<P> {
     }
 }
 
-impl<'a, P: Fp12Parameters> Div<&'a Self> for Fp12<P> {
+impl<P: Fp12Parameters> Div<&'_ Self> for Fp12<P> {
     type Output = Self;
 
     #[inline]
@@ -390,7 +390,7 @@ impl<'a, P: Fp12Parameters> Div<&'a Self> for Fp12<P> {
     }
 }
 
-impl<'a, P: Fp12Parameters> AddAssign<&'a Self> for Fp12<P> {
+impl<P: Fp12Parameters> AddAssign<&'_ Self> for Fp12<P> {
     #[inline]
     fn add_assign(&mut self, other: &Self) {
         self.c0.add_assign(other.c0);
@@ -398,7 +398,7 @@ impl<'a, P: Fp12Parameters> AddAssign<&'a Self> for Fp12<P> {
     }
 }
 
-impl<'a, P: Fp12Parameters> SubAssign<&'a Self> for Fp12<P> {
+impl<P: Fp12Parameters> SubAssign<&'_ Self> for Fp12<P> {
     #[inline]
     fn sub_assign(&mut self, other: &Self) {
         self.c0.sub_assign(&other.c0);
@@ -406,7 +406,7 @@ impl<'a, P: Fp12Parameters> SubAssign<&'a Self> for Fp12<P> {
     }
 }
 
-impl<'a, P: Fp12Parameters> MulAssign<&'a Self> for Fp12<P> {
+impl<P: Fp12Parameters> MulAssign<&'_ Self> for Fp12<P> {
     #[inline]
     #[allow(clippy::suspicious_op_assign_impl)]
     fn mul_assign(&mut self, other: &Self) {
@@ -417,7 +417,7 @@ impl<'a, P: Fp12Parameters> MulAssign<&'a Self> for Fp12<P> {
     }
 }
 
-impl<'a, P: Fp12Parameters> DivAssign<&'a Self> for Fp12<P> {
+impl<P: Fp12Parameters> DivAssign<&'_ Self> for Fp12<P> {
     #[inline]
     fn div_assign(&mut self, other: &Self) {
         self.mul_assign(&other.inverse().unwrap());

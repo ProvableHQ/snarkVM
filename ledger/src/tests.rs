@@ -577,10 +577,10 @@ finalize failed_assert:
     assert_eq!(next_block.transactions().len(), 1);
     let confirmed_transaction = next_block.transactions().iter().next().unwrap();
     assert!(confirmed_transaction.is_rejected());
-    if let Transaction::Execute(_, execution, fee) = failed_assert_transaction {
+    if let Transaction::Execute(_, _, execution, fee) = failed_assert_transaction {
         let fee_transaction = Transaction::from_fee(fee.unwrap()).unwrap();
         let expected_confirmed_transaction =
-            ConfirmedTransaction::RejectedExecute(0, fee_transaction, Rejected::new_execution(execution), vec![]);
+            ConfirmedTransaction::RejectedExecute(0, fee_transaction, Rejected::new_execution(*execution), vec![]);
 
         assert_eq!(confirmed_transaction, &expected_confirmed_transaction);
     }

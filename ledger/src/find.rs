@@ -50,11 +50,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns the record ciphertexts that belong to the given view key.
+    #[allow(clippy::type_complexity)]
     pub fn find_record_ciphertexts<'a>(
         &'a self,
         view_key: &'a ViewKey<N>,
         filter: RecordsFilter<N>,
-    ) -> Result<impl '_ + Iterator<Item = (Field<N>, Cow<'_, Record<N, Ciphertext<N>>>)>> {
+    ) -> Result<impl 'a + Iterator<Item = (Field<N>, Cow<'a, Record<N, Ciphertext<N>>>)>> {
         // Derive the x-coordinate of the address corresponding to the given view key.
         let address_x_coordinate = view_key.to_address().to_x_coordinate();
         // Derive the `sk_tag` from the graph key.
@@ -124,11 +125,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns the records that belong to the given view key.
+    #[allow(clippy::type_complexity)]
     pub fn find_records<'a>(
         &'a self,
         view_key: &'a ViewKey<N>,
         filter: RecordsFilter<N>,
-    ) -> Result<impl '_ + Iterator<Item = (Field<N>, Record<N, Plaintext<N>>)>> {
+    ) -> Result<impl 'a + Iterator<Item = (Field<N>, Record<N, Plaintext<N>>)>> {
         self.find_record_ciphertexts(view_key, filter).map(|iter| {
             iter.flat_map(|(commitment, record)| match record.decrypt(view_key) {
                 Ok(record) => Some((commitment, record)),

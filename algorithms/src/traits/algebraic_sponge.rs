@@ -182,10 +182,10 @@ pub(crate) mod nonnative_params {
         let mut limb_size = 1;
 
         while limb_size <= max_limb_size {
-            let num_of_limbs = (target_field_prime_bit_length + limb_size - 1) / limb_size;
+            let num_of_limbs = target_field_prime_bit_length.div_ceil(limb_size);
 
-            let group_size = (base_field_prime_length - 1 - surfeit - 1 - 1 - limb_size + limb_size - 1) / limb_size;
-            let num_of_groups = (2 * num_of_limbs - 1 + group_size - 1) / group_size;
+            let group_size = (base_field_prime_length - 1 - surfeit - 1 - 1 - limb_size).div_ceil(limb_size);
+            let num_of_groups = (2 * num_of_limbs - 1).div_ceil(group_size);
 
             let mut this_cost = 0;
 

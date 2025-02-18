@@ -326,7 +326,6 @@ impl<T: Valid + Sync + Send> Valid for Arc<T> {
     }
 
     #[inline]
-
     fn batch_check<'a>(batch: impl Iterator<Item = &'a Self> + Send) -> Result<(), SerializationError>
     where
         Self: 'a,
@@ -346,7 +345,7 @@ impl<T: CanonicalDeserialize + Sync + Send> CanonicalDeserialize for Arc<T> {
     }
 }
 
-impl<'a, T: CanonicalSerialize + ToOwned> CanonicalSerialize for Cow<'a, T> {
+impl<T: CanonicalSerialize + ToOwned> CanonicalSerialize for Cow<'_, T> {
     #[inline]
     fn serialize_with_mode<W: Write>(&self, mut writer: W, compress: Compress) -> Result<(), SerializationError> {
         self.as_ref().serialize_with_mode(&mut writer, compress)
@@ -508,7 +507,7 @@ impl<T: CanonicalSerialize> CanonicalSerialize for [T; 32] {
     }
 }
 
-impl<'a, T: CanonicalSerialize> CanonicalSerialize for &'a [T] {
+impl<T: CanonicalSerialize> CanonicalSerialize for &'_ [T] {
     #[inline]
     fn serialize_with_mode<W: Write>(&self, mut writer: W, compress: Compress) -> Result<(), SerializationError> {
         (*self).serialize_with_mode(&mut writer, compress)

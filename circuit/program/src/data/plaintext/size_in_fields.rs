@@ -21,7 +21,7 @@ impl<A: Aleo> Visibility<A> for Plaintext<A> {
         // Compute the number of bits.
         let num_bits = self.to_bits_le().len() + 1; // 1 extra bit for the terminus indicator.
         // Compute the ceiling division of the number of bits by the number of bits in a field element.
-        let num_fields = (num_bits + A::BaseField::size_in_data_bits() - 1) / A::BaseField::size_in_data_bits();
+        let num_fields = num_bits.div_ceil(A::BaseField::size_in_data_bits());
         // Ensure the number of field elements does not exceed the maximum allowed size.
         match num_fields <= A::MAX_DATA_SIZE_IN_FIELDS as usize {
             // Return the number of field elements.

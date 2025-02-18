@@ -435,7 +435,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     /// not guaranteed to be uniformly distributed, should only be used in certain situations.
     pub fn get_bits(&mut self, num_bits: usize) -> Vec<bool> {
         let bits_per_element = F::size_in_bits() - 1;
-        let num_elements = (num_bits + bits_per_element - 1) / bits_per_element;
+        let num_elements = num_bits.div_ceil(bits_per_element);
 
         let src_elements = self.squeeze_native_field_elements(num_elements);
         let mut dest_bits = Vec::<bool>::with_capacity(num_elements * bits_per_element);

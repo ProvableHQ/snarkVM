@@ -26,6 +26,7 @@ use ledger_puzzle::{SOLUTION_ID_PREFIX, SolutionID};
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum TransmissionID<N: Network> {
     /// A ratification.
+    /// This is a placeholder: currently ratifications are not actually supported.
     Ratification,
     /// A solution.
     Solution(SolutionID<N>, N::TransmissionChecksum),

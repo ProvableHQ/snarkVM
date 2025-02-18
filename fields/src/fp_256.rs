@@ -683,7 +683,7 @@ impl<P: Fp256Parameters> Neg for Fp256<P> {
     }
 }
 
-impl<'a, P: Fp256Parameters> Add<&'a Fp256<P>> for Fp256<P> {
+impl<P: Fp256Parameters> Add<&'_ Fp256<P>> for Fp256<P> {
     type Output = Self;
 
     #[inline]
@@ -694,7 +694,7 @@ impl<'a, P: Fp256Parameters> Add<&'a Fp256<P>> for Fp256<P> {
     }
 }
 
-impl<'a, P: Fp256Parameters> Sub<&'a Fp256<P>> for Fp256<P> {
+impl<P: Fp256Parameters> Sub<&'_ Fp256<P>> for Fp256<P> {
     type Output = Self;
 
     #[inline]
@@ -705,7 +705,7 @@ impl<'a, P: Fp256Parameters> Sub<&'a Fp256<P>> for Fp256<P> {
     }
 }
 
-impl<'a, P: Fp256Parameters> Mul<&'a Fp256<P>> for Fp256<P> {
+impl<P: Fp256Parameters> Mul<&'_ Fp256<P>> for Fp256<P> {
     type Output = Self;
 
     #[inline]
@@ -716,7 +716,7 @@ impl<'a, P: Fp256Parameters> Mul<&'a Fp256<P>> for Fp256<P> {
     }
 }
 
-impl<'a, P: Fp256Parameters> Div<&'a Fp256<P>> for Fp256<P> {
+impl<P: Fp256Parameters> Div<&'_ Fp256<P>> for Fp256<P> {
     type Output = Self;
 
     #[inline]
@@ -727,7 +727,7 @@ impl<'a, P: Fp256Parameters> Div<&'a Fp256<P>> for Fp256<P> {
     }
 }
 
-impl<'a, P: Fp256Parameters> AddAssign<&'a Self> for Fp256<P> {
+impl<P: Fp256Parameters> AddAssign<&'_ Self> for Fp256<P> {
     #[inline]
     fn add_assign(&mut self, other: &Self) {
         // This cannot exceed the backing capacity.
@@ -737,7 +737,7 @@ impl<'a, P: Fp256Parameters> AddAssign<&'a Self> for Fp256<P> {
     }
 }
 
-impl<'a, P: Fp256Parameters> SubAssign<&'a Self> for Fp256<P> {
+impl<P: Fp256Parameters> SubAssign<&'_ Self> for Fp256<P> {
     #[inline]
     fn sub_assign(&mut self, other: &Self) {
         // If `other` is larger than `self`, add the modulus to self first.
@@ -749,7 +749,7 @@ impl<'a, P: Fp256Parameters> SubAssign<&'a Self> for Fp256<P> {
     }
 }
 
-impl<'a, P: Fp256Parameters> MulAssign<&'a Self> for Fp256<P> {
+impl<P: Fp256Parameters> MulAssign<&'_ Self> for Fp256<P> {
     #[inline]
     fn mul_assign(&mut self, other: &Self) {
         let mut r = [0u64; 4];
@@ -817,7 +817,7 @@ impl<'a, P: Fp256Parameters> MulAssign<&'a Self> for Fp256<P> {
     }
 }
 
-impl<'a, P: Fp256Parameters> DivAssign<&'a Self> for Fp256<P> {
+impl<P: Fp256Parameters> DivAssign<&'_ Self> for Fp256<P> {
     #[inline]
     fn div_assign(&mut self, other: &Self) {
         self.mul_assign(&other.inverse().unwrap());

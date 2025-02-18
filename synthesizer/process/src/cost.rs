@@ -107,8 +107,8 @@ fn execution_storage_cost<N: Network>(size_in_bytes: u64) -> u64 {
     }
 }
 
-/// Finalize costs for compute heavy operations, derived as:
-/// `BASE_COST + (PER_BYTE_COST * SIZE_IN_BYTES)`.
+// Finalize costs for compute heavy operations, derived as:
+// `BASE_COST + (PER_BYTE_COST * SIZE_IN_BYTES)`.
 
 const CAST_BASE_COST: u64 = 500;
 const CAST_PER_BYTE_COST: u64 = 30;

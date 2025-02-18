@@ -179,7 +179,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     fn insert(&self, transaction: &Transaction<N>) -> Result<()> {
         // Ensure the transaction is a deployment.
         let (transaction_id, owner, deployment, fee) = match transaction {
-            Transaction::Deploy(transaction_id, owner, deployment, fee) => (transaction_id, owner, deployment, fee),
+            Transaction::Deploy(transaction_id, _, owner, deployment, fee) => (transaction_id, owner, deployment, fee),
             Transaction::Execute(..) => bail!("Attempted to insert an execute transaction into deployment storage."),
             Transaction::Fee(..) => bail!("Attempted to insert fee transaction into deployment storage."),
         };
@@ -817,6 +817,8 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 }
 
+type ProgramTriplet<N> = (ProgramID<N>, Identifier<N>, u16);
+
 impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     /// Returns an iterator over the deployment transaction IDs, for all deployments.
     pub fn deployment_transaction_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, N::TransactionID>> {
@@ -872,16 +874,12 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns an iterator over the `((program ID, function name, edition), verifying key)`, for all deployments.
-    pub fn verifying_keys(
-        &self,
-    ) -> impl '_ + Iterator<Item = (Cow<'_, (ProgramID<N>, Identifier<N>, u16)>, Cow<'_, VerifyingKey<N>>)> {
+    pub fn verifying_keys(&self) -> impl '_ + Iterator<Item = (Cow<'_, ProgramTriplet<N>>, Cow<'_, VerifyingKey<N>>)> {
         self.storage.verifying_key_map().iter_confirmed()
     }
 
     /// Returns an iterator over the `((program ID, function name, edition), certificate)`, for all deployments.
-    pub fn certificates(
-        &self,
-    ) -> impl '_ + Iterator<Item = (Cow<'_, (ProgramID<N>, Identifier<N>, u16)>, Cow<'_, Certificate<N>>)> {
+    pub fn certificates(&self) -> impl '_ + Iterator<Item = (Cow<'_, ProgramTriplet<N>>, Cow<'_, Certificate<N>>)> {
         self.storage.certificate_map().iter_confirmed()
     }
 }
@@ -942,7 +940,7 @@ mod tests {
         for transaction in transactions {
             let transaction_id = transaction.id();
             let program_id = match transaction {
-                Transaction::Deploy(_, _, ref deployment, _) => *deployment.program_id(),
+                Transaction::Deploy(_, _, _, ref deployment, _) => *deployment.program_id(),
                 _ => panic!("Incorrect transaction type"),
             };
 
