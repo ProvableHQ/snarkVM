@@ -229,7 +229,7 @@ struct message:
     first as field;
     second as field;
 
-init:
+_init:
     add 1u8 1u8 into 2u8;
 
 function compute:
@@ -281,7 +281,7 @@ function compute:
     add r0.first r0.second into r1;
     output r1 as field.private;
 
-init:
+_init:
     assert.eq 0u8 1u8;
 ";
         // Parse a new program.
@@ -371,7 +371,7 @@ init:
         let gen_constructor_string = |n: usize| -> String {
             let mut s = String::with_capacity(CurrentNetwork::MAX_PROGRAM_SIZE);
             for i in 0..n {
-                s.push_str("init:\n");
+                s.push_str("_init:\n");
                 s.push_str(&format!("    add {i}u8 {i}u8 into r0;\n"));
             }
             s

@@ -55,7 +55,7 @@ struct message:
     first as field;
     second as field;
 
-init:
+_init:
     assert.eq true false;
 
 function compute:
@@ -86,7 +86,7 @@ struct message:
     first as field;
     second as field;
 
-init:
+_init:
     assert.eq true false;
 
 function compute:

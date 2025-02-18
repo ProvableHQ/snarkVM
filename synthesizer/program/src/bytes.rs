@@ -169,7 +169,7 @@ record token:
     owner as address.private;
     token_amount as u64.private;
 
-init:
+_init:
     assert.eq true false;
 
 function compute:

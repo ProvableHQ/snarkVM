@@ -46,7 +46,7 @@ impl<N: Network, Command: CommandTrait<N>> ConstructorCore<N, Command> {
     pub fn default() -> Result<Self> {
         Self::from_str(
             r"
-init:
+_init:
     metadata.get edition into r0;
     assert.eq r0 0u8;",
         )
@@ -125,7 +125,7 @@ impl<N: Network, Command: CommandTrait<N>> TypeName for ConstructorCore<N, Comma
     /// Returns the type name as a string.
     #[inline]
     fn type_name() -> &'static str {
-        "init"
+        "_init"
     }
 }
 

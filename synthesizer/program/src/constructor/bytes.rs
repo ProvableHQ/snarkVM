@@ -68,7 +68,7 @@ mod tests {
     #[test]
     fn test_constructor_bytes() -> Result<()> {
         let constructor_string = r"
-init:
+_init:
     add r0 r1 into r2;
     add r0 r1 into r3;
     add r0 r1 into r4;
