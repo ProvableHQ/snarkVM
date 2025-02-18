@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - 'staging'
-      - 'testnet'
-      - 'mainnet'
 
 jobs:
   # Run benchmarks and stores the output to a file
