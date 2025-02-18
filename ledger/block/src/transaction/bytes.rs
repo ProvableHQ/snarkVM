@@ -96,8 +96,9 @@ impl<N: Network> ToBytes for Transaction<N> {
         1u8.write_le(&mut writer)?;
 
         // Write the transaction.
+        // We don't write the deployment or execution id, which are recomputed when creating the transaction.
         match self {
-            Self::Deploy(id, owner, deployment, fee) => {
+            Self::Deploy(id, _, owner, deployment, fee) => {
                 // Write the variant.
                 0u8.write_le(&mut writer)?;
                 // Write the ID.
@@ -109,7 +110,7 @@ impl<N: Network> ToBytes for Transaction<N> {
                 // Write the fee.
                 fee.write_le(&mut writer)
             }
-            Self::Execute(id, execution, fee) => {
+            Self::Execute(id, _, execution, fee) => {
                 // Write the variant.
                 1u8.write_le(&mut writer)?;
                 // Write the ID.

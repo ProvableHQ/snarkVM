@@ -48,7 +48,7 @@ impl<'a, T> ExecutionPool<'a, T> {
     }
 }
 
-impl<'a, T> Default for ExecutionPool<'a, T> {
+impl<T> Default for ExecutionPool<'_, T> {
     fn default() -> Self {
         Self::new()
     }

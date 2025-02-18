@@ -176,7 +176,7 @@ impl<'a> FromBytesVisitor<'a> {
     }
 }
 
-impl<'a, 'de> Visitor<'de> for FromBytesVisitor<'a> {
+impl<'de> Visitor<'de> for FromBytesVisitor<'_> {
     type Value = ();
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

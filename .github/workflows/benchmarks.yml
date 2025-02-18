@@ -3,16 +3,18 @@ name: Run snarkVM Benchmarks
 on:
   push:
     branches:
-      - 'mainnet'
+      - 'staging'
 
 jobs:
   # Run benchmarks and stores the output to a file
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -21,7 +23,7 @@ jobs:
           toolchain: stable
           override: true
 
-      - uses: actions/cache@v2
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -94,13 +96,13 @@ jobs:
 
       # Download previous benchmark result from cache (if exists)
       - name: Download previous benchmark data
-        uses: actions/cache@v1
+        uses: actions/cache@v4
         with:
           path: ./cache
           key: ${{ runner.os }}-benchmark
 
       - name: Store benchmark result
-        uses: rhysd/github-action-benchmark@v1
+        uses: benchmark-action/github-action-benchmark@v1
         with:
           name: snarkVM Benchmarks
           tool: 'cargo'

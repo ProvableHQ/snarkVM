@@ -1469,7 +1469,7 @@ function do:
         let transaction = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
 
         // Destructure the deployment transaction.
-        let Transaction::Deploy(_, program_owner, deployment, fee) = transaction else {
+        let Transaction::Deploy(_, _, program_owner, deployment, fee) = transaction else {
             panic!("Expected a deployment transaction");
         };
 
@@ -1533,7 +1533,7 @@ function do:
         let transaction = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
 
         // Destructure the deployment transaction.
-        let Transaction::Deploy(txid, program_owner, deployment, fee) = transaction else {
+        let Transaction::Deploy(txid, _, program_owner, deployment, fee) = transaction else {
             panic!("Expected a deployment transaction");
         };
 
@@ -1549,7 +1549,9 @@ function do:
         // Create a new deployment transaction with the underreported verifying keys.
         let adjusted_deployment =
             Deployment::new(deployment.edition(), deployment.program().clone(), vks_with_underreport).unwrap();
-        let adjusted_transaction = Transaction::Deploy(txid, program_owner, Box::new(adjusted_deployment), fee);
+        let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
+        let adjusted_transaction =
+            Transaction::Deploy(txid, deployment_id, program_owner, Box::new(adjusted_deployment), fee);
 
         // Verify the deployment transaction. It should error when enforcing the first constraint over the vk limit.
         let result = vm.check_transaction(&adjusted_transaction, None, rng);
@@ -1608,7 +1610,7 @@ function do:
         let transaction = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
 
         // Destructure the deployment transaction.
-        let Transaction::Deploy(txid, program_owner, deployment, fee) = transaction else {
+        let Transaction::Deploy(txid, _, program_owner, deployment, fee) = transaction else {
             panic!("Expected a deployment transaction");
         };
 
@@ -1622,7 +1624,9 @@ function do:
         // Create a new deployment transaction with the underreported verifying keys.
         let adjusted_deployment =
             Deployment::new(deployment.edition(), deployment.program().clone(), vks_with_underreport).unwrap();
-        let adjusted_transaction = Transaction::Deploy(txid, program_owner, Box::new(adjusted_deployment), fee);
+        let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
+        let adjusted_transaction =
+            Transaction::Deploy(txid, deployment_id, program_owner, Box::new(adjusted_deployment), fee);
 
         // Verify the deployment transaction. It should error when synthesizing the first variable over the vk limit.
         let result = vm.check_transaction(&adjusted_transaction, None, rng);

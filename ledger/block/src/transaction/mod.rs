@@ -30,16 +30,29 @@ mod string;
 use crate::Transition;
 use console::{
     network::prelude::*,
-    program::{Ciphertext, ProgramOwner, Record, TRANSACTION_DEPTH, TransactionLeaf, TransactionPath, TransactionTree},
+    program::{
+        Ciphertext,
+        DeploymentTree,
+        ExecutionTree,
+        ProgramOwner,
+        Record,
+        TRANSACTION_DEPTH,
+        TransactionLeaf,
+        TransactionPath,
+        TransactionTree,
+    },
     types::{Field, Group, U64},
 };
+
+type DeploymentID<N> = Field<N>;
+type ExecutionID<N> = Field<N>;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum Transaction<N: Network> {
     /// The deploy transaction publishes an Aleo program to the network.
-    Deploy(N::TransactionID, ProgramOwner<N>, Box<Deployment<N>>, Fee<N>),
+    Deploy(N::TransactionID, DeploymentID<N>, ProgramOwner<N>, Box<Deployment<N>>, Fee<N>),
     /// The execute transaction represents a call to an Aleo program.
-    Execute(N::TransactionID, Execution<N>, Option<Fee<N>>),
+    Execute(N::TransactionID, ExecutionID<N>, Box<Execution<N>>, Option<Fee<N>>),
     /// The fee transaction represents a fee paid to the network, used for rejected transactions.
     Fee(N::TransactionID, Fee<N>),
 }
@@ -49,24 +62,36 @@ impl<N: Network> Transaction<N> {
     pub fn from_deployment(owner: ProgramOwner<N>, deployment: Deployment<N>, fee: Fee<N>) -> Result<Self> {
         // Ensure the transaction is not empty.
         ensure!(!deployment.program().functions().is_empty(), "Attempted to create an empty deployment transaction");
-        // Compute the transaction ID.
-        let id = *Self::deployment_tree(&deployment, Some(&fee))?.root();
+        // Compute the deployment tree.
+        let deployment_tree = Self::deployment_tree(&deployment)?;
         // Compute the deployment ID.
-        let deployment_id = deployment.to_deployment_id()?;
+        let deployment_id = *deployment_tree.root();
+        // Compute the transaction ID
+        let transaction_id = *Self::transaction_tree(deployment_tree, deployment.len(), &fee)?.root();
         // Ensure the owner signed the correct transaction ID.
         ensure!(owner.verify(deployment_id), "Attempted to create a deployment transaction with an invalid owner");
         // Construct the deployment transaction.
-        Ok(Self::Deploy(id.into(), owner, Box::new(deployment), fee))
+        Ok(Self::Deploy(transaction_id.into(), deployment_id, owner, Box::new(deployment), fee))
     }
 
     /// Initializes a new execution transaction.
     pub fn from_execution(execution: Execution<N>, fee: Option<Fee<N>>) -> Result<Self> {
         // Ensure the transaction is not empty.
         ensure!(!execution.is_empty(), "Attempted to create an empty execution transaction");
-        // Compute the transaction ID.
-        let id = *Self::execution_tree(&execution, &fee)?.root();
+        // Compute the execution tree.
+        let execution_tree = Self::execution_tree(&execution)?;
+        // Compute the execution ID.
+        let execution_id = *execution_tree.root();
+        // Compute the transaction ID
+        let transaction_id = match &fee {
+            Some(fee) => {
+                // Compute the root of the transacton tree.
+                *Self::transaction_tree(execution_tree, execution.len(), fee)?.root()
+            }
+            None => execution_id,
+        };
         // Construct the execution transaction.
-        Ok(Self::Execute(id.into(), execution, fee))
+        Ok(Self::Execute(transaction_id.into(), execution_id, Box::new(execution), fee))
     }
 
     /// Initializes a new fee transaction.
@@ -106,7 +131,7 @@ impl<N: Network> Transaction<N> {
     pub fn contains_split(&self) -> bool {
         match self {
             // Case 1 - The transaction contains a transition that calls 'credits.aleo/split'.
-            Transaction::Execute(_, execution, _) => execution.transitions().any(|transition| transition.is_split()),
+            Transaction::Execute(_, _, execution, _) => execution.transitions().any(|transition| transition.is_split()),
             // Otherwise, return 'false'.
             _ => false,
         }
@@ -118,7 +143,7 @@ impl<N: Network> Transaction<N> {
     #[inline]
     pub fn owner(&self) -> Option<&ProgramOwner<N>> {
         match self {
-            Self::Deploy(_, owner, _, _) => Some(owner),
+            Self::Deploy(_, _, owner, _, _) => Some(owner),
             _ => None,
         }
     }
@@ -127,7 +152,7 @@ impl<N: Network> Transaction<N> {
     #[inline]
     pub fn deployment(&self) -> Option<&Deployment<N>> {
         match self {
-            Self::Deploy(_, _, deployment, _) => Some(deployment.as_ref()),
+            Self::Deploy(_, _, _, deployment, _) => Some(deployment.as_ref()),
             _ => None,
         }
     }
@@ -136,7 +161,7 @@ impl<N: Network> Transaction<N> {
     #[inline]
     pub fn execution(&self) -> Option<&Execution<N>> {
         match self {
-            Self::Execute(_, execution, _) => Some(execution),
+            Self::Execute(_, _, execution, _) => Some(execution),
             _ => None,
         }
     }
@@ -186,9 +211,9 @@ impl<N: Network> Transaction<N> {
     /// Returns the transaction total fee.
     pub fn fee_amount(&self) -> Result<U64<N>> {
         match self {
-            Self::Deploy(_, _, _, fee) => fee.amount(),
-            Self::Execute(_, _, Some(fee)) => fee.amount(),
-            Self::Execute(_, _, None) => Ok(U64::zero()),
+            Self::Deploy(_, _, _, _, fee) => fee.amount(),
+            Self::Execute(_, _, _, Some(fee)) => fee.amount(),
+            Self::Execute(_, _, _, None) => Ok(U64::zero()),
             Self::Fee(_, fee) => fee.amount(),
         }
     }
@@ -196,9 +221,9 @@ impl<N: Network> Transaction<N> {
     /// Returns the transaction base fee.
     pub fn base_fee_amount(&self) -> Result<U64<N>> {
         match self {
-            Self::Deploy(_, _, _, fee) => fee.base_amount(),
-            Self::Execute(_, _, Some(fee)) => fee.base_amount(),
-            Self::Execute(_, _, None) => Ok(U64::zero()),
+            Self::Deploy(_, _, _, _, fee) => fee.base_amount(),
+            Self::Execute(_, _, _, Some(fee)) => fee.base_amount(),
+            Self::Execute(_, _, _, None) => Ok(U64::zero()),
             Self::Fee(_, fee) => fee.base_amount(),
         }
     }
@@ -206,9 +231,9 @@ impl<N: Network> Transaction<N> {
     /// Returns the transaction priority fee.
     pub fn priority_fee_amount(&self) -> Result<U64<N>> {
         match self {
-            Self::Deploy(_, _, _, fee) => fee.priority_amount(),
-            Self::Execute(_, _, Some(fee)) => fee.priority_amount(),
-            Self::Execute(_, _, None) => Ok(U64::zero()),
+            Self::Deploy(_, _, _, _, fee) => fee.priority_amount(),
+            Self::Execute(_, _, _, Some(fee)) => fee.priority_amount(),
+            Self::Execute(_, _, _, None) => Ok(U64::zero()),
             Self::Fee(_, fee) => fee.priority_amount(),
         }
     }
@@ -216,8 +241,8 @@ impl<N: Network> Transaction<N> {
     /// Returns the fee transition.
     pub fn fee_transition(&self) -> Option<Fee<N>> {
         match self {
-            Self::Deploy(_, _, _, fee) => Some(fee.clone()),
-            Self::Execute(_, _, fee) => fee.clone(),
+            Self::Deploy(_, _, _, _, fee) => Some(fee.clone()),
+            Self::Execute(_, _, _, fee) => fee.clone(),
             Self::Fee(_, fee) => Some(fee.clone()),
         }
     }
@@ -228,9 +253,9 @@ impl<N: Network> Transaction<N> {
     pub fn contains_transition(&self, transition_id: &N::TransitionID) -> bool {
         match self {
             // Check the fee.
-            Self::Deploy(_, _, _, fee) => fee.id() == transition_id,
+            Self::Deploy(_, _, _, _, fee) => fee.id() == transition_id,
             // Check the execution and fee.
-            Self::Execute(_, execution, fee) => {
+            Self::Execute(_, _, execution, fee) => {
                 execution.contains_transition(transition_id)
                     || fee.as_ref().map_or(false, |fee| fee.id() == transition_id)
             }
@@ -255,12 +280,12 @@ impl<N: Network> Transaction<N> {
     pub fn find_transition(&self, transition_id: &N::TransitionID) -> Option<&Transition<N>> {
         match self {
             // Check the fee.
-            Self::Deploy(_, _, _, fee) => match fee.id() == transition_id {
+            Self::Deploy(_, _, _, _, fee) => match fee.id() == transition_id {
                 true => Some(fee.transition()),
                 false => None,
             },
             // Check the execution and fee.
-            Self::Execute(_, execution, fee) => execution.get_transition(transition_id).or_else(|| {
+            Self::Execute(_, _, execution, fee) => execution.get_transition(transition_id).or_else(|| {
                 fee.as_ref().and_then(|fee| match fee.id() == transition_id {
                     true => Some(fee.transition()),
                     false => None,
@@ -299,8 +324,8 @@ impl<N: Network> Transaction<N> {
     /// Returns an iterator over all transitions.
     pub fn transitions(&self) -> impl '_ + DoubleEndedIterator<Item = &Transition<N>> {
         match self {
-            Self::Deploy(_, _, _, fee) => IterWrap::Deploy(Some(fee.transition()).into_iter()),
-            Self::Execute(_, execution, fee) => {
+            Self::Deploy(_, _, _, _, fee) => IterWrap::Deploy(Some(fee.transition()).into_iter()),
+            Self::Execute(_, _, execution, fee) => {
                 IterWrap::Execute(execution.transitions().chain(fee.as_ref().map(|fee| fee.transition())))
             }
             Self::Fee(_, fee) => IterWrap::Fee(Some(fee.transition()).into_iter()),
@@ -366,8 +391,8 @@ impl<N: Network> Transaction<N> {
     /// Returns a consuming iterator over all transitions.
     pub fn into_transitions(self) -> impl DoubleEndedIterator<Item = Transition<N>> {
         match self {
-            Self::Deploy(_, _, _, fee) => IterWrap::Deploy(Some(fee.into_transition()).into_iter()),
-            Self::Execute(_, execution, fee) => {
+            Self::Deploy(_, _, _, _, fee) => IterWrap::Deploy(Some(fee.into_transition()).into_iter()),
+            Self::Execute(_, _, execution, fee) => {
                 IterWrap::Execute(execution.into_transitions().chain(fee.map(|fee| fee.into_transition())))
             }
             Self::Fee(_, fee) => IterWrap::Fee(Some(fee.into_transition()).into_iter()),
@@ -468,5 +493,45 @@ pub mod test_helpers {
         let fee = crate::transaction::fee::test_helpers::sample_fee_public_hardcoded(rng);
         // Construct a fee transaction.
         Transaction::from_fee(fee).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_transaction_id() -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        // Transaction IDs are created using `transaction_tree`.
+        for expected in [
+            crate::transaction::test_helpers::sample_deployment_transaction(true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(false, rng),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng),
+        ]
+        .into_iter()
+        {
+            match expected {
+                // Compare against transaction IDs created using `deployment_tree`.
+                Transaction::Deploy(transaction_id, deployment_id, _, ref deployment, _) => {
+                    let expected_transaction_id = *expected.clone().to_tree()?.root();
+                    assert_eq!(expected_transaction_id, *transaction_id);
+                    let expected_deployment_id = *Transaction::deployment_tree(deployment)?.root();
+                    assert_eq!(expected_deployment_id, deployment_id);
+                }
+                // Compare against transaction IDs created using `execution_tree`.
+                Transaction::Execute(transaction_id, execution_id, ref execution, _) => {
+                    let expected_transaction_id = *expected.clone().to_tree()?.root();
+                    assert_eq!(expected_transaction_id, *transaction_id);
+                    let expected_execution_id = *Transaction::execution_tree(execution)?.root();
+                    assert_eq!(expected_execution_id, execution_id);
+                }
+                _ => panic!("Unexpected test case."),
+            };
+        }
+
+        Ok(())
     }
 }

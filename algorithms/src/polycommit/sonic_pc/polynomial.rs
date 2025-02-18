@@ -229,7 +229,7 @@ impl<'a, F: PrimeField> From<&'a LabeledPolynomial<F>> for LabeledPolynomialWith
     }
 }
 
-impl<'a, F: PrimeField> From<LabeledPolynomial<F>> for LabeledPolynomialWithBasis<'a, F> {
+impl<F: PrimeField> From<LabeledPolynomial<F>> for LabeledPolynomialWithBasis<'_, F> {
     fn from(other: LabeledPolynomial<F>) -> Self {
         let polynomial = PolynomialWithBasis::Monomial {
             polynomial: Cow::Owned(other.polynomial),

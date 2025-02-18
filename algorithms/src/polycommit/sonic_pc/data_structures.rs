@@ -482,7 +482,7 @@ impl From<PolynomialLabel> for LCTerm {
     }
 }
 
-impl<'a> From<&'a str> for LCTerm {
+impl From<&'_ str> for LCTerm {
     fn from(other: &str) -> Self {
         Self::PolyLabel(other.into())
     }

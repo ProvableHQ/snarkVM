@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-puzzle"
-version = "1.2.1"
+version = "1.3.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Puzzle for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -40,11 +40,11 @@ wasm = [ "console/wasm", "snarkvm-algorithms/wasm" ]
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../console"
-version = "=1.2.1"
+version = "=1.3.0"
 
 [dependencies.snarkvm-algorithms]
 path = "../../algorithms"
-version = "=1.2.1"
+version = "=1.3.0"
 
 [dependencies.aleo-std]
 version = "0.1.24"

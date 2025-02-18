@@ -338,7 +338,7 @@ impl<P: Fp2Parameters> Distribution<Fp2<P>> for Standard {
 impl_add_sub_from_field_ref!(Fp2, Fp2Parameters);
 impl_mul_div_from_field_ref!(Fp2, Fp2Parameters);
 
-impl<'a, P: Fp2Parameters> Add<&'a Fp2<P>> for Fp2<P> {
+impl<P: Fp2Parameters> Add<&'_ Fp2<P>> for Fp2<P> {
     type Output = Self;
 
     #[inline]
@@ -349,7 +349,7 @@ impl<'a, P: Fp2Parameters> Add<&'a Fp2<P>> for Fp2<P> {
     }
 }
 
-impl<'a, P: Fp2Parameters> Sub<&'a Fp2<P>> for Fp2<P> {
+impl<P: Fp2Parameters> Sub<&'_ Fp2<P>> for Fp2<P> {
     type Output = Self;
 
     #[inline]
@@ -360,7 +360,7 @@ impl<'a, P: Fp2Parameters> Sub<&'a Fp2<P>> for Fp2<P> {
     }
 }
 
-impl<'a, P: Fp2Parameters> Mul<&'a Fp2<P>> for Fp2<P> {
+impl<P: Fp2Parameters> Mul<&'_ Fp2<P>> for Fp2<P> {
     type Output = Self;
 
     #[inline]
@@ -371,7 +371,7 @@ impl<'a, P: Fp2Parameters> Mul<&'a Fp2<P>> for Fp2<P> {
     }
 }
 
-impl<'a, P: Fp2Parameters> Div<&'a Fp2<P>> for Fp2<P> {
+impl<P: Fp2Parameters> Div<&'_ Fp2<P>> for Fp2<P> {
     type Output = Self;
 
     #[inline]
@@ -382,7 +382,7 @@ impl<'a, P: Fp2Parameters> Div<&'a Fp2<P>> for Fp2<P> {
     }
 }
 
-impl<'a, P: Fp2Parameters> AddAssign<&'a Self> for Fp2<P> {
+impl<P: Fp2Parameters> AddAssign<&'_ Self> for Fp2<P> {
     #[inline]
     fn add_assign(&mut self, other: &Self) {
         self.c0.add_assign(other.c0);
@@ -390,7 +390,7 @@ impl<'a, P: Fp2Parameters> AddAssign<&'a Self> for Fp2<P> {
     }
 }
 
-impl<'a, P: Fp2Parameters> SubAssign<&'a Self> for Fp2<P> {
+impl<P: Fp2Parameters> SubAssign<&'_ Self> for Fp2<P> {
     #[inline]
     fn sub_assign(&mut self, other: &Self) {
         self.c0.sub_assign(&other.c0);
@@ -398,7 +398,7 @@ impl<'a, P: Fp2Parameters> SubAssign<&'a Self> for Fp2<P> {
     }
 }
 
-impl<'a, P: Fp2Parameters> MulAssign<&'a Self> for Fp2<P> {
+impl<P: Fp2Parameters> MulAssign<&'_ Self> for Fp2<P> {
     #[inline]
     #[allow(clippy::suspicious_op_assign_impl)]
     fn mul_assign(&mut self, other: &Self) {
@@ -409,7 +409,7 @@ impl<'a, P: Fp2Parameters> MulAssign<&'a Self> for Fp2<P> {
     }
 }
 
-impl<'a, P: Fp2Parameters> DivAssign<&'a Self> for Fp2<P> {
+impl<P: Fp2Parameters> DivAssign<&'_ Self> for Fp2<P> {
     #[inline]
     fn div_assign(&mut self, other: &Self) {
         self.mul_assign(&other.inverse().unwrap());

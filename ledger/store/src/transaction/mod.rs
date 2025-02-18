@@ -435,6 +435,8 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     }
 }
 
+type ProgramTriplet<N> = (ProgramID<N>, Identifier<N>, u16);
+
 impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     /// Returns an iterator over the transaction IDs, for all transactions.
     pub fn transaction_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, N::TransactionID>> {
@@ -462,16 +464,12 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     }
 
     /// Returns an iterator over the `((program ID, function name, edition), verifying key)`, for all deployments.
-    pub fn verifying_keys(
-        &self,
-    ) -> impl '_ + Iterator<Item = (Cow<'_, (ProgramID<N>, Identifier<N>, u16)>, Cow<'_, VerifyingKey<N>>)> {
+    pub fn verifying_keys(&self) -> impl '_ + Iterator<Item = (Cow<'_, ProgramTriplet<N>>, Cow<'_, VerifyingKey<N>>)> {
         self.storage.deployment_store().verifying_keys()
     }
 
     /// Returns an iterator over the `((program ID, function name, edition), certificate)`, for all deployments.
-    pub fn certificates(
-        &self,
-    ) -> impl '_ + Iterator<Item = (Cow<'_, (ProgramID<N>, Identifier<N>, u16)>, Cow<'_, Certificate<N>>)> {
+    pub fn certificates(&self) -> impl '_ + Iterator<Item = (Cow<'_, ProgramTriplet<N>>, Cow<'_, Certificate<N>>)> {
         self.storage.deployment_store().certificates()
     }
 }

@@ -161,12 +161,9 @@ fn batch_add_write<G: AffineCurve>(
     inversion_tmp = inversion_tmp.inverse().unwrap(); // this is always in Fp*
 
     for (a, op_b) in addition_result.iter_mut().rev().zip(scratch_space.iter().rev()) {
-        match op_b {
-            Some(b) => {
-                G::batch_add_loop_2(a, *b, &mut inversion_tmp);
-            }
-            None => (),
-        };
+        if let Some(b) = op_b {
+            G::batch_add_loop_2(a, *b, &mut inversion_tmp);
+        }
     }
     scratch_space.clear();
 }

@@ -495,7 +495,7 @@ pub mod test_helpers {
 
     /// Samples a random transition.
     pub(crate) fn sample_transition(rng: &mut TestRng) -> Transition<CurrentNetwork> {
-        if let Transaction::Execute(_, execution, _) =
+        if let Transaction::Execute(_, _, execution, _) =
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng)
         {
             execution.into_transitions().next().unwrap()

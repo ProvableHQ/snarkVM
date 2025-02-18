@@ -28,6 +28,7 @@ use ledger_puzzle::Solution;
 #[derive(Clone, PartialEq, Eq)]
 pub enum Transmission<N: Network> {
     /// A ratification.
+    /// This is a placeholder: currently ratifications are not actually supported.
     Ratification,
     /// A prover solution.
     /// Attention: Observe that the solution is encapsulated in `Data`, and thus possibly unchecked.

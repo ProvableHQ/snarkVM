@@ -138,7 +138,7 @@ impl<F: PrimeField> core::ops::MulAssign<F> for SparsePolynomial<F> {
     }
 }
 
-impl<'a, F: PrimeField> core::ops::Mul<F> for &'a SparsePolynomial<F> {
+impl<F: PrimeField> core::ops::Mul<F> for &'_ SparsePolynomial<F> {
     type Output = SparsePolynomial<F>;
 
     fn mul(self, other: F) -> Self::Output {

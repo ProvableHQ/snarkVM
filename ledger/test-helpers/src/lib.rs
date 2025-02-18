@@ -164,7 +164,7 @@ function compute:
 pub fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
     // Sample a deploy transaction.
     let deployment = match crate::sample_deployment_transaction(is_fee_private, rng) {
-        Transaction::Deploy(_, _, deployment, _) => (*deployment).clone(),
+        Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
         _ => unreachable!(),
     };
 
@@ -186,19 +186,19 @@ pub fn sample_execution(rng: &mut TestRng) -> Execution<CurrentNetwork> {
     // Retrieve a transaction.
     let transaction = block.transactions().iter().next().unwrap().deref().clone();
     // Retrieve the execution.
-    if let Transaction::Execute(_, execution, _) = transaction { execution } else { unreachable!() }
+    if let Transaction::Execute(_, _, execution, _) = transaction { *execution } else { unreachable!() }
 }
 
 /// Samples a rejected execution.
 pub fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
     // Sample an execute transaction.
     let execution = match crate::sample_execution_transaction_with_fee(is_fee_private, rng) {
-        Transaction::Execute(_, execution, _) => execution,
+        Transaction::Execute(_, _, execution, _) => execution,
         _ => unreachable!(),
     };
 
     // Return the rejected execution.
-    Rejected::new_execution(execution)
+    Rejected::new_execution(*execution)
 }
 
 /********************************************** Fee ***********************************************/

@@ -100,7 +100,7 @@ impl<F: PrimeField> std::ops::Index<usize> for Evaluations<F> {
     }
 }
 
-impl<'a, 'b, F: PrimeField> Mul<&'a Evaluations<F>> for &'b Evaluations<F> {
+impl<'a, F: PrimeField> Mul<&'a Evaluations<F>> for &'_ Evaluations<F> {
     type Output = Evaluations<F>;
 
     #[inline]
@@ -119,7 +119,7 @@ impl<'a, F: PrimeField> MulAssign<&'a Evaluations<F>> for Evaluations<F> {
     }
 }
 
-impl<'a, 'b, F: PrimeField> Add<&'a Evaluations<F>> for &'b Evaluations<F> {
+impl<'a, F: PrimeField> Add<&'a Evaluations<F>> for &'_ Evaluations<F> {
     type Output = Evaluations<F>;
 
     #[inline]
@@ -138,7 +138,7 @@ impl<'a, F: PrimeField> AddAssign<&'a Evaluations<F>> for Evaluations<F> {
     }
 }
 
-impl<'a, 'b, F: PrimeField> Sub<&'a Evaluations<F>> for &'b Evaluations<F> {
+impl<'a, F: PrimeField> Sub<&'a Evaluations<F>> for &'_ Evaluations<F> {
     type Output = Evaluations<F>;
 
     #[inline]
@@ -157,7 +157,7 @@ impl<'a, F: PrimeField> SubAssign<&'a Evaluations<F>> for Evaluations<F> {
     }
 }
 
-impl<'a, 'b, F: PrimeField> Div<&'a Evaluations<F>> for &'b Evaluations<F> {
+impl<'a, F: PrimeField> Div<&'a Evaluations<F>> for &'_ Evaluations<F> {
     type Output = Evaluations<F>;
 
     #[inline]

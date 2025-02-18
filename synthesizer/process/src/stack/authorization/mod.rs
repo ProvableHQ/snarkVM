@@ -188,7 +188,7 @@ impl<N: Network> Authorization<N> {
         if transitions.is_empty() {
             bail!("Cannot compute the execution ID for an empty authorization.");
         }
-        Ok(*Transaction::transitions_tree(transitions.values(), &None)?.root())
+        Ok(*Transaction::transitions_tree(transitions.values())?.root())
     }
 }
 

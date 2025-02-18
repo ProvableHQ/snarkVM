@@ -22,8 +22,10 @@ use snarkvm_utilities::TestRng;
 use core::str::FromStr;
 use wasm_bindgen_test::*;
 
+#[allow(dead_code)]
 const ITERATIONS: usize = 1000;
 
+#[allow(dead_code)]
 #[wasm_bindgen_test]
 fn test_account() {
     const ALEO_PRIVATE_KEY: &str = "APrivateKey1zkp8cC4jgHEBnbtu3xxs1Ndja2EMizcvTRDq5Nikdkukg1p";
@@ -40,6 +42,7 @@ fn test_account() {
     assert_eq!(ALEO_ADDRESS, address.to_string());
 }
 
+#[allow(dead_code)]
 #[wasm_bindgen_test]
 fn test_account_sign() {
     let mut rng = TestRng::default();

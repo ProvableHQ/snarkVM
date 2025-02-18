@@ -60,7 +60,7 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v1.0.0-rust-1.81.0-snarkvm-stable-cache
+        default: v1.3.0-rust-1.83.0-snarkvm-stable-cache
     steps:
       - run: set -e
       - run:
@@ -88,7 +88,7 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v1.0.0-rust-1.81.0-snarkvm-stable-cache
+        default: v1.3.0-rust-1.83.0-snarkvm-stable-cache
     steps:
       - run: (sccache -s || true)
       - run: set +e
@@ -154,7 +154,7 @@ commands:
 jobs:
   snarkvm:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.large >>
     steps:
       - checkout
@@ -164,511 +164,521 @@ jobs:
 
   algorithms:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.large >>
     steps:
       - run_serial:
           workspace_member: algorithms
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-algorithms-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-algorithms-cache
 
   algorithms-profiler:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial: # This runs a single test with profiler enabled
           workspace_member: algorithms
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-algorithms-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-algorithms-cache
           flags: varuna::prove_and_verify_with_square_matrix --features profiler
 
   circuit:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-cache
 
   circuit-account:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/account
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-account-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-account-cache
 
   # This checks that no `console` structs are used in core circuit logic.
   circuit-account-noconsole:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/account
           flags: --no-default-features
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-account-noconsole-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-account-noconsole-cache
 
   circuit-algorithms:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           workspace_member: circuit/algorithms
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-algorithms-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-algorithms-cache
 
   circuit-collections:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           workspace_member: circuit/collections
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-collections-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-collections-cache
 
   # This checks that no `console` structs are used in core circuit logic.
   circuit-collections-noconsole:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           workspace_member: circuit/collections
           flags: --no-default-features
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-collections-noconsole-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-collections-noconsole-cache
 
   circuit-environment:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/environment
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-environment-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-environment-cache
 
   circuit-network:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/network
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-network-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-network-cache
 
   circuit-program:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           workspace_member: circuit/program
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-program-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-program-cache
 
   circuit-types:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/types
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-types-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-types-cache
 
   circuit-types-address:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/types/address
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-types-address-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-types-address-cache
 
   circuit-types-boolean:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/types/boolean
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-types-boolean-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-types-boolean-cache
 
   circuit-types-field:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/types/field
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-types-field-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-types-field-cache
 
   circuit-types-group:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/types/group
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-types-group-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-types-group-cache
 
   circuit-types-integers:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           workspace_member: circuit/types/integers
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-types-integers-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-types-integers-cache
           flags: -- --ignored
 
   circuit-types-scalar:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/types/scalar
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-types-scalar-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-types-scalar-cache
 
   circuit-types-string:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: circuit/types/string
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-circuit-types-string-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-circuit-types-string-cache
   console:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-cache
 
   console-account:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           workspace_member: console/account
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-account-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-account-cache
 
   console-algorithms:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/algorithms
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-algorithms-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-algorithms-cache
 
   console-collections:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           workspace_member: console/collections
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-collections-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-collections-cache
 
   console-network:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/network
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-network-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-network-cache
 
   console-network-environment:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/network/environment
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-network-environment-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-network-environment-cache
 
   console-program:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/program
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-program-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-program-cache
 
   console-types:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/types
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-types-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-types-cache
 
   console-types-address:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/types/address
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-types-address-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-types-address-cache
 
   console-types-boolean:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/types/boolean
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-types-boolean-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-types-boolean-cache
 
   console-types-field:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/types/field
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-types-field-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-types-field-cache
 
   console-types-group:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/types/group
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-types-group-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-types-group-cache
 
   console-types-integers:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/types/integers
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-types-integers-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-types-integers-cache
 
   console-types-scalar:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/types/scalar
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-types-scalar-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-types-scalar-cache
 
   console-types-string:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: console/types/string
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-console-types-string-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-console-types-string-cache
 
   curves:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: curves
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-curves-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-curves-cache
 
   fields:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: fields
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-fields-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-fields-cache
 
   ledger:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           workspace_member: ledger
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-cache
 
   ledger-with-rocksdb:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           flags: --features=rocks
           workspace_member: ledger
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-with-rocksdb-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-with-rocksdb-cache
 
   ledger-with-valid-solutions:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           flags: valid_solutions --features=test
           workspace_member: ledger
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-with-valid-solutions-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-with-valid-solutions-cache
 
   ledger-authority:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: ledger/authority
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-authority-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-authority-cache
 
   ledger-block:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           workspace_member: ledger/block
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-block-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-block-cache
 
   ledger-committee:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           workspace_member: ledger/committee
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-committee-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-committee-cache
 
   ledger-narwhal:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: ledger/narwhal
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-narwhal-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-narwhal-cache
 
   ledger-narwhal-batch-certificate:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/batch-certificate
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-narwhal-batch-certificate-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-narwhal-batch-certificate-cache
 
   ledger-narwhal-batch-header:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/batch-header
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-narwhal-batch-header-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-narwhal-batch-header-cache
 
   ledger-narwhal-data:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/data
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-narwhal-data-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-narwhal-data-cache
 
   ledger-narwhal-subdag:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/subdag
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-narwhal-subdag-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-narwhal-subdag-cache
 
   ledger-narwhal-transmission:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/transmission
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-narwhal-transmission-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-narwhal-transmission-cache
 
   ledger-narwhal-transmission-id:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           workspace_member: ledger/narwhal/transmission-id
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-narwhal-transmission-id-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-narwhal-transmission-id-cache
 
   ledger-puzzle:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: ledger/puzzle
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-puzzle-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-puzzle-cache
 
   ledger-puzzle-epoch:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: ledger/puzzle/epoch
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-puzzle-epoch-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-puzzle-epoch-cache
 
   ledger-query:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: ledger/query
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-query-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-query-cache
 
   ledger-store:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           flags: --features=rocks
           workspace_member: ledger/store
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-store-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-store-cache
 
   ledger-test-helpers:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           workspace_member: ledger/test-helpers
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-ledger-test-helpers-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-test-helpers-cache
 
   parameters:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           flags: -- --test-threads=2
           workspace_member: parameters
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-parameters-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-parameters-cache
+
+  parameters-large:
+    docker:
+      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    resource_class: << pipeline.parameters.large >>
+    steps:
+      - run_serial:
+          flags: --no-run --features large_params
+          workspace_member: parameters
+          cache_key: v1.0.0-rust-1.81.0-snarkvm-parameters-large-cache
 
   parameters-uncached:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.large >>
     steps:
       - run_serial:
@@ -678,203 +688,211 @@ jobs:
 
   synthesizer:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           flags: --lib --bins
           workspace_member: synthesizer
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-cache
 
   synthesizer-mem-heavy:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           flags: -- --ignored test_deployment_synthesis_overload test_deep_nested_execution_cost
           workspace_member: synthesizer
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-mem-heavy-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-mem-heavy-cache
 
   synthesizer-integration:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           flags: --test '*' --features test -- --test-threads=8
           workspace_member: synthesizer
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-integration-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-integration-cache
 
   synthesizer-process:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           flags: -- --test-threads=8
           workspace_member: synthesizer/process
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-process-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-process-cache
 
   synthesizer-process-with-rocksdb:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           flags: --features=rocks
           workspace_member: synthesizer/process
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-process-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-process-cache
 
   synthesizer-program:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           flags: --lib --bins
           workspace_member: synthesizer/program
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-program-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-program-cache
 
   synthesizer-program-integration:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           flags: --test '*' -- --skip keccak --skip psd --skip sha --skip instruction::is --skip instruction::equal --skip instruction::commit
           workspace_member: synthesizer/program
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-program-integration-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-program-integration-cache
 
   synthesizer-program-integration-keccak:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           flags: keccak --test '*'
           workspace_member: synthesizer/program
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-program-keccak-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-program-keccak-cache
 
   synthesizer-program-integration-psd:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           flags: psd --test '*'
           workspace_member: synthesizer/program
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-program-psd-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-program-psd-cache
 
   synthesizer-program-integration-sha:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           flags: sha --test '*'
           workspace_member: synthesizer/program
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-program-sha-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-program-sha-cache
 
   synthesizer-program-integration-instruction-is:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
           flags: instruction::is --test '*'
           workspace_member: synthesizer/program
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-program-is-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-program-is-cache
 
   synthesizer-program-integration-instruction-equal:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
           flags: instruction::equal --test '*'
           workspace_member: synthesizer/program
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-program-equal-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-program-equal-cache
 
   synthesizer-program-integration-instruction-commit:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
           flags: instruction::commit --test '*'
           workspace_member: synthesizer/program
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-program-commit-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-program-commit-cache
 
   synthesizer-snark:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: synthesizer/snark
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-synthesizer-snark-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-snark-cache
 
   utilities:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.large >>
     steps:
       - run_serial:
           workspace_member: utilities
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-utilities-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-utilities-cache
 
   utilities-derives:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
           workspace_member: utilities/derives
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-utilities-derives-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-utilities-derives-cache
 
   wasm:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - checkout
       - setup_environment:
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-wasm-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-wasm-cache
       - run:
           no_output_timeout: 30m
           command: |
-            sudo apt-get install nodejs
-            (cargo install wasm-pack || true)
+            # The commands required to install current Node.js come from https://nodejs.org/en/download
+            # The versions of nvm and Node.js may need to be periodically updated
+            # Download and install nvm
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+            # Add nvm to the path
+            source /home/circleci/.profile
+            # Download and install Node.js
+            nvm install 22
+            # Install wasm-pack
+            curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+            # Run the tests
             cd wasm && wasm-pack test --node
-            # cargo test --target wasm32-unknown-unknown
       - clear_environment:
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-wasm-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-wasm-cache
 
   check-fmt:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.medium >>
     steps:
       - checkout
       - install_rust_nightly
       - setup_environment:
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-fmt-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-fmt-cache
       - run:
           name: Check style
           no_output_timeout: 35m
           command: cargo +nightly fmt --all -- --check
       - clear_environment:
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-fmt-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-fmt-cache
 
   check-clippy:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - checkout
       - setup_environment:
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-clippy-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-clippy-cache
       - run:
           name: Check Clippy
           no_output_timeout: 35m
@@ -882,22 +900,22 @@ jobs:
             cargo clippy --workspace --all-targets -- -D warnings
             cargo clippy --workspace --all-targets --all-features -- -D warnings
       - clear_environment:
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-clippy-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-clippy-cache
 
   check-all-targets:
     docker:
-      - image: cimg/rust:1.81.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.small >>
     steps:
       - checkout
       - setup_environment:
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-all-targets-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-all-targets-cache
       - run:
           name: Check all targets
           no_output_timeout: 35m
           command: cargo check --release --workspace --all-targets
       - clear_environment:
-          cache_key: v1.0.0-rust-1.81.0-snarkvm-all-targets-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-all-targets-cache
 
   verify-windows:
     executor:
@@ -974,6 +992,7 @@ workflows:
       - ledger-store
       - ledger-test-helpers
       - parameters
+      - parameters-large
       - parameters-uncached
       - synthesizer
       - synthesizer-mem-heavy
