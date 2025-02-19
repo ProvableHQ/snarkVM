@@ -23,8 +23,8 @@ use ledger_block::{Deployment, Execution, Transaction};
 use synthesizer_program::{CastType, Command, Finalize, Instruction, Operand, StackProgram};
 
 // TODO (@d0cd) Adjust deployment cost with constructors.
-/// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, namespace cost)).
-pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (u64, u64, u64))> {
+/// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, namespace cost, constructor cost)).
+pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (u64, u64, u64, u64))> {
     // Determine the number of bytes in the deployment.
     let size_in_bytes = deployment.size_in_bytes()?;
     // Retrieve the program ID.
@@ -50,13 +50,23 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
         .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
         .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
 
+    // Compute the constructor cost.
+    // These are priced differently from finalize commands.
+    // In a constructor, each command costs 100_000 microcredits.
+    // TODO (@d0cd) Is this sane?
+    let constructor_cost = match deployment.program().constructor() {
+        Some(constructor) => constructor.commands().len() as u64 * 100_000,
+        None => 0,
+    };
+
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
         .checked_add(synthesis_cost)
         .and_then(|x| x.checked_add(namespace_cost))
+        .and_then(|x| x.checked_add(constructor_cost))
         .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
 
-    Ok((total_cost, (storage_cost, synthesis_cost, namespace_cost)))
+    Ok((total_cost, (storage_cost, synthesis_cost, namespace_cost, constructor_cost)))
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).
