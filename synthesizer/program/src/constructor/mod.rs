@@ -25,6 +25,8 @@ use console::{
 use crate::Command;
 use std::collections::HashMap;
 
+// TODO (@d0cd) Consider adding versioning into this object.
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct ConstructorCore<N: Network, Command: CommandTrait<N>> {
     /// The commands, in order of execution.
@@ -57,6 +59,8 @@ impl<N: Network, Command: CommandTrait<N>> ConstructorCore<N, Command> {
     }
 }
 
+/// Defines the default constructor.
+/// Note that this cannot be changed without a network upgrade that introduces versioning.
 impl<N: Network> Default for ConstructorCore<N, Command<N>> {
     fn default() -> Self {
         Self::from_str(

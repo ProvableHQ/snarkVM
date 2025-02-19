@@ -19,6 +19,9 @@ pub use authorization::*;
 mod call;
 pub use call::*;
 
+mod constructor_registers;
+pub use constructor_registers::*;
+
 mod constructor_types;
 pub use constructor_types::*;
 
@@ -386,6 +389,12 @@ impl<N: Network> StackProgram<N> for Stack<N> {
 }
 
 impl<N: Network> StackProgramTypes<N> for Stack<N> {
+    /// Returns the constructor types for the program.
+    #[inline]
+    fn get_constructor_types(&self) -> &ConstructorTypes<N> {
+        &self.constructor_types
+    }
+
     /// Returns the register types for the given closure or function name.
     #[inline]
     fn get_register_types(&self, name: &Identifier<N>) -> Result<&RegisterTypes<N>> {

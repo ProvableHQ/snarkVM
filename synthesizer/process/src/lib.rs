@@ -55,7 +55,6 @@ use synthesizer_program::{
     Branch,
     Closure,
     Command,
-    Finalize,
     FinalizeGlobalState,
     FinalizeOperation,
     Instruction,

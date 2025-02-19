@@ -22,6 +22,7 @@ use console::{
 use ledger_block::{Deployment, Execution, Transaction};
 use synthesizer_program::{CastType, Command, Finalize, Instruction, Operand, StackProgram};
 
+// TODO (@d0cd) Adjust deployment cost with constructors.
 /// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, namespace cost)).
 pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (u64, u64, u64))> {
     // Determine the number of bytes in the deployment.

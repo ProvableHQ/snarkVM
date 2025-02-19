@@ -61,9 +61,9 @@ impl<N: Network> ConstructorTypes<N> {
     #[inline]
     pub fn from_constructor(
         stack: &(impl StackMatches<N> + StackProgram<N>),
-        finalize: &Constructor<N>,
+        constructor: &Constructor<N>,
     ) -> Result<Self> {
-        Self::initialize_constructor_types(stack, finalize)
+        Self::initialize_constructor_types(stack, constructor)
     }
 
     /// Returns `true` if the given register exists.
