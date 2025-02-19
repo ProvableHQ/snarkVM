@@ -230,7 +230,7 @@ struct message:
     second as field;
 
 _init:
-    add 1u8 1u8 into 2u8;
+    add 1u8 1u8 into r0;
 
 function compute:
     input r0 as message.private;
@@ -412,11 +412,11 @@ _init:
         // A program with more than MAX_FUNCTIONS should fail.
         test_parse("", &gen_function_string(CurrentNetwork::MAX_FUNCTIONS + 1), false);
         // A program with no constructor should succeed.
-        test_parse("", &gen_constructor_string(0), true);
+        test_parse("", &format!("function dummy:\n\n{}", &gen_constructor_string(0)), true);
         // A program with a constructor should succeed.
-        test_parse("", &gen_constructor_string(1), true);
-        // A program with more than one constructor should fail.
-        test_parse("", &gen_constructor_string(2), false);
+        test_parse("", &format!("function dummy:\n\n{}", &gen_constructor_string(1)), true);
+        // A program with two constructors should fail.
+        test_parse("", &format!("function dummy:\n\n{}", &gen_constructor_string(2)), false);
 
         // Initialize a program which is too big.
         let program_too_big = format!(

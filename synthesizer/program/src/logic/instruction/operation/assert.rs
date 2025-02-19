@@ -229,8 +229,8 @@ impl<N: Network, const VARIANT: u8> Display for AssertInstruction<N, VARIANT> {
             return Err(fmt::Error);
         }
         // Print the operation.
-        write!(f, "{} ", Self::opcode())?;
-        self.operands.iter().try_for_each(|operand| write!(f, "{operand} "))
+        write!(f, "{}", Self::opcode())?;
+        self.operands.iter().try_for_each(|operand| write!(f, " {operand}"))
     }
 }
 
