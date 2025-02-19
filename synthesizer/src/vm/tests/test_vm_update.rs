@@ -14,8 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use std::panic::AssertUnwindSafe;
-use synthesizer_program::StackProgram;
 
 // This test checks that:
 //  - the logic of a simple transition without records can be updated.
@@ -49,16 +47,7 @@ function binary_add:
     )?;
 
     // Deploy the program.
-    let transaction = vm.deploy_updatable(
-        &caller_private_key,
-        Address::try_from(&caller_private_key)?,
-        0,
-        &program,
-        None,
-        0,
-        None,
-        rng,
-    )?;
+    let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     vm.add_next_block(&block)?;
 
@@ -101,31 +90,13 @@ function binary_add:
 
     // Attempt to deploy the updated program with an invalid authority.
     let invalid_private_key = PrivateKey::new(rng)?;
-    let transaction = vm.deploy_updatable(
-        &invalid_private_key,
-        Address::try_from(&caller_private_key)?,
-        1,
-        &updated_program,
-        None,
-        0,
-        None,
-        rng,
-    )?;
+    let transaction = vm.deploy(&invalid_private_key, &updated_program, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &invalid_private_key, &[transaction], rng)?;
     assert_eq!(block.aborted_transaction_ids().len(), 1);
     vm.add_next_block(&block)?;
 
     // Deploy the updated program.
-    let transaction = vm.deploy_updatable(
-        &caller_private_key,
-        Address::try_from(&caller_private_key)?,
-        1,
-        &updated_program,
-        None,
-        0,
-        None,
-        rng,
-    )?;
+    let transaction = vm.deploy(&caller_private_key, &updated_program, None, 0, None, rng)?;
     assert_eq!(transaction.deployment().unwrap().edition(), 1);
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
@@ -162,14 +133,13 @@ function binary_add:
     Ok(())
 }
 
-// This test checks that a program deployed with `VM::deploy`, which uses `ProgramOwner::V1` cannot be updated.
+// TODO (@d0cd): This can readapted to check that one cannot update a program with a restricted init block
 #[test]
 fn test_program_owner_v1_is_not_updatable() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -196,8 +166,7 @@ fn test_program_owner_v1_is_not_updatable() -> Result<()> {
     vm.add_next_block(&block)?;
 
     // Attempt to deploy the updated program using `VM::deploy_updatable`.
-    let transaction =
-        vm.deploy_updatable(&caller_private_key, caller_address, 1, &updated_program, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &updated_program, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.aborted_transaction_ids().len(), 1);
     vm.add_next_block(&block)?;
@@ -214,7 +183,6 @@ fn test_editions_are_sequential() -> Result<()> {
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -231,20 +199,14 @@ fn test_editions_are_sequential() -> Result<()> {
     let program_v2 = Program::from_str("program basic.aleo;function foo:function bar:function baz:")?;
 
     // Using the off-chain VM, generate a sequence of deployments.
-    let deployment_v0_pass =
-        off_chain_vm.deploy_updatable(&caller_private_key, caller_address, 0, &program_v0, None, 0, None, rng)?;
+    let deployment_v0_pass = off_chain_vm.deploy(&caller_private_key, &program_v0, None, 0, None, rng)?;
     off_chain_vm.process().write().add_program(&program_v0)?;
-    let deployment_v1_fail =
-        off_chain_vm.deploy_updatable(&caller_private_key, caller_address, 1, &program_v1, None, 0, None, rng)?;
-    let deployment_v1_pass =
-        off_chain_vm.deploy_updatable(&caller_private_key, caller_address, 1, &program_v1, None, 0, None, rng)?;
-    let deployment_v2_as_v1_fail =
-        off_chain_vm.deploy_updatable(&caller_private_key, caller_address, 1, &program_v2, None, 0, None, rng)?;
+    let deployment_v1_fail = off_chain_vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
+    let deployment_v1_pass = off_chain_vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
+    let deployment_v2_as_v1_fail = off_chain_vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
     off_chain_vm.process().write().add_program(&program_v1)?;
-    let deployment_v2_fail =
-        off_chain_vm.deploy_updatable(&caller_private_key, caller_address, 2, &program_v2, None, 0, None, rng)?;
-    let deployment_v2_pass =
-        off_chain_vm.deploy_updatable(&caller_private_key, caller_address, 2, &program_v2, None, 0, None, rng)?;
+    let deployment_v2_fail = off_chain_vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
+    let deployment_v2_pass = off_chain_vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
 
     // Deploy the programs to the on-chain VM individually in the following sequence:
     // - deployment_v1_fail
@@ -306,7 +268,6 @@ fn test_update_with_records() -> Result<()> {
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -358,7 +319,7 @@ function burn:
     )?;
 
     // Deploy the first version of the program.
-    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 0, &program_v0, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &program_v0, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
@@ -392,7 +353,7 @@ function burn:
     vm.add_next_block(&block)?;
 
     // Update the program.
-    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 1, &program_v1, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
@@ -474,7 +435,6 @@ fn test_update_with_mappings() -> Result<()> {
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -547,7 +507,7 @@ finalize store_data_v2:
     )?;
 
     // Deploy the first version of the program.
-    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 0, &program_v0, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &program_v0, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
@@ -578,7 +538,7 @@ finalize store_data_v2:
     assert_eq!(value, 0u8);
 
     // Update the program.
-    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 1, &program_v1, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
@@ -672,7 +632,6 @@ fn test_update_with_dependents() -> Result<()> {
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -804,14 +763,13 @@ finalize sum_and_check:
     // 6. Verify that the call to `sum` now passes because the edition is 1.
 
     // Deploy the v0 dependency.
-    let transaction =
-        vm.deploy_updatable(&caller_private_key, caller_address, 0, &dependency_v0, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &dependency_v0, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Deploy the v0 dependent.
-    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 0, &dependent_v0, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &dependent_v0, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
@@ -866,8 +824,7 @@ finalize sum_and_check:
     assert!(vm.check_transaction(&sum_unchecked, None, rng).is_ok());
 
     // Update the dependency to v1.
-    let transaction =
-        vm.deploy_updatable(&caller_private_key, caller_address, 1, &dependency_v1, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &dependency_v1, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
@@ -903,7 +860,7 @@ finalize sum_and_check:
     vm.add_next_block(&block)?;
 
     // Update the dependent to v1.
-    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 1, &dependent_v1, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &dependent_v1, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
@@ -944,7 +901,6 @@ fn test_update_with_cycles() -> Result<()> {
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -1003,12 +959,12 @@ function foo:
     )?;
 
     // Deploy the first version of the programs.
-    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 0, &first_v0, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &first_v0, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
-    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 0, &second_v0, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &second_v0, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
@@ -1037,7 +993,7 @@ function foo:
     vm.add_next_block(&block)?;
 
     // Update the first program to create a cycle in the dependency graph.
-    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 1, &first_v1, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &first_v1, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
@@ -1066,7 +1022,7 @@ function foo:
     vm.add_next_block(&block)?;
 
     // Update the first program to create mutual recursion.
-    let transaction = vm.deploy_updatable(&caller_private_key, caller_address, 2, &first_v2, None, 0, None, rng)?;
+    let transaction = vm.deploy(&caller_private_key, &first_v2, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
@@ -1084,6 +1040,63 @@ function foo:
         )
         .is_err()
     );
+
+    Ok(())
+}
+
+// This test checks that a deployment with a failing _init block is rejected.
+#[test]
+fn test_failing_init_block() -> Result<()> {
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Initialize the genesis block.
+    let genesis = sample_genesis_block(rng);
+
+    // Initialize the VM.
+    let vm = sample_vm();
+    vm.add_next_block(&genesis)?;
+
+    // Define the programs.
+    let passing_program = Program::from_str(
+        r"
+program hello1.aleo;
+
+_init:
+    assert.eq true true;
+
+function foo:
+    input r0 as u8.public;
+    output r0 as u8.public;
+    ",
+    )?;
+
+    let failing_program = Program::from_str(
+        r"
+program hello2.aleo;
+
+_init:
+    assert.eq true false;
+
+function foo:
+    input r0 as u8.public;
+    output r0 as u8.public;
+    ",
+    )?;
+
+    // Deploy the passing program.
+    let transaction = vm.deploy(&caller_private_key, &passing_program, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Deploy the failing program.
+    let transaction = vm.deploy(&caller_private_key, &failing_program, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    vm.add_next_block(&block)?;
 
     Ok(())
 }

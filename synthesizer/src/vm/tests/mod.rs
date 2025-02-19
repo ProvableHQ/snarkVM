@@ -19,8 +19,7 @@ use super::*;
 
 use crate::vm::test_helpers::*;
 
-use console::{
-    account::{Address, ViewKey},
-    program::Value,
-};
-use synthesizer_program::Program;
+use console::{account::ViewKey, program::Value};
+use synthesizer_program::{Program, StackProgram};
+
+use std::panic::AssertUnwindSafe;

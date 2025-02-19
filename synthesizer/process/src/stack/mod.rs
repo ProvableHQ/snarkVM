@@ -68,7 +68,7 @@ use console::{
     types::{Field, Group},
 };
 use ledger_block::{Deployment, Transaction, Transition};
-use synthesizer_program::{CallOperator, Closure, Constructor, Function, Instruction, Operand, Program, traits::*};
+use synthesizer_program::{CallOperator, Closure, Function, Instruction, Operand, Program, traits::*};
 use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};

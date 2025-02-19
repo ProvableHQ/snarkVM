@@ -20,17 +20,15 @@ use crate::RegisterTypes;
 
 use console::{
     network::prelude::*,
-    program::{Access, ArrayType, Identifier, LiteralType, PlaintextType, Register, RegisterType, StructType},
+    program::{Access, ArrayType, LiteralType, PlaintextType, Register, RegisterType, StructType},
 };
 use synthesizer_program::{
-    Await,
     Branch,
     CallOperator,
     CastType,
     Command,
     Constructor,
     Contains,
-    Finalize,
     Get,
     GetOrUse,
     Instruction,
@@ -47,7 +45,6 @@ use synthesizer_program::{
 };
 
 use indexmap::IndexMap;
-use std::collections::HashSet;
 
 // TODO (@d0cd) This can be unified with `FinalizeTypes`.
 

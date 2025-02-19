@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use console::types::U16;
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns a new deploy transaction.
@@ -66,28 +65,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Return the deploy transaction.
         Transaction::from_deployment(owner, deployment, fee)
-    }
-
-    /// Returns a new deploy transaction with an authority address.
-    /// The authority address is allowed to update the program in a subsequent deployment.
-    ///
-    /// If a `fee_record` is provided, then a private fee will be included in the transaction;
-    /// otherwise, a public fee will be included in the transaction.
-    ///
-    /// The `priority_fee_in_microcredits` is an additional fee **on top** of the deployment fee.
-    #[allow(clippy::too_many_arguments)]
-    pub fn deploy_updatable<R: Rng + CryptoRng>(
-        &self,
-        private_key: &PrivateKey<N>,
-        authority: Address<N>,
-        edition: u16,
-        program: &Program<N>,
-        fee_record: Option<Record<N, Plaintext<N>>>,
-        priority_fee_in_microcredits: u64,
-        query: Option<Query<N, C::BlockStorage>>,
-        rng: &mut R,
-    ) -> Result<Transaction<N>> {
-        todo!("Clean up later")
     }
 }
 

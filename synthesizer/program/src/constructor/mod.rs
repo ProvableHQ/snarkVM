@@ -19,10 +19,10 @@ mod parse;
 use crate::traits::CommandTrait;
 use console::{
     network::prelude::*,
-    program::{FinalizeType, Identifier, Register},
+    program::{Identifier, Register},
 };
 
-use indexmap::IndexSet;
+use crate::Command;
 use std::collections::HashMap;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -41,17 +41,6 @@ impl<N: Network, Command: CommandTrait<N>> ConstructorCore<N, Command> {
         Self { commands: Vec::new(), num_writes: 0, positions: HashMap::new() }
     }
 
-    /// Initializes the default constructor.
-    // Note this cannot be changed without a migration.
-    pub fn default() -> Result<Self> {
-        Self::from_str(
-            r"
-_init:
-    metadata.get edition into r0;
-    assert.eq r0 0u8;",
-        )
-    }
-
     /// Returns the constructor commands.
     pub fn commands(&self) -> &[Command] {
         &self.commands
@@ -65,6 +54,18 @@ _init:
     /// Returns the mapping of `Position`s to their index in `commands`.
     pub const fn positions(&self) -> &HashMap<Identifier<N>, usize> {
         &self.positions
+    }
+}
+
+impl<N: Network> Default for ConstructorCore<N, Command<N>> {
+    fn default() -> Self {
+        Self::from_str(
+            r"
+_init:
+    metadata.get edition into r0;
+    assert.eq r0 0u16;",
+        )
+        .unwrap()
     }
 }
 
@@ -136,6 +137,19 @@ mod tests {
     use crate::{Command, Constructor};
 
     type CurrentNetwork = console::network::MainnetV0;
+
+    #[test]
+    fn test_default() {
+        // Initialize a new default constructor.
+        let constructor = Constructor::<CurrentNetwork>::default();
+        assert_eq!(constructor.commands.len(), 2);
+        let first = Command::<CurrentNetwork>::from_str("metadata.get edition into r0;").unwrap();
+        assert_eq!(constructor.commands[0], first);
+        let second = Command::<CurrentNetwork>::from_str("assert.eq r0 0u16;").unwrap();
+        assert_eq!(constructor.commands[1], second);
+        assert_eq!(constructor.num_writes, 0);
+        assert_eq!(constructor.positions.len(), 0);
+    }
 
     #[test]
     fn test_add_command() {

@@ -119,7 +119,7 @@ impl<N: Network> Stack<N> {
         // Compute the constructor types.
         let constructor_types = match constructor {
             Some(constructor) => ConstructorTypes::from_constructor(self, constructor),
-            None => ConstructorTypes::from_constructor(self, &Constructor::default()?),
+            None => ConstructorTypes::from_constructor(self, &Constructor::default()),
         }?;
         // Add the constructor types to the stack.
         self.constructor_types = constructor_types;

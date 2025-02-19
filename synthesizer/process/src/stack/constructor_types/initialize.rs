@@ -439,14 +439,20 @@ impl<N: Network> ConstructorTypes<N> {
 
         // Initialize a vector to store the register types of the operands.
         let mut operand_types = Vec::with_capacity(instruction.operands().len());
+        println!("Instruction: {instruction}");
+        println!("Operand types: {:?}", operand_types);
         // Iterate over the operands, and retrieve the register type of each operand.
         for operand in instruction.operands() {
             // Retrieve and append the register type.
             operand_types.push(RegisterType::Plaintext(self.get_type_from_operand(stack, operand)?));
         }
 
+        println!("1");
+
         // Compute the destination register types.
         let destination_types = instruction.output_types(stack, &operand_types)?;
+
+        println!("2");
 
         // Insert the destination register.
         for (destination, destination_type) in
@@ -462,6 +468,7 @@ impl<N: Network> ConstructorTypes<N> {
             // Insert the destination register.
             self.add_destination(destination, destination_type)?;
         }
+        println!("3");
         Ok(())
     }
 
