@@ -75,10 +75,6 @@ impl<N: Network> Process<N> {
             // Initialize a list for the finalize operations.
             let mut finalize_operations = Vec::with_capacity(deployment.program().mappings().len());
 
-            // Execute the constructor and extend the finalize operations.
-            let operations = finalize_constructor(state, store, &stack, *fee.transition_id())?;
-            finalize_operations.extend(operations);
-
             /* Finalize the fee. */
 
             // Retrieve the fee stack.
@@ -97,6 +93,11 @@ impl<N: Network> Process<N> {
                 finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
             }
             finish!(timer, "Initialize the program mappings");
+
+            // Execute the constructor and extend the finalize operations.
+            // This must happen after the mappings are initialized as the constructor may depend on them.
+            let operations = finalize_constructor(state, store, &stack, *fee.transition_id())?;
+            finalize_operations.extend(operations);
 
             // Return the stack and finalize operations.
             Ok((stack, finalize_operations))
