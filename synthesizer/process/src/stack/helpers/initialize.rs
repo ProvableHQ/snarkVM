@@ -22,7 +22,7 @@ use synthesizer_program::Constructor;
 impl<N: Network> Stack<N> {
     /// Initializes a new stack, given the process and program.
     #[inline]
-    pub(crate) fn initialize(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
+    pub(crate) fn initialize(process: &Process<N>, program: &Program<N>) -> Result<Self> {
         // Construct the stack for the program.
         let mut stack = Self {
             program: program.clone(),
@@ -34,7 +34,6 @@ impl<N: Network> Stack<N> {
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
             program_address: program.id().to_address()?,
-            edition,
         };
 
         // Add all the imports into the stack.

@@ -2647,6 +2647,6 @@ fn test_program_exceeding_transaction_spend_limit() {
     assert!(result.is_ok());
 
     // Initialize a `Stack` directly with the program should pass, as the check happens during finalization.
-    let result = Stack::initialize(&process, &program, 0);
+    let result = Stack::initialize(&process, &program);
     assert!(result.is_ok());
 }

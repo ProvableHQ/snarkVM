@@ -48,12 +48,6 @@ impl<N: Network> Process<N> {
         let stack = Stack::new(self, deployment.program())?;
         lap!(timer, "Compute the stack");
 
-        // Ensure that the computed stack's edition matches the deployment's edition.
-        ensure!(
-            stack.edition() == deployment.edition(),
-            "The computed stack's edition does not match the deployment's edition"
-        );
-
         // Insert the verifying keys.
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
             stack.insert_verifying_key(function_name, verifying_key.clone())?;

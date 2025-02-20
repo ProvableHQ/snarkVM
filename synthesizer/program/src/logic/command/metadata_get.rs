@@ -89,19 +89,14 @@ impl<N: Network> MetadataGet<N> {
             }
             CallOperator::Resource(global_name) => (None, global_name),
         };
-
-        // Ensure that the global name is `edition`.
-        // This is presently the only valid use of `metadata.get`.
-        ensure!(global_name.to_string() == "edition", "Invalid global name: {global_name}");
-
-        // Lookup the edition in the appropriate stack.
-        let edition = match external_stack {
-            Some(external_stack) => external_stack.edition(),
-            None => stack.edition(),
-        };
-
+        // Get the value from the program metadata.
+        let value = match external_stack {
+            Some(external_stack) => external_stack.program().get_metadata(&global_name).cloned(),
+            None => stack.program().get_metadata(&global_name).cloned(),
+        }?;
+        // TODO (@d0cd) Typecheck.
         // Assign the value to the destination register.
-        registers.store(stack, &self.destination, Value::from(Literal::U16(U16::new(edition))))?;
+        registers.store(stack, &self.destination, value)?;
 
         Ok(())
     }

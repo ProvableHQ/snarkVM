@@ -100,9 +100,6 @@ impl<N: Network> Process<N> {
         let stack = Stack::new(&process, &program)?;
         lap!(timer, "Initialize stack");
 
-        // Check that the edition is zero.
-        ensure!(stack.edition() == 0, "The 'credits.aleo' program must have edition 0");
-
         // Synthesize the 'credits.aleo' circuit keys.
         for function_name in program.functions().keys() {
             stack.synthesize_key::<A, _>(function_name, rng)?;
@@ -164,9 +161,6 @@ impl<N: Network> Process<N> {
         let stack = Stack::new(&process, &program)?;
         lap!(timer, "Initialize stack");
 
-        // Check that the edition is zero.
-        ensure!(stack.edition() == 0, "The 'credits.aleo' program must have edition 0");
-
         // Synthesize the 'credits.aleo' verifying keys.
         for function_name in program.functions().keys() {
             // Load the verifying key.
@@ -202,9 +196,6 @@ impl<N: Network> Process<N> {
 
         // Compute the 'credits.aleo' program stack.
         let stack = Stack::new(&process, &program)?;
-
-        // Check that the edition is zero.
-        ensure!(stack.edition() == 0, "The 'credits.aleo' program must have edition 0");
 
         // Add the stack to the process.
         process.add_stack(stack)?;

@@ -206,9 +206,6 @@ pub struct Stack<N: Network> {
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The program address.
     program_address: Address<N>,
-    // TODO (@d0cd) Remove
-    /// The program edition.
-    edition: u16,
 }
 
 impl<N: Network> Stack<N> {
@@ -217,19 +214,7 @@ impl<N: Network> Stack<N> {
     pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
         // Retrieve the program ID.
         let program_id = program.id();
-        // Determine the program edition.
-        let edition = match process.get_stack(program_id) {
-            // If the program does not exist, then the edition is zero.
-            Err(_) => 0,
-            // Otherwise, check that the update is valid, then retrieve the old program edition and increment it.
-            Ok(stack) => {
-                Stack::check_update_is_valid(process, program)?;
-                match stack.edition.checked_add(1) {
-                    Some(edition) => edition,
-                    None => bail!("The program cannot be updated past the current edition `{}`", stack.edition),
-                }
-            }
-        };
+        // TODO @d0cd edition check.
         // Ensure the program contains functions.
         ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{program_id}'");
         // Serialize the program into bytes.
@@ -243,7 +228,7 @@ impl<N: Network> Stack<N> {
         ensure!(program == &Program::from_str(&program_string)?, "Program string serialization failed");
 
         // Return the stack.
-        Stack::initialize(process, program, edition)
+        Stack::initialize(process, program)
     }
 }
 
@@ -264,12 +249,6 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     #[inline]
     fn program_address(&self) -> &Address<N> {
         &self.program_address
-    }
-
-    /// Returns the program edition.
-    #[inline]
-    fn edition(&self) -> u16 {
-        self.edition
     }
 
     /// Returns the external stack for the given program ID.

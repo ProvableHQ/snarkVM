@@ -51,7 +51,7 @@ impl<N: Network> Stack<N> {
         finish!(timer);
 
         // Return the deployment.
-        Deployment::new(self.edition, self.program.clone(), verifying_keys)
+        Deployment::new(N::ID, self.program.clone(), verifying_keys)
     }
 
     /// Checks each function in the program on the given verifying key and certificate.
