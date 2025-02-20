@@ -91,12 +91,12 @@ impl<N: Network> MetadataGet<N> {
         };
         // Get the value from the program metadata.
         let value = match external_stack {
-            Some(external_stack) => external_stack.program().get_metadata(&global_name).cloned(),
-            None => stack.program().get_metadata(&global_name).cloned(),
-        }?;
+            Some(external_stack) => external_stack.program().get_metadata(&global_name)?.value().clone(),
+            None => stack.program().get_metadata(&global_name)?.value().clone(),
+        };
         // TODO (@d0cd) Typecheck.
         // Assign the value to the destination register.
-        registers.store(stack, &self.destination, value)?;
+        registers.store(stack, &self.destination, Value::Plaintext(value))?;
 
         Ok(())
     }

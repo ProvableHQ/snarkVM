@@ -66,7 +66,7 @@ impl<N: Network> Default for ConstructorCore<N, Command<N>> {
         Self::from_str(
             r"
 _init:
-    metadata.get edition into r0;
+    metadata.get version into r0;
     assert.eq r0 0u16;",
         )
         .unwrap()

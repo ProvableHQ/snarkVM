@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use std::fmt::Pointer;
 
 impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Parser
     for ProgramCore<N, Instruction, Command>
@@ -21,104 +22,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
     /// Parses a string into a program.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
-        // A helper to parse a program.
-        enum P<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> {
-            M(Mapping<N>),
-            I(StructType<N>),
-            R(RecordType<N>),
-            C(ClosureCore<N, Instruction>),
-            F(FunctionCore<N, Instruction, Command>),
-            Con(ConstructorCore<N, Command>),
-        }
-
-        // Parse the imports from the string.
-        let (string, imports) = many0(Import::parse)(string)?;
-        // Parse the whitespace and comments from the string.
-        let (string, _) = Sanitizer::parse(string)?;
-        // Parse either the V1 or V2 keyword from the string.
-        // Note that the order of the parser matters since the V1 keyword is a prefix of the V2 keyword.
-        let (string, is_v1) =
-            alt((map(tag(Self::type_name_v2()), |_| false), map(tag(Self::type_name_v1()), |_| true)))(string)?;
-        // Parse the whitespace from the string.
-        let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the program ID from the string.
-        let (string, id) = ProgramID::parse(string)?;
-        // Parse the whitespace from the string.
-        let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the semicolon ';' keyword from the string.
-        let (string, _) = tag(";")(string)?;
-
-        fn intermediate<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>>(
-            string: &str,
-        ) -> ParserResult<P<N, Instruction, Command>> {
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-
-            if string.starts_with(Mapping::<N>::type_name()) {
-                map(Mapping::parse, |mapping| P::<N, Instruction, Command>::M(mapping))(string)
-            } else if string.starts_with(StructType::<N>::type_name()) {
-                map(StructType::parse, |struct_| P::<N, Instruction, Command>::I(struct_))(string)
-            } else if string.starts_with(RecordType::<N>::type_name()) {
-                map(RecordType::parse, |record| P::<N, Instruction, Command>::R(record))(string)
-            } else if string.starts_with(ClosureCore::<N, Instruction>::type_name()) {
-                map(ClosureCore::parse, |closure| P::<N, Instruction, Command>::C(closure))(string)
-            } else if string.starts_with(FunctionCore::<N, Instruction, Command>::type_name()) {
-                map(FunctionCore::parse, |function| P::<N, Instruction, Command>::F(function))(string)
-            } else if string.starts_with(ConstructorCore::<N, Command>::type_name()) {
-                map(ConstructorCore::parse, |constructor| P::<N, Instruction, Command>::Con(constructor))(string)
-            } else {
-                Err(Err::Error(make_error(string, ErrorKind::Alt)))
-            }
-        }
-
-        // Parse the struct or function from the string.
-        let (string, components) = many1(intermediate)(string)?;
-        // Parse the whitespace and comments from the string.
-        let (string, _) = Sanitizer::parse(string)?;
-
-        // Initialize a new program.
-        let result = match is_v1 {
-            true => ProgramCore::<N, Instruction, Command>::new_v1(id),
-            false => ProgramCore::<N, Instruction, Command>::new_v2(id),
-        };
-        let mut program = match result {
-            Ok(program) => program,
-            Err(error) => {
-                eprintln!("{error}");
-                return map_res(take(0usize), Err)(string);
-            }
-        };
-        // Construct the program with the parsed components.
-        for component in components {
-            let result = match component {
-                P::M(mapping) => program.add_mapping(mapping),
-                P::I(struct_) => program.add_struct(struct_),
-                P::R(record) => program.add_record(record),
-                P::C(closure) => program.add_closure(closure),
-                P::F(function) => program.add_function(function),
-                P::Con(constructor) => program.add_constructor(constructor),
-            };
-
-            match result {
-                Ok(_) => (),
-                Err(error) => {
-                    eprintln!("{error}");
-                    return map_res(take(0usize), Err)(string);
-                }
-            }
-        }
-        // Lastly, add the imports (if any) to the program.
-        for import in imports {
-            match program.add_import(import) {
-                Ok(_) => (),
-                Err(error) => {
-                    eprintln!("{error}");
-                    return map_res(take(0usize), Err)(string);
-                }
-            }
-        }
-
-        Ok((string, program))
+        alt((map(ProgramCoreV1::parse, Self::ProgramV1), map(ProgramCoreV2::parse, Self::ProgramV2)))(string)
     }
 }
 
@@ -163,56 +67,10 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Dis
 {
     /// Prints the program as a string.
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if !self.imports().is_empty() {
-            // Print the imports.
-            for import in self.imports().values() {
-                writeln!(f, "{import}")?;
-            }
-
-            // Print a newline.
-            writeln!(f)?;
+        match &self {
+            Self::ProgramV1(program) => Display::fmt(program, f),
+            Self::ProgramV2(program) => Display::fmt(program, f),
         }
-
-        // Print the program name.
-        write!(f, "{} {};\n\n", if self.is_v1() { Self::type_name_v1() } else { Self::type_name_v2() }, self.id())?;
-
-        // Print the named components.
-        let mut identifier_iter = self.identifiers().iter().peekable();
-        while let Some((identifier, definition)) = identifier_iter.next() {
-            match definition {
-                ProgramDefinition::Mapping => match self.mappings().get(identifier) {
-                    Some(mapping) => writeln!(f, "{mapping}")?,
-                    None => return Err(fmt::Error),
-                },
-                ProgramDefinition::Struct => match self.structs().get(identifier) {
-                    Some(struct_) => writeln!(f, "{struct_}")?,
-                    None => return Err(fmt::Error),
-                },
-                ProgramDefinition::Record => match self.records().get(identifier) {
-                    Some(record) => writeln!(f, "{record}")?,
-                    None => return Err(fmt::Error),
-                },
-                ProgramDefinition::Closure => match self.closures().get(identifier) {
-                    Some(closure) => writeln!(f, "{closure}")?,
-                    None => return Err(fmt::Error),
-                },
-                ProgramDefinition::Function => match self.functions().get(identifier) {
-                    Some(function) => writeln!(f, "{function}")?,
-                    None => return Err(fmt::Error),
-                },
-            }
-            // Omit the last newline.
-            if identifier_iter.peek().is_some() {
-                writeln!(f)?;
-            }
-        }
-
-        // Print the constructor, if it exists.
-        if let Ok(Some(constructor)) = self.constructor() {
-            writeln!(f, "\n{constructor}")?;
-        }
-
-        Ok(())
     }
 }
 
