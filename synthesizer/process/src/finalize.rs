@@ -235,17 +235,14 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
     // Currently, this nonce is set to zero for every constructor.
     let nonce = 0;
 
+    // Get the constructor types.
+    let constructor_types = stack.get_constructor_types()?.clone();
+
     // Initialize the finalize registers.
-    let mut registers = ConstructorRegisters::new(
-        state,
-        transition_id,
-        *program_id.name(),
-        stack.get_constructor_types().clone(),
-        nonce,
-    );
+    let mut registers = ConstructorRegisters::new(state, transition_id, *program_id.name(), constructor_types, nonce);
     // Get the constructor logic.
     let default_constructor = Constructor::default();
-    let constructor = stack.program().constructor().as_ref().unwrap_or(&default_constructor);
+    let constructor = stack.program().constructor()?.as_ref().unwrap_or(&default_constructor);
 
     // Initialize a counter for the commands.
     let mut counter = 0;

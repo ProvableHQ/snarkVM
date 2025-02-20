@@ -18,13 +18,14 @@ use super::*;
 // This test checks that:
 //  - the logic of a simple transition without records can be updated.
 //  - once a program is updated, the old executions are no longer valid.
-//  - an invalid authority cannot update a program.
+//  - an invalid admin cannot update a program.
 #[test]
 fn test_simple_update() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -34,17 +35,32 @@ fn test_simple_update() -> Result<()> {
     vm.add_next_block(&genesis)?;
 
     // Initialize the program.
-    let program = Program::from_str(
+    let program = Program::from_str(&format!(
         r"
 program adder.aleo;
+
+mapping admins:
+    key as address.public;
+    value as boolean.public;
+
+_init:
+    metadata.get edition into r0;
+    branch.neq r0 0u16 to rest;
+    set true into admins[{caller_address}];
+    branch.eq true true to end;
+    position rest;
+    metadata.get owner into r1;
+    get admins[r1] into r0;
+    assert.eq r0 true;
+    position end;
 
 function binary_add:
     input r0 as u8.public;
     input r1 as u8.public;
     add r0 r1 into r2;
     output r2 as u8.public;
-    ",
-    )?;
+    "
+    ))?;
 
     // Deploy the program.
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
@@ -55,6 +71,18 @@ function binary_add:
     let stack = vm.process().read().get_stack("adder.aleo")?;
     assert_eq!(stack.program_id(), &ProgramID::from_str("adder.aleo")?);
     assert_eq!(stack.edition(), 0);
+
+    // Check that the caller is an admin.
+    let Some(Value::Plaintext(Plaintext::Literal(Literal::Boolean(caller_is_admin), _))) =
+        vm.finalize_store().get_value_confirmed(
+            ProgramID::from_str("adder.aleo")?,
+            Identifier::from_str("admins")?,
+            &Plaintext::from(Literal::Address(caller_address)),
+        )?
+    else {
+        bail!("Unexpected value");
+    };
+    assert!(*caller_is_admin);
 
     // Execute the program.
     let original_execution = vm.execute(
@@ -76,17 +104,28 @@ function binary_add:
     assert_eq!(output, 2u8);
 
     // Update the program.
-    let updated_program = Program::from_str(
+    let updated_program = Program::from_str(&format!(
         r"
 program adder.aleo;
+
+_init:
+    metadata.get edition into r0;
+    branch.neq r0 0u8 into rest;
+    set true into admins[{caller_address}];
+    branch.eq true true into end;
+    position rest;
+    metadata.get owner into r1;
+    get admins[r1] into r0;
+    assert.eq r0 true;
+    position end;
 
 function binary_add:
     input r0 as u8.public;
     input r1 as u8.public;
     add.w r0 r1 into r2;
     output r2 as u8.public;
-    ",
-    )?;
+    "
+    ))?;
 
     // Attempt to deploy the updated program with an invalid authority.
     let invalid_private_key = PrivateKey::new(rng)?;

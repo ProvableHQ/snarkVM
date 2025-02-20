@@ -62,8 +62,10 @@ impl<N: Network> Stack<N> {
             stack.get_number_of_calls(function.name())?;
         }
 
-        // Add the constructor to the stack.
-        stack.insert_constructor(program.constructor())?;
+        // Add the constructor to the stack if it exists.
+        if let Some(constructor) = program.constructor().ok() {
+            stack.insert_constructor(constructor)?;
+        }
 
         // Return the stack.
         Ok(stack)
@@ -122,7 +124,7 @@ impl<N: Network> Stack<N> {
             None => ConstructorTypes::from_constructor(self, &Constructor::default()),
         }?;
         // Add the constructor types to the stack.
-        self.constructor_types = constructor_types;
+        self.constructor_types = Some(constructor_types);
         // Return success.
         Ok(())
     }

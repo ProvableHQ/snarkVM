@@ -21,16 +21,13 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fro
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
-        // Ensure the version is valid.
-        if version != 1 {
-            return Err(error("Invalid program version"));
-        }
 
-        // Read the program ID.
-        let id = ProgramID::read_le(&mut reader)?;
-
-        // Initialize the program.
-        let mut program = ProgramCore::new(id).map_err(|e| error(e.to_string()))?;
+        // Ensure the version is valid and initialize the program.
+        let mut program = match version {
+            1 => ProgramCore::new_v1(ProgramID::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?,
+            2 => ProgramCore::new_v2(ProgramID::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?,
+            _ => return Err(error("Invalid program version")),
+        };
 
         // Read the number of program imports.
         let imports_len = u8::read_le(&mut reader)?;
@@ -74,28 +71,31 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
 {
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        1u8.write_le(&mut writer)?;
+        match self.is_v1() {
+            true => 1u8.write_le(&mut writer)?,
+            false => 2u8.write_le(&mut writer)?,
+        }
 
         // Write the program ID.
-        self.id.write_le(&mut writer)?;
+        self.id().write_le(&mut writer)?;
 
         // Write the number of program imports.
-        u8::try_from(self.imports.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        u8::try_from(self.imports().len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
         // Write the program imports.
-        for import in self.imports.values() {
+        for import in self.imports().values() {
             import.write_le(&mut writer)?;
         }
 
         // Write the number of components.
-        let num_components = match self.constructor.is_none() {
-            true => self.identifiers.len(),
-            false => self.identifiers.len() + 1,
+        let num_components = match self.constructor().ok() {
+            Some(Some(_)) => self.identifiers().len() + 1,
+            _ => self.identifiers().len(),
         };
         u16::try_from(num_components).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
         // Write the named components.
-        for (identifier, definition) in self.identifiers.iter() {
+        for (identifier, definition) in self.identifiers().iter() {
             match definition {
-                ProgramDefinition::Mapping => match self.mappings.get(identifier) {
+                ProgramDefinition::Mapping => match self.mappings().get(identifier) {
                     Some(mapping) => {
                         // Write the variant.
                         0u8.write_le(&mut writer)?;
@@ -104,7 +104,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
                     }
                     None => return Err(error(format!("Mapping '{identifier}' is not defined"))),
                 },
-                ProgramDefinition::Struct => match self.structs.get(identifier) {
+                ProgramDefinition::Struct => match self.structs().get(identifier) {
                     Some(struct_) => {
                         // Write the variant.
                         1u8.write_le(&mut writer)?;
@@ -113,7 +113,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
                     }
                     None => return Err(error(format!("Struct '{identifier}' is not defined."))),
                 },
-                ProgramDefinition::Record => match self.records.get(identifier) {
+                ProgramDefinition::Record => match self.records().get(identifier) {
                     Some(record) => {
                         // Write the variant.
                         2u8.write_le(&mut writer)?;
@@ -122,7 +122,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
                     }
                     None => return Err(error(format!("Record '{identifier}' is not defined."))),
                 },
-                ProgramDefinition::Closure => match self.closures.get(identifier) {
+                ProgramDefinition::Closure => match self.closures().get(identifier) {
                     Some(closure) => {
                         // Write the variant.
                         3u8.write_le(&mut writer)?;
@@ -131,7 +131,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
                     }
                     None => return Err(error(format!("Closure '{identifier}' is not defined."))),
                 },
-                ProgramDefinition::Function => match self.functions.get(identifier) {
+                ProgramDefinition::Function => match self.functions().get(identifier) {
                     Some(function) => {
                         // Write the variant.
                         4u8.write_le(&mut writer)?;
@@ -143,7 +143,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
             }
         }
         // Write the constructor if it exists.
-        if let Some(constructor) = &self.constructor {
+        if let Ok(Some(constructor)) = self.constructor() {
             5u8.write_le(&mut writer)?;
             constructor.write_le(&mut writer)?;
         }

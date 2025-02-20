@@ -58,8 +58,8 @@ impl<N: Network> Stack<N> {
             }
         }
         // Ensure that the constructors in both programs are exactly the same.
-        let old_constructor = old_program.constructor();
-        let new_constructor = program.constructor();
+        let old_constructor = old_program.constructor()?;
+        let new_constructor = program.constructor()?;
         ensure!(
             old_constructor == new_constructor,
             "Cannot update '{program_id}' because the constructor does not match"

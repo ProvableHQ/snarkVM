@@ -35,8 +35,10 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
         let (string, imports) = many0(Import::parse)(string)?;
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the 'program' keyword from the string.
-        let (string, _) = tag(Self::type_name())(string)?;
+        // Parse either the V1 or V2 keyword from the string.
+        // Note that the order of the parser matters since the V1 keyword is a prefix of the V2 keyword.
+        let (string, is_v1) =
+            alt((map(tag(Self::type_name_v2()), |_| false), map(tag(Self::type_name_v1()), |_| true)))(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the program ID from the string.
@@ -75,7 +77,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
         let (string, _) = Sanitizer::parse(string)?;
 
         // Initialize a new program.
-        let mut program = match ProgramCore::<N, Instruction, Command>::new(id) {
+        let result = match is_v1 {
+            true => ProgramCore::<N, Instruction, Command>::new_v1(id),
+            false => ProgramCore::<N, Instruction, Command>::new_v2(id),
+        };
+        let mut program = match result {
             Ok(program) => program,
             Err(error) => {
                 eprintln!("{error}");
@@ -157,9 +163,9 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Dis
 {
     /// Prints the program as a string.
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if !self.imports.is_empty() {
+        if !self.imports().is_empty() {
             // Print the imports.
-            for import in self.imports.values() {
+            for import in self.imports().values() {
                 writeln!(f, "{import}")?;
             }
 
@@ -168,29 +174,29 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Dis
         }
 
         // Print the program name.
-        write!(f, "{} {};\n\n", Self::type_name(), self.id)?;
+        write!(f, "{} {};\n\n", if self.is_v1() { Self::type_name_v1() } else { Self::type_name_v2() }, self.id())?;
 
         // Print the named components.
-        let mut identifier_iter = self.identifiers.iter().peekable();
+        let mut identifier_iter = self.identifiers().iter().peekable();
         while let Some((identifier, definition)) = identifier_iter.next() {
             match definition {
-                ProgramDefinition::Mapping => match self.mappings.get(identifier) {
+                ProgramDefinition::Mapping => match self.mappings().get(identifier) {
                     Some(mapping) => writeln!(f, "{mapping}")?,
                     None => return Err(fmt::Error),
                 },
-                ProgramDefinition::Struct => match self.structs.get(identifier) {
+                ProgramDefinition::Struct => match self.structs().get(identifier) {
                     Some(struct_) => writeln!(f, "{struct_}")?,
                     None => return Err(fmt::Error),
                 },
-                ProgramDefinition::Record => match self.records.get(identifier) {
+                ProgramDefinition::Record => match self.records().get(identifier) {
                     Some(record) => writeln!(f, "{record}")?,
                     None => return Err(fmt::Error),
                 },
-                ProgramDefinition::Closure => match self.closures.get(identifier) {
+                ProgramDefinition::Closure => match self.closures().get(identifier) {
                     Some(closure) => writeln!(f, "{closure}")?,
                     None => return Err(fmt::Error),
                 },
-                ProgramDefinition::Function => match self.functions.get(identifier) {
+                ProgramDefinition::Function => match self.functions().get(identifier) {
                     Some(function) => writeln!(f, "{function}")?,
                     None => return Err(fmt::Error),
                 },
@@ -202,7 +208,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Dis
         }
 
         // Print the constructor, if it exists.
-        if let Some(constructor) = &self.constructor {
+        if let Ok(Some(constructor)) = self.constructor() {
             writeln!(f, "\n{constructor}")?;
         }
 

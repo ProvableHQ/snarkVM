@@ -34,6 +34,7 @@ use ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
 use snarkvm_utilities::try_vm_runtime;
 use synthesizer::{Function, program::Program, vm::VM};
 
+use console::program::ProgramOwner;
 use indexmap::{IndexMap, IndexSet};
 use rand::seq::SliceRandom;
 use std::collections::{BTreeMap, HashMap};

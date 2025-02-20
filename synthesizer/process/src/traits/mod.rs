@@ -80,7 +80,7 @@ pub trait StackExecute<N: Network> {
 
 pub trait StackProgramTypes<N: Network> {
     /// Returns the constructor types for the program.
-    fn get_constructor_types(&self) -> &ConstructorTypes<N>;
+    fn get_constructor_types(&self) -> Result<&ConstructorTypes<N>>;
 
     /// Returns the register types for the given closure or function name.
     fn get_register_types(&self, name: &Identifier<N>) -> Result<&RegisterTypes<N>>;

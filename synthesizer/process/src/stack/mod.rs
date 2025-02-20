@@ -197,7 +197,7 @@ pub struct Stack<N: Network> {
     /// The mapping of finalize names to their register types.
     finalize_types: IndexMap<Identifier<N>, FinalizeTypes<N>>,
     /// The register types in a constructor.
-    constructor_types: ConstructorTypes<N>,
+    constructor_types: Option<ConstructorTypes<N>>,
     /// The universal SRS.
     universal_srs: Arc<UniversalSRS<N>>,
     /// The mapping of function name to proving key.
@@ -206,6 +206,7 @@ pub struct Stack<N: Network> {
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The program address.
     program_address: Address<N>,
+    // TODO (@d0cd) Remove
     /// The program edition.
     edition: u16,
 }
@@ -391,8 +392,8 @@ impl<N: Network> StackProgram<N> for Stack<N> {
 impl<N: Network> StackProgramTypes<N> for Stack<N> {
     /// Returns the constructor types for the program.
     #[inline]
-    fn get_constructor_types(&self) -> &ConstructorTypes<N> {
-        &self.constructor_types
+    fn get_constructor_types(&self) -> Result<&ConstructorTypes<N>> {
+        self.constructor_types.as_ref().ok_or_else(|| anyhow!("Constructor types do not exist"))
     }
 
     /// Returns the register types for the given closure or function name.

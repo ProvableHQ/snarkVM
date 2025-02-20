@@ -54,9 +54,9 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
     // These are priced differently from finalize commands.
     // In a constructor, each command costs 100_000 microcredits.
     // TODO (@d0cd) Is this sane?
-    let constructor_cost = match deployment.program().constructor() {
-        Some(constructor) => constructor.commands().len() as u64 * 100_000,
-        None => 0,
+    let constructor_cost = match deployment.program().constructor().ok() {
+        Some(Some(constructor)) => constructor.commands().len() as u64 * 100_000,
+        _ => 0,
     };
 
     // Compute the total cost in microcredits.

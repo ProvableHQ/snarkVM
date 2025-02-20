@@ -77,6 +77,7 @@ use console::{
         ToBytesSerializer,
         TypeName,
         Write,
+        alt,
         anyhow,
         bail,
         de,
@@ -91,7 +92,7 @@ use console::{
         tag,
         take,
     },
-    program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
+    program::{Identifier, PlaintextType, ProgramID, RecordType, StructType, Value},
 };
 use indexmap::IndexMap;
 
@@ -110,7 +111,27 @@ pub enum ProgramDefinition {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct ProgramCore<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> {
+pub struct ProgramCoreV1<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> {
+    /// The ID of the program.
+    id: ProgramID<N>,
+    /// A map of the declared imports for the program.
+    imports: IndexMap<ProgramID<N>, Import<N>>,
+    /// A map of identifiers to their program declaration.
+    identifiers: IndexMap<Identifier<N>, ProgramDefinition>,
+    /// A map of the declared mappings for the program.
+    mappings: IndexMap<Identifier<N>, Mapping<N>>,
+    /// A map of the declared structs for the program.
+    structs: IndexMap<Identifier<N>, StructType<N>>,
+    /// A map of the declared record types for the program.
+    records: IndexMap<Identifier<N>, RecordType<N>>,
+    /// A map of the declared closures for the program.
+    closures: IndexMap<Identifier<N>, ClosureCore<N, Instruction>>,
+    /// A map of the declared functions for the program.
+    functions: IndexMap<Identifier<N>, FunctionCore<N, Instruction, Command>>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ProgramCoreV2<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> {
     /// The ID of the program.
     id: ProgramID<N>,
     /// A map of the declared imports for the program.
@@ -129,16 +150,45 @@ pub struct ProgramCore<N: Network, Instruction: InstructionTrait<N>, Command: Co
     functions: IndexMap<Identifier<N>, FunctionCore<N, Instruction, Command>>,
     /// A constructor for the program.
     constructor: Option<ConstructorCore<N, Command>>,
+    // TODO (@d0cd) Consider versioning the metadata.
+    /// Additional metadata for the program.
+    metadata: IndexMap<Identifier<N>, Value<N>>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum ProgramCore<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> {
+    /// The V1 program.
+    ProgramV1(ProgramCoreV1<N, Instruction, Command>),
+    /// The V2 program.
+    ProgramV2(ProgramCoreV2<N, Instruction, Command>),
 }
 
 impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
-    /// Initializes an empty program.
+    /// Initializes an empty V1 program.
     #[inline]
-    pub fn new(id: ProgramID<N>) -> Result<Self> {
+    pub fn new_v1(id: ProgramID<N>) -> Result<Self> {
         // Ensure the program name is valid.
         ensure!(!Self::is_reserved_keyword(id.name()), "Program name is invalid: {}", id.name());
 
-        Ok(Self {
+        Ok(Self::ProgramV1(ProgramCoreV1 {
+            id,
+            imports: IndexMap::new(),
+            identifiers: IndexMap::new(),
+            mappings: IndexMap::new(),
+            structs: IndexMap::new(),
+            records: IndexMap::new(),
+            closures: IndexMap::new(),
+            functions: IndexMap::new(),
+        }))
+    }
+
+    /// Initializes an empty V2 program.
+    #[inline]
+    pub fn new_v2(id: ProgramID<N>) -> Result<Self> {
+        // Ensure the program name is valid.
+        ensure!(!Self::is_reserved_keyword(id.name()), "Program name is invalid: {}", id.name());
+
+        Ok(Self::ProgramV2(ProgramCoreV2 {
             id,
             imports: IndexMap::new(),
             identifiers: IndexMap::new(),
@@ -148,7 +198,8 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             closures: IndexMap::new(),
             functions: IndexMap::new(),
             constructor: None,
-        })
+            metadata: IndexMap::new(),
+        }))
     }
 
     /// Initializes the credits program.
@@ -159,78 +210,123 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
 
     /// Returns the ID of the program.
     pub const fn id(&self) -> &ProgramID<N> {
-        &self.id
+        match &self {
+            Self::ProgramV1(program) => &program.id,
+            Self::ProgramV2(program) => &program.id,
+        }
+    }
+
+    /// Returns the identifiers in the program.
+    pub const fn identifiers(&self) -> &IndexMap<Identifier<N>, ProgramDefinition> {
+        match &self {
+            Self::ProgramV1(program) => &program.identifiers,
+            Self::ProgramV2(program) => &program.identifiers,
+        }
     }
 
     /// Returns the imports in the program.
     pub const fn imports(&self) -> &IndexMap<ProgramID<N>, Import<N>> {
-        &self.imports
+        match &self {
+            Self::ProgramV1(program) => &program.imports,
+            Self::ProgramV2(program) => &program.imports,
+        }
     }
 
     /// Returns the mappings in the program.
     pub const fn mappings(&self) -> &IndexMap<Identifier<N>, Mapping<N>> {
-        &self.mappings
+        match &self {
+            Self::ProgramV1(program) => &program.mappings,
+            Self::ProgramV2(program) => &program.mappings,
+        }
     }
 
     /// Returns the structs in the program.
     pub const fn structs(&self) -> &IndexMap<Identifier<N>, StructType<N>> {
-        &self.structs
+        match &self {
+            Self::ProgramV1(program) => &program.structs,
+            Self::ProgramV2(program) => &program.structs,
+        }
     }
 
     /// Returns the records in the program.
     pub const fn records(&self) -> &IndexMap<Identifier<N>, RecordType<N>> {
-        &self.records
+        match &self {
+            Self::ProgramV1(program) => &program.records,
+            Self::ProgramV2(program) => &program.records,
+        }
     }
 
     /// Returns the closures in the program.
     pub const fn closures(&self) -> &IndexMap<Identifier<N>, ClosureCore<N, Instruction>> {
-        &self.closures
+        match &self {
+            Self::ProgramV1(program) => &program.closures,
+            Self::ProgramV2(program) => &program.closures,
+        }
     }
 
     /// Returns the functions in the program.
     pub const fn functions(&self) -> &IndexMap<Identifier<N>, FunctionCore<N, Instruction, Command>> {
-        &self.functions
+        match &self {
+            Self::ProgramV1(program) => &program.functions,
+            Self::ProgramV2(program) => &program.functions,
+        }
     }
 
     /// Returns the constructor in the program.
-    pub const fn constructor(&self) -> &Option<ConstructorCore<N, Command>> {
-        &self.constructor
+    pub fn constructor(&self) -> Result<&Option<ConstructorCore<N, Command>>> {
+        match &self {
+            Self::ProgramV1(_) => bail!("Constructors are not supported in V1 programs"),
+            Self::ProgramV2(program) => Ok(&program.constructor),
+        }
+    }
+
+    /// Returns the metadata in the program.
+    pub fn metadata(&self) -> Result<&IndexMap<Identifier<N>, Value<N>>> {
+        match &self {
+            Self::ProgramV1(_) => bail!("Metadata is not supported in V1 programs"),
+            Self::ProgramV2(program) => Ok(&program.metadata),
+        }
     }
 
     /// Returns `true` if the program contains an import with the given program ID.
     pub fn contains_import(&self, id: &ProgramID<N>) -> bool {
-        self.imports.contains_key(id)
+        self.imports().contains_key(id)
     }
 
     /// Returns `true` if the program contains a mapping with the given name.
     pub fn contains_mapping(&self, name: &Identifier<N>) -> bool {
-        self.mappings.contains_key(name)
+        self.mappings().contains_key(name)
     }
 
     /// Returns `true` if the program contains a struct with the given name.
     pub fn contains_struct(&self, name: &Identifier<N>) -> bool {
-        self.structs.contains_key(name)
+        self.structs().contains_key(name)
     }
 
     /// Returns `true` if the program contains a record with the given name.
     pub fn contains_record(&self, name: &Identifier<N>) -> bool {
-        self.records.contains_key(name)
+        self.records().contains_key(name)
     }
 
     /// Returns `true` if the program contains a closure with the given name.
     pub fn contains_closure(&self, name: &Identifier<N>) -> bool {
-        self.closures.contains_key(name)
+        self.closures().contains_key(name)
     }
 
     /// Returns `true` if the program contains a function with the given name.
     pub fn contains_function(&self, name: &Identifier<N>) -> bool {
-        self.functions.contains_key(name)
+        self.functions().contains_key(name)
+    }
+
+    /// Returns `true` if the program contains metadata with the given name.
+    pub fn contains_metadata(&self, name: &Identifier<N>) -> Result<bool> {
+        self.metadata().map(|metadata| metadata.contains_key(name))
     }
 
     /// Returns the mapping with the given name.
     pub fn get_mapping(&self, name: &Identifier<N>) -> Result<Mapping<N>> {
         // Attempt to retrieve the mapping.
-        let mapping = self.mappings.get(name).cloned().ok_or_else(|| anyhow!("Mapping '{name}' is not defined."))?;
+        let mapping = self.mappings().get(name).cloned().ok_or_else(|| anyhow!("Mapping '{name}' is not defined."))?;
         // Ensure the mapping name matches.
         ensure!(mapping.name() == name, "Expected mapping '{name}', but found mapping '{}'", mapping.name());
         // Return the mapping.
@@ -240,7 +336,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Returns the struct with the given name.
     pub fn get_struct(&self, name: &Identifier<N>) -> Result<&StructType<N>> {
         // Attempt to retrieve the struct.
-        let struct_ = self.structs.get(name).ok_or_else(|| anyhow!("Struct '{name}' is not defined."))?;
+        let struct_ = self.structs().get(name).ok_or_else(|| anyhow!("Struct '{name}' is not defined."))?;
         // Ensure the struct name matches.
         ensure!(struct_.name() == name, "Expected struct '{name}', but found struct '{}'", struct_.name());
         // Ensure the struct contains members.
@@ -252,7 +348,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Returns the record with the given name.
     pub fn get_record(&self, name: &Identifier<N>) -> Result<&RecordType<N>> {
         // Attempt to retrieve the record.
-        let record = self.records.get(name).ok_or_else(|| anyhow!("Record '{name}' is not defined."))?;
+        let record = self.records().get(name).ok_or_else(|| anyhow!("Record '{name}' is not defined."))?;
         // Ensure the record name matches.
         ensure!(record.name() == name, "Expected record '{name}', but found record '{}'", record.name());
         // Return the record.
@@ -262,7 +358,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Returns the closure with the given name.
     pub fn get_closure(&self, name: &Identifier<N>) -> Result<ClosureCore<N, Instruction>> {
         // Attempt to retrieve the closure.
-        let closure = self.closures.get(name).cloned().ok_or_else(|| anyhow!("Closure '{name}' is not defined."))?;
+        let closure = self.closures().get(name).cloned().ok_or_else(|| anyhow!("Closure '{name}' is not defined."))?;
         // Ensure the closure name matches.
         ensure!(closure.name() == name, "Expected closure '{name}', but found closure '{}'", closure.name());
         // Ensure there are input statements in the closure.
@@ -285,7 +381,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Returns a reference to the function with the given name.
     pub fn get_function_ref(&self, name: &Identifier<N>) -> Result<&FunctionCore<N, Instruction, Command>> {
         // Attempt to retrieve the function.
-        let function = self.functions.get(name).ok_or(anyhow!("Function '{}/{name}' is not defined.", self.id))?;
+        let function = self.functions().get(name).ok_or(anyhow!("Function '{}/{name}' is not defined.", self.id()))?;
         // Ensure the function name matches.
         ensure!(function.name() == name, "Expected function '{name}', but found function '{}'", function.name());
         // Ensure the number of inputs is within the allowed range.
@@ -296,6 +392,14 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         ensure!(function.outputs().len() <= N::MAX_OUTPUTS, "Function exceeds maximum number of outputs");
         // Return the function.
         Ok(function)
+    }
+
+    /// Returns the metadata value with the given name.
+    pub fn get_metadata(&self, name: &Identifier<N>) -> Result<&Value<N>> {
+        // Attempt to retrieve the metadata.
+        let metadata = self.metadata()?.get(name).ok_or(anyhow!("Metadata '{name}' is not defined."))?;
+        // Return the metadata.
+        Ok(metadata)
     }
 }
 
@@ -310,7 +414,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         let import_name = *import.name();
 
         // Ensure that the number of imports is within the allowed range.
-        ensure!(self.imports.len() < N::MAX_IMPORTS, "Program exceeds the maximum number of imports");
+        ensure!(self.imports().len() < N::MAX_IMPORTS, "Program exceeds the maximum number of imports");
 
         // Ensure the import name is new.
         ensure!(self.is_unique_name(&import_name), "'{import_name}' is already in use.");
@@ -321,14 +425,23 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
 
         // Ensure the import is new.
         ensure!(
-            !self.imports.contains_key(import.program_id()),
+            !self.imports().contains_key(import.program_id()),
             "Import '{}' is already defined.",
             import.program_id()
         );
 
         // Add the import statement to the program.
-        if self.imports.insert(*import.program_id(), import.clone()).is_some() {
-            bail!("'{}' already exists in the program.", import.program_id())
+        match self {
+            Self::ProgramV1(program) => {
+                if program.imports.insert(*import.program_id(), import.clone()).is_some() {
+                    bail!("'{}' already exists in the program.", import.program_id())
+                }
+            }
+            Self::ProgramV2(program) => {
+                if program.imports.insert(*import.program_id(), import.clone()).is_some() {
+                    bail!("'{}' already exists in the program.", import.program_id())
+                }
+            }
         }
         Ok(())
     }
@@ -344,7 +457,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         let mapping_name = *mapping.name();
 
         // Ensure the program has not exceeded the maximum number of mappings.
-        ensure!(self.mappings.len() < N::MAX_MAPPINGS, "Program exceeds the maximum number of mappings");
+        ensure!(self.mappings().len() < N::MAX_MAPPINGS, "Program exceeds the maximum number of mappings");
 
         // Ensure the mapping name is new.
         ensure!(self.is_unique_name(&mapping_name), "'{mapping_name}' is already in use.");
@@ -354,12 +467,24 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         ensure!(!Self::is_reserved_opcode(&mapping_name.to_string()), "'{mapping_name}' is a reserved opcode.");
 
         // Add the mapping name to the identifiers.
-        if self.identifiers.insert(mapping_name, ProgramDefinition::Mapping).is_some() {
-            bail!("'{mapping_name}' already exists in the program.")
-        }
         // Add the mapping to the program.
-        if self.mappings.insert(mapping_name, mapping).is_some() {
-            bail!("'{mapping_name}' already exists in the program.")
+        match self {
+            Self::ProgramV1(program) => {
+                if program.identifiers.insert(mapping_name, ProgramDefinition::Mapping).is_some() {
+                    bail!("'{mapping_name}' already exists in the program.")
+                }
+                if program.mappings.insert(mapping_name, mapping).is_some() {
+                    bail!("'{mapping_name}' already exists in the program.")
+                }
+            }
+            Self::ProgramV2(program) => {
+                if program.identifiers.insert(mapping_name, ProgramDefinition::Mapping).is_some() {
+                    bail!("'{mapping_name}' already exists in the program.")
+                }
+                if program.mappings.insert(mapping_name, mapping).is_some() {
+                    bail!("'{mapping_name}' already exists in the program.")
+                }
+            }
         }
         Ok(())
     }
@@ -376,7 +501,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         let struct_name = *struct_.name();
 
         // Ensure the program has not exceeded the maximum number of structs.
-        ensure!(self.structs.len() < N::MAX_STRUCTS, "Program exceeds the maximum number of structs.");
+        ensure!(self.structs().len() < N::MAX_STRUCTS, "Program exceeds the maximum number of structs.");
 
         // Ensure the struct name is new.
         ensure!(self.is_unique_name(&struct_name), "'{struct_name}' is already in use.");
@@ -398,14 +523,14 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
                 PlaintextType::Literal(_) => continue,
                 PlaintextType::Struct(member_identifier) => {
                     // Ensure the member struct name exists in the program.
-                    if !self.structs.contains_key(member_identifier) {
+                    if !self.structs().contains_key(member_identifier) {
                         bail!("'{member_identifier}' in struct '{}' is not defined.", struct_name)
                     }
                 }
                 PlaintextType::Array(array_type) => {
                     if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
                         // Ensure the member struct name exists in the program.
-                        if !self.structs.contains_key(struct_name) {
+                        if !self.structs().contains_key(struct_name) {
                             bail!("'{struct_name}' in array '{array_type}' is not defined.")
                         }
                     }
@@ -414,12 +539,24 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         }
 
         // Add the struct name to the identifiers.
-        if self.identifiers.insert(struct_name, ProgramDefinition::Struct).is_some() {
-            bail!("'{}' already exists in the program.", struct_name)
-        }
         // Add the struct to the program.
-        if self.structs.insert(struct_name, struct_).is_some() {
-            bail!("'{}' already exists in the program.", struct_name)
+        match self {
+            Self::ProgramV1(program) => {
+                if program.identifiers.insert(struct_name, ProgramDefinition::Struct).is_some() {
+                    bail!("'{struct_name}' already exists in the program.")
+                }
+                if program.structs.insert(struct_name, struct_).is_some() {
+                    bail!("'{struct_name}' already exists in the program.")
+                }
+            }
+            Self::ProgramV2(program) => {
+                if program.identifiers.insert(struct_name, ProgramDefinition::Struct).is_some() {
+                    bail!("'{struct_name}' already exists in the program.")
+                }
+                if program.structs.insert(struct_name, struct_).is_some() {
+                    bail!("'{struct_name}' already exists in the program.")
+                }
+            }
         }
         Ok(())
     }
@@ -436,7 +573,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         let record_name = *record.name();
 
         // Ensure the program has not exceeded the maximum number of records.
-        ensure!(self.records.len() < N::MAX_RECORDS, "Program exceeds the maximum number of records.");
+        ensure!(self.records().len() < N::MAX_RECORDS, "Program exceeds the maximum number of records.");
 
         // Ensure the record name is new.
         ensure!(self.is_unique_name(&record_name), "'{record_name}' is already in use.");
@@ -454,14 +591,14 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             match entry_type.plaintext_type() {
                 PlaintextType::Literal(_) => continue,
                 PlaintextType::Struct(identifier) => {
-                    if !self.structs.contains_key(identifier) {
+                    if !self.structs().contains_key(identifier) {
                         bail!("Struct '{identifier}' in record '{record_name}' is not defined.")
                     }
                 }
                 PlaintextType::Array(array_type) => {
                     if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
                         // Ensure the member struct name exists in the program.
-                        if !self.structs.contains_key(struct_name) {
+                        if !self.structs().contains_key(struct_name) {
                             bail!("'{struct_name}' in array '{array_type}' is not defined.")
                         }
                     }
@@ -470,12 +607,24 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         }
 
         // Add the record name to the identifiers.
-        if self.identifiers.insert(record_name, ProgramDefinition::Record).is_some() {
-            bail!("'{record_name}' already exists in the program.")
-        }
         // Add the record to the program.
-        if self.records.insert(record_name, record).is_some() {
-            bail!("'{record_name}' already exists in the program.")
+        match self {
+            Self::ProgramV1(program) => {
+                if program.identifiers.insert(record_name, ProgramDefinition::Record).is_some() {
+                    bail!("'{record_name}' already exists in the program.")
+                }
+                if program.records.insert(record_name, record).is_some() {
+                    bail!("'{record_name}' already exists in the program.")
+                }
+            }
+            Self::ProgramV2(program) => {
+                if program.identifiers.insert(record_name, ProgramDefinition::Record).is_some() {
+                    bail!("'{record_name}' already exists in the program.")
+                }
+                if program.records.insert(record_name, record).is_some() {
+                    bail!("'{record_name}' already exists in the program.")
+                }
+            }
         }
         Ok(())
     }
@@ -498,7 +647,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         let closure_name = *closure.name();
 
         // Ensure the program has not exceeded the maximum number of closures.
-        ensure!(self.closures.len() < N::MAX_CLOSURES, "Program exceeds the maximum number of closures.");
+        ensure!(self.closures().len() < N::MAX_CLOSURES, "Program exceeds the maximum number of closures.");
 
         // Ensure the closure name is new.
         ensure!(self.is_unique_name(&closure_name), "'{closure_name}' is already in use.");
@@ -518,12 +667,24 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         ensure!(closure.outputs().len() <= N::MAX_OUTPUTS, "Closure exceeds maximum number of outputs");
 
         // Add the function name to the identifiers.
-        if self.identifiers.insert(closure_name, ProgramDefinition::Closure).is_some() {
-            bail!("'{closure_name}' already exists in the program.")
-        }
         // Add the closure to the program.
-        if self.closures.insert(closure_name, closure).is_some() {
-            bail!("'{closure_name}' already exists in the program.")
+        match self {
+            Self::ProgramV1(program) => {
+                if program.identifiers.insert(closure_name, ProgramDefinition::Closure).is_some() {
+                    bail!("'{closure_name}' already exists in the program.")
+                }
+                if program.closures.insert(closure_name, closure).is_some() {
+                    bail!("'{closure_name}' already exists in the program.")
+                }
+            }
+            Self::ProgramV2(program) => {
+                if program.identifiers.insert(closure_name, ProgramDefinition::Closure).is_some() {
+                    bail!("'{closure_name}' already exists in the program.")
+                }
+                if program.closures.insert(closure_name, closure).is_some() {
+                    bail!("'{closure_name}' already exists in the program.")
+                }
+            }
         }
         Ok(())
     }
@@ -546,7 +707,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         let function_name = *function.name();
 
         // Ensure the program has not exceeded the maximum number of functions.
-        ensure!(self.functions.len() < N::MAX_FUNCTIONS, "Program exceeds the maximum number of functions");
+        ensure!(self.functions().len() < N::MAX_FUNCTIONS, "Program exceeds the maximum number of functions");
 
         // Ensure the function name is new.
         ensure!(self.is_unique_name(&function_name), "'{function_name}' is already in use.");
@@ -563,12 +724,24 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         ensure!(function.outputs().len() <= N::MAX_OUTPUTS, "Function exceeds maximum number of outputs");
 
         // Add the function name to the identifiers.
-        if self.identifiers.insert(function_name, ProgramDefinition::Function).is_some() {
-            bail!("'{function_name}' already exists in the program.")
-        }
         // Add the function to the program.
-        if self.functions.insert(function_name, function).is_some() {
-            bail!("'{function_name}' already exists in the program.")
+        match self {
+            Self::ProgramV1(program) => {
+                if program.identifiers.insert(function_name, ProgramDefinition::Function).is_some() {
+                    bail!("'{function_name}' already exists in the program.")
+                }
+                if program.functions.insert(function_name, function).is_some() {
+                    bail!("'{function_name}' already exists in the program.")
+                }
+            }
+            Self::ProgramV2(program) => {
+                if program.identifiers.insert(function_name, ProgramDefinition::Function).is_some() {
+                    bail!("'{function_name}' already exists in the program.")
+                }
+                if program.functions.insert(function_name, function).is_some() {
+                    bail!("'{function_name}' already exists in the program.")
+                }
+            }
         }
         Ok(())
     }
@@ -578,10 +751,40 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// # Errors
     /// This method will halt if a constructor has already been added.
     pub fn add_constructor(&mut self, constructor: ConstructorCore<N, Command>) -> Result<()> {
-        // Ensure there is no constructor in memory.
-        ensure!(self.constructor().is_none(), "Cannot add multiple constructors to the program");
-        // Insert the constructor.
-        self.constructor = Some(constructor);
+        match self {
+            Self::ProgramV1(_) => bail!("Cannot add a constructor to a V1 program"),
+            Self::ProgramV2(program) => {
+                // Ensure the program has not exceeded the maximum number of constructors.
+                ensure!(program.constructor.is_none(), "Cannot add multiple constructors to the program");
+                // Add the constructor to the program.
+                program.constructor = Some(constructor);
+                Ok(())
+            }
+        }
+    }
+
+    /// Adds a new metadata value to the program.
+    ///
+    /// # Errors
+    /// This method will halt if the metadata name is already in use in the program.
+    /// This method will halt if the metadata name is a reserved opcode or keyword.
+    pub fn add_metadata(&mut self, name: Identifier<N>, value: Value<N>) -> Result<()> {
+        // Ensure the metadata name is new.
+        ensure!(self.is_unique_name(&name), "'{name}' is already in use.");
+        // Ensure the metadata name is not a reserved opcode.
+        ensure!(!Self::is_reserved_opcode(&name.to_string()), "'{name}' is a reserved opcode.");
+        // Ensure the metadata name is not a reserved keyword.
+        ensure!(!Self::is_reserved_keyword(&name), "'{name}' is a reserved keyword.");
+
+        // Add the metadata name to the program.
+        match self {
+            Self::ProgramV1(_) => bail!("Metadata is not supported in V1 programs"),
+            Self::ProgramV2(program) => {
+                if program.metadata.insert(name, value).is_some() {
+                    bail!("'{name}' already exists in the program.")
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -593,9 +796,15 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the imported program is not in the program.
     #[inline]
     pub fn remove_import(&mut self, program_id: &ProgramID<N>) -> Result<Import<N>> {
-        match self.imports.shift_remove(program_id) {
-            Some(import) => Ok(import),
-            None => bail!("Import '{}' not found.", program_id),
+        match self {
+            Self::ProgramV1(program) => match program.imports.shift_remove(program_id) {
+                Some(import) => Ok(import),
+                None => bail!("Import '{}' not found.", program_id),
+            },
+            Self::ProgramV2(program) => match program.imports.shift_remove(program_id) {
+                Some(import) => Ok(import),
+                None => bail!("Import '{}' not found.", program_id),
+            },
         }
     }
 
@@ -605,12 +814,25 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the mapping is not in the program.
     #[inline]
     pub fn remove_mapping(&mut self, mapping_name: &Identifier<N>) -> Result<Mapping<N>> {
-        // Remove the mapping from `identifiers`.
-        self.identifiers.shift_remove(mapping_name);
-        // Remove and return the mapping.
-        match self.mappings.shift_remove(mapping_name) {
-            Some(mapping) => Ok(mapping),
-            None => bail!("Mapping '{}' not found.", mapping_name),
+        match self {
+            Self::ProgramV1(program) => {
+                // Remove the mapping from `identifiers`.
+                program.identifiers.shift_remove(mapping_name);
+                // Remove and return the mapping.
+                match program.mappings.shift_remove(mapping_name) {
+                    Some(mapping) => Ok(mapping),
+                    None => bail!("Mapping '{}' not found.", mapping_name),
+                }
+            }
+            Self::ProgramV2(program) => {
+                // Remove the mapping from `identifiers`.
+                program.identifiers.shift_remove(mapping_name);
+                // Remove and return the mapping.
+                match program.mappings.shift_remove(mapping_name) {
+                    Some(mapping) => Ok(mapping),
+                    None => bail!("Mapping '{}' not found.", mapping_name),
+                }
+            }
         }
     }
 
@@ -620,12 +842,25 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the struct is not in the program.
     #[inline]
     pub fn remove_struct(&mut self, struct_name: &Identifier<N>) -> Result<StructType<N>> {
-        // Remove the struct from `identifiers`.
-        self.identifiers.shift_remove(struct_name);
-        // Remove and return the struct.
-        match self.structs.shift_remove(struct_name) {
-            Some(struct_) => Ok(struct_),
-            None => bail!("Struct '{}' not found.", struct_name),
+        match self {
+            Self::ProgramV1(program) => {
+                // Remove the struct from `identifiers`.
+                program.identifiers.shift_remove(struct_name);
+                // Remove and return the struct.
+                match program.structs.shift_remove(struct_name) {
+                    Some(struct_) => Ok(struct_),
+                    None => bail!("Struct '{}' not found.", struct_name),
+                }
+            }
+            Self::ProgramV2(program) => {
+                // Remove the struct from `identifiers`.
+                program.identifiers.shift_remove(struct_name);
+                // Remove and return the struct.
+                match program.structs.shift_remove(struct_name) {
+                    Some(struct_) => Ok(struct_),
+                    None => bail!("Struct '{}' not found.", struct_name),
+                }
+            }
         }
     }
 
@@ -635,12 +870,25 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the record is not in the program.
     #[inline]
     pub fn remove_record(&mut self, record_name: &Identifier<N>) -> Result<RecordType<N>> {
-        // Remove the record from `identifiers`.
-        self.identifiers.shift_remove(record_name);
-        // Remove and return the record.
-        match self.records.shift_remove(record_name) {
-            Some(record) => Ok(record),
-            None => bail!("Record '{}' not found.", record_name),
+        match self {
+            Self::ProgramV1(program) => {
+                // Remove the record from `identifiers`.
+                program.identifiers.shift_remove(record_name);
+                // Remove and return the record.
+                match program.records.shift_remove(record_name) {
+                    Some(record) => Ok(record),
+                    None => bail!("Record '{}' not found.", record_name),
+                }
+            }
+            Self::ProgramV2(program) => {
+                // Remove the record from `identifiers`.
+                program.identifiers.shift_remove(record_name);
+                // Remove and return the record.
+                match program.records.shift_remove(record_name) {
+                    Some(record) => Ok(record),
+                    None => bail!("Record '{}' not found.", record_name),
+                }
+            }
         }
     }
 
@@ -650,12 +898,25 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the closure is not in the program.
     #[inline]
     pub fn remove_closure(&mut self, closure_name: &Identifier<N>) -> Result<ClosureCore<N, Instruction>> {
-        // Remove the closure from `identifiers`.
-        self.identifiers.shift_remove(closure_name);
-        // Remove and return the closure.
-        match self.closures.shift_remove(closure_name) {
-            Some(closure) => Ok(closure),
-            None => bail!("Closure '{}' not found.", closure_name),
+        match self {
+            Self::ProgramV1(program) => {
+                // Remove the closure from `identifiers`.
+                program.identifiers.shift_remove(closure_name);
+                // Remove and return the closure.
+                match program.closures.shift_remove(closure_name) {
+                    Some(closure) => Ok(closure),
+                    None => bail!("Closure '{}' not found.", closure_name),
+                }
+            }
+            Self::ProgramV2(program) => {
+                // Remove the closure from `identifiers`.
+                program.identifiers.shift_remove(closure_name);
+                // Remove and return the closure.
+                match program.closures.shift_remove(closure_name) {
+                    Some(closure) => Ok(closure),
+                    None => bail!("Closure '{}' not found.", closure_name),
+                }
+            }
         }
     }
 
@@ -665,12 +926,25 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the function is not in the program.
     #[inline]
     pub fn remove_function(&mut self, function_name: &Identifier<N>) -> Result<FunctionCore<N, Instruction, Command>> {
-        // Remove the function from `identifiers`.
-        self.identifiers.shift_remove(function_name);
-        // Remove and return the function.
-        match self.functions.shift_remove(function_name) {
-            Some(function) => Ok(function),
-            None => bail!("Function '{}' not found.", function_name),
+        match self {
+            Self::ProgramV1(program) => {
+                // Remove the function from `identifiers`.
+                program.identifiers.shift_remove(function_name);
+                // Remove and return the function.
+                match program.functions.shift_remove(function_name) {
+                    Some(function) => Ok(function),
+                    None => bail!("Function '{}' not found.", function_name),
+                }
+            }
+            Self::ProgramV2(program) => {
+                // Remove the function from `identifiers`.
+                program.identifiers.shift_remove(function_name);
+                // Remove and return the function.
+                match program.functions.shift_remove(function_name) {
+                    Some(function) => Ok(function),
+                    None => bail!("Function '{}' not found.", function_name),
+                }
+            }
         }
     }
 
@@ -680,10 +954,33 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the constructor is not in the program.
     #[inline]
     pub fn remove_constructor(&mut self) -> Result<ConstructorCore<N, Command>> {
-        // Remove the constructor from the program.
-        match self.constructor.take() {
-            Some(constructor) => Ok(constructor),
-            None => bail!("Constructor not found."),
+        match self {
+            Self::ProgramV1(_) => bail!("Constructor not found."),
+            Self::ProgramV2(program) => {
+                // Remove the constructor from the program.
+                match program.constructor.take() {
+                    Some(constructor) => Ok(constructor),
+                    None => bail!("Constructor not found."),
+                }
+            }
+        }
+    }
+
+    /// Removes a metadata value from the program.
+    ///
+    /// # Errors
+    /// This method will halt if the metadata is not in the program.
+    #[inline]
+    pub fn remove_metadata(&mut self, name: &Identifier<N>) -> Result<Value<N>> {
+        match self {
+            Self::ProgramV1(_) => bail!("Metadata is not supported in V1 programs"),
+            Self::ProgramV2(program) => {
+                // Remove and return the metadata.
+                match program.metadata.shift_remove(name) {
+                    Some(metadata) => Ok(metadata),
+                    None => bail!("Metadata '{}' not found.", name),
+                }
+            }
         }
     }
 }
@@ -768,7 +1065,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
 
     /// Returns `true` if the given name does not already exist in the program.
     fn is_unique_name(&self, name: &Identifier<N>) -> bool {
-        !self.identifiers.contains_key(name)
+        !self.identifiers().contains_key(name)
     }
 
     /// Returns `true` if the given name is a reserved opcode.
@@ -785,13 +1082,23 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> TypeName
-    for ProgramCore<N, Instruction, Command>
-{
-    /// Returns the type name as a string.
+impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
+    /// Returns whether the program is a V1 program.
     #[inline]
-    fn type_name() -> &'static str {
+    pub fn is_v1(&self) -> bool {
+        matches!(self, Self::ProgramV1(_))
+    }
+
+    /// Returns the V1 type name as a string.
+    #[inline]
+    fn type_name_v1() -> &'static str {
         "program"
+    }
+
+    /// Returns the V2 type name as a string.
+    #[inline]
+    fn type_name_v2() -> &'static str {
+        "program$2"
     }
 }
 
