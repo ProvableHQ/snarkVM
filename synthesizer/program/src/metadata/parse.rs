@@ -32,8 +32,12 @@ impl<N: Network> Parser for Metadata<N> {
         // Parse the colon ':' keyword from the string.
         let (string, _) = tag(":")(string)?;
 
+        // Parse the whitespaces from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the value from the string.
         let (string, value) = Plaintext::parse(string)?;
+        // Parse the whitespaces from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
         // Parse the semicolon ';' keyword from the string.
         let (string, _) = tag(";")(string)?;
@@ -86,17 +90,19 @@ mod tests {
     fn test_metadata_parse() {
         let metadata = Metadata::<CurrentNetwork>::parse(
             r"
-$metadata foo: { bar: 1u8 };",
+$metadata foo: 1u8;",
         )
         .unwrap()
         .1;
         assert_eq!("foo", metadata.name().to_string());
-        assert_eq!("{ bar: 1u8 }", metadata.value().to_string());
+        assert_eq!("1u8", metadata.value().to_string());
     }
 
     #[test]
     fn test_metadata_display() {
-        let expected = r"$metadata foo: { bar: 1u8 };";
+        let expected = r"$metadata foo: {
+    bar: 1u8
+};";
         let metadata = Metadata::<CurrentNetwork>::parse(expected).unwrap().1;
         assert_eq!(expected, format!("{metadata}"),);
     }

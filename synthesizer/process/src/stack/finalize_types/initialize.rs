@@ -470,7 +470,7 @@ impl<N: Network> FinalizeTypes<N> {
         metadata_get: &MetadataGet<N>,
     ) -> Result<()> {
         // Ensure that the global name is `edition`.
-        let global_name = match metadata_get.global() {
+        let global_name = match metadata_get.name() {
             CallOperator::Locator(locator) => {
                 // Retrieve the program ID.
                 let program_id = locator.program_id();

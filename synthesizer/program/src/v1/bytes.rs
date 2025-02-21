@@ -128,3 +128,39 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Program;
+    use console::network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_bytes() -> Result<()> {
+        let program = r"
+program token.aleo;
+
+record token:
+    owner as address.private;
+    token_amount as u64.private;
+
+function compute:
+    input r0 as token.record;
+    add r0.token_amount r0.token_amount into r1;
+    output r1 as u64.private;";
+
+        // Initialize a new program.
+        let (string, expected) = Program::<CurrentNetwork>::parse(program).unwrap();
+        assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+
+        let expected_bytes = expected.to_bytes_le()?;
+
+        let candidate = Program::<CurrentNetwork>::from_bytes_le(&expected_bytes)?;
+        assert_eq!(expected, candidate);
+        assert_eq!(expected_bytes, candidate.to_bytes_le()?);
+
+        Ok(())
+    }
+}

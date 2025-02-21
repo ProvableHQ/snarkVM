@@ -566,3 +566,185 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Typ
         "program$2"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::{
+        network::MainnetV0,
+        program::{Locator, ValueType},
+    };
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_program_mapping() -> Result<()> {
+        // Create a new mapping.
+        let mapping = Mapping::<CurrentNetwork>::from_str(
+            r"
+mapping message:
+    key as field.public;
+    value as field.public;",
+        )?;
+
+        // Initialize a new program.
+        let program = Program::<CurrentNetwork>::from_str(&format!("program$2 unknown.aleo; {mapping}"))?;
+        // Ensure the mapping was added.
+        assert!(program.contains_mapping(&Identifier::from_str("message")?));
+        // Ensure the retrieved mapping matches.
+        assert_eq!(mapping.to_string(), program.get_mapping(&Identifier::from_str("message")?)?.to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_program_struct() -> Result<()> {
+        // Create a new struct.
+        let struct_ = StructType::<CurrentNetwork>::from_str(
+            r"
+struct message:
+    first as field;
+    second as field;",
+        )?;
+
+        // Initialize a new program.
+        let program = Program::<CurrentNetwork>::from_str(&format!("program$2 unknown.aleo; {struct_}"))?;
+        // Ensure the struct was added.
+        assert!(program.contains_struct(&Identifier::from_str("message")?));
+        // Ensure the retrieved struct matches.
+        assert_eq!(&struct_, program.get_struct(&Identifier::from_str("message")?)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_program_record() -> Result<()> {
+        // Create a new record.
+        let record = RecordType::<CurrentNetwork>::from_str(
+            r"
+record foo:
+    owner as address.private;
+    first as field.private;
+    second as field.public;",
+        )?;
+
+        // Initialize a new program.
+        let program = Program::<CurrentNetwork>::from_str(&format!("program$2 unknown.aleo; {record}"))?;
+        // Ensure the record was added.
+        assert!(program.contains_record(&Identifier::from_str("foo")?));
+        // Ensure the retrieved record matches.
+        assert_eq!(&record, program.get_record(&Identifier::from_str("foo")?)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_program_function() -> Result<()> {
+        // Create a new function.
+        let function = Function::<CurrentNetwork>::from_str(
+            r"
+function compute:
+    input r0 as field.public;
+    input r1 as field.private;
+    add r0 r1 into r2;
+    output r2 as field.private;",
+        )?;
+
+        // Initialize a new program.
+        let program = Program::<CurrentNetwork>::from_str(&format!("program$2 unknown.aleo; {function}"))?;
+        // Ensure the function was added.
+        assert!(program.contains_function(&Identifier::from_str("compute")?));
+        // Ensure the retrieved function matches.
+        assert_eq!(function, program.get_function(&Identifier::from_str("compute")?)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_program_import() -> Result<()> {
+        // Initialize a new program.
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+import eth.aleo;
+import usdc.aleo;
+
+program$2 swap.aleo;
+
+// The `swap` function transfers ownership of the record
+// for token A to the record owner of token B, and vice-versa.
+function swap:
+    // Input the record for token A.
+    input r0 as eth.aleo/eth.record;
+    // Input the record for token B.
+    input r1 as usdc.aleo/usdc.record;
+
+    // Send the record for token A to the owner of token B.
+    call eth.aleo/transfer r0 r1.owner r0.amount into r2 r3;
+
+    // Send the record for token B to the owner of token A.
+    call usdc.aleo/transfer r1 r0.owner r1.amount into r4 r5;
+
+    // Output the new record for token A.
+    output r2 as eth.aleo/eth.record;
+    // Output the new record for token B.
+    output r4 as usdc.aleo/usdc.record;
+
+_init:
+    assert.eq true true;
+
+$metadata version: 0u8;
+$metadata authority: aleo1rhgdu77hgyqd3xjj8ucu3jj9r2krwz6mnzyd80gncr5fxcwlh5rsvzp9px;
+   ",
+        )
+        .unwrap();
+        assert_eq!(program.version(), ProgramVersion::V2);
+
+        // Ensure the program imports exist.
+        assert!(program.contains_import(&ProgramID::from_str("eth.aleo")?));
+        assert!(program.contains_import(&ProgramID::from_str("usdc.aleo")?));
+
+        // Retrieve the 'swap' function.
+        let function = program.get_function(&Identifier::from_str("swap")?)?;
+
+        // Ensure there are two inputs.
+        assert_eq!(function.inputs().len(), 2);
+        assert_eq!(function.input_types().len(), 2);
+
+        // Declare the expected input types.
+        let expected_input_type_1 = ValueType::ExternalRecord(Locator::from_str("eth.aleo/eth")?);
+        let expected_input_type_2 = ValueType::ExternalRecord(Locator::from_str("usdc.aleo/usdc")?);
+
+        // Ensure the inputs are external records.
+        assert_eq!(function.input_types()[0], expected_input_type_1);
+        assert_eq!(function.input_types()[1], expected_input_type_2);
+
+        // Ensure the input variants are correct.
+        assert_eq!(function.input_types()[0].variant(), expected_input_type_1.variant());
+        assert_eq!(function.input_types()[1].variant(), expected_input_type_2.variant());
+
+        // Ensure there are two instructions.
+        assert_eq!(function.instructions().len(), 2);
+
+        // Ensure the instructions are calls.
+        assert_eq!(function.instructions()[0].opcode(), Opcode::Call);
+        assert_eq!(function.instructions()[1].opcode(), Opcode::Call);
+
+        // Ensure there are two outputs.
+        assert_eq!(function.outputs().len(), 2);
+        assert_eq!(function.output_types().len(), 2);
+
+        // Declare the expected output types.
+        let expected_output_type_1 = ValueType::ExternalRecord(Locator::from_str("eth.aleo/eth")?);
+        let expected_output_type_2 = ValueType::ExternalRecord(Locator::from_str("usdc.aleo/usdc")?);
+
+        // Ensure the outputs are external records.
+        assert_eq!(function.output_types()[0], expected_output_type_1);
+        assert_eq!(function.output_types()[1], expected_output_type_2);
+
+        // Ensure the output variants are correct.
+        assert_eq!(function.output_types()[0].variant(), expected_output_type_1.variant());
+        assert_eq!(function.output_types()[1].variant(), expected_output_type_2.variant());
+
+        Ok(())
+    }
+}

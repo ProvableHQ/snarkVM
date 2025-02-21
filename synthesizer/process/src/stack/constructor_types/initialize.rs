@@ -318,7 +318,7 @@ impl<N: Network> ConstructorTypes<N> {
         metadata_get: &MetadataGet<N>,
     ) -> Result<()> {
         // Ensure that the global name is `edition`.
-        let global_name = match metadata_get.global() {
+        let global_name = match metadata_get.name() {
             CallOperator::Locator(locator) => {
                 // Retrieve the program ID.
                 let program_id = locator.program_id();
@@ -341,7 +341,7 @@ impl<N: Network> ConstructorTypes<N> {
         // Ensure the destination register is a locator (and does not reference an access).
         ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
         // Insert the destination register.
-        self.add_destination(destination, PlaintextType::Literal(LiteralType::U16))?;
+        self.add_destination(destination, metadata_get.destination_type().clone())?;
         Ok(())
     }
 

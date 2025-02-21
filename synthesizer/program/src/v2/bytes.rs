@@ -77,14 +77,12 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the program ID.
         self.id.write_le(&mut writer)?;
-
         // Write the number of program imports.
         u8::try_from(self.imports.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
         // Write the program imports.
         for import in self.imports.values() {
             import.write_le(&mut writer)?;
         }
-
         // Write the number of components.
         u16::try_from(self.identifiers.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
         // Write the components.
@@ -136,23 +134,66 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
                     None => return Err(error(format!("Function '{identifier}' is not defined."))),
                 },
             }
-            // Write the constructor.
-            match &self.constructor {
-                None => false.write_le(&mut writer)?,
-                Some(constructor) => {
-                    // Write the variant.
-                    true.write_le(&mut writer)?;
-                    // Write the constructor.
-                    constructor.write_le(&mut writer)?;
-                }
-            }
-            // Write the number of metadata entries and the metadata.
-            u16::try_from(self.metadata.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
-            for (_, metadata) in self.metadata.iter() {
-                // Write the metadata.
-                metadata.write_le(&mut writer)?;
+        }
+        // Write the constructor.
+        match &self.constructor {
+            None => false.write_le(&mut writer)?,
+            Some(constructor) => {
+                // Write the variant.
+                true.write_le(&mut writer)?;
+                // Write the constructor.
+                constructor.write_le(&mut writer)?;
             }
         }
+        // Write the number of metadata entries and the metadata.
+        u16::try_from(self.metadata.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        for (_, metadata) in self.metadata.iter() {
+            // Write the metadata.
+            metadata.write_le(&mut writer)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Program;
+    use console::network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_bytes() -> Result<()> {
+        let program = r"
+program$2 token.aleo;
+
+record token:
+    owner as address.private;
+    token_amount as u64.private;
+
+function compute:
+    input r0 as token.record;
+    add r0.token_amount r0.token_amount into r1;
+    output r1 as u64.private;
+
+_init:
+    assert.eq true false;
+
+$metadata foo: false;
+$metadata bar: 42u8;";
+
+        // Initialize a new program.
+        let (string, expected) = Program::<CurrentNetwork>::parse(program).unwrap();
+        assert_eq!(expected.version(), ProgramVersion::V2);
+        assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+
+        let expected_bytes = expected.to_bytes_le()?;
+
+        let candidate = Program::<CurrentNetwork>::from_bytes_le(&expected_bytes)?;
+        assert_eq!(expected, candidate);
+        assert_eq!(expected_bytes, candidate.to_bytes_le()?);
+
         Ok(())
     }
 }
