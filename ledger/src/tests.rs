@@ -2169,7 +2169,7 @@ fn test_deployment_and_execution_exceeding_max_transaction_spend() {
     for i in 0..<CurrentNetwork as Network>::MAX_COMMANDS.ilog2() {
         // Initialize the program.
         let mut program =
-            Program::new(ProgramID::from_str(&format!("test_max_spend_limit_{i}.aleo")).unwrap()).unwrap();
+            Program::new_v1(ProgramID::from_str(&format!("test_max_spend_limit_{i}.aleo")).unwrap()).unwrap();
         // Construct a finalize body whose finalize cost is excessively large.
         let mut function = format!(
             r"
