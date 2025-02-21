@@ -100,9 +100,7 @@ $metadata foo: 1u8;",
 
     #[test]
     fn test_metadata_display() {
-        let expected = r"$metadata foo: {
-    bar: 1u8
-};";
+        let expected = "$metadata foo: {\n  bar: 1u8\n};";
         let metadata = Metadata::<CurrentNetwork>::parse(expected).unwrap().1;
         assert_eq!(expected, format!("{metadata}"),);
     }

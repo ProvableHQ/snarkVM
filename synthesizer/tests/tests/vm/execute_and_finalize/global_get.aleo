@@ -36,5 +36,5 @@ function a:
     output r1 as second.aleo/a.future;
 finalize a:
     input r0 as u16.public;
-    metadata.get edition into r1;
+    metadata.get edition into r1 as u16;
     assert.eq r0 r1;

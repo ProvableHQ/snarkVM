@@ -24,8 +24,9 @@ use console::{
     types::U16,
 };
 
-/// A command to get metadata about a program, e.g. `metadata.get owner into r1;`.
-/// Gets the value stored at `global` and stores the result in `destination`.
+/// A command to get metadata about a program, e.g. `metadata.get owner into r1 as address;`.
+/// Gets the value with the `name` from the program and stores it in the `destination` register.
+/// The value is checked to be of the `destination_type`.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct MetadataGet<N: Network> {
     /// The global ID.
@@ -161,11 +162,7 @@ impl<N: Network> Display for MetadataGet<N> {
     /// Prints the command to a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the command.
-        write!(f, "{} ", Self::opcode())?;
-        // Print the global ID.
-        write!(f, "{} into ", self.name)?;
-        // Print the destination register.
-        write!(f, "{};", self.destination)
+        write!(f, "{} {} into {} as {};", Self::opcode(), self.name, self.destination, self.destination_type)
     }
 }
 
@@ -232,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_from_bytes() {
-        let (string, get) = MetadataGet::<CurrentNetwork>::parse("metadata.get edition into r1;").unwrap();
+        let (string, get) = MetadataGet::<CurrentNetwork>::parse("metadata.get edition into r1 as u16;").unwrap();
         assert!(string.is_empty());
         let bytes_le = get.to_bytes_le().unwrap();
         let result = MetadataGet::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);

@@ -427,7 +427,7 @@ mod tests {
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
 
         // MetadataGet
-        let expected = "metadata.get edition into r0;";
+        let expected = "metadata.get edition into r0 as u16;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         let bytes = command.to_bytes_le().unwrap();
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
@@ -510,7 +510,7 @@ mod tests {
         assert_eq!(expected, command.to_string());
 
         // MetadataGet
-        let expected = "metadata.get edition into r0;";
+        let expected = "metadata.get edition into r0 as u16;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         assert_eq!(Command::MetadataGet(MetadataGet::from_str(expected).unwrap()), command);
         assert_eq!(expected, command.to_string());

@@ -44,12 +44,12 @@ mapping admins:
     value as boolean.public;
 
 _init:
-    metadata.get edition into r0;
+    metadata.get edition into r0 as u16;
     branch.neq r0 0u16 to rest;
     set true into admins[{caller_address}];
     branch.eq true true to end;
     position rest;
-    metadata.get owner into r1;
+    metadata.get owner into r1 as address;
     get admins[r1] into r0;
     assert.eq r0 true;
     position end;
@@ -109,12 +109,12 @@ function binary_add:
 program adder.aleo;
 
 _init:
-    metadata.get edition into r0;
+    metadata.get edition into r0 as u16;
     branch.neq r0 0u8 into rest;
     set true into admins[{caller_address}];
     branch.eq true true into end;
     position rest;
-    metadata.get owner into r1;
+    metadata.get owner into r1 as address;
     get admins[r1] into r0;
     assert.eq r0 true;
     position end;
@@ -743,7 +743,7 @@ function sum:
     output r2 as u8.public;
     output r3 as dependent.aleo/sum.future;
 finalize sum:
-    metadata.get dependency.aleo/edition into r0;
+    metadata.get dependency.aleo/edition into r0 as u16;
     assert.eq r0 0u16;
 
 function sum_and_check:
@@ -778,7 +778,7 @@ function sum:
     output r2 as u8.public;
     output r3 as dependent.aleo/sum.future;
 finalize sum:
-    metadata.get dependency.aleo/edition into r0;
+    metadata.get dependency.aleo/edition into r0 as u16;
     assert.eq r0 1u16;
 
 function sum_and_check:

@@ -66,7 +66,7 @@ impl<N: Network> Default for ConstructorCore<N, Command<N>> {
         Self::from_str(
             r"
 _init:
-    metadata.get version into r0;
+    metadata.get version into r0 as u16;
     assert.eq r0 0u16;",
         )
         .unwrap()
@@ -147,7 +147,7 @@ mod tests {
         // Initialize a new default constructor.
         let constructor = Constructor::<CurrentNetwork>::default();
         assert_eq!(constructor.commands.len(), 2);
-        let first = Command::<CurrentNetwork>::from_str("metadata.get edition into r0;").unwrap();
+        let first = Command::<CurrentNetwork>::from_str("metadata.get version into r0 as u16;").unwrap();
         assert_eq!(constructor.commands[0], first);
         let second = Command::<CurrentNetwork>::from_str("assert.eq r0 0u16;").unwrap();
         assert_eq!(constructor.commands[1], second);
