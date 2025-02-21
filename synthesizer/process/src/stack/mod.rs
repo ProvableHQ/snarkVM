@@ -71,7 +71,17 @@ use console::{
     types::{Field, Group},
 };
 use ledger_block::{Deployment, Transaction, Transition};
-use synthesizer_program::{CallOperator, Closure, Function, Instruction, Operand, Program, traits::*};
+use synthesizer_program::{
+    CallOperator,
+    Closure,
+    Function,
+    Instruction,
+    Metadata,
+    Operand,
+    Program,
+    ProgramVersion,
+    traits::*,
+};
 use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -214,7 +224,15 @@ impl<N: Network> Stack<N> {
     pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
         // Retrieve the program ID.
         let program_id = program.id();
-        // TODO @d0cd edition check.
+        // If the program is a V2 program and an update, then check that the update is valid.
+        match program.version() {
+            ProgramVersion::V1 => (), // Do nothing.
+            ProgramVersion::V2 => {
+                if process.contains_program(program_id) {
+                    Stack::check_update_is_valid(process, program)?;
+                }
+            }
+        }
         // Ensure the program contains functions.
         ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{program_id}'");
         // Serialize the program into bytes.

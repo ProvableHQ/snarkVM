@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use synthesizer_program::{Metadata, ProgramVersion, StackProgram};
 
 /// Ensures the given iterator has no duplicate elements, and that the ledger
 /// does not already contain a given item.
@@ -150,41 +151,109 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Verify the signature corresponds to the transaction ID.
                 ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
 
-                // If the edition is zero, then check that:
+                // If the program is a V1 program, then check that:
+                //  - the edition matches the network edition.
+                //  - the program does not exist in the store or process.
+                //
+                // If the program is a V2 program, then check that:
+                //  - the editions in the program metadata and deployment match.
+                //  - the owners in the program metadata and deployment match.
+                // Furthermore, if the edition is zero, then check that:
                 //  - The program does not exist in the store or process.
                 // Otherwise, check that:
-                //  - The new edition increments the old edition.
                 //  - The program exists in the store and process.
+                //  - The new edition increments the old edition.
+                //  - The existing program is a V2 program.
                 let store_contains_program = self.transaction_store().contains_program_id(deployment.program_id())?;
                 let process_contains_program = self.contains_program(deployment.program_id());
-                match deployment.edition() {
-                    0 => {
+                match deployment.program().version() {
+                    ProgramVersion::V1 => {
+                        // Ensure the edition is correct.
+                        ensure!(
+                            deployment.edition() != N::EDITION,
+                            "Invalid deployment transaction '{id}' - expected edition {}",
+                            N::EDITION
+                        );
+                        // Ensure the program ID does not already exist in the store.
                         ensure!(
                             !store_contains_program,
                             "Program ID '{}' is already deployed",
                             deployment.program_id()
                         );
+                        // Ensure the program does not already exist in the process.
                         ensure!(!process_contains_program, "Program ID '{}' already exists", deployment.program_id());
                     }
-                    edition => {
-                        // Ensure the program exists in the store.
+                    ProgramVersion::V2 => {
+                        // Ensure that the editions defined in the program and deployment match.
+                        let program_edition = match deployment
+                            .program()
+                            .get_metadata(&Identifier::from_str("edition")?)
+                            .map(Metadata::value)
+                        {
+                            Ok(Value::Plaintext(Plaintext::Literal(Literal::U16(edition), _))) => **edition,
+                            _ => bail!("The edition is missing from the program metadata"),
+                        };
                         ensure!(
-                            store_contains_program,
-                            "Invalid deployment transaction '{id}' - program does not exist in the store"
+                            program_edition == deployment.edition(),
+                            "The editions in the program metadata '{program_edition}' and deployment '{}' do not match",
+                            deployment.edition()
                         );
-                        // Ensure the program exists in the process.
+                        // Ensure that the owners defined in the program and deployment match.
+                        let program_owner = match deployment
+                            .program()
+                            .get_metadata(&Identifier::from_str("owner")?)
+                            .map(Metadata::value)
+                        {
+                            Ok(Value::Plaintext(Plaintext::Literal(Literal::Address(owner), _))) => *owner,
+                            _ => bail!("The owner is missing from the program metadata"),
+                        };
                         ensure!(
-                            process_contains_program,
-                            "Invalid deployment transaction '{id}' - program does not exist in the process"
+                            program_owner == *owner,
+                            "The owners in the program metadata '{program_owner}' and deployment '{owner}' do not match"
                         );
-                        // Ensure the new edition increments the old edition.
-                        match self.transaction_store().deployment_store().get_edition(deployment.program_id())? {
-                            Some(old_edition) => ensure!(
-                                old_edition < edition && old_edition.saturating_add(1) == edition,
-                                "Invalid deployment transaction '{id}' - new edition does not increment old edition"
-                            ),
-                            None => {
-                                bail!("Invalid deployment transaction '{id}' - program does not exist in the store")
+                        // Check the cases that depend on the edition.
+                        match program_edition {
+                            0 => {
+                                ensure!(
+                                    !store_contains_program,
+                                    "Program ID '{}' is already deployed",
+                                    deployment.program_id()
+                                );
+                                ensure!(
+                                    !process_contains_program,
+                                    "Program ID '{}' already exists",
+                                    deployment.program_id()
+                                );
+                            }
+                            edition => {
+                                ensure!(
+                                    store_contains_program,
+                                    "Invalid deployment transaction '{id}' - program does not exist in the store"
+                                );
+                                ensure!(
+                                    process_contains_program,
+                                    "Invalid deployment transaction '{id}' - program does not exist in the process"
+                                );
+                                // Get the process program.
+                                // It should be the case that the stored program matches the process program.
+                                let process_program =
+                                    self.process().read().get_stack(deployment.program_id())?.program();
+                                ensure!(
+                                    process_program.version() == ProgramVersion::V2,
+                                    "Invalid deployment transaction '{id}' - program is not a V2 program"
+                                );
+                                // Get the current edition.
+                                let process_edition = match process_program
+                                    .get_metadata(&Identifier::from_str("edition")?)
+                                    .map(Metadata::value)
+                                {
+                                    Ok(Value::Plaintext(Plaintext::Literal(Literal::U16(edition), _))) => **edition,
+                                    _ => bail!("The edition is missing from the process program metadata"),
+                                };
+                                ensure!(
+                                    process_edition < edition && process_edition.saturating_add(1) == edition,
+                                    "Invalid deployment transaction '{id}' - new edition does not increment old edition"
+                                );
                             }
                         }
                     }

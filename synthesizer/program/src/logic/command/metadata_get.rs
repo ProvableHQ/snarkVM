@@ -216,9 +216,9 @@ mod tests {
         );
 
         let (string, metadata_get) =
-            MetadataGet::<CurrentNetwork>::parse("metadata.get token.aleo/edition into r1 as u16;").unwrap();
+            MetadataGet::<CurrentNetwork>::parse("metadata.get token.aleo/bar into r1 as u16;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-        assert_eq!(metadata_get.name(), &CallOperator::from_str("token.aleo/edition").unwrap());
+        assert_eq!(metadata_get.name(), &CallOperator::from_str("token.aleo/bar").unwrap());
         assert_eq!(metadata_get.destination, Register::Locator(1), "The destination is incorrect");
         assert_eq!(
             metadata_get.destination_type,
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_from_bytes() {
-        let (string, get) = MetadataGet::<CurrentNetwork>::parse("metadata.get edition into r1 as u16;").unwrap();
+        let (string, get) = MetadataGet::<CurrentNetwork>::parse("metadata.get foo into r1 as u16;").unwrap();
         assert!(string.is_empty());
         let bytes_le = get.to_bytes_le().unwrap();
         let result = MetadataGet::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);

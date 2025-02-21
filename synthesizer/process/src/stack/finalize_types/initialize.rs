@@ -469,31 +469,24 @@ impl<N: Network> FinalizeTypes<N> {
         stack: &(impl StackMatches<N> + StackProgram<N>),
         metadata_get: &MetadataGet<N>,
     ) -> Result<()> {
-        // Ensure that the global name is `edition`.
-        let global_name = match metadata_get.name() {
-            CallOperator::Locator(locator) => {
-                // Retrieve the program ID.
-                let program_id = locator.program_id();
-                // Ensure the locator does not reference the current program.
-                if stack.program_id() == program_id {
-                    bail!("Locator '{locator}' does not reference an external program.");
-                }
-                // Ensure the current program contains an import for this external program.
-                if !stack.program().imports().keys().contains(program_id) {
-                    bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
-                }
-                locator.resource()
+        // Ensure that the program is defined.
+        // Note that we do not check that the metadata name is valid, as that can change in future updates.
+        if let CallOperator::Locator(locator) = metadata_get.name() {
+            // Ensure the program ID is defined.
+            let program_id = locator.program_id();
+            // Ensure the program ID is imported by the current program.
+            if !stack.program().imports().keys().contains(program_id) {
+                bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
             }
-            CallOperator::Resource(global_name) => global_name,
-        };
-        ensure!(global_name.to_string() == "edition", "Invalid global name: {global_name}");
-
+            // Check that the process contains the external program.
+            stack.get_external_stack(program_id)?;
+        }
         // Get the destination register.
         let destination = metadata_get.destination().clone();
         // Ensure the destination register is a locator (and does not reference an access).
         ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
         // Insert the destination register.
-        self.add_destination(destination, FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U16)))?;
+        self.add_destination(destination, FinalizeType::Plaintext(metadata_get.destination_type().clone()))?;
         Ok(())
     }
 
