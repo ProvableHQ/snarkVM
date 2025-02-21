@@ -190,7 +190,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             .get_metadata(&Identifier::from_str("edition")?)
                             .map(Metadata::value)
                         {
-                            Ok(Value::Plaintext(Plaintext::Literal(Literal::U16(edition), _))) => **edition,
+                            Ok(Plaintext::Literal(Literal::U16(edition), _)) => **edition,
                             _ => bail!("The edition is missing from the program metadata"),
                         };
                         ensure!(
@@ -204,11 +204,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             .get_metadata(&Identifier::from_str("owner")?)
                             .map(Metadata::value)
                         {
-                            Ok(Value::Plaintext(Plaintext::Literal(Literal::Address(owner), _))) => *owner,
+                            Ok(Plaintext::Literal(Literal::Address(owner), _)) => *owner,
                             _ => bail!("The owner is missing from the program metadata"),
                         };
                         ensure!(
-                            program_owner == *owner,
+                            program_owner == owner.address(),
                             "The owners in the program metadata '{program_owner}' and deployment '{owner}' do not match"
                         );
                         // Check the cases that depend on the edition.
@@ -236,8 +236,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 );
                                 // Get the process program.
                                 // It should be the case that the stored program matches the process program.
-                                let process_program =
-                                    self.process().read().get_stack(deployment.program_id())?.program();
+                                let stack = self.process().read().get_stack(deployment.program_id())?;
+                                let process_program = stack.program();
                                 ensure!(
                                     process_program.version() == ProgramVersion::V2,
                                     "Invalid deployment transaction '{id}' - program is not a V2 program"
@@ -247,7 +247,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     .get_metadata(&Identifier::from_str("edition")?)
                                     .map(Metadata::value)
                                 {
-                                    Ok(Value::Plaintext(Plaintext::Literal(Literal::U16(edition), _))) => **edition,
+                                    Ok(Plaintext::Literal(Literal::U16(edition), _)) => **edition,
                                     _ => bail!("The edition is missing from the process program metadata"),
                                 };
                                 ensure!(
