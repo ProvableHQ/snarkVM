@@ -102,7 +102,7 @@ use console::{
         tag,
         take,
     },
-    program::{Identifier, Plaintext, PlaintextType, ProgramID, RecordType, StructType, Value},
+    program::{Identifier, Plaintext, PlaintextType, ProgramID, RecordType, StructType},
 };
 use indexmap::IndexMap;
 

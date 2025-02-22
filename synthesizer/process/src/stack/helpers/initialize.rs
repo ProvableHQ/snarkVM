@@ -62,7 +62,7 @@ impl<N: Network> Stack<N> {
         }
 
         // Add the constructor to the stack if it exists.
-        if let Some(constructor) = program.constructor().ok() {
+        if let Ok(constructor) = program.constructor() {
             stack.insert_constructor(constructor)?;
         }
 

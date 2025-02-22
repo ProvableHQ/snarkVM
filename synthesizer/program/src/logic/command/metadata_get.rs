@@ -20,8 +20,7 @@ use crate::{
 };
 use console::{
     network::prelude::*,
-    program::{Literal, Plaintext, PlaintextType, Register, Value},
-    types::U16,
+    program::{PlaintextType, Register, Value},
 };
 
 /// A command to get metadata about a program, e.g. `metadata.get owner into r1 as address;`.
