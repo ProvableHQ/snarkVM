@@ -21,6 +21,7 @@ mod bytes;
 mod parse;
 mod serialize;
 
+use console::program::{Address, Boolean, Literal, U16};
 use super::*;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -222,6 +223,45 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         ensure!(metadata.name() == name, "Expected metadata '{name}', but found metadata '{}'", metadata.name());
         // Return the metadata value.
         Ok(metadata)
+    }
+
+    /// Returns the `edition` metadata value.
+    pub fn get_edition_metadata(&self) -> Result<&U16<N>> {
+        // Attempt to retrieve the metadata value.
+        let metadata = self.metadata.get(&Identifier::from_str("edition")?).ok_or_else(|| anyhow!("Metadata 'edition' is not defined."))?;
+        // Destructure the edition.
+        let edition = match metadata.value() {
+            Plaintext::Literal(Literal::U16(edition), _) => edition,
+            _ => bail!("Metadata 'edition' is not a valid 'u16' value."),
+        };
+        // Return the edition.
+        Ok(edition)
+    }
+
+    /// Returns the `owner` metadata value.
+    pub fn get_owner_metadata(&self) -> Result<&Address<N>> {
+        // Attempt to retrieve the metadata value.
+        let metadata = self.metadata.get(&Identifier::from_str("owner")?).ok_or_else(|| anyhow!("Metadata 'owner' is not defined."))?;
+        // Destructure the owner.
+        let owner = match metadata.value() {
+            Plaintext::Literal(Literal::Address(owner), _) => owner,
+            _ => bail!("Metadata 'owner' is not a valid 'sddress' value."),
+        };
+        // Return the owner.
+        Ok(owner)
+    }
+
+    /// Returns the `upgradable` metadata value.
+    pub fn get_upgradable_metadata(&self) -> Result<&Boolean<N>> {
+        // Attempt to retrieve the metadata value.
+        let metadata = self.metadata.get(&Identifier::from_str("upgradable")?).ok_or_else(|| anyhow!("Metadata 'upgradable' is not defined."))?;
+        // Destructure the upgradable.
+        let upgradable = match metadata.value() {
+            Plaintext::Literal(Literal::Boolean(upgradable), _) => upgradable,
+            _ => bail!("Metadata 'upgradable' is not a valid 'boolean' value."),
+        };
+        // Return the upgradable.
+        Ok(upgradable)
     }
 }
 

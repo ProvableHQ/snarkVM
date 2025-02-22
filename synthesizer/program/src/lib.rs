@@ -149,6 +149,8 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         Ok(Self::ProgramV2(ProgramCoreV2::new(id)?))
     }
 
+    /// Returns the program
+
     /// Returns the version of the program.
     #[inline]
     pub fn version(&self) -> ProgramVersion {
