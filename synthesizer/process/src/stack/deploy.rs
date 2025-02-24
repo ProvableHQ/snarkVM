@@ -142,19 +142,24 @@ impl<N: Network> Stack<N> {
             // Initialize the assignments.
             let assignments = Assignments::<N>::default();
             // Initialize the constraint limit. Account for the constraint added after synthesis that makes the Varuna zerocheck hiding.
-            let Some(constraint_limit) = verifying_key.circuit_info.num_constraints.checked_sub(1) else {
+            let Some(num_constraints) = verifying_key.circuit_info.num_constraints.checked_sub(1) else {
                 // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
                 bail!("The constraint limit of 0 for function '{}' is invalid", function.name());
             };
-            // Retrieve the variable limit.
-            let variable_limit = verifying_key.num_variables();
+            println!("num_constraints: {}", num_constraints);
+            // Create circuit info.
+            let circuit_info = CircuitInfo { // TODO: could we just pass in the existing CircuitInfo object?
+                num_constants: 0, // TODO: can we determine this? Should we add it to the VK?
+                num_public: verifying_key.circuit_info.num_public_inputs,
+                num_private: verifying_key.circuit_info.num_public_and_private_variables - verifying_key.circuit_info.num_public_inputs,
+                num_constraints,
+            };
             // Initialize the call stack.
             let call_stack = CallStack::CheckDeployment(
                 vec![request],
                 burner_private_key,
                 assignments.clone(),
-                Some(constraint_limit as u64),
-                Some(variable_limit),
+                Some(circuit_info), // TODO: why would this even be an option? When do we not use a limit?
             );
             // Append the function name, callstack, and assignments.
             call_stacks.push((function.name(), call_stack, assignments));

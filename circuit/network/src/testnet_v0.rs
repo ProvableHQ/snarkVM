@@ -510,6 +510,16 @@ impl Environment for AleoTestnetV0 {
         E::set_constraint_limit(limit)
     }
 
+    /// Allocates memory for the circuit variables and constraints.
+    fn allocate_memory(
+        num_constants: usize,
+        num_public: usize,
+        num_private: usize,
+        num_constraints: usize,
+    ) {
+        E::allocate_memory(num_constants, num_public, num_private, num_constraints)
+    }
+
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
     fn halt<S: Into<String>, T>(message: S) -> T {
         E::halt(message)

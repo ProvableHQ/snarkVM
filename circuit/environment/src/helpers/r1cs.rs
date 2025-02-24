@@ -23,7 +23,7 @@ use std::rc::Rc;
 
 pub type Scope = String;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct R1CS<F: PrimeField> {
     constants: Vec<Variable<F>>,
     public: Vec<Variable<F>>,
@@ -33,6 +33,8 @@ pub struct R1CS<F: PrimeField> {
     num_variables: u64,
     nonzeros: (u64, u64, u64),
 }
+
+// TODO: find or add a synthesis benchmark.
 
 impl<F: PrimeField> R1CS<F> {
     /// Returns a new instance of a constraint system.
@@ -46,6 +48,20 @@ impl<F: PrimeField> R1CS<F> {
             num_variables: 1u64,
             nonzeros: (0, 0, 0),
         }
+    }
+
+    /// Allocates memory for the circuit variables and constraints.
+    pub(crate) fn allocate_memory(
+        &mut self,
+        num_constants: usize,
+        num_public: usize,
+        num_private: usize,
+        num_constraints: usize,
+    ) {
+        self.constants.reserve(num_constants);
+        self.public.reserve(num_public);
+        self.private.reserve(num_private);
+        self.constraints.reserve(num_constraints);
     }
 
     /// Appends the given scope to the current environment.

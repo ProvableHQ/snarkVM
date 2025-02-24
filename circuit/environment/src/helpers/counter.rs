@@ -26,7 +26,7 @@ pub(crate) struct Counter<F: PrimeField> {
     public: u64,
     private: u64,
     nonzeros: (u64, u64, u64),
-    parents: Vec<(Scope, Vec<Rc<Constraint<F>>>, u64, u64, u64, (u64, u64, u64))>,
+    parents: Vec<(Scope, Vec<Rc<Constraint<F>>>, u64, u64, u64, (u64, u64, u64))>, // TODO: where is this used?
 }
 
 impl<F: PrimeField> Counter<F> {

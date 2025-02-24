@@ -172,6 +172,14 @@ pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq +
     /// Sets the constraint limit for the circuit.
     fn set_constraint_limit(limit: Option<u64>);
 
+    /// Allocates memory for the circuit variables and constraints.
+    fn allocate_memory(
+        num_constants: usize,
+        num_public: usize,
+        num_private: usize,
+        num_constraints: usize,
+    );
+
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
     fn halt<S: Into<String>, T>(message: S) -> T {
         <Self::Network as console::Environment>::halt(message)

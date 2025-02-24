@@ -50,6 +50,11 @@ name = "stack_operations"
 path = "benches/stack_operations.rs"
 harness = false
 
+[[bench]]
+name = "check_deployment"
+path = "benches/check_deployment.rs"
+harness = false
+
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../console"

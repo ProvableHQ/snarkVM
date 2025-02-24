@@ -262,6 +262,23 @@ impl Environment for TestnetCircuit {
         CONSTRAINT_LIMIT.with(|current_limit| current_limit.replace(limit));
     }
 
+    /// Allocates memory for the circuit variables and constraints.
+    fn allocate_memory(
+        num_constants: usize,
+        num_public: usize,
+        num_private: usize,
+        num_constraints: usize,
+    ) {
+        TESTNET_CIRCUIT.with(|circuit| {
+            circuit.borrow_mut().allocate_memory(
+                num_constants,
+                num_public,
+                num_private,
+                num_constraints,
+            )
+        })
+    }
+
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
     fn halt<S: Into<String>, T>(message: S) -> T {
         let error = message.into();

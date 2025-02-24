@@ -78,11 +78,19 @@ use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
 
+#[derive(Clone, Copy)]
+pub struct CircuitInfo {
+    pub num_constants: usize,
+    pub num_public: usize,
+    pub num_private: usize,
+    pub num_constraints: usize,
+}
+
 #[derive(Clone)]
 pub enum CallStack<N: Network> {
     Authorize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
-    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>),
+    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<CircuitInfo>),
     Evaluate(Authorization<N>),
     Execute(Authorization<N>, Arc<RwLock<Trace<N>>>),
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
@@ -110,13 +118,12 @@ impl<N: Network> CallStack<N> {
             CallStack::Synthesize(requests, private_key, authorization) => {
                 CallStack::Synthesize(requests.clone(), *private_key, authorization.replicate())
             }
-            CallStack::CheckDeployment(requests, private_key, assignments, constraint_limit, variable_limit) => {
+            CallStack::CheckDeployment(requests, private_key, assignments, circuit_info) => {
                 CallStack::CheckDeployment(
                     requests.clone(),
                     *private_key,
                     Arc::new(RwLock::new(assignments.read().clone())),
-                    *constraint_limit,
-                    *variable_limit,
+                    *circuit_info,
                 )
             }
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),

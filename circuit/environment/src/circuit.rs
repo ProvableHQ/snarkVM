@@ -285,6 +285,24 @@ impl Environment for Circuit {
     fn set_constraint_limit(limit: Option<u64>) {
         CONSTRAINT_LIMIT.with(|current_limit| current_limit.replace(limit));
     }
+    
+    /// Allocates memory for the circuit.
+    fn allocate_memory(
+        num_constants: usize,
+        num_public: usize,
+        num_private: usize,
+        num_constraints: usize,
+    ) {
+        CIRCUIT.with(|circuit| {
+            // Allocate memory for the circuit.
+            circuit.borrow_mut().allocate_memory(
+                num_constants,
+                num_public,
+                num_private,
+                num_constraints,
+            );
+        });
+    }
 
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
     fn halt<S: Into<String>, T>(message: S) -> T {
@@ -293,7 +311,7 @@ impl Environment for Circuit {
         panic!("{}", &error)
     }
 
-    /// Returns the R1CS circuit, resetting the circuit.
+    /// Injects the R1CS circuit into an empty circuit.
     fn inject_r1cs(r1cs: R1CS<Self::BaseField>) {
         CIRCUIT.with(|circuit| {
             // Ensure the circuit is empty before injecting.

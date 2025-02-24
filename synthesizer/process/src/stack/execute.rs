@@ -152,9 +152,10 @@ impl<N: Network> StackExecute<N> for Stack<N> {
 
         // If in 'CheckDeployment' mode, set the constraint limit and variable limit.
         // We do not have to reset it after function calls because `CheckDeployment` mode does not execute those.
-        if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit) = &call_stack {
-            A::set_constraint_limit(*constraint_limit);
-            A::set_variable_limit(*variable_limit);
+        if let CallStack::CheckDeployment(_, _, _, Some(circuit_info)) = &call_stack {
+            A::set_constraint_limit(Some(circuit_info.num_constraints as u64));
+            A::set_variable_limit(Some((circuit_info.num_private + circuit_info.num_public) as u64)); // TODO: consider computing this from num_public and num_private... Consider exposing a function.
+            A::allocate_memory(circuit_info.num_constants, circuit_info.num_public, circuit_info.num_private, circuit_info.num_constraints);
         }
 
         // Retrieve the next request.
@@ -447,7 +448,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
             lap!(timer, "Save the transition");
         }
         // If the circuit is in `CheckDeployment` mode, then save the assignment.
-        else if let CallStack::CheckDeployment(_, _, ref assignments, _, _) = registers.call_stack() {
+        else if let CallStack::CheckDeployment(_, _, ref assignments, _) = registers.call_stack() {
             // Construct the call metrics.
             let metrics = CallMetrics {
                 program_id: *self.program_id(),
