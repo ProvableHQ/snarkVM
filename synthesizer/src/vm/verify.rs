@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use synthesizer_program::{Metadata, ProgramVersion, StackProgram};
 
 /// Ensures the given iterator has no duplicate elements, and that the ledger
 /// does not already contain a given item.
@@ -193,11 +192,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                         // Ensure the edition and owner defined in the deployment match the program metadata.
                         ensure!(
-                            deployment.edition() == program_edition,
+                            deployment.edition() == **program_edition,
                             "Invalid deployment transaction '{id}' - edition mismatch"
                         );
                         ensure!(
-                            owner.address() == program_owner,
+                            owner.address() == *program_owner,
                             "Invalid deployment transaction '{id}' - owner mismatch"
                         );
                         // Check the cases that depend on the edition.
@@ -228,18 +227,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 // It should be the case that the stored program matches the process program.
                                 // TODO (@d0cd) Do we need to verify this?
                                 let stack = self.process().read().get_stack(deployment.program_id())?;
-                                let process_program = stack.program();
-                                ensure!(
-                                    process_program.version() == ProgramVersion::V2,
-                                    "Invalid deployment transaction '{id}' - program is not a V2 program"
-                                );
+                                let process_program = stack.program().as_v2()?;
                                 // Check that the program is upgradable.
                                 ensure!(
-                                    program_upgradable,
+                                    **program_upgradable,
                                     "Invalid deployment transaction '{id}' - program is not upgradable"
                                 );
                                 // Check that the new edition increments the old edition.
-                                let process_edition = process_program.
+                                let process_edition = **process_program.get_edition_metadata()?;
                                 ensure!(
                                     process_edition < edition && process_edition.saturating_add(1) == edition,
                                     "Invalid deployment transaction '{id}' - new edition does not increment old edition"

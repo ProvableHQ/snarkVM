@@ -20,7 +20,6 @@ use console::{
 };
 use synthesizer_program::{Closure, Function, Import, Mapping, Program, StackProgram};
 
-
 type CurrentNetwork = MainnetV0;
 
 /// Samples the default program to test updates on.

@@ -149,7 +149,23 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         Ok(Self::ProgramV2(ProgramCoreV2::new(id)?))
     }
 
-    /// Returns the program
+    /// Returns the program as a V1 program.
+    #[inline]
+    pub fn as_v1(&self) -> Result<&ProgramCoreV1<N, Instruction, Command>> {
+        match self {
+            Self::ProgramV1(program) => Ok(program),
+            Self::ProgramV2(_) => bail!("Program is not a V1 program"),
+        }
+    }
+
+    /// Returns the program as a V2 program.
+    #[inline]
+    pub fn as_v2(&self) -> Result<&ProgramCoreV2<N, Instruction, Command>> {
+        match self {
+            Self::ProgramV1(_) => bail!("Program is not a V2 program"),
+            Self::ProgramV2(program) => Ok(program),
+        }
+    }
 
     /// Returns the version of the program.
     #[inline]

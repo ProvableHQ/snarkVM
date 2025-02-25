@@ -21,8 +21,8 @@ mod bytes;
 mod parse;
 mod serialize;
 
-use console::program::{Address, Boolean, Literal, U16};
 use super::*;
+use console::program::{Address, Boolean, Literal, U16};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct ProgramCoreV2<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> {
@@ -228,7 +228,10 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Returns the `edition` metadata value.
     pub fn get_edition_metadata(&self) -> Result<&U16<N>> {
         // Attempt to retrieve the metadata value.
-        let metadata = self.metadata.get(&Identifier::from_str("edition")?).ok_or_else(|| anyhow!("Metadata 'edition' is not defined."))?;
+        let metadata = self
+            .metadata
+            .get(&Identifier::from_str("edition")?)
+            .ok_or_else(|| anyhow!("Metadata 'edition' is not defined."))?;
         // Destructure the edition.
         let edition = match metadata.value() {
             Plaintext::Literal(Literal::U16(edition), _) => edition,
@@ -241,7 +244,10 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Returns the `owner` metadata value.
     pub fn get_owner_metadata(&self) -> Result<&Address<N>> {
         // Attempt to retrieve the metadata value.
-        let metadata = self.metadata.get(&Identifier::from_str("owner")?).ok_or_else(|| anyhow!("Metadata 'owner' is not defined."))?;
+        let metadata = self
+            .metadata
+            .get(&Identifier::from_str("owner")?)
+            .ok_or_else(|| anyhow!("Metadata 'owner' is not defined."))?;
         // Destructure the owner.
         let owner = match metadata.value() {
             Plaintext::Literal(Literal::Address(owner), _) => owner,
@@ -254,7 +260,10 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Returns the `upgradable` metadata value.
     pub fn get_upgradable_metadata(&self) -> Result<&Boolean<N>> {
         // Attempt to retrieve the metadata value.
-        let metadata = self.metadata.get(&Identifier::from_str("upgradable")?).ok_or_else(|| anyhow!("Metadata 'upgradable' is not defined."))?;
+        let metadata = self
+            .metadata
+            .get(&Identifier::from_str("upgradable")?)
+            .ok_or_else(|| anyhow!("Metadata 'upgradable' is not defined."))?;
         // Destructure the upgradable.
         let upgradable = match metadata.value() {
             Plaintext::Literal(Literal::Boolean(upgradable), _) => upgradable,
