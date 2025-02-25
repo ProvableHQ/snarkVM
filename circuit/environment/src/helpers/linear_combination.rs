@@ -158,19 +158,44 @@ impl<F: PrimeField> LinearCombination<F> {
 
 impl<F: PrimeField> From<Variable<F>> for LinearCombination<F> {
     fn from(variable: Variable<F>) -> Self {
-        Self::from(&variable)
+        Self::from([variable])
     }
 }
 
 impl<F: PrimeField> From<&Variable<F>> for LinearCombination<F> {
     fn from(variable: &Variable<F>) -> Self {
-        Self::from(&[variable.clone()])
+        Self::from(&[variable][..])
     }
 }
 
 impl<F: PrimeField, const N: usize> From<[Variable<F>; N]> for LinearCombination<F> {
     fn from(variables: [Variable<F>; N]) -> Self {
-        Self::from(&variables[..])
+        let mut output = Self::zero();
+        for variable in variables {
+            let variable_value = variable.value();
+            match variable.is_constant() {
+                true => output.constant += variable_value,
+                false => {
+                    match output.terms.binary_search_by(|(v, _)| v.cmp(&variable)) {
+                        Ok(idx) => {
+                            // Increment the existing coefficient by 1.
+                            output.terms[idx].1 += F::one();
+                            // If the coefficient of the term is now zero, remove the entry.
+                            if output.terms[idx].1.is_zero() {
+                                output.terms.remove(idx);
+                            }
+                        }
+                        Err(idx) => {
+                            // Insert the variable and a coefficient of 1 as a new term.
+                            output.terms.insert(idx, (variable, F::one()));
+                        }
+                    }
+                }
+            }
+            // Increment the value of the linear combination by the variable.
+            output.value += variable_value;
+        }
+        output
     }
 }
 
@@ -182,7 +207,32 @@ impl<F: PrimeField, const N: usize> From<&[Variable<F>; N]> for LinearCombinatio
 
 impl<F: PrimeField> From<Vec<Variable<F>>> for LinearCombination<F> {
     fn from(variables: Vec<Variable<F>>) -> Self {
-        Self::from(variables.as_slice())
+        let mut output = Self::zero();
+        for variable in variables {
+            let variable_value = variable.value();
+            match variable.is_constant() {
+                true => output.constant += variable_value,
+                false => {
+                    match output.terms.binary_search_by(|(v, _)| v.cmp(&variable)) {
+                        Ok(idx) => {
+                            // Increment the existing coefficient by 1.
+                            output.terms[idx].1 += F::one();
+                            // If the coefficient of the term is now zero, remove the entry.
+                            if output.terms[idx].1.is_zero() {
+                                output.terms.remove(idx);
+                            }
+                        }
+                        Err(idx) => {
+                            // Insert the variable and a coefficient of 1 as a new term.
+                            output.terms.insert(idx, (variable, F::one()));
+                        }
+                    }
+                }
+            }
+            // Increment the value of the linear combination by the variable.
+            output.value += variable_value;
+        }
+        output
     }
 }
 
@@ -222,6 +272,36 @@ impl<F: PrimeField> From<&[Variable<F>]> for LinearCombination<F> {
     }
 }
 
+impl<F: PrimeField> From<&[&Variable<F>]> for LinearCombination<F> {
+    fn from(variables: &[&Variable<F>]) -> Self {
+        let mut output = Self::zero();
+        for variable in variables {
+            match variable.is_constant() {
+                true => output.constant += variable.value(),
+                false => {
+                    match output.terms.binary_search_by(|(v, _)| v.cmp(variable)) {
+                        Ok(idx) => {
+                            // Increment the existing coefficient by 1.
+                            output.terms[idx].1 += F::one();
+                            // If the coefficient of the term is now zero, remove the entry.
+                            if output.terms[idx].1.is_zero() {
+                                output.terms.remove(idx);
+                            }
+                        }
+                        Err(idx) => {
+                            // Insert the variable and a coefficient of 1 as a new term.
+                            output.terms.insert(idx, ((*variable).clone(), F::one()));
+                        }
+                    }
+                }
+            }
+            // Increment the value of the linear combination by the variable.
+            output.value += variable.value();
+        }
+        output
+    }
+}
+
 impl<F: PrimeField> Neg for LinearCombination<F> {
     type Output = Self;
 
@@ -249,7 +329,7 @@ impl<F: PrimeField> Add<Variable<F>> for LinearCombination<F> {
 
     #[allow(clippy::op_ref)]
     fn add(self, other: Variable<F>) -> Self::Output {
-        self + &other
+        self + Self::from(other)
     }
 }
 
@@ -266,7 +346,7 @@ impl<F: PrimeField> Add<Variable<F>> for &LinearCombination<F> {
 
     #[allow(clippy::op_ref)]
     fn add(self, other: Variable<F>) -> Self::Output {
-        self.clone() + &other
+        self + LinearCombination::<F>::from(other)
     }
 }
 
@@ -439,7 +519,7 @@ impl<F: PrimeField> Sub<Variable<F>> for LinearCombination<F> {
 
     #[allow(clippy::op_ref)]
     fn sub(self, other: Variable<F>) -> Self::Output {
-        self - &other
+        self - Self::from(other)
     }
 }
 
@@ -456,7 +536,7 @@ impl<F: PrimeField> Sub<Variable<F>> for &LinearCombination<F> {
 
     #[allow(clippy::op_ref)]
     fn sub(self, other: Variable<F>) -> Self::Output {
-        self.clone() - &other
+        self - LinearCombination::<F>::from(other)
     }
 }
 
