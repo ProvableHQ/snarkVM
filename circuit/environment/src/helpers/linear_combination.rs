@@ -274,7 +274,19 @@ impl<F: PrimeField> Add<LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
-        self + &other
+        if self.constant.is_zero() && self.terms.is_empty() {
+            other
+        } else if other.constant.is_zero() && other.terms.is_empty() {
+            self
+        } else if self.terms.len() > other.terms.len() {
+            let mut output = self;
+            output += other;
+            output
+        } else {
+            let mut output = other;
+            output += self;
+            output
+        }
     }
 }
 
@@ -282,7 +294,19 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn add(self, other: &Self) -> Self::Output {
-        &self + other
+        if self.constant.is_zero() && self.terms.is_empty() {
+            other.clone()
+        } else if other.constant.is_zero() && other.terms.is_empty() {
+            self
+        } else if self.terms.len() > other.terms.len() {
+            let mut output = self;
+            output += other;
+            output
+        } else {
+            let mut output = other.clone();
+            output += self;
+            output
+        }
     }
 }
 
@@ -290,7 +314,19 @@ impl<F: PrimeField> Add<LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: LinearCombination<F>) -> Self::Output {
-        self + &other
+        if self.constant.is_zero() && self.terms.is_empty() {
+            other
+        } else if other.constant.is_zero() && other.terms.is_empty() {
+            self.clone()
+        } else if self.terms.len() > other.terms.len() {
+            let mut output = self.clone();
+            output += other;
+            output
+        } else {
+            let mut output = other;
+            output += self;
+            output
+        }
     }
 }
 
@@ -316,7 +352,43 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for &LinearCombination<F> {
 
 impl<F: PrimeField> AddAssign<LinearCombination<F>> for LinearCombination<F> {
     fn add_assign(&mut self, other: Self) {
-        *self += &other;
+        // If `other` is empty, return immediately.
+        if other.constant.is_zero() && other.terms.is_empty() {
+            return;
+        }
+
+        if self.constant.is_zero() && self.terms.is_empty() {
+            *self = other;
+        } else {
+            // Add the constant value from `other` to `self`.
+            self.constant += other.constant;
+
+            // Add the terms from `other` to the terms of `self`.
+            for (variable, coefficient) in other.terms.into_iter() {
+                match variable.is_constant() {
+                    true => panic!("Malformed linear combination found"),
+                    false => {
+                        match self.terms.binary_search_by(|(v, _)| v.cmp(&variable)) {
+                            Ok(idx) => {
+                                // Add the coefficient to the existing coefficient for this term.
+                                self.terms[idx].1 += coefficient;
+                                // If the coefficient of the term is now zero, remove the entry.
+                                if self.terms[idx].1.is_zero() {
+                                    self.terms.remove(idx);
+                                }
+                            }
+                            Err(idx) => {
+                                // Insert the variable and coefficient as a new term.
+                                self.terms.insert(idx, (variable, coefficient));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add the value from `other` to `self`.
+            self.value += other.value;
+        }
     }
 }
 
@@ -392,7 +464,7 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
-        self - &other
+        self + (-other)
     }
 }
 
@@ -400,7 +472,7 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(self, other: &Self) -> Self::Output {
-        &self - other
+        self + (-other)
     }
 }
 
@@ -408,7 +480,7 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: LinearCombination<F>) -> Self::Output {
-        self - &other
+        self + (-other)
     }
 }
 
@@ -416,7 +488,7 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: &LinearCombination<F>) -> Self::Output {
-        self + &(-other)
+        self + (-other)
     }
 }
 
