@@ -18,7 +18,7 @@ use snarkvm_fields::PrimeField;
 
 use core::{
     fmt,
-    ops::{Add, AddAssign, Mul, Neg, Sub},
+    ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign},
 };
 use smallvec::SmallVec;
 
@@ -544,7 +544,15 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
-        self + (-other)
+        if self.constant.is_zero() && self.terms.is_empty() {
+            -other
+        } else if other.constant.is_zero() && other.terms.is_empty() {
+            self
+        } else {
+            let mut output = self;
+            output -= other;
+            output
+        }
     }
 }
 
@@ -552,7 +560,15 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(self, other: &Self) -> Self::Output {
-        self + (-other)
+        if self.constant.is_zero() && self.terms.is_empty() {
+            -other.clone()
+        } else if other.constant.is_zero() && other.terms.is_empty() {
+            self
+        } else {
+            let mut output = self;
+            output -= other;
+            output
+        }
     }
 }
 
@@ -560,7 +576,15 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: LinearCombination<F>) -> Self::Output {
-        self + (-other)
+        if self.constant.is_zero() && self.terms.is_empty() {
+            -other
+        } else if other.constant.is_zero() && other.terms.is_empty() {
+            self.clone()
+        } else {
+            let mut output = self.clone();
+            output -= other;
+            output
+        }
     }
 }
 
@@ -568,7 +592,99 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: &LinearCombination<F>) -> Self::Output {
-        self + (-other)
+        if self.constant.is_zero() && self.terms.is_empty() {
+            -other
+        } else if other.constant.is_zero() && other.terms.is_empty() {
+            self.clone()
+        } else {
+            let mut output = self.clone();
+            output -= other;
+            output
+        }
+    }
+}
+
+impl<F: PrimeField> SubAssign<LinearCombination<F>> for LinearCombination<F> {
+    fn sub_assign(&mut self, other: Self) {
+        // If `other` is empty, return immediately.
+        if other.constant.is_zero() && other.terms.is_empty() {
+            return;
+        }
+
+        if self.constant.is_zero() && self.terms.is_empty() {
+            *self = -other;
+        } else {
+            // Add the constant value from `other` to `self`.
+            self.constant -= other.constant;
+
+            // Add the terms from `other` to the terms of `self`.
+            for (variable, coefficient) in other.terms.into_iter() {
+                match variable.is_constant() {
+                    true => panic!("Malformed linear combination found"),
+                    false => {
+                        match self.terms.binary_search_by(|(v, _)| v.cmp(&variable)) {
+                            Ok(idx) => {
+                                // Add the coefficient to the existing coefficient for this term.
+                                self.terms[idx].1 -= coefficient;
+                                // If the coefficient of the term is now zero, remove the entry.
+                                if self.terms[idx].1.is_zero() {
+                                    self.terms.remove(idx);
+                                }
+                            }
+                            Err(idx) => {
+                                // Insert the variable and coefficient as a new term.
+                                self.terms.insert(idx, (variable, -coefficient));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add the value from `other` to `self`.
+            self.value -= other.value;
+        }
+    }
+}
+
+impl<F: PrimeField> SubAssign<&LinearCombination<F>> for LinearCombination<F> {
+    fn sub_assign(&mut self, other: &Self) {
+        // If `other` is empty, return immediately.
+        if other.constant.is_zero() && other.terms.is_empty() {
+            return;
+        }
+
+        if self.constant.is_zero() && self.terms.is_empty() {
+            *self = -other;
+        } else {
+            // Add the constant value from `other` to `self`.
+            self.constant -= other.constant;
+
+            // Add the terms from `other` to the terms of `self`.
+            for (variable, coefficient) in other.terms.iter() {
+                match variable.is_constant() {
+                    true => panic!("Malformed linear combination found"),
+                    false => {
+                        match self.terms.binary_search_by(|(v, _)| v.cmp(variable)) {
+                            Ok(idx) => {
+                                // Add the coefficient to the existing coefficient for this term.
+                                self.terms[idx].1 -= *coefficient;
+                                // If the coefficient of the term is now zero, remove the entry.
+                                if self.terms[idx].1.is_zero() {
+                                    self.terms.remove(idx);
+                                }
+                            }
+                            Err(idx) => {
+                                // Insert the variable and coefficient as a new term.
+                                self.terms.insert(idx, (variable.clone(), -(*coefficient)));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add the value from `other` to `self`.
+            self.value -= other.value;
+        }
     }
 }
 
