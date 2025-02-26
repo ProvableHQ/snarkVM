@@ -13,98 +13,112 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/// The purpose of these tests are to ensure that an update made to a program is correct.
+/// The logic governing these updates are defined in `check_update_is_valid`.
+/// These tests *DO NOT*:
+///   - check the enforcement rules of the upgrades.
+///   - check that the program contains the required metadata.
 use crate::Process;
-use console::{
-    network::{MainnetV0, prelude::*},
-    program::{Identifier, ProgramID, RecordType, StructType},
-};
-use synthesizer_program::{Closure, Function, Import, Mapping, Program, StackProgram};
+use console::network::{MainnetV0, prelude::*};
+use synthesizer_program::{Program, ProgramVersion, StackProgram};
 
 type CurrentNetwork = MainnetV0;
 
-/// Samples the default program to test updates on.
-fn default_program() -> Program<CurrentNetwork> {
-    Program::from_str(
-        "
-    import credits.aleo;
-
-    program basic.aleo;
-
-    struct bundle:
-        first as u8;
-        second as u8;
-
-    record data:
-        owner as address.private;
-        data as bundle.private;
-
-    mapping onchain:
-        key as u8.public;
-        value as u8.public;
-
-    closure sum:
-        input r0 as u8;
-        input r1 as u8;
-        add r0 r1 into r2;
-        output r2 as u8;
-
-    function adder:
-        input r0 as u8.private;
-        input r1 as u8.private;
-        call sum r0 r1 into r2;
-        output r2 as u8.private;
-
-    function create_data:
-        input r0 as u8.private;
-        input r1 as u8.private;
-        cast r0 r1 into r2 as bundle;
-        cast self.caller r2 into r3 as data.record;
-        output r3 as data.record;
-
-    function store_data:
-        input r0 as u8.public;
-        input r1 as u8.public;
-        async store_data r0 r1 into r2;
-        output r2 as basic.aleo/store_data.future;
-
-    finalize store_data:
-        input r0 as u8.public;
-        input r1 as u8.public;
-        set r1 into onchain[r0];
+// A helper function to sample the default process.
+fn sample_process() -> Result<Process<CurrentNetwork>, Error> {
+    let mut process = Process::load()?;
+    // Add the default V2 program to the process.
+    let default_program = Program::from_str(
+        r"
+program$2 test.aleo;
+function foo:
     ",
-    )
-    .unwrap()
+    )?;
+    process.add_program(&default_program)?;
+    // Return the process.
+    Ok(process)
 }
 
-/// Samples a `Process` with a default program to test updates on.
-fn sample_process() -> Result<Process<CurrentNetwork>> {
-    // Sample the process.
-    let mut process = Process::load()?;
-    // Add the default program to the process.
-    process.add_program(&default_program())?;
-    // Check that the edition of program is 0.
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 0);
-    Ok(process)
+#[test]
+fn test_add_simple_program() -> Result<()> {
+    // Sample the default process.
+    let mut process = Process::<CurrentNetwork>::load()?;
+    // Add a simple V2 program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 test.aleo;
+function foo:
+    ",
+    )?;
+    // Assert that the program is a V2 program.
+    assert_eq!(initial_program.version(), ProgramVersion::V2);
+    // Add the new program to the process.
+    process.add_program(&initial_program)?;
+    // Get the program from the process.
+    let stack = process.get_stack("test.aleo")?;
+    let program = stack.program();
+    // Check that the program is the same as the initial program.
+    assert_eq!(program, &initial_program);
+    Ok(())
+}
+
+#[test]
+fn test_update_with_different_version() -> Result<()> {
+    // Sample the default process.
+    let mut process = Process::<CurrentNetwork>::load()?;
+    // Add a simple V1 program to the process.
+    let initial_program = Program::from_str(
+        r"
+program test.aleo;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Attempt to update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 test.aleo;
+function foo:
+    ",
+    )?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_update_with_same_version() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 test.aleo;
+function foo:
+    ",
+    )?;
+    // Verify that the update was successful.
+    process.add_program(&new_program)?;
+    Ok(())
 }
 
 #[test]
 fn test_add_import() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Add a dummy program to the process.
-    let dummy_program = Program::from_str("program dummy.aleo;function foo:")?;
-    process.add_program(&dummy_program)?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to add a new import.
-    new_program.add_import(Import::from_str("import dummy.aleo;")?)?;
-    // Add the new program to the process.
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+import credits.aleo;
+program$2 test.aleo;
+function foo:
+    ",
+    )?;
     process.add_program(&new_program)?;
-    // Check that the updated program is edition 1.
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
-    // Check that the update was successful.
-    let stack = process.get_stack("basic.aleo")?;
-    assert_eq!(stack.program().imports().len(), 2);
+    // Verify that the update was successful.
+    let stack = process.get_stack("test.aleo")?;
+    let program = stack.program();
+    assert_eq!(program, &new_program);
     Ok(())
 }
 
@@ -112,17 +126,20 @@ fn test_add_import() -> Result<()> {
 fn test_add_struct() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to add a new struct.
-    new_program.add_struct(StructType::from_str("struct foo:data as u8;")?)?;
-    // Add the new program to the process.
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 test.aleo;
+struct bar:
+    data as u8;
+function foo:
+    ",
+    )?;
     process.add_program(&new_program)?;
-    // Check that the updated program is edition 1.
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
-    // Check that the update was successful.
-    let stack = process.get_stack("basic.aleo")?;
-    assert_eq!(stack.program().structs().len(), 2);
+    // Verify that the update was successful.
+    let stack = process.get_stack("test.aleo")?;
+    let program = stack.program();
+    assert_eq!(program, &new_program);
     Ok(())
 }
 
@@ -130,17 +147,21 @@ fn test_add_struct() -> Result<()> {
 fn test_add_record() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to add a new record.
-    new_program.add_record(RecordType::from_str("record foo:owner as address.private;data as u8.private;")?)?;
-    // Add the new program to the process.
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 test.aleo;
+record foo:
+    owner as address.private;
+    data as u8.private;
+function foo:
+    ",
+    )?;
     process.add_program(&new_program)?;
-    // Check that the updated program is edition 1.
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
-    // Check that the update was successful.
-    let stack = process.get_stack("basic.aleo")?;
-    assert_eq!(stack.program().records().len(), 2);
+    // Verify that the update was successful.
+    let stack = process.get_stack("test.aleo")?;
+    let program = stack.program();
+    assert_eq!(program, &new_program);
     Ok(())
 }
 
@@ -148,17 +169,21 @@ fn test_add_record() -> Result<()> {
 fn test_add_mapping() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to add a new mapping.
-    new_program.add_mapping(Mapping::from_str("mapping foo:key as u8.public;value as u8.public;")?)?;
-    // Add the new program to the process.
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 test.aleo;
+mapping onchain:
+    key as u8.public;
+    value as u16.public;
+function foo:
+    ",
+    )?;
     process.add_program(&new_program)?;
-    // Check that the updated program is edition 1.
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
-    // Check that the update was successful.
-    let stack = process.get_stack("basic.aleo")?;
-    assert_eq!(stack.program().mappings().len(), 2);
+    // Verify that the update was successful.
+    let stack = process.get_stack("test.aleo")?;
+    let program = stack.program();
+    assert_eq!(program, &new_program);
     Ok(())
 }
 
@@ -166,19 +191,23 @@ fn test_add_mapping() -> Result<()> {
 fn test_add_closure() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to add a new closure.
-    new_program.add_closure(Closure::from_str(
-        "closure foo:input r0 as u8;input r1 as u8;add r0 r1 into r2;output r2 as u8;",
-    )?)?;
-    // Add the new program to the process.
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 test.aleo;
+closure sum:
+    input r0 as u8;
+    input r1 as u8;
+    add r0 r1 into r2;
+    output r2 as u8;
+function foo:
+    ",
+    )?;
     process.add_program(&new_program)?;
-    // Check that the updated program is edition 1.
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
-    // Check that the update was successful.
-    let stack = process.get_stack("basic.aleo")?;
-    assert_eq!(stack.program().closures().len(), 2);
+    // Verify that the update was successful.
+    let stack = process.get_stack("test.aleo")?;
+    let program = stack.program();
+    assert_eq!(program, &new_program);
     Ok(())
 }
 
@@ -186,19 +215,23 @@ fn test_add_closure() -> Result<()> {
 fn test_add_function() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to add a new function.
-    new_program.add_function(Function::from_str(
-        "function foo:input r0 as u8.private;input r1 as u8.private;add r0 r1 into r2;output r2 as u8.private;",
-    )?)?;
-    // Add the new program to the process.
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 test.aleo;
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+function foo:
+    ",
+    )?;
     process.add_program(&new_program)?;
-    // Check that the updated program is edition 1.
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
-    // Check that the update was successful.
-    let stack = process.get_stack("basic.aleo")?;
-    assert_eq!(stack.program().functions().len(), 4);
+    // Verify that the update was successful.
+    let stack = process.get_stack("test.aleo")?;
+    let program = stack.program();
+    assert_eq!(program, &new_program);
     Ok(())
 }
 
@@ -206,23 +239,34 @@ fn test_add_function() -> Result<()> {
 fn test_modify_function_logic() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Remove the `adder` function and add a new `adder` function.
-    new_program.remove_function(&Identifier::from_str("adder")?)?;
-    let new_function = Function::from_str(
-        "function adder:input r0 as u8.private;input r1 as u8.private;sub r0 r1 into r2;output r2 as u8.private;",
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+    ",
     )?;
-    new_program.add_function(new_function.clone())?;
-    // Add the new program to the process.
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    sub r0 r1 into r2;
+    output r2 as u8.private;
+    ",
+    )?;
     process.add_program(&new_program)?;
-    // Check that the updated program is edition 1.
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
-    // Check that the update was successful.
+    // Verify that the update was successful.
     let stack = process.get_stack("basic.aleo")?;
-    assert_eq!(stack.program().functions().len(), 3);
-    let updated_function = stack.program().get_function(new_function.name())?;
-    assert_eq!(updated_function, new_function);
+    let program = stack.program();
+    assert_eq!(program, &new_program);
     Ok(())
 }
 
@@ -230,15 +274,29 @@ fn test_modify_function_logic() -> Result<()> {
 fn test_modify_function_signature() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Remove the `adder` function and add a new `adder` function.
-    new_program.remove_function(&Identifier::from_str("adder")?)?;
-    // Modify the program to change the signature of the `adder` function.
-    let new_function = Function::from_str(
-        "function adder:input r0 as u16.private;input r1 as u16.private;add r0 r1 into r2;output r2 as u16.private;",
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+    ",
     )?;
-    new_program.add_function(new_function.clone())?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function adder:
+    input r0 as u16.private;
+    input r1 as u16.private;
+    add r0 r1 into r2;
+    output r2 as u16.private;
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -248,33 +306,42 @@ fn test_modify_function_signature() -> Result<()> {
 fn test_modify_finalize_logic() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Remove the `store_data` function and add a new `store_data` function.
-    new_program.remove_function(&Identifier::from_str("store_data")?)?;
-    let new_function = Function::from_str(
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
         r"
-function store_data:
+program$2 basic.aleo;
+function assert_on_chain:
     input r0 as u8.public;
     input r1 as u8.public;
-    async store_data r0 r1 into r2;
-    output r2 as basic.aleo/store_data.future;
-
-finalize store_data:
+    async assert_on_chain r0 r1 into r2;
+    output r2 as basic.aleo/assert_on_chain.future;
+finalize assert_on_chain:
     input r0 as u8.public;
     input r1 as u8.public;
-    assert.eq r0 r1;",
+    assert.eq r0 r1;
+    ",
     )?;
-    new_program.add_function(new_function.clone())?;
-    // Add the new program to the process.
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function assert_on_chain:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    async assert_on_chain r0 r1 into r2;
+    output r2 as basic.aleo/assert_on_chain.future;
+finalize assert_on_chain:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    assert.neq r0 r1;
+    ",
+    )?;
     process.add_program(&new_program)?;
-    // Check that the updated program is edition 1.
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
-    // Check that the update was successful.
+    // Verify that the update was successful.
     let stack = process.get_stack("basic.aleo")?;
-    assert_eq!(stack.program().functions().len(), 3);
-    let updated_function = stack.program().get_function(new_function.name())?;
-    assert_eq!(updated_function, new_function);
+    let program = stack.program();
+    assert_eq!(program, &new_program);
     Ok(())
 }
 
@@ -282,24 +349,37 @@ finalize store_data:
 fn test_modify_finalize_signature() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Remove the `store_data` function and add a new `store_data` function.
-    new_program.remove_function(&Identifier::from_str("store_data")?)?;
-    let new_function = Function::from_str(
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
         r"
-function store_data:
+program$2 basic.aleo;
+function assert_on_chain:
     input r0 as u8.public;
     input r1 as u8.public;
-    async store_data 0u16 1u16 into r2;
-    output r2 as basic.aleo/store_data.future;
-
-finalize store_data:
+    async assert_on_chain r0 r1 into r2;
+    output r2 as basic.aleo/assert_on_chain.future;
+finalize assert_on_chain:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    assert.eq r0 r1;
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function assert_on_chain:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    async assert_on_chain 0u16 1u16 into r2;
+    output r2 as basic.aleo/assert_on_chain.future;
+finalize assert_on_chain:
     input r0 as u16.public;
     input r1 as u16.public;
-    assert.eq r0 r1;",
+    assert.eq r0 r1;
+    ",
     )?;
-    new_program.add_function(new_function.clone())?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -309,11 +389,25 @@ finalize store_data:
 fn test_modify_struct() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to add a new struct.
-    new_program.remove_struct(&Identifier::from_str("bundle")?)?;
-    new_program.add_struct(StructType::from_str("struct bundle:first as u8;second as u8;third as u8;")?)?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+struct bar:
+    data as u8;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+struct bar:
+    data as u16;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -323,13 +417,27 @@ fn test_modify_struct() -> Result<()> {
 fn test_modify_record() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to add a new record.
-    new_program.remove_record(&Identifier::from_str("data")?)?;
-    new_program.add_record(RecordType::from_str(
-        "record data:owner as address.private;data as bundle.private;counter as u8.private;",
-    )?)?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+record foo:
+    owner as address.private;
+    data as u8.private;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+record foo:
+    owner as address.private;
+    data as u16.private;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -339,11 +447,27 @@ fn test_modify_record() -> Result<()> {
 fn test_modify_mapping() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to add a new mapping.
-    new_program.remove_mapping(&Identifier::from_str("onchain")?)?;
-    new_program.add_mapping(Mapping::from_str("mapping onchain:key as u8.public;value as u16.public;")?)?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+mapping onchain:
+    key as u8.public;
+    value as u16.public;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+mapping onchain:
+    key as u8.public;
+    value as u8.public;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -353,15 +477,31 @@ fn test_modify_mapping() -> Result<()> {
 fn test_modify_closure_logic() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Remove the `sum` closure and add a new `sum` closure.
-    new_program.remove_closure(&Identifier::from_str("sum")?)?;
-    // Modify the `sum` closure to add a new instruction.
-    let new_closure = Closure::from_str(
-        "closure sum:input r0 as u8;input r1 as u8;add r0 r1 into r2;sub r2 r1 into r3;output r3 as u8;",
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+closure sum:
+    input r0 as u8;
+    input r1 as u8;
+    add r0 r1 into r2;
+    output r2 as u8;
+function foo:
+    ",
     )?;
-    new_program.add_closure(new_closure.clone())?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+closure sum:
+    input r0 as u8;
+    input r1 as u8;
+    sub r0 r1 into r2;
+    output r2 as u8;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -371,14 +511,31 @@ fn test_modify_closure_logic() -> Result<()> {
 fn test_modify_closure_signature() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Remove the `sum` closure and add a new `sum` closure.
-    new_program.remove_closure(&Identifier::from_str("sum")?)?;
-    // Modify the `sum` closure to add a new instruction.
-    let new_closure =
-        Closure::from_str("closure sum:input r0 as u16;input r1 as u16;add r0 r1 into r2;output r2 as u16;")?;
-    new_program.add_closure(new_closure.clone())?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+closure sum:
+    input r0 as u8;
+    input r1 as u8;
+    add r0 r1 into r2;
+    output r2 as u8;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+closure sum:
+    input r0 as u16;
+    input r1 as u16;
+    add r0 r1 into r2;
+    output r2 as u16;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -388,13 +545,22 @@ fn test_modify_closure_signature() -> Result<()> {
 fn test_remove_import() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Add a dummy program to the process.
-    let dummy_program = Program::from_str("program dummy.aleo;function foo:")?;
-    process.add_program(&dummy_program)?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to remove an import.
-    new_program.remove_import(&ProgramID::from_str("credits.aleo")?)?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+import credits.aleo;
+program$2 basic.aleo;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -404,10 +570,23 @@ fn test_remove_import() -> Result<()> {
 fn test_remove_struct() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to remove a struct.
-    new_program.remove_struct(&Identifier::from_str("bundle")?)?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+struct bar:
+    data as u8;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -417,10 +596,24 @@ fn test_remove_struct() -> Result<()> {
 fn test_remove_record() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to remove a record.
-    new_program.remove_record(&Identifier::from_str("data")?)?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+record foo:
+    owner as address.private;
+    data as u8.private;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -430,10 +623,24 @@ fn test_remove_record() -> Result<()> {
 fn test_remove_mapping() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to remove a mapping.
-    new_program.remove_mapping(&Identifier::from_str("onchain")?)?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+mapping onchain:
+    key as u8.public;
+    value as u16.public;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -443,10 +650,26 @@ fn test_remove_mapping() -> Result<()> {
 fn test_remove_closure() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to remove a closure.
-    new_program.remove_closure(&Identifier::from_str("sum")?)?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+closure sum:
+    input r0 as u8;
+    input r1 as u8;
+    add r0 r1 into r2;
+    output r2 as u8;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -456,10 +679,26 @@ fn test_remove_closure() -> Result<()> {
 fn test_remove_function() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Modify the program to remove a function.
-    new_program.remove_function(&Identifier::from_str("adder")?)?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+function foo:
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function foo:
+    ",
+    )?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -481,25 +720,36 @@ function foo:
     output r2 as u8.private;",
     )?;
     process.add_program(&new_program)?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Add an import of `non_async.aleo` to the default program.
-    new_program.add_import(Import::from_str("import non_async.aleo;")?)?;
-    // Remove the `adder` function and add a new `adder` function.
-    new_program.remove_function(&Identifier::from_str("adder")?)?;
-    let new_function = Function::from_str(
-        "function adder:input r0 as u8.private;input r1 as u8.private;call non_async.aleo/foo r0 r1 into r2;output r2 as u8.private;",
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+import non_async.aleo;
+program$2 basic.aleo;
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+    ",
     )?;
-    new_program.add_function(new_function.clone())?;
-    // Add the new program to the process.
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+import non_async.aleo;
+program$2 basic.aleo;
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    call non_async.aleo/foo r0 r1 into r2;
+    output r2 as u8.private;
+    ",
+    )?;
     process.add_program(&new_program)?;
-    // Check that the updated program is edition 1.
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
-    // Check that the update was successful.
+    // Verify that the update was successful.
     let stack = process.get_stack("basic.aleo")?;
-    assert_eq!(stack.program().functions().len(), 3);
-    let updated_function = stack.program().get_function(new_function.name())?;
-    assert_eq!(updated_function, new_function);
+    let program = stack.program();
+    assert_eq!(program, &new_program);
     Ok(())
 }
 
@@ -507,7 +757,7 @@ function foo:
 fn test_add_call_to_async_transition() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
-    // Add a program with a non-async transition.
+    // Add a program with an async transition.
     let new_program = Program::from_str(
         r"
 program async_example.aleo;
@@ -525,14 +775,24 @@ finalize foo:
     assert.eq r0 r1;",
     )?;
     process.add_program(&new_program)?;
-    // Get the default program.
-    let mut new_program = default_program();
-    // Add an import of `non_async.aleo` to the default program.
-    new_program.add_import(Import::from_str("import async_example.aleo;")?)?;
-    // Remove the `adder` function and add a new `adder` function.
-    new_program.remove_function(&Identifier::from_str("adder")?)?;
-    let new_function = Function::from_str(
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
         r"
+import async_example.aleo;
+program$2 basic.aleo;
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+import async_example.aleo;
+program$2 basic.aleo;
 function adder:
     input r0 as u8.private;
     input r1 as u8.private;
@@ -544,7 +804,6 @@ finalize adder:
     input r0 as async_example.aleo/foo.future;
     await r0;",
     )?;
-    new_program.add_function(new_function.clone())?;
     // Verify that the update was not successful.
     assert!(process.add_program(&new_program).is_err());
     Ok(())
@@ -555,9 +814,31 @@ fn test_add_import_cycle() -> Result<()> {
     // Sample the default process.
     let mut process = sample_process()?;
 
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+
     // Verify that self-import cycles are not allowed.
-    let mut new_program = default_program();
-    new_program.add_import(Import::from_str("import basic.aleo;")?)?;
+    let new_program = Program::from_str(
+        r"
+import basic.aleo;
+program$2 basic.aleo;
+function adder:
+    input r0 as u8.private;
+    input r1 as u8.private;
+    add r0 r1 into r2;
+    output r2 as u8.private;
+    ",
+    )?;
     assert!(process.add_program(&new_program).is_err());
 
     // Add a program dependent on `basic.aleo`.
@@ -572,28 +853,25 @@ function foo:
     output r2 as u8.private;",
     )?;
     process.add_program(&dependent_program)?;
-    //assert_eq!(process.get_stack("dependent.aleo")?.edition(), 0);
+    // Verify that the update was successful.
+    let stack = process.get_stack("dependent.aleo")?;
+    let program = stack.program();
+    assert_eq!(program, &dependent_program);
 
     // Update basic.aleo to import dependent.aleo.
     // This is allowed since we do not do cycle detection across programs.
-    let mut new_program = default_program();
-    new_program.add_import(Import::from_str("import dependent.aleo;")?)?;
-    process.add_program(&new_program)?;
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 1);
-
-    // Update basic.aleo's adder to call dependent.aleo/foo.
-    new_program.remove_function(&Identifier::from_str("adder")?)?;
-    let new_function = Function::from_str(
+    let new_program = Program::from_str(
         r"
+import dependent.aleo;
+program$2 basic.aleo;
 function adder:
     input r0 as u8.private;
     input r1 as u8.private;
-    call dependent.aleo/foo r0 r1 into r2;
-    output r2 as u8.private;",
+    add r0 r1 into r2;
+    output r2 as u8.private;
+    ",
     )?;
-    new_program.add_function(new_function.clone())?;
+    // Verify that the update was successful.
     process.add_program(&new_program)?;
-    //assert_eq!(process.get_stack("basic.aleo")?.edition(), 2);
-
     Ok(())
 }

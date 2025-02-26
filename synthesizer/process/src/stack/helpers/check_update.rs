@@ -24,6 +24,11 @@ impl<N: Network> Stack<N> {
         // Get the old program.
         let stack = process.get_stack(program_id)?;
         let old_program = stack.program();
+        // Ensure that the program versions match.
+        ensure!(
+            old_program.version() == program.version(),
+            "Cannot update '{program_id}' because the versions do not match"
+        );
         // Ensure the program ID matches.
         ensure!(old_program.id() == program.id(), "Cannot update '{program_id}' with different program ID");
 
