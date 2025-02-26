@@ -171,7 +171,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     Program::ProgramV1(_) => {
                         // Ensure the edition is correct.
                         ensure!(
-                            deployment.edition() != N::EDITION,
+                            deployment.edition() == N::EDITION,
                             "Invalid deployment transaction '{id}' - expected edition {}",
                             N::EDITION
                         );
