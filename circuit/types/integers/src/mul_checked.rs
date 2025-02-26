@@ -19,7 +19,9 @@ impl<E: Environment, I: IntegerType> Mul<Integer<E, I>> for Integer<E, I> {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self::Output {
-        self * &other
+        let mut output = self;
+        output *= other;
+        output
     }
 }
 
@@ -27,7 +29,9 @@ impl<E: Environment, I: IntegerType> Mul<Integer<E, I>> for &Integer<E, I> {
     type Output = Integer<E, I>;
 
     fn mul(self, other: Integer<E, I>) -> Self::Output {
-        self * &other
+        let mut output = self.clone();
+        output *= other;
+        output
     }
 }
 
@@ -35,7 +39,9 @@ impl<E: Environment, I: IntegerType> Mul<&Integer<E, I>> for Integer<E, I> {
     type Output = Self;
 
     fn mul(self, other: &Self) -> Self::Output {
-        &self * other
+        let mut output = self;
+        output *= other;
+        output
     }
 }
 
@@ -103,7 +109,7 @@ impl<E: Environment, I: IntegerType> MulChecked<Self> for Integer<E, I> {
             // If the product should be negative, then it cannot exceed the absolute value of the signed minimum.
             let negative_product_underflows = {
                 let lower_product_bits_nonzero =
-                    product.bits_le[..(I::BITS as usize - 1)].iter().fold(Boolean::constant(false), |a, b| a | b);
+                    product.bits_le[..(I::BITS as usize - 1)].into_iter().fold(Boolean::constant(false), |a, b| a | b);
                 let negative_product_lt_or_eq_signed_min =
                     !product.msb() | (product.msb() & !lower_product_bits_nonzero);
                 !operands_same_sign & !negative_product_lt_or_eq_signed_min
