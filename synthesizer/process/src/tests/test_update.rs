@@ -151,7 +151,7 @@ fn test_add_record() -> Result<()> {
     let new_program = Program::from_str(
         r"
 program$2 test.aleo;
-record foo:
+record bar:
     owner as address.private;
     data as u8.private;
 function foo:
@@ -421,7 +421,7 @@ fn test_modify_record() -> Result<()> {
     let initial_program = Program::from_str(
         r"
 program$2 basic.aleo;
-record foo:
+record bar:
     owner as address.private;
     data as u8.private;
 function foo:
@@ -432,7 +432,7 @@ function foo:
     let new_program = Program::from_str(
         r"
 program$2 basic.aleo;
-record foo:
+record bar:
     owner as address.private;
     data as u16.private;
 function foo:
@@ -600,7 +600,7 @@ fn test_remove_record() -> Result<()> {
     let initial_program = Program::from_str(
         r"
 program$2 basic.aleo;
-record foo:
+record bar:
     owner as address.private;
     data as u8.private;
 function foo:
