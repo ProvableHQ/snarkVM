@@ -378,13 +378,9 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for LinearCombination<F> {
             other.clone()
         } else if other.constant.is_zero() && other.terms.is_empty() {
             self
-        } else if self.terms.len() > other.terms.len() {
+        } else {
             let mut output = self;
             output += other;
-            output
-        } else {
-            let mut output = other.clone();
-            output += self;
             output
         }
     }
@@ -398,10 +394,6 @@ impl<F: PrimeField> Add<LinearCombination<F>> for &LinearCombination<F> {
             other
         } else if other.constant.is_zero() && other.terms.is_empty() {
             self.clone()
-        } else if self.terms.len() > other.terms.len() {
-            let mut output = self.clone();
-            output += other;
-            output
         } else {
             let mut output = other;
             output += self;
