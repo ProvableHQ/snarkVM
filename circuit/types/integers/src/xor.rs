@@ -21,7 +21,7 @@ impl<E: Environment, I: IntegerType> BitXor<Integer<E, I>> for Integer<E, I> {
     /// Returns `(self != other)`.
     fn bitxor(self, other: Self) -> Self::Output {
         Self::Output {
-            bits_le: self.bits_le.into_iter().zip_eq(other.bits_le.into_iter()).map(|(a, b)| a ^ b).collect(),
+            bits_le: self.bits_le.into_iter().zip_eq(other.bits_le).map(|(a, b)| a ^ b).collect(),
             phantom: Default::default(),
         }
     }
@@ -33,7 +33,7 @@ impl<E: Environment, I: IntegerType> BitXor<Integer<E, I>> for &Integer<E, I> {
     /// Returns `(self != other)`.
     fn bitxor(self, other: Integer<E, I>) -> Self::Output {
         Self::Output {
-            bits_le: self.bits_le.iter().zip_eq(other.bits_le.into_iter()).map(|(a, b)| a ^ b).collect(),
+            bits_le: self.bits_le.iter().zip_eq(other.bits_le).map(|(a, b)| a ^ b).collect(),
             phantom: Default::default(),
         }
     }
@@ -68,11 +68,7 @@ impl<E: Environment, I: IntegerType> BitXorAssign<Integer<E, I>> for Integer<E, 
     fn bitxor_assign(&mut self, other: Integer<E, I>) {
         // Stores the bitwise XOR of `self` and `other` in `self`.
         *self = Self {
-            bits_le: std::mem::take(&mut self.bits_le)
-                .into_iter()
-                .zip_eq(other.bits_le.into_iter())
-                .map(|(a, b)| a ^ b)
-                .collect(),
+            bits_le: std::mem::take(&mut self.bits_le).into_iter().zip_eq(other.bits_le).map(|(a, b)| a ^ b).collect(),
             phantom: Default::default(),
         }
     }
