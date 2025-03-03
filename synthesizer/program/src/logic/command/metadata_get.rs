@@ -23,7 +23,7 @@ use console::{
     program::{PlaintextType, Register, Value},
 };
 
-/// A command to get metadata about a program, e.g. `metadata.get owner into r1 as address;`.
+/// A command to get metadata about a program, e.g. `metadata.get program_owner into r1 as address;`.
 /// Gets the value with the `name` from the program and stores it in the `destination` register.
 /// The value is checked to be of the `destination_type`.
 #[derive(Clone, PartialEq, Eq, Hash)]

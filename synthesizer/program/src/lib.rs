@@ -247,7 +247,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the metadata in the program.
-    pub fn metadata(&self) -> Result<&IndexMap<Identifier<N>, Metadata<N>>> {
+    pub fn metadata(&self) -> Result<&IndexMap<Identifier<N>, ProgramMetadata<N>>> {
         match &self {
             Self::ProgramV1(_) => bail!("Metadata is not supported in V1 programs"),
             Self::ProgramV2(program) => Ok(program.metadata()),
@@ -338,7 +338,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the metadata value with the given name.
-    pub fn get_metadata(&self, name: &Identifier<N>) -> Result<&Metadata<N>> {
+    pub fn get_metadata(&self, name: &Identifier<N>) -> Result<&ProgramMetadata<N>> {
         match self {
             Self::ProgramV1(_) => bail!("Metadata is not supported in V1 programs"),
             Self::ProgramV2(program) => program.get_metadata(name),
@@ -410,7 +410,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Adds a new metadata value to the program.
-    pub fn add_metadata(&mut self, metadata: Metadata<N>) -> Result<()> {
+    pub fn add_metadata(&mut self, metadata: ProgramMetadata<N>) -> Result<()> {
         match self {
             Self::ProgramV1(_) => bail!("Metadata is not supported in V1 programs"),
             Self::ProgramV2(program) => program.add_metadata(metadata),

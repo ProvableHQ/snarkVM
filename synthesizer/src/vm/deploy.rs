@@ -31,10 +31,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         query: Option<Query<N, C::BlockStorage>>,
         rng: &mut R,
     ) -> Result<Transaction<N>> {
+        // Ensure the program is not empty.
+        ensure!(!program.functions().is_empty(), "Attempted to create an empty transaction deployment");
+        // Ensure that the program is well-formed.
+        match program {
+            Program::ProgramV1(_) => (), // ProgramV1 is always well-formed.
+            Program::ProgramV2(program) => {
+                // Ensure that the required metadata is there.
+                program.get_edition_metadata()?;
+                program.get_owner_metadata()?;
+                program.get_upgradable_metadata()?;
+            }
+        }
         // Compute the deployment.
         let deployment = self.deploy_raw(program, rng)?;
-        // Ensure the transaction is not empty.
-        ensure!(!deployment.program().functions().is_empty(), "Attempted to create an empty transaction deployment");
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id()?;
         // Construct the owner.

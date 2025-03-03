@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<N: Network> FromBytes for Metadata<N> {
+impl<N: Network> FromBytes for ProgramMetadata<N> {
     /// Reads the metadata from a buffer.
     #[inline]
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
@@ -28,7 +28,7 @@ impl<N: Network> FromBytes for Metadata<N> {
     }
 }
 
-impl<N: Network> ToBytes for Metadata<N> {
+impl<N: Network> ToBytes for ProgramMetadata<N> {
     /// Writes the metadata to a buffer.
     #[inline]
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
@@ -51,11 +51,11 @@ mod tests {
         let metadata_string = r"
 $metadata edition: 0u8;";
 
-        let expected = Metadata::<CurrentNetwork>::from_str(metadata_string)?;
+        let expected = ProgramMetadata::<CurrentNetwork>::from_str(metadata_string)?;
         let expected_bytes = expected.to_bytes_le()?;
         println!("String size: {:?}, Bytecode size: {:?}", metadata_string.as_bytes().len(), expected_bytes.len());
 
-        let candidate = Metadata::<CurrentNetwork>::from_bytes_le(&expected_bytes)?;
+        let candidate = ProgramMetadata::<CurrentNetwork>::from_bytes_le(&expected_bytes)?;
         assert_eq!(expected.to_string(), candidate.to_string());
         assert_eq!(expected_bytes, candidate.to_bytes_le()?);
         Ok(())

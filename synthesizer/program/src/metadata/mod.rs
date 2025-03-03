@@ -19,14 +19,14 @@ mod parse;
 use super::*;
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct Metadata<N: Network> {
+pub struct ProgramMetadata<N: Network> {
     /// The name.
     name: Identifier<N>,
     /// The value.
     value: Plaintext<N>,
 }
 
-impl<N: Network> Metadata<N> {
+impl<N: Network> ProgramMetadata<N> {
     /// Initializes a new metadata declaration with the given name and value.
     pub fn new(name: Identifier<N>, value: Plaintext<N>) -> Self {
         Self { name, value }
@@ -43,7 +43,7 @@ impl<N: Network> Metadata<N> {
     }
 }
 
-impl<N: Network> TypeName for Metadata<N> {
+impl<N: Network> TypeName for ProgramMetadata<N> {
     /// Returns the type name as a string.
     #[inline]
     fn type_name() -> &'static str {

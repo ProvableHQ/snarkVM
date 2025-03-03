@@ -45,7 +45,7 @@ pub struct ProgramCoreV2<N: Network, Instruction: InstructionTrait<N>, Command: 
     /// The program constructor.
     constructor: Option<ConstructorCore<N, Command>>,
     /// Additional metadata for the program.
-    metadata: IndexMap<Identifier<N>, Metadata<N>>,
+    metadata: IndexMap<Identifier<N>, ProgramMetadata<N>>,
 }
 
 impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCoreV2<N, Instruction, Command> {
@@ -110,7 +110,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the metadata for the program.
-    pub const fn metadata(&self) -> &IndexMap<Identifier<N>, Metadata<N>> {
+    pub const fn metadata(&self) -> &IndexMap<Identifier<N>, ProgramMetadata<N>> {
         &self.metadata
     }
 
@@ -216,7 +216,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the metadata value with the given name.
-    pub fn get_metadata(&self, name: &Identifier<N>) -> Result<&Metadata<N>> {
+    pub fn get_metadata(&self, name: &Identifier<N>) -> Result<&ProgramMetadata<N>> {
         // Attempt to retrieve the metadata value.
         let metadata = self.metadata.get(name).ok_or_else(|| anyhow!("Metadata '{name}' is not defined."))?;
         // Ensure the metadata name matches.
@@ -246,12 +246,12 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         // Attempt to retrieve the metadata value.
         let metadata = self
             .metadata
-            .get(&Identifier::from_str("owner")?)
-            .ok_or_else(|| anyhow!("Metadata 'owner' is not defined."))?;
+            .get(&Identifier::from_str("program_owner")?)
+            .ok_or_else(|| anyhow!("Metadata 'program_owner' is not defined."))?;
         // Destructure the owner.
         let owner = match metadata.value() {
             Plaintext::Literal(Literal::Address(owner), _) => owner,
-            _ => bail!("Metadata 'owner' is not a valid 'sddress' value."),
+            _ => bail!("Metadata 'program_owner' is not a valid 'address' value."),
         };
         // Return the owner.
         Ok(owner)
@@ -570,7 +570,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// This method will halt if the metadata name is already in use.
     /// This method will halt if the metadata name is a reserved opcode or keyword.
     #[inline]
-    pub fn add_metadata(&mut self, metadata: Metadata<N>) -> Result<()> {
+    pub fn add_metadata(&mut self, metadata: ProgramMetadata<N>) -> Result<()> {
         // Retrieve the metadata name.
         let name = *metadata.name();
 

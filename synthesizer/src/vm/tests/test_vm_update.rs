@@ -37,11 +37,17 @@ fn test_simple_update() -> Result<()> {
     // Initialize the program.
     let program = Program::from_str(&format!(
         r"
-program adder.aleo;
+program$2 adder.aleo;
 
 mapping admins:
     key as address.public;
     value as boolean.public;
+
+function binary_add:
+    input r0 as u8.public;
+    input r1 as u8.public;
+    add r0 r1 into r2;
+    output r2 as u8.public;
 
 _init:
     metadata.get edition into r0 as u16;
@@ -49,28 +55,27 @@ _init:
     set true into admins[{caller_address}];
     branch.eq true true to end;
     position rest;
-    metadata.get owner into r1 as address;
-    get admins[r1] into r0;
-    assert.eq r0 true;
+    metadata.get program_owner into r1 as address;
+    get admins[r1] into r2;
+    assert.eq r2 true;
     position end;
 
-function binary_add:
-    input r0 as u8.public;
-    input r1 as u8.public;
-    add r0 r1 into r2;
-    output r2 as u8.public;
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
     "
     ))?;
 
     // Deploy the program.
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
     // Check that the program is deployed.
     let stack = vm.process().read().get_stack("adder.aleo")?;
     assert_eq!(stack.program_id(), &ProgramID::from_str("adder.aleo")?);
-    // assert_eq!(stack.edition(), 0);
+    assert_eq!(**stack.program().as_v2()?.get_edition_metadata()?, 0);
 
     // Check that the caller is an admin.
     let Some(Value::Plaintext(Plaintext::Literal(Literal::Boolean(caller_is_admin), _))) =
@@ -106,24 +111,32 @@ function binary_add:
     // Update the program.
     let updated_program = Program::from_str(&format!(
         r"
-program adder.aleo;
+program$2 adder.aleo;
 
-_init:
-    metadata.get edition into r0 as u16;
-    branch.neq r0 0u8 into rest;
-    set true into admins[{caller_address}];
-    branch.eq true true into end;
-    position rest;
-    metadata.get owner into r1 as address;
-    get admins[r1] into r0;
-    assert.eq r0 true;
-    position end;
+mapping admins:
+    key as address.public;
+    value as boolean.public;
 
 function binary_add:
     input r0 as u8.public;
     input r1 as u8.public;
     add.w r0 r1 into r2;
     output r2 as u8.public;
+
+_init:
+    metadata.get edition into r0 as u16;
+    branch.neq r0 0u16 to rest;
+    set true into admins[{caller_address}];
+    branch.eq true true to end;
+    position rest;
+    metadata.get program_owner into r1 as address;
+    get admins[r1] into r2;
+    assert.eq r2 true;
+    position end;
+
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
     "
     ))?;
 
@@ -144,7 +157,7 @@ function binary_add:
     // Check that the program is updated.
     let stack = vm.process().read().get_stack("adder.aleo")?;
     assert_eq!(stack.program_id(), &ProgramID::from_str("adder.aleo")?);
-    // assert_eq!(stack.edition(), 1);
+    assert_eq!(**stack.program().as_v2()?.get_edition_metadata()?, 1);
 
     // Check that the old execution is no longer valid.
     vm.partially_verified_transactions().write().clear();
@@ -174,11 +187,12 @@ function binary_add:
 
 // TODO (@d0cd): This can readapted to check that one cannot update a program with a restricted init block
 #[test]
-fn test_program_owner_v1_is_not_updatable() -> Result<()> {
+fn test_program_v1_is_not_updatable() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -188,27 +202,65 @@ fn test_program_owner_v1_is_not_updatable() -> Result<()> {
     vm.add_next_block(&genesis)?;
 
     // Initialize the program.
-    let program = Program::from_str("program basic.aleo;function foo:")?;
+    let program = Program::from_str(
+        r"
+program basic.aleo;
+function foo:
+    ",
+    )?;
+
+    // Initialize the updated program.
+    let updated_program = Program::from_str(
+        r"
+program basic.aleo;
+function foo:
+function bar:
+    ",
+    )?;
 
     // Deploy the program.
-    let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    let transaction_0 = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    let transaction_1 = vm.deploy(&caller_private_key, &updated_program, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction_0], rng)?;
+    vm.add_next_block(&block)?;
+
+    // Attempt to deploy the updated program.
+    assert!(vm.deploy(&caller_private_key, &updated_program, None, 0, None, rng).is_err());
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction_1], rng)?;
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
     vm.add_next_block(&block)?;
 
     // Initialize the updated program.
-    let updated_program = Program::from_str("program basic.aleo;function foo:function bar:")?;
+    let updated_program = Program::from_str(&format!(
+        r"
+program$2 basic.aleo;
+function foo:
+function bar:
+_init:
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
+    "
+    ))?;
 
     // Attempt to deploy the updated program using `VM::deploy`.
-    let transaction = vm.deploy(&caller_private_key, &updated_program, None, 0, None, rng)?;
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
-    vm.add_next_block(&block)?;
+    assert!(vm.deploy(&caller_private_key, &updated_program, None, 0, None, rng).is_err());
 
-    // Attempt to deploy the updated program using `VM::deploy_updatable`.
-    let transaction = vm.deploy(&caller_private_key, &updated_program, None, 0, None, rng)?;
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
-    vm.add_next_block(&block)?;
+    // Initialize the updated program.
+    let updated_program = Program::from_str(&format!(
+        r"
+program$2 basic.aleo;
+function foo:
+function bar:
+_init:
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    // Attempt to deploy the updated program using `VM::deploy`.
+    assert!(vm.deploy(&caller_private_key, &updated_program, None, 0, None, rng).is_err());
 
     Ok(())
 }
@@ -222,6 +274,7 @@ fn test_editions_are_sequential() -> Result<()> {
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -233,16 +286,58 @@ fn test_editions_are_sequential() -> Result<()> {
     on_chain_vm.add_next_block(&genesis)?;
 
     // Define the three versions of the program.
-    let program_v0 = Program::from_str("program basic.aleo;function foo:")?;
-    let program_v1 = Program::from_str("program basic.aleo;function foo:function bar:")?;
-    let program_v2 = Program::from_str("program basic.aleo;function foo:function bar:function baz:")?;
+    let program_v0 = Program::from_str(&format!(
+        r"
+program$2 basic.aleo;
+function foo:
+_init:
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
+    "
+    ))?;
+    let program_v1 = Program::from_str(&format!(
+        r"
+program$2 basic.aleo;
+function foo:
+function bar:
+_init:
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
+    "
+    ))?;
+    let program_v2_as_v1 = Program::from_str(&format!(
+        r"
+program$2 basic.aleo;
+function foo:
+function bar:
+function baz:
+_init:
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
+    "
+    ))?;
+    let program_v2 = Program::from_str(&format!(
+        r"
+program$2 basic.aleo;
+function foo:
+function bar:
+function baz:
+_init:
+$metadata program_owner: {caller_address};
+$metadata edition: 2u16;
+$metadata upgradable: true;
+    "
+    ))?;
 
     // Using the off-chain VM, generate a sequence of deployments.
     let deployment_v0_pass = off_chain_vm.deploy(&caller_private_key, &program_v0, None, 0, None, rng)?;
     off_chain_vm.process().write().add_program(&program_v0)?;
     let deployment_v1_fail = off_chain_vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
     let deployment_v1_pass = off_chain_vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
-    let deployment_v2_as_v1_fail = off_chain_vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
+    let deployment_v2_as_v1_fail = off_chain_vm.deploy(&caller_private_key, &program_v2_as_v1, None, 0, None, rng)?;
     off_chain_vm.process().write().add_program(&program_v1)?;
     let deployment_v2_fail = off_chain_vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
     let deployment_v2_pass = off_chain_vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
@@ -254,7 +349,7 @@ fn test_editions_are_sequential() -> Result<()> {
     // - deployment_v1_pass
     // - deployment_v2_as_v1_fail
     // - deployment_v2_pass
-    // Their name should indicate whether the deployment should pass or fail.
+    // Their name indicate whether the deployment should pass or fail.
 
     // This deployment should fail because the it is not the zero-th edition.
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v1_fail], rng)?;
@@ -266,7 +361,7 @@ fn test_editions_are_sequential() -> Result<()> {
     assert_eq!(block.transactions().num_accepted(), 1);
     on_chain_vm.add_next_block(&block)?;
     let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
-    // assert_eq!(stack.edition(), 0);
+    assert_eq!(**stack.program().as_v2()?.get_edition_metadata()?, 0);
 
     // This deployment should fail because it does not increment the edition.
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v2_fail], rng)?;
@@ -278,11 +373,11 @@ fn test_editions_are_sequential() -> Result<()> {
     assert_eq!(block.transactions().num_accepted(), 1);
     on_chain_vm.add_next_block(&block)?;
     let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
-    // assert_eq!(stack.edition(), 1);
+    assert_eq!(**stack.program().as_v2()?.get_edition_metadata()?, 1);
 
     // This deployment should fail because it attempt to redeploy at the same edition.
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v2_as_v1_fail], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.transactions().num_accepted(), 0);
     on_chain_vm.add_next_block(&block)?;
 
     // This deployment should pass.
@@ -290,7 +385,7 @@ fn test_editions_are_sequential() -> Result<()> {
     assert_eq!(block.transactions().num_accepted(), 1);
     on_chain_vm.add_next_block(&block)?;
     let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
-    // assert_eq!(stack.edition(), 2);
+    assert_eq!(**stack.program().as_v2()?.get_edition_metadata()?, 2);
 
     Ok(())
 }
@@ -307,6 +402,7 @@ fn test_update_with_records() -> Result<()> {
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
+    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -316,9 +412,9 @@ fn test_update_with_records() -> Result<()> {
     vm.add_next_block(&genesis)?;
 
     // Define the two versions of the program.
-    let program_v0 = Program::from_str(
+    let program_v0 = Program::from_str(&format!(
         r"
-program record_test.aleo;
+program$2 record_test.aleo;
 
 record data_v1:
     owner as address.private;
@@ -327,12 +423,19 @@ record data_v1:
 function mint:
     input r0 as u8.public;
     cast self.caller r0 into r1 as data_v1.record;
-    output r1 as data_v1.record;",
-    )?;
+    output r1 as data_v1.record;
 
-    let program_v1 = Program::from_str(
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    let program_v1 = Program::from_str(&format!(
         r"
-program record_test.aleo;
+program$2 record_test.aleo;
 
 record data_v1:
     owner as address.private;
@@ -354,8 +457,15 @@ function convert:
     output r1 as data_v2.record;
 
 function burn:
-    input r0 as data_v2.record;",
-    )?;
+    input r0 as data_v2.record;
+
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
+    "
+    ))?;
 
     // Deploy the first version of the program.
     let transaction = vm.deploy(&caller_private_key, &program_v0, None, 0, None, rng)?;
@@ -474,6 +584,7 @@ fn test_update_with_mappings() -> Result<()> {
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -483,9 +594,9 @@ fn test_update_with_mappings() -> Result<()> {
     vm.add_next_block(&genesis)?;
 
     // Define the two versions of the program.
-    let program_v0 = Program::from_str(
+    let program_v0 = Program::from_str(&format!(
         r"
-program mapping_test.aleo;
+program$2 mapping_test.aleo;
 
 mapping data_v1:
     key as u8.public;
@@ -499,12 +610,19 @@ function store_data_v1:
 finalize store_data_v1:
     input r0 as u8.public;
     input r1 as u8.public;
-    set r1 into data_v1[r0];",
-    )?;
+    set r1 into data_v1[r0];
 
-    let program_v1 = Program::from_str(
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    let program_v1 = Program::from_str(&format!(
         r"
-program mapping_test.aleo;
+program$2 mapping_test.aleo;
 
 mapping data_v1:
     key as u8.public;
@@ -542,8 +660,15 @@ function store_data_v2:
 finalize store_data_v2:
     input r0 as u8.public;
     input r1 as u8.public;
-    set r1 into data_v2[r0];",
-    )?;
+    set r1 into data_v2[r0];
+
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
+    "
+    ))?;
 
     // Deploy the first version of the program.
     let transaction = vm.deploy(&caller_private_key, &program_v0, None, 0, None, rng)?;
@@ -671,6 +796,7 @@ fn test_update_with_dependents() -> Result<()> {
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -680,9 +806,9 @@ fn test_update_with_dependents() -> Result<()> {
     vm.add_next_block(&genesis)?;
 
     // Define the two versions of the dependency program.
-    let dependency_v0 = Program::from_str(
+    let dependency_v0 = Program::from_str(&format!(
         r"
-program dependency.aleo;
+program$2 dependency.aleo;
 
 function sum:
     input r0 as u8.public;
@@ -698,12 +824,19 @@ function sum_and_check:
     output r2 as u8.public;
     output r3 as dependency.aleo/sum_and_check.future;
 finalize sum_and_check:
-    assert.eq true true;",
-    )?;
+    assert.eq true true;
 
-    let dependency_v1 = Program::from_str(
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    let dependency_v1 = Program::from_str(&format!(
         r"
-program dependency.aleo;
+program$2 dependency.aleo;
 
 function sum:
     input r0 as u8.public;
@@ -719,15 +852,22 @@ function sum_and_check:
     output r2 as u8.public;
     output r3 as dependency.aleo/sum_and_check.future;
 finalize sum_and_check:
-    assert.eq true false;",
-    )?;
+    assert.eq true false;
+
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
+    "
+    ))?;
 
     // Define the two versions of the dependent program.
-    let dependent_v0 = Program::from_str(
+    let dependent_v0 = Program::from_str(&format!(
         r"
 import dependency.aleo;
 
-program dependent.aleo;
+program$2 dependent.aleo;
 
 function sum_unchecked:
     input r0 as u8.public;
@@ -755,14 +895,21 @@ function sum_and_check:
     output r4 as dependent.aleo/sum_and_check.future;
 finalize sum_and_check:
     input r0 as dependency.aleo/sum_and_check.future;
-    await r0;",
-    )?;
+    await r0;
 
-    let dependent_v1 = Program::from_str(
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    let dependent_v1 = Program::from_str(&format!(
         r"
 import dependency.aleo;
 
-program dependent.aleo;
+program$2 dependent.aleo;
 
 function sum_unchecked:
     input r0 as u8.public;
@@ -790,8 +937,15 @@ function sum_and_check:
     output r4 as dependent.aleo/sum_and_check.future;
 finalize sum_and_check:
     input r0 as dependency.aleo/sum_and_check.future;
-    await r0;",
-    )?;
+    await r0;
+
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
+    "
+    ))?;
 
     // At a high level, this test will:
     // 1. Deploy the v0 dependency and v0 dependent.
@@ -940,6 +1094,7 @@ fn test_update_with_cycles() -> Result<()> {
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -949,53 +1104,77 @@ fn test_update_with_cycles() -> Result<()> {
     vm.add_next_block(&genesis)?;
 
     // Define the programs.
-    let first_v0 = Program::from_str(
+    let first_v0 = Program::from_str(&format!(
         r"
-program first.aleo;
+program$2 first.aleo;
 
 function foo:
     input r0 as u8.public;
     output r0 as u8.public;
-    ",
-    )?;
 
-    let second_v0 = Program::from_str(
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    let second_v0 = Program::from_str(&format!(
         r"
 import first.aleo;
 
-program second.aleo;
+program$2 second.aleo;
 
 function foo:
     input r0 as u8.public;
     call first.aleo/foo r0 into r1;
     output r1 as u8.public;
-    ",
-    )?;
 
-    let first_v1 = Program::from_str(
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    let first_v1 = Program::from_str(&format!(
         r"
 import second.aleo;
 
-program first.aleo;
+program$2 first.aleo;
 
 function foo:
     input r0 as u8.public;
     output r0 as u8.public;
-    ",
-    )?;
 
-    let first_v2 = Program::from_str(
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    let first_v2 = Program::from_str(&format!(
         r"
 import second.aleo;
 
-program first.aleo;
+program$2 first.aleo;
 
 function foo:
     input r0 as u8.public;
     call second.aleo/foo r0 into r1;
     output r1 as u8.public;
-    ",
-    )?;
+
+_init:
+
+$metadata program_owner: {caller_address};
+$metadata edition: 2u16;
+$metadata upgradable: true;
+    "
+    ))?;
 
     // Deploy the first version of the programs.
     let transaction = vm.deploy(&caller_private_key, &first_v0, None, 0, None, rng)?;
@@ -1090,6 +1269,7 @@ fn test_failing_init_block() -> Result<()> {
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the genesis block.
     let genesis = sample_genesis_block(rng);
@@ -1099,31 +1279,39 @@ fn test_failing_init_block() -> Result<()> {
     vm.add_next_block(&genesis)?;
 
     // Define the programs.
-    let passing_program = Program::from_str(
+    let passing_program = Program::from_str(&format!(
         r"
-program hello1.aleo;
+program$2 hello1.aleo;
+
+function foo:
+    input r0 as u8.public;
+    output r0 as u8.public;
 
 _init:
     assert.eq true true;
 
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: false;
+    "
+    ))?;
+
+    let failing_program = Program::from_str(&format!(
+        r"
+program$2 hello2.aleo;
+
 function foo:
     input r0 as u8.public;
     output r0 as u8.public;
-    ",
-    )?;
-
-    let failing_program = Program::from_str(
-        r"
-program hello2.aleo;
 
 _init:
     assert.eq true false;
 
-function foo:
-    input r0 as u8.public;
-    output r0 as u8.public;
-    ",
-    )?;
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: false;
+    "
+    ))?;
 
     // Deploy the passing program.
     let transaction = vm.deploy(&caller_private_key, &passing_program, None, 0, None, rng)?;
@@ -1134,7 +1322,7 @@ function foo:
     // Deploy the failing program.
     let transaction = vm.deploy(&caller_private_key, &failing_program, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.transactions().num_accepted(), 0);
     vm.add_next_block(&block)?;
 
     Ok(())

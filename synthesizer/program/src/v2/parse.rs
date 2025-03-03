@@ -77,7 +77,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
         let (string, _) = Sanitizer::parse(string)?;
 
         // Parse the metadata from the string.
-        let (string, metadata) = many0(Metadata::parse)(string)?;
+        let (string, metadata) = many0(ProgramMetadata::parse)(string)?;
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
 
@@ -232,8 +232,8 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Dis
         }
 
         // Write the metadata.
-        for (key, value) in &self.metadata {
-            writeln!(f, "\n{key}: {value}")?;
+        for metadata in self.metadata.values() {
+            writeln!(f, "\n{metadata}")?;
         }
 
         Ok(())

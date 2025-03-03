@@ -64,7 +64,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fro
         let metadata_len = u16::read_le(&mut reader)?;
         // Read the metadata.
         for _ in 0..metadata_len {
-            program.add_metadata(Metadata::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?;
+            program.add_metadata(ProgramMetadata::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?;
         }
 
         Ok(program)

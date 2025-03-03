@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<N: Network> Parser for Metadata<N> {
+impl<N: Network> Parser for ProgramMetadata<N> {
     /// Parses a string into a metadata.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
@@ -47,7 +47,7 @@ impl<N: Network> Parser for Metadata<N> {
     }
 }
 
-impl<N: Network> FromStr for Metadata<N> {
+impl<N: Network> FromStr for ProgramMetadata<N> {
     type Err = Error;
 
     /// Returns a metadata from a string literal.
@@ -64,14 +64,14 @@ impl<N: Network> FromStr for Metadata<N> {
     }
 }
 
-impl<N: Network> Debug for Metadata<N> {
+impl<N: Network> Debug for ProgramMetadata<N> {
     /// Prints the metadata as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network> Display for Metadata<N> {
+impl<N: Network> Display for ProgramMetadata<N> {
     /// Prints the metadata as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Write the metadata to a string.
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn test_metadata_parse() {
-        let metadata = Metadata::<CurrentNetwork>::parse(
+        let metadata = ProgramMetadata::<CurrentNetwork>::parse(
             r"
 $metadata foo: 1u8;",
         )
@@ -101,7 +101,7 @@ $metadata foo: 1u8;",
     #[test]
     fn test_metadata_display() {
         let expected = "$metadata foo: {\n  bar: 1u8\n};";
-        let metadata = Metadata::<CurrentNetwork>::parse(expected).unwrap().1;
+        let metadata = ProgramMetadata::<CurrentNetwork>::parse(expected).unwrap().1;
         assert_eq!(expected, format!("{metadata}"),);
     }
 }

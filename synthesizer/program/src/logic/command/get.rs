@@ -103,9 +103,9 @@ impl<N: Network> Get<N> {
             CallOperator::Resource(mapping_name) => (*stack.program_id(), mapping_name),
         };
 
-        // Ensure the mapping exists in storage.
-        if !store.contains_mapping_confirmed(&program_id, &mapping_name)? {
-            bail!("Mapping '{program_id}/{mapping_name}' does not exist in storage");
+        // Ensure the mapping exists.
+        if !store.contains_mapping_speculative(&program_id, &mapping_name)? {
+            bail!("Mapping '{program_id}/{mapping_name}' does not exist");
         }
 
         // Load the operand as a plaintext.

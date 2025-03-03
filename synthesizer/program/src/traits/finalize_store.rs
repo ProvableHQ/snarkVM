@@ -21,8 +21,11 @@ use console::{
 };
 
 pub trait FinalizeStoreTrait<N: Network> {
-    /// Returns `true` if the given `program ID` and `mapping name` exist.
+    /// Returns `true` if the given `program ID` and `mapping name` confirmedly exist.
     fn contains_mapping_confirmed(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<bool>;
+
+    /// Returns `true` if the given `program ID` and `mapping name` exist.
+    fn contains_mapping_speculative(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<bool>;
 
     /// Returns `true` if the given `program ID`, `mapping name`, and `key` exist.
     fn contains_key_speculative(

@@ -29,7 +29,7 @@ impl<N: Network, Command: CommandTrait<N>> Parser for ConstructorCore<N, Command
         let (string, _) = tag(":")(string)?;
 
         // Parse the commands from the string.
-        let (string, commands) = many1(Command::parse)(string)?;
+        let (string, commands) = many0(Command::parse)(string)?;
 
         map_res(take(0usize), move |_| {
             // Initialize a new constructor.

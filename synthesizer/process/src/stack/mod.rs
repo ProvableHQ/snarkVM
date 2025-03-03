@@ -71,7 +71,7 @@ use console::{
     types::{Field, Group},
 };
 use ledger_block::{Deployment, Transaction, Transition};
-use synthesizer_program::{CallOperator, Closure, Function, Instruction, Operand, Program, ProgramVersion, traits::*};
+use synthesizer_program::{CallOperator, Closure, Function, Instruction, Operand, Program, traits::*};
 use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -214,11 +214,26 @@ impl<N: Network> Stack<N> {
     pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
         // Retrieve the program ID.
         let program_id = program.id();
-        // If the program is a V2 program and an update, then check that the update is valid.
-        match program.version() {
-            ProgramVersion::V1 => (), // Do nothing.
-            ProgramVersion::V2 => {
-                if process.contains_program(program_id) {
+        // If the program is a V1 program, check that it does not exist in the process.
+        // If the program is a V2 program,
+        //   - if its edition is 0, check that it does not exist in the process.
+        //   - if its edition is greater than 0, check that it exists in the process and that the update is valid.
+        match &program {
+            Program::ProgramV1(_) => {
+                ensure!(!process.contains_program(program_id), "Program '{program_id}' already exists in the process");
+            }
+            Program::ProgramV2(program_v2) => {
+                let edition = **program_v2.get_edition_metadata()?;
+                if edition == 0 {
+                    ensure!(
+                        !process.contains_program(program_id),
+                        "Program '{program_id}' already exists in the process"
+                    );
+                } else {
+                    ensure!(
+                        process.contains_program(program_id),
+                        "Program '{program_id}' does not exist in the process"
+                    );
                     Stack::check_update_is_valid(process, program)?;
                 }
             }

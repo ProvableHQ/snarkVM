@@ -95,6 +95,7 @@ impl<N: Network> Process<N> {
                 finalize_operations.extend(operations);
             }
 
+            println!("Finished");
             // Return the stack and finalize operations.
             Ok((stack, finalize_operations))
         })
@@ -248,6 +249,7 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
     while counter < constructor.commands().len() {
         // Retrieve the command.
         let command = &constructor.commands()[counter];
+        println!("Command: {command}");
         // Finalize the command.
         match &command {
             Command::BranchEq(branch_eq) => {
@@ -287,9 +289,15 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
                     // If the evaluation succeeds with no operation, continue.
                     Ok(Ok(None)) => {}
                     // If the evaluation fails, bail and return the error.
-                    Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
+                    Ok(Err(error)) => {
+                        println!("'finalize' failed to evaluate command ({command}): {error}");
+                        bail!("'finalize' failed to evaluate command ({command}): {error}")
+                    }
                     // If the evaluation fails, bail and return the error.
-                    Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
+                    Err(_) => {
+                        println!("'finalize' failed to evaluate command ({command})");
+                        bail!("'finalize' failed to evaluate command ({command})")
+                    }
                 }
                 counter += 1;
             }
