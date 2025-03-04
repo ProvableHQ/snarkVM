@@ -8,7 +8,7 @@ outputs:
       - '{"type":"public","id":"7571316186508319878827016469809649549608056961397657756993177747855651462866field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
-- execute: 'Failed to evaluate instruction (call child.aleo/foo into r0 r1;): Failed to evaluate instruction (assert.eq self.caller self.signer ;): ''assert.eq'' failed: ''aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy'' is not equal to ''aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx'' (should be equal)'
+- execute: 'Failed to evaluate instruction (call child.aleo/foo into r0 r1;): Failed to evaluate instruction (assert.eq self.caller self.signer;): ''assert.eq'' failed: ''aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy'' is not equal to ''aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx'' (should be equal)'
 additional:
 - child_outputs:
     credits.aleo/fee_public:

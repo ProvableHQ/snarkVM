@@ -5,7 +5,7 @@ outputs:
     first.aleo/a:
       outputs:
       - '{"type":"future","id":"2809153169238796095987200430148602762586641507642945792553422332319686895519field","value":"{\n  program_id: first.aleo,\n  function_name: a,\n  arguments: [\n    0u16\n  ]\n}"}'
-  speculate: the execution was accepted
+  speculate: the execution was rejected
   add_next_block: succeeded.
 - verified: true
   execute:
@@ -19,7 +19,7 @@ outputs:
     second.aleo/a:
       outputs:
       - '{"type":"future","id":"4159938038415297757000623408673685308057279543422402726232827422415160043417field","value":"{\n  program_id: second.aleo,\n  function_name: a,\n  arguments: [\n    0u16\n  ]\n}"}'
-  speculate: the execution was accepted
+  speculate: the execution was rejected
   add_next_block: succeeded.
 - verified: true
   execute:
