@@ -22,7 +22,6 @@ use std::collections::HashSet;
 
 impl<N: Network> Process<N> {
     /// Finalizes the deployment and fee.
-    // TODO (@d0cd) We should specify what valid here means, because `Stack::new` performs a number of checks
     /// This method assumes the given deployment **is valid**.
     /// This method should **only** be called by `VM::finalize()`.
     #[inline]

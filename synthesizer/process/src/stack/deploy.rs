@@ -52,7 +52,7 @@ impl<N: Network> Stack<N> {
 
         // Get the edition.
         let edition = match self.program() {
-            Program::ProgramV1(_) => N::ID,
+            Program::ProgramV1(_) => N::EDITION,
             Program::ProgramV2(program) => **program.get_edition_metadata()?,
         };
 

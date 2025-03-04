@@ -34,8 +34,6 @@ use anyhow::Result;
 use core::marker::PhantomData;
 use std::borrow::Cow;
 
-// TODO (@d0cd): Review migration.
-
 /// A trait for deployment storage.
 pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `transaction ID` to `program ID`.
@@ -198,7 +196,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
         atomic_batch_scope!(self, {
             // Store the program ID and edition.
-            // Note that the `id_map_v1` is intentionally excluded updated.
+            // Note that the `id_map_v1` is intentionally excluded.
             self.id_map_v2().insert(*transaction_id, (program_id, edition))?;
             // Store the latest edition.
             self.edition_map().insert(program_id, edition)?;

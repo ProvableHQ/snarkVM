@@ -2166,9 +2166,6 @@ fn test_deployment_and_execution_exceeding_max_transaction_spend() {
     let mut max_spend_limit_exceeded = false;
 
     for i in 0..<CurrentNetwork as Network>::MAX_COMMANDS.ilog2() {
-        // Initialize the program.
-        let mut program =
-            Program::new_v1(ProgramID::from_str(&format!("test_max_spend_limit_{i}.aleo")).unwrap()).unwrap();
         // Construct a finalize body whose finalize cost is excessively large.
         let mut function = format!(
             r"
@@ -2184,14 +2181,14 @@ finalize foo:
             function.push_str(&format!("\n    hash.bhp256 r2 into r{} as field;", i + 3));
         });
 
-        // Parse the function and add it to the program.
-        let function = Function::from_str(&function).unwrap();
-        program.add_function(function).unwrap();
-
         // If the program length exceeds the maximum length, break.
-        if program.to_string().len() > CurrentNetwork::MAX_PROGRAM_SIZE {
+        if function.len() > CurrentNetwork::MAX_PROGRAM_SIZE {
             break;
         }
+
+        // Parse the function and add it to the program.
+        let function = Function::<CurrentNetwork>::from_str(&function).unwrap();
+        let program = Program::from_str(&format!(r"program test_max_spend_limit_{i}.aleo;{function}")).unwrap();
 
         // Deploy the program.
         let deployment = ledger.vm().deploy(&private_key, &program, None, 0, None, rng).unwrap();
