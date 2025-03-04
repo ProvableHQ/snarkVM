@@ -62,6 +62,7 @@ use synthesizer_program::{
     Program,
     RegistersLoad,
     RegistersStore,
+    StackKeys,
     StackProgram,
 };
 use synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};

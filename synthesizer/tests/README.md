@@ -2,6 +2,7 @@
 
 This directory contains a set of utilities and integration tests for various components of `synthesizer` crate. The test framework is based loosely off ideas from [Characterization Testing](https://en.wikipedia.org/wiki/Characterization_test) (you have have heard these referred to as "golden tests"). At a high level, the framework runs a set of integration tests and compares their output to their corresponding expected output. If the output does not match, the framework returns an error.
 
+Don't expect a change in RNG state to necessarily lead to a change in outputs, because certain cryptographic objects like field elements may require a different amount of iterated sampling, offsetting initial changes in RNG state. 
 
 Some important files/folders are:
 - `expectations` | The expectation files for each of the test categories.

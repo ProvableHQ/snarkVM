@@ -4,42 +4,42 @@ outputs:
   execute:
     branch_with_future.aleo/bar:
       outputs:
-      - '{"type":"future","id":"1901721223736840349427585700021263388379767581008399009736938254771892005010field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: bar,\n  arguments: [\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        false\n      ]\n    }\n  \n  ]\n}"}'
+      - '{"type":"future","id":"4349654541257851733712484481717142261930236272682244511977958530837607168540field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: bar,\n  arguments: [\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        false\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was rejected
   add_next_block: succeeded.
 - verified: true
   execute:
     branch_with_future.aleo/baz:
       outputs:
-      - '{"type":"future","id":"1228696003383050132266889674489868345643026254029592802751654436178885132079field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: baz,\n  arguments: [\n    true,\n    true,\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    }\n  \n  ]\n}"}'
+      - '{"type":"future","id":"7156465225651669153670567832058691425591505309444339579752354761446040771896field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: baz,\n  arguments: [\n    true,\n    true,\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
   execute:
     branch_with_future.aleo/baz:
       outputs:
-      - '{"type":"future","id":"879289045619836306626870648843085153732274658528750377055734664982530581365field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: baz,\n  arguments: [\n    true,\n    false,\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    }\n  \n  ]\n}"}'
+      - '{"type":"future","id":"7929887084917992981071528229802596484171061971577465716483026041288400867308field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: baz,\n  arguments: [\n    true,\n    false,\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was rejected
   add_next_block: succeeded.
 - verified: true
   execute:
     branch_with_future.aleo/baz:
       outputs:
-      - '{"type":"future","id":"2968372731533596222248603718368848747733103012276200825311164319889876057729field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: baz,\n  arguments: [\n    false,\n    true,\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    }\n  \n  ]\n}"}'
+      - '{"type":"future","id":"4387124244669988277678707281799158084862070836307836467912218130095801417735field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: baz,\n  arguments: [\n    false,\n    true,\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was rejected
   add_next_block: succeeded.
 - verified: true
   execute:
     branch_with_future.aleo/baz:
       outputs:
-      - '{"type":"future","id":"156680474478658222397874990119431113642250358456541583625828235061767777479field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: baz,\n  arguments: [\n    false,\n    false,\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    }\n  \n  ]\n}"}'
+      - '{"type":"future","id":"6871220385727096575377167279142936053084242984561135217111606446643202359426field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: baz,\n  arguments: [\n    false,\n    false,\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
   execute:
     branch_with_future.aleo/qux:
       outputs:
-      - '{"type":"future","id":"1044271547530566723253698133585207021073550216261586640127744587292737089669field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: qux,\n  arguments: [\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    }\n  \n  ]\n}"}'
+      - '{"type":"future","id":"7691625082533535675185248621438483571507576519714791672523805051888319306804field","value":"{\n  program_id: branch_with_future.aleo,\n  function_name: qux,\n  arguments: [\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        true,\n        true\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was rejected
   add_next_block: succeeded.
 additional:

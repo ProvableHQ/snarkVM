@@ -59,7 +59,7 @@ default-features = false
 features = [ "derive" ]
 
 [dependencies.thiserror]
-version = "1.0"
+version = "2.0.11"
 
 [dependencies.zeroize]
 version = "1"

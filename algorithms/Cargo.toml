@@ -147,7 +147,7 @@ default-features = false
 features = [ "const_generics", "const_new" ]
 
 [dependencies.thiserror]
-version = "1.0"
+version = "2.0.11"
 
 [dependencies.wasm-bindgen-futures]
 version = "0.4"

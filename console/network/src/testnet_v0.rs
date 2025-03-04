@@ -163,10 +163,10 @@ impl Network for TestnetV0 {
     const INCLUSION_FUNCTION_NAME: &'static str = MainnetV0::INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(not(any(test, feature = "test")))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 16), (ConsensusVersion::V3, 25)];
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 100), (ConsensusVersion::V3, 100)];
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(any(test, feature = "test"))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 100), (ConsensusVersion::V3, 100)];
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 25), (ConsensusVersion::V3, 25)];
     /// The network name.
     const NAME: &'static str = "Aleo Testnet (v0)";
 
