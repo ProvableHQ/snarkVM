@@ -37,6 +37,33 @@ use console::{
     types::{Address, Field},
 };
 use rand::{CryptoRng, Rng};
+use synthesizer_snark::{ProvingKey, VerifyingKey};
+
+pub trait StackKeys<N: Network> {
+    /// Returns `true` if the proving key for the given function name exists.
+    fn contains_proving_key(&self, function_name: &Identifier<N>) -> bool;
+
+    /// Returns the proving key for the given function name.
+    fn get_proving_key(&self, function_name: &Identifier<N>) -> Result<ProvingKey<N>>;
+
+    /// Inserts the proving key for the given function name.
+    fn insert_proving_key(&self, function_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()>;
+
+    /// Removes the proving key for the given function name.
+    fn remove_proving_key(&self, function_name: &Identifier<N>);
+
+    /// Returns `true` if the verifying key for the given function name exists.
+    fn contains_verifying_key(&self, function_name: &Identifier<N>) -> bool;
+
+    /// Returns the verifying key for the given function name.
+    fn get_verifying_key(&self, function_name: &Identifier<N>) -> Result<VerifyingKey<N>>;
+
+    /// Inserts the verifying key for the given function name.
+    fn insert_verifying_key(&self, function_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()>;
+
+    /// Removes the verifying key for the given function name.
+    fn remove_verifying_key(&self, function_name: &Identifier<N>);
+}
 
 pub trait StackMatches<N: Network> {
     /// Checks that the given value matches the layout of the value type.
@@ -94,6 +121,16 @@ pub trait StackProgram<N: Network> {
         burner_address: &Address<N>,
         record_name: &Identifier<N>,
         record_nonce: Group<N>,
+        rng: &mut R,
+    ) -> Result<Record<N, Plaintext<N>>>;
+
+    /// Returns a record for the given record name, deriving the nonce from tvk and index.
+    fn sample_record_using_tvk<R: Rng + CryptoRng>(
+        &self,
+        burner_address: &Address<N>,
+        record_name: &Identifier<N>,
+        tvk: Field<N>,
+        index: Field<N>,
         rng: &mut R,
     ) -> Result<Record<N, Plaintext<N>>>;
 }
