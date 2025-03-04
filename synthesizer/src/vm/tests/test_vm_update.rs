@@ -185,7 +185,6 @@ $metadata upgradable: true;
     Ok(())
 }
 
-// TODO (@d0cd): This can readapted to check that one cannot update a program with a restricted init block
 #[test]
 fn test_program_v1_is_not_updatable() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -1526,27 +1525,21 @@ $metadata upgradable: true;
     let transaction_1 = vm.deploy(&caller_private_key, &program_1_v0, None, 0, None, rng)?;
     let transaction_2 = vm.deploy(&caller_private_key, &program_2_v0, None, 0, None, rng)?;
     let transaction_3 = vm.deploy(&caller_private_key, &program_3_v0, None, 0, None, rng)?;
-    let block = sample_next_block(
-        &vm,
-        &caller_private_key,
-        &[transaction_0, transaction_1, transaction_2, transaction_3],
-        rng,
-    )?;
-    assert_eq!(block.transactions().num_accepted(), 4);
-    vm.add_next_block(&block)?;
+    for transaction in &[transaction_0, transaction_1, transaction_2, transaction_3] {
+        let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng)?;
+        assert_eq!(block.transactions().num_accepted(), 1);
+        vm.add_next_block(&block)?;
+    }
 
     let transaction_0 = vm.deploy(&caller_private_key, &program_0_v1, None, 0, None, rng)?;
     let transaction_1 = vm.deploy(&caller_private_key, &program_1_v1, None, 0, None, rng)?;
     let transaction_2 = vm.deploy(&caller_private_key, &program_2_v1, None, 0, None, rng)?;
     let transaction_3 = vm.deploy(&caller_private_key, &program_3_v1, None, 0, None, rng)?;
-    let block = sample_next_block(
-        &vm,
-        &caller_private_key,
-        &[transaction_0, transaction_1, transaction_2, transaction_3],
-        rng,
-    )?;
-    assert_eq!(block.transactions().num_accepted(), 0);
-    vm.add_next_block(&block)?;
+    for transaction in &[transaction_0, transaction_1, transaction_2, transaction_3] {
+        let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng)?;
+        assert_eq!(block.transactions().num_rejected(), 1);
+        vm.add_next_block(&block)?;
+    }
 
     Ok(())
 }
