@@ -20,12 +20,15 @@ use crate::{
 };
 use console::{
     network::prelude::*,
-    program::{PlaintextType, Register, Value},
+    program::{Literal, Plaintext, PlaintextType, Register, Value},
 };
 
 /// A command to get metadata about a program, e.g. `metadata.get program_owner into r1 as address;`.
 /// Gets the value with the `name` from the program and stores it in the `destination` register.
 /// The value is checked to be of the `destination_type`.
+///
+/// `metadata.get checksum into r1 as u128;` is a special case where the metadata is not retrieved from the program.
+/// Instead, the checksum of the program is calculated and stored in the destination register.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct MetadataGet<N: Network> {
     /// The global ID.
@@ -71,17 +74,18 @@ impl<N: Network> MetadataGet<N> {
         _store: &impl FinalizeStoreTrait<N>,
         registers: &mut (impl RegistersLoad<N> + RegistersStore<N>),
     ) -> Result<()> {
-        // Determine the program ID and global ID.
-        let (external_stack, global_name) = match self.name {
+        // Determine the program ID and name.
+        let (external_stack, name) = match self.name {
             CallOperator::Locator(locator) => {
                 (Some(stack.get_external_stack(locator.program_id())?), *locator.resource())
             }
-            CallOperator::Resource(global_name) => (None, global_name),
+            CallOperator::Resource(name) => (None, name),
         };
-        // Get the value from the program metadata.
-        let value = match external_stack {
-            Some(external_stack) => external_stack.program().get_metadata(&global_name)?.value().clone(),
-            None => stack.program().get_metadata(&global_name)?.value().clone(),
+        let value = match (external_stack, name.to_string().as_str()) {
+            (Some(external_stack), "checksum") => Plaintext::from(Literal::U128(*external_stack.program_checksum())),
+            (None, "checksum") => Plaintext::from(Literal::U128(*stack.program_checksum())),
+            (Some(external_stack), _) => external_stack.program().get_metadata(&name)?.value().clone(),
+            (None, _) => stack.program().get_metadata(&name)?.value().clone(),
         };
         // Check that retrieved metadata is of the correct type.
         stack.matches_plaintext(&value, self.destination_type())?;

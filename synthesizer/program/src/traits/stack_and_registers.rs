@@ -31,6 +31,7 @@ use console::{
         Record,
         Register,
         RegisterType,
+        U128,
         Value,
         ValueType,
     },
@@ -94,6 +95,9 @@ pub trait StackProgram<N: Network> {
 
     /// Returns the program address.
     fn program_address(&self) -> &Address<N>;
+
+    /// Returns the program checksum.
+    fn program_checksum(&self) -> &U128<N>;
 
     /// Returns the external stack for the given program ID.
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;

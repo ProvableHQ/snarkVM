@@ -519,6 +519,7 @@ pub trait ProgramReserved<N: Network, Instruction: InstructionTrait<N>> {
         "type",
         "future",
         "_init",
+        "checksum",
     ];
 
     /// Returns `true` if the given name is a reserved opcode.
