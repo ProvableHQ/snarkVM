@@ -366,12 +366,10 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
         // Retrieve the edition.
         match transaction_type {
             TransactionType::Deploy => {
-                // Retrieve the program ID.
-                let program_id = self.storage.deployment_store().get_program_id(transaction_id)?;
                 // Return the edition.
-                match program_id {
-                    Some(program_id) => self.storage.deployment_store().get_edition(&program_id),
-                    None => bail!("Failed to get the program ID for deployment transaction '{transaction_id}'"),
+                match self.storage.deployment_store().get_program_id_and_edition(transaction_id)? {
+                    Some((_, edition)) => Ok(Some(edition)),
+                    None => bail!("Failed to get the edition for deployment transaction '{transaction_id}'"),
                 }
             }
             // Return 'None'.
