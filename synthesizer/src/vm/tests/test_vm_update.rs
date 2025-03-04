@@ -1630,3 +1630,226 @@ $metadata upgradable: true;
 
     Ok(())
 }
+
+// This test checks that an upgrade can be locked to a checksum.
+// The checksum is managed by an admin address.
+#[test]
+fn test_lock_upgrade_to_checksum() -> Result<()> {
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    // Initialize the genesis block.
+    let genesis = sample_genesis_block(rng);
+
+    // Initialize the VM.
+    let vm = sample_vm();
+    vm.add_next_block(&genesis)?;
+
+    // Define the programs.
+    let program_v0 = Program::from_str(&format!(
+        r"
+program$2 locked_upgrade.aleo;
+mapping admin:
+    key as boolean.public;
+    value as address.public;
+mapping expected_checksum:
+    key as boolean.public;
+    value as u128.public;
+function set_expected:
+    input r0 as u128.public;
+    async set_expected self.caller r0 into r1;
+    output r1 as locked_upgrade.aleo/set_expected.future;
+finalize set_expected:
+    input r0 as address.public;
+    input r1 as u128.public;
+    get admin[true] into r2;
+    assert.eq r0 r2;
+    set r1 into expected_checksum[true];
+_init:
+    metadata.get edition into r0 as u16;
+    branch.neq r0 0u16 to rest;
+    metadata.get program_owner into r1 as address;
+    set r1 into admin[true];
+    branch.eq true true to end;
+    position rest;
+    metadata.get checksum into r2 as u128;
+    get expected_checksum[true] into r3;
+    assert.eq r2 r3;
+    position end;
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    let program_v1 = Program::from_str(&format!(
+        r"
+program$2 locked_upgrade.aleo;
+mapping admin:
+    key as boolean.public;
+    value as address.public;
+mapping expected_checksum:
+    key as boolean.public;
+    value as u128.public;
+function bar:
+function set_expected:
+    input r0 as u128.public;
+    async set_expected self.caller r0 into r1;
+    output r1 as locked_upgrade.aleo/set_expected.future;
+finalize set_expected:
+    input r0 as address.public;
+    input r1 as u128.public;
+    get admin[true] into r2;
+    assert.eq r0 r2;
+    set r1 into expected_checksum[true];
+_init:
+    metadata.get edition into r0 as u16;
+    branch.neq r0 0u16 to rest;
+    metadata.get program_owner into r1 as address;
+    set r1 into admin[true];
+    branch.eq true true to end;
+    position rest;
+    metadata.get checksum into r2 as u128;
+    get expected_checksum[true] into r3;
+    assert.eq r2 r3;
+    position end;
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    let program_v1_mismatch = Program::from_str(&format!(
+        r"
+program$2 locked_upgrade.aleo;
+mapping admin:
+    key as boolean.public;
+    value as address.public;
+mapping expected_checksum:
+    key as boolean.public;
+    value as u128.public;
+function baz:
+function set_expected:
+    input r0 as u128.public;
+    async set_expected self.caller r0 into r1;
+    output r1 as locked_upgrade.aleo/set_expected.future;
+finalize set_expected:
+    input r0 as address.public;
+    input r1 as u128.public;
+    get admin[true] into r2;
+    assert.eq r0 r2;
+    set r1 into expected_checksum[true];
+_init:
+    metadata.get edition into r0 as u16;
+    branch.neq r0 0u16 to rest;
+    metadata.get program_owner into r1 as address;
+    set r1 into admin[true];
+    branch.eq true true to end;
+    position rest;
+    metadata.get checksum into r2 as u128;
+    get expected_checksum[true] into r3;
+    assert.eq r2 r3;
+    position end;
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    // Deploy the first version of the program.
+    let transaction = vm.deploy(&caller_private_key, &program_v0, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Check that the caller is the admin.
+    let Some(Value::Plaintext(Plaintext::Literal(Literal::Address(admin), _))) =
+        vm.finalize_store().get_value_confirmed(
+            ProgramID::from_str("locked_upgrade.aleo")?,
+            Identifier::from_str("admin")?,
+            &Plaintext::from_str("true")?,
+        )?
+    else {
+        bail!("Unexpected entry in admin mapping");
+    };
+    assert_eq!(admin, caller_address);
+
+    // Attempt to update without setting the expected checksum.
+    let transaction = vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 0);
+    vm.add_next_block(&block)?;
+
+    // Attempt to set the expected checksum with the wrong admin.
+    let checksum = Value::from_str("0u128")?;
+    let admin_private_key = PrivateKey::new(rng)?;
+    let transaction = vm.execute(
+        &admin_private_key,
+        ("locked_upgrade.aleo", "set_expected"),
+        vec![checksum].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 0);
+    vm.add_next_block(&block)?;
+
+    // Check that there is no expected checksum set.
+    assert!(
+        vm.finalize_store()
+            .get_value_confirmed(
+                ProgramID::from_str("locked_upgrade.aleo")?,
+                Identifier::from_str("expected_checksum")?,
+                &Plaintext::from_str("true")?,
+            )?
+            .is_none()
+    );
+
+    // Set the expected checksum.
+    let Plaintext::Literal(Literal::U128(checksum), _) = program_v1.checksum()? else {
+        bail!("Failed to get checksum");
+    };
+    let transaction = vm.execute(
+        &caller_private_key,
+        ("locked_upgrade.aleo", "set_expected"),
+        vec![Value::from_str(&checksum.to_string())].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Check that the expected checksum is set.
+    let Some(Value::Plaintext(Plaintext::Literal(Literal::U128(expected), _))) =
+        vm.finalize_store().get_value_confirmed(
+            ProgramID::from_str("locked_upgrade.aleo")?,
+            Identifier::from_str("expected_checksum")?,
+            &Plaintext::from_str("true")?,
+        )?
+    else {
+        bail!("Unexpected entry in expected_checksum mapping");
+    };
+    assert_eq!(checksum, expected);
+
+    // Attempt to update with a mismatched program.
+    let transaction = vm.deploy(&caller_private_key, &program_v1_mismatch, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 0);
+    vm.add_next_block(&block)?;
+
+    // Update with the expected checksum set.
+    let transaction = vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    Ok(())
+}
