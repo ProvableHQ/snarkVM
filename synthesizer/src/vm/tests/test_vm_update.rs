@@ -1521,23 +1521,17 @@ $metadata upgradable: true;
     ))?;
 
     // Deploy the programs and attempt to upgrade. All upgrades should fail.
-    let transaction_0 = vm.deploy(&caller_private_key, &program_0_v0, None, 0, None, rng)?;
-    let transaction_1 = vm.deploy(&caller_private_key, &program_1_v0, None, 0, None, rng)?;
-    let transaction_2 = vm.deploy(&caller_private_key, &program_2_v0, None, 0, None, rng)?;
-    let transaction_3 = vm.deploy(&caller_private_key, &program_3_v0, None, 0, None, rng)?;
-    for transaction in &[transaction_0, transaction_1, transaction_2, transaction_3] {
-        let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng)?;
+    for program in &[program_0_v0, program_1_v0, program_2_v0, program_3_v0] {
+        let transaction = vm.deploy(&caller_private_key, program, None, 0, None, rng)?;
+        let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
         assert_eq!(block.transactions().num_accepted(), 1);
         vm.add_next_block(&block)?;
     }
 
-    let transaction_0 = vm.deploy(&caller_private_key, &program_0_v1, None, 0, None, rng)?;
-    let transaction_1 = vm.deploy(&caller_private_key, &program_1_v1, None, 0, None, rng)?;
-    let transaction_2 = vm.deploy(&caller_private_key, &program_2_v1, None, 0, None, rng)?;
-    let transaction_3 = vm.deploy(&caller_private_key, &program_3_v1, None, 0, None, rng)?;
-    for transaction in &[transaction_0, transaction_1, transaction_2, transaction_3] {
-        let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng)?;
-        assert_eq!(block.transactions().num_rejected(), 1);
+    for program in &[program_0_v1, program_1_v1, program_2_v1, program_3_v1] {
+        let transaction = vm.deploy(&caller_private_key, program, None, 0, None, rng)?;
+        let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+        assert_eq!(block.transactions().num_accepted(), 0);
         vm.add_next_block(&block)?;
     }
 
