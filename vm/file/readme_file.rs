@@ -15,7 +15,7 @@
 
 use crate::{
     prelude::{Network, ProgramID},
-    synthesizer::Program,
+    synthesizer::{Program, ProgramReserved},
 };
 
 use anyhow::{Result, ensure};

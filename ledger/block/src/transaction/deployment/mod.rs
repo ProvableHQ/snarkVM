@@ -119,7 +119,7 @@ impl<N: Network> Deployment<N> {
     }
 
     /// Returns the program.
-    pub const fn program_id(&self) -> &ProgramID<N> {
+    pub fn program_id(&self) -> &ProgramID<N> {
         self.program.id()
     }
 

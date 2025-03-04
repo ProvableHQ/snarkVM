@@ -48,6 +48,7 @@ use synthesizer_program::{
     Opcode,
     Operand,
     Program,
+    ProgramReserved,
     RandChaCha,
     Remove,
     Set,

@@ -15,7 +15,7 @@
 
 use crate::{
     prelude::{FromBytes, Identifier, IoResult, Network, Read, ToBytes},
-    synthesizer::{Program, snark::VerifyingKey},
+    synthesizer::{Program, ProgramReserved, snark::VerifyingKey},
 };
 
 use anyhow::{Result, anyhow, bail, ensure};

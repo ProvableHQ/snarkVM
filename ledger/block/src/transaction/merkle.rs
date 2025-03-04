@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use synthesizer_program::Program;
+use synthesizer_program::{Program, ProgramTrait};
 
 impl<N: Network> Transaction<N> {
     /// The maximum number of transitions allowed in a transaction.

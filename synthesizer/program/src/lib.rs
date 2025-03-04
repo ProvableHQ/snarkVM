@@ -102,7 +102,7 @@ use console::{
         tag,
         take,
     },
-    program::{Identifier, Plaintext, PlaintextType, ProgramID, RecordType, StructType},
+    program::{Identifier, Plaintext, ProgramID, RecordType, StructType},
 };
 use indexmap::IndexMap;
 
@@ -183,7 +183,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the ID of the program.
-    pub const fn id(&self) -> &ProgramID<N> {
+    pub fn id(&self) -> &ProgramID<N> {
         match &self {
             Self::ProgramV1(program) => program.id(),
             Self::ProgramV2(program) => program.id(),
@@ -191,7 +191,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the imports in the program.
-    pub const fn imports(&self) -> &IndexMap<ProgramID<N>, Import<N>> {
+    pub fn imports(&self) -> &IndexMap<ProgramID<N>, Import<N>> {
         match &self {
             Self::ProgramV1(program) => program.imports(),
             Self::ProgramV2(program) => program.imports(),
@@ -199,7 +199,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the mappings in the program.
-    pub const fn mappings(&self) -> &IndexMap<Identifier<N>, Mapping<N>> {
+    pub fn mappings(&self) -> &IndexMap<Identifier<N>, Mapping<N>> {
         match &self {
             Self::ProgramV1(program) => program.mappings(),
             Self::ProgramV2(program) => program.mappings(),
@@ -207,7 +207,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the structs in the program.
-    pub const fn structs(&self) -> &IndexMap<Identifier<N>, StructType<N>> {
+    pub fn structs(&self) -> &IndexMap<Identifier<N>, StructType<N>> {
         match &self {
             Self::ProgramV1(program) => program.structs(),
             Self::ProgramV2(program) => program.structs(),
@@ -215,7 +215,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the records in the program.
-    pub const fn records(&self) -> &IndexMap<Identifier<N>, RecordType<N>> {
+    pub fn records(&self) -> &IndexMap<Identifier<N>, RecordType<N>> {
         match &self {
             Self::ProgramV1(program) => program.records(),
             Self::ProgramV2(program) => program.records(),
@@ -223,7 +223,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the closures in the program.
-    pub const fn closures(&self) -> &IndexMap<Identifier<N>, ClosureCore<N, Instruction>> {
+    pub fn closures(&self) -> &IndexMap<Identifier<N>, ClosureCore<N, Instruction>> {
         match &self {
             Self::ProgramV1(program) => program.closures(),
             Self::ProgramV2(program) => program.closures(),
@@ -231,7 +231,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 
     /// Returns the functions in the program.
-    pub const fn functions(&self) -> &IndexMap<Identifier<N>, FunctionCore<N, Instruction, Command>> {
+    pub fn functions(&self) -> &IndexMap<Identifier<N>, FunctionCore<N, Instruction, Command>> {
         match &self {
             Self::ProgramV1(program) => program.functions(),
             Self::ProgramV2(program) => program.functions(),
@@ -418,94 +418,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
-    #[rustfmt::skip]
-    const KEYWORDS: &'static [&'static str] = &[
-        // Mode
-        "const",
-        "constant",
-        "public",
-        "private",
-        // Literals
-        "address",
-        "boolean",
-        "field",
-        "group",
-        "i8",
-        "i16",
-        "i32",
-        "i64",
-        "i128",
-        "u8",
-        "u16",
-        "u32",
-        "u64",
-        "u128",
-        "scalar",
-        "signature",
-        "string",
-        // Boolean
-        "true",
-        "false",
-        // Statements
-        "input",
-        "output",
-        "as",
-        "into",
-        // Record
-        "record",
-        "owner",
-        // Program
-        "transition",
-        "import",
-        "function",
-        "struct",
-        "closure",
-        "program",
-        "aleo",
-        "self",
-        "storage",
-        "mapping",
-        "key",
-        "value",
-        "async",
-        "finalize",
-        // Reserved (catch all)
-        "global",
-        "block",
-        "return",
-        "break",
-        "assert",
-        "continue",
-        "let",
-        "if",
-        "else",
-        "while",
-        "for",
-        "switch",
-        "case",
-        "default",
-        "match",
-        "enum",
-        "struct",
-        "union",
-        "trait",
-        "impl",
-        "type",
-        "future",
-        "_init",
-    ];
-
-    /// Returns `true` if the given name is a reserved opcode.
-    pub fn is_reserved_opcode(name: &str) -> bool {
-        Instruction::is_reserved_opcode(name)
-    }
-
-    /// Returns `true` if the given name uses a reserved keyword.
-    pub fn is_reserved_keyword(name: &Identifier<N>) -> bool {
-        // Convert the given name to a string.
-        let name = name.to_string();
-        // Check if the name is a keyword.
-        Self::KEYWORDS.iter().any(|keyword| *keyword == name)
-    }
+impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramReserved<N, Instruction>
+    for ProgramCore<N, Instruction, Command>
+{
 }
