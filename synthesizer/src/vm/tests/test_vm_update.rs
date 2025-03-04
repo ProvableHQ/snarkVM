@@ -1499,7 +1499,7 @@ $metadata upgradable: true;
 program$2 non_upgradable_3.aleo;
 function foo:
 _init:
-    metadata.get edition into r0 as address;
+    metadata.get edition into r0 as u16;
     assert.eq r0 0u16;
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
@@ -1513,7 +1513,7 @@ program$2 non_upgradable_3.aleo;
 function foo:
 function bar:
 _init:
-    metadata.get edition into r0 as address;
+    metadata.get edition into r0 as u16;
     assert.eq r0 0u16;
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;

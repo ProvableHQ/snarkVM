@@ -188,7 +188,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Get the required metadata.
                         let program_edition = program.get_edition_metadata()?;
                         let program_owner = program.get_owner_metadata()?;
-                        let program_upgradable = program.get_upgradable_metadata()?;
 
                         // Ensure the edition and owner defined in the deployment match the program metadata.
                         ensure!(
@@ -228,6 +227,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 // TODO (@d0cd) Do we need to verify this?
                                 let stack = self.process().read().get_stack(deployment.program_id())?;
                                 let process_program = stack.program().as_v2()?;
+                                let program_upgradable = process_program.get_upgradable_metadata()?;
                                 // Check that the program is upgradable.
                                 ensure!(
                                     **program_upgradable,

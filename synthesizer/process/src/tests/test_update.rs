@@ -875,3 +875,31 @@ function adder:
     process.add_program(&new_program)?;
     Ok(())
 }
+
+#[test]
+fn test_constructor_update() -> Result<()> {
+    // Sample the default process.
+    let mut process = sample_process()?;
+    // Add the initial program to the process.
+    let initial_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function foo:
+_init:
+    assert.eq 1u8 1u8;
+    ",
+    )?;
+    process.add_program(&initial_program)?;
+    // Update the program.
+    let new_program = Program::from_str(
+        r"
+program$2 basic.aleo;
+function foo:
+_init:
+    assert.eq 2u8 2u8;
+    ",
+    )?;
+    // Verify that the update was not successful.
+    assert!(process.add_program(&new_program).is_err());
+    Ok(())
+}
