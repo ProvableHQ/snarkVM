@@ -1550,3 +1550,96 @@ $metadata upgradable: true;
 
     Ok(())
 }
+
+// This test checks that a program can be made non-upgradable after being upgradable.
+#[test]
+fn test_downgrade_upgradable_program() -> Result<()> {
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    // Initialize the genesis block.
+    let genesis = sample_genesis_block(rng);
+
+    // Initialize the VM.
+    let vm = sample_vm();
+    vm.add_next_block(&genesis)?;
+
+    // Define the programs.
+    let program_v0 = Program::from_str(&format!(
+        r"
+program$2 upgradable.aleo;
+function foo:
+_init:
+$metadata program_owner: {caller_address};
+$metadata edition: 0u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    let program_v1 = Program::from_str(&format!(
+        r"
+program$2 upgradable.aleo;
+function foo:
+function bar:
+_init:
+$metadata program_owner: {caller_address};
+$metadata edition: 1u16;
+$metadata upgradable: false;
+    "
+    ))?;
+
+    let program_v2 = Program::from_str(&format!(
+        r"
+program$2 upgradable.aleo;
+function foo:
+function bar:
+function baz:
+_init:
+$metadata program_owner: {caller_address};
+$metadata edition: 2u16;
+$metadata upgradable: false;
+    "
+    ))?;
+
+    let program_v3 = Program::from_str(&format!(
+        r"
+program$2 upgradable.aleo;
+function foo:
+function bar:
+function baz:
+_init:
+$metadata program_owner: {caller_address};
+$metadata edition: 2u16;
+$metadata upgradable: true;
+    "
+    ))?;
+
+    // Deploy the first version of the program.
+    let transaction = vm.deploy(&caller_private_key, &program_v0, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Deploy the second version of the program.
+    let transaction = vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Attempt to deploy the third version of the program.
+    let transaction = vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 0);
+    vm.add_next_block(&block)?;
+
+    // Attempt to deploy another third version of the program.
+    let transaction = vm.deploy(&caller_private_key, &program_v3, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 0);
+    vm.add_next_block(&block)?;
+
+    Ok(())
+}
