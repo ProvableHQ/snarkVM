@@ -34,12 +34,7 @@ impl<N: Network> Stack<N> {
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
             program_address: program.id().to_address()?,
-            program_checksum: {
-                // Hash the program bits.
-                let hash = N::hash_sha3_256(&program.to_bytes_le()?.to_bits_le())?;
-                // Truncate the hash. This offers 64 bits of collision resistance.
-                U128::from_bits_le(&hash[0..U128::<N>::size_in_bits()])?
-            },
+            program_checksum: program.checksum()?,
         };
 
         // Add all the imports into the stack.

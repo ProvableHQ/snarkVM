@@ -20,6 +20,10 @@ use console::{
     program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
 };
 
+use console::{
+    prelude::{FromBits, SizeInBits, ToBits, ToBytes},
+    program::{Literal, Plaintext, U128},
+};
 use indexmap::IndexMap;
 
 pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>>:
@@ -536,6 +540,18 @@ pub trait ProgramReserved<N: Network, Instruction: InstructionTrait<N>> {
     }
 }
 
+pub trait ProgramChecksum<N: Network>: Sized + ToBytes {
+    /// Returns the of the program.
+    fn checksum(&self) -> Result<Plaintext<N>> {
+        // Hash the program bits.
+        let hash = N::hash_sha3_256(&self.to_bytes_le()?.to_bits_le())?;
+        // Truncate the hash. This offers 64 bits of collision resistance.
+        let result = U128::from_bits_le(&hash[0..U128::<N>::size_in_bits()])?;
+        // Return the checksum.
+        Ok(Plaintext::from(Literal::U128(result)))
+    }
+}
+
 // A macro for implementing the standard functionality of a `Program`.
 #[macro_export]
 macro_rules! impl_standard_program {
@@ -605,6 +621,11 @@ macro_rules! impl_standard_program {
         }
 
         impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramReserved<N, Instruction>
+            for $name<N, Instruction, Command>
+        {
+        }
+
+        impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramChecksum<N>
             for $name<N, Instruction, Command>
         {
         }

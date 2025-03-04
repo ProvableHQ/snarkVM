@@ -79,7 +79,6 @@ use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::sync::{Arc, Weak};
 
-use console::program::U128;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
@@ -208,7 +207,7 @@ pub struct Stack<N: Network> {
     /// The program address.
     program_address: Address<N>,
     /// The program checksum.
-    program_checksum: U128<N>,
+    program_checksum: Plaintext<N>,
 }
 
 impl<N: Network> Stack<N> {
@@ -343,7 +342,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
 
     /// Returns the program checksum.
     #[inline]
-    fn program_checksum(&self) -> &U128<N> {
+    fn program_checksum(&self) -> &Plaintext<N> {
         &self.program_checksum
     }
 

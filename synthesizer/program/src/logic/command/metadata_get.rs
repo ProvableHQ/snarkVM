@@ -20,7 +20,7 @@ use crate::{
 };
 use console::{
     network::prelude::*,
-    program::{Literal, Plaintext, PlaintextType, Register, Value},
+    program::{PlaintextType, Register, Value},
 };
 
 /// A command to get metadata about a program, e.g. `metadata.get program_owner into r1 as address;`.
@@ -29,6 +29,8 @@ use console::{
 ///
 /// `metadata.get checksum into r1 as u128;` is a special case where the metadata is not retrieved from the program.
 /// Instead, the checksum of the program is calculated and stored in the destination register.
+///
+/// Note that other than the `checksum`, metadata can only be retrieved for V2 programs.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct MetadataGet<N: Network> {
     /// The global ID.
@@ -82,8 +84,8 @@ impl<N: Network> MetadataGet<N> {
             CallOperator::Resource(name) => (None, name),
         };
         let value = match (external_stack, name.to_string().as_str()) {
-            (Some(external_stack), "checksum") => Plaintext::from(Literal::U128(*external_stack.program_checksum())),
-            (None, "checksum") => Plaintext::from(Literal::U128(*stack.program_checksum())),
+            (Some(external_stack), "checksum") => external_stack.program_checksum().clone(),
+            (None, "checksum") => stack.program_checksum().clone(),
             (Some(external_stack), _) => external_stack.program().get_metadata(&name)?.value().clone(),
             (None, _) => stack.program().get_metadata(&name)?.value().clone(),
         };

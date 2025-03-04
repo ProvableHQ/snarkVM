@@ -190,6 +190,14 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         }
     }
 
+    /// Returns the program checksum.
+    pub fn checksum(&self) -> Result<Plaintext<N>> {
+        match &self {
+            Self::ProgramV1(program) => program.checksum(),
+            Self::ProgramV2(program) => program.checksum(),
+        }
+    }
+
     /// Returns the imports in the program.
     pub fn imports(&self) -> &IndexMap<ProgramID<N>, Import<N>> {
         match &self {
