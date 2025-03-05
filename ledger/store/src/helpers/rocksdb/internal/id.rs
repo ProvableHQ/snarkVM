@@ -295,6 +295,11 @@ enum DataID {
     ProgramIDMap,
     KeyValueMap,
 
+    // Deployment V2
+    DeploymentIDV2Map,
+
+    // Note. Add new production variants above this line.
+
     // Testing
     #[cfg(test)]
     Test,
@@ -306,7 +311,5 @@ enum DataID {
     Test4,
     #[cfg(test)]
     Test5,
-
-    // Additional
-    DeploymentIDV2Map,
+    // Note. Add new testing variants above this line.
 }

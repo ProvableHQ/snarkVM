@@ -37,8 +37,12 @@ use std::borrow::Cow;
 /// A trait for deployment storage.
 pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `transaction ID` to `program ID`.
+    /// Note. After the migration height, `IDMapV1` will only be used for v1 programs.
+    ///   V1 program editions are always `N::EDITION`.
     type IDMapV1: for<'a> Map<'a, N::TransactionID, ProgramID<N>>;
     /// The mapping of `transaction ID` to `(program ID, edition)`.
+    /// Note. After the migration height, `IDMapV2` will be used for v2 programs.
+    ///   V2 program editions start at zero and increment by one for each update.
     type IDMapV2: for<'a> Map<'a, N::TransactionID, (ProgramID<N>, u16)>;
     /// The mapping of `program ID` to `edition`.
     type EditionMap: for<'a> Map<'a, ProgramID<N>, u16>;
@@ -223,7 +227,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         })
     }
 
-    /// TODO (@d0cd) After the migration only the V2 map is used, so do we need to handle the old map?
     /// Removes the deployment transaction for the given `transaction ID`.
     fn remove(&self, transaction_id: &N::TransactionID) -> Result<()> {
         // Retrieve the program ID and edition from the ID map.
@@ -241,16 +244,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             Some(program) => cow_to_cloned!(program),
             None => bail!("Failed to locate program '{program_id}' for transaction '{transaction_id}'"),
         };
-        // Check if the program and edition are in the old ID map.
-        let in_v1_id_map = self.id_map_v1().contains_key_confirmed(transaction_id)?;
 
         atomic_batch_scope!(self, {
-            // Remove the program ID.
-            if in_v1_id_map {
-                self.id_map_v1().remove(transaction_id)?;
-            } else {
-                self.id_map_v2().remove(transaction_id)?;
-            }
+            // Note that after a specific block migration height, `IDMapV2` will be used instead of `IDMapV1`.
+            // This implies that a given transaction will exist in either `IDMapV1` or `IDMapV2`, but not both.
+            self.id_map_v1().remove(transaction_id)?;
+            self.id_map_v2().remove(transaction_id)?;
             // Update the latest edition.
             match (edition, latest_edition) {
                 // If the removed edition is 0, remove the program ID from the edition map.
@@ -313,7 +312,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     ) -> Result<Option<N::TransactionID>> {
         // Check if the pogram ID is for `credits.aleo`.
         // This case is handled separately, as it is a default program of the VM.
-        // TODO: Note on removal in `find_transaction_id_from_program_id`.
+        // TODO: Refer to the prior TODO in `find_transaction_id_from_program_id`.
         if program_id == &ProgramID::from_str("credits.aleo")? {
             return Ok(None);
         }
