@@ -32,4 +32,6 @@ pub trait CommandTrait<N: Network>: Clone + Parser + FromBytes + ToBytes {
     fn is_cast_to_record(&self) -> bool;
     /// Returns `true` if the command is a write operation.
     fn is_write(&self) -> bool;
+    /// Returns `true` if the command is an await instruction.
+    fn is_await(&self) -> bool;
 }

@@ -143,6 +143,12 @@ impl<N: Network> CommandTrait<N> for Command<N> {
     fn is_write(&self) -> bool {
         matches!(self, Command::Set(_) | Command::Remove(_))
     }
+
+    /// Returns `true` if the command is an await instruction.
+    #[inline]
+    fn is_await(&self) -> bool {
+        matches!(self, Command::Await(_))
+    }
 }
 
 impl<N: Network> Command<N> {
