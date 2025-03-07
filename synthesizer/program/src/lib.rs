@@ -102,7 +102,7 @@ use console::{
         tag,
         take,
     },
-    program::{Identifier, Plaintext, ProgramID, RecordType, StructType},
+    program::{Identifier, Literal, ProgramID, RecordType, StructType},
 };
 use indexmap::IndexMap;
 
@@ -440,6 +440,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
 }
 
 impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
+    // Note. This list **must** be append-only as it applies to all program versions.
     #[rustfmt::skip]
     const KEYWORDS: &'static [&'static str] = &[
         // Mode

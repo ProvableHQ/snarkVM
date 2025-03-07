@@ -109,7 +109,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             .ok_or_else(|| anyhow!("Metadata 'edition' is not defined."))?;
         // Destructure the edition.
         let edition = match metadata.value() {
-            Plaintext::Literal(Literal::U16(edition), _) => edition,
+            Literal::U16(edition) => edition,
             _ => bail!("Metadata 'edition' is not a valid 'u16' value."),
         };
         // Return the edition.
@@ -125,7 +125,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             .ok_or_else(|| anyhow!("Metadata 'program_owner' is not defined."))?;
         // Destructure the owner.
         let owner = match metadata.value() {
-            Plaintext::Literal(Literal::Address(owner), _) => owner,
+            Literal::Address(owner) => owner,
             _ => bail!("Metadata 'program_owner' is not a valid 'address' value."),
         };
         // Return the owner.
@@ -141,7 +141,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             .ok_or_else(|| anyhow!("Metadata 'upgradable' is not defined."))?;
         // Destructure the upgradable.
         let upgradable = match metadata.value() {
-            Plaintext::Literal(Literal::Boolean(upgradable), _) => upgradable,
+            Literal::Boolean(upgradable) => upgradable,
             _ => bail!("Metadata 'upgradable' is not a valid 'boolean' value."),
         };
         // Return the upgradable.
