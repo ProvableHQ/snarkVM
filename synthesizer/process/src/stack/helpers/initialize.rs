@@ -120,8 +120,8 @@ impl<N: Network> Stack<N> {
     fn insert_constructor(&mut self, constructor: &Option<Constructor<N>>) -> Result<()> {
         // Compute the constructor types.
         let constructor_types = match constructor {
-            Some(constructor) => ConstructorTypes::from_constructor(self, constructor),
-            None => ConstructorTypes::from_constructor(self, &Constructor::default()),
+            Some(constructor) => FinalizeTypes::from_constructor(self, constructor),
+            None => FinalizeTypes::from_constructor(self, &Constructor::default()),
         }?;
         // Add the constructor types to the stack.
         self.constructor_types = Some(constructor_types);

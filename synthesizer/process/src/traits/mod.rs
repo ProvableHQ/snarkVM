@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, Closure, ConstructorTypes, FinalizeTypes, RegisterTypes};
+use crate::{CallStack, Closure, FinalizeTypes, RegisterTypes};
 use console::{
     account::Address,
     network::Network,
@@ -80,7 +80,7 @@ pub trait StackExecute<N: Network> {
 
 pub trait StackProgramTypes<N: Network> {
     /// Returns the constructor types for the program.
-    fn get_constructor_types(&self) -> Result<&ConstructorTypes<N>>;
+    fn get_constructor_types(&self) -> Result<&FinalizeTypes<N>>;
 
     /// Returns the register types for the given closure or function name.
     fn get_register_types(&self, name: &Identifier<N>) -> Result<&RegisterTypes<N>>;

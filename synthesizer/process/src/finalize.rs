@@ -236,7 +236,7 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
     let constructor_types = stack.get_constructor_types()?.clone();
 
     // Initialize the finalize registers.
-    let mut registers = ConstructorRegisters::new(state, transition_id, *program_id.name(), constructor_types, nonce);
+    let mut registers = FinalizeRegisters::new(state, transition_id, *program_id.name(), constructor_types, nonce);
     // Get the constructor logic.
     let default_constructor = Constructor::default();
     let constructor = stack.program().constructor()?.as_ref().unwrap_or(&default_constructor);

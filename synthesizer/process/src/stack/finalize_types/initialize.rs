@@ -14,9 +14,33 @@
 // limitations under the License.
 
 use super::*;
-use synthesizer_program::MetadataGet;
+use std::collections::HashMap;
+use synthesizer_program::{Constructor, MetadataGet};
 
 impl<N: Network> FinalizeTypes<N> {
+    /// Initializes a new instance of `FinalizeTypes` for the given constructor.
+    /// Checks that the given constructor is well-formed for the given stack.
+    #[inline]
+    pub(super) fn initialize_finalize_types_from_constructor(
+        stack: &(impl StackMatches<N> + StackProgram<N>),
+        constructor: &Constructor<N>,
+    ) -> Result<Self> {
+        // Initialize a map of registers to their types.
+        let mut finalize_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
+
+        // Check the commands are well-formed.
+        for command in constructor.commands() {
+            // Verify that the command is not an await.
+            if let Command::Await(..) = command {
+                bail!("`await` commands are not allowed in constructors.")
+            }
+            // Check the command opcode, operands, and destinations.
+            finalize_types.check_command(stack, constructor.positions(), command)?;
+        }
+
+        Ok(finalize_types)
+    }
+
     /// Initializes a new instance of `FinalizeTypes` for the given finalize.
     /// Checks that the given finalize is well-formed for the given stack.
     ///
@@ -26,7 +50,7 @@ impl<N: Network> FinalizeTypes<N> {
     /// whose finalize is not well-formed, but it is not possible to execute a program whose finalize
     /// is not well-formed.
     #[inline]
-    pub(super) fn initialize_finalize_types(
+    pub(super) fn initialize_finalize_types_from_finalize(
         stack: &(impl StackMatches<N> + StackProgram<N>),
         finalize: &Finalize<N>,
     ) -> Result<Self> {
@@ -53,7 +77,7 @@ impl<N: Network> FinalizeTypes<N> {
         // Step 2. Check the commands are well-formed. Make sure all the input futures are awaited.
         for command in finalize.commands() {
             // Check the command opcode, operands, and destinations.
-            finalize_types.check_command(stack, finalize, command)?;
+            finalize_types.check_command(stack, finalize.positions(), command)?;
 
             // If the command is an `await`, add the future to the set of consumed futures.
             if let Command::Await(await_) = command {
@@ -165,26 +189,26 @@ impl<N: Network> FinalizeTypes<N> {
         Ok(())
     }
 
-    /// Ensures the given command is well-formed.
+    /// Ensures the given command in a finalize block is well-formed.
     #[inline]
     fn check_command(
         &mut self,
         stack: &(impl StackMatches<N> + StackProgram<N>),
-        finalize: &Finalize<N>,
+        positions: &HashMap<Identifier<N>, usize>,
         command: &Command<N>,
     ) -> Result<()> {
         match command {
-            Command::Instruction(instruction) => self.check_instruction(stack, finalize.name(), instruction)?,
+            Command::Instruction(instruction) => self.check_instruction(stack, instruction)?,
             Command::Await(await_) => self.check_await(stack, await_)?,
             Command::Contains(contains) => self.check_contains(stack, contains)?,
             Command::Get(get) => self.check_get(stack, get)?,
             Command::GetOrUse(get_or_use) => self.check_get_or_use(stack, get_or_use)?,
             Command::MetadataGet(metadata_get) => self.check_metadata_get(stack, metadata_get)?,
-            Command::RandChaCha(rand_chacha) => self.check_rand_chacha(stack, finalize.name(), rand_chacha)?,
-            Command::Remove(remove) => self.check_remove(stack, finalize.name(), remove)?,
-            Command::Set(set) => self.check_set(stack, finalize.name(), set)?,
-            Command::BranchEq(branch_eq) => self.check_branch(stack, finalize, branch_eq)?,
-            Command::BranchNeq(branch_neq) => self.check_branch(stack, finalize, branch_neq)?,
+            Command::RandChaCha(rand_chacha) => self.check_rand_chacha(stack, rand_chacha)?,
+            Command::Remove(remove) => self.check_remove(stack, remove)?,
+            Command::Set(set) => self.check_set(stack, set)?,
+            Command::BranchEq(branch_eq) => self.check_branch(stack, positions, branch_eq)?,
+            Command::BranchNeq(branch_neq) => self.check_branch(stack, positions, branch_neq)?,
             // Note that the `Position`s are checked for uniqueness when constructing `Finalize`.
             Command::Position(_) => (),
         }
@@ -215,7 +239,7 @@ impl<N: Network> FinalizeTypes<N> {
     fn check_branch<const VARIANT: u8>(
         &mut self,
         stack: &(impl StackMatches<N> + StackProgram<N>),
-        finalize: &Finalize<N>,
+        positions: &HashMap<Identifier<N>, usize>,
         branch: &Branch<N, VARIANT>,
     ) -> Result<()> {
         // Get the type of the first operand.
@@ -242,7 +266,7 @@ impl<N: Network> FinalizeTypes<N> {
         );
         // Check that the `Position` has been defined.
         ensure!(
-            finalize.positions().get(branch.position()).is_some(),
+            positions.get(branch.position()).is_some(),
             "Command '{}' expects a defined position to jump to. Found undefined position '{}'",
             Branch::<N, VARIANT>::opcode(),
             branch.position()
@@ -495,7 +519,6 @@ impl<N: Network> FinalizeTypes<N> {
     fn check_rand_chacha(
         &mut self,
         _stack: &(impl StackMatches<N> + StackProgram<N>),
-        _finalize_name: &Identifier<N>,
         rand_chacha: &RandChaCha<N>,
     ) -> Result<()> {
         // Ensure the number of operands is within bounds.
@@ -523,15 +546,10 @@ impl<N: Network> FinalizeTypes<N> {
 
     /// Ensures the given `set` command is well-formed.
     #[inline]
-    fn check_set(
-        &self,
-        stack: &(impl StackMatches<N> + StackProgram<N>),
-        finalize_name: &Identifier<N>,
-        set: &Set<N>,
-    ) -> Result<()> {
+    fn check_set(&self, stack: &(impl StackMatches<N> + StackProgram<N>), set: &Set<N>) -> Result<()> {
         // Ensure the declared mapping in `set` is defined in the program.
         if !stack.program().contains_mapping(set.mapping_name()) {
-            bail!("Mapping '{}' in '{}/{finalize_name}' is not defined.", set.mapping_name(), stack.program_id())
+            bail!("Mapping '{}' in '{}' is not defined.", set.mapping_name(), stack.program_id())
         }
         // Retrieve the mapping from the program.
         // Note that the unwrap is safe, as we have already checked the mapping exists.
@@ -569,15 +587,10 @@ impl<N: Network> FinalizeTypes<N> {
 
     /// Ensures the given `remove` command is well-formed.
     #[inline]
-    fn check_remove(
-        &self,
-        stack: &(impl StackMatches<N> + StackProgram<N>),
-        finalize_name: &Identifier<N>,
-        remove: &Remove<N>,
-    ) -> Result<()> {
+    fn check_remove(&self, stack: &(impl StackMatches<N> + StackProgram<N>), remove: &Remove<N>) -> Result<()> {
         // Ensure the declared mapping in `remove` is defined in the program.
         if !stack.program().contains_mapping(remove.mapping_name()) {
-            bail!("Mapping '{}' in '{}/{finalize_name}' is not defined.", remove.mapping_name(), stack.program_id())
+            bail!("Mapping '{}' in '{}' is not defined.", remove.mapping_name(), stack.program_id())
         }
         // Retrieve the mapping from the program.
         // Note that the unwrap is safe, as we have already checked the mapping exists.
@@ -603,11 +616,10 @@ impl<N: Network> FinalizeTypes<N> {
     fn check_instruction(
         &mut self,
         stack: &(impl StackMatches<N> + StackProgram<N>),
-        finalize_name: &Identifier<N>,
         instruction: &Instruction<N>,
     ) -> Result<()> {
         // Ensure the opcode is well-formed.
-        self.check_instruction_opcode(stack, finalize_name, instruction)?;
+        self.check_instruction_opcode(stack, instruction)?;
 
         // Initialize a vector to store the register types of the operands.
         let mut operand_types = Vec::with_capacity(instruction.operands().len());
@@ -644,7 +656,6 @@ impl<N: Network> FinalizeTypes<N> {
     fn check_instruction_opcode(
         &mut self,
         stack: &(impl StackMatches<N> + StackProgram<N>),
-        finalize_name: &Identifier<N>,
         instruction: &Instruction<N>,
     ) -> Result<()> {
         match instruction.opcode() {
@@ -745,7 +756,7 @@ impl<N: Network> FinalizeTypes<N> {
                 _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
             },
             Opcode::Command(opcode) => {
-                bail!("Fatal error: Cannot check command '{opcode}' as an instruction in 'finalize {finalize_name}'.")
+                bail!("Fatal error: Cannot check command '{opcode}' as an instruction'.")
             }
             Opcode::Commit(opcode) => RegisterTypes::check_commit_opcode(opcode, instruction)?,
             Opcode::Hash(opcode) => RegisterTypes::check_hash_opcode(opcode, instruction)?,

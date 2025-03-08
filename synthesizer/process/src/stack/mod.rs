@@ -19,12 +19,6 @@ pub use authorization::*;
 mod call;
 pub use call::*;
 
-mod constructor_registers;
-pub use constructor_registers::*;
-
-mod constructor_types;
-pub use constructor_types::*;
-
 mod finalize_registers;
 pub use finalize_registers::*;
 
@@ -197,7 +191,7 @@ pub struct Stack<N: Network> {
     /// The mapping of finalize names to their register types.
     finalize_types: IndexMap<Identifier<N>, FinalizeTypes<N>>,
     /// The register types in a constructor.
-    constructor_types: Option<ConstructorTypes<N>>,
+    constructor_types: Option<FinalizeTypes<N>>,
     /// The universal SRS.
     universal_srs: Arc<UniversalSRS<N>>,
     /// The mapping of function name to proving key.
@@ -483,7 +477,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
 impl<N: Network> StackProgramTypes<N> for Stack<N> {
     /// Returns the constructor types for the program.
     #[inline]
-    fn get_constructor_types(&self) -> Result<&ConstructorTypes<N>> {
+    fn get_constructor_types(&self) -> Result<&FinalizeTypes<N>> {
         self.constructor_types.as_ref().ok_or_else(|| anyhow!("Constructor types do not exist"))
     }
 
