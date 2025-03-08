@@ -102,7 +102,9 @@ use console::{
         tag,
         take,
     },
+    prelude::{FromBits, SizeInBits, ToBits},
     program::{Identifier, Literal, ProgramID, RecordType, StructType},
+    types::U128,
 };
 use indexmap::IndexMap;
 
@@ -174,6 +176,15 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             Self::ProgramV1(_) => ProgramVersion::V1,
             Self::ProgramV2(_) => ProgramVersion::V2,
         }
+    }
+
+    /// Returns the checksum of the program.
+    #[inline]
+    pub fn checksum(&self) -> Result<U128<N>> {
+        // Hash the program bits.
+        let hash = N::hash_sha3_256(&self.to_bytes_le()?.to_bits_le())?;
+        // Truncate the hash. This offers 64 bits of collision resistance which is sufficient for our purposes.
+        U128::from_bits_le(&hash[0..U128::<N>::size_in_bits()])
     }
 
     /// Initializes the credits program.
