@@ -67,7 +67,7 @@ impl<N: Network> Remove<N> {
         registers: &mut impl RegistersLoad<N>,
     ) -> Result<Option<FinalizeOperation<N>>> {
         // Ensure the mapping exists in storage.
-        if !store.contains_mapping_confirmed(stack.program_id(), &self.mapping)? {
+        if !store.contains_mapping_speculative(stack.program_id(), &self.mapping)? {
             bail!("Mapping '{}/{}' does not exist in storage", stack.program_id(), self.mapping);
         }
 

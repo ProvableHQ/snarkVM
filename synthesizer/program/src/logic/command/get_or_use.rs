@@ -115,7 +115,7 @@ impl<N: Network> GetOrUse<N> {
         };
 
         // Ensure the mapping exists in storage.
-        if !store.contains_mapping_confirmed(&program_id, &mapping_name)? {
+        if !store.contains_mapping_speculative(&program_id, &mapping_name)? {
             bail!("Mapping '{program_id}/{mapping_name}' does not exist in storage");
         }
 

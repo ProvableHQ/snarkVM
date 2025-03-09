@@ -15,7 +15,7 @@
 
 use super::*;
 use console::program::{FinalizeType, Future, Register};
-use synthesizer_program::{Await, FinalizeRegistersState, Operand};
+use synthesizer_program::{Await, Constructor, FinalizeRegistersState, Operand, ProgramVersion};
 use utilities::try_vm_runtime;
 
 use std::collections::HashSet;
@@ -67,6 +67,13 @@ impl<N: Network> Process<N> {
                 finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
             }
             finish!(timer, "Initialize the program mappings");
+
+            // If the program is a V2 program, execute the constructor and extend the finalize operations.
+            // This must happen after the mappings are initialized as the constructor may depend on them.
+            if deployment.program().version() == ProgramVersion::V2 {
+                let operations = finalize_constructor(state, store, &stack, *fee.transition_id())?;
+                finalize_operations.extend(operations);
+            }
 
             // Return the stack and finalize operations.
             Ok((stack, finalize_operations))
@@ -181,6 +188,102 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
         // If the evaluation fails, bail and return the error.
         Err(error) => bail!("'finalize' failed on '{}/{}' - {error}", fee.program_id(), fee.function_name()),
     }
+}
+
+/// Finalizes the constructor.
+fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
+    state: FinalizeGlobalState,
+    store: &FinalizeStore<N, P>,
+    stack: &Stack<N>,
+    transition_id: N::TransitionID,
+) -> Result<Vec<FinalizeOperation<N>>> {
+    // Retrieve the program ID.
+    let program_id = stack.program_id();
+    #[cfg(debug_assertions)]
+    println!("Finalizing constructor for {}...", stack.program_id());
+
+    // Initialize a list for finalize operations.
+    let mut finalize_operations = Vec::new();
+
+    // Initialize a nonce for the constructor registers.
+    // Currently, this nonce is set to zero for every constructor.
+    let nonce = 0;
+
+    // Get the constructor types.
+    // Note that this function is only called on V2 programs which are guaranteed to have constructor types.
+    // This is because if no explicit constructor is defined, a default constructor is used.
+    let constructor_types = stack.get_constructor_types()?.clone();
+
+    // Initialize the finalize registers.
+    let mut registers = FinalizeRegisters::new(state, transition_id, *program_id.name(), constructor_types, nonce);
+    // Get the constructor logic.
+    let default_constructor = Constructor::default();
+    let constructor = stack.program().constructor()?.as_ref().unwrap_or(&default_constructor);
+
+    // Initialize a counter for the commands.
+    let mut counter = 0;
+
+    // Evaluate the commands.
+    while counter < constructor.commands().len() {
+        // Retrieve the command.
+        let command = &constructor.commands()[counter];
+        println!("Command: {command}");
+        // Finalize the command.
+        match &command {
+            Command::BranchEq(branch_eq) => {
+                let result =
+                    try_vm_runtime!(|| branch_to(counter, branch_eq, constructor.positions(), stack, &registers));
+                match result {
+                    Ok(Ok(new_counter)) => {
+                        counter = new_counter;
+                    }
+                    // If the evaluation fails, bail and return the error.
+                    Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
+                    // If the evaluation fails, bail and return the error.
+                    Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
+                }
+            }
+            Command::BranchNeq(branch_neq) => {
+                let result =
+                    try_vm_runtime!(|| branch_to(counter, branch_neq, constructor.positions(), stack, &registers));
+                match result {
+                    Ok(Ok(new_counter)) => {
+                        counter = new_counter;
+                    }
+                    // If the evaluation fails, bail and return the error.
+                    Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
+                    // If the evaluation fails, bail and return the error.
+                    Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
+                }
+            }
+            Command::Await(_) => {
+                bail!("Cannot `await` a Future in a constructor")
+            }
+            _ => {
+                let result = try_vm_runtime!(|| command.finalize(stack, store, &mut registers));
+                match result {
+                    // If the evaluation succeeds with an operation, add it to the list.
+                    Ok(Ok(Some(finalize_operation))) => finalize_operations.push(finalize_operation),
+                    // If the evaluation succeeds with no operation, continue.
+                    Ok(Ok(None)) => {}
+                    // If the evaluation fails, bail and return the error.
+                    Ok(Err(error)) => {
+                        println!("'finalize' failed to evaluate command ({command}): {error}");
+                        bail!("'finalize' failed to evaluate command ({command}): {error}")
+                    }
+                    // If the evaluation fails, bail and return the error.
+                    Err(_) => {
+                        println!("'finalize' failed to evaluate command ({command})");
+                        bail!("'finalize' failed to evaluate command ({command})")
+                    }
+                }
+                counter += 1;
+            }
+        };
+    }
+
+    // Return the finalize operations.
+    Ok(finalize_operations)
 }
 
 /// Finalizes the given transition.

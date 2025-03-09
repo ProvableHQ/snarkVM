@@ -492,8 +492,6 @@ pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: Co
     }
 }
 
-pub trait ProgramReserved<N: Network, Instruction: InstructionTrait<N>> {}
-
 // A macro for implementing the standard functionality of a `Program`.
 #[macro_export]
 macro_rules! impl_standard_program {

@@ -79,10 +79,10 @@ impl<N: Network> ConfirmedTransaction<N> {
                     program.mappings().len(),
                 )
             }
-            // Ensure the number of finalize operations matches the number of 'UpdateKeyValue' finalize operations.
-            if num_update_key_values != fee.num_finalize_operations() {
+            // Ensure the number of fee finalize operations lower bounds the number of 'UpdateKeyValue' finalize operations.
+            if num_update_key_values < fee.num_finalize_operations() {
                 bail!(
-                    "Transaction '{}' (deploy) must contain {} 'UpdateKeyValue' operations (found '{num_update_key_values}')",
+                    "Transaction '{}' (deploy) must contain at least {} 'UpdateKeyValue' operations (found '{num_update_key_values}')",
                     transaction.id(),
                     fee.num_finalize_operations()
                 );

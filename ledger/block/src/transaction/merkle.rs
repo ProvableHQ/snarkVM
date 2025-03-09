@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use synthesizer_program::ProgramVersion;
 
 impl<N: Network> Transaction<N> {
     /// The maximum number of transitions allowed in a transaction.
@@ -116,10 +117,14 @@ impl<N: Network> Transaction<N> {
     pub fn deployment_tree(deployment: &Deployment<N>) -> Result<DeploymentTree<N>> {
         // Ensure the number of leaves is within the Merkle tree size.
         Self::check_deployment_size(deployment)?;
-        // Retrieve the program.
-        let program = deployment.program();
+        // Prepare the header for the hash.
+        let header = match deployment.program().version() {
+            ProgramVersion::V1 => deployment.program().id().to_bits_le(),
+            ProgramVersion::V2 => N::hash_keccak256(&deployment.program().to_bytes_le()?.to_bits_le())?,
+        };
         // Prepare the leaves.
-        let leaves = program
+        let leaves = deployment
+            .program()
             .functions()
             .values()
             .enumerate()
@@ -127,7 +132,7 @@ impl<N: Network> Transaction<N> {
                 // Construct the transaction leaf.
                 Ok(TransactionLeaf::new_deployment(
                     u16::try_from(index)?,
-                    N::hash_bhp1024(&to_bits_le![program.id(), function.to_bytes_le()?])?,
+                    N::hash_bhp1024(&to_bits_le![header, function.to_bytes_le()?])?,
                 )
                 .to_bits_le())
             })
@@ -216,7 +221,7 @@ impl<N: Network> Transaction<N> {
         // Ensure the number of functions is within the allowed range.
         ensure!(
             num_transitions < Self::MAX_TRANSITIONS, // Note: Observe we hold back 1 for the fee.
-            "Execution must contain less than {num_transitions} transitions, found {}",
+            "Execution must contain less than {} transitions, found {num_transitions}",
             Self::MAX_TRANSITIONS,
         );
         Ok(())

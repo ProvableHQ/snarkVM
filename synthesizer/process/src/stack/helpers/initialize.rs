@@ -23,6 +23,7 @@ impl<N: Network> Stack<N> {
         let mut stack = Self {
             program: program.clone(),
             stacks: Arc::downgrade(&process.stacks),
+            constructor_types: Default::default(),
             register_types: Default::default(),
             finalize_types: Default::default(),
             universal_srs: process.universal_srs().clone(),

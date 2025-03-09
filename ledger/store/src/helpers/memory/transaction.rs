@@ -90,8 +90,10 @@ impl<N: Network> TransactionStorage<N> for TransactionMemory<N> {
 #[derive(Clone)]
 #[allow(clippy::type_complexity)]
 pub struct DeploymentMemory<N: Network> {
-    /// The ID map.
-    id_map: MemoryMap<N::TransactionID, ProgramID<N>>,
+    /// The V1 ID map.
+    id_map_v1: MemoryMap<N::TransactionID, ProgramID<N>>,
+    /// The V2 ID map.
+    id_map_v2: MemoryMap<N::TransactionID, (ProgramID<N>, u16)>,
     /// The edition map.
     edition_map: MemoryMap<ProgramID<N>, u16>,
     /// The reverse ID map.
@@ -110,7 +112,8 @@ pub struct DeploymentMemory<N: Network> {
 
 #[rustfmt::skip]
 impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
-    type IDMap = MemoryMap<N::TransactionID, ProgramID<N>>;
+    type IDMapV1 = MemoryMap<N::TransactionID, ProgramID<N>>;
+    type IDMapV2 = MemoryMap<N::TransactionID, (ProgramID<N>, u16)>;
     type EditionMap = MemoryMap<ProgramID<N>, u16>;
     type ReverseIDMap = MemoryMap<(ProgramID<N>, u16), N::TransactionID>;
     type OwnerMap = MemoryMap<(ProgramID<N>, u16), ProgramOwner<N>>;
@@ -122,7 +125,8 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
     /// Initializes the deployment storage.
     fn open(fee_store: FeeStore<N, Self::FeeStorage>) -> Result<Self> {
         Ok(Self {
-            id_map: MemoryMap::default(),
+            id_map_v1: MemoryMap::default(),
+            id_map_v2: MemoryMap::default(),
             edition_map: MemoryMap::default(),
             reverse_id_map: MemoryMap::default(),
             owner_map: MemoryMap::default(),
@@ -133,9 +137,14 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
         })
     }
 
-    /// Returns the ID map.
-    fn id_map(&self) -> &Self::IDMap {
-        &self.id_map
+    /// Returns the V1 ID map.
+    fn id_map_v1(&self) -> &Self::IDMapV1 {
+        &self.id_map_v1
+    }
+
+    /// Returns the V2 ID map.
+    fn id_map_v2(&self) -> &Self::IDMapV2 {
+        &self.id_map_v2
     }
 
     /// Returns the edition map.

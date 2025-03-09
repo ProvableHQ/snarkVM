@@ -38,6 +38,7 @@ use synthesizer_program::{
     CallOperator,
     CastType,
     Command,
+    Constructor,
     Contains,
     Finalize,
     Get,
@@ -56,7 +57,7 @@ use synthesizer_program::{
 };
 
 use indexmap::IndexMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct FinalizeTypes<N: Network> {
@@ -69,11 +70,21 @@ pub struct FinalizeTypes<N: Network> {
 }
 
 impl<N: Network> FinalizeTypes<N> {
+    /// Initializes a new instance of `FinalizeTypes` for the given constructor.
+    /// Checks that the given constructor is well-formed for the given stack.
+    #[inline]
+    pub fn from_constructor(
+        stack: &(impl StackMatches<N> + StackProgram<N>),
+        constructor: &Constructor<N>,
+    ) -> Result<Self> {
+        Self::initialize_finalize_types_from_constructor(stack, constructor)
+    }
+
     /// Initializes a new instance of `FinalizeTypes` for the given finalize.
     /// Checks that the given finalize is well-formed for the given stack.
     #[inline]
     pub fn from_finalize(stack: &(impl StackMatches<N> + StackProgram<N>), finalize: &Finalize<N>) -> Result<Self> {
-        Self::initialize_finalize_types(stack, finalize)
+        Self::initialize_finalize_types_from_finalize(stack, finalize)
     }
 
     /// Returns `true` if the given register exists.

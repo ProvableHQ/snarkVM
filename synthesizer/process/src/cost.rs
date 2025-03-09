@@ -23,8 +23,8 @@ use console::{
 use ledger_block::{Deployment, Execution, Transaction};
 use synthesizer_program::{CastType, Command, Finalize, Instruction, Operand, StackProgram};
 
-/// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, namespace cost)).
-pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (u64, u64, u64))> {
+/// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, namespace cost, constructor cost)).
+pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (u64, u64, u64, u64))> {
     // Determine the number of bytes in the deployment.
     let size_in_bytes = deployment.size_in_bytes()?;
     // Retrieve the program ID.
@@ -44,19 +44,27 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
     // Compute the synthesis cost in microcredits.
     let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER;
 
-    // Compute the namespace cost in credits: 10^(10 - num_characters).
+    // Compute the namespace cost in microcredits: 10^(10 - num_characters) * COST_PER_CREDIT.
     let namespace_cost = 10u64
         .checked_pow(10u32.saturating_sub(num_characters))
         .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
         .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
 
+    // Compute the constructor cost in microcredits.
+    // In a constructor, each command costs 100_000 microcredits.
+    let constructor_cost = match deployment.program().constructor().ok() {
+        Some(Some(constructor)) => constructor.commands().len() as u64 * 100_000,
+        _ => 0,
+    };
+
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
         .checked_add(synthesis_cost)
         .and_then(|x| x.checked_add(namespace_cost))
+        .and_then(|x| x.checked_add(constructor_cost))
         .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
 
-    Ok((total_cost, (storage_cost, synthesis_cost, namespace_cost)))
+    Ok((total_cost, (storage_cost, synthesis_cost, namespace_cost, constructor_cost)))
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).

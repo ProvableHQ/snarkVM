@@ -105,7 +105,8 @@ pub enum CommitteeMap {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum DeploymentMap {
-    ID = DataID::DeploymentIDMap as u16,
+    IDV1 = DataID::DeploymentIDV1Map as u16,
+    IDV2 = DataID::DeploymentIDV2Map as u16,
     Edition = DataID::DeploymentEditionMap as u16,
     ReverseID = DataID::DeploymentReverseIDMap as u16,
     Owner = DataID::DeploymentOwnerMap as u16,
@@ -248,7 +249,7 @@ enum DataID {
     RoundToHeightMap,
     CommitteeMap,
     // Deployment
-    DeploymentIDMap,
+    DeploymentIDV1Map,
     DeploymentEditionMap,
     DeploymentReverseIDMap,
     DeploymentOwnerMap,
@@ -293,6 +294,8 @@ enum DataID {
     // Program
     ProgramIDMap,
     KeyValueMap,
+    // Migration for V2 programs
+    DeploymentIDV2Map,
 
     // Testing
     #[cfg(test)]
