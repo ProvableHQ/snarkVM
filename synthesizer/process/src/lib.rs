@@ -109,7 +109,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Synthesize credits program keys");
 
         // Add the 'credits.aleo' stack to the process.
-        process.add_stack(stack)?;
+        process.add_stack(stack);
 
         finish!(timer);
         // Return the process.
@@ -124,7 +124,7 @@ impl<N: Network> Process<N> {
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
         if program.id() != &credits_program_id {
-            self.add_stack(Stack::new(self, program)?)?;
+            self.add_stack(Stack::new(self, program)?);
         }
         Ok(())
     }
@@ -132,14 +132,13 @@ impl<N: Network> Process<N> {
     /// Adds a new stack to the process.
     /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
     #[inline]
-    pub fn add_stack(&mut self, stack: Stack<N>) -> Result<()> {
+    pub fn add_stack(&mut self, stack: Stack<N>) {
         // Get the program ID.
         let program_id = *stack.program_id();
         // Acquire the write lock.
         let mut stacks = self.stacks.write();
         // Insert the stack into the process, replacing the existing stack if it exists.
         stacks.insert(program_id, Arc::new(stack));
-        Ok(())
     }
 }
 
@@ -177,7 +176,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Load circuit keys");
 
         // Add the stack to the process.
-        process.add_stack(stack)?;
+        process.add_stack(stack);
 
         finish!(timer, "Process::load");
         // Return the process.
@@ -199,7 +198,7 @@ impl<N: Network> Process<N> {
         let stack = Stack::new(&process, &program)?;
 
         // Add the stack to the process.
-        process.add_stack(stack)?;
+        process.add_stack(stack);
 
         // Return the process.
         Ok(process)

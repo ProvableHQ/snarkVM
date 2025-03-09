@@ -294,6 +294,8 @@ enum DataID {
     // Program
     ProgramIDMap,
     KeyValueMap,
+    // Migration for V2 programs
+    DeploymentIDV2Map,
 
     // Testing
     #[cfg(test)]
@@ -306,7 +308,4 @@ enum DataID {
     Test4,
     #[cfg(test)]
     Test5,
-
-    // Additional
-    DeploymentIDV2Map,
 }

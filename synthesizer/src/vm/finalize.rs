@@ -633,7 +633,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 return Err(format!("Failed to finalize an accepted deploy transaction - {error}"));
                             }
                         };
-
                         Ok(())
                     }
                     ConfirmedTransaction::AcceptedExecute(_, transaction, finalize) => {
@@ -770,13 +769,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             // Commit all of the stacks to the process.
             if !stacks.is_empty() {
-                for stack in stacks {
-                    if let Err(e) = process.add_stack(stack) {
-                        eprintln!("Critical bug in finalize: {e}");
-                        // Note: This will abort the entire atomic batch.
-                        return Err(format!("Failed to commit the stack - {e}"));
-                    }
-                }
+                stacks.into_iter().for_each(|stack| process.add_stack(stack))
             }
 
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.

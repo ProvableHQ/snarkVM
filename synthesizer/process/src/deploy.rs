@@ -55,7 +55,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Insert the verifying keys");
 
         // Add the stack to the process.
-        self.add_stack(stack)?;
+        self.add_stack(stack);
 
         finish!(timer);
 

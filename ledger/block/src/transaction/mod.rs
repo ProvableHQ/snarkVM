@@ -43,7 +43,6 @@ use console::{
     },
     types::{Field, Group, U64},
 };
-use synthesizer_program::{Program, ProgramTrait};
 
 type DeploymentID<N> = Field<N>;
 type ExecutionID<N> = Field<N>;

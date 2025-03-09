@@ -71,7 +71,7 @@ impl<N: Network> ConfirmedTransaction<N> {
                     finalize_operations.len()
                 );
             }
-            // Ensure the number of program mappings bounds the number of 'InitializeMapping' finalize operations.
+            // Ensure the number of program mappings upper bounds the number of 'InitializeMapping' finalize operations.
             if num_initialize_mappings > program.mappings().len() {
                 bail!(
                     "Transaction '{}' (deploy) must contain at most '{}' 'InitializeMapping' operations (found '{num_initialize_mappings}')",
@@ -79,7 +79,7 @@ impl<N: Network> ConfirmedTransaction<N> {
                     program.mappings().len(),
                 )
             }
-            // Ensure the number of fee finalize operations bounds the number of 'UpdateKeyValue' finalize operations.
+            // Ensure the number of fee finalize operations lower bounds the number of 'UpdateKeyValue' finalize operations.
             if num_update_key_values < fee.num_finalize_operations() {
                 bail!(
                     "Transaction '{}' (deploy) must contain at least {} 'UpdateKeyValue' operations (found '{num_update_key_values}')",

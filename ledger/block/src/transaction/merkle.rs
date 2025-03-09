@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use synthesizer_program::ProgramVersion;
 
 impl<N: Network> Transaction<N> {
     /// The maximum number of transitions allowed in a transaction.
@@ -117,9 +118,9 @@ impl<N: Network> Transaction<N> {
         // Ensure the number of leaves is within the Merkle tree size.
         Self::check_deployment_size(deployment)?;
         // Prepare the header for the hash.
-        let header = match deployment.program() {
-            Program::ProgramV1(program) => program.id().to_bits_le(),
-            Program::ProgramV2(program) => N::hash_keccak256(&program.to_bytes_le()?.to_bits_le())?,
+        let header = match deployment.program().version() {
+            ProgramVersion::V1 => deployment.program().id().to_bits_le(),
+            ProgramVersion::V2 => N::hash_keccak256(&deployment.program().to_bytes_le()?.to_bits_le())?,
         };
         // Prepare the leaves.
         let leaves = deployment
