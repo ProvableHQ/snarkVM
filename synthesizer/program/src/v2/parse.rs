@@ -15,12 +15,10 @@
 
 use super::*;
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Parser
-    for ProgramCoreV2<N, Instruction, Command>
-{
+impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCoreV2<N, Instruction, Command> {
     /// Parses a string into a program.
     #[inline]
-    fn parse(string: &str) -> ParserResult<Self> {
+    pub(crate) fn parse_internal(string: &str) -> ParserResult<Self> {
         // A helper to parse a program.
         enum P<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> {
             M(Mapping<N>),
@@ -139,33 +137,6 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
         }
 
         Ok((string, program))
-    }
-}
-
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> FromStr
-    for ProgramCoreV2<N, Instruction, Command>
-{
-    type Err = Error;
-
-    /// Returns a program from a string literal.
-    fn from_str(string: &str) -> Result<Self> {
-        // Ensure the raw program string is less than MAX_PROGRAM_SIZE.
-        ensure!(
-            string.len() <= N::MAX_PROGRAM_SIZE,
-            "Program length '{}' exceeds '{}'.",
-            string.len(),
-            N::MAX_PROGRAM_SIZE
-        );
-
-        match Self::parse(string) {
-            Ok((remainder, object)) => {
-                // Ensure the remainder is empty.
-                ensure!(remainder.is_empty(), "Failed to parse string. Remaining invalid string is: \"{remainder}\"");
-                // Return the object.
-                Ok(object)
-            }
-            Err(error) => bail!("Failed to parse string. {error}"),
-        }
     }
 }
 

@@ -19,7 +19,6 @@
 
 mod bytes;
 mod parse;
-mod serialize;
 
 use super::*;
 

@@ -24,8 +24,8 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fro
 
         // Ensure the version is valid and initialize the program.
         let program = match version {
-            1 => Self::ProgramV1(ProgramCoreV1::read_le(&mut reader).map_err(|e| error(e.to_string()))?),
-            2 => Self::ProgramV2(ProgramCoreV2::read_le(&mut reader).map_err(|e| error(e.to_string()))?),
+            1 => Self::ProgramV1(ProgramCoreV1::read_le_internal(&mut reader).map_err(|e| error(e.to_string()))?),
+            2 => Self::ProgramV2(ProgramCoreV2::read_le_internal(&mut reader).map_err(|e| error(e.to_string()))?),
             _ => return Err(error("Invalid program version")),
         };
 
@@ -42,11 +42,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
         match self {
             Self::ProgramV1(program) => {
                 1u8.write_le(&mut writer)?;
-                program.write_le(&mut writer)
+                program.write_le_internal(&mut writer)
             }
             Self::ProgramV2(program) => {
                 2u8.write_le(&mut writer)?;
-                program.write_le(&mut writer)
+                program.write_le_internal(&mut writer)
             }
         }
     }

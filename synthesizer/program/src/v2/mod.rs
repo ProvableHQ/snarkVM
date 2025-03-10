@@ -19,7 +19,6 @@
 
 mod bytes;
 mod parse;
-mod serialize;
 
 use super::*;
 use console::program::{Address, Boolean, Literal, U16};
