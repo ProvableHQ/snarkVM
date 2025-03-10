@@ -492,10 +492,8 @@ impl<N: Network> FinalizeTypes<N> {
         metadata_get: &MetadataGet<N>,
     ) -> Result<()> {
         // Ensure that the program is defined.
-        // Note that we do not check that the metadata name is valid, as that can change in future updates.
-        if let CallOperator::Locator(locator) = metadata_get.name() {
-            // Ensure the program ID is defined.
-            let program_id = locator.program_id();
+        // Note that we do not check that the metadata name is valid, as that can change by an update to the program.
+        if let Some(program_id) = metadata_get.program() {
             // Ensure the program ID is imported by the current program.
             if !stack.program().imports().keys().contains(program_id) {
                 bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());

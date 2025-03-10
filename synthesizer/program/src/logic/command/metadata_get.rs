@@ -14,27 +14,37 @@
 // limitations under the License.
 
 use crate::{
-    CallOperator,
     Opcode,
     traits::{FinalizeStoreTrait, RegistersLoad, RegistersStore, StackMatches, StackProgram},
 };
 use console::{
     network::prelude::*,
-    program::{Literal, LiteralType, Plaintext, PlaintextType, Register, Value},
+    program::{Identifier, Literal, LiteralType, Plaintext, PlaintextType, ProgramID, Register, Value},
 };
+
+/// The name of the metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MetadataName<N: Network> {
+    /// The program checksum.
+    Checksum,
+    /// A declared metadata identifier.
+    Identifier(Identifier<N>),
+}
 
 /// A command to get metadata about a program, e.g. `metadata.get program_owner into r1 as address;`.
 /// Gets the value with the `name` from the program and stores it in the `destination` register.
 /// The value is checked to be of the `destination_type`.
 ///
-/// `metadata.get checksum into r1 as u128;` is a special case where the metadata is not retrieved from the program.
+/// `metadata.get _checksum into r1 as u128;` is a special case where the metadata is not retrieved from the program.
 /// Instead, the checksum of the program is calculated and stored in the destination register.
 ///
 /// Note that other than the `checksum`, metadata can only be retrieved for V2 programs.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct MetadataGet<N: Network> {
-    /// The global ID.
-    name: CallOperator<N>,
+    /// The optional program name.
+    program: Option<ProgramID<N>>,
+    /// The name of the metadata.
+    name: MetadataName<N>,
     /// The destination register.
     destination: Register<N>,
     /// The destination type.
@@ -48,9 +58,15 @@ impl<N: Network> MetadataGet<N> {
         Opcode::Command("metadata.get")
     }
 
+    /// Returns the program.
+    #[inline]
+    pub const fn program(&self) -> Option<&ProgramID<N>> {
+        self.program.as_ref()
+    }
+
     /// Returns the name.
     #[inline]
-    pub const fn name(&self) -> &CallOperator<N> {
+    pub const fn name(&self) -> &MetadataName<N> {
         &self.name
     }
 
@@ -76,19 +92,20 @@ impl<N: Network> MetadataGet<N> {
         _store: &impl FinalizeStoreTrait<N>,
         registers: &mut (impl RegistersLoad<N> + RegistersStore<N>),
     ) -> Result<()> {
-        // Determine the program ID and name.
-        let (external_stack, name) = match self.name {
-            CallOperator::Locator(locator) => {
-                (Some(stack.get_external_stack(locator.program_id())?), *locator.resource())
-            }
-            CallOperator::Resource(name) => (None, name),
+        // Get the metadata literal.
+        let literal = match &self.name {
+            MetadataName::Checksum => Literal::U128(match &self.program {
+                Some(program) => *stack.get_external_stack(program)?.program_checksum(),
+                None => *stack.program_checksum(),
+            }),
+            MetadataName::Identifier(identifier) => match &self.program {
+                Some(program) => {
+                    stack.get_external_stack(program)?.program().get_metadata(&identifier)?.value().clone()
+                }
+                None => stack.program().get_metadata(&identifier)?.value().clone(),
+            },
         };
-        let plaintext = Plaintext::from(match (external_stack, name.to_string().as_str()) {
-            (Some(external_stack), "checksum") => Literal::U128(*external_stack.program_checksum()),
-            (None, "checksum") => Literal::U128(*stack.program_checksum()),
-            (Some(external_stack), _) => external_stack.program().get_metadata(&name)?.value().clone(),
-            (None, _) => stack.program().get_metadata(&name)?.value().clone(),
-        });
+        let plaintext = Plaintext::from(literal);
         // Check that retrieved metadata is of the correct type.
         stack.matches_plaintext(&plaintext, &PlaintextType::Literal(*self.destination_type()))?;
         // Assign the value to the destination register.
@@ -109,8 +126,13 @@ impl<N: Network> Parser for MetadataGet<N> {
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
-        // Parse the name from the string.
-        let (string, name) = CallOperator::parse(string)?;
+        // Optionally parse the program and the "/" separator from the string.
+        let (string, (program, _)) = pair(opt(ProgramID::parse), opt(tag("/")))(string)?;
+        // Parse the metadata name from the string.
+        let (string, name) = alt((
+            map(tag("_checksum"), |_| MetadataName::Checksum),
+            map(Identifier::parse, MetadataName::Identifier),
+        ))(string)?;
 
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
@@ -134,7 +156,7 @@ impl<N: Network> Parser for MetadataGet<N> {
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self { name, destination, destination_type }))
+        Ok((string, Self { program, name, destination, destination_type }))
     }
 }
 
@@ -166,34 +188,72 @@ impl<N: Network> Debug for MetadataGet<N> {
 impl<N: Network> Display for MetadataGet<N> {
     /// Prints the command to a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        // Format the program.
+        let program = match &self.program {
+            Some(program) => format!("{}/", program.to_string()),
+            None => String::new(),
+        };
+        // Format the name.
+        let name = match &self.name {
+            MetadataName::Checksum => "_checksum".to_string(),
+            MetadataName::Identifier(identifier) => identifier.to_string(),
+        };
         // Print the command.
-        write!(f, "{} {} into {} as {};", Self::opcode(), self.name, self.destination, self.destination_type)
+        write!(f, "{} {program}{name} into {} as {};", Self::opcode(), self.destination, self.destination_type)
     }
 }
 
 impl<N: Network> FromBytes for MetadataGet<N> {
     /// Reads the command from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the program.
+        let option = u8::read_le(&mut reader)?;
+        let program = match option {
+            0 => None,
+            1 => Some(ProgramID::read_le(&mut reader)?),
+            _ => return Err(error("Failed to read program ID. Invalid option.")),
+        };
         // Read the name.
-        let name = CallOperator::read_le(&mut reader)?;
+        let variant = u8::read_le(&mut reader)?;
+        let name = match variant {
+            0 => MetadataName::Checksum,
+            1 => MetadataName::Identifier(Identifier::read_le(&mut reader)?),
+            _ => return Err(error("Failed to read metadata name. Invalid variant: {variant}")),
+        };
         // Read the destination register.
         let destination = Register::read_le(&mut reader)?;
         // Read the destination type.
         let destination_type = LiteralType::read_le(&mut reader)?;
         // Return the command.
-        Ok(Self { name, destination, destination_type })
+        Ok(Self { program, name, destination, destination_type })
     }
 }
 
 impl<N: Network> ToBytes for MetadataGet<N> {
     /// Writes the command to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        // Write the program.
+        match &self.program {
+            None => 0u8.write_le(&mut writer)?,
+            Some(program) => {
+                1u8.write_le(&mut writer)?;
+                program.write_le(&mut writer)?;
+            }
+        }
         // Write the name.
-        self.name.write_le(&mut writer)?;
+        match &self.name {
+            MetadataName::Checksum => 0u8.write_le(&mut writer)?,
+            MetadataName::Identifier(identifier) => {
+                1u8.write_le(&mut writer)?;
+                identifier.write_le(&mut writer)?;
+            }
+        }
         // Write the destination register.
         self.destination.write_le(&mut writer)?;
         // Write the destination type.
-        self.destination_type.write_le(&mut writer)
+        self.destination_type.write_le(&mut writer)?;
+        // Return success.
+        Ok(())
     }
 }
 
@@ -212,16 +272,26 @@ mod tests {
         let (string, metadata_get) =
             MetadataGet::<CurrentNetwork>::parse("metadata.get edition into r1 as u16;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-        assert_eq!(metadata_get.name(), &CallOperator::from_str("edition").unwrap());
+        assert_eq!(metadata_get.program(), None);
+        assert_eq!(metadata_get.name(), &MetadataName::Identifier(Identifier::from_str("edition").unwrap()));
         assert_eq!(metadata_get.destination, Register::Locator(1), "The destination is incorrect");
         assert_eq!(metadata_get.destination_type, LiteralType::U16, "The destination type is incorrect");
 
         let (string, metadata_get) =
             MetadataGet::<CurrentNetwork>::parse("metadata.get token.aleo/bar into r1 as u16;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-        assert_eq!(metadata_get.name(), &CallOperator::from_str("token.aleo/bar").unwrap());
+        assert_eq!(metadata_get.program(), Some(&ProgramID::from_str("token.aleo").unwrap()));
+        assert_eq!(metadata_get.name(), &MetadataName::Identifier(Identifier::from_str("bar").unwrap()));
         assert_eq!(metadata_get.destination, Register::Locator(1), "The destination is incorrect");
         assert_eq!(metadata_get.destination_type, LiteralType::U16, "The destination type is incorrect");
+
+        let (string, metadata_get) =
+            MetadataGet::<CurrentNetwork>::parse("metadata.get _checksum into r1 as u128;").unwrap();
+        assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+        assert_eq!(metadata_get.program(), None);
+        assert_eq!(metadata_get.name(), &MetadataName::Checksum);
+        assert_eq!(metadata_get.destination, Register::Locator(1), "The destination is incorrect");
+        assert_eq!(metadata_get.destination_type, LiteralType::U128, "The destination type is incorrect");
     }
 
     #[test]

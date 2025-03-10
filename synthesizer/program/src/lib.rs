@@ -527,6 +527,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         "type",
         "future",
         "_init",
+        "_checksum"
     ];
 
     /// Returns `true` if the given name is a reserved opcode.
