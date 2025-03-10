@@ -31,7 +31,7 @@ pub use synthesizer_snark as snark;
 #[cfg(feature = "process")]
 pub use crate::process::{Authorization, CallMetrics, Process, Stack, Trace};
 #[cfg(feature = "program")]
-pub use crate::program::{Closure, Command, Finalize, Function, Instruction, Program, ProgramReserved};
+pub use crate::program::{Closure, Command, Finalize, Function, Instruction, Program};
 
 #[cfg(all(feature = "process", feature = "program", feature = "snark"))]
 mod restrictions;
@@ -47,7 +47,7 @@ pub mod prelude {
     #[cfg(feature = "process")]
     pub use crate::process::*;
     #[cfg(feature = "program")]
-    pub use crate::program::{Closure, Finalize, Function, Instruction, Mapping, Program, ProgramReserved};
+    pub use crate::program::{Closure, Finalize, Function, Instruction, Mapping, Program};
     #[cfg(feature = "snark")]
     pub use crate::snark::{Certificate, Proof, ProvingKey, UniversalSRS, VerifyingKey};
     #[cfg(all(feature = "process", feature = "program", feature = "snark"))]

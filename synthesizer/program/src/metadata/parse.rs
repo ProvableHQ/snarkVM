@@ -21,21 +21,23 @@ impl<N: Network> Parser for ProgramMetadata<N> {
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the 'metadata' keyword from the string.
+        // Parse the '$metadata' keyword from the string.
         let (string, _) = tag(Self::type_name())(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the metadata name from the string.
+
+        // Parse the name from the string.
         let (string, name) = Identifier::<N>::parse(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
+
         // Parse the colon ':' keyword from the string.
         let (string, _) = tag(":")(string)?;
-
         // Parse the whitespaces from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
+
         // Parse the value from the string.
-        let (string, value) = Plaintext::parse(string)?;
+        let (string, value) = Literal::parse(string)?;
         // Parse the whitespaces from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
@@ -76,32 +78,5 @@ impl<N: Network> Display for ProgramMetadata<N> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Write the metadata to a string.
         write!(f, "{} {}: {};", Self::type_name(), self.name, self.value)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use console::network::MainnetV0;
-
-    type CurrentNetwork = MainnetV0;
-
-    #[test]
-    fn test_metadata_parse() {
-        let metadata = ProgramMetadata::<CurrentNetwork>::parse(
-            r"
-$metadata foo: 1u8;",
-        )
-        .unwrap()
-        .1;
-        assert_eq!("foo", metadata.name().to_string());
-        assert_eq!("1u8", metadata.value().to_string());
-    }
-
-    #[test]
-    fn test_metadata_display() {
-        let expected = "$metadata foo: {\n  bar: 1u8\n};";
-        let metadata = ProgramMetadata::<CurrentNetwork>::parse(expected).unwrap().1;
-        assert_eq!(expected, format!("{metadata}"),);
     }
 }

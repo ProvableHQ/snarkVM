@@ -20,7 +20,7 @@ use crate::{
 };
 use console::{
     network::prelude::*,
-    program::{PlaintextType, Register, Value},
+    program::{Literal, Plaintext, PlaintextType, Register, Value},
 };
 
 /// A command to get metadata about a program, e.g. `metadata.get program_owner into r1 as address;`.
@@ -83,16 +83,16 @@ impl<N: Network> MetadataGet<N> {
             }
             CallOperator::Resource(name) => (None, name),
         };
-        let value = match (external_stack, name.to_string().as_str()) {
-            (Some(external_stack), "checksum") => external_stack.program_checksum().clone(),
-            (None, "checksum") => stack.program_checksum().clone(),
+        let plaintext = Plaintext::from(match (external_stack, name.to_string().as_str()) {
+            (Some(external_stack), "checksum") => Literal::U128(*external_stack.program_checksum()),
+            (None, "checksum") => Literal::U128(*stack.program_checksum()),
             (Some(external_stack), _) => external_stack.program().get_metadata(&name)?.value().clone(),
             (None, _) => stack.program().get_metadata(&name)?.value().clone(),
-        };
+        });
         // Check that retrieved metadata is of the correct type.
-        stack.matches_plaintext(&value, self.destination_type())?;
+        stack.matches_plaintext(&plaintext, self.destination_type())?;
         // Assign the value to the destination register.
-        registers.store(stack, &self.destination, Value::Plaintext(value))?;
+        registers.store(stack, &self.destination, Value::Plaintext(plaintext))?;
 
         Ok(())
     }

@@ -16,7 +16,7 @@
 use crate::{
     file::Manifest,
     prelude::{Network, ProgramID},
-    synthesizer::{Program, ProgramReserved},
+    synthesizer::Program,
 };
 
 use anyhow::{Result, anyhow, bail, ensure};

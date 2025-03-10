@@ -528,9 +528,9 @@ fn initialize_finalize_state<N: Network>(
     nonce: u64,
 ) -> Result<FinalizeState<N>> {
     // Get the stack.
-    let stack = match stack.get_external_stack(future.program_id()) {
-        Ok(stack) => stack,
-        Err(_) => stack.clone(),
+    let stack = match stack.program_id() == future.program_id() {
+        true => stack.clone(),
+        false => stack.get_external_stack(future.program_id())?,
     };
     // Get the finalize logic and check that it exists.
     let finalize = match stack.get_function_ref(future.function_name())?.finalize_logic() {

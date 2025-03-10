@@ -1811,9 +1811,7 @@ $metadata upgradable: true;
     );
 
     // Set the expected checksum.
-    let Plaintext::Literal(Literal::U128(checksum), _) = program_v1.checksum()? else {
-        bail!("Failed to get checksum");
-    };
+    let checksum = program_v1.checksum()?;
     let transaction = vm.execute(
         &caller_private_key,
         ("locked_upgrade.aleo", "set_expected"),

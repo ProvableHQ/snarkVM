@@ -15,10 +15,8 @@
 
 use super::*;
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> FromBytes
-    for ProgramCoreV1<N, Instruction, Command>
-{
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCoreV1<N, Instruction, Command> {
+    pub(crate) fn read_le_internal<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the program ID.
         let id = ProgramID::read_le(&mut reader)?;
 
@@ -58,10 +56,8 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fro
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToBytes
-    for ProgramCoreV1<N, Instruction, Command>
-{
-    fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
+impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCoreV1<N, Instruction, Command> {
+    pub(crate) fn write_le_internal<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the program ID.
         self.id.write_le(&mut writer)?;
 

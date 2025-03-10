@@ -13,16 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Process, Stack, StackProgramTypes, StackRef};
+use crate::{Process, Stack, StackProgramTypes};
 
+use crate::stack::StackRef;
 use console::{
     prelude::*,
     program::{FinalizeType, Identifier, LiteralType, PlaintextType},
 };
 use ledger_block::{Deployment, Execution, Transaction};
-use synthesizer_program::{CastType, Command, Finalize, Instruction, Operand, StackProgram};
+use synthesizer_program::{CastType, Command, Finalize, Instruction, Operand, Program, StackProgram};
 
-// TODO (@d0cd) Adjust deployment cost with constructors.
 /// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, namespace cost, constructor cost)).
 pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (u64, u64, u64, u64))> {
     // Determine the number of bytes in the deployment.
@@ -44,20 +44,14 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
     // Compute the synthesis cost in microcredits.
     let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER;
 
-    // Compute the namespace cost in credits: 10^(10 - num_characters).
+    // Compute the namespace cost in microcredits: 10^(10 - num_characters) * COST_PER_CREDIT.
     let namespace_cost = 10u64
         .checked_pow(10u32.saturating_sub(num_characters))
         .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
         .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
 
-    // Compute the constructor cost.
-    // These are priced differently from finalize commands.
-    // In a constructor, each command costs 100_000 microcredits.
-    // TODO (@d0cd) Is this sane?
-    let constructor_cost = match deployment.program().constructor().ok() {
-        Some(Some(constructor)) => constructor.commands().len() as u64 * 100_000,
-        _ => 0,
-    };
+    // Compute the constructor cost in microcredits.
+    let constructor_cost = constructor_cost_in_microcredits(deployment.program())?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -133,6 +127,7 @@ const HASH_BHP_PER_BYTE_COST: u64 = 300;
 const HASH_PSD_BASE_COST: u64 = 40_000;
 const HASH_PSD_PER_BYTE_COST: u64 = 75;
 
+#[derive(Copy, Clone)]
 pub enum ConsensusFeeVersion {
     V1,
     V2,
@@ -404,7 +399,6 @@ pub fn cost_per_command<N: Network>(
         Command::GetOrUse(command) => {
             cost_in_size(stack, finalize, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
-        // TODO: This should be updated once general `metadata.get` is implemented.
         Command::MetadataGet(_) => Ok(500),
         Command::RandChaCha(_) => Ok(25_000),
         Command::Remove(_) => Ok(SET_BASE_COST),
@@ -416,52 +410,38 @@ pub fn cost_per_command<N: Network>(
     }
 }
 
+/// Returns the minimum number of microcredits required to run the constructor.
+/// Each command costs 100_000 microcredits.
+///
+/// If a constructor does not exist, then the default one is used but no cost is incurred.
+/// V1 programs do not have constructors and thus do not incur a cost.
+pub fn constructor_cost_in_microcredits<N: Network>(program: &Program<N>) -> Result<u64> {
+    match program.constructor().ok() {
+        Some(Some(constructor)) => {
+            let num_commands = constructor.commands().len() as u64;
+            let cost = num_commands.checked_mul(100_000).ok_or(anyhow!("Constructor cost overflowed"))?;
+            Ok(cost)
+        }
+        Some(None) | None => Ok(0),
+    }
+}
+
 /// Returns the minimum number of microcredits required to run the finalize.
 pub fn cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
-    // Initialize the base cost.
-    let mut finalize_cost = 0u64;
-    // Initialize a queue of finalize blocks to tally.
-    let mut finalizes = vec![(StackRef::Internal(stack), *function_name)];
-    // Initialize a counter for the number of finalize blocks seen.
-    let mut num_finalizes = 1;
-    // Iterate over the finalize blocks.
-    while let Some((stack_ref, function_name)) = finalizes.pop() {
-        // Ensure that the number of finalize blocks does not exceed the maximum.
-        // Note that one transition is reserved for the fee.
-        ensure!(
-            num_finalizes < Transaction::<N>::MAX_TRANSITIONS,
-            "The number of finalize blocks must be less than '{}'",
-            Transaction::<N>::MAX_TRANSITIONS
-        );
-        // Get the finalize logic. If the function does not have a finalize scope then no cost is incurred.
-        if let Some(finalize) = match &stack_ref {
-            StackRef::Internal(stack_ref) => stack_ref.get_function_ref(&function_name)?.finalize_logic(),
-            StackRef::External(stack_ref) => stack_ref.get_function_ref(&function_name)?.finalize_logic(),
-        } {
-            // Queue the futures to be tallied.
-            for input in finalize.inputs() {
-                if let FinalizeType::Future(future) = input.finalize_type() {
-                    // Get the external stack for the future.
-                    let external_stack = stack_ref.get_external_stack(future.program_id())?;
-                    // Increment the number of finalize blocks seen.
-                    num_finalizes += 1;
-                    // Queue the future.
-                    finalizes.push((StackRef::External(external_stack), *future.resource()));
-                }
-            }
-            // Sum the cost of all commands in the current block.
-            for command in finalize.commands() {
-                finalize_cost = finalize_cost
-                    .checked_add(cost_per_command(&stack_ref, finalize, command, ConsensusFeeVersion::V2)?)
-                    .ok_or(anyhow!("Finalize cost overflowed"))?;
-            }
-        }
-    }
-    Ok(finalize_cost)
+    cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V2)
 }
 
 /// Returns the minimum number of microcredits required to run the finalize (deprecated).
 pub fn cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
+    cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V1)
+}
+
+// A helper function to compute the cost in microcredits for a given function.
+fn cost_in_microcredits<N: Network>(
+    stack: &Stack<N>,
+    function_name: &Identifier<N>,
+    consensus_fee_version: ConsensusFeeVersion,
+) -> Result<u64> {
     // Initialize the base cost.
     let mut finalize_cost = 0u64;
     // Initialize a queue of finalize blocks to tally.
@@ -478,10 +458,7 @@ pub fn cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Ide
             Transaction::<N>::MAX_TRANSITIONS
         );
         // Get the finalize logic. If the function does not have a finalize scope then no cost is incurred.
-        if let Some(finalize) = match &stack_ref {
-            StackRef::Internal(stack_ref) => stack_ref.get_function_ref(&function_name)?.finalize_logic(),
-            StackRef::External(stack_ref) => stack_ref.get_function_ref(&function_name)?.finalize_logic(),
-        } {
+        if let Some(finalize) = stack_ref.get_function_ref(&function_name)?.finalize_logic() {
             // Queue the futures to be tallied.
             for input in finalize.inputs() {
                 if let FinalizeType::Future(future) = input.finalize_type() {
@@ -496,7 +473,7 @@ pub fn cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Ide
             // Sum the cost of all commands in the current block.
             for command in finalize.commands() {
                 finalize_cost = finalize_cost
-                    .checked_add(cost_per_command(&stack_ref, finalize, command, ConsensusFeeVersion::V1)?)
+                    .checked_add(cost_per_command(&stack_ref, finalize, command, consensus_fee_version)?)
                     .ok_or(anyhow!("Finalize cost overflowed"))?;
             }
         }

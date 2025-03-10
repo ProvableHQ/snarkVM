@@ -21,7 +21,9 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Par
     /// Parses a string into a program.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
-        alt((map(ProgramCoreV1::parse, Self::ProgramV1), map(ProgramCoreV2::parse, Self::ProgramV2)))(string)
+        alt((map(ProgramCoreV1::parse_internal, Self::ProgramV1), map(ProgramCoreV2::parse_internal, Self::ProgramV2)))(
+            string,
+        )
     }
 }
 

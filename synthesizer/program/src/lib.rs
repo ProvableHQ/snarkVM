@@ -102,7 +102,9 @@ use console::{
         tag,
         take,
     },
-    program::{Identifier, Plaintext, ProgramID, RecordType, StructType},
+    prelude::{FromBits, SizeInBits, ToBits},
+    program::{Identifier, Literal, ProgramID, RecordType, StructType},
+    types::U128,
 };
 use indexmap::IndexMap;
 
@@ -176,6 +178,15 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         }
     }
 
+    /// Returns the checksum of the program.
+    #[inline]
+    pub fn checksum(&self) -> Result<U128<N>> {
+        // Hash the program bits.
+        let hash = N::hash_sha3_256(&self.to_bytes_le()?.to_bits_le())?;
+        // Truncate the hash. This offers 64 bits of collision resistance which is sufficient for our purposes.
+        U128::from_bits_le(&hash[0..U128::<N>::size_in_bits()])
+    }
+
     /// Initializes the credits program.
     #[inline]
     pub fn credits() -> Result<Self> {
@@ -187,14 +198,6 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         match &self {
             Self::ProgramV1(program) => program.id(),
             Self::ProgramV2(program) => program.id(),
-        }
-    }
-
-    /// Returns the program checksum.
-    pub fn checksum(&self) -> Result<Plaintext<N>> {
-        match &self {
-            Self::ProgramV1(program) => program.checksum(),
-            Self::ProgramV2(program) => program.checksum(),
         }
     }
 
@@ -264,37 +267,58 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
 
     /// Returns `true` if the program contains an import with the given program ID.
     pub fn contains_import(&self, id: &ProgramID<N>) -> bool {
-        self.imports().contains_key(id)
+        match &self {
+            Self::ProgramV1(program) => program.contains_import(id),
+            Self::ProgramV2(program) => program.contains_import(id),
+        }
     }
 
     /// Returns `true` if the program contains a mapping with the given name.
     pub fn contains_mapping(&self, name: &Identifier<N>) -> bool {
-        self.mappings().contains_key(name)
+        match &self {
+            Self::ProgramV1(program) => program.contains_mapping(name),
+            Self::ProgramV2(program) => program.contains_mapping(name),
+        }
     }
 
     /// Returns `true` if the program contains a struct with the given name.
     pub fn contains_struct(&self, name: &Identifier<N>) -> bool {
-        self.structs().contains_key(name)
+        match &self {
+            Self::ProgramV1(program) => program.contains_struct(name),
+            Self::ProgramV2(program) => program.contains_struct(name),
+        }
     }
 
     /// Returns `true` if the program contains a record with the given name.
     pub fn contains_record(&self, name: &Identifier<N>) -> bool {
-        self.records().contains_key(name)
+        match &self {
+            Self::ProgramV1(program) => program.contains_record(name),
+            Self::ProgramV2(program) => program.contains_record(name),
+        }
     }
 
     /// Returns `true` if the program contains a closure with the given name.
     pub fn contains_closure(&self, name: &Identifier<N>) -> bool {
-        self.closures().contains_key(name)
+        match &self {
+            Self::ProgramV1(program) => program.contains_closure(name),
+            Self::ProgramV2(program) => program.contains_closure(name),
+        }
     }
 
     /// Returns `true` if the program contains a function with the given name.
     pub fn contains_function(&self, name: &Identifier<N>) -> bool {
-        self.functions().contains_key(name)
+        match &self {
+            Self::ProgramV1(program) => program.contains_function(name),
+            Self::ProgramV2(program) => program.contains_function(name),
+        }
     }
 
     /// Returns `true` if the program contains metadata with the given name.
     pub fn contains_metadata(&self, name: &Identifier<N>) -> Result<bool> {
-        self.metadata().map(|metadata| metadata.contains_key(name))
+        match &self {
+            Self::ProgramV1(_) => bail!("Metadata is not supported in V1 programs"),
+            Self::ProgramV2(program) => Ok(program.contains_metadata(name)),
+        }
     }
 
     /// Returns the mapping with the given name.
@@ -426,7 +450,95 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramReserved<N, Instruction>
-    for ProgramCore<N, Instruction, Command>
-{
+impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
+    // Note. This list **must** be append-only as it applies to all program versions.
+    #[rustfmt::skip]
+    const KEYWORDS: &'static [&'static str] = &[
+        // Mode
+        "const",
+        "constant",
+        "public",
+        "private",
+        // Literals
+        "address",
+        "boolean",
+        "field",
+        "group",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "i128",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "u128",
+        "scalar",
+        "signature",
+        "string",
+        // Boolean
+        "true",
+        "false",
+        // Statements
+        "input",
+        "output",
+        "as",
+        "into",
+        // Record
+        "record",
+        "owner",
+        // Program
+        "transition",
+        "import",
+        "function",
+        "struct",
+        "closure",
+        "program",
+        "aleo",
+        "self",
+        "storage",
+        "mapping",
+        "key",
+        "value",
+        "async",
+        "finalize",
+        // Reserved (catch all)
+        "global",
+        "block",
+        "return",
+        "break",
+        "assert",
+        "continue",
+        "let",
+        "if",
+        "else",
+        "while",
+        "for",
+        "switch",
+        "case",
+        "default",
+        "match",
+        "enum",
+        "struct",
+        "union",
+        "trait",
+        "impl",
+        "type",
+        "future",
+        "_init",
+    ];
+
+    /// Returns `true` if the given name is a reserved opcode.
+    pub fn is_reserved_opcode(name: &str) -> bool {
+        Instruction::is_reserved_opcode(name)
+    }
+
+    /// Returns `true` if the given name uses a reserved keyword.
+    pub fn is_reserved_keyword(name: &Identifier<N>) -> bool {
+        // Convert the given name to a string.
+        let name = name.to_string();
+        // Check if the name is a keyword.
+        Self::KEYWORDS.iter().any(|keyword| *keyword == name)
+    }
 }

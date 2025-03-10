@@ -14,10 +14,8 @@
 // limitations under the License.
 
 use super::*;
+use crate::{constructor_cost_in_microcredits, cost_in_microcredits_v2};
 use synthesizer_program::Constructor;
-
-// TODO: @d0cd. Check the MAX_PROGRAM_DEPTH at runtime?
-// TODO: @d0cd. Recursion safety for the number of calls and costs at runtime?
 
 impl<N: Network> Stack<N> {
     /// Initializes a new stack, given the process and program.
@@ -27,9 +25,9 @@ impl<N: Network> Stack<N> {
         let mut stack = Self {
             program: program.clone(),
             stacks: Arc::downgrade(&process.stacks),
+            constructor_types: Default::default(),
             register_types: Default::default(),
             finalize_types: Default::default(),
-            constructor_types: Default::default(),
             universal_srs: process.universal_srs().clone(),
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
@@ -60,10 +58,28 @@ impl<N: Network> Stack<N> {
             // Determine the number of calls for the function.
             // This includes a safety check for the maximum number of calls.
             stack.get_number_of_calls(function.name())?;
+            // Get the finalize cost.
+            let finalize_cost = cost_in_microcredits_v2(&stack, function.name())?;
+            // Check that the finalize cost does not exceed the maximum.
+            ensure!(
+                finalize_cost <= N::TRANSACTION_SPEND_LIMIT,
+                "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
+                function.name(),
+                N::TRANSACTION_SPEND_LIMIT
+            )
         }
 
         // Add the constructor to the stack if it exists.
         if let Ok(constructor) = program.constructor() {
+            // Get the constructor cost.
+            let constructor_cost = constructor_cost_in_microcredits(program)?;
+            // Check that the constructor cost does not exceed the maximum.
+            ensure!(
+                constructor_cost <= N::TRANSACTION_SPEND_LIMIT,
+                "Constructor has a cost '{constructor_cost}' which exceeds the transaction spend limit '{}'",
+                N::TRANSACTION_SPEND_LIMIT
+            );
+            // Add the constructor to the stack.
             stack.insert_constructor(constructor)?;
         }
 
@@ -113,7 +129,7 @@ impl<N: Network> Stack<N> {
         Ok(())
     }
 
-    /// Adds the constructor to the stack. If none is specified for a the program, a default constructor is added.
+    /// Adds the constructor to the stack. If a constructor is not specified for the program, the default constructor is added.
     /// The default constructor ensures that a program cannot be updated.
     // Note that the default constructor **cannot** be changed without a migration.
     #[inline]

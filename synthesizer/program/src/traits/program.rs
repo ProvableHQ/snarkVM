@@ -13,22 +13,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{ClosureCore, CommandTrait, FunctionCore, Import, InstructionTrait, Mapping, ProgramDefinition};
+use crate::{
+    ClosureCore,
+    CommandTrait,
+    FunctionCore,
+    Import,
+    InstructionTrait,
+    Mapping,
+    ProgramCore,
+    ProgramDefinition,
+};
 
 use console::{
     prelude::{Network, Result, anyhow, bail, ensure},
     program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
 };
 
-use console::{
-    prelude::{FromBits, SizeInBits, ToBits, ToBytes},
-    program::{Literal, Plaintext, U128},
-};
 use indexmap::IndexMap;
 
-pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>>:
-    Sized + ProgramReserved<N, Instruction>
-{
+pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>>: Sized {
     /// Returns the ID of the program.
     fn id(&self) -> &ProgramID<N>;
 
@@ -194,9 +197,15 @@ pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: Co
         // Ensure the import name is new.
         ensure!(self.is_unique_name(&import_name), "'{import_name}' is already in use.");
         // Ensure the import name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&import_name.to_string()), "'{import_name}' is a reserved opcode.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_opcode(&import_name.to_string()),
+            "'{import_name}' is a reserved opcode."
+        );
         // Ensure the import name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&import_name), "'{import_name}' is a reserved keyword.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_keyword(&import_name),
+            "'{import_name}' is a reserved keyword."
+        );
 
         // Ensure the import is new.
         ensure!(!self.contains_import(import.program_id()), "Import '{}' is already defined.", import.program_id());
@@ -223,9 +232,15 @@ pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: Co
         // Ensure the mapping name is new.
         ensure!(self.is_unique_name(&mapping_name), "'{mapping_name}' is already in use.");
         // Ensure the mapping name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&mapping_name), "'{mapping_name}' is a reserved keyword.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_keyword(&mapping_name),
+            "'{mapping_name}' is a reserved keyword."
+        );
         // Ensure the mapping name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&mapping_name.to_string()), "'{mapping_name}' is a reserved opcode.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_opcode(&mapping_name.to_string()),
+            "'{mapping_name}' is a reserved opcode."
+        );
 
         // Add the mapping name to the identifiers.
         if self.identifiers_mut().insert(mapping_name, ProgramDefinition::Mapping).is_some() {
@@ -255,9 +270,15 @@ pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: Co
         // Ensure the struct name is new.
         ensure!(self.is_unique_name(&struct_name), "'{struct_name}' is already in use.");
         // Ensure the struct name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&struct_name.to_string()), "'{struct_name}' is a reserved opcode.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_opcode(&struct_name.to_string()),
+            "'{struct_name}' is a reserved opcode."
+        );
         // Ensure the struct name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&struct_name), "'{struct_name}' is a reserved keyword.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_keyword(&struct_name),
+            "'{struct_name}' is a reserved keyword."
+        );
 
         // Ensure the struct contains members.
         ensure!(!struct_.members().is_empty(), "Struct '{struct_name}' is missing members.");
@@ -266,7 +287,10 @@ pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: Co
         // Note: This design ensures cyclic references are not possible.
         for (identifier, plaintext_type) in struct_.members() {
             // Ensure the member name is not a reserved keyword.
-            ensure!(!Self::is_reserved_keyword(identifier), "'{identifier}' is a reserved keyword.");
+            ensure!(
+                !ProgramCore::<N, Instruction, Command>::is_reserved_keyword(identifier),
+                "'{identifier}' is a reserved keyword."
+            );
             // Ensure the member type is already defined in the program.
             match plaintext_type {
                 PlaintextType::Literal(_) => continue,
@@ -315,15 +339,24 @@ pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: Co
         // Ensure the record name is new.
         ensure!(self.is_unique_name(&record_name), "'{record_name}' is already in use.");
         // Ensure the record name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&record_name.to_string()), "'{record_name}' is a reserved opcode.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_opcode(&record_name.to_string()),
+            "'{record_name}' is a reserved opcode."
+        );
         // Ensure the record name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&record_name), "'{record_name}' is a reserved keyword.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_keyword(&record_name),
+            "'{record_name}' is a reserved keyword."
+        );
 
         // Ensure all record entries are well-formed.
         // Note: This design ensures cyclic references are not possible.
         for (identifier, entry_type) in record.entries() {
             // Ensure the member name is not a reserved keyword.
-            ensure!(!Self::is_reserved_keyword(identifier), "'{identifier}' is a reserved keyword.");
+            ensure!(
+                !ProgramCore::<N, Instruction, Command>::is_reserved_keyword(identifier),
+                "'{identifier}' is a reserved keyword."
+            );
             // Ensure the member type is already defined in the program.
             match entry_type.plaintext_type() {
                 PlaintextType::Literal(_) => continue,
@@ -377,9 +410,15 @@ pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: Co
         // Ensure the closure name is new.
         ensure!(self.is_unique_name(&closure_name), "'{closure_name}' is already in use.");
         // Ensure the closure name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&closure_name.to_string()), "'{closure_name}' is a reserved opcode.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_opcode(&closure_name.to_string()),
+            "'{closure_name}' is a reserved opcode."
+        );
         // Ensure the closure name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&closure_name), "'{closure_name}' is a reserved keyword.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_keyword(&closure_name),
+            "'{closure_name}' is a reserved keyword."
+        );
 
         // Ensure there are input statements in the closure.
         ensure!(!closure.inputs().is_empty(), "Cannot evaluate a closure without input statements");
@@ -424,9 +463,15 @@ pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: Co
         // Ensure the function name is new.
         ensure!(self.is_unique_name(&function_name), "'{function_name}' is already in use.");
         // Ensure the function name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&function_name.to_string()), "'{function_name}' is a reserved opcode.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_opcode(&function_name.to_string()),
+            "'{function_name}' is a reserved opcode."
+        );
         // Ensure the function name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&function_name), "'{function_name}' is a reserved keyword.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_keyword(&function_name),
+            "'{function_name}' is a reserved keyword."
+        );
 
         // Ensure the number of inputs is within the allowed range.
         ensure!(function.inputs().len() <= N::MAX_INPUTS, "Function exceeds maximum number of inputs");
@@ -444,111 +489,6 @@ pub trait ProgramTrait<N: Network, Instruction: InstructionTrait<N>, Command: Co
             bail!("'{function_name}' already exists in the program.")
         }
         Ok(())
-    }
-}
-
-pub trait ProgramReserved<N: Network, Instruction: InstructionTrait<N>> {
-    #[rustfmt::skip]
-    const KEYWORDS: &'static [&'static str] = &[
-        // Mode
-        "const",
-        "constant",
-        "public",
-        "private",
-        // Literals
-        "address",
-        "boolean",
-        "field",
-        "group",
-        "i8",
-        "i16",
-        "i32",
-        "i64",
-        "i128",
-        "u8",
-        "u16",
-        "u32",
-        "u64",
-        "u128",
-        "scalar",
-        "signature",
-        "string",
-        // Boolean
-        "true",
-        "false",
-        // Statements
-        "input",
-        "output",
-        "as",
-        "into",
-        // Record
-        "record",
-        "owner",
-        // Program
-        "transition",
-        "import",
-        "function",
-        "struct",
-        "closure",
-        "program",
-        "aleo",
-        "self",
-        "storage",
-        "mapping",
-        "key",
-        "value",
-        "async",
-        "finalize",
-        // Reserved (catch all)
-        "global",
-        "block",
-        "return",
-        "break",
-        "assert",
-        "continue",
-        "let",
-        "if",
-        "else",
-        "while",
-        "for",
-        "switch",
-        "case",
-        "default",
-        "match",
-        "enum",
-        "struct",
-        "union",
-        "trait",
-        "impl",
-        "type",
-        "future",
-        "_init",
-        "checksum",
-    ];
-
-    /// Returns `true` if the given name is a reserved opcode.
-    fn is_reserved_opcode(name: &str) -> bool {
-        Instruction::is_reserved_opcode(name)
-    }
-
-    /// Returns `true` if the given name uses a reserved keyword.
-    fn is_reserved_keyword(name: &Identifier<N>) -> bool {
-        // Convert the given name to a string.
-        let name = name.to_string();
-        // Check if the name is a keyword.
-        Self::KEYWORDS.iter().any(|keyword| *keyword == name)
-    }
-}
-
-pub trait ProgramChecksum<N: Network>: Sized + ToBytes {
-    /// Returns the of the program.
-    fn checksum(&self) -> Result<Plaintext<N>> {
-        // Hash the program bits.
-        let hash = N::hash_sha3_256(&self.to_bytes_le()?.to_bits_le())?;
-        // Truncate the hash. This offers 64 bits of collision resistance.
-        let result = U128::from_bits_le(&hash[0..U128::<N>::size_in_bits()])?;
-        // Return the checksum.
-        Ok(Plaintext::from(Literal::U128(result)))
     }
 }
 
@@ -618,16 +558,6 @@ macro_rules! impl_standard_program {
             fn functions_mut(&mut self) -> &mut IndexMap<Identifier<N>, FunctionCore<N, Instruction, Command>> {
                 &mut self.functions
             }
-        }
-
-        impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramReserved<N, Instruction>
-            for $name<N, Instruction, Command>
-        {
-        }
-
-        impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramChecksum<N>
-            for $name<N, Instruction, Command>
-        {
         }
     };
 }

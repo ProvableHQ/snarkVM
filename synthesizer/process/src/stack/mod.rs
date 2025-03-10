@@ -73,6 +73,7 @@ use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::sync::{Arc, Weak};
 
+use console::program::U128;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
@@ -186,12 +187,12 @@ pub struct Stack<N: Network> {
     program: Program<N>,
     /// A reference to the global stack map.
     stacks: Weak<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
+    /// The register types for the program constructor, if it exists.
+    constructor_types: Option<FinalizeTypes<N>>,
     /// The mapping of closure and function names to their register types.
     register_types: IndexMap<Identifier<N>, RegisterTypes<N>>,
     /// The mapping of finalize names to their register types.
     finalize_types: IndexMap<Identifier<N>, FinalizeTypes<N>>,
-    /// The register types in a constructor.
-    constructor_types: Option<FinalizeTypes<N>>,
     /// The universal SRS.
     universal_srs: Arc<UniversalSRS<N>>,
     /// The mapping of function name to proving key.
@@ -201,7 +202,7 @@ pub struct Stack<N: Network> {
     /// The program address.
     program_address: Address<N>,
     /// The program checksum.
-    program_checksum: Plaintext<N>,
+    program_checksum: U128<N>,
 }
 
 impl<N: Network> Stack<N> {
@@ -336,7 +337,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
 
     /// Returns the program checksum.
     #[inline]
-    fn program_checksum(&self) -> &Plaintext<N> {
+    fn program_checksum(&self) -> &U128<N> {
         &self.program_checksum
     }
 
@@ -346,16 +347,13 @@ impl<N: Network> StackProgram<N> for Stack<N> {
         // Check that the program ID is imported by the program.
         ensure!(self.program.contains_import(program_id), "External program '{program_id}' is not imported.");
         // Upgrade the weak reference to the process-level stack map and retrieve the external stack.
-        let result = self
-            .stacks
+        self.stacks
             .upgrade()
             .ok_or_else(|| anyhow!("Process-level stack map does not exist"))?
             .read()
             .get(program_id)
             .cloned()
-            .ok_or_else(|| anyhow!("External stack for '{program_id}' does not exist"));
-        // Return the external stack.
-        result
+            .ok_or_else(|| anyhow!("External stack for '{program_id}' does not exist"))
     }
 
     /// Returns the function with the given function name.
@@ -387,10 +385,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
                 Transaction::<N>::MAX_TRANSITIONS
             );
             // Determine the number of calls for the function.
-            for instruction in match &stack_ref {
-                StackRef::Internal(stack) => stack.get_function_ref(&function_name)?.instructions(),
-                StackRef::External(stack) => stack.get_function_ref(&function_name)?.instructions(),
-            } {
+            for instruction in stack_ref.get_function_ref(&function_name)?.instructions() {
                 if let Instruction::Call(call) = instruction {
                     // Determine if this is a function call.
                     if call.is_function_call(&*stack_ref)? {

@@ -19,7 +19,6 @@
 
 mod bytes;
 mod parse;
-mod serialize;
 
 use super::*;
 use console::program::{Address, Boolean, Literal, U16};
@@ -55,7 +54,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     #[inline]
     pub fn new(id: ProgramID<N>) -> Result<Self> {
         // Ensure the program name is valid.
-        ensure!(!Self::is_reserved_keyword(id.name()), "Program name is invalid: {}", id.name());
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_keyword(id.name()),
+            "Program name is invalid: {}",
+            id.name()
+        );
 
         Ok(Self {
             id,
@@ -81,6 +84,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         &self.metadata
     }
 
+    /// Returns `true` if the program contains metadata with the given name.
+    pub fn contains_metadata(&self, name: &Identifier<N>) -> bool {
+        self.metadata.contains_key(name)
+    }
+
     /// Returns the metadata value with the given name.
     pub fn get_metadata(&self, name: &Identifier<N>) -> Result<&ProgramMetadata<N>> {
         // Attempt to retrieve the metadata value.
@@ -100,7 +108,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             .ok_or_else(|| anyhow!("Metadata 'edition' is not defined."))?;
         // Destructure the edition.
         let edition = match metadata.value() {
-            Plaintext::Literal(Literal::U16(edition), _) => edition,
+            Literal::U16(edition) => edition,
             _ => bail!("Metadata 'edition' is not a valid 'u16' value."),
         };
         // Return the edition.
@@ -116,7 +124,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             .ok_or_else(|| anyhow!("Metadata 'program_owner' is not defined."))?;
         // Destructure the owner.
         let owner = match metadata.value() {
-            Plaintext::Literal(Literal::Address(owner), _) => owner,
+            Literal::Address(owner) => owner,
             _ => bail!("Metadata 'program_owner' is not a valid 'address' value."),
         };
         // Return the owner.
@@ -132,7 +140,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             .ok_or_else(|| anyhow!("Metadata 'upgradable' is not defined."))?;
         // Destructure the upgradable.
         let upgradable = match metadata.value() {
-            Plaintext::Literal(Literal::Boolean(upgradable), _) => upgradable,
+            Literal::Boolean(upgradable) => upgradable,
             _ => bail!("Metadata 'upgradable' is not a valid 'boolean' value."),
         };
         // Return the upgradable.
@@ -167,9 +175,12 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         // Ensure the metadata name is new.
         ensure!(self.is_unique_name(&name), "'{name}' is already in use.");
         // Ensure the metadata name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&name.to_string()), "'{name}' is a reserved opcode.");
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_opcode(&name.to_string()),
+            "'{name}' is a reserved opcode."
+        );
         // Ensure the metadata name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&name), "'{name}' is a reserved keyword.");
+        ensure!(!ProgramCore::<N, Instruction, Command>::is_reserved_keyword(&name), "'{name}' is a reserved keyword.");
 
         // Add the metadata value to the program.
         if self.metadata.insert(name, metadata).is_some() {

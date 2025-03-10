@@ -26,7 +26,7 @@ use console::{
     program::{Identifier, ProgramID, ProgramOwner},
 };
 use ledger_block::{Deployment, Fee, Transaction};
-use synthesizer_program::Program;
+use synthesizer_program::{Program, ProgramVersion};
 use synthesizer_snark::{Certificate, VerifyingKey};
 
 use aleo_std_storage::StorageMode;
@@ -37,8 +37,10 @@ use std::borrow::Cow;
 /// A trait for deployment storage.
 pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `transaction ID` to `program ID`.
+    /// Note `IDMapV1` only stores program IDs for V1 programs.
     type IDMapV1: for<'a> Map<'a, N::TransactionID, ProgramID<N>>;
     /// The mapping of `transaction ID` to `(program ID, edition)`.
+    /// Note `IDMapV2` only stores program IDs for V2 programs.
     type IDMapV2: for<'a> Map<'a, N::TransactionID, (ProgramID<N>, u16)>;
     /// The mapping of `program ID` to `edition`.
     type EditionMap: for<'a> Map<'a, ProgramID<N>, u16>;
@@ -193,11 +195,17 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         let program = deployment.program();
         // Retrieve the program ID.
         let program_id = *program.id();
+        // Retrieve the program version.
+        let version = program.version();
 
         atomic_batch_scope!(self, {
             // Store the program ID and edition.
-            // Note that the `id_map_v1` is intentionally excluded.
-            self.id_map_v2().insert(*transaction_id, (program_id, edition))?;
+            // If the program is a V1 program, store it in the V1 ID map.
+            // Otherwise, store it in the V2 ID map.
+            match version {
+                ProgramVersion::V1 => self.id_map_v1().insert(*transaction_id, program_id)?,
+                ProgramVersion::V2 => self.id_map_v2().insert(*transaction_id, (program_id, edition))?,
+            }
             // Store the latest edition.
             self.edition_map().insert(program_id, edition)?;
 
@@ -223,7 +231,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         })
     }
 
-    /// TODO (@d0cd) After the migration only the V2 map is used, so do we need to handle the old map?
     /// Removes the deployment transaction for the given `transaction ID`.
     fn remove(&self, transaction_id: &N::TransactionID) -> Result<()> {
         // Retrieve the program ID and edition from the ID map.
@@ -241,16 +248,11 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             Some(program) => cow_to_cloned!(program),
             None => bail!("Failed to locate program '{program_id}' for transaction '{transaction_id}'"),
         };
-        // Check if the program and edition are in the old ID map.
-        let in_v1_id_map = self.id_map_v1().contains_key_confirmed(transaction_id)?;
 
         atomic_batch_scope!(self, {
-            // Remove the program ID.
-            if in_v1_id_map {
-                self.id_map_v1().remove(transaction_id)?;
-            } else {
-                self.id_map_v2().remove(transaction_id)?;
-            }
+            // Remove the transaction from the ID maps.
+            self.id_map_v1().remove(transaction_id)?;
+            self.id_map_v2().remove(transaction_id)?;
             // Update the latest edition.
             match (edition, latest_edition) {
                 // If the removed edition is 0, remove the program ID from the edition map.
@@ -313,7 +315,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     ) -> Result<Option<N::TransactionID>> {
         // Check if the pogram ID is for `credits.aleo`.
         // This case is handled separately, as it is a default program of the VM.
-        // TODO: Note on removal in `find_transaction_id_from_program_id`.
+        // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
         if program_id == &ProgramID::from_str("credits.aleo")? {
             return Ok(None);
         }

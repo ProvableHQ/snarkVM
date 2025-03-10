@@ -42,7 +42,6 @@ use synthesizer_program::{
     Opcode,
     Operand,
     Program,
-    ProgramReserved,
     StackMatches,
     StackProgram,
 };

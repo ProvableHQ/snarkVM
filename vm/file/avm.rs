@@ -15,7 +15,7 @@
 
 use crate::{
     prelude::{FromBytes, Network, ProgramID, ToBytes},
-    synthesizer::{Program, ProgramReserved},
+    synthesizer::Program,
 };
 
 use anyhow::{Result, anyhow, ensure};

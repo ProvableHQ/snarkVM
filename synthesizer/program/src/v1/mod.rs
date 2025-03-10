@@ -19,7 +19,6 @@
 
 mod bytes;
 mod parse;
-mod serialize;
 
 use super::*;
 
@@ -50,7 +49,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     #[inline]
     pub fn new(id: ProgramID<N>) -> Result<Self> {
         // Ensure the program name is valid.
-        ensure!(!Self::is_reserved_keyword(id.name()), "Program name is invalid: {}", id.name());
+        ensure!(
+            !ProgramCore::<N, Instruction, Command>::is_reserved_keyword(id.name()),
+            "Program name is invalid: {}",
+            id.name()
+        );
 
         Ok(Self {
             id,
