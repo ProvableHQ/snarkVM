@@ -99,10 +99,8 @@ impl<N: Network> MetadataGet<N> {
                 None => *stack.program_checksum(),
             }),
             MetadataName::Identifier(identifier) => match &self.program {
-                Some(program) => {
-                    stack.get_external_stack(program)?.program().get_metadata(&identifier)?.value().clone()
-                }
-                None => stack.program().get_metadata(&identifier)?.value().clone(),
+                Some(program) => stack.get_external_stack(program)?.program().get_metadata(identifier)?.value().clone(),
+                None => stack.program().get_metadata(identifier)?.value().clone(),
             },
         };
         let plaintext = Plaintext::from(literal);
@@ -190,7 +188,7 @@ impl<N: Network> Display for MetadataGet<N> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Format the program.
         let program = match &self.program {
-            Some(program) => format!("{}/", program.to_string()),
+            Some(program) => format!("{program}/"),
             None => String::new(),
         };
         // Format the name.
