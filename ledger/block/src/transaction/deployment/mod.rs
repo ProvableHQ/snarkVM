@@ -58,10 +58,13 @@ impl<N: Network> Deployment<N> {
         let program_id = self.program.id();
 
         // Ensure the edition matches.
+        let expected_edition = match &self.program {
+            Program::ProgramV1(_) => N::EDITION,
+            Program::ProgramV2(program) => **program.get_edition_metadata()?,
+        };
         ensure!(
-            self.edition == N::EDITION,
-            "Deployed the wrong edition (expected '{}', found '{}').",
-            N::EDITION,
+            self.edition == expected_edition,
+            "Deployment has the wrong edition (expected '{expected_edition}', found '{}').",
             self.edition
         );
         // Ensure the program contains functions.

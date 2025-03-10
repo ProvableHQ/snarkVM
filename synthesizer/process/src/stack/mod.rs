@@ -65,7 +65,17 @@ use console::{
     types::{Field, Group, U128},
 };
 use ledger_block::{Deployment, Transaction, Transition};
-use synthesizer_program::{CallOperator, Closure, Constructor, Function, Instruction, Operand, Program, traits::*};
+use synthesizer_program::{
+    CallOperator,
+    Closure,
+    Constructor,
+    Function,
+    Instruction,
+    Operand,
+    Program,
+    ProgramVersion,
+    traits::*,
+};
 use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -210,8 +220,18 @@ impl<N: Network> Stack<N> {
     pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
         // Retrieve the program ID.
         let program_id = program.id();
-        // Ensure the program does not already exist in the process.
-        ensure!(!process.contains_program(program_id), "Program '{program_id}' already exists");
+        // If the program is a V1 program, check that it does not exist in the process.
+        // If the program is a V2 program and it exists in the process, check that the update is valid.
+        match program.version() {
+            ProgramVersion::V1 => {
+                ensure!(!process.contains_program(program_id), "Program '{program_id}' already exists in the process");
+            }
+            ProgramVersion::V2 => {
+                if process.contains_program(program_id) {
+                    Self::check_update_is_valid(process, program)?;
+                }
+            }
+        }
         // Ensure the program contains functions.
         ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{program_id}'");
 

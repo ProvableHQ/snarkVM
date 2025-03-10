@@ -56,10 +56,17 @@ impl<N: Network, Command: CommandTrait<N>> ConstructorCore<N, Command> {
         &self.positions
     }
 }
-
+/// Defines the default constructor.
+/// Note that this cannot be changed without a network upgrade that introduces versioning.
 impl<N: Network, Command: CommandTrait<N>> Default for ConstructorCore<N, Command> {
     fn default() -> Self {
-        Self::new()
+        Self::from_str(
+            r"
+_init:
+    metadata.get edition into r0 as u16;
+    assert.eq r0 0u16;",
+        )
+        .unwrap()
     }
 }
 
@@ -131,6 +138,19 @@ mod tests {
     use crate::{Command, Constructor};
 
     type CurrentNetwork = console::network::MainnetV0;
+
+    #[test]
+    fn test_default() {
+        // Initialize a new default constructor.
+        let constructor = Constructor::<CurrentNetwork>::default();
+        assert_eq!(constructor.commands.len(), 2);
+        let first = Command::<CurrentNetwork>::from_str("metadata.get edition into r0 as u16;").unwrap();
+        assert_eq!(constructor.commands[0], first);
+        let second = Command::<CurrentNetwork>::from_str("assert.eq r0 0u16;").unwrap();
+        assert_eq!(constructor.commands[1], second);
+        assert_eq!(constructor.num_writes, 0);
+        assert_eq!(constructor.positions.len(), 0);
+    }
 
     #[test]
     fn test_add_command() {

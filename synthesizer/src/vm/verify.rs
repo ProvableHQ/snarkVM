@@ -149,17 +149,98 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Transaction::Deploy(id, deployment_id, owner, deployment, _) => {
                 // Verify the signature corresponds to the transaction ID.
                 ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
-                // Ensure the edition is correct.
-                if deployment.edition() != N::EDITION {
-                    bail!("Invalid deployment transaction '{id}' - expected edition {}", N::EDITION)
-                }
-                // Ensure the program ID does not already exist in the store.
-                if self.transaction_store().contains_program_id(deployment.program_id())? {
-                    bail!("Program ID '{}' is already deployed", deployment.program_id())
-                }
-                // Ensure the program does not already exist in the process.
-                if self.contains_program(deployment.program_id()) {
-                    bail!("Program ID '{}' already exists", deployment.program_id());
+
+                // If the program is a V1 program, then check that:
+                //  - the edition matches the network edition.
+                //  - the program does not exist in the store or process.
+                //
+                // If the program is a V2 program, then check that:
+                //  - the program contains `edition`, `owner`, and `upgradable` metadata.
+                //  - the editions in the program metadata and deployment match.
+                //  - the owners in the program metadata and deployment match.
+                // Furthermore, if the edition is zero, then check that:
+                //  - The program does not exist in the store or process.
+                // Otherwise, check that:
+                //  - The program exists in the store and process.
+                //  - The existing program is a V2 program.
+                //  - The existing program is upgradable.
+                //  - The new edition increments the old edition.
+                let store_contains_program = self.transaction_store().contains_program_id(deployment.program_id())?;
+                let process_contains_program = self.contains_program(deployment.program_id());
+                match deployment.program() {
+                    Program::ProgramV1(_) => {
+                        // Ensure the edition is correct.
+                        ensure!(
+                            deployment.edition() == N::EDITION,
+                            "Invalid deployment transaction '{id}' - expected edition {}",
+                            N::EDITION
+                        );
+                        // Ensure the program ID does not already exist in the store.
+                        ensure!(
+                            !store_contains_program,
+                            "Program ID '{}' is already deployed",
+                            deployment.program_id()
+                        );
+                        // Ensure the program does not already exist in the process.
+                        ensure!(!process_contains_program, "Program ID '{}' already exists", deployment.program_id());
+                    }
+                    Program::ProgramV2(program) => {
+                        // Get the required metadata.
+                        let program_edition = program.get_edition_metadata()?;
+                        let program_owner = program.get_owner_metadata()?;
+
+                        // Ensure the edition and owner defined in the deployment match the program metadata.
+                        ensure!(
+                            deployment.edition() == **program_edition,
+                            "Invalid deployment transaction '{id}' - edition mismatch"
+                        );
+                        ensure!(
+                            owner.address() == *program_owner,
+                            "Invalid deployment transaction '{id}' - owner mismatch"
+                        );
+                        // Check the cases that depend on the edition.
+                        match **program_edition {
+                            0 => {
+                                ensure!(
+                                    !store_contains_program,
+                                    "Program ID '{}' is already deployed",
+                                    deployment.program_id()
+                                );
+                                ensure!(
+                                    !process_contains_program,
+                                    "Program ID '{}' already exists",
+                                    deployment.program_id()
+                                );
+                            }
+                            edition => {
+                                // Check that the program exists.
+                                ensure!(
+                                    store_contains_program,
+                                    "Invalid deployment transaction '{id}' - program does not exist in the store"
+                                );
+                                ensure!(
+                                    process_contains_program,
+                                    "Invalid deployment transaction '{id}' - program does not exist in the process"
+                                );
+                                // Check the program version.
+                                // It should be the case that the stored program matches the process program.
+                                let stack = self.process().read().get_stack(deployment.program_id())?;
+                                let process_program = stack.program().as_v2()?;
+                                let program_upgradable = process_program.get_upgradable_metadata()?;
+                                // Check that the program is upgradable.
+                                ensure!(
+                                    **program_upgradable,
+                                    "Invalid deployment transaction '{id}' - program is not upgradable"
+                                );
+                                // Check that the new edition increments the old edition.
+                                let process_edition = **process_program.get_edition_metadata()?;
+                                ensure!(
+                                    process_edition < edition && process_edition.saturating_add(1) == edition,
+                                    "Invalid deployment transaction '{id}' - new edition does not increment old edition"
+                                );
+                            }
+                        }
+                    }
                 }
                 // Verify the deployment if it has not been verified before.
                 if !is_partially_verified {
@@ -242,11 +323,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             N::TRANSACTION_SPEND_LIMIT
                         );
                         // Ensure the fee is sufficient to cover the cost.
-                        if *fee.base_amount()? < cost {
-                            bail!(
-                                "Transaction '{id}' has an insufficient base fee (execution) - requires {cost} microcredits"
-                            )
-                        }
+                        ensure!(
+                            cost <= *fee.base_amount()?,
+                            "Transaction '{id}' has an insufficient base fee (execution) - requires {cost} microcredits"
+                        );
                     } else {
                         // Ensure the base fee amount is zero.
                         ensure!(*fee.base_amount()? == 0, "Transaction '{id}' has a non-zero base fee (execution)");

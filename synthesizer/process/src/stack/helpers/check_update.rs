@@ -1,0 +1,113 @@
+// Copyright 2024 Aleo Network Foundation
+// This file is part of the snarkVM library.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at:
+
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use super::*;
+
+impl<N: Network> Stack<N> {
+    /// Checks that the new program definition is a valid update.
+    #[inline]
+    pub(crate) fn check_update_is_valid(process: &Process<N>, program: &Program<N>) -> Result<()> {
+        // Get the new program ID.
+        let program_id = program.id();
+        // Get the old program.
+        let stack = process.get_stack(program_id)?;
+        let old_program = stack.program();
+        // Ensure that the program versions match.
+        ensure!(
+            old_program.version() == program.version(),
+            "Cannot update '{program_id}' because the versions do not match"
+        );
+        // Ensure the program ID matches.
+        ensure!(old_program.id() == program.id(), "Cannot update '{program_id}' with different program ID");
+
+        // Ensure that all of the structs in the old program exist in the new program.
+        for (struct_id, struct_type) in old_program.structs() {
+            let new_struct_type = program.get_struct(struct_id)?;
+            ensure!(
+                struct_type == new_struct_type,
+                "Cannot update '{program_id}' because the struct '{struct_id}' does not match"
+            );
+        }
+        // Ensure that all of the records in the old program exist in the new program.
+        for (record_id, record_type) in old_program.records() {
+            let new_record_type = program.get_record(record_id)?;
+            ensure!(
+                record_type == new_record_type,
+                "Cannot update '{program_id}' because the record '{record_id}' does not match"
+            );
+        }
+        // Ensure that all of the mappings in the old program exist in the new program.
+        for (mapping_id, mapping_type) in old_program.mappings() {
+            let new_mapping_type = program.get_mapping(mapping_id)?;
+            ensure!(
+                *mapping_type == new_mapping_type,
+                "Cannot update '{program_id}' because the mapping '{mapping_id}' does not match"
+            );
+        }
+        // Ensure that all of the imports in the old program exist in the new program.
+        for import in old_program.imports().keys() {
+            if !program.contains_import(import) {
+                bail!("Cannot update '{program_id}' because it is missing the original import '{import}'");
+            }
+        }
+        // Ensure that the constructors in both programs are exactly the same.
+        ensure!(
+            old_program.constructor()? == program.constructor()?,
+            "Cannot update '{program_id}' because the constructor does not match"
+        );
+        // Ensure that the old program closures exist in the new program, with the exact same definition
+        for closure in old_program.closures().values() {
+            let closure_name = closure.name();
+            let new_closure = program.get_closure(closure_name)?;
+            ensure!(
+                closure == &new_closure,
+                "Cannot update '{program_id}' because the closure '{closure_name}' does not exactly match"
+            );
+        }
+        // Ensure that the old program functions exist in the new program, with the same input and output types.
+        // If the function has an associated `finalize` block, then ensure that the finalize block exists in the new program.
+        for function in old_program.functions().values() {
+            let function_name = function.name();
+            if !program.contains_function(function.name()) {
+                bail!("Cannot update '{program_id}' because it is missing the function '{function_name}'");
+            }
+            let new_function = program.get_function(function.name())?;
+            ensure!(
+                function.input_types() == new_function.input_types(),
+                "Cannot update '{program_id}' because the inputs to the function '{function_name}' do not match"
+            );
+            ensure!(
+                function.output_types() == new_function.output_types(),
+                "Cannot update '{program_id}' because the outputs of the function '{function_name}' do not match"
+            );
+            match (function.finalize_logic(), new_function.finalize_logic()) {
+                (None, None) => {} // Do nothing
+                (None, Some(_)) => bail!(
+                    "Cannot update '{program_id}' because the function '{function_name}' should not have a finalize block"
+                ),
+                (Some(_), None) => bail!(
+                    "Cannot update '{program_id}' because the function '{function_name}' should have a finalize block"
+                ),
+                (Some(finalize), Some(new_finalize)) => {
+                    ensure!(
+                        finalize.input_types() == new_finalize.input_types(),
+                        "Cannot update '{program_id}' because the finalize inputs to the function '{function_name}' do not match"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+}

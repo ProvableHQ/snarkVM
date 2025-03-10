@@ -50,8 +50,14 @@ impl<N: Network> Stack<N> {
 
         finish!(timer);
 
+        // Get the edition.
+        let edition = match self.program() {
+            Program::ProgramV1(_) => N::EDITION,
+            Program::ProgramV2(program) => **program.get_edition_metadata()?,
+        };
+
         // Return the deployment.
-        Deployment::new(N::EDITION, self.program.clone(), verifying_keys)
+        Deployment::new(edition, self.program.clone(), verifying_keys)
     }
 
     /// Checks each function in the program on the given verifying key and certificate.
