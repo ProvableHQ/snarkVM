@@ -214,22 +214,14 @@ mod tests {
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(metadata_get.name(), &CallOperator::from_str("edition").unwrap());
         assert_eq!(metadata_get.destination, Register::Locator(1), "The destination is incorrect");
-        assert_eq!(
-            metadata_get.destination_type,
-            LiteralType::U16,
-            "The destination type is incorrect"
-        );
+        assert_eq!(metadata_get.destination_type, LiteralType::U16, "The destination type is incorrect");
 
         let (string, metadata_get) =
             MetadataGet::<CurrentNetwork>::parse("metadata.get token.aleo/bar into r1 as u16;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(metadata_get.name(), &CallOperator::from_str("token.aleo/bar").unwrap());
         assert_eq!(metadata_get.destination, Register::Locator(1), "The destination is incorrect");
-        assert_eq!(
-            metadata_get.destination_type,
-            LiteralType::U16,
-            "The destination type is incorrect"
-        );
+        assert_eq!(metadata_get.destination_type, LiteralType::U16, "The destination type is incorrect");
     }
 
     #[test]

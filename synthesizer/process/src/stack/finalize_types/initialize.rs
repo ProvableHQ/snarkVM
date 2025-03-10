@@ -510,7 +510,7 @@ impl<N: Network> FinalizeTypes<N> {
         // Insert the destination register.
         self.add_destination(
             destination,
-            FinalizeType::Plaintext(PlaintextType::Literal(metadata_get.destination_type().clone())),
+            FinalizeType::Plaintext(PlaintextType::Literal(*metadata_get.destination_type())),
         )?;
         Ok(())
     }
