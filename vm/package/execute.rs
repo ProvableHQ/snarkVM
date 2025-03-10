@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use snarkvm_synthesizer::program::StackProgram;
 
 impl<N: Network> Package<N> {
     /// Executes a program function with the given inputs.

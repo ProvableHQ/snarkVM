@@ -34,7 +34,7 @@ use crate::{
     prelude::{Deserialize, Deserializer, Serialize, SerializeStruct, Serializer},
     synthesizer::{
         process::{Assignments, CallMetrics, CallStack, Process, StackExecute},
-        program::{CallOperator, Instruction, Program},
+        program::{CallOperator, Instruction, Program, StackProgram},
         snark::{ProvingKey, VerifyingKey},
     },
 };

@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use snarkvm_synthesizer::program::StackProgram;
 
 use snarkvm_utilities::DeserializeExt;
 
