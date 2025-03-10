@@ -252,11 +252,7 @@ impl<F: PrimeField> Add<LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
-        if self.constant.is_zero() && self.terms.is_empty() {
-            other
-        } else if other.constant.is_zero() && other.terms.is_empty() {
-            self
-        } else if self.terms.len() > other.terms.len() {
+        if self.terms.len() > other.terms.len() {
             let mut output = self;
             output += Cow::Owned(other);
             output
@@ -272,15 +268,9 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn add(self, other: &Self) -> Self::Output {
-        if self.constant.is_zero() && self.terms.is_empty() {
-            other.clone()
-        } else if other.constant.is_zero() && other.terms.is_empty() {
-            self
-        } else {
-            let mut output = self;
-            output += Cow::Borrowed(other);
-            output
-        }
+        let mut output = self;
+        output += Cow::Borrowed(other);
+        output
     }
 }
 
@@ -296,11 +286,7 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: &LinearCombination<F>) -> Self::Output {
-        if self.constant.is_zero() && self.terms.is_empty() {
-            other.clone()
-        } else if other.constant.is_zero() && other.terms.is_empty() {
-            self.clone()
-        } else if self.terms.len() > other.terms.len() {
+        if self.terms.len() > other.terms.len() {
             let mut output = self.clone();
             output += Cow::Borrowed(other);
             output
@@ -386,13 +372,7 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
-        if self.constant.is_zero() && self.terms.is_empty() {
-            -other
-        } else if other.constant.is_zero() && other.terms.is_empty() {
-            self
-        } else {
-            self + (-other)
-        }
+        self + (-other)
     }
 }
 
@@ -400,13 +380,7 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(self, other: &Self) -> Self::Output {
-        if self.constant.is_zero() && self.terms.is_empty() {
-            -other.clone()
-        } else if other.constant.is_zero() && other.terms.is_empty() {
-            self
-        } else {
-            self + (-other)
-        }
+        self + (-other)
     }
 }
 
@@ -414,13 +388,7 @@ impl<F: PrimeField> Sub<LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: LinearCombination<F>) -> Self::Output {
-        if self.constant.is_zero() && self.terms.is_empty() {
-            -other
-        } else if other.constant.is_zero() && other.terms.is_empty() {
-            self.clone()
-        } else {
-            self + (-other)
-        }
+        self + (-other)
     }
 }
 
@@ -428,13 +396,7 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn sub(self, other: &LinearCombination<F>) -> Self::Output {
-        if self.constant.is_zero() && self.terms.is_empty() {
-            -other
-        } else if other.constant.is_zero() && other.terms.is_empty() {
-            self.clone()
-        } else {
-            self + (-other)
-        }
+        self + (-other)
     }
 }
 
