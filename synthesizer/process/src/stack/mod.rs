@@ -62,7 +62,7 @@ use console::{
         Value,
         ValueType,
     },
-    types::{Field, Group},
+    types::{Field, Group, U128},
 };
 use ledger_block::{Deployment, Transaction, Transition};
 use synthesizer_program::{CallOperator, Closure, Constructor, Function, Instruction, Operand, Program, traits::*};
@@ -200,6 +200,8 @@ pub struct Stack<N: Network> {
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The program address.
     program_address: Address<N>,
+    /// The program checksum.
+    program_checksum: U128<N>,
 }
 
 impl<N: Network> Stack<N> {
@@ -321,6 +323,12 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     #[inline]
     fn program_address(&self) -> &Address<N> {
         &self.program_address
+    }
+
+    /// Returns the program checksum.
+    #[inline]
+    fn program_checksum(&self) -> &U128<N> {
+        &self.program_checksum
     }
 
     /// Returns the external stack for the given program ID.

@@ -201,6 +201,7 @@ impl<N: Network> FinalizeTypes<N> {
             Command::Contains(contains) => self.check_contains(stack, contains)?,
             Command::Get(get) => self.check_get(stack, get)?,
             Command::GetOrUse(get_or_use) => self.check_get_or_use(stack, get_or_use)?,
+            Command::MetadataGet(metadata_get) => self.check_metadata_get(stack, metadata_get)?,
             Command::RandChaCha(rand_chacha) => self.check_rand_chacha(stack, rand_chacha)?,
             Command::Remove(remove) => self.check_remove(stack, remove)?,
             Command::Set(set) => self.check_set(stack, set)?,
@@ -480,6 +481,37 @@ impl<N: Network> FinalizeTypes<N> {
         ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
         // Insert the destination register.
         self.add_destination(destination, FinalizeType::Plaintext(default_value_type))?;
+        Ok(())
+    }
+
+    /// Ensures the given `metadata.get` command is well-formed.
+    #[inline]
+    fn check_metadata_get(
+        &mut self,
+        stack: &(impl StackMatches<N> + StackProgram<N>),
+        metadata_get: &MetadataGet<N>,
+    ) -> Result<()> {
+        // Ensure that the program is defined.
+        // Note that we do not check that the metadata name is valid, as that can change in future updates.
+        if let CallOperator::Locator(locator) = metadata_get.name() {
+            // Ensure the program ID is defined.
+            let program_id = locator.program_id();
+            // Ensure the program ID is imported by the current program.
+            if !stack.program().imports().keys().contains(program_id) {
+                bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
+            }
+            // Check that the process contains the external program.
+            stack.get_external_stack(program_id)?;
+        }
+        // Get the destination register.
+        let destination = metadata_get.destination().clone();
+        // Ensure the destination register is a locator (and does not reference an access).
+        ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
+        // Insert the destination register.
+        self.add_destination(
+            destination,
+            FinalizeType::Plaintext(PlaintextType::Literal(metadata_get.destination_type().clone())),
+        )?;
         Ok(())
     }
 

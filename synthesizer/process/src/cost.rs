@@ -399,6 +399,7 @@ pub fn cost_per_command<N: Network>(
         Command::GetOrUse(command) => {
             cost_in_size(stack, finalize, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
+        Command::MetadataGet(_) => Ok(500),
         Command::RandChaCha(_) => Ok(25_000),
         Command::Remove(_) => Ok(SET_BASE_COST),
         Command::Set(command) => {

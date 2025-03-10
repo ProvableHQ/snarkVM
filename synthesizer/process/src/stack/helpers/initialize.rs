@@ -30,6 +30,7 @@ impl<N: Network> Stack<N> {
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
             program_address: program.id().to_address()?,
+            program_checksum: program.checksum()?,
         };
 
         // Add all the imports into the stack.
@@ -41,6 +42,7 @@ impl<N: Network> Stack<N> {
                 bail!("Cannot add program '{}' because its import '{import}' must be added first", program.id())
             }
         }
+
         // Add the program closures to the stack.
         for closure in program.closures().values() {
             // Add the closure to the stack.
@@ -54,7 +56,6 @@ impl<N: Network> Stack<N> {
             // Determine the number of calls for the function.
             // This includes a safety check for the maximum number of calls.
             stack.get_number_of_calls(function.name())?;
-
             // Get the finalize cost.
             let finalize_cost = cost_in_microcredits_v2(&stack, function.name())?;
             // Check that the finalize cost does not exceed the maximum.
@@ -63,7 +64,7 @@ impl<N: Network> Stack<N> {
                 "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
                 function.name(),
                 N::TRANSACTION_SPEND_LIMIT
-            );
+            )
         }
 
         // Add the constructor to the stack if it exists.

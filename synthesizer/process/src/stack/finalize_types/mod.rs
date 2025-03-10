@@ -46,6 +46,7 @@ use synthesizer_program::{
     Instruction,
     InstructionTrait,
     MAX_ADDITIONAL_SEEDS,
+    MetadataGet,
     Opcode,
     Operand,
     Program,
