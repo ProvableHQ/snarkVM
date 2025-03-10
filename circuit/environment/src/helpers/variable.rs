@@ -21,7 +21,7 @@ use core::{
     fmt,
     ops::{Add, Sub},
 };
-use std::rc::Rc;
+use std::{borrow::Cow, rc::Rc};
 
 pub type Index = u64;
 
@@ -121,7 +121,7 @@ impl<F: PrimeField> Add<Variable<F>> for Variable<F> {
     fn add(self, other: Variable<F>) -> Self::Output {
         match (self, other) {
             (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(*a + *b)).into(),
-            (first, second) => LinearCombination::from([first, second]),
+            (first, second) => LinearCombination::from([Cow::Owned(first), Cow::Owned(second)]),
         }
     }
 }
@@ -133,7 +133,7 @@ impl<F: PrimeField> Add<Variable<F>> for &Variable<F> {
     fn add(self, other: Variable<F>) -> Self::Output {
         match (self, other) {
             (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(**a + *b)).into(),
-            (first, second) => LinearCombination::from([first.clone(), second]),
+            (first, second) => LinearCombination::from([Cow::Borrowed(first), Cow::Owned(second)]),
         }
     }
 }
@@ -145,7 +145,7 @@ impl<F: PrimeField> Add<&Variable<F>> for Variable<F> {
     fn add(self, other: &Variable<F>) -> Self::Output {
         match (self, other) {
             (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(*a + **b)).into(),
-            (first, second) => LinearCombination::from([first, second.clone()]),
+            (first, second) => LinearCombination::from([Cow::Owned(first), Cow::Borrowed(second)]),
         }
     }
 }
@@ -156,7 +156,7 @@ impl<F: PrimeField> Add<&Variable<F>> for &Variable<F> {
     fn add(self, other: &Variable<F>) -> Self::Output {
         match (self, other) {
             (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(**a + **b)).into(),
-            (first, second) => LinearCombination::from([first.clone(), second.clone()]),
+            (first, second) => LinearCombination::from([Cow::Borrowed(first), Cow::Borrowed(second)]),
         }
     }
 }
