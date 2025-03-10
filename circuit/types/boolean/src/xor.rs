@@ -15,6 +15,16 @@
 
 use super::*;
 
+fn boolean_witness<E: Environment>(first: &Boolean<E>, second: &Boolean<E>) -> Boolean<E> {
+    Boolean(
+        E::new_variable(Mode::Private, match first.eject_value() ^ second.eject_value() {
+            true => E::BaseField::one(),
+            false => E::BaseField::zero(),
+        })
+        .into(),
+    )
+}
+
 impl<E: Environment> BitXor<Boolean<E>> for Boolean<E> {
     type Output = Boolean<E>;
 
@@ -39,13 +49,7 @@ impl<E: Environment> BitXor<Boolean<E>> for Boolean<E> {
             // Declare a new variable with the expected output as witness.
             // Note: The constraint below will ensure `output` is either 0 or 1,
             // assuming `self` and `other` are well-formed (they are either 0 or 1).
-            let output = Boolean(
-                E::new_variable(Mode::Private, match self.eject_value() ^ other.eject_value() {
-                    true => E::BaseField::one(),
-                    false => E::BaseField::zero(),
-                })
-                .into(),
-            );
+            let output = boolean_witness(&self, &other);
 
             //
             // Ensure (`self` + `self`) * (`other`) = (`self` + `other` - `output`)
@@ -77,55 +81,19 @@ impl<E: Environment> BitXor<Boolean<E>> for Boolean<E> {
 impl<E: Environment> BitXor<Boolean<E>> for &Boolean<E> {
     type Output = Boolean<E>;
 
-    /// Returns `(self != other)`.
     fn bitxor(self, other: Boolean<E>) -> Self::Output {
-        // Constant `self`
         if self.is_constant() {
             match self.eject_value() {
                 true => !other,
                 false => other,
             }
-        }
-        // Constant `other`
-        else if other.is_constant() {
+        } else if other.is_constant() {
             match other.eject_value() {
                 true => !self.clone(),
                 false => self.clone(),
             }
-        }
-        // Variable != Variable
-        else {
-            // Declare a new variable with the expected output as witness.
-            // Note: The constraint below will ensure `output` is either 0 or 1,
-            // assuming `self` and `other` are well-formed (they are either 0 or 1).
-            let output = Boolean(
-                E::new_variable(Mode::Private, match self.eject_value() ^ other.eject_value() {
-                    true => E::BaseField::one(),
-                    false => E::BaseField::zero(),
-                })
-                .into(),
-            );
-
-            //
-            // Ensure (`self` + `self`) * (`other`) = (`self` + `other` - `output`)
-            // `output` is `1` iff `self` != `other`.
-            //
-            // As `self` and `other` are enforced to be `Boolean` types,
-            // if they are equal, then the `output` is 0,
-            // and if they are different, then `output` must be 1.
-            //
-            // ¬(a ∧ b) ∧ ¬(¬a ∧ ¬b) = c
-            //
-            // (1 - (a * b)) * (1 - ((1 - a) * (1 - b))) = c
-            // (1 - ab) * (1 - (1 - a - b + ab)) = c
-            // (1 - ab) * (a + b - ab) = c
-            // a + b - ab - (a^2)b - (b^2)a + (a^2)(b^2) = c
-            // a + b - ab - ab - ab + ab = c
-            // a + b - 2ab = c
-            // -2a * b = c - a - b
-            // 2a * b = a + b - c
-            // (a + a) * b = a + b - c
-            //
+        } else {
+            let output = boolean_witness(self, &other);
             E::enforce(|| ((&self.0 + &self.0), &other, (&self.0 + &other.0 - &output.0)));
 
             output
@@ -136,55 +104,19 @@ impl<E: Environment> BitXor<Boolean<E>> for &Boolean<E> {
 impl<E: Environment> BitXor<&Boolean<E>> for Boolean<E> {
     type Output = Boolean<E>;
 
-    /// Returns `(self != other)`.
     fn bitxor(self, other: &Boolean<E>) -> Self::Output {
-        // Constant `self`
         if self.is_constant() {
             match self.eject_value() {
                 true => !other.clone(),
                 false => other.clone(),
             }
-        }
-        // Constant `other`
-        else if other.is_constant() {
+        } else if other.is_constant() {
             match other.eject_value() {
                 true => !self,
                 false => self,
             }
-        }
-        // Variable != Variable
-        else {
-            // Declare a new variable with the expected output as witness.
-            // Note: The constraint below will ensure `output` is either 0 or 1,
-            // assuming `self` and `other` are well-formed (they are either 0 or 1).
-            let output = Boolean(
-                E::new_variable(Mode::Private, match self.eject_value() ^ other.eject_value() {
-                    true => E::BaseField::one(),
-                    false => E::BaseField::zero(),
-                })
-                .into(),
-            );
-
-            //
-            // Ensure (`self` + `self`) * (`other`) = (`self` + `other` - `output`)
-            // `output` is `1` iff `self` != `other`.
-            //
-            // As `self` and `other` are enforced to be `Boolean` types,
-            // if they are equal, then the `output` is 0,
-            // and if they are different, then `output` must be 1.
-            //
-            // ¬(a ∧ b) ∧ ¬(¬a ∧ ¬b) = c
-            //
-            // (1 - (a * b)) * (1 - ((1 - a) * (1 - b))) = c
-            // (1 - ab) * (1 - (1 - a - b + ab)) = c
-            // (1 - ab) * (a + b - ab) = c
-            // a + b - ab - (a^2)b - (b^2)a + (a^2)(b^2) = c
-            // a + b - ab - ab - ab + ab = c
-            // a + b - 2ab = c
-            // -2a * b = c - a - b
-            // 2a * b = a + b - c
-            // (a + a) * b = a + b - c
-            //
+        } else {
+            let output = boolean_witness(&self, other);
             E::enforce(|| ((&self.0 + &self.0), other, (self.0 + &other.0 - &output.0)));
 
             output
@@ -195,55 +127,19 @@ impl<E: Environment> BitXor<&Boolean<E>> for Boolean<E> {
 impl<E: Environment> BitXor<&Boolean<E>> for &Boolean<E> {
     type Output = Boolean<E>;
 
-    /// Returns `(self != other)`.
     fn bitxor(self, other: &Boolean<E>) -> Self::Output {
-        // Constant `self`
         if self.is_constant() {
             match self.eject_value() {
                 true => !other.clone(),
                 false => other.clone(),
             }
-        }
-        // Constant `other`
-        else if other.is_constant() {
+        } else if other.is_constant() {
             match other.eject_value() {
                 true => !self.clone(),
                 false => self.clone(),
             }
-        }
-        // Variable != Variable
-        else {
-            // Declare a new variable with the expected output as witness.
-            // Note: The constraint below will ensure `output` is either 0 or 1,
-            // assuming `self` and `other` are well-formed (they are either 0 or 1).
-            let output = Boolean(
-                E::new_variable(Mode::Private, match self.eject_value() ^ other.eject_value() {
-                    true => E::BaseField::one(),
-                    false => E::BaseField::zero(),
-                })
-                .into(),
-            );
-
-            //
-            // Ensure (`self` + `self`) * (`other`) = (`self` + `other` - `output`)
-            // `output` is `1` iff `self` != `other`.
-            //
-            // As `self` and `other` are enforced to be `Boolean` types,
-            // if they are equal, then the `output` is 0,
-            // and if they are different, then `output` must be 1.
-            //
-            // ¬(a ∧ b) ∧ ¬(¬a ∧ ¬b) = c
-            //
-            // (1 - (a * b)) * (1 - ((1 - a) * (1 - b))) = c
-            // (1 - ab) * (1 - (1 - a - b + ab)) = c
-            // (1 - ab) * (a + b - ab) = c
-            // a + b - ab - (a^2)b - (b^2)a + (a^2)(b^2) = c
-            // a + b - ab - ab - ab + ab = c
-            // a + b - 2ab = c
-            // -2a * b = c - a - b
-            // 2a * b = a + b - c
-            // (a + a) * b = a + b - c
-            //
+        } else {
+            let output = boolean_witness(self, other);
             E::enforce(|| ((&self.0 + &self.0), other, (&self.0 + &other.0 - &output.0)));
 
             output
@@ -252,120 +148,44 @@ impl<E: Environment> BitXor<&Boolean<E>> for &Boolean<E> {
 }
 
 impl<E: Environment> BitXorAssign<Boolean<E>> for Boolean<E> {
-    /// Sets `self` as `(self != other)`.
     fn bitxor_assign(&mut self, other: Boolean<E>) {
-        // Stores the bitwise XOR of `self` and `other` in `self`.
-        *self =
-            // Constant `self`
-            if self.is_constant() {
-                match self.eject_value() {
-                    true => !other,
-                    false => other,
-                }
+        *self = if self.is_constant() {
+            match self.eject_value() {
+                true => !other,
+                false => other,
             }
-            // Constant `other`
-            else if other.is_constant() {
-                match other.eject_value() {
-                    true => !self.clone(),
-                    false => self.clone(),
-                }
+        } else if other.is_constant() {
+            match other.eject_value() {
+                true => !self.clone(),
+                false => self.clone(),
             }
-            // Variable != Variable
-            else {
-                // Declare a new variable with the expected output as witness.
-                // Note: The constraint below will ensure `output` is either 0 or 1,
-                // assuming `self` and `other` are well-formed (they are either 0 or 1).
-                let output = Boolean(
-                    E::new_variable(Mode::Private, match self.eject_value() ^ other.eject_value() {
-                        true => E::BaseField::one(),
-                        false => E::BaseField::zero(),
-                    })
-                        .into(),
-                );
+        } else {
+            let output = boolean_witness(self, &other);
+            E::enforce(|| ((&self.0 + &self.0), &other, (&self.0 + &other.0 - &output.0)));
 
-                //
-                // Ensure (`self` + `self`) * (`other`) = (`self` + `other` - `output`)
-                // `output` is `1` iff `self` != `other`.
-                //
-                // As `self` and `other` are enforced to be `Boolean` types,
-                // if they are equal, then the `output` is 0,
-                // and if they are different, then `output` must be 1.
-                //
-                // ¬(a ∧ b) ∧ ¬(¬a ∧ ¬b) = c
-                //
-                // (1 - (a * b)) * (1 - ((1 - a) * (1 - b))) = c
-                // (1 - ab) * (1 - (1 - a - b + ab)) = c
-                // (1 - ab) * (a + b - ab) = c
-                // a + b - ab - (a^2)b - (b^2)a + (a^2)(b^2) = c
-                // a + b - ab - ab - ab + ab = c
-                // a + b - 2ab = c
-                // -2a * b = c - a - b
-                // 2a * b = a + b - c
-                // (a + a) * b = a + b - c
-                //
-                E::enforce(|| ((&self.0 + &self.0), &other, (&self.0 + &other.0 - &output.0)));
-
-                output
-            }
+            output
+        }
     }
 }
 
 impl<E: Environment> BitXorAssign<&Boolean<E>> for Boolean<E> {
-    /// Sets `self` as `(self != other)`.
     fn bitxor_assign(&mut self, other: &Boolean<E>) {
-        // Stores the bitwise XOR of `self` and `other` in `self`.
-        *self =
-            // Constant `self`
-            if self.is_constant() {
-                match self.eject_value() {
-                    true => !other.clone(),
-                    false => other.clone(),
-                }
+        *self = if self.is_constant() {
+            match self.eject_value() {
+                true => !other.clone(),
+                false => other.clone(),
             }
-            // Constant `other`
-            else if other.is_constant() {
-                match other.eject_value() {
-                    true => !self.clone(),
-                    false => self.clone(),
-                }
+        } else if other.is_constant() {
+            match other.eject_value() {
+                true => !self.clone(),
+                false => self.clone(),
             }
-            // Variable != Variable
-            else {
-                // Declare a new variable with the expected output as witness.
-                // Note: The constraint below will ensure `output` is either 0 or 1,
-                // assuming `self` and `other` are well-formed (they are either 0 or 1).
-                let output = Boolean(
-                    E::new_variable(Mode::Private, match self.eject_value() ^ other.eject_value() {
-                        true => E::BaseField::one(),
-                        false => E::BaseField::zero(),
-                    })
-                        .into(),
-                );
+        } else {
+            let output = boolean_witness(self, other);
+            E::enforce(|| ((&self.0 + &self.0), other, (&self.0 + &other.0 - &output.0)));
 
-                //
-                // Ensure (`self` + `self`) * (`other`) = (`self` + `other` - `output`)
-                // `output` is `1` iff `self` != `other`.
-                //
-                // As `self` and `other` are enforced to be `Boolean` types,
-                // if they are equal, then the `output` is 0,
-                // and if they are different, then `output` must be 1.
-                //
-                // ¬(a ∧ b) ∧ ¬(¬a ∧ ¬b) = c
-                //
-                // (1 - (a * b)) * (1 - ((1 - a) * (1 - b))) = c
-                // (1 - ab) * (1 - (1 - a - b + ab)) = c
-                // (1 - ab) * (a + b - ab) = c
-                // a + b - ab - (a^2)b - (b^2)a + (a^2)(b^2) = c
-                // a + b - ab - ab - ab + ab = c
-                // a + b - 2ab = c
-                // -2a * b = c - a - b
-                // 2a * b = a + b - c
-                // (a + a) * b = a + b - c
-                //
-                E::enforce(|| ((&self.0 + &self.0), other, (&self.0 + &other.0 - &output.0)));
-
-                output
-            }
+            output
+        }
     }
 }
 
