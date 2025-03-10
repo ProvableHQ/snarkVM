@@ -37,7 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace, cost_in_microcredits_v2, traits::*};
+use crate::{CallMetrics, Process, Trace, constructor_cost_in_microcredits, cost_in_microcredits_v2, traits::*};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -65,7 +65,7 @@ use console::{
     types::{Field, Group},
 };
 use ledger_block::{Deployment, Transaction, Transition};
-use synthesizer_program::{CallOperator, Closure, Function, Instruction, Operand, Program, traits::*};
+use synthesizer_program::{CallOperator, Closure, Constructor, Function, Instruction, Operand, Program, traits::*};
 use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};

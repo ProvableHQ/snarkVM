@@ -66,6 +66,20 @@ impl<N: Network> Stack<N> {
             );
         }
 
+        // Add the constructor to the stack if it exists.
+        if let Ok(constructor) = program.constructor() {
+            // Get the constructor cost.
+            let constructor_cost = constructor_cost_in_microcredits(program)?;
+            // Check that the constructor cost does not exceed the maximum.
+            ensure!(
+                constructor_cost <= N::TRANSACTION_SPEND_LIMIT,
+                "Constructor has a cost '{constructor_cost}' which exceeds the transaction spend limit '{}'",
+                N::TRANSACTION_SPEND_LIMIT
+            );
+            // Add the constructor to the stack.
+            stack.insert_constructor(constructor)?;
+        }
+
         // Return the stack.
         Ok(stack)
     }
@@ -108,6 +122,22 @@ impl<N: Network> Stack<N> {
             // Add the finalize name and finalize types to the stack.
             self.finalize_types.insert(*name, finalize_types);
         }
+        // Return success.
+        Ok(())
+    }
+
+    /// Adds the constructor to the stack. If a constructor is not specified for the program, the default constructor is added.
+    /// The default constructor ensures that a program cannot be updated.
+    // Note that the default constructor **cannot** be changed without a migration.
+    #[inline]
+    fn insert_constructor(&mut self, constructor: &Option<Constructor<N>>) -> Result<()> {
+        // Compute the constructor types.
+        let constructor_types = match constructor {
+            Some(constructor) => FinalizeTypes::from_constructor(self, constructor),
+            None => FinalizeTypes::from_constructor(self, &Constructor::default()),
+        }?;
+        // Add the constructor types to the stack.
+        self.constructor_types = Some(constructor_types);
         // Return success.
         Ok(())
     }

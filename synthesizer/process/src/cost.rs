@@ -21,7 +21,7 @@ use console::{
     program::{FinalizeType, Identifier, LiteralType, PlaintextType},
 };
 use ledger_block::{Deployment, Execution, Transaction};
-use synthesizer_program::{CastType, Command, Finalize, Instruction, Operand, StackProgram};
+use synthesizer_program::{CastType, Command, Finalize, Instruction, Operand, Program, StackProgram};
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, namespace cost, constructor cost)).
 pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (u64, u64, u64, u64))> {
@@ -51,11 +51,7 @@ pub fn deployment_cost<N: Network>(deployment: &Deployment<N>) -> Result<(u64, (
         .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
 
     // Compute the constructor cost in microcredits.
-    // In a constructor, each command costs 100_000 microcredits.
-    let constructor_cost = match deployment.program().constructor().ok() {
-        Some(Some(constructor)) => constructor.commands().len() as u64 * 100_000,
-        _ => 0,
-    };
+    let constructor_cost = constructor_cost_in_microcredits(deployment.program())?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -410,6 +406,22 @@ pub fn cost_per_command<N: Network>(
         }
         Command::BranchEq(_) | Command::BranchNeq(_) => Ok(500),
         Command::Position(_) => Ok(100),
+    }
+}
+
+/// Returns the minimum number of microcredits required to run the constructor.
+/// Each command costs 100_000 microcredits.
+///
+/// If a constructor does not exist, then the default one is used but no cost is incurred.
+/// V1 programs do not have constructors and thus do not incur a cost.
+pub fn constructor_cost_in_microcredits<N: Network>(program: &Program<N>) -> Result<u64> {
+    match program.constructor().ok() {
+        Some(Some(constructor)) => {
+            let num_commands = constructor.commands().len() as u64;
+            let cost = num_commands.checked_mul(100_000).ok_or(anyhow!("Constructor cost overflowed"))?;
+            Ok(cost)
+        }
+        Some(None) | None => Ok(0),
     }
 }
 
