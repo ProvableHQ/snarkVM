@@ -288,15 +288,7 @@ impl<F: PrimeField> Add<LinearCombination<F>> for &LinearCombination<F> {
     type Output = LinearCombination<F>;
 
     fn add(self, other: LinearCombination<F>) -> Self::Output {
-        if self.constant.is_zero() && self.terms.is_empty() {
-            other
-        } else if other.constant.is_zero() && other.terms.is_empty() {
-            self.clone()
-        } else {
-            let mut output = other;
-            output += Cow::Borrowed(self);
-            output
-        }
+        other + self
     }
 }
 
