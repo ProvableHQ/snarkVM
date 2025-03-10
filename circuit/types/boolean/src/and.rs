@@ -15,6 +15,16 @@
 
 use super::*;
 
+fn boolean_witness<E: Environment>(first: &Boolean<E>, second: &Boolean<E>) -> Boolean<E> {
+    Boolean(
+        E::new_variable(Mode::Private, match first.eject_value() & second.eject_value() {
+            true => E::BaseField::one(),
+            false => E::BaseField::zero(),
+        })
+        .into(),
+    )
+}
+
 impl<E: Environment> BitAnd<Boolean<E>> for Boolean<E> {
     type Output = Boolean<E>;
 
@@ -39,13 +49,7 @@ impl<E: Environment> BitAnd<Boolean<E>> for Boolean<E> {
             // Declare a new variable with the expected output as witness.
             // Note: The constraint below will ensure `output` is either 0 or 1,
             // assuming `self` and `other` are well-formed (they are either 0 or 1).
-            let output = Boolean(
-                E::new_variable(Mode::Private, match self.eject_value() & other.eject_value() {
-                    true => E::BaseField::one(),
-                    false => E::BaseField::zero(),
-                })
-                .into(),
-            );
+            let output = boolean_witness(&self, &other);
 
             // Ensure `self` * `other` = `output`
             // `output` is `1` iff `self` AND `other` are both `1`.
@@ -59,37 +63,19 @@ impl<E: Environment> BitAnd<Boolean<E>> for Boolean<E> {
 impl<E: Environment> BitAnd<Boolean<E>> for &Boolean<E> {
     type Output = Boolean<E>;
 
-    /// Returns `(self AND other)`.
     fn bitand(self, other: Boolean<E>) -> Self::Output {
-        // Constant `self`
         if self.is_constant() {
             match self.eject_value() {
                 true => other,
                 false => self.clone(),
             }
-        }
-        // Constant `other`
-        else if other.is_constant() {
+        } else if other.is_constant() {
             match other.eject_value() {
                 true => self.clone(),
                 false => other,
             }
-        }
-        // Variable AND Variable
-        else {
-            // Declare a new variable with the expected output as witness.
-            // Note: The constraint below will ensure `output` is either 0 or 1,
-            // assuming `self` and `other` are well-formed (they are either 0 or 1).
-            let output = Boolean(
-                E::new_variable(Mode::Private, match self.eject_value() & other.eject_value() {
-                    true => E::BaseField::one(),
-                    false => E::BaseField::zero(),
-                })
-                .into(),
-            );
-
-            // Ensure `self` * `other` = `output`
-            // `output` is `1` iff `self` AND `other` are both `1`.
+        } else {
+            let output = boolean_witness(self, &other);
             E::enforce(|| (self, other, &output));
 
             output
@@ -100,37 +86,19 @@ impl<E: Environment> BitAnd<Boolean<E>> for &Boolean<E> {
 impl<E: Environment> BitAnd<&Boolean<E>> for Boolean<E> {
     type Output = Boolean<E>;
 
-    /// Returns `(self AND other)`.
     fn bitand(self, other: &Boolean<E>) -> Self::Output {
-        // Constant `self`
         if self.is_constant() {
             match self.eject_value() {
                 true => other.clone(),
                 false => self,
             }
-        }
-        // Constant `other`
-        else if other.is_constant() {
+        } else if other.is_constant() {
             match other.eject_value() {
                 true => self,
                 false => other.clone(),
             }
-        }
-        // Variable AND Variable
-        else {
-            // Declare a new variable with the expected output as witness.
-            // Note: The constraint below will ensure `output` is either 0 or 1,
-            // assuming `self` and `other` are well-formed (they are either 0 or 1).
-            let output = Boolean(
-                E::new_variable(Mode::Private, match self.eject_value() & other.eject_value() {
-                    true => E::BaseField::one(),
-                    false => E::BaseField::zero(),
-                })
-                .into(),
-            );
-
-            // Ensure `self` * `other` = `output`
-            // `output` is `1` iff `self` AND `other` are both `1`.
+        } else {
+            let output = boolean_witness(&self, other);
             E::enforce(|| (self, other, &output));
 
             output
@@ -141,37 +109,19 @@ impl<E: Environment> BitAnd<&Boolean<E>> for Boolean<E> {
 impl<E: Environment> BitAnd<&Boolean<E>> for &Boolean<E> {
     type Output = Boolean<E>;
 
-    /// Returns `(self AND other)`.
     fn bitand(self, other: &Boolean<E>) -> Self::Output {
-        // Constant `self`
         if self.is_constant() {
             match self.eject_value() {
                 true => other.clone(),
                 false => self.clone(),
             }
-        }
-        // Constant `other`
-        else if other.is_constant() {
+        } else if other.is_constant() {
             match other.eject_value() {
                 true => self.clone(),
                 false => other.clone(),
             }
-        }
-        // Variable AND Variable
-        else {
-            // Declare a new variable with the expected output as witness.
-            // Note: The constraint below will ensure `output` is either 0 or 1,
-            // assuming `self` and `other` are well-formed (they are either 0 or 1).
-            let output = Boolean(
-                E::new_variable(Mode::Private, match self.eject_value() & other.eject_value() {
-                    true => E::BaseField::one(),
-                    false => E::BaseField::zero(),
-                })
-                .into(),
-            );
-
-            // Ensure `self` * `other` = `output`
-            // `output` is `1` iff `self` AND `other` are both `1`.
+        } else {
+            let output = boolean_witness(self, other);
             E::enforce(|| (self, other, &output));
 
             output
@@ -180,84 +130,44 @@ impl<E: Environment> BitAnd<&Boolean<E>> for &Boolean<E> {
 }
 
 impl<E: Environment> BitAndAssign<Boolean<E>> for Boolean<E> {
-    /// Sets `self` as `(self AND other)`.
     fn bitand_assign(&mut self, other: Boolean<E>) {
-        // Stores the bitwise AND of `self` and `other` in `self`.
-        *self =
-            // Constant `self`
-            if self.is_constant() {
-                match self.eject_value() {
-                    true => other,
-                    false => self.clone(),
-                }
+        *self = if self.is_constant() {
+            match self.eject_value() {
+                true => other,
+                false => self.clone(),
             }
-            // Constant `other`
-            else if other.is_constant() {
-                match other.eject_value() {
-                    true => self.clone(),
-                    false => other,
-                }
+        } else if other.is_constant() {
+            match other.eject_value() {
+                true => self.clone(),
+                false => other,
             }
-            // Variable AND Variable
-            else {
-                // Declare a new variable with the expected output as witness.
-                // Note: The constraint below will ensure `output` is either 0 or 1,
-                // assuming `self` and `other` are well-formed (they are either 0 or 1).
-                let output = Boolean(
-                    E::new_variable(Mode::Private, match self.eject_value() & other.eject_value() {
-                        true => E::BaseField::one(),
-                        false => E::BaseField::zero(),
-                    })
-                        .into(),
-                );
+        } else {
+            let output = boolean_witness(self, &other);
+            E::enforce(|| (&*self, other, &output));
 
-                // Ensure `self` * `other` = `output`
-                // `output` is `1` iff `self` AND `other` are both `1`.
-                E::enforce(|| (&*self, other, &output));
-
-                output
-            }
+            output
+        }
     }
 }
 
 impl<E: Environment> BitAndAssign<&Boolean<E>> for Boolean<E> {
-    /// Sets `self` as `(self AND other)`.
     fn bitand_assign(&mut self, other: &Boolean<E>) {
-        // Stores the bitwise AND of `self` and `other` in `self`.
-        *self =
-            // Constant `self`
-            if self.is_constant() {
-                match self.eject_value() {
-                    true => other.clone(),
-                    false => self.clone(),
-                }
+        *self = if self.is_constant() {
+            match self.eject_value() {
+                true => other.clone(),
+                false => self.clone(),
             }
-            // Constant `other`
-            else if other.is_constant() {
-                match other.eject_value() {
-                    true => self.clone(),
-                    false => other.clone(),
-                }
+        } else if other.is_constant() {
+            match other.eject_value() {
+                true => self.clone(),
+                false => other.clone(),
             }
-            // Variable AND Variable
-            else {
-                // Declare a new variable with the expected output as witness.
-                // Note: The constraint below will ensure `output` is either 0 or 1,
-                // assuming `self` and `other` are well-formed (they are either 0 or 1).
-                let output = Boolean(
-                    E::new_variable(Mode::Private, match self.eject_value() & other.eject_value() {
-                        true => E::BaseField::one(),
-                        false => E::BaseField::zero(),
-                    })
-                        .into(),
-                );
+        } else {
+            let output = boolean_witness(self, other);
+            E::enforce(|| (&*self, other, &output));
 
-                // Ensure `self` * `other` = `output`
-                // `output` is `1` iff `self` AND `other` are both `1`.
-                E::enforce(|| (&*self, other, &output));
-
-                output
-            }
+            output
+        }
     }
 }
 
