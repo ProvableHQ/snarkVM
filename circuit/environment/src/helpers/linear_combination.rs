@@ -258,11 +258,11 @@ impl<F: PrimeField> Add<LinearCombination<F>> for LinearCombination<F> {
             self
         } else if self.terms.len() > other.terms.len() {
             let mut output = self;
-            output += other;
+            output += Cow::Owned(other);
             output
         } else {
             let mut output = other;
-            output += self;
+            output += Cow::Owned(self);
             output
         }
     }
@@ -278,7 +278,7 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for LinearCombination<F> {
             self
         } else {
             let mut output = self;
-            output += other;
+            output += Cow::Borrowed(other);
             output
         }
     }
@@ -294,7 +294,7 @@ impl<F: PrimeField> Add<LinearCombination<F>> for &LinearCombination<F> {
             self.clone()
         } else {
             let mut output = other;
-            output += self;
+            output += Cow::Borrowed(self);
             output
         }
     }
@@ -310,31 +310,33 @@ impl<F: PrimeField> Add<&LinearCombination<F>> for &LinearCombination<F> {
             self.clone()
         } else if self.terms.len() > other.terms.len() {
             let mut output = self.clone();
-            output += other;
+            output += Cow::Borrowed(other);
             output
         } else {
             let mut output = other.clone();
-            output += self;
+            output += Cow::Borrowed(self);
             output
         }
     }
 }
 
-impl<F: PrimeField> AddAssign<LinearCombination<F>> for LinearCombination<F> {
-    fn add_assign(&mut self, other: Self) {
+impl<'a, F: PrimeField> AddAssign<Cow<'a, LinearCombination<F>>> for LinearCombination<F> {
+    fn add_assign(&mut self, other: Cow<'a, LinearCombination<F>>) {
+        let other_value = other.value;
+
         // If `other` is empty, return immediately.
         if other.constant.is_zero() && other.terms.is_empty() {
             return;
         }
 
         if self.constant.is_zero() && self.terms.is_empty() {
-            *self = other;
+            *self = other.into_owned();
         } else {
             // Add the constant value from `other` to `self`.
             self.constant += other.constant;
 
             // Add the terms from `other` to the terms of `self`.
-            for (variable, coefficient) in other.terms.into_iter() {
+            for (variable, coefficient) in other.into_owned().terms.into_iter() {
                 match variable.is_constant() {
                     true => panic!("Malformed linear combination found"),
                     false => {
@@ -357,49 +359,7 @@ impl<F: PrimeField> AddAssign<LinearCombination<F>> for LinearCombination<F> {
             }
 
             // Add the value from `other` to `self`.
-            self.value += other.value;
-        }
-    }
-}
-
-impl<F: PrimeField> AddAssign<&LinearCombination<F>> for LinearCombination<F> {
-    fn add_assign(&mut self, other: &Self) {
-        // If `other` is empty, return immediately.
-        if other.constant.is_zero() && other.terms.is_empty() {
-            return;
-        }
-
-        if self.constant.is_zero() && self.terms.is_empty() {
-            *self = other.clone();
-        } else {
-            // Add the constant value from `other` to `self`.
-            self.constant += other.constant;
-
-            // Add the terms from `other` to the terms of `self`.
-            for (variable, coefficient) in other.terms.iter() {
-                match variable.is_constant() {
-                    true => panic!("Malformed linear combination found"),
-                    false => {
-                        match self.terms.binary_search_by(|(v, _)| v.cmp(variable)) {
-                            Ok(idx) => {
-                                // Add the coefficient to the existing coefficient for this term.
-                                self.terms[idx].1 += *coefficient;
-                                // If the coefficient of the term is now zero, remove the entry.
-                                if self.terms[idx].1.is_zero() {
-                                    self.terms.remove(idx);
-                                }
-                            }
-                            Err(idx) => {
-                                // Insert the variable and coefficient as a new term.
-                                self.terms.insert(idx, (variable.clone(), *coefficient));
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Add the value from `other` to `self`.
-            self.value += other.value;
+            self.value += other_value;
         }
     }
 }
