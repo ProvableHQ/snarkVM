@@ -21,26 +21,24 @@ impl<E: Environment> Not for Boolean<E> {
 
     /// Returns `(NOT a)`.
     fn not(self) -> Self::Output {
-        // The `NOT` operation behaves as follows:
-        //     Case 1: If `(self == 0)`, then `(1 - self) == 1`.
-        //     Case 2: If `(self == 1)`, then `(1 - self) == 0`.
-        match self.is_constant() {
-            // Constant case.
-            true => Boolean(E::one() - self.0),
-            // Public and private cases.
-            // Note: We directly instantiate a public variable to correctly represent a boolean in a linear combination.
-            // For more information, see `LinearCombination::is_boolean_type`.
-            false => Boolean(Variable::Public(Rc::new((0, E::BaseField::one()))) - self.0),
-        }
+        (&self).not()
     }
 }
 
 impl<E: Environment> Not for &Boolean<E> {
     type Output = Boolean<E>;
 
+    /// Returns `(NOT a)`.
     fn not(self) -> Self::Output {
+        // The `NOT` operation behaves as follows:
+        //     Case 1: If `(self == 0)`, then `(1 - self) == 1`.
+        //     Case 2: If `(self == 1)`, then `(1 - self) == 0`.
         match self.is_constant() {
+            // Constant case.
             true => Boolean(E::one() - &self.0),
+            // Public and private cases.
+            // Note: We directly instantiate a public variable to correctly represent a boolean in a linear combination.
+            // For more information, see `LinearCombination::is_boolean_type`.
             false => Boolean(Variable::Public(Rc::new((0, E::BaseField::one()))) - &self.0),
         }
     }
