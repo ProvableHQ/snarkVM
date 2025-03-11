@@ -125,6 +125,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let program = deployment.program();
             let program_id = program.id();
 
+            println!("--- Loading program {}", program_id);
+
             // Return early if the program is already loaded.
             if process.contains_program(program_id) {
                 return Ok(vec![]);
@@ -135,6 +137,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             // Iterate through the program imports.
             for import_program_id in program.imports().keys() {
+
+                println!("----- Loading import program {import_program_id} for {program_id}");
+
                 // Add the imports to the process if does not exist yet.
                 if !process.contains_program(import_program_id) {
                     // Fetch the deployment transaction ID.
@@ -152,6 +157,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     )?);
                 }
             }
+
+            println!("--- Loaded program {}", program_id);
 
             // Once all the imports have been included, add the parent deployment.
             deployments.push((*program_id, deployment));
@@ -173,16 +180,30 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             );
             let deployments = cfg_iter!(chunk)
                 .map(|transaction_id| {
+
+                    println!("Loading deployment for tx {}", transaction_id);
+
                     // Load the deployment and its imports.
-                    load_deployment_and_imports(&process, transaction_store, **transaction_id)
+                    let result = load_deployment_and_imports(&process, transaction_store, **transaction_id);
+                    println!("Loaded deployment for tx {}", transaction_id);
+
+                    result
                 })
                 .collect::<Result<Vec<_>>>()?;
 
+            println!("Loaded deployments and inputs");
+
             for (program_id, deployment) in deployments.iter().flatten() {
+
+                println!("Loading program ID: {}", program_id);
+
                 // Load the deployment if it does not exist in the process yet.
                 if !process.contains_program(program_id) {
                     process.load_deployment(deployment)?;
                 }
+
+                println!("Loaded program ID: {}", program_id);
+
             }
         }
 
