@@ -60,6 +60,7 @@ fn test_vm_execute_and_finalize() {
 
 // A helper function to run the test and extract the outputs as YAML, to be compared against the expectation.
 fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
+    println!("Running test: {}", test.path().display());
     // Initialize the RNG.
     let rng = &mut match test.randomness() {
         None => TestRng::fixed(123456789),

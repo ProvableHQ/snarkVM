@@ -54,6 +54,11 @@ impl ProgramTest {
         &self.programs
     }
 
+    /// Returns the path.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// Returns the test cases.
     pub fn cases(&self) -> &[Value] {
         &self.cases

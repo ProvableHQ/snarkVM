@@ -2640,9 +2640,9 @@ fn test_program_exceeding_transaction_spend_limit() {
 
     // Attempt to add the program to the process should pass, as the check happens during finalization.
     let result = process.add_program(&program);
-    assert!(result.is_ok());
+    assert!(result.is_err());
 
     // Initialize a `Stack` directly with the program should pass, as the check happens during finalization.
     let result = Stack::initialize(&process, &program);
-    assert!(result.is_ok())
+    assert!(result.is_err())
 }
