@@ -20,8 +20,8 @@ use core::{
     fmt,
     ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign},
 };
-use std::borrow::Cow;
 use smallvec::SmallVec;
+use std::borrow::Cow;
 
 // Before high level program operations are converted into constraints, they are first tracked as linear combinations.
 // Each linear combination corresponds to a portion or all of a single row of an R1CS matrix, and consists of:
