@@ -145,9 +145,17 @@ impl ExpectedTest for ProgramTest {
         // If the expectation file should be rewritten, then there is no need to check the output.
         if !self.rewrite {
             // Check that the errors match.
-            let expected_errors =
-                self.expected.get(Value::String("errors".to_string())).unwrap().as_sequence().unwrap();
-            let actual_errors = output.get(Value::String("errors".to_string())).unwrap().as_sequence().unwrap();
+            let expected_errors = self
+                .expected
+                .get(Value::String("errors".to_string()))
+                .expect("expected should contain `errors`")
+                .as_sequence()
+                .expect("expected `errors` should be a sequence");
+            let actual_errors = output
+                .get(Value::String("errors".to_string()))
+                .expect("actual should contain `errors`")
+                .as_sequence()
+                .expect("actual `errors` should be a sequence");
             expected_errors.iter().zip_eq(actual_errors.iter()).for_each(|(expected, actual)| {
                 if expected != actual {
                     let expected =
@@ -157,9 +165,17 @@ impl ExpectedTest for ProgramTest {
                 }
             });
             // Check that the outputs match.
-            let expected_outputs =
-                self.expected.get(Value::String("outputs".to_string())).unwrap().as_sequence().unwrap();
-            let actual_outputs = output.get(Value::String("outputs".to_string())).unwrap().as_sequence().unwrap();
+            let expected_outputs = self
+                .expected
+                .get(Value::String("outputs".to_string()))
+                .expect("expected should contain `outputs`")
+                .as_sequence()
+                .expect("expected `outputs` should be a sequence");
+            let actual_outputs = output
+                .get(Value::String("outputs".to_string()))
+                .expect("actual should contain `outputs`")
+                .as_sequence()
+                .expect("actual `outputs` should be a sequence");
             self.cases.iter().zip_eq(expected_outputs.iter().zip_eq(actual_outputs.iter())).for_each(
                 |(test, (expected, actual))| {
                     if expected != actual {

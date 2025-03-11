@@ -1675,7 +1675,7 @@ _init:
     set r1 into admin[true];
     branch.eq true true to end;
     position rest;
-    metadata.get checksum into r2 as u128;
+    metadata.get _checksum into r2 as u128;
     get expected_checksum[true] into r3;
     assert.eq r2 r3;
     position end;
@@ -1712,7 +1712,7 @@ _init:
     set r1 into admin[true];
     branch.eq true true to end;
     position rest;
-    metadata.get checksum into r2 as u128;
+    metadata.get _checksum into r2 as u128;
     get expected_checksum[true] into r3;
     assert.eq r2 r3;
     position end;
@@ -1749,7 +1749,7 @@ _init:
     set r1 into admin[true];
     branch.eq true true to end;
     position rest;
-    metadata.get checksum into r2 as u128;
+    metadata.get _checksum into r2 as u128;
     get expected_checksum[true] into r3;
     assert.eq r2 r3;
     position end;

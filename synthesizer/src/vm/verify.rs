@@ -192,11 +192,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Ensure the edition and owner defined in the deployment match the program metadata.
                         ensure!(
                             deployment.edition() == **program_edition,
-                            "Invalid deployment transaction '{id}' - edition mismatch"
+                            "Invalid deployment transaction '{id}' - edition mismatch, deployment: {}, program: {}",
+                            deployment.edition(),
+                            program_edition
                         );
                         ensure!(
                             owner.address() == *program_owner,
-                            "Invalid deployment transaction '{id}' - owner mismatch"
+                            "Invalid deployment transaction '{id}' - owner mismatch, deployment: {}, program: {}",
+                            owner.address(),
+                            program_owner
                         );
                         // Check the cases that depend on the edition.
                         match **program_edition {

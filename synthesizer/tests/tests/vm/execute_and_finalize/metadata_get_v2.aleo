@@ -20,7 +20,7 @@ program$2 child.aleo;
 
 function foo:
 
-$metadata program_owner: aleo1rhgdu77hgyqd3xjj8ucu3jj9r2krwz6mnzyd80gncr5fxcwlh5rsvzp9px;
+$metadata program_owner: aleo1s8ynfrjjlge4exyn4ulznyww6ug6nj37pxscpcj9jgjzw43uucrsgxsxxm;
 $metadata edition: 0u16;
 $metadata upgradable: true;
 
@@ -69,7 +69,7 @@ function test_metadata_does_not_exist:
 finalize test_metadata_does_not_exist:
     metadata.get foo into r0 as i128;
 
-$metadata program_owner: aleo1rhgdu77hgyqd3xjj8ucu3jj9r2krwz6mnzyd80gncr5fxcwlh5rsvzp9px;
+$metadata program_owner: aleo1s8ynfrjjlge4exyn4ulznyww6ug6nj37pxscpcj9jgjzw43uucrsgxsxxm;
 $metadata edition: 0u16;
 $metadata upgradable: true;
 
