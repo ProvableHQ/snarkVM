@@ -477,7 +477,7 @@ mod tests {
     use super::*;
     use snarkvm_fields::{One as O, Zero as Z};
 
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     #[test]
     fn test_zero() {
@@ -533,7 +533,7 @@ mod tests {
         let two = one + one;
         let four = two + two;
 
-        let start = LinearCombination::from(Variable::Public(Rc::new((1, one))));
+        let start = LinearCombination::from(Variable::Public(Arc::new((1, one))));
         assert!(!start.is_constant());
         assert_eq!(one, start.value());
 

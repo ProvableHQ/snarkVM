@@ -21,7 +21,7 @@ use snarkvm_fields::PrimeField;
 
 #[cfg(feature = "save_r1cs_hashes")]
 use sha2::{Digest, Sha256};
-use std::rc::Rc;
+use std::sync::Arc;
 #[cfg(feature = "save_r1cs_hashes")]
 use std::{
     hash::{Hash, Hasher},
@@ -62,11 +62,11 @@ pub static R1CS_HASHES: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::new());
 #[derive(Debug, Hash)]
 pub struct R1CS<F: PrimeField> {
     constants: Vec<Variable<F>>,
-    public: Vec<Variable<F>>,
-    private: Vec<Variable<F>>,
-    constraints: Vec<Rc<Constraint<F>>>,
+    pub(crate) public: Vec<Variable<F>>,
+    pub(crate) private: Vec<Variable<F>>,
+    pub(crate) constraints: Vec<Arc<Constraint<F>>>,
     counter: Counter<F>,
-    num_variables: u64,
+    pub(crate) num_variables: u64,
     nonzeros: (u64, u64, u64),
 }
 
@@ -75,7 +75,7 @@ impl<F: PrimeField> R1CS<F> {
     pub(crate) fn new() -> Self {
         Self {
             constants: Default::default(),
-            public: vec![Variable::Public(Rc::new((0u64, F::one())))],
+            public: vec![Variable::Public(Arc::new((0u64, F::one())))],
             private: Default::default(),
             constraints: Default::default(),
             counter: Default::default(),
@@ -96,7 +96,7 @@ impl<F: PrimeField> R1CS<F> {
 
     /// Returns a new constant with the given value and scope.
     pub(crate) fn new_constant(&mut self, value: F) -> Variable<F> {
-        let variable = Variable::Constant(Rc::new(value));
+        let variable = Variable::Constant(Arc::new(value));
         self.constants.push(variable.clone());
         self.counter.increment_constant();
         self.num_variables += 1;
@@ -105,7 +105,7 @@ impl<F: PrimeField> R1CS<F> {
 
     /// Returns a new public variable with the given value and scope.
     pub(crate) fn new_public(&mut self, value: F) -> Variable<F> {
-        let variable = Variable::Public(Rc::new((self.public.len() as u64, value)));
+        let variable = Variable::Public(Arc::new((self.public.len() as u64, value)));
         self.public.push(variable.clone());
         self.counter.increment_public();
         self.num_variables += 1;
@@ -114,7 +114,7 @@ impl<F: PrimeField> R1CS<F> {
 
     /// Returns a new private variable with the given value and scope.
     pub(crate) fn new_private(&mut self, value: F) -> Variable<F> {
-        let variable = Variable::Private(Rc::new((self.private.len() as u64, value)));
+        let variable = Variable::Private(Arc::new((self.private.len() as u64, value)));
         self.private.push(variable.clone());
         self.counter.increment_private();
         self.num_variables += 1;
@@ -128,8 +128,8 @@ impl<F: PrimeField> R1CS<F> {
         self.nonzeros.1 += b_nonzeros;
         self.nonzeros.2 += c_nonzeros;
 
-        let constraint = Rc::new(constraint);
-        self.constraints.push(Rc::clone(&constraint));
+        let constraint = Arc::new(constraint);
+        self.constraints.push(Arc::clone(&constraint));
         self.counter.add_constraint(constraint);
     }
 
@@ -242,7 +242,7 @@ impl<F: PrimeField> R1CS<F> {
     }
 
     /// Returns the constraints in the constraint system.
-    pub fn to_constraints(&self) -> &Vec<Rc<Constraint<F>>> {
+    pub fn to_constraints(&self) -> &Vec<Arc<Constraint<F>>> {
         &self.constraints
     }
 

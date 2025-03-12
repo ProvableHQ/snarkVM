@@ -51,7 +51,7 @@ impl Sanitizer {
         )(string)
     }
 
-    /// Parse a safe character (in the sense explained in [string_parser::is_char_supported]).
+    /// Parse a safe character (in the sense explained in [is_char_supported]).
     /// Returns an error if no character is found or a non-safe character is found.
     /// The character is returned, along with the remaining input.
     ///
@@ -84,9 +84,8 @@ impl Sanitizer {
         }
     }
 
-    /// A newline parser that accepts:
-    ///
-    /// - A newline.
+    /// A parser that accepts:
+    /// - A newline, either `CR LF` or just `LF`.
     /// - The end of input.
     fn eol(string: &str) -> ParserResult<()> {
         alt((
@@ -113,15 +112,19 @@ impl Sanitizer {
 
     /// Parse a string until the end of line.
     ///
-    /// This parser accepts the multiline annotation (\) to break the string on several lines.
+    /// This parser accepts the multiline annotation (`\ LF`) to break the string on several lines.
     ///
-    /// Discard any leading newline.
+    /// The line may end with a newline (either `CR LF` or just `LF`), or it may end with the input.
+    ///
+    /// Return the body of the comment, i.e. what is between `//` and the end of line.
+    /// If the line ends with `CR LF`, the `CR` is included in the returned body.
+    /// The `LF`, if present, is never included in the returned body.
     fn str_till_eol(string: &str) -> ParserResult<&str> {
         // A heuristic approach is applied here in order to avoid costly parsing operations in the
         // most common scenarios: non-parsing methods are used to verify if the string has multiple
         // lines and if there are any unsafe characters.
         if let Some((before, after)) = string.split_once('\n') {
-            let is_multiline = before.ends_with('\\');
+            let is_multiline = before.ends_with('\\'); // is `LF` preceded by `\`?
 
             if !is_multiline {
                 let contains_unsafe_chars = !before.chars().all(is_char_supported);
@@ -130,7 +133,8 @@ impl Sanitizer {
                     Ok((after, before))
                 } else {
                     // `eoi` is used here instead of `eol`, since the earlier call to `split_once`
-                    // already removed the newline
+                    // already removed the `LF`. This will fail at the first unsafe character,
+                    // which is known to exist because we are under the condition contains_unsafe_chars.
                     recognize(Self::till(value((), Sanitizer::parse_safe_char), Self::eoi))(before)
                 }
             } else {
@@ -140,12 +144,19 @@ impl Sanitizer {
                         Self::eol,
                     )),
                     |i| {
+                        // Exclude the final `LF`, if any, from the comment body.
                         if i.as_bytes().last() == Some(&b'\n') { &i[0..i.len() - 1] } else { i }
                     },
                 )(string)
             }
+        } else if string.chars().all(is_char_supported) {
+            // There is no `LF`. We return all the characters up to the end of file.
+            Ok(("", string))
         } else {
-            Ok((string, ""))
+            // `eoi` is used here because we are under the condition that there is no newline.
+            // This will fail at the first unsafe character, which is known to exist because
+            // we are under the condition that not all characters are safe.
+            recognize(Self::till(value((), Sanitizer::parse_safe_char), Self::eoi))(string)
         }
     }
 
@@ -303,5 +314,6 @@ mod tests {
         assert!(Sanitizer::parse_comments("/* hel\u{202d}lo */\nhello world").is_err());
         assert!(Sanitizer::parse_comments("/** hel\x00lo */\nhello world").is_err());
         assert!(Sanitizer::parse_comments("/** hel\u{202a}lo */\nhello world").is_err());
+        assert!(Sanitizer::parse_comments("// unsafe \u{202a} no newline").is_err());
     }
 }

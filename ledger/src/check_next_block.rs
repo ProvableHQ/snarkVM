@@ -81,17 +81,36 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         )?;
 
         // Retrieve the committee lookback.
-        let committee_lookback = self
-            .get_committee_lookback_for_round(block.round())?
-            .ok_or(anyhow!("Failed to fetch committee lookback for round {}", block.round()))?;
+        let committee_lookback = {
+            // Determine the round number for the previous committee. Note, we subtract 2 from odd rounds,
+            // because committees are updated in even rounds.
+            let previous_round = match block.round() % 2 == 0 {
+                true => block.round().saturating_sub(1),
+                false => block.round().saturating_sub(2),
+            };
+            // Determine the committee lookback round.
+            let committee_lookback_round = previous_round.saturating_sub(Committee::<N>::COMMITTEE_LOOKBACK_RANGE);
+            // Output the committee lookback.
+            self.get_committee_for_round(committee_lookback_round)?
+                .ok_or(anyhow!("Failed to fetch committee for round {committee_lookback_round}"))?
+        };
 
         // Retrieve the previous committee lookback.
         let previous_committee_lookback = {
             // Calculate the penultimate round, which is the round before the anchor round.
             let penultimate_round = block.round().saturating_sub(1);
-            // Output the committee lookback for the penultimate round.
-            self.get_committee_lookback_for_round(penultimate_round)?
-                .ok_or(anyhow!("Failed to fetch committee lookback for round {penultimate_round}"))?
+            // Determine the round number for the previous committee. Note, we subtract 2 from odd rounds,
+            // because committees are updated in even rounds.
+            let previous_penultimate_round = match penultimate_round % 2 == 0 {
+                true => penultimate_round.saturating_sub(1),
+                false => penultimate_round.saturating_sub(2),
+            };
+            // Determine the previous committee lookback round.
+            let penultimate_committee_lookback_round =
+                previous_penultimate_round.saturating_sub(Committee::<N>::COMMITTEE_LOOKBACK_RANGE);
+            // Output the previous committee lookback.
+            self.get_committee_for_round(penultimate_committee_lookback_round)?
+                .ok_or(anyhow!("Failed to fetch committee for round {penultimate_committee_lookback_round}"))?
         };
 
         // Ensure the block is correct.
@@ -105,9 +124,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             OffsetDateTime::now_utc().unix_timestamp(),
             ratified_finalize_operations,
         )?;
-
-        // Ensure the certificates in the block subdag have met quorum requirements.
-        self.check_block_subdag_quorum(block)?;
 
         // Determine if the block subdag is correctly constructed and is not a combination of multiple subdags.
         self.check_block_subdag_atomicity(block)?;
@@ -125,43 +141,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 bail!("Transaction ID '{existing_transaction_id}' does not exist in the ledger");
             }
         }
-
-        Ok(())
-    }
-
-    /// Check that the certificates in the block subdag have met quorum requirements.
-    fn check_block_subdag_quorum(&self, block: &Block<N>) -> Result<()> {
-        // Check if the block has a subdag.
-        let subdag = match block.authority() {
-            Authority::Quorum(subdag) => subdag,
-            _ => return Ok(()),
-        };
-
-        // Check that all certificates on each round have met quorum requirements.
-        cfg_iter!(subdag).try_for_each(|(round, certificates)| {
-            // Retrieve the committee lookback for the round.
-            let committee_lookback = self
-                .get_committee_lookback_for_round(*round)?
-                .ok_or_else(|| anyhow!("No committee lookback found for round {round}"))?;
-
-            // Check that each certificate for this round has met quorum requirements.
-            // Note that we do not need to check the quorum requirement for the previous certificates
-            // because that is done during construction in `BatchCertificate::new`.
-            cfg_iter!(certificates).try_for_each(|certificate| {
-                // Collect the signature authors.
-                let authors = certificate.signatures().map(|signature| signature.to_address()).collect();
-                // Ensure that the signers of the certificate reach the quorum threshold.
-                ensure!(
-                    committee_lookback.is_quorum_threshold_reached(&authors),
-                    "Certificate '{}' for round {round} does not meet quorum requirements",
-                    certificate.id()
-                );
-
-                Ok::<_, Error>(())
-            })?;
-
-            Ok::<_, Error>(())
-        })?;
 
         Ok(())
     }
