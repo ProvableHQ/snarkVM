@@ -133,7 +133,7 @@ impl<F: PrimeField> Add<Variable<F>> for Variable<F> {
 
     fn add(self, other: Variable<F>) -> Self::Output {
         match (self, other) {
-            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(*a + *b)).into(),
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(*a + *b)).into(),
             (first, second) => LinearCombination::from([Cow::Owned(first), Cow::Owned(second)]),
         }
     }
@@ -145,7 +145,7 @@ impl<F: PrimeField> Add<Variable<F>> for &Variable<F> {
 
     fn add(self, other: Variable<F>) -> Self::Output {
         match (self, other) {
-            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(**a + *b)).into(),
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(**a + *b)).into(),
             (first, second) => LinearCombination::from([Cow::Borrowed(first), Cow::Owned(second)]),
         }
     }
@@ -157,7 +157,7 @@ impl<F: PrimeField> Add<&Variable<F>> for Variable<F> {
 
     fn add(self, other: &Variable<F>) -> Self::Output {
         match (self, other) {
-            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(*a + **b)).into(),
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(*a + **b)).into(),
             (first, second) => LinearCombination::from([Cow::Owned(first), Cow::Borrowed(second)]),
         }
     }
@@ -215,7 +215,7 @@ impl<F: PrimeField> Sub<Variable<F>> for Variable<F> {
 
     fn sub(self, other: Variable<F>) -> Self::Output {
         match (self, other) {
-            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(*a - *b)).into(),
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(*a - *b)).into(),
             (first, second) => LinearCombination::from(first) - second,
         }
     }
@@ -227,7 +227,7 @@ impl<F: PrimeField> Sub<Variable<F>> for &Variable<F> {
 
     fn sub(self, other: Variable<F>) -> Self::Output {
         match (self, other) {
-            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(**a - *b)).into(),
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(**a - *b)).into(),
             (first, second) => LinearCombination::from(first) - second,
         }
     }
@@ -239,7 +239,7 @@ impl<F: PrimeField> Sub<&Variable<F>> for Variable<F> {
 
     fn sub(self, other: &Variable<F>) -> Self::Output {
         match (self, other) {
-            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(*a - **b)).into(),
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(*a - **b)).into(),
             (first, second) => LinearCombination::from(first) - second,
         }
     }
