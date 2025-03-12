@@ -40,7 +40,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Ensure that the required metadata is there.
                 program.get_edition_metadata()?;
                 program.get_owner_metadata()?;
-                program.get_upgradable_metadata()?;
+                program.get_updatable_metadata()?;
             }
         }
         // Compute the deployment.

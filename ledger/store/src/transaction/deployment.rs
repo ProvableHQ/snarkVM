@@ -559,7 +559,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         }
 
-        // TODO (raychu86): Consider program upgrades and edition changes.
+        // TODO (raychu86): Consider program updates and edition changes.
         // Retrieve the edition.
         let edition = match self.get_edition(program_id)? {
             Some(edition) => edition,

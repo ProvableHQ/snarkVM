@@ -16,7 +16,7 @@
 /// The purpose of these tests are to ensure that an update made to a program is correct.
 /// The logic governing these updates are defined in `check_update_is_valid`.
 /// These tests *DO NOT*:
-///   - check the enforcement rules of the upgrades.
+///   - check the enforcement rules of the updates.
 ///   - check that the program contains the required metadata.
 use crate::Process;
 use console::network::{MainnetV0, prelude::*};

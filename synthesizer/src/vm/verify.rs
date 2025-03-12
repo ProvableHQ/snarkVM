@@ -155,7 +155,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //  - the program does not exist in the store or process.
                 //
                 // If the program is a V2 program, then check that:
-                //  - the program contains `edition`, `owner`, and `upgradable` metadata.
+                //  - the program contains `edition`, `owner`, and `updatable` metadata.
                 //  - the editions in the program metadata and deployment match.
                 //  - the owners in the program metadata and deployment match.
                 // Furthermore, if the edition is zero, then check that:
@@ -163,7 +163,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Otherwise, check that:
                 //  - The program exists in the store and process.
                 //  - The existing program is a V2 program.
-                //  - The existing program is upgradable.
+                //  - The existing program is updatable.
                 //  - The new edition increments the old edition.
                 let store_contains_program = self.transaction_store().contains_program_id(deployment.program_id())?;
                 let process_contains_program = self.contains_program(deployment.program_id());
@@ -230,11 +230,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 // It should be the case that the stored program matches the process program.
                                 let stack = self.process().read().get_stack(deployment.program_id())?;
                                 let process_program = stack.program().as_v2()?;
-                                let program_upgradable = process_program.get_upgradable_metadata()?;
-                                // Check that the program is upgradable.
+                                let program_updatable = process_program.get_updatable_metadata()?;
+                                // Check that the program is updatable.
                                 ensure!(
-                                    **program_upgradable,
-                                    "Invalid deployment transaction '{id}' - program is not upgradable"
+                                    **program_updatable,
+                                    "Invalid deployment transaction '{id}' - program is not updatable"
                                 );
                                 // Check that the new edition increments the old edition.
                                 let process_edition = **process_program.get_edition_metadata()?;

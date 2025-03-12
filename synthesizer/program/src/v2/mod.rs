@@ -131,20 +131,20 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         Ok(owner)
     }
 
-    /// Returns the `upgradable` metadata value.
-    pub fn get_upgradable_metadata(&self) -> Result<&Boolean<N>> {
+    /// Returns the `updatable` metadata value.
+    pub fn get_updatable_metadata(&self) -> Result<&Boolean<N>> {
         // Attempt to retrieve the metadata value.
         let metadata = self
             .metadata
-            .get(&Identifier::from_str("upgradable")?)
-            .ok_or_else(|| anyhow!("Metadata 'upgradable' is not defined."))?;
-        // Destructure the upgradable.
-        let upgradable = match metadata.value() {
-            Literal::Boolean(upgradable) => upgradable,
-            _ => bail!("Metadata 'upgradable' is not a valid 'boolean' value."),
+            .get(&Identifier::from_str("updatable")?)
+            .ok_or_else(|| anyhow!("Metadata 'updatable' is not defined."))?;
+        // Destructure the updatable.
+        let updatable = match metadata.value() {
+            Literal::Boolean(updatable) => updatable,
+            _ => bail!("Metadata 'updatable' is not a valid 'boolean' value."),
         };
-        // Return the upgradable.
-        Ok(upgradable)
+        // Return the updatable.
+        Ok(updatable)
     }
 }
 

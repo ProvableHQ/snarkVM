@@ -3418,7 +3418,7 @@ fn test_update_after_block_height() -> Result<()> {
     // Define the programs.
     let program_v0 = Program::from_str(&format!(
         r"
-program$2 upgradable.aleo;
+program$2 updatable.aleo;
 function foo:
 _init:
     metadata.get edition into r0 as u16;
@@ -3428,13 +3428,13 @@ _init:
     position end;
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
     let program_v1 = Program::from_str(&format!(
         r"
-program$2 upgradable.aleo;
+program$2 updatable.aleo;
 function foo:
 function bar:
 _init:
@@ -3445,7 +3445,7 @@ _init:
     position end;
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 

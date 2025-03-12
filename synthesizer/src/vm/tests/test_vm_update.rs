@@ -62,7 +62,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -136,7 +136,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -238,7 +238,7 @@ function bar:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -254,7 +254,7 @@ function bar:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -292,7 +292,7 @@ function foo:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
     let program_v1 = Program::from_str(&format!(
@@ -303,7 +303,7 @@ function bar:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
     let program_v2_as_v1 = Program::from_str(&format!(
@@ -315,7 +315,7 @@ function baz:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
     let program_v2 = Program::from_str(&format!(
@@ -327,7 +327,7 @@ function baz:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 2u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -428,7 +428,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -462,7 +462,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -615,7 +615,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -665,7 +665,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -829,7 +829,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -857,7 +857,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -900,7 +900,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -942,7 +942,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -1115,7 +1115,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -1134,7 +1134,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -1152,7 +1152,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -1171,7 +1171,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 2u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -1291,7 +1291,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: false;
+$metadata updatable: false;
     "
     ))?;
 
@@ -1308,7 +1308,7 @@ _init:
 
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: false;
+$metadata updatable: false;
     "
     ))?;
 
@@ -1327,7 +1327,7 @@ $metadata upgradable: false;
     Ok(())
 }
 
-// This tests verifies that anyone can update a program whose `upgradable` metadata is set to `true` and has an intentionally empty constructor.
+// This tests verifies that anyone can update a program whose `updatable` metadata is set to `true` and has an intentionally empty constructor.
 #[test]
 fn test_anyone_can_update() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -1352,37 +1352,37 @@ fn test_anyone_can_update() -> Result<()> {
     // Define the programs.
     let program_v0 = Program::from_str(&format!(
         r"
-program$2 upgradable.aleo;
+program$2 updatable.aleo;
 function foo:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
     let program_v1 = Program::from_str(&format!(
         r"
-program$2 upgradable.aleo;
+program$2 updatable.aleo;
 function foo:
 function bar:
 _init:
 $metadata program_owner: {unrelated_caller_address_0};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
     let program_v2 = Program::from_str(&format!(
         r"
-program$2 upgradable.aleo;
+program$2 updatable.aleo;
 function foo:
 function bar:
 function baz:
 _init:
 $metadata program_owner: {unrelated_caller_address_1};
 $metadata edition: 2u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -1407,13 +1407,13 @@ $metadata upgradable: true;
     Ok(())
 }
 
-// This test checks that the following V2 program variants cannot be upgraded:
-//  - a program with the `upgradable` metadata set to `false` and an empty constructor
-//  - a program with the `upgradable` metadata set to `false` and no constructor
-//  - a program with the `upgradable` metadata set to `true` and no constructor
-//  - a program with the `upgradable` metadata set to `true` and a constructor that restricts upgrades
+// This test checks that the following V2 program variants cannot be updated:
+//  - a program with the `updatable` metadata set to `false` and an empty constructor
+//  - a program with the `updatable` metadata set to `false` and no constructor
+//  - a program with the `updatable` metadata set to `true` and no constructor
+//  - a program with the `updatable` metadata set to `true` and a constructor that restricts updates
 #[test]
-fn test_non_upgradable_programs() -> Result<()> {
+fn test_non_updatable_programs() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
@@ -1430,85 +1430,85 @@ fn test_non_upgradable_programs() -> Result<()> {
     // Define the programs.
     let program_0_v0 = Program::from_str(&format!(
         r"
-program$2 non_upgradable_0.aleo;
+program$2 non_updatable_0.aleo;
 function foo:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: false;
+$metadata updatable: false;
     "
     ))?;
 
     let program_0_v1 = Program::from_str(&format!(
         r"
-program$2 non_upgradable_0.aleo;
+program$2 non_updatable_0.aleo;
 function foo:
 function bar:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: false;
+$metadata updatable: false;
     "
     ))?;
 
     let program_1_v0 = Program::from_str(&format!(
         r"
-program$2 non_upgradable_1.aleo;
+program$2 non_updatable_1.aleo;
 function foo:
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: false;
+$metadata updatable: false;
     "
     ))?;
 
     let program_1_v1 = Program::from_str(&format!(
         r"
-program$2 non_upgradable_1.aleo;
+program$2 non_updatable_1.aleo;
 function foo:
 function bar:
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: false;
+$metadata updatable: false;
     "
     ))?;
 
     let program_2_v0 = Program::from_str(&format!(
         r"
-program$2 non_upgradable_2.aleo;
+program$2 non_updatable_2.aleo;
 function foo:
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
     let program_2_v1 = Program::from_str(&format!(
         r"
-program$2 non_upgradable_2.aleo;
+program$2 non_updatable_2.aleo;
 function foo:
 function bar:
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
     let program_3_v0 = Program::from_str(&format!(
         r"
-program$2 non_upgradable_3.aleo;
+program$2 non_updatable_3.aleo;
 function foo:
 _init:
     metadata.get edition into r0 as u16;
     assert.eq r0 0u16;
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
     let program_3_v1 = Program::from_str(&format!(
         r"
-program$2 non_upgradable_3.aleo;
+program$2 non_updatable_3.aleo;
 function foo:
 function bar:
 _init:
@@ -1516,11 +1516,11 @@ _init:
     assert.eq r0 0u16;
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
-    // Deploy the programs and attempt to upgrade. All upgrades should fail.
+    // Deploy the programs and attempt to update. All updates should fail.
     for program in &[program_0_v0, program_1_v0, program_2_v0, program_3_v0] {
         let transaction = vm.deploy(&caller_private_key, program, None, 0, None, rng)?;
         let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
@@ -1538,9 +1538,9 @@ $metadata upgradable: true;
     Ok(())
 }
 
-// This test checks that a program can be made non-upgradable after being upgradable.
+// This test checks that a program can be made non-updatable after being updatable.
 #[test]
-fn test_downgrade_upgradable_program() -> Result<()> {
+fn test_downgrade_updatable_program() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
@@ -1557,50 +1557,50 @@ fn test_downgrade_upgradable_program() -> Result<()> {
     // Define the programs.
     let program_v0 = Program::from_str(&format!(
         r"
-program$2 upgradable.aleo;
+program$2 updatable.aleo;
 function foo:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
     let program_v1 = Program::from_str(&format!(
         r"
-program$2 upgradable.aleo;
+program$2 updatable.aleo;
 function foo:
 function bar:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: false;
+$metadata updatable: false;
     "
     ))?;
 
     let program_v2 = Program::from_str(&format!(
         r"
-program$2 upgradable.aleo;
+program$2 updatable.aleo;
 function foo:
 function bar:
 function baz:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 2u16;
-$metadata upgradable: false;
+$metadata updatable: false;
     "
     ))?;
 
     let program_v3 = Program::from_str(&format!(
         r"
-program$2 upgradable.aleo;
+program$2 updatable.aleo;
 function foo:
 function bar:
 function baz:
 _init:
 $metadata program_owner: {caller_address};
 $metadata edition: 2u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -1631,10 +1631,10 @@ $metadata upgradable: true;
     Ok(())
 }
 
-// This test checks that an upgrade can be locked to a checksum.
+// This test checks that an update can be locked to a checksum.
 // The checksum is managed by an admin address.
 #[test]
-fn test_lock_upgrade_to_checksum() -> Result<()> {
+fn test_lock_update_to_checksum() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
@@ -1651,7 +1651,7 @@ fn test_lock_upgrade_to_checksum() -> Result<()> {
     // Define the programs.
     let program_v0 = Program::from_str(&format!(
         r"
-program$2 locked_upgrade.aleo;
+program$2 locked_update.aleo;
 mapping admin:
     key as boolean.public;
     value as address.public;
@@ -1661,7 +1661,7 @@ mapping expected_checksum:
 function set_expected:
     input r0 as u128.public;
     async set_expected self.caller r0 into r1;
-    output r1 as locked_upgrade.aleo/set_expected.future;
+    output r1 as locked_update.aleo/set_expected.future;
 finalize set_expected:
     input r0 as address.public;
     input r1 as u128.public;
@@ -1681,13 +1681,13 @@ _init:
     position end;
 $metadata program_owner: {caller_address};
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
     let program_v1 = Program::from_str(&format!(
         r"
-program$2 locked_upgrade.aleo;
+program$2 locked_update.aleo;
 mapping admin:
     key as boolean.public;
     value as address.public;
@@ -1698,7 +1698,7 @@ function bar:
 function set_expected:
     input r0 as u128.public;
     async set_expected self.caller r0 into r1;
-    output r1 as locked_upgrade.aleo/set_expected.future;
+    output r1 as locked_update.aleo/set_expected.future;
 finalize set_expected:
     input r0 as address.public;
     input r1 as u128.public;
@@ -1718,13 +1718,13 @@ _init:
     position end;
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
     let program_v1_mismatch = Program::from_str(&format!(
         r"
-program$2 locked_upgrade.aleo;
+program$2 locked_update.aleo;
 mapping admin:
     key as boolean.public;
     value as address.public;
@@ -1735,7 +1735,7 @@ function baz:
 function set_expected:
     input r0 as u128.public;
     async set_expected self.caller r0 into r1;
-    output r1 as locked_upgrade.aleo/set_expected.future;
+    output r1 as locked_update.aleo/set_expected.future;
 finalize set_expected:
     input r0 as address.public;
     input r1 as u128.public;
@@ -1755,7 +1755,7 @@ _init:
     position end;
 $metadata program_owner: {caller_address};
 $metadata edition: 1u16;
-$metadata upgradable: true;
+$metadata updatable: true;
     "
     ))?;
 
@@ -1768,7 +1768,7 @@ $metadata upgradable: true;
     // Check that the caller is the admin.
     let Some(Value::Plaintext(Plaintext::Literal(Literal::Address(admin), _))) =
         vm.finalize_store().get_value_confirmed(
-            ProgramID::from_str("locked_upgrade.aleo")?,
+            ProgramID::from_str("locked_update.aleo")?,
             Identifier::from_str("admin")?,
             &Plaintext::from_str("true")?,
         )?
@@ -1788,7 +1788,7 @@ $metadata upgradable: true;
     let admin_private_key = PrivateKey::new(rng)?;
     let transaction = vm.execute(
         &admin_private_key,
-        ("locked_upgrade.aleo", "set_expected"),
+        ("locked_update.aleo", "set_expected"),
         vec![checksum].into_iter(),
         None,
         0,
@@ -1803,7 +1803,7 @@ $metadata upgradable: true;
     assert!(
         vm.finalize_store()
             .get_value_confirmed(
-                ProgramID::from_str("locked_upgrade.aleo")?,
+                ProgramID::from_str("locked_update.aleo")?,
                 Identifier::from_str("expected_checksum")?,
                 &Plaintext::from_str("true")?,
             )?
@@ -1814,7 +1814,7 @@ $metadata upgradable: true;
     let checksum = program_v1.checksum()?;
     let transaction = vm.execute(
         &caller_private_key,
-        ("locked_upgrade.aleo", "set_expected"),
+        ("locked_update.aleo", "set_expected"),
         vec![Value::from_str(&checksum.to_string())].into_iter(),
         None,
         0,
@@ -1828,7 +1828,7 @@ $metadata upgradable: true;
     // Check that the expected checksum is set.
     let Some(Value::Plaintext(Plaintext::Literal(Literal::U128(expected), _))) =
         vm.finalize_store().get_value_confirmed(
-            ProgramID::from_str("locked_upgrade.aleo")?,
+            ProgramID::from_str("locked_update.aleo")?,
             Identifier::from_str("expected_checksum")?,
             &Plaintext::from_str("true")?,
         )?

@@ -22,7 +22,7 @@ function foo:
 
 $metadata program_owner: aleo1s8ynfrjjlge4exyn4ulznyww6ug6nj37pxscpcj9jgjzw43uucrsgxsxxm;
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
 
 /////////////////////////////////////////////////
 
@@ -47,10 +47,10 @@ function test_metadata:
 finalize test_metadata:
     metadata.get program_owner into r0 as address;
     metadata.get edition into r1 as u16;
-    metadata.get upgradable into r2 as boolean;
+    metadata.get updatable into r2 as boolean;
     metadata.get child.aleo/program_owner into r3 as address;
     metadata.get child.aleo/edition into r4 as u16;
-    metadata.get child.aleo/upgradable into r5 as boolean;
+    metadata.get child.aleo/updatable into r5 as boolean;
     assert.eq r0 r3;
     assert.eq r1 r4;
     assert.eq r2 r5;
@@ -71,5 +71,5 @@ finalize test_metadata_does_not_exist:
 
 $metadata program_owner: aleo1s8ynfrjjlge4exyn4ulznyww6ug6nj37pxscpcj9jgjzw43uucrsgxsxxm;
 $metadata edition: 0u16;
-$metadata upgradable: true;
+$metadata updatable: true;
 

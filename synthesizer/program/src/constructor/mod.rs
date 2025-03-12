@@ -57,7 +57,7 @@ impl<N: Network, Command: CommandTrait<N>> ConstructorCore<N, Command> {
     }
 }
 /// Defines the default constructor.
-/// Note that this cannot be changed without a network upgrade that introduces versioning.
+/// Note that this cannot be changed without a migration.
 impl<N: Network, Command: CommandTrait<N>> Default for ConstructorCore<N, Command> {
     fn default() -> Self {
         Self::from_str(
