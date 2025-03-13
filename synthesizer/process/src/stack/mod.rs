@@ -322,8 +322,16 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     }
 
     /// Returns the external stack for the given program ID.
+    ///
+    /// Attention - this function is used to check the existence of the external program.
+    /// Developers should explicitly handle the error case so as to not default to the main program.
     #[inline]
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Stack<N>>> {
+        // Check that the program ID is not itself.
+        ensure!(
+            program_id != self.program.id(),
+            "Attempted to get the main program '{program_id}' as an external program."
+        );
         // Check that the program ID is imported by the program.
         ensure!(self.program.contains_import(program_id), "External program '{program_id}' is not imported.");
         // Upgrade the weak reference to the process-level stack map and retrieve the external stack.

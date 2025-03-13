@@ -301,12 +301,14 @@ impl<N: Network> Stack<N> {
         // Retrieve the external stack, if needed.
         let external_stack = match locator.program_id() == self.program_id() {
             true => None,
+            // Attention - This method must fail here and early return if the external program is missing.
+            // Otherwise, this method will proceed to look for the requested function in its own program.
             false => Some(self.get_external_stack(locator.program_id())?),
         };
         // Retrieve the associated function.
-        let function = match external_stack {
-            Some(external_stack) => external_stack.get_function(locator.resource())?,
-            None => self.get_function(locator.resource())?,
+        let function = match &external_stack {
+            Some(external_stack) => external_stack.get_function_ref(locator.resource())?,
+            None => self.get_function_ref(locator.resource())?,
         };
         // Retrieve the finalize inputs.
         let inputs = match function.finalize_logic() {

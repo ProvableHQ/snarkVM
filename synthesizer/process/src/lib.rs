@@ -218,14 +218,17 @@ impl<N: Network> Process<N> {
     pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<Arc<Stack<N>>> {
         // Prepare the program ID.
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
-        // Acquire the read lock.
-        let stacks = self.stacks.read();
         // Retrieve the stack.
-        let stack = stacks.get(&program_id).ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?;
+        let stack = self
+            .stacks
+            .read()
+            .get(&program_id)
+            .ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?
+            .clone();
         // Ensure the program ID matches.
         ensure!(stack.program_id() == &program_id, "Expected program '{}', found '{program_id}'", stack.program_id());
         // Return the stack.
-        Ok(stack.clone())
+        Ok(stack)
     }
 
     /// Returns the proving key for the given program ID and function name.

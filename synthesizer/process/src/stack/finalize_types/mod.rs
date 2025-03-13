@@ -166,6 +166,8 @@ impl<N: Network> FinalizeTypes<N> {
                     // Get the external stack, if needed.
                     let external_stack = match locator.program_id() == stack.program_id() {
                         true => None,
+                        // Attention - This method must fail here and early return if the external program is missing.
+                        // Otherwise, this method will proceed to look for the requested function in its own program.
                         false => Some(stack.get_external_stack(locator.program_id())?),
                     };
                     // Retrieve the associated function.
@@ -181,14 +183,7 @@ impl<N: Network> FinalizeTypes<N> {
                     // Check that the index is in bounds.
                     match finalize_inputs.get_index(**index as usize) {
                         // Retrieve the input type and update `finalize_type` for the next iteration.
-                        Some(input) => {
-                            finalize_type = match input.finalize_type() {
-                                FinalizeType::Plaintext(plaintext_type) => {
-                                    FinalizeType::Plaintext(plaintext_type.clone())
-                                }
-                                FinalizeType::Future(locator) => FinalizeType::Future(*locator),
-                            }
-                        }
+                        Some(input) => finalize_type = input.finalize_type().clone(),
                         // Halts if the index is out of bounds.
                         None => bail!("Index out of bounds"),
                     }

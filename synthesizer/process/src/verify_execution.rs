@@ -194,7 +194,7 @@ impl<N: Network> Process<N> {
             None => (Field::one(), *transition.program_id()),
         };
 
-        // Retrieve the adress belonging to the parent.
+        // Retrieve the address belonging to the parent.
         let stack = self.get_stack(parent)?;
         let parent_address = stack.program_address();
 

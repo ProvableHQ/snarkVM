@@ -230,13 +230,12 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
         states.pop()
     {
         // Get the finalize logic.
-        let finalize = match stack.get_function_ref(registers.function_name())?.finalize_logic() {
-            Some(finalize) => finalize,
-            None => bail!(
+        let Some(finalize) = stack.get_function_ref(registers.function_name())?.finalize_logic() else {
+            bail!(
                 "The function '{}/{}' does not have an associated finalize block",
                 stack.program_id(),
                 registers.function_name()
-            ),
+            )
         };
         // Evaluate the commands.
         while counter < finalize.commands().len() {
@@ -245,13 +244,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
             // Finalize the command.
             match &command {
                 Command::BranchEq(branch_eq) => {
-                    let result = try_vm_runtime!(|| branch_to(
-                        counter,
-                        branch_eq,
-                        finalize.positions(),
-                        stack.deref(),
-                        &registers
-                    ));
+                    let result =
+                        try_vm_runtime!(|| branch_to(counter, branch_eq, finalize.positions(), &stack, &registers));
                     match result {
                         Ok(Ok(new_counter)) => {
                             counter = new_counter;
@@ -263,13 +257,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     }
                 }
                 Command::BranchNeq(branch_neq) => {
-                    let result = try_vm_runtime!(|| branch_to(
-                        counter,
-                        branch_neq,
-                        finalize.positions(),
-                        stack.deref(),
-                        &registers
-                    ));
+                    let result =
+                        try_vm_runtime!(|| branch_to(counter, branch_neq, finalize.positions(), &stack, &registers));
                     match result {
                         Ok(Ok(new_counter)) => {
                             counter = new_counter;

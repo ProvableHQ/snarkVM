@@ -2487,6 +2487,7 @@ function {function_name}:
 
 #[test]
 fn test_long_import_chain() {
+    const MAX_PROGRAM_DEPTH: usize = 64;
     // Initialize a new program.
     let program = Program::<CurrentNetwork>::from_str(
         r"
@@ -2499,7 +2500,7 @@ fn test_long_import_chain() {
     let mut process = crate::test_helpers::sample_process(&program);
 
     // Add `MAX_PROGRAM_DEPTH` programs to the process.
-    for i in 1..=CurrentNetwork::MAX_PROGRAM_DEPTH {
+    for i in 1..=MAX_PROGRAM_DEPTH {
         println!("Adding program {i}");
         // Initialize a new program.
         let program = Program::from_str(&format!(
@@ -2521,8 +2522,8 @@ fn test_long_import_chain() {
         import test{}.aleo;
         program test{}.aleo;
         function c:",
-        CurrentNetwork::MAX_PROGRAM_DEPTH,
-        CurrentNetwork::MAX_PROGRAM_DEPTH + 1
+        MAX_PROGRAM_DEPTH,
+        MAX_PROGRAM_DEPTH + 1
     ))
     .unwrap();
     let result = process.add_program(&program);

@@ -449,8 +449,9 @@ fn cost_in_microcredits<N: Network>(
                     finalizes.push((StackRef::External(external_stack), *future.resource()));
                 }
             }
-            // Sum the cost of all commands in the current block.
+            // Iterate over the commands in the finalize block.
             for command in finalize.commands() {
+                // Sum the cost of all commands in the current future into the total running cost.
                 finalize_cost = finalize_cost
                     .checked_add(cost_per_command(&stack_ref, finalize, command, consensus_fee_version)?)
                     .ok_or(anyhow!("Finalize cost overflowed"))?;

@@ -125,12 +125,12 @@ impl<N: Network> Process<N> {
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = fee.tpk().to_xy_coordinates();
 
-        // Retrieve the adress belonging to the program ID.
+        // Retrieve the address belonging to the program ID.
         let stack = self.get_stack(fee.program_id())?;
-        let program_adress = stack.program_address();
+        let program_address = stack.program_address();
 
         // Compute the x- and y-coordinate of `parent`.
-        let (parent_x, parent_y) = program_adress.to_xy_coordinates();
+        let (parent_x, parent_y) = program_address.to_xy_coordinates();
 
         // Construct the public inputs to verify the proof.
         let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **fee.tcm(), **fee.scm()];
@@ -198,12 +198,12 @@ impl<N: Network> Process<N> {
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = fee.tpk().to_xy_coordinates();
 
-        // Retrieve the adress belonging to the program ID.
+        // Retrieve the address belonging to the program ID.
         let stack = self.get_stack(fee.program_id())?;
-        let program_adress = stack.program_address();
+        let program_address = stack.program_address();
 
         // Compute the x- and y-coordinate of `parent`.
-        let (parent_x, parent_y) = program_adress.to_xy_coordinates();
+        let (parent_x, parent_y) = program_address.to_xy_coordinates();
 
         // Construct the public inputs to verify the proof.
         let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **fee.tcm(), **fee.scm()];
