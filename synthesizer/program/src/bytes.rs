@@ -26,7 +26,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fro
         let program = match version {
             1 => Self::ProgramV1(ProgramCoreV1::read_le_internal(&mut reader).map_err(|e| error(e.to_string()))?),
             2 => Self::ProgramV2(ProgramCoreV2::read_le_internal(&mut reader).map_err(|e| error(e.to_string()))?),
-            _ => return Err(error("Invalid program version")),
+            invalid_version => return Err(error(format!("Invalid program version ({invalid_version})"))),
         };
 
         // Return the program.
