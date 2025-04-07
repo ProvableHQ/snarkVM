@@ -101,6 +101,9 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
         &self,
         cs: &mut CS,
     ) -> Result<(), snarkvm_algorithms::r1cs::SynthesisError> {
+        println!("Generating constraints");
+        println!("Constraint system: {self:?}");
+
         /// A struct for tracking the mapping of variables from the virtual machine (first) to the gadget constraint system (second).
         struct Converter {
             public: IndexMap<u64, snarkvm_algorithms::r1cs::Variable>,

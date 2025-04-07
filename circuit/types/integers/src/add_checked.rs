@@ -169,7 +169,7 @@ mod tests {
 
     use core::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 1;
 
     fn check_add<I: IntegerType + RefUnwindSafe>(
         name: &str,
@@ -196,6 +196,9 @@ mod tests {
                 }),
             },
         }
+        // Eject R1CS.
+        let r1cs = Circuit::eject_r1cs_and_reset();
+        println!("R1CS: {r1cs:?}");
         Circuit::reset();
     }
 

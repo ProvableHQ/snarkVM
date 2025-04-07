@@ -271,6 +271,10 @@ mod tests {
         let second = Field::<Circuit>::new(Mode::Private, b);
         let candidate_b = first * second;
         assert_eq!(expected, candidate_b.eject_value());
+
+        // Eject R1CS.
+        let r1cs = Circuit::eject_r1cs_and_reset();
+        println!("R1CS: {r1cs:?}");
     }
 
     #[test]

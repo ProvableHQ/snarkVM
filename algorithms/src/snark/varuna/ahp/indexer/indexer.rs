@@ -64,6 +64,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             id,
         } = Self::index_helper(c).map_err(|e| anyhow!("{e:?}"))?;
 
+        println!("Finished indexing circuit {id}");
+        println!("Constraint domain size: {}", constraint_domain.size());
+        println!("Variable domain size: {}", variable_domain.size());
+        println!("a: {a:?}");
+        println!("b: {b:?}");
+        println!("c: {c:?}");
+        println!("evaluations of row, col, rowcol, rowcolval for a matrix: {a_arith:?}");
+        println!("evaluations of row, col, rowcol, rowcolval for b matrix: {b_arith:?}");
+        println!("evaluations of row, col, rowcol, rowcolval for c matrix: {c_arith:?}");
+        println!("Circuit info: {index_info:?}");
+
         let fft_precomp_time = start_timer!(|| format!("Precomputing roots of unity {id}"));
 
         let (fft_precomputation, ifft_precomputation) = Self::fft_precomputation(

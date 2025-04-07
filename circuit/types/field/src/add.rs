@@ -270,6 +270,10 @@ mod tests {
         let candidate = Field::<Circuit>::new(Mode::Public, one) + Field::new(Mode::Public, one);
         assert_eq!(two, candidate.eject_value());
 
+        // Eject R1CS.
+        let r1cs = Circuit::eject_r1cs_and_reset();
+        println!("R1CS: {r1cs:?}");
+
         let candidate = Field::<Circuit>::new(Mode::Private, one) + Field::new(Mode::Public, one);
         assert_eq!(two, candidate.eject_value());
 

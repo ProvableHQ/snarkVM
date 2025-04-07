@@ -301,6 +301,9 @@ mod tests {
                 }),
             },
         }
+        // Eject R1CS.
+        let r1cs = Circuit::eject_r1cs_and_reset();
+        println!("R1CS: {r1cs:?}");
         Circuit::reset();
     }
 
