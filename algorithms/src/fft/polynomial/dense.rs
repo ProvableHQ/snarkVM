@@ -78,7 +78,8 @@ impl<F: Field> DensePolynomial<F> {
         while let Some(true) = coeffs.last().map(|c| c.is_zero()) {
             coeffs.pop();
         }
-        // Check that either the coefficients vec are empty or that the last coeff is non-zero.
+        // Check that either the coefficients vec are empty or that the last coeff is
+        // non-zero.
         assert!(coeffs.last().map_or(true, |coeff| !coeff.is_zero()));
 
         Self { coeffs }

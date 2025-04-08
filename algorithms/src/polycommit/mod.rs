@@ -26,8 +26,9 @@ pub mod kzg10;
 
 /// Polynomial commitment scheme based on the construction in [\[KZG10\]][kzg],
 /// modified to obtain batching and to enforce strict
-/// degree bounds by following the approach outlined in [[MBKM19, “Sonic”]][sonic]
-/// (more precisely, via the variant in [[Gabizon19, “AuroraLight”]][al] that avoids negative G1 powers).
+/// degree bounds by following the approach outlined in [[MBKM19,
+/// “Sonic”]][sonic] (more precisely, via the variant in [[Gabizon19,
+/// “AuroraLight”]][al] that avoids negative G1 powers).
 ///
 /// [kzg]: http://cacr.uwaterloo.ca/techreports/2010/cacr2010-10.pdf
 /// [sonic]: https://eprint.iacr.org/2019/099

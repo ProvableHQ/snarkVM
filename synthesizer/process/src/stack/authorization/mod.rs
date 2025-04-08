@@ -21,6 +21,9 @@ use console::{network::prelude::*, program::Request, types::Field};
 use ledger_block::{Transaction, Transition};
 
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::{collections::VecDeque, sync::Arc};
 

@@ -560,7 +560,8 @@ mod tests {
             let transaction_id = transaction.id();
 
             // Initialize a new transition store.
-            let transition_store = TransitionStore::<_, TransitionMemory<_>>::open(None).unwrap();
+            let transition_store =
+                TransitionStore::<_, TransitionMemory<_>>::open(StorageMode::new_test(None)).unwrap();
             // Initialize a new transaction store.
             let transaction_store = TransactionStore::<_, TransactionMemory<_>>::open(transition_store).unwrap();
 
@@ -603,7 +604,8 @@ mod tests {
             let transition_ids = transaction.transition_ids();
 
             // Initialize a new transition store.
-            let transition_store = TransitionStore::<_, TransitionMemory<_>>::open(None).unwrap();
+            let transition_store =
+                TransitionStore::<_, TransitionMemory<_>>::open(StorageMode::new_test(None)).unwrap();
             // Initialize a new transaction store.
             let transaction_store = TransactionStore::<_, TransactionMemory<_>>::open(transition_store).unwrap();
 

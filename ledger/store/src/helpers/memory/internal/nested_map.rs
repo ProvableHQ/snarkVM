@@ -19,6 +19,9 @@ use crate::helpers::{NestedMap, NestedMapRead};
 use console::network::prelude::*;
 
 use core::hash::Hash;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use std::{
     borrow::Cow,

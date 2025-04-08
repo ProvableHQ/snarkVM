@@ -52,7 +52,10 @@ use console::{
 use aleo_std::prelude::*;
 use core::num::NonZeroUsize;
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;

@@ -36,7 +36,7 @@ impl<N: Network> FromBytes for Block<N> {
         // Read the authority.
         let authority = FromBytes::read_le(&mut reader)?;
 
-        // Read the number of ratifications.
+        // Read the ratifications.
         let ratifications = Ratifications::read_le(&mut reader)?;
 
         // Read the solutions.

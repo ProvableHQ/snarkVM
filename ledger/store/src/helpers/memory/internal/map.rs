@@ -20,6 +20,9 @@ use console::network::prelude::*;
 use indexmap::IndexMap;
 
 use core::{borrow::Borrow, hash::Hash};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use std::{
     borrow::Cow,

@@ -214,7 +214,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         end_timer!(f_evals_time);
 
         let f_poly_time = start_timer!(|| format!("Computing f poly for {label}"));
-        // we define f as the rational equation for which we're running the sumcheck protocol
+        // we define f as the rational equation for which we're running the sumcheck
+        // protocol
         let f = EvaluationsOnDomain::from_vec_and_domain(f_evals_on_K, non_zero_domain)
             .interpolate_with_pc(ifft_precomputation);
 

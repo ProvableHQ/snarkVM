@@ -16,6 +16,7 @@
 #[macro_use]
 extern crate criterion;
 
+use algorithms::snark::varuna::VarunaVersion;
 use circuit::{AleoV0, Eject, Environment, Inject, Mode, collections::kary_merkle_tree::*};
 use console::{
     algorithms::Sha3_256,
@@ -102,9 +103,11 @@ fn batch_prove(c: &mut Criterion) {
         let assignments =
             [(proving_key.clone(), (0..*num_assignments).map(|_| assignment.clone()).collect::<Vec<_>>())];
 
+        let varuna_version = VarunaVersion::V1;
         c.bench_function(&format!("KaryMerkleTree batch prove {num_assignments} assignments"), |b| {
             b.iter(|| {
-                let _proof = ProvingKey::prove_batch("ProveKaryMerkleTree", &assignments, &mut rng).unwrap();
+                let _proof =
+                    ProvingKey::prove_batch("ProveKaryMerkleTree", varuna_version, &assignments, &mut rng).unwrap();
             })
         });
     }

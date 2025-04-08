@@ -50,7 +50,8 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
 
     /// Initializes the finalize storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        let storage = storage.into();
         // Initialize the committee store.
         let committee_store = CommitteeStore::<N, CommitteeMemory<N>>::open(storage.clone())?;
         // Return the finalize store.
@@ -58,14 +59,8 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             committee_store,
             program_id_map: MemoryMap::default(),
             key_value_map: NestedMemoryMap::default(),
-            storage_mode: storage.into(),
+            storage_mode: storage,
         })
-    }
-
-    /// Initializes the test-variant of the storage.
-    #[cfg(any(test, feature = "test"))]
-    fn open_testing(_: std::path::PathBuf, dev: Option<u16>) -> Result<Self> {
-        Self::open(dev)
     }
 
     /// Returns the committee store.
@@ -109,19 +104,13 @@ impl<N: Network> CommitteeStorage<N> for CommitteeMemory<N> {
     type CommitteeMap = MemoryMap<u32, Committee<N>>;
 
     /// Initializes the committee storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         Ok(Self {
             current_round_map: MemoryMap::default(),
             round_to_height_map: MemoryMap::default(),
             committee_map: MemoryMap::default(),
             storage_mode: storage.into(),
         })
-    }
-
-    /// Initializes the test-variant of the storage.
-    #[cfg(any(test, feature = "test"))]
-    fn open_testing(_: std::path::PathBuf, dev: Option<u16>) -> Result<Self> {
-        Self::open(dev)
     }
 
     /// Returns the current round map.

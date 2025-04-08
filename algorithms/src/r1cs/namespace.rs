@@ -19,7 +19,8 @@ use snarkvm_fields::Field;
 use std::marker::PhantomData;
 
 /// This is a "namespaced" constraint system which borrows a constraint system
-/// (pushing a namespace context) and, when dropped, pops out of the namespace context.
+/// (pushing a namespace context) and, when dropped, pops out of the namespace
+/// context.
 pub struct Namespace<'a, F: Field, CS: ConstraintSystem<F>>(pub(super) &'a mut CS, pub(super) PhantomData<F>);
 
 impl<F: Field, CS: ConstraintSystem<F>> ConstraintSystem<F> for Namespace<'_, F, CS> {

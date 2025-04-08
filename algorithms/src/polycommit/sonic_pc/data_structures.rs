@@ -36,7 +36,8 @@ pub type Randomness<E> = kzg10::KZGRandomness<E>;
 /// `Commitment` is the commitment for the KZG10 scheme.
 pub type Commitment<E> = kzg10::KZGCommitment<E>;
 
-/// `CommitterKey` is used to commit to, and create evaluation proofs for, a given polynomial.
+/// `CommitterKey` is used to commit to, and create evaluation proofs for, a
+/// given polynomial.
 #[derive(Debug)]
 pub struct CommitterKey<E: PairingEngine> {
     /// The key used to commit to polynomials.
@@ -271,7 +272,8 @@ impl<E: PairingEngine> CommitterKey<E> {
     }
 }
 
-/// `CommitterUnionKey` is a union of `CommitterKey`s, useful for multi-circuit batch proofs.
+/// `CommitterUnionKey` is a union of `CommitterKey`s, useful for multi-circuit
+/// batch proofs.
 #[derive(Debug)]
 pub struct CommitterUnionKey<'a, E: PairingEngine> {
     /// The key used to commit to polynomials.
@@ -330,8 +332,8 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
         }
     }
 
-    /// Obtain elements of the SRS in the lagrange basis powers, for use with the underlying
-    /// KZG10 construction.
+    /// Obtain elements of the SRS in the lagrange basis powers, for use with
+    /// the underlying KZG10 construction.
     pub fn lagrange_basis(&self, domain: EvaluationDomain<E::Fr>) -> Option<kzg10::LagrangeBasis<E>> {
         self.lagrange_bases_at_beta_g.get(&domain.size()).map(|basis| kzg10::LagrangeBasis {
             lagrange_basis_at_beta_g: Cow::Borrowed(basis),
@@ -415,8 +417,8 @@ impl<F: Field, C: CanonicalSerialize + ToConstraintField<F>> ToConstraintField<F
 
 // NOTE: Serializing the LabeledCommitments struct is done by serializing
 // _WITHOUT_ the labels or the degree bound. Deserialization is _NOT_ supported,
-// and you should construct the struct via the `LabeledCommitment::new` method after
-// deserializing the Commitment.
+// and you should construct the struct via the `LabeledCommitment::new` method
+// after deserializing the Commitment.
 impl<C: CanonicalSerialize + ToBytes> ToBytes for LabeledCommitment<C> {
     fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
         CanonicalSerialize::serialize_compressed(&self.commitment, &mut writer)
@@ -627,18 +629,20 @@ impl<F: Field> MulAssign<F> for LinearCombination<F> {
     }
 }
 
-/// `QuerySet` is the set of queries that are to be made to a set of labeled polynomials/equations
-/// `p` that have previously been committed to. Each element of a `QuerySet` is a `(label, query)`
-/// pair, where `label` is the label of a polynomial in `p`, and `query` is the field element
+/// `QuerySet` is the set of queries that are to be made to a set of labeled
+/// polynomials/equations `p` that have previously been committed to. Each
+/// element of a `QuerySet` is a `(label, query)` pair, where `label` is the
+/// label of a polynomial in `p`, and `query` is the field element
 /// that `p[label]` is to be queried at.
 ///
 /// Added the third field: the point name.
 pub type QuerySet<T> = BTreeSet<(String, (String, T))>;
 
-/// `Evaluations` is the result of querying a set of labeled polynomials or equations
-/// `p` at a `QuerySet` `Q`. It maps each element of `Q` to the resulting evaluation.
-/// That is, if `(label, query)` is an element of `Q`, then `evaluation.get((label, query))`
-/// should equal `p[label].evaluate(query)`.
+/// `Evaluations` is the result of querying a set of labeled polynomials or
+/// equations `p` at a `QuerySet` `Q`. It maps each element of `Q` to the
+/// resulting evaluation. That is, if `(label, query)` is an element of `Q`,
+/// then `evaluation.get((label, query))` should equal
+/// `p[label].evaluate(query)`.
 pub type Evaluations<F> = BTreeMap<(String, F), F>;
 
 /// Evaluate the given polynomials at `query_set`.

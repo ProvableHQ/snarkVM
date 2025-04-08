@@ -19,6 +19,7 @@ pub use call_metrics::*;
 mod inclusion;
 pub use inclusion::*;
 
+use algorithms::snark::varuna::VarunaVersion;
 use circuit::Assignment;
 use console::{
     network::prelude::*,
@@ -151,6 +152,7 @@ impl<N: Network> Trace<N> {
     pub fn prove_execution<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
         locator: &str,
+        varuna_version: VarunaVersion,
         rng: &mut R,
     ) -> Result<Execution<N>> {
         // Ensure this is not a fee.
@@ -169,14 +171,24 @@ impl<N: Network> Trace<N> {
         // Construct the proving tasks.
         let proving_tasks = self.transition_tasks.values().cloned().collect();
         // Compute the proof.
-        let (global_state_root, proof) =
-            Self::prove_batch::<A, R>(locator, proving_tasks, inclusion_assignments, *global_state_root, rng)?;
+        let (global_state_root, proof) = Self::prove_batch::<A, R>(
+            locator,
+            varuna_version,
+            proving_tasks,
+            inclusion_assignments,
+            *global_state_root,
+            rng,
+        )?;
         // Return the execution.
         Execution::from(self.transitions.iter().cloned(), global_state_root, Some(proof))
     }
 
     /// Returns a new fee with a proof, for the current inclusion assignment and global state root.
-    pub fn prove_fee<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<Fee<N>> {
+    pub fn prove_fee<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        varuna_version: VarunaVersion,
+        rng: &mut R,
+    ) -> Result<Fee<N>> {
         // Ensure this is a fee.
         let is_fee_public = self.is_fee_public();
         let is_fee_private = self.is_fee_private();
@@ -199,6 +211,7 @@ impl<N: Network> Trace<N> {
         // Compute the proof.
         let (global_state_root, proof) = Self::prove_batch::<A, R>(
             "credits.aleo/fee (private or public)",
+            varuna_version,
             proving_tasks,
             inclusion_assignments,
             *global_state_root,
@@ -212,6 +225,7 @@ impl<N: Network> Trace<N> {
     /// Note: This does *not* check that the global state root exists in the ledger.
     pub fn verify_execution_proof(
         locator: &str,
+        varuna_version: VarunaVersion,
         verifier_inputs: Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>,
         execution: &Execution<N>,
     ) -> Result<()> {
@@ -224,7 +238,14 @@ impl<N: Network> Trace<N> {
         // Retrieve the proof.
         let Some(proof) = execution.proof() else { bail!("Expected the execution to contain a proof") };
         // Verify the execution proof.
-        match Self::verify_batch(locator, verifier_inputs, global_state_root, execution.transitions(), proof) {
+        match Self::verify_batch(
+            locator,
+            varuna_version,
+            verifier_inputs,
+            global_state_root,
+            execution.transitions(),
+            proof,
+        ) {
             Ok(()) => Ok(()),
             Err(e) => bail!("Execution is invalid - {e}"),
         }
@@ -232,7 +253,11 @@ impl<N: Network> Trace<N> {
 
     /// Checks the proof for the fee.
     /// Note: This does *not* check that the global state root exists in the ledger.
-    pub fn verify_fee_proof(verifier_inputs: (VerifyingKey<N>, Vec<Vec<N::Field>>), fee: &Fee<N>) -> Result<()> {
+    pub fn verify_fee_proof(
+        varuna_version: VarunaVersion,
+        verifier_inputs: (VerifyingKey<N>, Vec<Vec<N::Field>>),
+        fee: &Fee<N>,
+    ) -> Result<()> {
         // Retrieve the global state root.
         let global_state_root = fee.global_state_root();
         // Ensure the global state root is not zero.
@@ -244,6 +269,7 @@ impl<N: Network> Trace<N> {
         // Verify the fee proof.
         match Self::verify_batch(
             "credits.aleo/fee (private or public)",
+            varuna_version,
             vec![verifier_inputs],
             global_state_root,
             [fee.transition()].into_iter(),
@@ -259,6 +285,7 @@ impl<N: Network> Trace<N> {
     /// Returns the global state root and proof for the given assignments.
     fn prove_batch<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         locator: &str,
+        varuna_version: VarunaVersion,
         mut proving_tasks: Vec<(ProvingKey<N>, Vec<Assignment<N::Field>>)>,
         inclusion_assignments: &[InclusionAssignment<N>],
         global_state_root: N::StateRoot,
@@ -291,7 +318,7 @@ impl<N: Network> Trace<N> {
         }
 
         // Compute the proof.
-        let proof = ProvingKey::prove_batch(locator, &proving_tasks, rng)?;
+        let proof = ProvingKey::prove_batch(locator, varuna_version, &proving_tasks, rng)?;
         // Return the global state root and proof.
         Ok((global_state_root, proof))
     }
@@ -300,6 +327,7 @@ impl<N: Network> Trace<N> {
     /// Note: This does *not* check that the global state root exists in the ledger.
     fn verify_batch<'a>(
         locator: &str,
+        varuna_version: VarunaVersion,
         mut verifier_inputs: Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>,
         global_state_root: N::StateRoot,
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
@@ -319,6 +347,7 @@ impl<N: Network> Trace<N> {
             verifier_inputs.push((VerifyingKey::<N>::new(verifying_key, num_variables), batch_inclusion_inputs));
         }
         // Verify the proof.
-        VerifyingKey::verify_batch(locator, verifier_inputs, proof).map_err(|e| anyhow!("Failed to verify proof - {e}"))
+        VerifyingKey::verify_batch(locator, varuna_version, verifier_inputs, proof)
+            .map_err(|e| anyhow!("Failed to verify proof - {e}"))
     }
 }

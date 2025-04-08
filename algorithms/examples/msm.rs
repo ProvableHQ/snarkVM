@@ -31,7 +31,8 @@ use rayon::prelude::*;
 const DEFAULT_POWER_OF_TWO: usize = 20;
 
 /// Run the following command to perform the MSM(s).
-/// `cargo run --release --example msm [variant] [power of 2] [number of MSM iterations]`
+/// `cargo run --release --example msm [variant] [power of 2] [number of MSM
+/// iterations]`
 pub fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {

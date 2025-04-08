@@ -88,7 +88,8 @@ pub(crate) fn pad_input_for_indexer_and_prover<F: PrimeField, CS: ConstraintSyst
     let power_of_two =
         EvaluationDomain::<F>::new(num_public_variables).ok_or(anyhow!("Could not create EvaluationDomain"))?;
 
-    // Allocated `zero` variables to pad the public input up to the next power of two.
+    // Allocated `zero` variables to pad the public input up to the next power of
+    // two.
     let padded_size = power_of_two.size();
     if padded_size > num_public_variables {
         for i in 0..(padded_size - num_public_variables) {
@@ -105,7 +106,8 @@ pub struct MatrixEvals<F: PrimeField> {
     /// Evaluations of the `col` polynomial.
     pub col: EvaluationsOnDomain<F>,
     /// Evaluations of the `row_col` polynomial.
-    /// After indexing, we drop these evaluations to save space in the ProvingKey
+    /// After indexing, we drop these evaluations to save space in the
+    /// ProvingKey
     pub row_col: Option<EvaluationsOnDomain<F>>,
     /// Evaluations of the `row_col_val` polynomial.
     pub row_col_val: EvaluationsOnDomain<F>,
@@ -204,7 +206,8 @@ pub struct MatrixArithmetization<F: PrimeField> {
     pub col: LabeledPolynomial<F>,
     /// LDE of the vector containing entry-wise products of `row` and `col`.
     pub row_col: LabeledPolynomial<F>,
-    /// LDE of the vector containing entry-wise products of `row`, `col` and the non-zero entries of M.
+    /// LDE of the vector containing entry-wise products of `row`, `col` and the
+    /// non-zero entries of M.
     pub row_col_val: LabeledPolynomial<F>,
 }
 
@@ -256,7 +259,8 @@ pub(crate) fn transpose<F: PrimeField>(
     variable_domain: &EvaluationDomain<F>,
     input_domain: &EvaluationDomain<F>,
 ) -> Result<Matrix<F>> {
-    // NOTE: we cannot preallocate the inner Vec because we don't know ahead of time how many rows are used by which variables
+    // NOTE: we cannot preallocate the inner Vec because we don't know ahead of time
+    // how many rows are used by which variables
     let mut transpose = vec![vec![]; variable_domain.size()];
     for (row_index, row) in matrix.iter().enumerate() {
         for (val, input_var_index) in row {

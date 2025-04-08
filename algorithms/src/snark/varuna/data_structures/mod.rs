@@ -35,7 +35,7 @@ pub(super) mod test_circuit;
 #[cfg(any(test, feature = "test", feature = "test_exports"))]
 pub use test_circuit::*;
 
-/// Test exports module that provides access to test utilities for external crates.
+/// Test exports module that provides test utilities for external crates.
 #[cfg(feature = "test_exports")]
 pub mod test_exports {
     /// Test circuit for Varuna (for testing purposes only).

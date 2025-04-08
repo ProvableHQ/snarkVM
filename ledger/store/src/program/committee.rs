@@ -38,11 +38,7 @@ pub trait CommitteeStorage<N: Network>: 'static + Clone + Send + Sync {
     type CommitteeMap: for<'a> Map<'a, u32, Committee<N>>;
 
     /// Initializes the committee storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self>;
-
-    /// Initializes the test-variant of the storage.
-    #[cfg(any(test, feature = "test"))]
-    fn open_testing(temp_dir: std::path::PathBuf, dev: Option<u16>) -> Result<Self>;
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
 
     /// Returns the current round map.
     fn current_round_map(&self) -> &Self::CurrentRoundMap;
@@ -301,18 +297,9 @@ pub struct CommitteeStore<N: Network, C: CommitteeStorage<N>> {
 
 impl<N: Network, C: CommitteeStorage<N>> CommitteeStore<N, C> {
     /// Initializes the committee store.
-    pub fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         // Initialize the committee storage.
-        let storage = C::open(storage.clone())?;
-        // Return the committee store.
-        Ok(Self { storage, _phantom: PhantomData })
-    }
-
-    /// Initializes the test-variant of the storage.
-    #[cfg(any(test, feature = "test"))]
-    pub fn open_testing(temp_dir: std::path::PathBuf, dev: Option<u16>) -> Result<Self> {
-        // Initialize the committee storage.
-        let storage = C::open_testing(temp_dir, dev)?;
+        let storage = C::open(storage)?;
         // Return the committee store.
         Ok(Self { storage, _phantom: PhantomData })
     }
@@ -424,7 +411,7 @@ mod tests {
         let committee_0 = ledger_committee::test_helpers::sample_committee_for_round(0, rng);
 
         // Initialize a new committee store.
-        let store = CommitteeStore::<CurrentNetwork, CommitteeMemory<_>>::open(None).unwrap();
+        let store = CommitteeStore::<CurrentNetwork, CommitteeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         assert!(store.current_round().is_err());
         assert!(store.current_height().is_err());
         assert!(store.current_committee().is_err());
@@ -545,7 +532,7 @@ mod tests {
         let committee_0 = ledger_committee::test_helpers::sample_committee_for_round(0, rng);
 
         // Initialize a new committee store.
-        let store = CommitteeStore::<CurrentNetwork, CommitteeMemory<_>>::open(None).unwrap();
+        let store = CommitteeStore::<CurrentNetwork, CommitteeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         assert!(store.current_round().is_err());
         assert!(store.current_height().is_err());
         assert!(store.current_committee().is_err());

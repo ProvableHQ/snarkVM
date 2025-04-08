@@ -141,8 +141,8 @@ impl Network for MainnetV0 {
         (ConsensusVersion::V1, 0),
         (ConsensusVersion::V2, 2_800_000),
         (ConsensusVersion::V3, 4_900_000),
-        (ConsensusVersion::V4, 7_100_000),
-        (ConsensusVersion::V5, 999_999_999),
+        (ConsensusVersion::V4, 6_135_000),
+        (ConsensusVersion::V5, 7_060_000),
     ];
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
@@ -176,10 +176,12 @@ impl Network for MainnetV0 {
     const INCLUSION_FUNCTION_NAME: &'static str = snarkvm_parameters::mainnet::NETWORK_INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(not(any(test, feature = "test")))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 16), (ConsensusVersion::V3, 25)];
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 3] =
+        [(ConsensusVersion::V1, 16), (ConsensusVersion::V3, 25), (ConsensusVersion::V5, 30)];
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(any(test, feature = "test"))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 100), (ConsensusVersion::V3, 100)];
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 3] =
+        [(ConsensusVersion::V1, 100), (ConsensusVersion::V3, 100), (ConsensusVersion::V5, 100)];
     /// The network name.
     const NAME: &'static str = "Aleo Mainnet (v0)";
 

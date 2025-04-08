@@ -27,14 +27,19 @@ mod tests;
 
 use aleo_std_storage::StorageMode;
 use anyhow::{Result, bail, ensure};
-use once_cell::sync::OnceCell;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+use once_cell::sync::Lazy;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
     borrow::Borrow,
+    collections::HashMap,
     marker::PhantomData,
     mem,
     ops::Deref,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -43,19 +48,23 @@ use std::{
 
 pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
 
+// A static map of database paths to their objects; it's needed in order to facilitate concurrent
+// tests involving persistent storage, but it only ever has a single member outside of them.
+// TODO: remove the static in favor of improved `open` methods.
+// note: this object can't utilize locktick for lock accounting, but it is only ever accessed
+//       when first creating the database(s), so this is acceptable; this will also no longer
+//       be an issue once the above TODO is complete.
+static DATABASES: parking_lot::Mutex<Lazy<HashMap<PathBuf, RocksDB>>> =
+    parking_lot::Mutex::new(Lazy::new(HashMap::new));
+
 pub trait Database {
     /// Opens the database.
-    fn open<S: Clone + Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self>
+    fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self>
     where
         Self: Sized;
 
     /// Opens the map with the given `network_id`, `storage mode`, and `map_id` from storage.
-    fn open_map<
-        S: Clone + Into<StorageMode>,
-        K: Serialize + DeserializeOwned,
-        V: Serialize + DeserializeOwned,
-        T: Into<u16>,
-    >(
+    fn open_map<S: Into<StorageMode>, K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned, T: Into<u16>>(
         network_id: u16,
         storage: S,
         map_id: T,
@@ -63,7 +72,7 @@ pub trait Database {
 
     /// Opens the nested map with the given `network_id`, `storage mode`, and `map_id` from storage.
     fn open_nested_map<
-        S: Clone + Into<StorageMode>,
+        S: Into<StorageMode>,
         M: Serialize + DeserializeOwned,
         K: Serialize + DeserializeOwned,
         V: Serialize + DeserializeOwned,
@@ -122,12 +131,17 @@ impl Database for RocksDB {
     ///
     /// In production mode, the database opens directory `~/.aleo/storage/ledger-{network}`.
     /// In development mode, the database opens directory `/path/to/repo/.ledger-{network}-{id}`.
-    fn open<S: Clone + Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
-        static DB: OnceCell<RocksDB> = OnceCell::new();
+    /// In tests, the database opens an ephemeral directory in the OS temporary folder.
+    /// The default storage location can be changed by using `StorageMode::Custom`.
+    fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
+        let storage = storage.into();
 
         // Retrieve the database.
-        let database = DB
-            .get_or_try_init(|| {
+        let db_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
+        let database = DATABASES
+            .lock()
+            .entry(db_path.clone())
+            .or_insert_with(|| {
                 // Customize database options.
                 let mut options = rocksdb::Options::default();
                 options.set_compression_type(rocksdb::DBCompressionType::Lz4);
@@ -136,30 +150,37 @@ impl Database for RocksDB {
                 let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
                 options.set_prefix_extractor(prefix_extractor);
 
-                let primary = aleo_std_storage::aleo_ledger_dir(network_id, storage.clone().into());
                 let rocksdb = {
                     options.increase_parallelism(2);
                     options.set_max_background_jobs(4);
                     options.create_if_missing(true);
                     options.set_max_open_files(8192);
 
-                    Arc::new(rocksdb::DB::open(&options, primary)?)
+                    Arc::new(rocksdb::DB::open(&options, db_path).expect("Couldn't open the database"))
                 };
 
-                Ok::<_, anyhow::Error>(RocksDB {
+                RocksDB {
                     rocksdb,
                     network_id,
-                    storage_mode: storage.clone().into(),
+                    storage_mode: storage.clone(),
                     atomic_batch: Default::default(),
                     atomic_depth: Default::default(),
                     atomic_writes_paused: Default::default(),
                     default_readopts: Default::default(),
-                })
-            })?
+                }
+            })
             .clone();
 
+        // Ensure that multiple database instances are possible only when using the test storage
+        // mode, and that in such scenarios, all of the instances are only using the test mode.
+        if !matches!(storage, StorageMode::Test(_)) {
+            ensure!(DATABASES.lock().len() == 1);
+        } else {
+            ensure!(DATABASES.lock().values().all(|db| matches!(&db.storage_mode, StorageMode::Test(_))));
+        }
+
         // Ensure the database network ID and storage mode match.
-        match database.network_id == network_id && database.storage_mode == storage.into() {
+        match database.network_id == network_id && database.storage_mode == storage {
             true => Ok(database),
             false => bail!("Mismatching network ID or storage mode in the database"),
         }
@@ -167,7 +188,7 @@ impl Database for RocksDB {
 
     /// Opens the map with the given `network_id`, `storage mode`, and `map_id` from storage.
     fn open_map<
-        S: Clone + Into<StorageMode>,
+        S: Into<StorageMode>,
         K: Serialize + DeserializeOwned,
         V: Serialize + DeserializeOwned,
         T: Into<u16>,
@@ -195,7 +216,7 @@ impl Database for RocksDB {
 
     /// Opens the nested map with the given `network_id`, `storage mode`, and `map_id` from storage.
     fn open_nested_map<
-        S: Clone + Into<StorageMode>,
+        S: Into<StorageMode>,
         M: Serialize + DeserializeOwned,
         K: Serialize + DeserializeOwned,
         V: Serialize + DeserializeOwned,
@@ -272,123 +293,6 @@ impl RocksDB {
     /// Checks whether the atomic writes are currently paused.
     fn are_atomic_writes_paused(&self) -> bool {
         self.atomic_writes_paused.load(Ordering::SeqCst)
-    }
-
-    /// Opens the test database.
-    #[cfg(any(test, feature = "test"))]
-    pub fn open_testing(temp_dir: std::path::PathBuf, dev: Option<u16>) -> Result<Self> {
-        use console::prelude::{Rng, TestRng};
-
-        // Ensure the `temp_dir` is unique.
-        let temp_dir = temp_dir.join(Rng::gen::<u64>(&mut TestRng::default()).to_string());
-
-        // Construct the directory for the test database.
-        let primary = match dev {
-            Some(dev) => temp_dir.join(dev.to_string()),
-            None => temp_dir,
-        };
-
-        // Prepare the storage mode.
-        let storage_mode = StorageMode::from(primary.clone());
-
-        let database = {
-            // Customize database options.
-            let mut options = rocksdb::Options::default();
-            options.set_compression_type(rocksdb::DBCompressionType::Lz4);
-
-            // Register the prefix length.
-            let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
-            options.set_prefix_extractor(prefix_extractor);
-
-            let rocksdb = {
-                options.increase_parallelism(2);
-                options.set_max_background_jobs(4);
-                options.create_if_missing(true);
-
-                // Keep these around as options for configuration testing.
-
-                // options.set_max_subcompactions(4);
-                // options.set_use_direct_io_for_flush_and_compaction(true);
-                // options.set_bytes_per_sync(1 << 28);
-                // options.set_compaction_readahead_size(1 << 28);
-                // options.set_max_write_buffer_number(16);
-                // options.set_min_write_buffer_number_to_merge(8);
-                // options.set_compression_type(rocksdb::DBCompressionType::None);
-                // options.set_bottommost_compression_type(rocksdb::DBCompressionType::None);
-                // options.set_write_buffer_size(1 << 28);
-
-                Arc::new(rocksdb::DB::open(&options, primary)?)
-            };
-
-            Ok::<_, anyhow::Error>(RocksDB {
-                rocksdb,
-                network_id: u16::MAX,
-                storage_mode: storage_mode.clone(),
-                atomic_batch: Default::default(),
-                atomic_depth: Default::default(),
-                atomic_writes_paused: Default::default(),
-                default_readopts: Default::default(),
-            })
-        }?;
-
-        // Ensure the database storage mode match.
-        match database.storage_mode == storage_mode {
-            true => Ok(database),
-            false => bail!("Mismatching storage mode in the test database"),
-        }
-    }
-
-    /// Opens the test map.
-    #[cfg(any(test, feature = "test"))]
-    pub fn open_map_testing<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned, T: Into<u16>>(
-        temp_dir: std::path::PathBuf,
-        dev: Option<u16>,
-        map_id: T,
-    ) -> Result<DataMap<K, V>> {
-        // Open the RocksDB test database.
-        let database = Self::open_testing(temp_dir, dev)?;
-
-        // Combine contexts to create a new scope.
-        let mut context = database.network_id.to_le_bytes().to_vec();
-        context.extend_from_slice(&(map_id.into()).to_le_bytes());
-
-        // Return the DataMap.
-        Ok(DataMap(Arc::new(InnerDataMap {
-            database,
-            context,
-            batch_in_progress: Default::default(),
-            atomic_batch: Default::default(),
-            checkpoints: Default::default(),
-        })))
-    }
-
-    /// Opens the test nested map.
-    #[cfg(any(test, feature = "test"))]
-    pub fn open_nested_map_testing<
-        M: Serialize + DeserializeOwned,
-        K: Serialize + DeserializeOwned,
-        V: Serialize + DeserializeOwned,
-        T: Into<u16>,
-    >(
-        temp_dir: std::path::PathBuf,
-        dev: Option<u16>,
-        map_id: T,
-    ) -> Result<NestedDataMap<M, K, V>> {
-        // Open the RocksDB test database.
-        let database = Self::open_testing(temp_dir, dev)?;
-
-        // Combine contexts to create a new scope.
-        let mut context = database.network_id.to_le_bytes().to_vec();
-        context.extend_from_slice(&(map_id.into()).to_le_bytes());
-
-        // Return the DataMap.
-        Ok(NestedDataMap {
-            database,
-            context,
-            batch_in_progress: Default::default(),
-            atomic_batch: Default::default(),
-            checkpoints: Default::default(),
-        })
     }
 }
 

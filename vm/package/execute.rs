@@ -110,10 +110,20 @@ impl<N: Network> Package<N> {
         // Retrieve the call metrics.
         let call_metrics = trace.call_metrics().to_vec();
 
+        // Prepare the query.
+        let query = Query::<_, BlockMemory<_>>::from(endpoint);
+        // Determine which Varuna version to use.
+        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+            VarunaVersion::V1
+        } else {
+            VarunaVersion::V2
+        };
         // Prepare the trace.
-        trace.prepare(Query::<_, BlockMemory<_>>::from(endpoint))?;
+        trace.prepare(query)?;
+
         // Prove the execution.
-        let execution = trace.prove_execution::<A, R>(&locator.to_string(), rng)?;
+        let execution = trace.prove_execution::<A, R>(&locator.to_string(), varuna_version, rng)?;
         // Return the response, execution, and call metrics.
         Ok((response, execution, call_metrics))
     }

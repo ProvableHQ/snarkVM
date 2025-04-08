@@ -140,8 +140,8 @@ impl Network for CanaryV0 {
         (ConsensusVersion::V1, 0),
         (ConsensusVersion::V2, 2_900_000),
         (ConsensusVersion::V3, 4_560_000),
-        (ConsensusVersion::V4, 5_570_000),
-        (ConsensusVersion::V5, 999_999_999),
+        (ConsensusVersion::V4, 5_730_000),
+        (ConsensusVersion::V5, 5_780_000),
     ];
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
@@ -171,10 +171,12 @@ impl Network for CanaryV0 {
     const INCLUSION_FUNCTION_NAME: &'static str = MainnetV0::INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(not(any(test, feature = "test")))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 100), (ConsensusVersion::V3, 100)];
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 3] =
+        [(ConsensusVersion::V1, 100), (ConsensusVersion::V3, 100), (ConsensusVersion::V5, 100)];
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(any(test, feature = "test"))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 25), (ConsensusVersion::V3, 25)];
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 3] =
+        [(ConsensusVersion::V1, 25), (ConsensusVersion::V3, 25), (ConsensusVersion::V5, 25)];
     /// The network name.
     const NAME: &'static str = "Aleo Canary (v0)";
 

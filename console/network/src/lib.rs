@@ -223,7 +223,7 @@ pub trait Network:
     //  Decreasing this value will break backwards compatibility of serialization without explicit
     //  declaration of migration based on round number rather than block height.
     //  Increasing this value will require a migration to prevent forking during network upgrades.
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2];
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 3];
 
     /// Returns the consensus version which is active at the given height.
     ///
@@ -232,6 +232,10 @@ pub trait Network:
     /// V2: Update to the block reward and execution cost algorithms.
     ///
     /// V3: Update to the number of validators and finalize scope RNG seed.
+    ///
+    /// V4: Update to the Varuna version.
+    ///
+    /// V5: Update to the number of validators and enable batch proposal spend limits.
     #[allow(non_snake_case)]
     fn CONSENSUS_VERSION(seek_height: u32) -> anyhow::Result<ConsensusVersion> {
         match Self::CONSENSUS_VERSION_HEIGHTS.binary_search_by(|(_, height)| height.cmp(&seek_height)) {

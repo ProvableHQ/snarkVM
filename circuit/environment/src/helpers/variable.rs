@@ -21,15 +21,15 @@ use core::{
     fmt,
     ops::{Add, Sub},
 };
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub type Index = u64;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Variable<F: PrimeField> {
-    Constant(Rc<F>),
-    Public(Rc<(Index, F)>),
-    Private(Rc<(Index, F)>),
+    Constant(Arc<F>),
+    Public(Arc<(Index, F)>),
+    Private(Arc<(Index, F)>),
 }
 
 impl<F: PrimeField> Variable<F> {
@@ -90,6 +90,19 @@ impl<F: PrimeField> Variable<F> {
             }
         }
     }
+
+    ///
+    /// Returns the relative index and value of the variable.
+    ///
+    pub fn index_value(&self) -> (Index, F) {
+        match self {
+            Self::Constant(value) => (0, **value),
+            Self::Public(index_value) | Self::Private(index_value) => {
+                let (index, value) = index_value.as_ref();
+                (*index, *value)
+            }
+        }
+    }
 }
 
 impl<F: PrimeField> PartialOrd for Variable<F> {
@@ -146,7 +159,7 @@ impl<F: PrimeField> Add<&Variable<F>> for &Variable<F> {
 
     fn add(self, other: &Variable<F>) -> Self::Output {
         match (self, other) {
-            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(**a + **b)).into(),
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(**a + **b)).into(),
             (first, second) => LinearCombination::from([first.clone(), second.clone()]),
         }
     }
@@ -219,7 +232,7 @@ impl<F: PrimeField> Sub<&Variable<F>> for &Variable<F> {
 
     fn sub(self, other: &Variable<F>) -> Self::Output {
         match (self, other) {
-            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Rc::new(**a - **b)).into(),
+            (Variable::Constant(a), Variable::Constant(b)) => Variable::Constant(Arc::new(**a - **b)).into(),
             (first, second) => LinearCombination::from(first) - second,
         }
     }

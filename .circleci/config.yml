@@ -506,7 +506,7 @@ jobs:
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
-          flags: --features=rocks
+          flags: --release --features=rocks -- --test-threads=2
           workspace_member: ledger
           cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-with-rocksdb-cache
 
@@ -983,8 +983,7 @@ workflows:
       - curves
       - fields
       - ledger
-# TODO (howardwu) - Implement `open_testing` on all storage, update to `CurrentConsensusStore::open_testing`, then re-enable.
-#      - ledger-with-rocksdb
+      - ledger-with-rocksdb
       - ledger-with-valid-solutions
       - ledger-authority
       - ledger-block

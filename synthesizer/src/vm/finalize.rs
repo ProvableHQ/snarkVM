@@ -1424,16 +1424,19 @@ mod tests {
     };
     use ledger_block::{Block, Header, Metadata, Transaction, Transition};
     use ledger_committee::{MAX_DELEGATORS, MIN_VALIDATOR_STAKE};
-    use ledger_store::helpers::memory::ConsensusMemory;
     use synthesizer_program::Program;
 
     use rand::distributions::DistString;
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
+    #[cfg(not(feature = "rocks"))]
+    type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    #[cfg(feature = "rocks")]
+    type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     /// Sample a new program and deploy it to the VM. Returns the program name.
     fn new_program_deployment<R: Rng + CryptoRng>(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         private_key: &PrivateKey<CurrentNetwork>,
         previous_block: &Block<CurrentNetwork>,
         unspent_records: &mut Vec<Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
@@ -1501,7 +1504,7 @@ finalize transfer_public:
 
     /// Construct a new block based on the given transactions.
     fn sample_next_block<R: Rng + CryptoRng>(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         private_key: &PrivateKey<CurrentNetwork>,
         transactions: &[Transaction<CurrentNetwork>],
         previous_block: &Block<CurrentNetwork>,
@@ -1571,7 +1574,7 @@ finalize transfer_public:
 
     /// Generate split transactions for the unspent records.
     fn generate_splits<R: Rng + CryptoRng>(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         private_key: &PrivateKey<CurrentNetwork>,
         previous_block: &Block<CurrentNetwork>,
         unspent_records: &mut Vec<Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
@@ -1610,7 +1613,7 @@ finalize transfer_public:
 
     /// Create an execution transaction.
     fn create_execution(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         caller_private_key: PrivateKey<CurrentNetwork>,
         program_id: &str,
         function_name: &str,
@@ -1637,7 +1640,7 @@ finalize transfer_public:
 
     /// Sample a public mint transaction.
     fn sample_mint_public(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         caller_private_key: PrivateKey<CurrentNetwork>,
         program_id: &str,
         recipient: Address<CurrentNetwork>,
@@ -1655,7 +1658,7 @@ finalize transfer_public:
 
     /// Sample a public transfer transaction.
     fn sample_transfer_public(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         caller_private_key: PrivateKey<CurrentNetwork>,
         program_id: &str,
         recipient: Address<CurrentNetwork>,
@@ -2568,11 +2571,11 @@ finalize compute:
         let mut transactions = Vec::new();
         let mut excess_transaction_ids = Vec::new();
 
-        for _ in 0..VM::<CurrentNetwork, ConsensusMemory<_>>::MAXIMUM_CONFIRMED_TRANSACTIONS + 1 {
+        for _ in 0..VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS + 1 {
             let transaction =
                 sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 10, &mut unspent_records, rng);
             // Abort the transaction if the block is full.
-            if transactions.len() >= VM::<CurrentNetwork, ConsensusMemory<_>>::MAXIMUM_CONFIRMED_TRANSACTIONS {
+            if transactions.len() >= VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS {
                 excess_transaction_ids.push(transaction.id());
             }
 
@@ -2586,10 +2589,7 @@ finalize compute:
 
         // Ensure that the excess transactions were aborted.
         assert_eq!(next_block.aborted_transaction_ids(), &excess_transaction_ids);
-        assert_eq!(
-            next_block.transactions().len(),
-            VM::<CurrentNetwork, ConsensusMemory<_>>::MAXIMUM_CONFIRMED_TRANSACTIONS
-        );
+        assert_eq!(next_block.transactions().len(), VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS);
     }
 
     #[test]

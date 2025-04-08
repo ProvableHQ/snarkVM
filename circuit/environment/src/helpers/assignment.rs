@@ -13,85 +13,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::Index;
+use crate::{Constraint, LinearCombination, Variable};
 use snarkvm_fields::PrimeField;
 
 use indexmap::IndexMap;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum AssignmentVariable<F: PrimeField> {
-    Constant(F),
-    Public(Index),
-    Private(Index),
-}
-
-impl<F: PrimeField> From<&crate::Variable<F>> for AssignmentVariable<F> {
-    /// Converts a variable to an assignment variable.
-    fn from(variable: &crate::Variable<F>) -> Self {
-        match variable {
-            crate::Variable::Constant(value) => Self::Constant(**value),
-            crate::Variable::Public(index_value) => {
-                let (index, _value) = index_value.as_ref();
-                Self::Public(*index)
-            }
-            crate::Variable::Private(index_value) => {
-                let (index, _value) = index_value.as_ref();
-                Self::Private(*index)
-            }
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct AssignmentLC<F: PrimeField> {
-    constant: F,
-    terms: Vec<(AssignmentVariable<F>, F)>,
-}
-
-impl<F: PrimeField> From<&crate::LinearCombination<F>> for AssignmentLC<F> {
-    /// Converts a linear combination to an assignment linear combination.
-    fn from(lc: &crate::LinearCombination<F>) -> Self {
-        Self {
-            constant: lc.to_constant(),
-            terms: FromIterator::from_iter(
-                lc.to_terms().iter().map(|(variable, coefficient)| (variable.into(), *coefficient)),
-            ),
-        }
-    }
-}
-
-impl<F: PrimeField> AssignmentLC<F> {
-    /// Returns the constant term of the linear combination.
-    pub const fn constant(&self) -> F {
-        self.constant
-    }
-
-    /// Returns the terms of the linear combination.
-    pub const fn terms(&self) -> &Vec<(AssignmentVariable<F>, F)> {
-        &self.terms
-    }
-
-    /// Returns the number of nonzeros in the linear combination.
-    pub(super) fn num_nonzeros(&self) -> u64 {
-        // Increment by one if the constant is nonzero.
-        match self.constant.is_zero() {
-            true => self.terms.len() as u64,
-            false => (self.terms.len() as u64).saturating_add(1),
-        }
-    }
-}
+use super::R1CS;
 
 /// A struct that contains public variable assignments, private variable assignments,
 /// and constraint assignments.
 #[derive(Clone, Debug)]
 pub struct Assignment<F: PrimeField> {
     /// The public variables.
-    public: Arc<[(Index, F)]>,
+    public: Arc<[Variable<F>]>,
     /// The private variables.
-    private: Arc<[(Index, F)]>,
+    private: Arc<[Variable<F>]>,
     /// The constraints.
-    constraints: Arc<[(AssignmentLC<F>, AssignmentLC<F>, AssignmentLC<F>)]>,
+    constraints: Arc<[Arc<Constraint<F>>]>,
     /// The number of constants, public, and private variables in the assignment.
     num_variables: u64,
 }
@@ -102,35 +41,25 @@ impl<F: PrimeField> From<crate::R1CS<F>> for Assignment<F> {
         #[cfg(feature = "save_r1cs_hashes")]
         r1cs.save_hash();
 
-        Self {
-            public: FromIterator::from_iter(
-                r1cs.to_public_variables().iter().map(|variable| (variable.index(), variable.value())),
-            ),
-            private: FromIterator::from_iter(
-                r1cs.to_private_variables().iter().map(|variable| (variable.index(), variable.value())),
-            ),
-            constraints: FromIterator::from_iter(r1cs.to_constraints().iter().map(|constraint| {
-                let (a, b, c) = constraint.to_terms();
-                (a.into(), b.into(), c.into())
-            })),
-            num_variables: r1cs.num_variables(),
-        }
+        let R1CS { public, private, constraints, num_variables, .. } = r1cs;
+
+        Self { public: public.into(), private: private.into(), constraints: constraints.into(), num_variables }
     }
 }
 
 impl<F: PrimeField> Assignment<F> {
     /// Returns the public inputs of the assignment.
-    pub const fn public_inputs(&self) -> &Arc<[(Index, F)]> {
+    pub const fn public_inputs(&self) -> &Arc<[Variable<F>]> {
         &self.public
     }
 
     /// Returns the private inputs of the assignment.
-    pub const fn private_inputs(&self) -> &Arc<[(Index, F)]> {
+    pub const fn private_inputs(&self) -> &Arc<[Variable<F>]> {
         &self.private
     }
 
     /// Returns the constraints of the assignment.
-    pub const fn constraints(&self) -> &Arc<[(AssignmentLC<F>, AssignmentLC<F>, AssignmentLC<F>)]> {
+    pub const fn constraints(&self) -> &Arc<[Arc<Constraint<F>>]> {
         &self.constraints
     }
 
@@ -158,7 +87,10 @@ impl<F: PrimeField> Assignment<F> {
     pub fn num_nonzeros(&self) -> (u64, u64, u64) {
         self.constraints
             .iter()
-            .map(|(a, b, c)| (a.num_nonzeros(), b.num_nonzeros(), c.num_nonzeros()))
+            .map(|constraint| {
+                let (a, b, c) = constraint.to_terms();
+                (a.num_nonzeros(), b.num_nonzeros(), c.num_nonzeros())
+            })
             .fold((0, 0, 0), |(a, b, c), (x, y, z)| (a.saturating_add(x), b.saturating_add(y), c.saturating_add(z)))
     }
 }
@@ -187,27 +119,29 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
 
         // Allocate the public variables.
         // NOTE: we skip the first public `One` variable because we already allocated it in the `ConstraintSystem` constructor.
-        for (i, (index, value)) in self.public.iter().skip(1).enumerate() {
-            assert_eq!((i + 1) as u64, *index, "Public vars in first system must be processed in lexicographic order");
+        for (i, variable) in self.public.iter().skip(1).enumerate() {
+            let (index, value) = variable.index_value();
+            assert_eq!((i + 1) as u64, index, "Public vars in first system must be processed in lexicographic order");
 
-            let gadget = cs.alloc_input(|| format!("Public {i}"), || Ok(*value))?;
+            let gadget = cs.alloc_input(|| format!("Public {i}"), || Ok(value))?;
 
             assert_eq!(
-                snarkvm_algorithms::r1cs::Index::Public(*index as usize),
+                snarkvm_algorithms::r1cs::Index::Public(index as usize),
                 gadget.get_unchecked(),
                 "Public variables in the second system must match the first system (with an off-by-1 for the public case)"
             );
 
-            let result = converter.public.insert(*index, gadget);
+            let result = converter.public.insert(index, gadget);
 
             assert!(result.is_none(), "Overwrote an existing public variable in the converter");
         }
 
         // Allocate the private variables.
-        for (i, (index, value)) in self.private.iter().enumerate() {
-            assert_eq!(i as u64, *index, "Private variables in first system must be processed in lexicographic order");
+        for (i, variable) in self.private.iter().enumerate() {
+            let (index, value) = variable.index_value();
+            assert_eq!(i as u64, index, "Private variables in first system must be processed in lexicographic order");
 
-            let gadget = cs.alloc(|| format!("Private {i}"), || Ok(*value))?;
+            let gadget = cs.alloc(|| format!("Private {i}"), || Ok(value))?;
 
             assert_eq!(
                 snarkvm_algorithms::r1cs::Index::Private(i),
@@ -215,58 +149,64 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
                 "Private variables in the second system must match the first system"
             );
 
-            let result = converter.private.insert(*index, gadget);
+            let result = converter.private.insert(index, gadget);
 
             assert!(result.is_none(), "Overwrote an existing private variable in the converter");
         }
 
         // Enforce all of the constraints.
-        for (i, (a, b, c)) in self.constraints.iter().enumerate() {
+        for (i, constraint) in self.constraints.iter().enumerate() {
+            let (a, b, c) = constraint.to_terms();
             // Converts terms from one linear combination in the first system to the second system.
-            let convert_linear_combination = |lc: &AssignmentLC<F>| -> snarkvm_algorithms::r1cs::LinearCombination<F> {
-                // Initialize a linear combination for the second system.
-                let mut linear_combination = snarkvm_algorithms::r1cs::LinearCombination::<F>::zero();
+            let convert_linear_combination =
+                |lc: &LinearCombination<F>| -> snarkvm_algorithms::r1cs::LinearCombination<F> {
+                    // Initialize a linear combination for the second system.
+                    let mut linear_combination = snarkvm_algorithms::r1cs::LinearCombination::<F>::zero();
 
-                // Process every term in the linear combination.
-                for (variable, coefficient) in lc.terms.iter() {
-                    match variable {
-                        AssignmentVariable::Constant(_) => {
-                            unreachable!(
-                                "Failed during constraint translation. The first system by definition cannot have constant variables in the terms"
-                            )
-                        }
-                        AssignmentVariable::Public(index) => {
-                            let gadget = converter.public.get(index).unwrap();
-                            assert_eq!(
-                                snarkvm_algorithms::r1cs::Index::Public(*index as usize),
-                                gadget.get_unchecked(),
-                                "Failed during constraint translation. The public variable in the second system must match the first system (with an off-by-1 for the public case)"
-                            );
-                            linear_combination += (*coefficient, *gadget);
-                        }
-                        AssignmentVariable::Private(index) => {
-                            let gadget = converter.private.get(index).unwrap();
-                            assert_eq!(
-                                snarkvm_algorithms::r1cs::Index::Private(*index as usize),
-                                gadget.get_unchecked(),
-                                "Failed during constraint translation. The private variable in the second system must match the first system"
-                            );
-                            linear_combination += (*coefficient, *gadget);
+                    // Process every term in the linear combination.
+                    for (variable, coefficient) in lc.to_terms() {
+                        match variable {
+                            Variable::Constant(_) => {
+                                unreachable!(
+                                    "Failed during constraint translation. The first system by definition cannot have constant variables in the terms"
+                                )
+                            }
+                            Variable::Public(index_value) => {
+                                let (index, _) = index_value.as_ref();
+                                let gadget = converter.public.get(index).unwrap();
+                                assert_eq!(
+                                    snarkvm_algorithms::r1cs::Index::Public(*index as usize),
+                                    gadget.get_unchecked(),
+                                    "Failed during constraint translation. The public variable in the second system must match the first system (with an off-by-1 for the public case)"
+                                );
+                                linear_combination += (*coefficient, *gadget);
+                            }
+                            Variable::Private(index_value) => {
+                                let (index, _) = index_value.as_ref();
+                                let gadget = converter.private.get(index).unwrap();
+                                assert_eq!(
+                                    snarkvm_algorithms::r1cs::Index::Private(*index as usize),
+                                    gadget.get_unchecked(),
+                                    "Failed during constraint translation. The private variable in the second system must match the first system"
+                                );
+                                linear_combination += (*coefficient, *gadget);
+                            }
                         }
                     }
-                }
 
-                // Finally, add the accumulated constant value to the linear combination.
-                if !lc.constant.is_zero() {
-                    linear_combination += (
-                        lc.constant,
-                        snarkvm_algorithms::r1cs::Variable::new_unchecked(snarkvm_algorithms::r1cs::Index::Public(0)),
-                    );
-                }
+                    // Finally, add the accumulated constant value to the linear combination.
+                    if !lc.to_constant().is_zero() {
+                        linear_combination += (
+                            lc.to_constant(),
+                            snarkvm_algorithms::r1cs::Variable::new_unchecked(snarkvm_algorithms::r1cs::Index::Public(
+                                0,
+                            )),
+                        );
+                    }
 
-                // Return the linear combination of the second system.
-                linear_combination
-            };
+                    // Return the linear combination of the second system.
+                    linear_combination
+                };
 
             cs.enforce(
                 || format!("Constraint {i}"),
@@ -287,7 +227,7 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
 
 #[cfg(test)]
 mod tests {
-    use snarkvm_algorithms::{AlgebraicSponge, SNARK, r1cs::ConstraintSynthesizer};
+    use snarkvm_algorithms::{AlgebraicSponge, SNARK, r1cs::ConstraintSynthesizer, snark::varuna::VarunaVersion};
     use snarkvm_circuit::prelude::*;
     use snarkvm_curves::bls12_377::Fr;
 
@@ -365,15 +305,19 @@ mod tests {
         let fs_pp = FS::sample_parameters();
 
         let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &assignment).unwrap();
+        let varuna_version = VarunaVersion::V2;
         println!("Called circuit setup");
 
-        let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &assignment, rng).unwrap();
+        let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, varuna_version, &assignment, rng).unwrap();
         println!("Called prover");
 
         let one = <Circuit as Environment>::BaseField::one();
-        assert!(VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one], &proof).unwrap());
+        assert!(VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, varuna_version, [one, one], &proof).unwrap());
         println!("Called verifier");
         println!("\nShould not verify (i.e. verifier messages should print below):");
-        assert!(!VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [one, one + one], &proof).unwrap());
+        assert!(
+            !VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, varuna_version, [one, one + one], &proof)
+                .unwrap()
+        );
     }
 }

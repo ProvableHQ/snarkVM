@@ -208,18 +208,17 @@ pub enum Instruction<N: Network> {
 ///
 /// ## Example
 /// This example will print the opcode and the instruction to the given stream.
-/// ```ignore
+/// ```rust,ignore
 /// instruction!(self, |instruction| write!(f, "{} {};", self.opcode(), instruction))
 /// ```
 /// The above example is equivalent to the following logic:
-/// ```ignore
+/// ```rust,ignore
 ///     match self {
 ///         Self::Add(instruction) => write!(f, "{} {};", self.opcode(), instruction),
 ///         Self::Sub(instruction) => write!(f, "{} {};", self.opcode(), instruction),
 ///         Self::Mul(instruction) => write!(f, "{} {};", self.opcode(), instruction),
 ///         Self::Div(instruction) => write!(f, "{} {};", self.opcode(), instruction),
 ///     }
-/// )
 /// ```
 #[macro_export]
 macro_rules! instruction {

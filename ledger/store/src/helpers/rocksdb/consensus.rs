@@ -40,7 +40,8 @@ impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {
     type TransitionStorage = TransitionDB<N>;
 
     /// Initializes the consensus storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        let storage = storage.into();
         // Initialize the finalize store.
         let finalize_store = FinalizeStore::<N, FinalizeDB<N>>::open(storage.clone())?;
         // Initialize the block store.

@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This crate implements functions for manipulating polynomials over finite fields,
-//! including FFTs.
+//! This crate implements functions for manipulating polynomials over finite
+//! fields, including FFTs.
 
 pub mod domain;
 pub use domain::EvaluationDomain;

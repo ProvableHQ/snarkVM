@@ -35,3 +35,10 @@ pub struct VarunaNonHidingMode;
 impl SNARKMode for VarunaNonHidingMode {
     const ZK: bool = false;
 }
+
+/// The different Varuna Versions.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum VarunaVersion {
+    V1 = 1,
+    V2 = 2,
+}

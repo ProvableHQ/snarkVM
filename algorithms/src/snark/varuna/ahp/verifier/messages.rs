@@ -13,13 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::snark::varuna::{CircuitId, SNARKMode, witness_label};
+use crate::snark::varuna::{CircuitId, SNARKMode, VarunaVersion, witness_label};
 use snarkvm_fields::PrimeField;
 
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
-/// Randomizers used to combine circuit-specific and instance-specific elements in the AHP sumchecks
+/// Randomizers used to combine circuit-specific and instance-specific elements
+/// in the AHP sumchecks
 #[derive(Clone, Debug)]
 pub(crate) struct BatchCombiners<F> {
     pub(crate) circuit_combiner: F,
@@ -31,7 +32,7 @@ pub(crate) struct BatchCombiners<F> {
 #[derive(Clone, Debug)]
 pub struct FirstMessage<F: PrimeField> {
     /// Randomizers for combining checks from the batch
-    pub(crate) batch_combiners: BTreeMap<CircuitId, BatchCombiners<F>>,
+    pub(crate) first_round_batch_combiners: BTreeMap<CircuitId, BatchCombiners<F>>,
 }
 
 /// Second verifier message.
@@ -39,6 +40,17 @@ pub struct FirstMessage<F: PrimeField> {
 pub struct SecondMessage<F> {
     /// Query for lineval.
     pub alpha: F,
+    /// Randomizer for the lineval for `B`.
+    pub eta_b: Option<F>,
+    /// Randomizer for the lineval for `C`.
+    pub eta_c: Option<F>,
+}
+
+/// Prep Third verifier message.
+#[derive(Clone, Debug)]
+pub struct PrepareThirdMessage<F> {
+    /// Randomizers for combining checks from the batch
+    pub(crate) third_round_batch_combiners: BTreeMap<CircuitId, BatchCombiners<F>>,
     /// Randomizer for the lineval for `B`.
     pub eta_b: F,
     /// Randomizer for the lineval for `C`.
@@ -88,10 +100,13 @@ impl<F: PrimeField> QuerySet<F> {
         let alpha = state.second_round_message.as_ref().unwrap().alpha;
         let beta = state.third_round_message.unwrap().beta;
         let gamma = state.gamma.unwrap();
-        // The rowcheck_zerocheck, lineval_sumcheck and matrix_sumcheck are linear combinations ("virtual oracles") of other oracles
-        // The rowcheck_zerocheck evaluates whether our polynomial constraints (e.g. R1CS) hold
-        // The lineval_sumcheck evaluates whether those constraints hold on an evaluation of assignments multiplied by constraint matrices
-        // The matrix_sumcheck evaluates whether the lineval sumcheck holds on an evaluation of constraint matrices over the domain of non-zero entries
+        // The rowcheck_zerocheck, lineval_sumcheck and matrix_sumcheck are linear
+        // combinations ("virtual oracles") of other oracles
+        // The rowcheck_zerocheck evaluates whether our polynomial constraints (e.g.
+        // R1CS) hold The lineval_sumcheck evaluates whether those constraints
+        // hold on an evaluation of assignments multiplied by constraint matrices
+        // The matrix_sumcheck evaluates whether the lineval sumcheck holds on an
+        // evaluation of constraint matrices over the domain of non-zero entries
         Self {
             batch_sizes: state.circuit_specific_states.iter().map(|(c, s)| (*c, s.batch_size)).collect(),
 
@@ -139,5 +154,42 @@ impl<F: PrimeField> QueryPoints<F> {
 
     pub(crate) fn into_iter(self) -> impl IntoIterator<Item = F> {
         [self.alpha, self.beta, self.gamma]
+    }
+}
+
+/// Pick challenges for the third round based on the varuna version.
+pub fn select_third_round_challenges<F: PrimeField>(
+    verifier_first_message: &FirstMessage<F>,
+    verifier_second_message: &SecondMessage<F>,
+    verifier_prepare_third_message: Option<&PrepareThirdMessage<F>>,
+    varuna_version: VarunaVersion,
+) -> anyhow::Result<(F, BTreeMap<CircuitId, BatchCombiners<F>>, F, F)> {
+    // Choose challenges based on the proof system version.
+    match varuna_version {
+        VarunaVersion::V1 => {
+            let FirstMessage { first_round_batch_combiners } = verifier_first_message;
+            let SecondMessage { alpha, eta_b, eta_c } = verifier_second_message;
+            let (Some(eta_b), Some(eta_c)) = (eta_b, eta_c) else {
+                return Err(anyhow::anyhow!("Expected eta_b,c in SecondMessage in VarunaVersion::V1."));
+            };
+            if verifier_prepare_third_message.is_some() {
+                return Err(anyhow::anyhow!("Did not expect PrepareThirdMessage in VarunaVersion::V1 third round."));
+            }
+            Ok((*alpha, first_round_batch_combiners.clone(), *eta_b, *eta_c))
+        }
+        VarunaVersion::V2 => {
+            let SecondMessage { alpha, eta_b, eta_c } = verifier_second_message;
+            if eta_b.is_some() || eta_c.is_some() {
+                return Err(anyhow::anyhow!(
+                    "Did not expect SecondMessage to contain eta_b,c in VarunaVersion::V2 third round."
+                ));
+            }
+            let Some(PrepareThirdMessage { third_round_batch_combiners, eta_b, eta_c }) =
+                verifier_prepare_third_message
+            else {
+                return Err(anyhow::anyhow!("Expected PrepareThirdMessage in VarunaVersion::V2 third round."));
+            };
+            Ok((*alpha, third_round_batch_combiners.clone(), *eta_b, *eta_c))
+        }
     }
 }

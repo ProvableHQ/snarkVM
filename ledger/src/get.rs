@@ -315,25 +315,3 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             .collect::<Result<_>>()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_helpers::CurrentLedger;
-    use console::network::MainnetV0;
-
-    type CurrentNetwork = MainnetV0;
-
-    #[test]
-    fn test_get_block() {
-        // Load the genesis block.
-        let genesis = Block::from_bytes_le(CurrentNetwork::genesis_bytes()).unwrap();
-
-        // Initialize a new ledger.
-        let ledger = CurrentLedger::load(genesis.clone(), StorageMode::Production).unwrap();
-        // Retrieve the genesis block.
-        let candidate = ledger.get_block(0).unwrap();
-        // Ensure the genesis block matches.
-        assert_eq!(genesis, candidate);
-    }
-}

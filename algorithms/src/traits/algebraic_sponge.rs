@@ -20,8 +20,9 @@ use snarkvm_utilities::FromBits;
 use core::fmt::Debug;
 
 /// The interface for a cryptographic sponge.
-/// A sponge can `absorb` or take in inputs and later `squeeze` or output bytes or field elements.
-/// The outputs are dependent on previous `absorb` and `squeeze` calls.
+/// A sponge can `absorb` or take in inputs and later `squeeze` or output bytes
+/// or field elements. The outputs are dependent on previous `absorb` and
+/// `squeeze` calls.
 pub trait AlgebraicSponge<F: PrimeField, const RATE: usize>: Clone + Debug {
     /// Parameters used by the sponge.
     type Parameters;
@@ -98,9 +99,10 @@ pub enum DuplexSpongeMode {
 }
 
 pub(crate) mod nonnative_params {
-    /// A macro for computing ceil(log2(x))+1 for a field element x. The num_bits
-    /// param is expected to be a vector to which the BE bits can be written; it is
-    /// not created here, as reusing it allows us to avoid a lot of allocations.
+    /// A macro for computing ceil(log2(x))+1 for a field element x. The
+    /// num_bits param is expected to be a vector to which the BE bits can
+    /// be written; it is not created here, as reusing it allows us to avoid
+    /// a lot of allocations.
     #[macro_export]
     macro_rules! overhead {
         ($x:expr, $num_bits:expr) => {{
@@ -136,14 +138,16 @@ pub(crate) mod nonnative_params {
     /// Parameters for a specific `NonNativeFieldVar` instantiation
     #[derive(Clone, Debug)]
     pub struct NonNativeFieldParams {
-        /// The number of limbs (`BaseField` elements) used to represent a `TargetField` element. Highest limb first.
+        /// The number of limbs (`BaseField` elements) used to represent a
+        /// `TargetField` element. Highest limb first.
         pub num_limbs: usize,
 
         /// The number of bits of the limb
         pub bits_per_limb: usize,
     }
 
-    /// Obtain the parameters from a `ConstraintSystem`'s cache or generate a new one
+    /// Obtain the parameters from a `ConstraintSystem`'s cache or generate a
+    /// new one
     #[must_use]
     pub const fn get_params(
         target_field_size: usize,

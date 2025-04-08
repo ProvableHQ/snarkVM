@@ -60,9 +60,10 @@ impl CircuitId {
 /// The indexed version of the constraint system.
 /// This struct contains three kinds of objects:
 /// 1) `index_info` is information about the index, such as the size of the
-///     public input
+///    public input
 /// 2) `{a,b,c}` are the matrices defining the R1CS instance
-/// 3) `{a,b,c}_arith` are structs containing information about the arithmetized matrices
+/// 3) `{a,b,c}_arith` are structs containing information about the arithmetized
+///    matrices
 #[derive(Debug)]
 pub struct Circuit<F: PrimeField, SM: SNARKMode> {
     /// Information about the indexed circuit.
@@ -147,7 +148,8 @@ impl<F: PrimeField, SM: SNARKMode> Circuit<F, SM> {
         Ok(iters.into_iter().flatten())
     }
 
-    /// After indexing, we drop these evaluations to save space in the ProvingKey.
+    /// After indexing, we drop these evaluations to save space in the
+    /// ProvingKey.
     pub fn prune_row_col_evals(&mut self) {
         self.a_arith.row_col = None;
         self.b_arith.row_col = None;

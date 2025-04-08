@@ -19,6 +19,7 @@ mod bytes;
 mod parse;
 mod serialize;
 
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use std::collections::BTreeMap;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -41,7 +42,13 @@ impl<N: Network> VerifyingKey<N> {
     }
 
     /// Returns `true` if the proof is valid for the given public inputs.
-    pub fn verify(&self, function_name: &str, inputs: &[N::Field], proof: &Proof<N>) -> bool {
+    pub fn verify(
+        &self,
+        function_name: &str,
+        varuna_version: varuna::VarunaVersion,
+        inputs: &[N::Field],
+        proof: &Proof<N>,
+    ) -> bool {
         #[cfg(feature = "aleo-cli")]
         let timer = std::time::Instant::now();
 
@@ -51,7 +58,7 @@ impl<N: Network> VerifyingKey<N> {
 
         // Verify the proof.
         #[allow(clippy::manual_unwrap_or_default)]
-        match Varuna::<N>::verify(universal_verifier, fiat_shamir, self, inputs, proof) {
+        match Varuna::<N>::verify(universal_verifier, fiat_shamir, self, varuna_version, inputs, proof) {
             Ok(is_valid) => {
                 #[cfg(feature = "aleo-cli")]
                 println!(
@@ -72,6 +79,7 @@ impl<N: Network> VerifyingKey<N> {
     #[allow(clippy::type_complexity)]
     pub fn verify_batch(
         locator: &str,
+        varuna_version: VarunaVersion,
         inputs: Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>,
         proof: &Proof<N>,
     ) -> Result<()> {
@@ -89,7 +97,7 @@ impl<N: Network> VerifyingKey<N> {
         let fiat_shamir = N::varuna_fs_parameters();
 
         // Verify the batch proof.
-        match Varuna::<N>::verify_batch(universal_verifier, fiat_shamir, &keys_to_inputs, proof) {
+        match Varuna::<N>::verify_batch(universal_verifier, fiat_shamir, varuna_version, &keys_to_inputs, proof) {
             Ok(is_valid) => {
                 #[cfg(feature = "aleo-cli")]
                 println!(

@@ -29,6 +29,112 @@ use ledger_block::{Execution, Input, Output, Transition};
 use indexmap::IndexMap;
 
 #[derive(Clone, PartialEq, Eq)]
+/// A registry of program execution restrictions for the Aleo network.
+///
+/// The `Restrictions` struct maintains lists of programs, functions, and arguments that are
+/// restricted from execution on the network, either permanently or within specific block height ranges.
+///
+/// # Structure
+/// - **Programs**: Entire programs can be restricted by their program ID.
+/// - **Functions**: Specific functions within programs can be restricted by their locator (program ID + function name).
+/// - **Arguments**: Specific argument values to functions can be restricted based on input/output values.
+///
+/// # Block Ranges
+/// All restrictions are associated with block ranges that define when the restriction is active:
+/// - `..` - All blocks (permanent restriction).
+/// - `10..` - From block 10 onwards.
+/// - `..10` - Up to block 10.
+/// - `10..20` - From block 10 to block 20.
+///
+/// # How to update the restrictions list and snarkVM
+/// 1. Identify your favorite ${NETWORK}.
+/// 2. Update the content of `fn test_restrictions_list_comparison` to reflect the restrictions list.
+/// 3. Run `cd synthesizer/src/restrictions && cargo test test_restrictions_list_comparison`.
+/// 4. Update the restrictions.json in `parameters/src/${NETWORK}/resources/restrictions.json`.
+/// 5. Run `cargo test test_restrictions_list_comparison`.
+/// 6. Update the restrictions id printed by the test in the test and in `parameters/src/${NETWORK}/resources/restrictions.json`.
+/// 7. Run `cargo test test_restrictions_list_comparison` again to verify.
+///
+/// # Example: Restricting a program
+///
+/// ## In the `test_restrictions_list_comparison` function of `synthesizer/src/restrictions/mod.rs`:
+/// ```rust
+/// // Set the network.
+/// type Network = console::network::MainnetV0;
+/// // Initialize the restrictions.
+/// let mut restrictions = Restrictions::<Network>::new_blank().unwrap();
+/// // Add a program ID.
+/// restrictions.restrictions_id =
+///     Field::from_str("5990626497004338480795078796922903812962674412239021866159347614258503263942field")
+///         .unwrap();
+/// let program_id = ProgramID::from_str("hello.aleo").unwrap();
+/// let range = BlockRange::RangeFrom(10..);
+/// restrictions.programs.insert(program_id, range);
+/// // Check the restrictions.
+/// check_restrictions!(restrictions, Network);
+/// ```
+///
+/// ## In `parameters/src/mainnet/resources/restrictions.json`:
+/// ```json
+/// {
+///   "restrictions_id": "5990626497004338480795078796922903812962674412239021866159347614258503263942field",
+///   "programs": {
+///     "hello.aleo": {
+///       "RangeFrom": 10
+///     }
+///   },
+///   "functions": {},
+///   "arguments": {}
+/// }
+/// ```
+///
+/// # Example: Restricting an address
+///
+/// ## In the import section of the tests of `synthesizer/src/restrictions/mod.rs`:
+/// Make sure to import `console::types::Address`, e.g., by replacing `use console::types::I8;` with `use console::types::{Address, I8};`.
+///
+/// ## In the `test_restrictions_list_comparison function` of `synthesizer/src/restrictions/mod.rs`:
+/// ```rust
+/// // Set the network.
+/// type Network = console::network::MainnetV0;
+/// // Initialize the restrictions.
+/// let mut restrictions = Restrictions::<Network>::new_blank().unwrap();
+/// // Add a program ID.
+/// restrictions.restrictions_id =
+///     Field::from_str("565692246249929386853861250603407577977410496268514614186112026084930301564field")
+///         .unwrap();
+/// let program_id = ProgramID::from_str("credits.aleo").unwrap();
+/// let function_id = Identifier::from_str("transfer_public").unwrap();
+/// let literal = Literal::Address(
+///     Address::from_str("aleo10unn23a4z4jh2ea4g2n9fa7vz5mxzd2jf5nxpmv7f2f2sh3ur5rstqnpcg").unwrap(),
+/// );
+/// let index = 0;
+/// let range = BlockRange::RangeFrom(150..);
+/// restrictions.arguments.insert(
+///     Locator::new(program_id, function_id),
+///     indexmap!( ArgumentLocator::new(true, index) => indexmap!( literal.clone() => range )),
+/// );
+/// // Check the restrictions.
+/// check_restrictions!(restrictions, Network);
+/// ```
+///
+/// ## In `parameters/src/mainnet/resources/restrictions.json`:
+/// ```json
+/// {
+///   "restrictions_id": "565692246249929386853861250603407577977410496268514614186112026084930301564field",
+///   "programs": {},
+///   "functions": {},
+///   "arguments": {
+///     "credits.aleo/transfer_public": {
+///       "true/0": {
+///         "aleo10unn23a4z4jh2ea4g2n9fa7vz5mxzd2jf5nxpmv7f2f2sh3ur5rstqnpcg": {
+///           "RangeFrom": 150
+///         }
+///       }
+///     }
+///   }
+/// }
+/// ```
 pub struct Restrictions<N: Network> {
     /// The restrictions ID, for the current state of the `Restrictions` list.
     restrictions_id: Field<N>,

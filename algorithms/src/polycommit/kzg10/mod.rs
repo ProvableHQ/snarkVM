@@ -16,9 +16,10 @@
 //! Here we construct a polynomial commitment that enables users to commit to a
 //! single polynomial `p`, and then later provide an evaluation proof that
 //! convinces verifiers that a claimed value `v` is the true evaluation of `p`
-//! at a chosen point `x`. Our construction follows the template of the construction
-//! proposed by Kate, Zaverucha, and Goldberg ([KZG11](http://cacr.uwaterloo.ca/techreports/2010/cacr2010-10.pdf)).
-//! This construction achieves extractability in the algebraic group model (AGM).
+//! at a chosen point `x`. Our construction follows the template of the
+//! construction proposed by Kate, Zaverucha, and Goldberg ([KZG11](http://cacr.uwaterloo.ca/techreports/2010/cacr2010-10.pdf)).
+//! This construction achieves extractability in the algebraic group model
+//! (AGM).
 
 use crate::{
     fft::{DensePolynomial, Polynomial},
@@ -86,8 +87,8 @@ impl KZGDegreeBounds {
 pub struct KZG10<E: PairingEngine>(PhantomData<E>);
 
 impl<E: PairingEngine> KZG10<E> {
-    /// Constructs public parameters when given as input the maximum degree `degree`
-    /// for the polynomial commitment scheme.
+    /// Constructs public parameters when given as input the maximum degree
+    /// `degree` for the polynomial commitment scheme.
     pub fn load_srs(max_degree: usize) -> Result<UniversalParams<E>, PCError> {
         let params = UniversalParams::load()?;
         params.download_powers_for(0..(max_degree + 1))?;
@@ -207,9 +208,10 @@ impl<E: PairingEngine> KZG10<E> {
 
     /// Compute witness polynomial.
     ///
-    /// The witness polynomial w(x) the quotient of the division (p(x) - p(z)) / (x - z)
-    /// Observe that this quotient does not change with z because
-    /// p(z) is the remainder term. We can therefore omit p(z) when computing the quotient.
+    /// The witness polynomial w(x) the quotient of the division (p(x) - p(z)) /
+    /// (x - z) Observe that this quotient does not change with z because
+    /// p(z) is the remainder term. We can therefore omit p(z) when computing
+    /// the quotient.
     pub fn compute_witness_polynomial(
         polynomial: &DensePolynomial<E::Fr>,
         point: E::Fr,
@@ -300,7 +302,8 @@ impl<E: PairingEngine> KZG10<E> {
         Ok(KZGProof { w: witness_comm.0, random_v: None })
     }
 
-    /// On input a polynomial `p` and a point `point`, outputs a proof for the same.
+    /// On input a polynomial `p` and a point `point`, outputs a proof for the
+    /// same.
     pub fn open(
         powers: &Powers<E>,
         polynomial: &DensePolynomial<E::Fr>,
@@ -486,8 +489,8 @@ mod tests {
     type KZG_Bls12_377 = KZG10<Bls12_377>;
 
     impl<E: PairingEngine> KZG10<E> {
-        /// Specializes the public parameters for a given maximum degree `d` for polynomials
-        /// `d` should be less that `pp.max_degree()`.
+        /// Specializes the public parameters for a given maximum degree `d` for
+        /// polynomials `d` should be less that `pp.max_degree()`.
         pub(crate) fn trim(
             pp: &UniversalParams<E>,
             mut supported_degree: usize,

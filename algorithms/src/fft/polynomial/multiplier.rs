@@ -64,8 +64,8 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
     /// Multiplies all polynomials stored in `self`.
     ///
     /// Returns `None` if any of the stored evaluations are over a domain that's
-    /// insufficiently large to interpolate the product, or if `F` does not contain
-    /// a sufficiently large subgroup for interpolation.
+    /// insufficiently large to interpolate the product, or if `F` does not
+    /// contain a sufficiently large subgroup for interpolation.
     #[allow(unused_mut)]
     pub fn multiply(mut self) -> Option<DensePolynomial<F>> {
         if self.polynomials.is_empty() && self.evaluations.is_empty() {

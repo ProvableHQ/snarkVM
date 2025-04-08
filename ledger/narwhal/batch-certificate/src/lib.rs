@@ -172,25 +172,42 @@ pub mod test_helpers {
         sample_batch_certificate_for_round_with_previous_certificate_ids(round, certificate_ids, rng)
     }
 
-    /// Returns a sample batch certificate with a given round; the rest is sampled at random.
+    /// Returns a sample batch certificate with a given round and the given certificate ids as predecessors; the rest is sampled at random.
     pub fn sample_batch_certificate_for_round_with_previous_certificate_ids(
         round: u64,
         previous_certificate_ids: IndexSet<Field<CurrentNetwork>>,
         rng: &mut TestRng,
     ) -> BatchCertificate<CurrentNetwork> {
+        let committee: Vec<_> = (0..5).map(|_| PrivateKey::new(rng).unwrap()).collect();
+        sample_batch_certificate_for_round_with_committee(
+            round,
+            previous_certificate_ids,
+            &committee[0],
+            &committee[1..],
+            rng,
+        )
+    }
+
+    /// Same as `sample_batch_certificate_for_round_with_previous_certificate_ids`, but also allows you to set the private keys that sign the certificate.
+    pub fn sample_batch_certificate_for_round_with_committee(
+        round: u64,
+        previous_certificate_ids: IndexSet<Field<CurrentNetwork>>,
+        author: &PrivateKey<CurrentNetwork>,
+        signers: &[PrivateKey<CurrentNetwork>],
+        rng: &mut TestRng,
+    ) -> BatchCertificate<CurrentNetwork> {
         // Sample a batch header.
         let batch_header =
-            narwhal_batch_header::test_helpers::sample_batch_header_for_round_with_previous_certificate_ids(
+            narwhal_batch_header::test_helpers::sample_batch_header_for_round_and_key_with_previous_certificate_ids(
                 round,
+                author,
                 previous_certificate_ids,
                 rng,
             );
-        // Sample a list of signatures.
-        let mut signatures = IndexSet::with_capacity(5);
-        for _ in 0..5 {
-            let private_key = PrivateKey::new(rng).unwrap();
-            signatures.insert(private_key.sign(&[batch_header.batch_id()], rng).unwrap());
-        }
+        // Generate the endorsements.
+        let signatures: IndexSet<_> =
+            signers.iter().map(|private_key| private_key.sign(&[batch_header.batch_id()], rng).unwrap()).collect();
+
         // Return the batch certificate.
         BatchCertificate::from(batch_header, signatures).unwrap()
     }

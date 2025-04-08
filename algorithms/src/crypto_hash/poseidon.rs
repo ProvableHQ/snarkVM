@@ -75,13 +75,15 @@ impl<F: PrimeField, const RATE: usize> Poseidon<F, RATE> {
         Self { parameters: Arc::new(F::default_poseidon_parameters::<RATE>().unwrap()) }
     }
 
-    /// Evaluate the cryptographic hash function over a list of field elements as input.
+    /// Evaluate the cryptographic hash function over a list of field elements
+    /// as input.
     pub fn evaluate(&self, input: &[F]) -> F {
         self.evaluate_many(input, 1)[0]
     }
 
-    /// Evaluate the cryptographic hash function over a list of field elements as input,
-    /// and returns the specified number of field elements as output.
+    /// Evaluate the cryptographic hash function over a list of field elements
+    /// as input, and returns the specified number of field elements as
+    /// output.
     pub fn evaluate_many(&self, input: &[F], num_outputs: usize) -> Vec<F> {
         let mut sponge = PoseidonSponge::<F, RATE, 1>::new_with_parameters(&self.parameters);
         sponge.absorb_native_field_elements(input);
@@ -101,8 +103,8 @@ impl<F: PrimeField, const RATE: usize> Poseidon<F, RATE> {
 
 /// A duplex sponge based using the Poseidon permutation.
 ///
-/// This implementation of Poseidon is entirely from Fractal's implementation in [COS20][cos]
-/// with small syntax changes.
+/// This implementation of Poseidon is entirely from Fractal's implementation in
+/// [COS20][cos] with small syntax changes.
 ///
 /// [cos]: https://eprint.iacr.org/2019/1076
 #[derive(Clone, Debug)]
@@ -262,8 +264,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
             let num_elements_remaining = input.len() - first_chunk_size;
             let (first_chunk, rest_chunk) = input.split_at(first_chunk_size);
             let rest_chunks = rest_chunk.chunks(RATE);
-            // The total number of chunks is `elements[num_elements_remaining..].len() / RATE`, plus 1
-            // for the remainder.
+            // The total number of chunks is `elements[num_elements_remaining..].len() /
+            // RATE`, plus 1 for the remainder.
             let total_num_chunks = 1 + // 1 for the first chunk
                 // We add all the chunks that are perfectly divisible by `RATE`
                 (num_elements_remaining / RATE) +
@@ -271,8 +273,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
                 // (i.e. if `num_elements_remaining` is not a multiple of `RATE`)
                 usize::from((num_elements_remaining % RATE) != 0);
 
-            // Absorb the input elements, `RATE` elements at a time, except for the first chunk, which
-            // is of size `RATE - rate_start`.
+            // Absorb the input elements, `RATE` elements at a time, except for the first
+            // chunk, which is of size `RATE - rate_start`.
             for (i, chunk) in std::iter::once(first_chunk).chain(rest_chunks).enumerate() {
                 for (element, state_elem) in chunk.iter().zip(&mut self.state.rate_state[rate_start..]) {
                     *state_elem += element;
@@ -300,8 +302,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
             let (first_chunk, rest_chunk) = output.split_at_mut(first_chunk_size);
             assert_eq!(rest_chunk.len(), num_output_remaining);
             let rest_chunks = rest_chunk.chunks_mut(RATE);
-            // The total number of chunks is `output[num_output_remaining..].len() / RATE`, plus 1
-            // for the remainder.
+            // The total number of chunks is `output[num_output_remaining..].len() / RATE`,
+            // plus 1 for the remainder.
             let total_num_chunks = 1 + // 1 for the first chunk
                 // We add all the chunks that are perfectly divisible by `RATE`
                 (num_output_remaining / RATE) +
@@ -309,8 +311,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
                 // (i.e. if `num_output_remaining` is not a multiple of `RATE`)
                 usize::from((num_output_remaining % RATE) != 0);
 
-            // Absorb the input output, `RATE` output at a time, except for the first chunk, which
-            // is of size `RATE - rate_start`.
+            // Absorb the input output, `RATE` output at a time, except for the first chunk,
+            // which is of size `RATE - rate_start`.
             for (i, chunk) in std::iter::once(first_chunk).chain(rest_chunks).enumerate() {
                 let range = rate_start..(rate_start + chunk.len());
                 debug_assert_eq!(
@@ -375,7 +377,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     }
 
     /// Convert a `TargetField` element into limbs (not constraints)
-    /// This is an internal function that would be reused by a number of other functions
+    /// This is an internal function that would be reused by a number of other
+    /// functions
     pub fn get_limbs_representations<TargetField: PrimeField>(
         elem: &TargetField,
         optimization_type: OptimizationType,
@@ -412,7 +415,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
         limbs
     }
 
-    /// Push elements to sponge, treated in the non-native field representations.
+    /// Push elements to sponge, treated in the non-native field
+    /// representations.
     pub fn push_elements_to_sponge<TargetField: PrimeField>(
         &mut self,
         src: impl IntoIterator<Item = TargetField>,
@@ -423,7 +427,9 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
             .flat_map(|elem| {
                 let limbs = Self::get_limbs_representations(&elem, ty);
                 limbs.into_iter().map(|limb| (limb, F::one()))
-                // specifically set to one, since most gadgets in the constraint world would not have zero noise (due to the relatively weak normal form testing in `alloc`)
+                // specifically set to one, since most gadgets in the constraint
+                // world would not have zero noise (due to the relatively weak
+                // normal form testing in `alloc`)
             })
             .peekable();
 
@@ -432,7 +438,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     }
 
     /// obtain random bits from hashchain.
-    /// not guaranteed to be uniformly distributed, should only be used in certain situations.
+    /// not guaranteed to be uniformly distributed, should only be used in
+    /// certain situations.
     pub fn get_bits(&mut self, num_bits: usize) -> Vec<bool> {
         let bits_per_element = F::size_in_bits() - 1;
         let num_elements = num_bits.div_ceil(bits_per_element);
@@ -452,7 +459,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     }
 
     /// obtain random field elements from hashchain.
-    /// not guaranteed to be uniformly distributed, should only be used in certain situations.
+    /// not guaranteed to be uniformly distributed, should only be used in
+    /// certain situations.
     pub fn get_fe<TargetField: PrimeField>(
         &mut self,
         num_elements: usize,
@@ -475,7 +483,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
         let dest_elements = bits
             .chunks_exact(num_bits_per_nonnative)
             .map(|per_nonnative_bits| {
-                // technically, this can be done via BigInterger::from_bits; here, we use this method for consistency with the gadget counterpart
+                // technically, this can be done via BigInterger::from_bits; here, we use this
+                // method for consistency with the gadget counterpart
                 let mut res = TargetField::zero();
 
                 for (i, bit) in per_nonnative_bits.iter().rev().enumerate() {

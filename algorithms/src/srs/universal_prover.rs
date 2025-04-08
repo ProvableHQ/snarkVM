@@ -15,7 +15,8 @@
 
 use snarkvm_curves::PairingEngine;
 
-/// `UniversalProver` is used to compute evaluation proofs for a given commitment.
+/// `UniversalProver` is used to compute evaluation proofs for a given
+/// commitment.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UniversalProver<E: PairingEngine> {
     /// The maximum degree supported by the universal SRS.

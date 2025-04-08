@@ -20,7 +20,7 @@ use snarkvm_utilities::{
 };
 
 /// Returns the variable length integer of the given value.
-/// https://en.bitcoin.it/wiki/Protocol_documentation#Variable_length_integer
+/// <https://en.bitcoin.it/wiki/Protocol_documentation#Variable_length_integer>
 pub fn variable_length_integer(value: &u64) -> Vec<u8> {
     match value {
         // bounded by u8::max_value()
@@ -35,7 +35,7 @@ pub fn variable_length_integer(value: &u64) -> Vec<u8> {
 }
 
 /// Decode the value of a variable length integer.
-/// https://en.bitcoin.it/wiki/Protocol_documentation#Variable_length_integer
+/// <https://en.bitcoin.it/wiki/Protocol_documentation#Variable_length_integer>
 pub fn read_variable_length_integer<R: Read>(mut reader: R) -> IoResult<u64> {
     let flag = u8::read_le(&mut reader)?;
 

@@ -216,7 +216,7 @@ Each entry in the instruction set is a vector of at most
 `NUM_SEQUENCE_INSTRUCTIONS` is returned, each consisting of a tuple
 with:
 
--   The instruction as [defined here](https://developer.aleo.org/aleo/opcodes).
+-   The instruction as [defined here](https://developer.aleo.org/guides/aleo/opcodes/).
 
 -   The operands, which can be:
 

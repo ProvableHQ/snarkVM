@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// From https://github.com/Geal/nom/blob/main/examples/string.rs
+/// From <https://github.com/Geal/nom/blob/main/examples/string.rs>
 pub mod string_parser {
     /// This example shows an example of how to parse an escaped string. The
     /// rules for the string are similar to JSON and rust. A string is:
@@ -55,7 +55,7 @@ pub mod string_parser {
     /// Other ASCII control characters
     /// (except for horizontal tab, space, line feed, and carriage return, which are allowed)
     /// may or may not present dangers, but we see no good reason for allowing them.
-    /// At some point we may want disallow additional non-ASCII characters,
+    /// At some point we may want to disallow additional non-ASCII characters,
     /// if we see no good reason to allow them.
     ///
     /// Note that we say 'Unicode scalar values' above,
@@ -84,8 +84,8 @@ pub mod string_parser {
         }
     }
 
-    /// Parse a unicode sequence, of the form u{XXXX}, where XXXX is 1 to 6
-    /// hexadecimal numerals. We will combine this later with parse_escaped_char
+    /// Parse a Unicode sequence, of the form u{XXXX}, where XXXX is 1 to 6
+    /// hexadecimal numerals. We will combine this later with [parse_escaped_char]
     /// to parse sequences like \u{00AC}.
     fn parse_unicode<'a, E>(input: &'a str) -> IResult<&'a str, char, E>
     where
@@ -112,7 +112,7 @@ pub mod string_parser {
 
         // map_opt is like map_res, but it takes an Option instead of a Result. If
         // the function returns None, map_opt returns an error. In this case, because
-        // not all u32 values are valid unicode code points, we have to fallibly
+        // not all u32 values are valid Unicode code points, we have to fallibly
         // convert to char with from_u32.
         map_opt(parse_u32, std::char::from_u32)(input)
     }
@@ -130,8 +130,8 @@ pub mod string_parser {
                 parse_unicode,
                 // The `value` parser returns a fixed value (the first argument) if its
                 // parser (the second argument) succeeds. In these cases, it looks for
-                // the marker characters (n, r, t, etc) and returns the matching
-                // character (\n, \r, \t, etc).
+                // the marker characters (n, r, t, etc.) and returns the matching
+                // character (\n, \r, \t, etc.).
                 value('\n', char('n')),
                 value('\r', char('r')),
                 value('\t', char('t')),
@@ -162,7 +162,7 @@ pub mod string_parser {
         let not_quote_slash = is_not("\"\\");
 
         // `verify` runs a parser, then runs a verification function on the output of
-        // the parser. The verification function accepts out output only if it
+        // the parser. The verification function accepts output only if it
         // returns true. In this case, we want to ensure that the output of is_not
         // is non-empty.
         verify(not_quote_slash, |s: &str| !s.is_empty())(input)

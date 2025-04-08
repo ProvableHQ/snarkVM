@@ -56,6 +56,10 @@ pub struct BatchHeader<N: Network> {
 }
 
 impl<N: Network> BatchHeader<N> {
+    /// The maximum number of microcredits that can be spent on compute by the transactions in a batch.
+    /// This implies the block spend limit is bounded at `TRANSACTION_SPEND_LIMIT * N::NUM_MAX_CERTIFICATES`.
+    // TODO: div by 20 is temporary until we can dial in what the limit should be.
+    pub const BATCH_SPEND_LIMIT: u64 = N::TRANSACTION_SPEND_LIMIT * Self::MAX_TRANSMISSIONS_PER_BATCH as u64 / 20;
     /// The maximum number of rounds to store before garbage collecting.
     pub const MAX_GC_ROUNDS: usize = 100;
     /// The maximum number of transmissions in a batch.
@@ -272,6 +276,22 @@ pub mod test_helpers {
     ) -> BatchHeader<CurrentNetwork> {
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
+        // Generate a new certificated with the key as its author.
+        sample_batch_header_for_round_and_key_with_previous_certificate_ids(
+            round,
+            &private_key,
+            previous_certificate_ids,
+            rng,
+        )
+    }
+
+    /// Returns a sample batch header with a given round, author key, and set of previous certificate IDs; the rest is sampled at random.
+    pub fn sample_batch_header_for_round_and_key_with_previous_certificate_ids(
+        round: u64,
+        private_key: &PrivateKey<CurrentNetwork>,
+        previous_certificate_ids: IndexSet<Field<CurrentNetwork>>,
+        rng: &mut TestRng,
+    ) -> BatchHeader<CurrentNetwork> {
         // Sample the committee ID.
         let committee_id = Field::<CurrentNetwork>::rand(rng);
         // Sample transmission IDs.
@@ -280,7 +300,7 @@ pub mod test_helpers {
         // Checkpoint the timestamp for the batch.
         let timestamp = OffsetDateTime::now_utc().unix_timestamp();
         // Return the batch header.
-        BatchHeader::new(&private_key, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, rng)
+        BatchHeader::new(private_key, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, rng)
             .unwrap()
     }
 
@@ -295,5 +315,23 @@ pub mod test_helpers {
         }
         // Return the sample vector.
         sample
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use console::network::{CanaryV0, MainnetV0, TestnetV0};
+
+    #[test]
+    fn test_max_synthesis_cost_below_batch_spend_limit() {
+        fn max_synthesis_cost<N: Network>() -> u64 {
+            N::MAX_DEPLOYMENT_VARIABLES.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS) * N::SYNTHESIS_FEE_MULTIPLIER
+        }
+
+        assert!(max_synthesis_cost::<CanaryV0>() < BatchHeader::<CanaryV0>::BATCH_SPEND_LIMIT);
+        assert!(max_synthesis_cost::<TestnetV0>() < BatchHeader::<TestnetV0>::BATCH_SPEND_LIMIT);
+        assert!(max_synthesis_cost::<MainnetV0>() < BatchHeader::<MainnetV0>::BATCH_SPEND_LIMIT);
     }
 }

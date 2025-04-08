@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// Implements an Algebraic Holographic Proof (AHP) for the R1CS indexed relation.
+/// Implements an Algebraic Holographic Proof (AHP) for the R1CS indexed
+/// relation.
 pub mod ahp;
 pub use ahp::*;
 

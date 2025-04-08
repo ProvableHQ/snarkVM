@@ -26,10 +26,11 @@ mod verify;
 mod tests;
 
 use crate::{Restrictions, cast_mut_ref, cast_ref, convert, process};
+use algorithms::snark::varuna::VarunaVersion;
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
-    program::{Argument, Identifier, Literal, Locator, Plaintext, ProgramID, ProgramOwner, Record, Value},
+    program::{Argument, Identifier, Literal, Locator, Plaintext, ProgramID, ProgramOwner, Record, Response, Value},
     types::{Field, Group, U64},
 };
 use ledger_block::{
@@ -68,7 +69,10 @@ use utilities::try_vm_runtime;
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Either;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::{SeedableRng, rngs::StdRng};
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
@@ -148,14 +152,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let deployments = cfg_iter!(chunk)
                 .map(|(transaction_id, _)| {
                     // Retrieve the deployment from the transaction ID.
-                    let deployment = match transaction_store.get_deployment(transaction_id)? {
-                        Some(deployment) => deployment,
+                    match transaction_store.get_deployment(transaction_id)? {
+                        Some(deployment) => Ok(deployment),
                         None => bail!("Deployment transaction '{transaction_id}' is not found in storage."),
-                    };
-                    Ok(deployment)
+                    }
                 })
                 .collect::<Result<Vec<_>>>()?;
             // Add the deployments to the process.
+            // Note: This iterator must be serial, to ensure deployments are loaded in the order of their dependencies.
             deployments.iter().try_for_each(|deployment| process.load_deployment(deployment))?;
         }
 
@@ -404,6 +408,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
                 self.block_store().unpause_atomic_writes::<false>()?;
+                // If the block advances to `ConsensusVersion::V4`, clear the partial verification cache.
+                if N::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap_or_default() == block.height() {
+                    self.partially_verified_transactions().write().clear();
+                }
                 Ok(())
             }
             Err(finalize_error) => {
@@ -444,39 +452,36 @@ pub(crate) mod test_helpers {
         types::Field,
     };
     use ledger_block::{Block, Header, Input, Metadata, Transition};
-    use ledger_store::helpers::memory::ConsensusMemory;
-    #[cfg(feature = "rocks")]
-    use ledger_store::helpers::rocksdb::ConsensusDB;
     use ledger_test_helpers::{large_transaction_program, small_transaction_program};
     use synthesizer_program::Program;
 
+    use aleo_std::StorageMode;
     use indexmap::IndexMap;
     use once_cell::sync::OnceCell;
     use serde_json::json;
-    #[cfg(feature = "rocks")]
-    use std::path::Path;
     use synthesizer_snark::{Proof, VerifyingKey};
 
     #[cfg(feature = "test")]
     pub(crate) type CurrentAleo = circuit::AleoV0;
 
     pub(crate) type CurrentNetwork = MainnetV0;
+    #[cfg(not(feature = "rocks"))]
+    type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    #[cfg(feature = "rocks")]
+    type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     /// Samples a new finalize state.
     pub(crate) fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
         FinalizeGlobalState::from(block_height as u64, block_height, [0u8; 32])
     }
 
-    pub(crate) fn sample_vm() -> VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>> {
+    pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
         // Initialize a new VM.
-        VM::from(ConsensusStore::open(None).unwrap()).unwrap()
+        VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap()
     }
 
     #[cfg(feature = "test")]
-    pub(crate) fn sample_vm_at_height(
-        height: u32,
-        rng: &mut TestRng,
-    ) -> VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>> {
+    pub(crate) fn sample_vm_at_height(height: u32, rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
         // Initialize the VM with a genesis block.
         let vm = sample_vm_with_genesis_block(rng);
         // Get the genesis private key.
@@ -488,12 +493,6 @@ pub(crate) mod test_helpers {
         }
         // Return the VM.
         vm
-    }
-
-    #[cfg(feature = "rocks")]
-    pub(crate) fn sample_vm_rocks(path: &Path) -> VM<CurrentNetwork, ConsensusDB<CurrentNetwork>> {
-        // Initialize a new VM.
-        VM::from(ConsensusStore::open(path.to_owned()).unwrap()).unwrap()
     }
 
     pub(crate) fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
@@ -518,9 +517,7 @@ pub(crate) mod test_helpers {
             .clone()
     }
 
-    pub(crate) fn sample_vm_with_genesis_block(
-        rng: &mut TestRng,
-    ) -> VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>> {
+    pub(crate) fn sample_vm_with_genesis_block(rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
@@ -779,7 +776,7 @@ function compute:
     }
 
     pub fn sample_next_block<R: Rng + CryptoRng>(
-        vm: &VM<MainnetV0, ConsensusMemory<MainnetV0>>,
+        vm: &VM<MainnetV0, LedgerType>,
         private_key: &PrivateKey<MainnetV0>,
         transactions: &[Transaction<MainnetV0>],
         rng: &mut R,
@@ -2966,8 +2963,7 @@ function add_thrice:
         let block2 = sample_next_block(&vm, &genesis_private_key, &[], rng).unwrap();
 
         // Create a new, rocks-based VM shadowing the 1st one.
-        let tempdir = tempfile::tempdir().unwrap();
-        let vm = sample_vm_rocks(tempdir.path());
+        let vm = sample_vm();
         vm.add_next_block(&genesis).unwrap();
         // This time, however, try to insert the 2nd block first, which fails due to height.
         assert!(vm.add_next_block(&block2).is_err());

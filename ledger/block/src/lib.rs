@@ -611,11 +611,13 @@ impl<N: Network> Block<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
+    use algorithms::snark::varuna::VarunaVersion;
     use console::account::{Address, PrivateKey};
     use ledger_query::Query;
     use ledger_store::{BlockStore, helpers::memory::BlockMemory};
     use synthesizer_process::Process;
 
+    use aleo_std::StorageMode;
     use once_cell::sync::OnceCell;
 
     type CurrentNetwork = console::network::MainnetV0;
@@ -672,12 +674,12 @@ pub mod test_helpers {
         let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
 
         // Initialize a new block store.
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
         // Prepare the assignments.
         trace.prepare(Query::from(block_store)).unwrap();
         // Compute the proof and construct the execution.
-        let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, rng).unwrap();
+        let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, VarunaVersion::V1, rng).unwrap();
         // Convert the execution.
         // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
         let execution = Execution::from_str(&execution.to_string()).unwrap();

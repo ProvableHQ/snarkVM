@@ -25,7 +25,10 @@ use snarkvm_ledger_puzzle::PuzzleTrait;
 
 use anyhow::{Result, bail};
 use core::{marker::PhantomData, num::NonZeroUsize};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rand_chacha::ChaChaRng;
 use std::sync::Arc;

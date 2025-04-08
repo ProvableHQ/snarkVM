@@ -20,6 +20,10 @@ impl<N: Network> FromBytes for PuzzleSolutions<N> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the number of solutions.
         let num_solutions: u8 = FromBytes::read_le(&mut reader)?;
+        // Ensure the number of solutions is within bounds.
+        if num_solutions as usize > N::MAX_SOLUTIONS {
+            return Err(error("Failed to read solutions: too many solutions"));
+        }
         // Read the solutions.
         let mut solutions = Vec::with_capacity(num_solutions as usize);
         for _ in 0..num_solutions {

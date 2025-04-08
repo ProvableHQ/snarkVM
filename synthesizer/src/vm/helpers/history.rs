@@ -32,10 +32,11 @@ pub fn history_directory_path(network: u16, storage_mode: &StorageMode) -> PathB
     let directory_name = match &storage_mode {
         StorageMode::Development(id) => format!(".{HISTORY_DIRECTORY_NAME}-{network}-{id}"),
         StorageMode::Production | StorageMode::Custom(_) => format!("{HISTORY_DIRECTORY_NAME}-{network}"),
+        StorageMode::Test(_) => unimplemented!(),
     };
 
     // Obtain the path to the ledger.
-    let mut path = aleo_ledger_dir(network, storage_mode.clone());
+    let mut path = aleo_ledger_dir(network, storage_mode);
     // Go to the folder right above the ledger.
     path.pop();
     // Append the history directory's name.

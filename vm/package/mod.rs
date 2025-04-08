@@ -24,13 +24,18 @@ pub use build::{BuildRequest, BuildResponse};
 pub use deploy::{DeployRequest, DeployResponse};
 
 use crate::{
+    algorithms::snark::varuna::VarunaVersion,
     console::{
         account::PrivateKey,
-        network::Network,
+        network::{ConsensusVersion, Network},
         program::{Identifier, Locator, ProgramID, Response, Value},
     },
     file::{AVMFile, AleoFile, Manifest, ProverFile, README, VerifierFile},
-    ledger::{block::Execution, query::Query, store::helpers::memory::BlockMemory},
+    ledger::{
+        block::Execution,
+        query::{Query, QueryTrait},
+        store::helpers::memory::BlockMemory,
+    },
     prelude::{Deserialize, Deserializer, Serialize, SerializeStruct, Serializer},
     synthesizer::{
         process::{Assignments, CallMetrics, CallStack, Process, StackExecute},

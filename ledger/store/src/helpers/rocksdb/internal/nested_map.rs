@@ -766,7 +766,7 @@ mod tests {
         atomic_batch_scope,
         atomic_finalize,
         helpers::{
-            rocksdb::{MapID, TestMap, internal::tests::temp_dir},
+            rocksdb::{MapID, TestMap},
             traits::Map,
         },
     };
@@ -775,8 +775,7 @@ mod tests {
         network::MainnetV0,
     };
 
-    use anyhow::anyhow;
-    use serial_test::serial;
+    use anyhow::{anyhow, bail};
     use tracing_test::traced_test;
 
     type CurrentNetwork = MainnetV0;
@@ -837,7 +836,7 @@ mod tests {
     impl TestStorage {
         fn open() -> Self {
             // Initialize a database.
-            let database = RocksDB::open_testing(temp_dir(), None).expect("Failed to open a test database");
+            let database = RocksDB::open(0, StorageMode::new_test(None)).expect("Failed to open a test database");
 
             Self {
                 own_map: open_map_testing_from_db(database.clone(), MapID::Test(TestMap::Test)),
@@ -979,7 +978,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_contains_key_sanity_check() {
         // Initialize 'm'.
         let m = 0usize;
@@ -990,78 +988,72 @@ mod tests {
 
         // Initialize a map.
         let map: NestedDataMap<usize, Address<CurrentNetwork>, ()> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
         map.insert(m, address, ()).expect("Failed to insert into data map");
         assert!(map.contains_key_confirmed(&m, &address).unwrap());
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_insert_and_get_value_speculative() {
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
 
         crate::helpers::test_helpers::nested_map::check_insert_and_get_value_speculative(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_remove_key_and_get_value_speculative() {
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
 
         crate::helpers::test_helpers::nested_map::check_remove_and_get_value_speculative(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_contains_key() {
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
 
         crate::helpers::test_helpers::nested_map::check_contains_key(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_get_map() {
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
 
         crate::helpers::test_helpers::nested_map::check_get_map(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_check_iterators_match() {
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
 
         crate::helpers::test_helpers::nested_map::check_iterators_match(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_iter_from_nested_to_non_nested() {
         // Open a storage with a DataMap right after a NestedDataMap.
-        let database = RocksDB::open_testing(temp_dir(), None).expect("Failed to open a test database");
+        let database = RocksDB::open(0, StorageMode::new_test(None)).expect("Failed to open a test database");
         let test_storage = TestStorage3::open(database);
 
         // Insert 5 (confirmed) records into a nested map 77.
@@ -1080,24 +1072,22 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_atomic_writes_are_batched() {
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
 
         crate::helpers::test_helpers::nested_map::check_atomic_writes_are_batched(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_atomic_writes_can_be_aborted() {
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
 
         crate::helpers::test_helpers::nested_map::check_atomic_writes_can_be_aborted(map);
@@ -1110,7 +1100,7 @@ mod tests {
 
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
@@ -1185,7 +1175,7 @@ mod tests {
 
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
@@ -1248,7 +1238,7 @@ mod tests {
 
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
@@ -1303,7 +1293,7 @@ mod tests {
 
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
@@ -1383,7 +1373,7 @@ mod tests {
 
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
@@ -1462,7 +1452,7 @@ mod tests {
     fn test_atomic_finalize_fails_to_start() {
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
@@ -1496,7 +1486,7 @@ mod tests {
     fn test_atomic_checkpoint_truncation() {
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
@@ -1558,7 +1548,7 @@ mod tests {
     fn test_atomic_finalize_with_nested_batch_scope() -> Result<()> {
         // Initialize a map.
         let map: NestedDataMap<usize, usize, String> =
-            RocksDB::open_nested_map_testing(temp_dir(), None, MapID::Test(TestMap::Test))
+            RocksDB::open_nested_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
                 .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
@@ -1677,7 +1667,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_nested_atomic_write_batch_success() -> Result<()> {
         // Initialize a multi-layer test storage.
@@ -1748,7 +1737,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_nested_atomic_write_batch_failure() {
         // We'll want to execute the atomic write batch in its own function, in order to be able to

@@ -100,7 +100,8 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
     type TransitionStorage = TransitionDB<N>;
 
     /// Initializes the block storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        let storage = storage.into();
         // Initialize the transition store.
         let transition_store = TransitionStore::<N, TransitionDB<N>>::open(storage.clone())?;
         // Initialize the transaction store.

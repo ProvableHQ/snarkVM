@@ -148,11 +148,15 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             // Note that we do not need to check the quorum requirement for the previous certificates
             // because that is done during construction in `BatchCertificate::new`.
             cfg_iter!(certificates).try_for_each(|certificate| {
-                // Collect the signature authors.
-                let authors = certificate.signatures().map(|signature| signature.to_address()).collect();
+                // Collect the certificate signers.
+                let mut signers: HashSet<_> =
+                    certificate.signatures().map(|signature| signature.to_address()).collect();
+                // Append the certificate author.
+                signers.insert(certificate.author());
+
                 // Ensure that the signers of the certificate reach the quorum threshold.
                 ensure!(
-                    committee_lookback.is_quorum_threshold_reached(&authors),
+                    committee_lookback.is_quorum_threshold_reached(&signers),
                     "Certificate '{}' for round {round} does not meet quorum requirements",
                     certificate.id()
                 );

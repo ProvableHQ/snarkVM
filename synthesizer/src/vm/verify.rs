@@ -374,10 +374,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             bail!("Execution verification failed - restricted transition found");
         }
 
+        // Determine which Varuna version to use.
+        let consensus_version = N::CONSENSUS_VERSION(block_height)?;
+        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+            VarunaVersion::V1
+        } else {
+            VarunaVersion::V2
+        };
+
         // Verify the execution proof, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.read().verify_execution(execution),
+            false => self.process.read().verify_execution(varuna_version, execution),
         };
         lap!(timer, "Verify the execution");
 
@@ -412,10 +420,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let fee_amount = fee.amount()?;
         ensure!(*fee_amount <= N::MAX_FEE, "Fee verification failed: fee exceeds the maximum limit");
 
+        // Retrieve the block height.
+        let block_height = self.block_store().current_block_height();
+
+        // Determine which Varuna version to use.
+        let consensus_version = N::CONSENSUS_VERSION(block_height)?;
+        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+            VarunaVersion::V1
+        } else {
+            VarunaVersion::V2
+        };
+
         // Verify the fee, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.read().verify_fee(fee, deployment_or_execution_id),
+            false => self.process.read().verify_fee(varuna_version, fee, deployment_or_execution_id),
         };
         lap!(timer, "Verify the fee");
 
@@ -930,5 +949,69 @@ function compute:
         assert!(vm.check_transaction(&valid_transaction, None, rng).is_ok());
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_varuna_migration() {
+        let rng = &mut TestRng::default();
+
+        // Initialize the VM.
+        let vm = crate::vm::test_helpers::sample_vm();
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        // Update the VM.
+        vm.add_next_block(&genesis).unwrap();
+
+        // Fetch the private key.
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Create a transaction with on the old version.
+        let address = Address::try_from(&private_key).unwrap();
+        let inputs = [
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ]
+        .into_iter();
+        let transaction_v1 =
+            vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs, None, 0, None, rng).unwrap();
+
+        // Advance the ledger past ConsensusV4
+        let transactions: [Transaction<CurrentNetwork>; 0] = [];
+        for _ in 0..CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap() {
+            // Check that the v1 transaction is valid.
+            assert!(vm.check_transaction(&transaction_v1, None, rng).is_ok());
+            // Call the function
+            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&next_block).unwrap();
+        }
+
+        // Check that the v1 transaction is invalid
+        assert!(vm.check_transaction(&transaction_v1, None, rng).is_err());
+
+        // Create a transaction with on the new version.
+        let address = Address::try_from(&private_key).unwrap();
+        let inputs = [
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ]
+        .into_iter();
+        let transaction_v2 =
+            vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs, None, 0, None, rng).unwrap();
+
+        // Check that the v2 transaction is valid
+        assert!(vm.check_transaction(&transaction_v2, None, rng).is_ok());
+
+        // Sample a new VM
+        let new_vm = crate::vm::test_helpers::sample_vm();
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        // Update the VM.
+        new_vm.add_next_block(&genesis).unwrap();
+
+        // Check that v1 transaction is valid.
+        assert!(new_vm.check_transaction(&transaction_v1, None, rng).is_ok());
+        // Check that v2 transaction is invalid.
+        assert!(new_vm.check_transaction(&transaction_v2, None, rng).is_err());
     }
 }

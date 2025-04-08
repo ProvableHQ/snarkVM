@@ -282,7 +282,7 @@ mod tests {
             };
 
             // Initialize a new transition store.
-            let transition_store = TransitionStore::open(None).unwrap();
+            let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
             // Initialize a new fee store.
             let fee_store = FeeMemory::open(transition_store).unwrap();
 
@@ -323,7 +323,7 @@ mod tests {
             let fee_transition_id = fee.id();
 
             // Initialize a new transition store.
-            let transition_store = TransitionStore::open(None).unwrap();
+            let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
             // Initialize a new fee store.
             let fee_store = FeeMemory::open(transition_store).unwrap();
 

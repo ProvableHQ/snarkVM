@@ -31,6 +31,7 @@ use ledger_store::helpers::memory::ConsensusMemory;
 #[cfg(feature = "rocks")]
 use ledger_store::helpers::rocksdb::ConsensusDB;
 
+use aleo_std::StorageMode;
 use criterion::Criterion;
 use indexmap::indexmap;
 use std::{str::FromStr, time::Duration};
@@ -52,7 +53,7 @@ fn bench_bonded_mappings(c: &mut Criterion) {
     let validator_identifier = Identifier::from_str("validator").unwrap();
     let microcredits_identifier = Identifier::from_str("microcredits").unwrap();
     // Create a DB store for the consensus.
-    let store = ConsensusStore::<CurrentNetwork, CurrentStorage>::open(None).unwrap();
+    let store = ConsensusStore::<CurrentNetwork, CurrentStorage>::open(StorageMode::new_test(None)).unwrap();
     // Create a VM from the store.
     let vm = VM::from(store).unwrap();
     // Create a sample validator address.

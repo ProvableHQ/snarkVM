@@ -68,7 +68,8 @@ impl Variable {
     }
 }
 
-/// Represents the index of either a public variable (input) or a private variable (auxiliary).
+/// Represents the index of either a public variable (input) or a private
+/// variable (auxiliary).
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 pub enum Index {
     /// Index of a public variable.

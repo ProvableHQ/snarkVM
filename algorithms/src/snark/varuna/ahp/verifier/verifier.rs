@@ -20,11 +20,21 @@ use crate::{
     fft::EvaluationDomain,
     snark::varuna::{
         SNARKMode,
+        VarunaVersion,
         ahp::{
             AHPError,
             AHPForR1CS,
             indexer::{CircuitId, CircuitInfo},
-            verifier::{BatchCombiners, FirstMessage, FourthMessage, QuerySet, SecondMessage, State, ThirdMessage},
+            verifier::{
+                BatchCombiners,
+                FirstMessage,
+                FourthMessage,
+                PrepareThirdMessage,
+                QuerySet,
+                SecondMessage,
+                State,
+                ThirdMessage,
+            },
         },
         verifier::CircuitSpecificState,
     },
@@ -35,22 +45,19 @@ use snarkvm_fields::PrimeField;
 use std::collections::BTreeMap;
 
 impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
-    /// Output the first message and next round state.
-    pub fn verifier_first_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
+    /// Sample the batch combiners based on the number of circuits and
+    /// instances.
+    fn sample_batch_combiners<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
         batch_sizes: &BTreeMap<CircuitId, usize>,
         circuit_infos: &BTreeMap<CircuitId, &CircuitInfo>,
-        max_constraint_domain: EvaluationDomain<TargetField>,
-        max_variable_domain: EvaluationDomain<TargetField>,
-        max_non_zero_domain: EvaluationDomain<TargetField>,
         fs_rng: &mut R,
-    ) -> Result<(FirstMessage<TargetField>, State<TargetField, SM>)> {
+    ) -> Result<BTreeMap<CircuitId, BatchCombiners<TargetField>>> {
         let mut batch_combiners = BTreeMap::new();
-        let mut circuit_specific_states = BTreeMap::new();
         let mut num_circuit_combiners = vec![1; batch_sizes.len()];
         num_circuit_combiners[0] = 0; // the first circuit_combiner is TargetField::one() and needs no random sampling
 
-        for ((batch_size, (circuit_id, circuit_info)), num_c_combiner) in
-            batch_sizes.values().zip(circuit_infos).zip(num_circuit_combiners)
+        for ((batch_size, circuit_id), num_c_combiner) in
+            batch_sizes.values().zip(circuit_infos.keys()).zip(num_circuit_combiners)
         {
             let squeeze_time = start_timer!(|| format!("Squeezing challenges for {circuit_id}"));
             let elems = fs_rng.squeeze_nonnative_field_elements(*batch_size - 1 + num_c_combiner);
@@ -65,7 +72,26 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
             }
             combiners.instance_combiners.extend(instance_combiners);
             batch_combiners.insert(*circuit_id, combiners);
+        }
+        Ok(batch_combiners)
+    }
 
+    /// Output the first message and next round state.
+    pub fn verifier_first_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
+        batch_sizes: &BTreeMap<CircuitId, usize>,
+        circuit_infos: &BTreeMap<CircuitId, &CircuitInfo>,
+        max_constraint_domain: EvaluationDomain<TargetField>,
+        max_variable_domain: EvaluationDomain<TargetField>,
+        max_non_zero_domain: EvaluationDomain<TargetField>,
+        fs_rng: &mut R,
+    ) -> Result<(FirstMessage<TargetField>, State<TargetField, SM>)> {
+        let mut circuit_specific_states = BTreeMap::new();
+
+        // Sample the batch combiners for the first round.
+        let first_round_batch_combiners = Self::sample_batch_combiners(batch_sizes, circuit_infos, fs_rng)?;
+
+        // Compute the domains and batch sizes.
+        for (batch_size, (circuit_id, circuit_info)) in batch_sizes.values().zip(circuit_infos) {
             let constraint_domain_time = start_timer!(|| format!("Constructing constraint domain for {circuit_id}"));
             let constraint_domain =
                 EvaluationDomain::new(circuit_info.num_constraints).ok_or(AHPError::PolyTooLarge)?;
@@ -104,7 +130,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
             circuit_specific_states.insert(*circuit_id, circuit_specific_state);
         }
 
-        let message = FirstMessage { batch_combiners };
+        let message = FirstMessage { first_round_batch_combiners };
 
         let new_state = State {
             circuit_specific_states,
@@ -114,6 +140,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
 
             first_round_message: Some(message.clone()),
             second_round_message: None,
+            prepare_third_round_message: None,
             third_round_message: None,
             fourth_round_message: None,
 
@@ -128,10 +155,21 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
     pub fn verifier_second_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
         mut state: State<TargetField, SM>,
         fs_rng: &mut R,
+        varuna_version: VarunaVersion,
     ) -> Result<(SecondMessage<TargetField>, State<TargetField, SM>)> {
-        let elems = fs_rng.squeeze_nonnative_field_elements(3);
-        let (first, _) = elems.split_at(3);
-        let [alpha, eta_b, eta_c]: [_; 3] = first.try_into().map_err(anyhow::Error::msg)?;
+        let (alpha, eta_b, eta_c) = match varuna_version {
+            VarunaVersion::V1 => {
+                let elems = fs_rng.squeeze_nonnative_field_elements(3);
+                let (first, _) = elems.split_at(3);
+                let [alpha, eta_b, eta_c]: [_; 3] = first.try_into().map_err(anyhow::Error::msg)?;
+                (alpha, Some(eta_b), Some(eta_c))
+            }
+            VarunaVersion::V2 => {
+                let elems = fs_rng.squeeze_nonnative_field_elements(1);
+                let alpha = elems[0];
+                (alpha, None, None)
+            }
+        };
 
         let check_vanish_poly_time = start_timer!(|| "Evaluating vanishing polynomial");
         ensure!(!state.max_constraint_domain.evaluate_vanishing_polynomial(alpha).is_zero());
@@ -139,6 +177,27 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
 
         let message = SecondMessage { alpha, eta_b, eta_c };
         state.second_round_message = Some(message);
+
+        Ok((message, state))
+    }
+
+    /// Output the prep third message and next round state.
+    pub fn verifier_prepare_third_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
+        mut state: State<TargetField, SM>,
+        batch_sizes: &BTreeMap<CircuitId, usize>,
+        circuit_infos: &BTreeMap<CircuitId, &CircuitInfo>,
+        fs_rng: &mut R,
+    ) -> Result<(PrepareThirdMessage<TargetField>, State<TargetField, SM>)> {
+        // Sample the batch combiners for the third round.
+        let third_round_batch_combiners = Self::sample_batch_combiners(batch_sizes, circuit_infos, fs_rng)?;
+
+        // Sample eta_b and eta_c.
+        let elems = fs_rng.squeeze_nonnative_field_elements(2);
+        let (first, _) = elems.split_at(2);
+        let [eta_b, eta_c]: [_; 2] = first.try_into().map_err(anyhow::Error::msg)?;
+
+        let message = PrepareThirdMessage { third_round_batch_combiners, eta_b, eta_c };
+        state.prepare_third_round_message = Some(message.clone());
 
         Ok((message, state))
     }

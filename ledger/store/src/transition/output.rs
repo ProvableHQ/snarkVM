@@ -50,7 +50,7 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
     type FutureMap: for<'a> Map<'a, Field<N>, Option<Future<N>>>;
 
     /// Initializes the transition output storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self>;
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
 
     /// Returns the ID map.
     fn id_map(&self) -> &Self::IDMap;
@@ -328,7 +328,7 @@ pub struct OutputStore<N: Network, O: OutputStorage<N>> {
 
 impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
     /// Initializes the transition output store.
-    pub fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         // Initialize a new transition output storage.
         let storage = O::open(storage)?;
         // Return the transition output store.
@@ -574,7 +574,7 @@ mod tests {
         // Sample the transition outputs.
         for (transition_id, output) in ledger_test_helpers::sample_outputs() {
             // Initialize a new output store.
-            let output_store = OutputMemory::open(None).unwrap();
+            let output_store = OutputMemory::open(StorageMode::Test(None)).unwrap();
 
             // Ensure the transition output does not exist.
             let candidate = output_store.get(&transition_id).unwrap();
@@ -601,7 +601,7 @@ mod tests {
         // Sample the transition outputs.
         for (transition_id, output) in ledger_test_helpers::sample_outputs() {
             // Initialize a new output store.
-            let output_store = OutputMemory::open(None).unwrap();
+            let output_store = OutputMemory::open(StorageMode::Test(None)).unwrap();
 
             // Ensure the transition output does not exist.
             let candidate = output_store.get(&transition_id).unwrap();

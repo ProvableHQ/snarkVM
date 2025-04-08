@@ -29,6 +29,9 @@ use snarkvm_utilities::{
 };
 
 use anyhow::{Result, anyhow, bail, ensure};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::{collections::BTreeMap, ops::Range, sync::Arc};
 

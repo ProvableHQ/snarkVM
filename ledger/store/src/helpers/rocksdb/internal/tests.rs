@@ -16,7 +16,7 @@
 use crate::helpers::{
     Map,
     MapRead,
-    rocksdb::{MapID, RocksDB, TestMap as TestMapID},
+    rocksdb::{Database, MapID, RocksDB, TestMap as TestMapID},
 };
 use console::{
     network::{MainnetV0, Network},
@@ -24,34 +24,27 @@ use console::{
     types::Scalar,
 };
 
-use serial_test::serial;
-
-pub(crate) fn temp_dir() -> std::path::PathBuf {
-    tempfile::tempdir().expect("Failed to open temporary directory").into_path()
-}
+use aleo_std::StorageMode;
 
 // pub(crate) fn temp_file() -> std::path::PathBuf {
 //     tempfile::NamedTempFile::new().expect("Failed to open temporary file").path().to_owned()
 // }
 
 #[test]
-#[serial]
 fn test_open() {
-    let _storage = RocksDB::open_testing(temp_dir(), None).expect("Failed to open storage");
+    let _storage = RocksDB::open(0, StorageMode::new_test(None)).expect("Failed to open storage");
 }
 
 #[test]
-#[serial]
 fn test_open_map() {
-    let _map = RocksDB::open_map_testing::<u32, String, _>(temp_dir(), None, MapID::Test(TestMapID::Test))
+    let _map = RocksDB::open_map::<_, u32, String, _>(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
         .expect("Failed to open data map");
 }
 
 #[test]
-#[serial]
 fn test_insert_and_contains_key() {
-    let map =
-        RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+    let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
 
     map.insert(123456789, "123456789".to_string()).expect("Failed to insert");
     assert!(map.contains_key_confirmed(&123456789).expect("Failed to call contains key"));
@@ -59,10 +52,9 @@ fn test_insert_and_contains_key() {
 }
 
 #[test]
-#[serial]
 fn test_insert_and_get() {
-    let map =
-        RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+    let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
 
     map.insert(123456789, "123456789".to_string()).expect("Failed to insert");
     assert_eq!(
@@ -74,10 +66,9 @@ fn test_insert_and_get() {
 }
 
 #[test]
-#[serial]
 fn test_insert_and_remove() {
-    let map =
-        RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+    let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
 
     map.insert(123456789, "123456789".to_string()).expect("Failed to insert");
     assert_eq!(
@@ -90,10 +81,9 @@ fn test_insert_and_remove() {
 }
 
 #[test]
-#[serial]
 fn test_insert_and_iter() {
-    let map =
-        RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+    let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
 
     map.insert(123456789, "123456789".to_string()).expect("Failed to insert");
 
@@ -103,10 +93,9 @@ fn test_insert_and_iter() {
 }
 
 #[test]
-#[serial]
 fn test_insert_and_keys() {
-    let map =
-        RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+    let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
 
     map.insert(123456789, "123456789".to_string()).expect("Failed to insert");
 
@@ -116,10 +105,9 @@ fn test_insert_and_keys() {
 }
 
 #[test]
-#[serial]
 fn test_insert_and_values() {
-    let map =
-        RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+    let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
 
     map.insert(123456789, "123456789".to_string()).expect("Failed to insert");
 
@@ -129,11 +117,10 @@ fn test_insert_and_values() {
 }
 
 // #[test]
-// #[serial]
 // fn test_export_import() {
 //     let file = temp_file();
 //     {
-//         let mut map = RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+//         let mut map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test)).expect("Failed to open data map");
 //
 //         for i in 0..100 {
 //             map.insert(i, i.to_string()).expect("Failed to insert");
@@ -153,7 +140,6 @@ fn test_insert_and_values() {
 // }
 
 #[test]
-#[serial]
 fn test_scalar_mul() {
     type CurrentNetwork = MainnetV0;
 
@@ -161,8 +147,8 @@ fn test_scalar_mul() {
 
     const ITERATIONS: u32 = 1_000_000u32;
 
-    let map =
-        RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+    let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
 
     // Sample `ITERATION` random field elements to store.
     for i in 0..ITERATIONS {
@@ -182,10 +168,9 @@ fn test_scalar_mul() {
 }
 
 #[test]
-#[serial]
 fn test_iterator_ordering() {
-    let map =
-        RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMapID::Test)).expect("Failed to open data map");
+    let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
+        .expect("Failed to open data map");
 
     // Insert values into the map.
     map.insert(5, "d".to_string()).expect("Failed to insert");
