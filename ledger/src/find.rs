@@ -39,6 +39,15 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.transaction_store().find_latest_transaction_id_from_program_id(program_id)
     }
 
+    /// Returns the transaction ID that contains the given `program ID` and `edition`.
+    pub fn find_transaction_id_from_program_id_and_edition(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+    ) -> Result<Option<N::TransactionID>> {
+        self.vm.transaction_store().find_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
     /// Returns the transaction ID that contains the given `transition ID`.
     pub fn find_transaction_id_from_transition_id(
         &self,

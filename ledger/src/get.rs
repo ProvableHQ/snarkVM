@@ -231,11 +231,27 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         }
     }
 
-    /// Returns the program for the given program ID.
+    /// Returns the latest edition for the given `program ID`.
+    pub fn get_latest_edition_for_program(&self, program_id: &ProgramID<N>) -> Result<u16> {
+        match self.vm.block_store().get_latest_edition_for_program(program_id)? {
+            Some(edition) => Ok(edition),
+            None => bail!("Missing latest edition for program ID {program_id}"),
+        }
+    }
+
+    /// Returns the latest program for the given `program ID`.
     pub fn get_program(&self, program_id: ProgramID<N>) -> Result<Program<N>> {
         match self.vm.block_store().get_latest_program(&program_id)? {
             Some(program) => Ok(program),
             None => bail!("Missing program for ID {program_id}"),
+        }
+    }
+
+    /// Returns the program for the given `program ID` and `edition`.
+    pub fn get_program_for_edition(&self, program_id: ProgramID<N>, edition: u16) -> Result<Program<N>> {
+        match self.vm.block_store().get_program_for_edition(&program_id, edition)? {
+            Some(program) => Ok(program),
+            None => bail!("Missing program for ID {program_id} and edition {edition}"),
         }
     }
 

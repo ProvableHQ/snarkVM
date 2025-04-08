@@ -368,6 +368,11 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
         }
     }
 
+    /// Returns the latest edition for the given `program ID`.
+    pub fn get_latest_edition_for_program(&self, program_id: &ProgramID<N>) -> Result<Option<u16>> {
+        self.storage.deployment_store().get_latest_edition_for_program(program_id)
+    }
+
     /// Returns the edition for the given `transaction ID`.
     pub fn get_edition(&self, transaction_id: &N::TransactionID) -> Result<Option<u16>> {
         // Retrieve the transaction type.

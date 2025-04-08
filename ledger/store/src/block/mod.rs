@@ -1281,9 +1281,19 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         self.storage.get_block(block_hash)
     }
 
+    /// Returns the latest edition for the given `program ID`.
+    pub fn get_latest_edition_for_program(&self, program_id: &ProgramID<N>) -> Result<Option<u16>> {
+        self.storage.transaction_store().get_latest_edition_for_program(program_id)
+    }
+
     /// Returns the latest program for the given `program ID`.
     pub fn get_latest_program(&self, program_id: &ProgramID<N>) -> Result<Option<Program<N>>> {
         self.storage.transaction_store().get_latest_program(program_id)
+    }
+
+    /// Returns the program for the given `program ID` and `edition`.
+    pub fn get_program_for_edition(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<Program<N>>> {
+        self.storage.transaction_store().get_program_for_edition(program_id, edition)
     }
 
     /// Returns the batch certificate for the given `certificate ID`.
