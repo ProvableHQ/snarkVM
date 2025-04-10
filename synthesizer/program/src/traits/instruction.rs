@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::Operand;
 use console::{
     network::Network,
     prelude::{FromBytes, Parser, ToBytes},
@@ -24,4 +25,6 @@ pub trait InstructionTrait<N: Network>: Clone + PartialEq + Eq + Parser + FromBy
     fn destinations(&self) -> Vec<Register<N>>;
     /// Returns `true` if the given name is a reserved opcode.
     fn is_reserved_opcode(name: &str) -> bool;
+    /// Returns the operands of the instruction.
+    fn operands(&self) -> &[Operand<N>];
 }

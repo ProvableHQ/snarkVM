@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::Opcode;
+use crate::{Opcode, Operand};
 use console::{network::prelude::*, program::Register};
 
 /// An await command, e.g. `await r0;`.
@@ -21,8 +21,9 @@ use console::{network::prelude::*, program::Register};
 /// Note that asynchronous calls currently do not return a value.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Await<N: Network> {
-    /// The register containing the future.
-    register: Register<N>,
+    /// The operands.
+    /// Note: Byte and string parsing guarantees that this is a single register operand.
+    operands: [Operand<N>; 1],
 }
 
 impl<N: Network> Await<N> {
@@ -32,10 +33,21 @@ impl<N: Network> Await<N> {
         Opcode::Command("await")
     }
 
+    /// Returns the operands in the command.
+    #[inline]
+    pub fn operands(&self) -> &[Operand<N>] {
+        &self.operands
+    }
+
     /// Returns the register containing the future.
     #[inline]
-    pub const fn register(&self) -> &Register<N> {
-        &self.register
+    pub fn register(&self) -> &Register<N> {
+        // Note: This byte and string parsing guarantees that the operand is a single register.
+        let Operand::Register(register) = &self.operands[0] else {
+            unreachable!("The operands of an await command must be a single register.")
+        };
+        // Return the register.
+        register
     }
 }
 
@@ -56,7 +68,7 @@ impl<N: Network> Parser for Await<N> {
         // Parse the ';' from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self { register }))
+        Ok((string, Self { operands: [Operand::Register(register)] }))
     }
 }
 
@@ -89,7 +101,7 @@ impl<N: Network> Display for Await<N> {
     /// Prints the command to a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the command.
-        write!(f, "await {};", self.register)
+        write!(f, "await {};", self.register())
     }
 }
 
@@ -99,7 +111,7 @@ impl<N: Network> FromBytes for Await<N> {
         // Read the register.
         let register = Register::read_le(&mut reader)?;
 
-        Ok(Self { register })
+        Ok(Self { operands: [Operand::Register(register)] })
     }
 }
 
@@ -107,7 +119,7 @@ impl<N: Network> ToBytes for Await<N> {
     /// Writes the operation to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the register.
-        self.register.write_le(&mut writer)?;
+        self.register().write_le(&mut writer)?;
         Ok(())
     }
 }

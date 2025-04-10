@@ -385,6 +385,12 @@ impl<N: Network> InstructionTrait<N> for Instruction<N> {
         // Check if the given name matches any opcode (in its entirety; including past the first '.' if it exists).
         Instruction::<N>::OPCODES.iter().any(|opcode| **opcode == name)
     }
+
+    /// Returns the operands of the instruction.
+    #[inline]
+    fn operands(&self) -> &[Operand<N>] {
+        instruction!(self, |instruction| instruction.operands())
+    }
 }
 
 impl<N: Network> Instruction<N> {
@@ -395,12 +401,6 @@ impl<N: Network> Instruction<N> {
     #[inline]
     pub const fn opcode(&self) -> Opcode {
         instruction!(self, |InstructionMember| InstructionMember::<N>::opcode())
-    }
-
-    /// Returns the operands of the instruction.
-    #[inline]
-    pub fn operands(&self) -> &[Operand<N>] {
-        instruction!(self, |instruction| instruction.operands())
     }
 
     /// Evaluates the instruction.

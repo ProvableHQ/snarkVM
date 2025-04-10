@@ -26,7 +26,7 @@ use console::{
     program::{Field, Identifier, Literal, LiteralType, Value},
 };
 use snarkvm_synthesizer_process::{CallStack, Process, Registers, Stack, StackProgramTypes};
-use snarkvm_synthesizer_program::{Instruction, Program, RegistersStoreCircuit, StackProgram};
+use snarkvm_synthesizer_program::{Instruction, InstructionTrait, Program, RegistersStoreCircuit, StackProgram};
 
 use aleo_std::prelude::{finish, lap, timer};
 use anyhow::{Result, anyhow, bail, ensure};

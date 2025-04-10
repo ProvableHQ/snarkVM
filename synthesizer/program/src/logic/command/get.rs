@@ -30,8 +30,8 @@ use console::{
 pub struct Get<N: Network> {
     /// The mapping.
     mapping: CallOperator<N>,
-    /// The key to access the mapping.
-    key: Operand<N>,
+    /// The operands.
+    operands: [Operand<N>; 1],
     /// The destination register.
     destination: Register<N>,
 }
@@ -40,7 +40,7 @@ impl<N: Network> PartialEq for Get<N> {
     /// Returns true if the two objects are equal.
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.mapping == other.mapping && self.key == other.key && self.destination == other.destination
+        self.mapping == other.mapping && self.key() == other.key() && self.destination == other.destination
     }
 }
 
@@ -51,7 +51,7 @@ impl<N: Network> std::hash::Hash for Get<N> {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.mapping.hash(state);
-        self.key.hash(state);
+        self.key().hash(state);
         self.destination.hash(state);
     }
 }
@@ -65,8 +65,8 @@ impl<N: Network> Get<N> {
 
     /// Returns the operands in the operation.
     #[inline]
-    pub fn operands(&self) -> Vec<Operand<N>> {
-        vec![self.key.clone()]
+    pub fn operands(&self) -> &[Operand<N>] {
+        &self.operands
     }
 
     /// Returns the mapping.
@@ -78,7 +78,7 @@ impl<N: Network> Get<N> {
     /// Returns the operand containing the key.
     #[inline]
     pub const fn key(&self) -> &Operand<N> {
-        &self.key
+        &self.operands[0]
     }
 
     /// Returns the destination register.
@@ -109,7 +109,7 @@ impl<N: Network> Get<N> {
         }
 
         // Load the operand as a plaintext.
-        let key = registers.load_plaintext(stack, &self.key)?;
+        let key = registers.load_plaintext(stack, self.key())?;
 
         // Retrieve the value from storage as a literal.
         let value = match store.get_value_speculative(program_id, mapping_name, &key)? {
@@ -165,7 +165,7 @@ impl<N: Network> Parser for Get<N> {
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self { mapping, key, destination }))
+        Ok((string, Self { mapping, operands: [key], destination }))
     }
 }
 
@@ -200,7 +200,7 @@ impl<N: Network> Display for Get<N> {
         // Print the command.
         write!(f, "{} ", Self::opcode())?;
         // Print the mapping and key operand.
-        write!(f, "{}[{}] into ", self.mapping, self.key)?;
+        write!(f, "{}[{}] into ", self.mapping, self.key())?;
         // Print the destination register.
         write!(f, "{};", self.destination)
     }
@@ -216,7 +216,7 @@ impl<N: Network> FromBytes for Get<N> {
         // Read the destination register.
         let destination = Register::read_le(&mut reader)?;
         // Return the command.
-        Ok(Self { mapping, key, destination })
+        Ok(Self { mapping, operands: [key], destination })
     }
 }
 
@@ -226,7 +226,7 @@ impl<N: Network> ToBytes for Get<N> {
         // Write the mapping name.
         self.mapping.write_le(&mut writer)?;
         // Write the key operand.
-        self.key.write_le(&mut writer)?;
+        self.key().write_le(&mut writer)?;
         // Write the destination register.
         self.destination.write_le(&mut writer)
     }
@@ -245,14 +245,14 @@ mod tests {
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(get.mapping, CallOperator::from_str("account").unwrap());
         assert_eq!(get.operands().len(), 1, "The number of operands is incorrect");
-        assert_eq!(get.key, Operand::Register(Register::Locator(0)), "The first operand is incorrect");
+        assert_eq!(get.key(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
         assert_eq!(get.destination, Register::Locator(1), "The second operand is incorrect");
 
         let (string, get) = Get::<CurrentNetwork>::parse("get token.aleo/balances[r0] into r1;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(get.mapping, CallOperator::from_str("token.aleo/balances").unwrap());
         assert_eq!(get.operands().len(), 1, "The number of operands is incorrect");
-        assert_eq!(get.key, Operand::Register(Register::Locator(0)), "The first operand is incorrect");
+        assert_eq!(get.key(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
         assert_eq!(get.destination, Register::Locator(1), "The second operand is incorrect");
     }
 

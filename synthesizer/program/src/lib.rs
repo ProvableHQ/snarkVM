@@ -24,7 +24,6 @@ pub type Closure<N> = crate::ClosureCore<N, Instruction<N>>;
 pub type Constructor<N> = crate::ConstructorCore<N, Command<N>>;
 
 mod closure;
-
 pub use closure::*;
 
 mod constructor;
@@ -648,6 +647,66 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
             bail!("'{function_name}' already exists in the program.")
         }
         Ok(())
+    }
+}
+
+impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
+    /// Returns `true` if a program uses constructors, `Operand::Edition`, and `Operand::Checksum`.
+    /// This is enforced to be `false` for programs before `ConsensusVersion::V5`.
+    #[inline]
+    pub fn uses_constructor_checksum_or_edition(&self) -> bool {
+        // Check if the program contains a constructor.
+        if self.contains_constructor() {
+            return true;
+        }
+        // Check each instruction and output in each closure for the use of `Operand::Checksum` and `Operand::Edition`.
+        for closure in self.closures().values() {
+            // Check the instruction operands.
+            for instruction in closure.instructions() {
+                for operand in instruction.operands() {
+                    if matches!(operand, Operand::Checksum(_) | Operand::Edition(_)) {
+                        return true;
+                    }
+                }
+            }
+            // Check the output operands.
+            for output in closure.outputs() {
+                if matches!(output.operand(), Operand::Checksum(_) | Operand::Edition(_)) {
+                    return true;
+                }
+            }
+        }
+        // Check each instruction and output in each function for the use of `Operand::Checksum` and `Operand::Edition`.
+        // If the function has an associated finalize scope, then check its commands as well.
+        for function in self.functions().values() {
+            // Check the instruction oeprands.
+            for instruction in function.instructions() {
+                for operand in instruction.operands() {
+                    if matches!(operand, Operand::Checksum(_) | Operand::Edition(_)) {
+                        return true;
+                    }
+                }
+            }
+            // Check the output operands.
+            for output in function.outputs() {
+                if matches!(output.operand(), Operand::Checksum(_) | Operand::Edition(_)) {
+                    return true;
+                }
+            }
+            // Check the finalize scope if it exists.
+            if let Some(finalize_logic) = function.finalize_logic() {
+                // Check the command operands.
+                for command in finalize_logic.commands() {
+                    for operand in command.operands() {
+                        if matches!(operand, Operand::Checksum(_) | Operand::Edition(_)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        // Return `false` since no V5 syntax was found.
+        false
     }
 }
 

@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::Operand;
 use console::{
     network::Network,
     prelude::{FromBytes, Parser, ToBytes},
@@ -34,4 +35,6 @@ pub trait CommandTrait<N: Network>: Clone + PartialEq + Eq + Parser + FromBytes 
     fn is_write(&self) -> bool;
     /// Returns `true` if the command is an await command.
     fn is_await(&self) -> bool;
+    /// Returns the operands of the command.
+    fn operands(&self) -> &[Operand<N>];
 }

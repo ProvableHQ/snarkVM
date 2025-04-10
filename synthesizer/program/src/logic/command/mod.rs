@@ -45,6 +45,7 @@ use crate::{
     FinalizeOperation,
     FinalizeRegistersState,
     Instruction,
+    Operand,
     traits::{
         CommandTrait,
         FinalizeStoreTrait,
@@ -148,6 +149,24 @@ impl<N: Network> CommandTrait<N> for Command<N> {
     #[inline]
     fn is_await(&self) -> bool {
         matches!(self, Command::Await(_))
+    }
+
+    /// Returns the operands of the command.
+    #[inline]
+    fn operands(&self) -> &[Operand<N>] {
+        match self {
+            Command::Instruction(c) => c.operands(),
+            Command::Await(c) => c.operands(),
+            Command::Contains(c) => c.operands(),
+            Command::Get(c) => c.operands(),
+            Command::GetOrUse(c) => c.operands(),
+            Command::RandChaCha(c) => c.operands(),
+            Command::Remove(c) => c.operands(),
+            Command::Set(c) => c.operands(),
+            Command::BranchEq(c) => c.operands(),
+            Command::BranchNeq(c) => c.operands(),
+            Command::Position(_) => Default::default(),
+        }
     }
 }
 

@@ -31,8 +31,8 @@ use console::{
 pub struct Contains<N: Network> {
     /// The mapping name.
     mapping: CallOperator<N>,
-    /// The key to access the mapping.
-    key: Operand<N>,
+    /// The operands.
+    operands: [Operand<N>; 1],
     /// The destination register.
     destination: Register<N>,
 }
@@ -46,8 +46,8 @@ impl<N: Network> Contains<N> {
 
     /// Returns the operands in the operation.
     #[inline]
-    pub fn operands(&self) -> Vec<Operand<N>> {
-        vec![self.key.clone()]
+    pub fn operands(&self) -> &[Operand<N>] {
+        &self.operands
     }
 
     /// Returns the mapping.
@@ -59,7 +59,7 @@ impl<N: Network> Contains<N> {
     /// Returns the operand containing the key.
     #[inline]
     pub const fn key(&self) -> &Operand<N> {
-        &self.key
+        &self.operands[0]
     }
 
     /// Returns the destination register.
@@ -90,7 +90,7 @@ impl<N: Network> Contains<N> {
         }
 
         // Load the operand as a plaintext.
-        let key = registers.load_plaintext(stack, &self.key)?;
+        let key = registers.load_plaintext(stack, self.key())?;
 
         // Determine if the key exists in the mapping.
         let contains_key = store.contains_key_speculative(program_id, mapping_name, &key)?;
@@ -140,7 +140,7 @@ impl<N: Network> Parser for Contains<N> {
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self { mapping, key, destination }))
+        Ok((string, Self { mapping, operands: [key], destination }))
     }
 }
 
@@ -175,7 +175,7 @@ impl<N: Network> Display for Contains<N> {
         // Print the command.
         write!(f, "{} ", Self::opcode())?;
         // Print the mapping and key operand.
-        write!(f, "{}[{}] into ", self.mapping, self.key)?;
+        write!(f, "{}[{}] into ", self.mapping, self.key())?;
         // Print the destination register.
         write!(f, "{};", self.destination)
     }
@@ -191,7 +191,7 @@ impl<N: Network> FromBytes for Contains<N> {
         // Read the destination register.
         let destination = Register::read_le(&mut reader)?;
         // Return the command.
-        Ok(Self { mapping, key, destination })
+        Ok(Self { mapping, operands: [key], destination })
     }
 }
 
@@ -201,7 +201,7 @@ impl<N: Network> ToBytes for Contains<N> {
         // Write the mapping name.
         self.mapping.write_le(&mut writer)?;
         // Write the key operand.
-        self.key.write_le(&mut writer)?;
+        self.key().write_le(&mut writer)?;
         // Write the destination register.
         self.destination.write_le(&mut writer)
     }
@@ -220,7 +220,7 @@ mod tests {
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(contains.mapping, CallOperator::from_str("account").unwrap());
         assert_eq!(contains.operands().len(), 1, "The number of operands is incorrect");
-        assert_eq!(contains.key, Operand::Register(Register::Locator(0)), "The first operand is incorrect");
+        assert_eq!(contains.key(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
         assert_eq!(contains.destination, Register::Locator(1), "The second operand is incorrect");
 
         let (string, contains) =
@@ -228,7 +228,7 @@ mod tests {
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(contains.mapping, CallOperator::from_str("credits.aleo/account").unwrap());
         assert_eq!(contains.operands().len(), 1, "The number of operands is incorrect");
-        assert_eq!(contains.key, Operand::Register(Register::Locator(0)), "The first operand is incorrect");
+        assert_eq!(contains.key(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
         assert_eq!(contains.destination, Register::Locator(1), "The second operand is incorrect");
     }
 
