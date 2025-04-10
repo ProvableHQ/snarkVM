@@ -115,33 +115,48 @@ pub mod test_helpers {
     type CurrentNetwork = MainnetV0;
 
     /// Samples a rejected deployment.
-    pub(crate) fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
+    pub(crate) fn sample_rejected_deployment(
+        is_fee_private: bool,
+        store_unconfirmed_id: bool,
+        rng: &mut TestRng,
+    ) -> Rejected<CurrentNetwork> {
         // Sample a deploy transaction.
-        let deployment = match crate::transaction::test_helpers::sample_deployment_transaction(is_fee_private, rng) {
-            Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
-            _ => unreachable!(),
-        };
+        let (unconfirmed_id, deployment) =
+            match crate::transaction::test_helpers::sample_deployment_transaction(is_fee_private, rng) {
+                Transaction::Deploy(id, _, _, deployment, _) => (id, *deployment).clone(),
+                _ => unreachable!(),
+            };
 
         // Sample a new program owner.
         let private_key = PrivateKey::new(rng).unwrap();
         let deployment_id = deployment.to_deployment_id().unwrap();
         let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
+        // Get the unconfirmed transaction id.
+        let unconfirmed_id = store_unconfirmed_id.then_some(unconfirmed_id);
+
         // Return the rejected deployment.
-        Rejected::new_deployment(None, program_owner, deployment)
+        Rejected::new_deployment(unconfirmed_id, program_owner, deployment)
     }
 
     /// Samples a rejected execution.
-    pub(crate) fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
+    pub(crate) fn sample_rejected_execution(
+        is_fee_private: bool,
+        store_unconfirmed_id: bool,
+        rng: &mut TestRng,
+    ) -> Rejected<CurrentNetwork> {
         // Sample an execute transaction.
-        let execution =
+        let (unconfirmed_id, execution) =
             match crate::transaction::test_helpers::sample_execution_transaction_with_fee(is_fee_private, rng) {
-                Transaction::Execute(_, _, execution, _) => execution,
+                Transaction::Execute(id, _, execution, _) => (id, execution),
                 _ => unreachable!(),
             };
 
+        // Get the unconfirmed transaction id.
+        let unconfirmed_id = store_unconfirmed_id.then_some(unconfirmed_id);
+
         // Return the rejected execution.
-        Rejected::new_execution(None, *execution)
+        Rejected::new_execution(unconfirmed_id, *execution)
     }
 
     /// Sample a list of randomly rejected transactions.
@@ -149,10 +164,14 @@ pub mod test_helpers {
         let rng = &mut TestRng::default();
 
         vec![
-            sample_rejected_deployment(true, rng),
-            sample_rejected_deployment(false, rng),
-            sample_rejected_execution(true, rng),
-            sample_rejected_execution(false, rng),
+            sample_rejected_deployment(true, false, rng),
+            sample_rejected_deployment(false, false, rng),
+            sample_rejected_execution(true, false, rng),
+            sample_rejected_execution(false, false, rng),
+            sample_rejected_deployment(true, true, rng),
+            sample_rejected_deployment(false, true, rng),
+            sample_rejected_execution(true, true, rng),
+            sample_rejected_execution(false, true, rng),
         ]
     }
 }

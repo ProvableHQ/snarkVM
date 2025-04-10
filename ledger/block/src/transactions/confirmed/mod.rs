@@ -390,7 +390,7 @@ pub mod test_helpers {
         };
 
         // Extract the rejected deployment.
-        let rejected = crate::rejected::test_helpers::sample_rejected_deployment(is_fee_private, rng);
+        let rejected = crate::rejected::test_helpers::sample_rejected_deployment(is_fee_private, true, rng);
 
         // Return the confirmed transaction.
         ConfirmedTransaction::rejected_deploy(index, fee_transaction, rejected, vec![]).unwrap()
@@ -409,7 +409,7 @@ pub mod test_helpers {
         };
 
         // Extract the rejected execution.
-        let rejected = crate::rejected::test_helpers::sample_rejected_execution(is_fee_private, rng);
+        let rejected = crate::rejected::test_helpers::sample_rejected_execution(is_fee_private, true, rng);
 
         // Return the confirmed transaction.
         ConfirmedTransaction::rejected_execute(index, fee_transaction, rejected, vec![]).unwrap()

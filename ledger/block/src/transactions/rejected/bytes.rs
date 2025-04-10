@@ -106,7 +106,6 @@ mod tests {
     #[test]
     fn test_bytes() {
         for expected in crate::transactions::rejected::test_helpers::sample_rejected_transactions() {
-            // TODO: sample the old and new version.
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, Rejected::read_le(&expected_bytes[..]).unwrap());
