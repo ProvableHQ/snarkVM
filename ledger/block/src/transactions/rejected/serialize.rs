@@ -20,14 +20,29 @@ impl<N: Network> Serialize for Rejected<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => match self {
-                Self::Deployment(program_owner, deployment) => {
+                Self::Deployment(Some(unconfirmed_id), program_owner, deployment) => {
+                    let mut object = serializer.serialize_struct("Rejected", 4)?;
+                    object.serialize_field("type", "deployment")?;
+                    object.serialize_field("unconfirmed_id", &unconfirmed_id)?;
+                    object.serialize_field("program_owner", program_owner)?;
+                    object.serialize_field("deployment", deployment)?;
+                    object.end()
+                }
+                Self::Deployment(None, program_owner, deployment) => {
                     let mut object = serializer.serialize_struct("Rejected", 3)?;
                     object.serialize_field("type", "deployment")?;
                     object.serialize_field("program_owner", program_owner)?;
                     object.serialize_field("deployment", deployment)?;
                     object.end()
                 }
-                Self::Execution(execution) => {
+                Self::Execution(Some(unconfirmed_id), execution) => {
+                    let mut object = serializer.serialize_struct("Rejected", 3)?;
+                    object.serialize_field("type", "execution")?;
+                    object.serialize_field("unconfirmed_id", &unconfirmed_id)?;
+                    object.serialize_field("execution", execution)?;
+                    object.end()
+                }
+                Self::Execution(None, execution) => {
                     let mut object = serializer.serialize_struct("Rejected", 2)?;
                     object.serialize_field("type", "execution")?;
                     object.serialize_field("execution", execution)?;
@@ -47,6 +62,12 @@ impl<'de, N: Network> Deserialize<'de> for Rejected<N> {
                 // Parse the rejected transaction from a string into a value.
                 let mut object = serde_json::Value::deserialize(deserializer)?;
 
+                // Try to parse the unconfirmed ID.
+                let contains_unconfirmed_id = object.get("unconfirmed_id").is_some();
+                let unconfirmed_id: Option<N::TransactionID> = contains_unconfirmed_id
+                    .then(|| DeserializeExt::take_from_value::<D>(&mut object, "unconfirmed_id"))
+                    .transpose()?;
+
                 // Parse the type.
                 let type_ = object.get("type").and_then(|t| t.as_str());
 
@@ -60,13 +81,13 @@ impl<'de, N: Network> Deserialize<'de> for Rejected<N> {
                         let deployment: Deployment<N> =
                             DeserializeExt::take_from_value::<D>(&mut object, "deployment")?;
                         // Return the rejected deployment.
-                        Ok(Self::new_deployment(program_owner, deployment))
+                        Ok(Self::new_deployment(unconfirmed_id, program_owner, deployment))
                     }
                     Some("execution") => {
                         // Parse the execution.
                         let execution: Execution<N> = DeserializeExt::take_from_value::<D>(&mut object, "execution")?;
                         // Return the rejected execution.
-                        Ok(Self::new_execution(execution))
+                        Ok(Self::new_execution(unconfirmed_id, execution))
                     }
                     _ => Err(de::Error::custom("Invalid rejected transaction type")),
                 }

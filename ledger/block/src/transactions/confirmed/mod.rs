@@ -564,6 +564,7 @@ mod test {
         // Ensure that the unconfirmed transaction of a rejected deployment is not equivalent to its confirmed transaction.
         let deployment_transaction = crate::transaction::test_helpers::sample_deployment_transaction(true, rng);
         let rejected = Rejected::new_deployment(
+            None,
             *deployment_transaction.owner().unwrap(),
             deployment_transaction.deployment().unwrap().clone(),
         );
@@ -573,6 +574,7 @@ mod test {
         assert_eq!(rejected_deploy.to_unconfirmed_transaction().unwrap(), deployment_transaction);
         let deployment_transaction = crate::transaction::test_helpers::sample_deployment_transaction(false, rng);
         let rejected = Rejected::new_deployment(
+            None,
             *deployment_transaction.owner().unwrap(),
             deployment_transaction.deployment().unwrap().clone(),
         );
@@ -583,18 +585,19 @@ mod test {
 
         // Ensure that the unconfirmed transaction of a rejected execute is not equivalent to its confirmed transaction.
         let execution_transaction = crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng);
-        let rejected = Rejected::new_execution(execution_transaction.execution().unwrap().clone());
+        let rejected = Rejected::new_execution(None, execution_transaction.execution().unwrap().clone());
         let fee = Transaction::from_fee(execution_transaction.fee_transition().unwrap()).unwrap();
         let rejected_execute =
             ConfirmedTransaction::rejected_execute(Uniform::rand(rng), fee, rejected, vec![]).unwrap();
         assert_eq!(rejected_execute.to_unconfirmed_transaction_id().unwrap(), execution_transaction.id());
         assert_eq!(rejected_execute.to_unconfirmed_transaction().unwrap(), execution_transaction);
         let execution_transaction = crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng);
-        let rejected = Rejected::new_execution(execution_transaction.execution().unwrap().clone());
+        let rejected = Rejected::new_execution(None, execution_transaction.execution().unwrap().clone());
         let fee = Transaction::from_fee(execution_transaction.fee_transition().unwrap()).unwrap();
         let rejected_execute =
             ConfirmedTransaction::rejected_execute(Uniform::rand(rng), fee, rejected, vec![]).unwrap();
         assert_eq!(rejected_execute.to_unconfirmed_transaction_id().unwrap(), execution_transaction.id());
         assert_eq!(rejected_execute.to_unconfirmed_transaction().unwrap(), execution_transaction);
+        // TODO: consider adding tests passing Some(unconfirmed_id)
     }
 }

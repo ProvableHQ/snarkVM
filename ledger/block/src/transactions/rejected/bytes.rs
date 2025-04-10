@@ -26,15 +26,33 @@ impl<N: Network> FromBytes for Rejected<N> {
                 // Read the deployment.
                 let deployment = Deployment::read_le(&mut reader)?;
                 // Return the rejected deployment.
-                Ok(Self::new_deployment(program_owner, deployment))
+                Ok(Self::new_deployment(None, program_owner, deployment))
             }
             1 => {
                 // Read the execution.
                 let execution = Execution::read_le(&mut reader)?;
                 // Return the rejected execution.
-                Ok(Self::new_execution(execution))
+                Ok(Self::new_execution(None, execution))
             }
-            2.. => Err(error(format!("Failed to decode rejected transaction variant {variant}"))),
+            2 => {
+                // Read the unconfirmed ID.
+                let unconfirmed_id = N::TransactionID::read_le(&mut reader)?;
+                // Read the program owner.
+                let program_owner = ProgramOwner::read_le(&mut reader)?;
+                // Read the deployment.
+                let deployment = Deployment::read_le(&mut reader)?;
+                // Return the rejected deployment.
+                Ok(Self::new_deployment(Some(unconfirmed_id), program_owner, deployment))
+            }
+            3 => {
+                // Read the unconfirmed ID.
+                let unconfirmed_id = N::TransactionID::read_le(&mut reader)?;
+                // Read the execution.
+                let execution = Execution::read_le(&mut reader)?;
+                // Return the rejected execution.
+                Ok(Self::new_execution(Some(unconfirmed_id), execution))
+            }
+            4.. => Err(error(format!("Failed to decode rejected transaction variant {variant}"))),
         }
     }
 }
@@ -43,17 +61,37 @@ impl<N: Network> ToBytes for Rejected<N> {
     /// Writes the rejected transaction to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         match self {
-            Self::Deployment(program_owner, deployment) => {
-                // Write the variant.
-                0u8.write_le(&mut writer)?;
+            Self::Deployment(unconfirmed_id, program_owner, deployment) => {
+                match unconfirmed_id {
+                    None => {
+                        // Write the variant.
+                        0u8.write_le(&mut writer)?;
+                    }
+                    Some(unconfirmed_id) => {
+                        // Write the variant.
+                        2u8.write_le(&mut writer)?;
+                        // Write the unconfirmed ID.
+                        unconfirmed_id.write_le(&mut writer)?;
+                    }
+                }
                 // Write the program owner.
                 program_owner.write_le(&mut writer)?;
                 // Write the deployment.
                 deployment.write_le(&mut writer)
             }
-            Self::Execution(execution) => {
-                // Write the variant.
-                1u8.write_le(&mut writer)?;
+            Self::Execution(unconfirmed_id, execution) => {
+                match unconfirmed_id {
+                    None => {
+                        // Write the variant.
+                        1u8.write_le(&mut writer)?;
+                    }
+                    Some(unconfirmed_id) => {
+                        // Write the variant.
+                        3u8.write_le(&mut writer)?;
+                        // Write the unconfirmed ID.
+                        unconfirmed_id.write_le(&mut writer)?;
+                    }
+                }
                 // Write the execution.
                 execution.write_le(&mut writer)
             }
@@ -68,6 +106,7 @@ mod tests {
     #[test]
     fn test_bytes() {
         for expected in crate::transactions::rejected::test_helpers::sample_rejected_transactions() {
+            // TODO: sample the old and new version.
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, Rejected::read_le(&expected_bytes[..]).unwrap());

@@ -176,7 +176,7 @@ pub fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Re
     let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
     // Return the rejected deployment.
-    Rejected::new_deployment(program_owner, deployment)
+    Rejected::new_deployment(None, program_owner, deployment)
 }
 
 /******************************************* Execution ********************************************/
@@ -200,7 +200,7 @@ pub fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rej
     };
 
     // Return the rejected execution.
-    Rejected::new_execution(*execution)
+    Rejected::new_execution(None, *execution)
 }
 
 /********************************************** Fee ***********************************************/

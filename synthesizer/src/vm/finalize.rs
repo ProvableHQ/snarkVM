@@ -331,7 +331,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let outcome = match transaction {
                     // The finalize operation here involves appending the 'stack',
                     // and adding the program to the finalize tree.
-                    Transaction::Deploy(_, _, program_owner, deployment, fee) => {
+                    Transaction::Deploy(unconfirmed_id, _, program_owner, deployment, fee) => {
                         // Define the closure for processing a rejected deployment.
                         let process_rejected_deployment =
                             |fee: &Fee<N>,
@@ -343,7 +343,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
                                     })
                                     .map(|(fee_tx, finalize)| {
-                                        let rejected = Rejected::new_deployment(*program_owner, deployment);
+                                        let rejected =
+                                            Rejected::new_deployment(Some(*unconfirmed_id), *program_owner, deployment);
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
                                             .map_err(|e| e.to_string())
                                     })
@@ -391,7 +392,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     }
                     // The finalize operation here involves calling 'update_key_value',
                     // and update the respective leaves of the finalize tree.
-                    Transaction::Execute(_, _, execution, fee) => {
+                    Transaction::Execute(unconfirmed_id, _, execution, fee) => {
                         // Determine if the transaction is safe for execution, and proceed to execute it.
                         match Self::prepare_for_execution(state, store, execution)
                             .and_then(|_| process.finalize_execution(state, store, execution, fee.as_ref()))
@@ -410,7 +411,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     }) {
                                         Ok((fee_tx, finalize)) => {
                                             // Construct the rejected execution.
-                                            let rejected = Rejected::new_execution(*execution.clone());
+                                            let rejected =
+                                                Rejected::new_execution(Some(*unconfirmed_id), *execution.clone());
                                             // Construct the rejected execute transaction.
                                             ConfirmedTransaction::rejected_execute(counter, fee_tx, rejected, finalize)
                                                 .map_err(|e| e.to_string())
@@ -1657,10 +1659,10 @@ finalize transfer_public:
         finalize: &[FinalizeOperation<CurrentNetwork>],
     ) -> ConfirmedTransaction<CurrentNetwork> {
         match transaction {
-            Transaction::Execute(_, _, execution, fee) => ConfirmedTransaction::RejectedExecute(
+            Transaction::Execute(unconfirmed_id, _, execution, fee) => ConfirmedTransaction::RejectedExecute(
                 index,
                 Transaction::from_fee(fee.clone().unwrap()).unwrap(),
-                Rejected::new_execution(*execution.clone()),
+                Rejected::new_execution(Some(*unconfirmed_id), *execution.clone()),
                 finalize.to_vec(),
             ),
             _ => panic!("only reject execution transactions"),
@@ -2357,12 +2359,12 @@ function ped_hash:
             // Ensure that the transaction is rejected.
             assert_eq!(confirmed_transactions.len(), 1);
             assert!(transaction.is_execute());
-            if let Transaction::Execute(_, _, execution, fee) = transaction {
+            if let Transaction::Execute(unconfirmed_id, _, execution, fee) = transaction {
                 let fee_transaction = Transaction::from_fee(fee.unwrap()).unwrap();
                 let expected_confirmed_transaction = ConfirmedTransaction::RejectedExecute(
                     0,
                     fee_transaction,
-                    Rejected::new_execution(*execution),
+                    Rejected::new_execution(Some(unconfirmed_id), *execution),
                     vec![],
                 );
 
