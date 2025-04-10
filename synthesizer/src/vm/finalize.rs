@@ -1664,10 +1664,10 @@ finalize transfer_public:
         finalize: &[FinalizeOperation<CurrentNetwork>],
     ) -> ConfirmedTransaction<CurrentNetwork> {
         match transaction {
-            Transaction::Execute(unconfirmed_id, _, execution, fee) => ConfirmedTransaction::RejectedExecute(
+            Transaction::Execute(_, _, execution, fee) => ConfirmedTransaction::RejectedExecute(
                 index,
                 Transaction::from_fee(fee.clone().unwrap()).unwrap(),
-                Rejected::new_execution(Some(*unconfirmed_id), *execution.clone()),
+                Rejected::new_execution(None, *execution.clone()),
                 finalize.to_vec(),
             ),
             _ => panic!("only reject execution transactions"),
@@ -2364,12 +2364,12 @@ function ped_hash:
             // Ensure that the transaction is rejected.
             assert_eq!(confirmed_transactions.len(), 1);
             assert!(transaction.is_execute());
-            if let Transaction::Execute(unconfirmed_id, _, execution, fee) = transaction {
+            if let Transaction::Execute(_, _, execution, fee) = transaction {
                 let fee_transaction = Transaction::from_fee(fee.unwrap()).unwrap();
                 let expected_confirmed_transaction = ConfirmedTransaction::RejectedExecute(
                     0,
                     fee_transaction,
-                    Rejected::new_execution(Some(unconfirmed_id), *execution),
+                    Rejected::new_execution(None, *execution),
                     vec![],
                 );
 
