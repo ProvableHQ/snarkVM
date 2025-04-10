@@ -299,6 +299,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Initialize the list of deployment payers.
             let mut deployment_payers: IndexSet<Address<N>> = IndexSet::new();
 
+            // Determine whether to include the unconfirmed ID in rejected transactions.
+            let consensus_version = N::CONSENSUS_VERSION(state.block_height()).map_err(|e| e.to_string())?;
+            let store_unconfirmed_id = !(ConsensusVersion::V1..=ConsensusVersion::V5).contains(&consensus_version);
+
             // Finalize the transactions.
             'outer: for transaction in transactions {
                 // Ensure the number of confirmed transactions does not exceed the maximum.
@@ -343,8 +347,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
                                     })
                                     .map(|(fee_tx, finalize)| {
+                                        let unconfirmed_id = store_unconfirmed_id.then_some(*unconfirmed_id);
                                         let rejected =
-                                            Rejected::new_deployment(Some(*unconfirmed_id), *program_owner, deployment);
+                                            Rejected::new_deployment(unconfirmed_id, *program_owner, deployment);
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
                                             .map_err(|e| e.to_string())
                                     })
@@ -410,9 +415,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
                                     }) {
                                         Ok((fee_tx, finalize)) => {
+                                            let unconfirmed_id = store_unconfirmed_id.then_some(*unconfirmed_id);
                                             // Construct the rejected execution.
-                                            let rejected =
-                                                Rejected::new_execution(Some(*unconfirmed_id), *execution.clone());
+                                            let rejected = Rejected::new_execution(unconfirmed_id, *execution.clone());
                                             // Construct the rejected execute transaction.
                                             ConfirmedTransaction::rejected_execute(counter, fee_tx, rejected, finalize)
                                                 .map_err(|e| e.to_string())
