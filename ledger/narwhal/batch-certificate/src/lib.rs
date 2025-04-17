@@ -53,17 +53,7 @@ impl<N: Network> BatchCertificate<N> {
 impl<N: Network> BatchCertificate<N> {
     /// Initializes a new batch certificate.
     pub fn from(batch_header: BatchHeader<N>, signatures: IndexSet<Signature<N>>) -> Result<Self> {
-        // Ensure that the number of signatures is within bounds.
-        ensure!(signatures.len() <= Self::max_signatures()? as usize, "Invalid number of signatures");
-
-        // Ensure that the signature is from a unique signer and not from the author.
-        let signature_authors = signatures.iter().map(|signature| signature.to_address()).collect::<HashSet<_>>();
-        ensure!(
-            !signature_authors.contains(&batch_header.author()),
-            "The author's signature was included in the signers"
-        );
-        ensure!(signature_authors.len() == signatures.len(), "A duplicate author was found in the set of signatures");
-
+        Self::check_signature_basic(&batch_header, &signatures)?;
         // Verify the signatures are valid.
         cfg_iter!(signatures).try_for_each(|signature| {
             if !signature.verify(&signature.to_address(), &[batch_header.batch_id()]) {
@@ -81,6 +71,20 @@ impl<N: Network> BatchCertificate<N> {
         ensure!(!signatures.is_empty(), "Batch certificate must contain signatures");
         // Return the batch certificate.
         Ok(Self { batch_header, signatures })
+    }
+
+    pub fn check_signature_basic(batch_header: &BatchHeader<N>, signatures: &IndexSet<Signature<N>>) -> Result<()> {
+        // Ensure that the number of signatures is within bounds.
+        ensure!(signatures.len() <= Self::max_signatures()? as usize, "Invalid number of signatures");
+
+        // Ensure that the signature is from a unique signer and not from the author.
+        let signature_authors = signatures.iter().map(|signature| signature.to_address()).collect::<HashSet<_>>();
+        ensure!(
+            !signature_authors.contains(&batch_header.author()),
+            "The author's signature was included in the signers"
+        );
+        ensure!(signature_authors.len() == signatures.len(), "A duplicate author was found in the set of signatures");
+        Ok(())
     }
 }
 
