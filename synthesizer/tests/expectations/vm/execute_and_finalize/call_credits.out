@@ -1,0 +1,19 @@
+errors: []
+outputs:
+- verified: true
+  execute:
+    call_credits.aleo/pub_to_priv:
+      outputs:
+      - '{"type":"public","id":"7150988087808826078080014018773822232815962550378274224479638307604649589311field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
+      - '{"type":"future","id":"971782602423125130174388749052936230346707205864218561323263017211073983755field","value":"{\n  program_id: call_credits.aleo,\n  function_name: pub_to_priv,\n  arguments: [\n    {\n      program_id: credits.aleo,\n      function_name: transfer_public_to_private,\n      arguments: [\n        aleo1k8tlwts0u5t6kc983euw33uhxk33njr0tzqhdt8xl7dvv9tz3y9s469lra,\n        1u64\n      ]\n    }\n  \n  ]\n}"}'
+  speculate: the execution was rejected
+  add_next_block: succeeded.
+additional:
+- child_outputs:
+    credits.aleo/transfer_public_to_private:
+      outputs:
+      - '{"type":"record","id":"1240087176268938788592439099714101120167782422532480775065904361432384337354field","checksum":"4033951669603063808196154860468947284160859417750287271482434448860711978868field","value":"record1qyqspn5rxfcckgypgvjlft7cjwv0pftfk56yjg8ychcayzcmsqeu6ssxqyxx66trwfhkxun9v35hguerqqpqzqr7sgtrghuh4ajm7z9yhtu03jhvkgt2p3gperaru5lpjy7yrvjnqe3q8ttj6jqjl65wqkz0fmkfuqhj8fcqpdvywnw4r4qcrwcu3usscae8umz"}'
+      - '{"type":"future","id":"5843950764930417566798102419751117401236026690419644229117424476542959915891field","value":"{\n  program_id: credits.aleo,\n  function_name: transfer_public_to_private,\n  arguments: [\n    aleo1k8tlwts0u5t6kc983euw33uhxk33njr0tzqhdt8xl7dvv9tz3y9s469lra,\n    1u64\n  ]\n}"}'
+    credits.aleo/fee_public:
+      outputs:
+      - '{"type":"future","id":"1440021842772897607151762950424097512538016437849385091908037484081189682125field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    27886u64\n  ]\n}"}'
