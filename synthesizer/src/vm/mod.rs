@@ -3254,4 +3254,470 @@ function adder:
             panic!("Expected an error, but the deployment was accepted.")
         }
     }
+
+    #[test]
+    fn test_circuit_size_for_external_record_baseline() {
+        // Initialize the rng.
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Define the child program.
+        let child_program = Program::from_str(
+            r"
+program credits_clone.aleo;
+
+record credits:
+    owner as address.private;
+    microcredits as u64.private;
+
+function mint:
+    input r0 as address.private;
+    input r1 as u64.private;
+    cast r0 r1 into r2 as credits.record;
+    output r2 as credits.record;
+
+function check:
+    input r0 as credits.record;
+    assert.neq r0.microcredits 0u64;
+    cast r0.owner r0.microcredits into r1 as credits.record;
+    output r1 as credits.record;
+        ",
+        )
+        .unwrap();
+
+        // Define the parent program
+        let parent_program = Program::from_str(
+            r"
+import credits_clone.aleo;
+program use_external_record.aleo;
+function dummy:
+    input r0 as credits_clone.aleo/credits.record;
+function call_check:
+    input r0 as credits_clone.aleo/credits.record;
+    assert.neq r0.microcredits 1u64;
+    call credits_clone.aleo/check r0 into r1;
+    assert.neq r1.microcredits 2u64;
+    output r1 as credits_clone.aleo/credits.record;
+        ",
+        )
+        .unwrap();
+
+        // Initialize a process and add `child` and `parent` to it.
+        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        process.add_program(&child_program).unwrap();
+        process.add_program(&parent_program).unwrap();
+
+        // Execute the `mint` function of `credits_clone.aleo` to create a record.
+        let inputs = [
+            Value::from_str(&format!("{}", Address::try_from(&caller_private_key).unwrap())).unwrap(),
+            Value::from_str("3u64").unwrap(),
+        ];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                child_program.id(),
+                &Identifier::from_str("mint").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization credits_clone::mint: {}", authorization);
+        let (response, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (12937, 2020, 9792));
+
+        // Get the output.
+        let output = response.outputs().first().unwrap().clone();
+
+        // Execute the `check` function of `credits_clone.aleo`.
+        let inputs = vec![output];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                child_program.id(),
+                &Identifier::from_str("check").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization credits_clone::check: {}", authorization);
+        let (response, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (24044, 2023, 9792));
+
+        // Get the output.
+        let output = response.outputs().first().unwrap().clone();
+
+        // Execute the `dummy` function of `parent` with the record.
+        let inputs = vec![output.clone()];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                parent_program.id(),
+                &Identifier::from_str("dummy").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization use_external_record::dummy: {}", authorization);
+        let (_, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (11369, 0, 0));
+
+        // Call `check` function of `parent` with the record.
+        let inputs = vec![output];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                parent_program.id(),
+                &Identifier::from_str("call_check").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization use_external_record::call_check: {}", authorization);
+        let (_, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (24044, 2023, 9792));
+
+        let call_metrics = trace.call_metrics()[1];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (11369, 7118, 491));
+    }
+
+    #[test]
+    fn test_circuit_size_with_record_with_longer_name() {
+        // Initialize the rng.
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Define the child program.
+        let child_program = Program::from_str(
+            r"
+program credits_clone.aleo;
+
+record credits_with_longer_name:
+    owner as address.private;
+    microcredits as u64.private;
+
+function mint:
+    input r0 as address.private;
+    input r1 as u64.private;
+    cast r0 r1 into r2 as credits_with_longer_name.record;
+    output r2 as credits_with_longer_name.record;
+
+function check:
+    input r0 as credits_with_longer_name.record;
+    assert.neq r0.microcredits 0u64;
+    cast r0.owner r0.microcredits into r1 as credits_with_longer_name.record;
+    output r1 as credits_with_longer_name.record;
+        ",
+        )
+        .unwrap();
+
+        // Define the parent program
+        let parent_program = Program::from_str(
+            r"
+import credits_clone.aleo;
+program use_external_record.aleo;
+function dummy:
+    input r0 as credits_clone.aleo/credits_with_longer_name.record;
+function call_check:
+    input r0 as credits_clone.aleo/credits_with_longer_name.record;
+    assert.neq r0.microcredits 1u64;
+    call credits_clone.aleo/check r0 into r1;
+    assert.neq r1.microcredits 2u64;
+    output r1 as credits_clone.aleo/credits_with_longer_name.record;
+        ",
+        )
+        .unwrap();
+
+        // Initialize a process and add `child` and `parent` to it.
+        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        process.add_program(&child_program).unwrap();
+        process.add_program(&parent_program).unwrap();
+
+        // Execute the `mint` function of `credits_clone.aleo` to create a record.
+        let inputs = [
+            Value::from_str(&format!("{}", Address::try_from(&caller_private_key).unwrap())).unwrap(),
+            Value::from_str("3u64").unwrap(),
+        ];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                child_program.id(),
+                &Identifier::from_str("mint").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization credits_clone::mint: {}", authorization);
+        let (response, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (12937, 2020, 10742));
+
+        // Get the output.
+        let output = response.outputs().first().unwrap().clone();
+
+        // Execute the `check` function of `credits_clone.aleo`.
+        let inputs = vec![output];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                child_program.id(),
+                &Identifier::from_str("check").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization credits_clone::check: {}", authorization);
+        let (response, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (24994, 2023, 10742));
+
+        // Get the output.
+        let output = response.outputs().first().unwrap().clone();
+
+        // Execute the `dummy` function of `parent` with the record.
+        let inputs = vec![output.clone()];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                parent_program.id(),
+                &Identifier::from_str("dummy").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization use_external_record::dummy: {}", authorization);
+        let (_, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (11369, 0, 0));
+
+        // Call `check` function of `parent` with the record.
+        let inputs = vec![output];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                parent_program.id(),
+                &Identifier::from_str("call_check").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization use_external_record::call_check: {}", authorization);
+        let (_, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (24994, 2023, 10742));
+
+        let call_metrics = trace.call_metrics()[1];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (11369, 9018, 491));
+    }
+
+    #[test]
+    fn test_circuit_size_for_external_record_with_extra_field() {
+        // Initialize the rng.
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Define the child program.
+        let child_program = Program::from_str(
+            r"
+program credits_clone.aleo;
+
+record credits:
+    owner as address.private;
+    microcredits as u64.private;
+    hash as field.private;
+
+function mint:
+    input r0 as address.private;
+    input r1 as u64.private;
+    input r2 as field.private;
+    cast r0 r1 r2 into r3 as credits.record;
+    output r3 as credits.record;
+
+function check:
+    input r0 as credits.record;
+    assert.neq r0.microcredits 0u64;
+    assert.neq r0.hash 0field;
+    cast r0.owner r0.microcredits r0.hash into r1 as credits.record;
+    output r1 as credits.record;
+        ",
+        )
+        .unwrap();
+
+        // Define the parent program
+        let parent_program = Program::from_str(
+            r"
+import credits_clone.aleo;
+program use_external_record.aleo;
+function dummy:
+    input r0 as credits_clone.aleo/credits.record;
+function call_check:
+    input r0 as credits_clone.aleo/credits.record;
+    assert.neq r0.microcredits 1u64;
+    call credits_clone.aleo/check r0 into r1;
+    assert.neq r1.microcredits 2u64;
+    output r1 as credits_clone.aleo/credits.record;
+        ",
+        )
+        .unwrap();
+
+        // Initialize a process and add `child` and `parent` to it.
+        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        process.add_program(&child_program).unwrap();
+        process.add_program(&parent_program).unwrap();
+
+        // Execute the `mint` function of `credits_clone.aleo` to create a record.
+        let inputs = [
+            Value::from_str(&format!("{}", Address::try_from(&caller_private_key).unwrap())).unwrap(),
+            Value::from_str("3u64").unwrap(),
+            Value::from_str("1field").unwrap(),
+        ];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                child_program.id(),
+                &Identifier::from_str("mint").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization credits_clone::mint: {}", authorization);
+        let (response, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (14737, 2020, 14039));
+
+        // Get the output.
+        let output = response.outputs().first().unwrap().clone();
+
+        // Execute the `check` function of `credits_clone.aleo`.
+        let inputs = vec![output];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                child_program.id(),
+                &Identifier::from_str("check").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization credits_clone::check: {}", authorization);
+        let (response, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (25965, 2026, 14039));
+
+        // Get the output.
+        let output = response.outputs().first().unwrap().clone();
+
+        // Execute the `dummy` function of `parent` with the record.
+        let inputs = vec![output.clone()];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                parent_program.id(),
+                &Identifier::from_str("dummy").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization use_external_record::dummy: {}", authorization);
+        let (_, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (11886, 0, 0));
+
+        // Call `check` function of `parent` with the record.
+        let inputs = vec![output];
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &caller_private_key,
+                parent_program.id(),
+                &Identifier::from_str("call_check").unwrap(),
+                inputs.iter(),
+                rng,
+            )
+            .unwrap();
+        println!("Authorization use_external_record::call_check: {}", authorization);
+        let (_, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+        // Check the call metrics.
+        let call_metrics = trace.call_metrics()[0];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (25965, 2026, 14039));
+
+        let call_metrics = trace.call_metrics()[1];
+        let num_req_cons = call_metrics.num_request_constraints;
+        let num_func_cons = call_metrics.num_function_constraints;
+        let num_resp_cons = call_metrics.num_response_constraints;
+        assert_eq!((num_req_cons, num_func_cons, num_resp_cons), (11886, 10453, 501));
+    }
 }
