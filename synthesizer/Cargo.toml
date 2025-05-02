@@ -52,6 +52,7 @@ serial = [
 ]
 setup = [ ]
 test = [ "console/test" ]
+test-helpers = ["dep:once_cell"]
 timer = [ "aleo-std/timer" ]
 wasm = [
   "process",
@@ -172,6 +173,10 @@ optional = true
 [dependencies.lru]
 version = "0.12"
 
+[dependencies.once_cell]
+version = "1.18"
+optional = true
+
 [dependencies.parking_lot]
 version = "0.12"
 
@@ -215,9 +220,6 @@ features = [ "test-helpers" ]
 [dev-dependencies.ledger-test-helpers]
 package = "snarkvm-ledger-test-helpers"
 path = "../ledger/test-helpers"
-
-[dev-dependencies.once_cell]
-version = "1.18"
 
 [dev-dependencies.rayon]
 version = "1"
