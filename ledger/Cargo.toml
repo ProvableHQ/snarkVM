@@ -27,6 +27,12 @@ path = "benches/bonded_mapping.rs"
 harness = false
 
 [[bench]]
+name = "dag"
+path = "benches/dag.rs"
+harness = false
+required-features = ["test-helpers"]
+
+[[bench]]
 name = "transaction"
 path = "benches/transaction.rs"
 harness = false

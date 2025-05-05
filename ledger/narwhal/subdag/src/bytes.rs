@@ -57,6 +57,51 @@ impl<N: Network> FromBytes for Subdag<N> {
     }
 }
 
+impl<N: Network> FromBytesUnchecked for Subdag<N> {
+    /// Reads the subdag from the buffer.
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the version.
+        let version = u8::read_le(&mut reader)?;
+        // Ensure the version is valid.
+        if version != 1 {
+            return Err(error(format!("Invalid subdag version ({version})")));
+        }
+
+        // Read the number of rounds.
+        let num_rounds = u32::read_le(&mut reader)?;
+        // Ensure the number of rounds is within bounds.
+        if num_rounds as u64 > Self::MAX_ROUNDS {
+            return Err(error(format!("Number of rounds ({num_rounds}) exceeds the maximum ({})", Self::MAX_ROUNDS)));
+        }
+        // Read the round certificates.
+        let mut subdag = BTreeMap::new();
+        for _ in 0..num_rounds {
+            // Read the round.
+            let round = u64::read_le(&mut reader)?;
+            // Read the number of certificates.
+            let num_certificates = u16::read_le(&mut reader)?;
+            // Ensure the number of certificates is within bounds.
+            if num_certificates > BatchHeader::<N>::MAX_CERTIFICATES {
+                return Err(error(format!(
+                    "Number of certificates ({num_certificates}) exceeds the maximum ({})",
+                    BatchHeader::<N>::MAX_CERTIFICATES
+                )));
+            }
+            // Read the certificates.
+            let mut certificates = IndexSet::new();
+            for _ in 0..num_certificates {
+                // Read the certificate.
+                certificates.insert(BatchCertificate::read_le_unchecked(&mut reader)?);
+            }
+            // Insert the round and certificates.
+            subdag.insert(round, certificates);
+        }
+
+        // Return the subdag.
+        Ok(Self::from_unchecked(subdag))
+    }
+}
+
 impl<N: Network> ToBytes for Subdag<N> {
     /// Writes the subdag to the buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
@@ -92,6 +137,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, Subdag::read_le(&expected_bytes[..]).unwrap());
+            assert_eq!(expected, Subdag::read_le_unchecked(&expected_bytes[..]).unwrap());
         }
     }
 }

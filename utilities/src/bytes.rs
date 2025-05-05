@@ -21,7 +21,9 @@ use crate::{
     marker::PhantomData,
 };
 use serde::{
+    Deserialize,
     Deserializer,
+    Serialize,
     Serializer,
     de::{self, Error, SeqAccess, Visitor},
     ser::{self, SerializeTuple},
@@ -81,6 +83,41 @@ pub trait FromBytes {
     }
 }
 
+pub trait FromBytesUnchecked {
+    /// Reads `Self` from `reader` as little-endian bytes.
+    /// Does not perform input validation.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self>
+    where
+        Self: Sized;
+
+    /// Returns `Self` from a byte array in little-endian order.
+    fn from_bytes_le_unchecked(bytes: &[u8]) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self::read_le_unchecked(bytes)?)
+    }
+}
+
+/// Transparant wrapper struct to indicate that a value has been verified and does not require expensive input validation on deserialization.
+/// TODO: consider bounding database read operations by Verified and consider automatically dereferencing to the inner type.
+/// TODO: add a serialize/deserialize test for Verified wrapped data.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct Verified<T: FromBytesUnchecked + ToBytes>(pub T);
+
+impl<T: FromBytesUnchecked + ToBytes> FromBytes for Verified<T> {
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        T::read_le_unchecked(reader).map(Verified)
+    }
+}
+
+impl<T: FromBytesUnchecked + ToBytes> ToBytes for Verified<T> {
+    fn write_le<W: Write>(&self, writer: W) -> IoResult<()> {
+        self.0.write_le(writer)
+    }
+}
+
+/// Helper struct to serialize an object.
 pub struct ToBytesSerializer<T: ToBytes>(PhantomData<T>);
 
 impl<T: ToBytes> ToBytesSerializer<T> {
@@ -101,6 +138,7 @@ impl<T: ToBytes> ToBytesSerializer<T> {
     }
 }
 
+/// Helper struct to deserialize an object.
 pub struct FromBytesDeserializer<T: FromBytes>(PhantomData<T>);
 
 impl<'de, T: FromBytes> FromBytesDeserializer<T> {
@@ -164,6 +202,17 @@ impl<'de, T: FromBytes> FromBytesDeserializer<T> {
                 false => Err(error),
             },
         }
+    }
+}
+
+pub struct FromBytesUncheckedDeserializer<T: FromBytesUnchecked>(PhantomData<T>);
+
+impl<'de, T: FromBytesUnchecked> FromBytesUncheckedDeserializer<T> {
+    /// Deserializes a dynamically-sized byte array.
+    pub fn deserialize_with_size_encoding<D: Deserializer<'de>>(deserializer: D, name: &str) -> Result<T, D::Error> {
+        let mut buffer = Vec::with_capacity(32);
+        deserializer.deserialize_bytes(FromBytesVisitor::new(&mut buffer, name))?;
+        FromBytesUnchecked::read_le_unchecked(&*buffer).map_err(de::Error::custom)
     }
 }
 

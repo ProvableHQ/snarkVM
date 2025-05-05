@@ -23,6 +23,14 @@ impl<E: Environment> FromBytes for Group<E> {
     }
 }
 
+impl<E: Environment> FromBytesUnchecked for Group<E> {
+    /// Reads the group from a buffer.
+    #[inline]
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        Self::from_x_coordinate_unchecked(FromBytes::read_le(&mut reader)?).map_err(|e| error(e.to_string()))
+    }
+}
+
 impl<E: Environment> ToBytes for Group<E> {
     /// Writes the group to a buffer.
     #[inline]
@@ -51,7 +59,9 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, Group::read_le(&expected_bytes[..])?);
+            assert_eq!(expected, Group::read_le_unchecked(&expected_bytes[..])?);
             assert!(Group::<CurrentEnvironment>::read_le(&expected_bytes[1..]).is_err());
+            assert!(Group::<CurrentEnvironment>::read_le_unchecked(&expected_bytes[1..]).is_err());
         }
         Ok(())
     }
