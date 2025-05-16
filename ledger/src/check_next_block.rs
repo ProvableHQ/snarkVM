@@ -166,7 +166,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             }
 
             // Ensure that the certificate is associated with a previous block.
-            if self.vm.block_store().get_block_for_certificate(prev_id)?.is_none() {
+            if !self.vm.block_store().contains_block_for_certificate(prev_id)? {
                 bail!(
                     "Batch(es) in the block point(s) to a certificate {prev_id} in round {prev_round} that is not associated with a previous block"
                 )
