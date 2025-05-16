@@ -249,4 +249,164 @@ mod tests {
 
         Ok(())
     }
+
+    // A helper function to get the depth of the plaintext.
+    fn get_depth(plaintext: &Plaintext<CurrentNetwork>) -> usize {
+        match plaintext {
+            Plaintext::Literal(_, _) => 0,
+            Plaintext::Struct(members, _) => members.values().map(get_depth).max().unwrap_or(0) + 1,
+            Plaintext::Array(elements, _) => elements.iter().map(get_depth).max().unwrap_or(0) + 1,
+        }
+    }
+
+    #[test]
+    fn test_deeply_nested_plaintext() {
+        // Creates a nested array-like `Plaintext` structure by wrapping a root value `depth` times.
+        fn create_nested_array(depth: usize, root: impl Display) -> Vec<u8> {
+            // Start from the innermost value.
+            let mut result = Plaintext::<CurrentNetwork>::from_str(&root.to_string()).unwrap().to_bytes_le().unwrap();
+            // Reverse the bytes.
+            result.reverse();
+            // Build up the structure in reverse.
+            for _ in 0..depth {
+                // Write the size of the object in bytes in reverse.
+                let mut length = (u16::try_from(result.len()).unwrap()).to_bytes_le().unwrap();
+                length.reverse();
+                result.extend(length);
+                // Write the number of elements in the array in reverse.
+                let mut num_elements = 1u32.to_bytes_le().unwrap();
+                num_elements.reverse();
+                result.extend(num_elements);
+                // Write the plaintext variant in reverse.
+                let mut variant = 2u8.to_bytes_le().unwrap();
+                variant.reverse();
+                result.extend(variant);
+            }
+            // Reverse the result to get the correct order.
+            result.reverse();
+            result
+        }
+
+        // Creates a nested struct-like `Plaintext` structure by wrapping a root value `depth` times.
+        fn create_nested_struct(depth: usize, root: impl Display) -> Vec<u8> {
+            // Start from the innermost value.
+            let mut result = Plaintext::<CurrentNetwork>::from_str(&root.to_string()).unwrap().to_bytes_le().unwrap();
+            // Reverse the bytes.
+            result.reverse();
+            // Build up the structure in reverse.
+            for _ in 0..depth {
+                // Write the size of the object in bytes in reverse.
+                let mut length = (u16::try_from(result.len()).unwrap()).to_bytes_le().unwrap();
+                length.reverse();
+                result.extend(length);
+                // Write the member name in reverse.
+                let mut member_name = Identifier::<CurrentNetwork>::from_str("inner").unwrap().to_bytes_le().unwrap();
+                member_name.reverse();
+                result.extend(member_name);
+                // Write the number of members in the struct in reverse.
+                let mut num_members = 1u8.to_bytes_le().unwrap();
+                num_members.reverse();
+                result.extend(num_members);
+                // Write the plaintext variant in reverse.
+                let mut variant = 1u8.to_bytes_le().unwrap();
+                variant.reverse();
+                result.extend(variant);
+            }
+            // Reverse the result to get the correct order.
+            result.reverse();
+            result
+        }
+
+        // Creates a nested `Plaintext` structure with alternating array and struct wrappers.
+        fn create_alternated_nested(depth: usize, root: impl Display) -> Vec<u8> {
+            // Start from the innermost value.
+            let mut result = Plaintext::<CurrentNetwork>::from_str(&root.to_string()).unwrap().to_bytes_le().unwrap();
+            // Reverse the bytes.
+            result.reverse();
+            // Build up the structure in reverse.
+            for i in 0..depth {
+                // Write the size of the object in bytes in reverse.
+                let mut length = (u16::try_from(result.len()).unwrap()).to_bytes_le().unwrap();
+                length.reverse();
+                result.extend(length);
+                // Determine the type of the wrapper (array or struct) and handle accordingly.
+                if i % 2 == 0 {
+                    // Write the number of elements in the array in reverse.
+                    let mut num_elements = 1u32.to_bytes_le().unwrap();
+                    num_elements.reverse();
+                    result.extend(num_elements);
+                    // Write the plaintext variant for array in reverse.
+                    let mut variant = 2u8.to_bytes_le().unwrap();
+                    variant.reverse();
+                    result.extend(variant);
+                } else {
+                    // Write the member name in reverse.
+                    let mut member_name =
+                        Identifier::<CurrentNetwork>::from_str("inner").unwrap().to_bytes_le().unwrap();
+                    member_name.reverse();
+                    result.extend(member_name);
+                    // Write the number of members in the struct in reverse.
+                    let mut num_members = 1u8.to_bytes_le().unwrap();
+                    num_members.reverse();
+                    result.extend(num_members);
+                    // Write the plaintext variant for struct in reverse.
+                    let mut variant = 1u8.to_bytes_le().unwrap();
+                    variant.reverse();
+                    result.extend(variant);
+                }
+            }
+            // Reverse the result to get the correct order.
+            result.reverse();
+            result
+        }
+
+        // A helper function to run the test.
+        fn run_test(expected_depth: usize, input: Vec<u8>, expected_error: bool) {
+            // Parse the input string.
+            let result = Plaintext::<CurrentNetwork>::read_le(&*input);
+            // Check if the result is an error.
+            match expected_error {
+                true => {
+                    assert!(result.is_err());
+                    return;
+                }
+                false => assert!(result.is_ok()),
+            };
+            // Unwrap the result.
+            let candidate = result.unwrap();
+            // Check if the candidate is equal to the input.
+            assert_eq!(input, candidate.to_bytes_le().unwrap());
+            // Check if the candidate is equal to the expected depth.
+            assert_eq!(get_depth(&candidate), expected_depth);
+        }
+
+        // Initialize a sequence of depths to check.
+        // Note that 6500 is approximate maximum depth that can be constructed in this test.
+        let mut depths = (0usize..100).collect_vec();
+        depths.extend((100..6500).step_by(100));
+
+        // Test deeply nested arrays with different literal types.
+        for i in depths.iter().copied() {
+            run_test(i, create_nested_array(i, "false"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_array(i, "1u8"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_array(i, "0u128"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_array(i, "10field"), i > CurrentNetwork::MAX_DATA_DEPTH);
+        }
+
+        // Test deeply nested structs with different literal types.
+        for i in depths.iter().copied() {
+            run_test(i, create_nested_struct(i, "false"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_struct(i, "1u8"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_struct(i, "0u128"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_struct(i, "10field"), i > CurrentNetwork::MAX_DATA_DEPTH);
+        }
+
+        // Test alternating nested arrays and structs.
+        for i in depths.iter().copied() {
+            run_test(i, create_alternated_nested(i, "false"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_alternated_nested(i, "1u8"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_alternated_nested(i, "0u128"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_alternated_nested(i, "10field"), i > CurrentNetwork::MAX_DATA_DEPTH);
+        }
+    }
 }

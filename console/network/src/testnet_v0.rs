@@ -174,7 +174,7 @@ impl Network for TestnetV0 {
     /// The function name for the inclusion circuit.
     const INCLUSION_FUNCTION_NAME: &'static str = MainnetV0::INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
-    #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
+    #[cfg(not(any(test, feature = "test")))]
     const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4] = [
         (ConsensusVersion::V1, 100),
         (ConsensusVersion::V3, 100),
@@ -182,7 +182,7 @@ impl Network for TestnetV0 {
         (ConsensusVersion::V6, 100),
     ];
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
-    #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
+    #[cfg(any(test, feature = "test"))]
     const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4] = [
         (ConsensusVersion::V1, 25),
         (ConsensusVersion::V3, 25),

@@ -140,4 +140,97 @@ mod tests {
 
         Ok(())
     }
+
+    // A helper function to get the depth of a future.
+    fn get_depth<N: Network>(future: &Future<N>) -> usize {
+        // Count the number of nested futures.
+        future
+            .arguments
+            .iter()
+            .map(|arg| match arg {
+                Argument::Plaintext(_) => 0,
+                Argument::Future(future) => 1 + get_depth(future),
+            })
+            .sum()
+    }
+
+    #[test]
+    fn test_deeply_nested_future() {
+        // Creates a nested `Future`.
+        // This method is iterative to avoid stack overflows.
+        fn create_nested_future(depth: usize) -> Vec<u8> {
+            // Start from the innermost value.
+            let mut result = Future::<CurrentNetwork>::from_str(
+                r"{
+                program_id: foo.aleo,
+                function_name: bar,
+                arguments: []
+            }",
+            )
+            .unwrap()
+            .to_bytes_le()
+            .unwrap();
+            // Reverse the bytes.
+            result.reverse();
+            // Build up the structure in reverse.
+            for _ in 0..depth {
+                // Write the variant of the argument in reverse.
+                let mut variant = 1u8.to_bytes_le().unwrap();
+                variant.reverse();
+                result.extend(variant);
+                // Write the size of the object in bytes in reverse.
+                let mut length = (u16::try_from(result.len()).unwrap()).to_bytes_le().unwrap();
+                length.reverse();
+                result.extend(length);
+                // Write the number of arguments in reverse.
+                let mut num_elements = 1u8.to_bytes_le().unwrap();
+                num_elements.reverse();
+                result.extend(num_elements);
+                // Write the function name in reverse.
+                let mut function_name = Identifier::<CurrentNetwork>::from_str("bar").unwrap().to_bytes_le().unwrap();
+                function_name.reverse();
+                result.extend(function_name);
+                // Write the program ID in reverse.
+                let mut program_id = ProgramID::<CurrentNetwork>::from_str("foo.aleo").unwrap().to_bytes_le().unwrap();
+                program_id.reverse();
+                result.extend(program_id);
+            }
+            // Reverse the result to get the correct order.
+            result.reverse();
+            result
+        }
+
+        // A helper function to run the test.
+        fn run_test(expected_depth: usize, input: Vec<u8>, expected_error: bool) {
+            // Parse the input string.
+            let result = Future::<CurrentNetwork>::read_le(&*input);
+            // // Check if the result is an error.
+            match expected_error {
+                true => {
+                    assert!(result.is_err());
+                    return;
+                }
+                false => assert!(result.is_ok()),
+            };
+            // Unwrap the result.
+            let candidate = result.unwrap();
+            // Check if the candidate is equal to the input, with whitespace removed.
+            assert_eq!(input, candidate.to_bytes_le().unwrap());
+            // Check if the candidate is equal to the expected depth.
+            assert_eq!(get_depth(&candidate), expected_depth);
+        }
+
+        // Initialize a sequence of depths to check.
+        // Note: It is not possible to create a `Future` of depth 4000 in this test as it's size would exceed `u16::MAX`.
+        let mut depths = (0usize..100).collect_vec();
+        depths.extend((100..3900).step_by(100));
+
+        // Test deeply nested arrays with different literal types.
+        for i in depths.iter().copied() {
+            run_test(i, create_nested_future(i), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_future(i), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_future(i), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_future(i), i > CurrentNetwork::MAX_DATA_DEPTH);
+        }
+    }
 }

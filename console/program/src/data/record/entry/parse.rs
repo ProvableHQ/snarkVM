@@ -414,4 +414,104 @@ mod tests {
 
         Ok(())
     }
+
+    // A helper function to get the depth of the plaintext.
+    fn get_depth(plaintext: &Plaintext<CurrentNetwork>) -> usize {
+        match plaintext {
+            Plaintext::Literal(_, _) => 0,
+            Plaintext::Struct(members, _) => members.values().map(get_depth).max().unwrap_or(0) + 1,
+            Plaintext::Array(elements, _) => elements.iter().map(get_depth).max().unwrap_or(0) + 1,
+        }
+    }
+
+    #[test]
+    fn test_deeply_nested_entry() {
+        // Creates a string representation of a nested array Entry with the given depth and root.
+        fn create_nested_array(depth: usize, root: impl Display) -> String {
+            // Define the prefix and suffix based on the depth.
+            let prefix = if depth == 0 { "".to_string() } else { "[".repeat(depth) };
+            let suffix = if depth == 0 { "".to_string() } else { "]".repeat(depth) };
+            // Format the string with the prefix, root, and suffix.
+            format!("{prefix}{root}{suffix}")
+        }
+
+        // Creates a string representation of a nested struct Entry with the given depth and root.
+        fn create_nested_struct(depth: usize, root: impl Display) -> String {
+            // Define the prefix and suffix based on the depth.
+            let prefix = if depth == 0 { "".to_string() } else { "{inner:".repeat(depth) };
+            let suffix = if depth == 0 { "".to_string() } else { "}".repeat(depth) };
+            // Format the string with the prefix, root, and suffix.
+            format!("{prefix}{root}{suffix}")
+        }
+
+        // Creates a string representation of a nested Entry with alternating structs and arrays with the given depth and root.
+        fn create_alternated_nested(depth: usize, root: impl Display) -> String {
+            let prefix = (0..depth).map(|i| if i % 2 == 0 { "[" } else { "{inner:" }).collect::<String>();
+            let suffix = (0..depth).map(|i| if i % 2 == 0 { "]" } else { "}" }).rev().collect::<String>();
+            format!("{prefix}{root}{suffix}")
+        }
+
+        // A helper function to run the test.
+        fn run_test(expected_depth: usize, input: String, expected_error: bool) {
+            println!("Testing input: {input} with expected error: {expected_error}");
+            // Parse the input string.
+            let result = Entry::<CurrentNetwork, Plaintext<CurrentNetwork>>::parse(&input);
+            // Check if the result is an error.
+            match expected_error {
+                true => {
+                    assert!(result.is_err());
+                    return;
+                }
+                false => assert!(result.is_ok()),
+            };
+            // Unwrap the result.
+            let (remainder, candidate) = result.unwrap();
+            // Check if the remainder is empty.
+            assert!(remainder.is_empty());
+            // Check if the candidate is equal to the input, with whitespace removed.
+            assert_eq!(input, candidate.to_string().replace("\n", "").replace(" ", ""));
+            // Check if the candidate is equal to the expected depth.
+            match candidate {
+                Entry::Constant(plaintext) => {
+                    assert_eq!(get_depth(&plaintext), expected_depth);
+                }
+                Entry::Public(plaintext) => {
+                    assert_eq!(get_depth(&plaintext), expected_depth);
+                }
+                Entry::Private(plaintext) => {
+                    assert_eq!(get_depth(&plaintext), expected_depth);
+                }
+            }
+        }
+
+        // Initialize a sequence of depths to check.
+        let mut depths = (0usize..100).collect_vec();
+        depths.extend((100..1000).step_by(100));
+        depths.extend((1000..10000).step_by(1000));
+        depths.extend((10000..100000).step_by(10000));
+
+        // Test deeply nested arrays with different literal types.
+        for i in depths.iter().copied() {
+            run_test(i, create_nested_array(i, "false.constant"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_array(i, "1u8.public"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_array(i, "0u128.private"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_array(i, "10field.constant"), i > CurrentNetwork::MAX_DATA_DEPTH);
+        }
+
+        // Test deeply nested structs with different literal types.
+        for i in depths.iter().copied() {
+            run_test(i, create_nested_struct(i, "false.public"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_struct(i, "1u8.private"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_struct(i, "0u128.constant"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_struct(i, "10field.public"), i > CurrentNetwork::MAX_DATA_DEPTH);
+        }
+
+        // Test alternating nested arrays and structs.
+        for i in depths.iter().copied() {
+            run_test(i, create_alternated_nested(i, "false.private"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_alternated_nested(i, "1u8.constant"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_alternated_nested(i, "0u128.public"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_alternated_nested(i, "10field.private"), i > CurrentNetwork::MAX_DATA_DEPTH);
+        }
+    }
 }

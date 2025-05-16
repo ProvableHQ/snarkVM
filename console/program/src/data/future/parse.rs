@@ -271,4 +271,66 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_deeply_nested_future() {
+        // A helper function to iteratively create a deeply nested future.
+        fn create_nested_future(depth: usize) -> String {
+            // Define the base case.
+            let root = r"{
+                program_id: foo.aleo,
+                function_name: bar,
+                arguments: []
+            }";
+            // Define the prefix and suffix for the nested future.
+            let prefix = r"{
+                program_id: foo.aleo,
+                function_name: bar,
+                arguments: ["
+                .repeat(depth);
+            let suffix = r"]}".repeat(depth);
+            // Concatenate the prefix, root, and suffix to create the nested future.
+            format!("{}{}{}", prefix, root, suffix)
+        }
+
+        // A helper function to test the parsing of a deeply nested future.
+        fn run_test(depth: usize, expected_error: bool) {
+            // Create the nested future string.
+            let nested_future_string = create_nested_future(depth);
+            // Parse the nested future.
+            let result = Future::<CurrentNetwork>::parse(&nested_future_string);
+            // Check if the result is an error.
+            match expected_error {
+                true => {
+                    assert!(result.is_err());
+                    return;
+                }
+                false => assert!(result.is_ok()),
+            };
+            // Unwrap the result.
+            let (remainder, candidate) = result.unwrap();
+            // Ensure the remainder is empty.
+            assert!(
+                remainder.is_empty(),
+                "Failed to parse deeply nested future. Found invalid character in: \"{remainder}\""
+            );
+            // Strip the expected string of whitespace.
+            let expected = nested_future_string.replace("\n", "").replace(" ", "").replace("\t", "");
+            // Strip the candidate string of whitespace.
+            let candidate_str = candidate.to_string().replace("\n", "").replace(" ", "").replace("\t", "");
+            // Ensure the expected and candidate strings are equal.
+            assert_eq!(expected, candidate_str, "Expected: {expected}, Candidate: {candidate_str}");
+        }
+
+        // Initialize a set of depths to test.
+        let mut depths = (0usize..100).collect_vec();
+        depths.extend((100..1000).step_by(100));
+        depths.extend((1000..10000).step_by(1000));
+        depths.extend((10000..100000).step_by(10000));
+
+        // For each depth, test the parsing of a deeply nested future.
+        for depth in depths {
+            run_test(depth, depth > CurrentNetwork::MAX_DATA_DEPTH);
+        }
+    }
 }
