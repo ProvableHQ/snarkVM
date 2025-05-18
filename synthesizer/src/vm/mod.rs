@@ -502,14 +502,6 @@ pub(crate) mod test_helpers {
         vm
     }
 
-    #[cfg(feature = "rocks")]
-    pub(crate) fn sample_vm_rocks(
-        path: &std::path::Path,
-    ) -> VM<CurrentNetwork, ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>> {
-        // Initialize a new VM.
-        VM::from(ConsensusStore::open(path.to_owned()).unwrap()).unwrap()
-    }
-
     pub(crate) fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
         static INSTANCE: OnceCell<PrivateKey<CurrentNetwork>> = OnceCell::new();
         *INSTANCE.get_or_init(|| {

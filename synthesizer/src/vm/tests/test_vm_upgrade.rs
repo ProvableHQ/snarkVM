@@ -28,7 +28,7 @@ use std::panic::AssertUnwindSafe;
 //   - programs without constructor cannot be deployed after V7
 //   - program with constructors can be deployed after V7
 #[test]
-fn test_constructor_requires_V7() -> Result<()> {
+fn test_constructor_requires_v7() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
@@ -2184,7 +2184,7 @@ constructor:
 //   - `credits.aleo` does not have an owner.
 //   - a program deployed after `V7` has an owner.
 #[test]
-fn test_program_deployed_before_V7_do_not_have_owner() {
+fn test_program_deployed_before_v7_do_not_have_owner() {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
@@ -2195,14 +2195,14 @@ fn test_program_deployed_before_V7_do_not_have_owner() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V7).unwrap() - 1, rng);
 
     // Define the programs.
-    let program_before_V7 = Program::from_str(
+    let program_before_v7 = Program::from_str(
         r"
 program test_program_0.aleo;
 function foo:",
     )
     .unwrap();
 
-    let program_after_V7 = Program::from_str(
+    let program_after_v7 = Program::from_str(
         r"
 program test_program_1.aleo;
 function foo:
@@ -2213,7 +2213,7 @@ constructor:
     .unwrap();
 
     // Deploy the first program.
-    let transaction = vm.deploy(&caller_private_key, &program_before_V7, None, 0, None, rng).unwrap();
+    let transaction = vm.deploy(&caller_private_key, &program_before_v7, None, 0, None, rng).unwrap();
     // Check that the deployment does not have an owner or checksum.
     assert!(transaction.deployment().unwrap().program_checksum().is_none());
     assert!(transaction.deployment().unwrap().program_owner().is_none());
@@ -2225,7 +2225,7 @@ constructor:
     vm.add_next_block(&block).unwrap();
 
     // Deploy the second program.
-    let transaction = vm.deploy(&caller_private_key, &program_after_V7, None, 0, None, rng).unwrap();
+    let transaction = vm.deploy(&caller_private_key, &program_after_v7, None, 0, None, rng).unwrap();
     // Check that the deployment has an owner and checksum.
     assert!(transaction.deployment().unwrap().program_checksum().is_some());
     assert!(transaction.deployment().unwrap().program_owner().is_some());
