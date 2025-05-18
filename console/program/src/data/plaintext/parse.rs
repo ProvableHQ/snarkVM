@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,32 +19,39 @@ impl<N: Network> Parser for Plaintext<N> {
     /// Parses a string into a plaintext value.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
-        /// Parses a sanitized pair: `identifier: plaintext`.
-        fn parse_pair<N: Network>(string: &str) -> ParserResult<(Identifier<N>, Plaintext<N>)> {
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the identifier from the string.
-            let (string, identifier) = Identifier::parse(string)?;
-            // Parse the whitespace from the string.
-            let (string, _) = Sanitizer::parse_whitespaces(string)?;
-            // Parse the ":" from the string.
-            let (string, _) = tag(":")(string)?;
-            // Parse the plaintext from the string.
-            let (string, plaintext) = Plaintext::parse(string)?;
-            // Parse the whitespace from the string.
-            let (string, _) = Sanitizer::parse_whitespaces(string)?;
-            // Return the identifier and plaintext.
-            Ok((string, (identifier, plaintext)))
-        }
+        // Parse the string into a plaintext value.
+        Self::parse_internal(string, 0)
+    }
+}
 
-        /// Parses a plaintext as a struct: `{ identifier_0: plaintext_0, ..., identifier_n: plaintext_n }`.
-        fn parse_struct<N: Network>(string: &str) -> ParserResult<Plaintext<N>> {
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the "{" from the string.
-            let (string, _) = tag("{")(string)?;
-            // Parse the members.
-            let (string, members) = map_res(separated_list1(tag(","), parse_pair), |members: Vec<_>| {
+impl<N: Network> Plaintext<N> {
+    /// Parses a sanitized pair: `identifier: plaintext`.
+    fn parse_pair(string: &str, depth: usize) -> ParserResult<(Identifier<N>, Self)> {
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the identifier from the string.
+        let (string, identifier) = Identifier::parse(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
+        // Parse the ":" from the string.
+        let (string, _) = tag(":")(string)?;
+        // Parse the plaintext from the string.
+        let (string, plaintext) = Self::parse_internal(string, depth + 1)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
+        // Return the identifier and plaintext.
+        Ok((string, (identifier, plaintext)))
+    }
+
+    /// Parses a plaintext as a struct: `{ identifier_0: plaintext_0, ..., identifier_n: plaintext_n }`.
+    fn parse_struct(string: &str, depth: usize) -> ParserResult<Self> {
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the "{" from the string.
+        let (string, _) = tag("{")(string)?;
+        // Parse the members.
+        let (string, members) =
+            map_res(separated_list1(tag(","), |input| Self::parse_pair(input, depth)), |members: Vec<_>| {
                 // Ensure the members has no duplicate names.
                 if has_duplicates(members.iter().map(|(name, ..)| name)) {
                     return Err(error("Duplicate member in struct"));
@@ -55,40 +62,49 @@ impl<N: Network> Parser for Plaintext<N> {
                     false => Err(error(format!("Found a plaintext that exceeds size ({})", members.len()))),
                 }
             })(string)?;
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the '}' from the string.
-            let (string, _) = tag("}")(string)?;
-            // Output the plaintext.
-            Ok((string, Plaintext::Struct(IndexMap::from_iter(members), Default::default())))
-        }
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the '}' from the string.
+        let (string, _) = tag("}")(string)?;
+        // Output the plaintext.
+        Ok((string, Self::Struct(IndexMap::from_iter(members), Default::default())))
+    }
 
-        /// Parses a plaintext as an array: `[plaintext_0, ..., plaintext_n]`.
-        fn parse_array<N: Network>(string: &str) -> ParserResult<Plaintext<N>> {
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the "[" from the string.
-            let (string, _) = tag("[")(string)?;
-            // Parse the members.
-            let (string, members) = separated_list1(tag(","), Plaintext::parse)(string)?;
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the ']' from the string.
-            let (string, _) = tag("]")(string)?;
-            // Output the plaintext.
-            Ok((string, Plaintext::Array(members, Default::default())))
-        }
+    /// Parses a plaintext as an array: `[plaintext_0, ..., plaintext_n]`.
+    fn parse_array(string: &str, depth: usize) -> ParserResult<Self> {
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the "[" from the string.
+        let (string, _) = tag("[")(string)?;
+        // Parse the members.
+        let (string, members) = separated_list1(tag(","), |input| Self::parse_internal(input, depth + 1))(string)?;
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the ']' from the string.
+        let (string, _) = tag("]")(string)?;
+        // Output the plaintext.
+        Ok((string, Self::Array(members, Default::default())))
+    }
 
-        // Parse the whitespace from the string.
-        let (string, _) = Sanitizer::parse_whitespaces(string)?;
+    /// Parses a string into a plaintext value, while tracking the depth of the data.
+    fn parse_internal(string: &str, depth: usize) -> ParserResult<Self> {
+        // Ensure that the depth is within the maximum limit.
+        if depth > N::MAX_DATA_DEPTH {
+            return map_res(take(0usize), |_| {
+                Err(error(format!("Found a plaintext that exceeds maximum data depth ({})", N::MAX_DATA_DEPTH)))
+            })(string);
+        }
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the struct or array from the string.
         // Parse to determine the plaintext (order matters).
         alt((
             // Parse a plaintext literal.
             map(Literal::parse, |literal| Self::Literal(literal, Default::default())),
             // Parse a plaintext struct.
-            parse_struct,
+            |input| Self::parse_struct(input, depth),
             // Parse a plaintext array.
-            parse_array,
+            |input| Self::parse_array(input, depth),
         ))(string)
     }
 }
@@ -474,5 +490,94 @@ mod tests {
         println!("\nExpected: {expected}\n\nFound: {candidate}\n");
         assert_eq!(expected, candidate.to_string());
         assert_eq!("", remainder);
+    }
+
+    // A helper function to get the depth of the plaintext.
+    fn get_depth(plaintext: &Plaintext<CurrentNetwork>) -> usize {
+        match plaintext {
+            Plaintext::Literal(_, _) => 0,
+            Plaintext::Struct(members, _) => members.values().map(get_depth).max().unwrap_or(0) + 1,
+            Plaintext::Array(elements, _) => elements.iter().map(get_depth).max().unwrap_or(0) + 1,
+        }
+    }
+
+    #[test]
+    fn test_deeply_nested_plaintext() {
+        // Creates a string representation of a nested Plaintext array with the given depth and root.
+        fn create_nested_array(depth: usize, root: impl Display) -> String {
+            // Define the prefix and suffix based on the depth.
+            let prefix = if depth == 0 { "".to_string() } else { "[".repeat(depth) };
+            let suffix = if depth == 0 { "".to_string() } else { "]".repeat(depth) };
+            // Format the string with the prefix, root, and suffix.
+            format!("{prefix}{root}{suffix}")
+        }
+
+        // Creates a string representation of a nested Plaintext struct with the given depth and root.
+        fn create_nested_struct(depth: usize, root: impl Display) -> String {
+            // Define the prefix and suffix based on the depth.
+            let prefix = if depth == 0 { "".to_string() } else { "{inner:".repeat(depth) };
+            let suffix = if depth == 0 { "".to_string() } else { "}".repeat(depth) };
+            // Format the string with the prefix, root, and suffix.
+            format!("{prefix}{root}{suffix}")
+        }
+
+        // Creates a string representation of a nested Plaintext object with alternating structs and arrays with the given depth and root.
+        fn create_alternated_nested(depth: usize, root: impl Display) -> String {
+            let prefix = (0..depth).map(|i| if i % 2 == 0 { "[" } else { "{inner:" }).collect::<String>();
+            let suffix = (0..depth).map(|i| if i % 2 == 0 { "]" } else { "}" }).rev().collect::<String>();
+            format!("{prefix}{root}{suffix}")
+        }
+
+        // A helper function to run the test.
+        fn run_test(expected_depth: usize, input: String, expected_error: bool) {
+            // Parse the input string.
+            let result = Plaintext::<CurrentNetwork>::parse(&input);
+            // Check if the result is an error.
+            match expected_error {
+                true => {
+                    assert!(result.is_err());
+                    return;
+                }
+                false => assert!(result.is_ok()),
+            };
+            // Unwrap the result.
+            let (remainder, candidate) = result.unwrap();
+            // Check if the remainder is empty.
+            assert!(remainder.is_empty());
+            // Check if the candidate is equal to the input, with whitespace removed.
+            assert_eq!(input, candidate.to_string().replace("\n", "").replace(" ", ""));
+            // Check if the candidate is equal to the expected depth.
+            assert_eq!(get_depth(&candidate), expected_depth);
+        }
+
+        // Initialize a sequence of depths to check.
+        let mut depths = (0usize..100).collect_vec();
+        depths.extend((100..1000).step_by(100));
+        depths.extend((1000..10000).step_by(1000));
+        depths.extend((10000..100000).step_by(10000));
+
+        // Test deeply nested arrays with different literal types.
+        for i in depths.iter().copied() {
+            run_test(i, create_nested_array(i, "false"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_array(i, "1u8"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_array(i, "0u128"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_array(i, "10field"), i > CurrentNetwork::MAX_DATA_DEPTH);
+        }
+
+        // Test deeply nested structs with different literal types.
+        for i in depths.iter().copied() {
+            run_test(i, create_nested_struct(i, "false"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_struct(i, "1u8"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_struct(i, "0u128"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_nested_struct(i, "10field"), i > CurrentNetwork::MAX_DATA_DEPTH);
+        }
+
+        // Test alternating nested arrays and structs.
+        for i in depths.iter().copied() {
+            run_test(i, create_alternated_nested(i, "false"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_alternated_nested(i, "1u8"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_alternated_nested(i, "0u128"), i > CurrentNetwork::MAX_DATA_DEPTH);
+            run_test(i, create_alternated_nested(i, "10field"), i > CurrentNetwork::MAX_DATA_DEPTH);
+        }
     }
 }

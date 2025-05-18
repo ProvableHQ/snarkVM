@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -222,7 +222,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             // Store the program.
             self.program_map().insert((program_id, edition), program.clone())?;
             // If the checksum exists, then store it and also store the edition into the `IDEditionMap`.
-            // This is done because the existence of the checksum implies a migration at the V5 consensus height.
+            // This is done because the existence of the checksum implies a migration at the V7 consensus height.
             // This migration enables program upgrades.
             if let Some(checksum) = checksum {
                 self.id_edition_map().insert(*transaction_id, edition)?;
@@ -420,7 +420,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                     None => return Ok(None),
                 };
                 // Verify that the latest edition is zero.
-                // Prior to `ConsensusVersion::V5`, this must be the case because if a program is not in the `IDEditionMap` but exists,
+                // Prior to `ConsensusVersion::V7`, this must be the case because if a program is not in the `IDEditionMap` but exists,
                 // then it must have been deployed before program upgrades were introduced.
                 ensure!(latest_edition == 0, "Failed to get the edition for transaction '{transaction_id}'");
                 // Return the edition.
@@ -973,7 +973,7 @@ mod tests {
             let checksum = transaction.deployment().unwrap().program_checksum();
 
             // Initialize a new transition store.
-            let transition_store = TransitionStore::open(None).unwrap();
+            let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
             // Initialize a new fee store.
             let fee_store = FeeStore::open(transition_store).unwrap();
             // Initialize a new deployment store.
@@ -1049,7 +1049,7 @@ mod tests {
             };
 
             // Initialize a new transition store.
-            let transition_store = TransitionStore::open(None).unwrap();
+            let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
             // Initialize a new fee store.
             let fee_store = FeeStore::open(transition_store).unwrap();
             // Initialize a new deployment store.

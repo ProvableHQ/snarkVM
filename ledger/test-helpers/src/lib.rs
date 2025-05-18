@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use algorithms::snark::varuna::VarunaVersion;
 use console::{
     account::{Address, PrivateKey},
     prelude::*,
@@ -39,6 +40,7 @@ use ledger_store::{BlockStore, helpers::memory::BlockMemory};
 use synthesizer_process::Process;
 use synthesizer_program::Program;
 
+use aleo_std::StorageMode;
 use once_cell::sync::OnceCell;
 
 type CurrentNetwork = console::network::MainnetV0;
@@ -286,7 +288,7 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
     let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Insert the block into the block store.
     // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
     block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
@@ -294,7 +296,7 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
     // Prepare the assignments.
     trace.prepare(Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
-    let fee = trace.prove_fee::<CurrentAleo, _>(rng).unwrap();
+    let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
     // Convert the fee.
     // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
@@ -339,7 +341,7 @@ pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng:
     let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Insert the block into the block store.
     // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
     block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
@@ -347,7 +349,7 @@ pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng:
     // Prepare the assignments.
     trace.prepare(Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
-    let fee = trace.prove_fee::<CurrentAleo, _>(rng).unwrap();
+    let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
     // Convert the fee.
     // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
@@ -475,13 +477,15 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
 
             // Initialize a new block store.
             let block_store =
-                ledger_store::BlockStore::<CurrentNetwork, ledger_store::helpers::memory::BlockMemory<_>>::open(None)
-                    .unwrap();
+                ledger_store::BlockStore::<CurrentNetwork, ledger_store::helpers::memory::BlockMemory<_>>::open(
+                    StorageMode::new_test(None),
+                )
+                .unwrap();
 
             // Prepare the assignments.
             trace.prepare(ledger_query::Query::from(block_store)).unwrap();
             // Compute the proof and construct the execution.
-            let execution = trace.prove_execution::<CurrentAleo, _>("testing.aleo", rng).unwrap();
+            let execution = trace.prove_execution::<CurrentAleo, _>("testing.aleo", VarunaVersion::V1, rng).unwrap();
             // Reconstruct the execution from bytes.
             // This is a hack to get around Rust dependency resolution.
             Execution::from_bytes_le(&execution.to_bytes_le().unwrap()).unwrap()
@@ -572,12 +576,12 @@ fn sample_genesis_block_and_components_raw(
     let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Prepare the assignments.
     trace.prepare(Query::from(block_store)).unwrap();
     // Compute the proof and construct the execution.
-    let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, rng).unwrap();
+    let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, VarunaVersion::V1, rng).unwrap();
     // Convert the execution.
     // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
     let execution = Execution::from_str(&execution.to_string()).unwrap();

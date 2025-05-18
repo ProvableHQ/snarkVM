@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +27,7 @@ use snarkvm_utilities::biginteger::BigInteger256 as BigInteger;
 ///
 /// Roots of unity computed from modulus and R using this sage code:
 ///
-/// ```ignore
+/// ```r,ignore
 /// q = 8444461749428370424248824938781546531375899335154063827935233455917409239041
 /// R = 6014086494747379908336260804527802945383293308637734276299549080986809532403 # Montgomery R
 /// s = 47

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,7 +56,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
     type SCMMap: for<'a> Map<'a, N::TransitionID, Field<N>>;
 
     /// Initializes the transition storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self>;
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
 
     /// Returns the transition program IDs and function names.
     fn locator_map(&self) -> &Self::LocatorMap;
@@ -292,7 +292,7 @@ pub struct TransitionStore<N: Network, T: TransitionStorage<N>> {
 
 impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
     /// Initializes the transition store.
-    pub fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         // Initialize the transition storage.
         let storage = T::open(storage)?;
         // Return the transition store.
@@ -668,7 +668,7 @@ mod tests {
             assert!(transitions.len() > 1, "\n\nNumber of transitions: {}\n", transitions.len());
 
             // Initialize a new transition store.
-            let transition_store = TransitionMemory::open(None).unwrap();
+            let transition_store = TransitionMemory::open(StorageMode::Test(None)).unwrap();
 
             // Test each transition in isolation.
             for transition in transitions.iter() {

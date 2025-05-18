@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,18 +24,24 @@ use console::{
     program::{Plaintext, Record, Value},
 };
 use ledger_block::Transition;
-use ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
+use ledger_store::ConsensusStore;
 use synthesizer::{VM, program::Program};
 
+use aleo_std::StorageMode;
 use criterion::Criterion;
 use indexmap::IndexMap;
+
+#[cfg(not(feature = "rocks"))]
+type LedgerType<N> = ledger_store::helpers::memory::ConsensusMemory<N>;
+#[cfg(feature = "rocks")]
+type LedgerType<N> = ledger_store::helpers::rocksdb::ConsensusDB<N>;
 
 fn initialize_vm<R: Rng + CryptoRng>(
     private_key: &PrivateKey<MainnetV0>,
     rng: &mut R,
-) -> (VM<MainnetV0, ConsensusMemory<MainnetV0>>, Vec<Record<MainnetV0, Plaintext<MainnetV0>>>) {
+) -> (VM<MainnetV0, LedgerType<MainnetV0>>, Vec<Record<MainnetV0, Plaintext<MainnetV0>>>) {
     // Initialize the VM.
-    let vm = VM::from(ConsensusStore::open(None).unwrap()).unwrap();
+    let vm = VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
 
     // Initialize the genesis block.
     let genesis = vm.genesis_beacon(private_key, rng).unwrap();

@@ -506,7 +506,7 @@ jobs:
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
-          flags: --features=rocks
+          flags: --release --features=rocks -- --test-threads=2
           workspace_member: ledger
           cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-with-rocksdb-cache
 
@@ -695,6 +695,16 @@ jobs:
           flags: --lib --bins
           workspace_member: synthesizer
           cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-cache
+
+  synthesizer-test:
+    docker:
+      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    resource_class: << pipeline.parameters.twoxlarge >>
+    steps:
+      - run_serial:
+          flags: --lib --bins --features test
+          workspace_member: synthesizer
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-test-cache
 
   synthesizer-mem-heavy:
     docker:
@@ -983,8 +993,7 @@ workflows:
       - curves
       - fields
       - ledger
-# TODO (howardwu) - Implement `open_testing` on all storage, update to `CurrentConsensusStore::open_testing`, then re-enable.
-#      - ledger-with-rocksdb
+      - ledger-with-rocksdb
       - ledger-with-valid-solutions
       - ledger-authority
       - ledger-block
@@ -1005,6 +1014,7 @@ workflows:
       - parameters-large
       - parameters-uncached
       - synthesizer
+      - synthesizer-test
       - synthesizer-mem-heavy
       - synthesizer-integration
       - synthesizer-process

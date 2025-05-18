@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain},
@@ -56,9 +56,12 @@ pub struct CircuitSpecificState<F: PrimeField> {
     /// The length of this list must be equal to the batch size.
     pub(super) z_c: Option<Vec<Vec<F>>>,
 
-    /// A list of polynomials corresponding to the interpolation of the public input.
-    /// The length of this list must be equal to the batch size.
+    /// A list of polynomials corresponding to the interpolation of the public
+    /// input. The length of this list must be equal to the batch size.
     pub(super) x_polys: Vec<DensePolynomial<F>>,
+
+    /// Intermediary polynomials of the row sumcheck.
+    pub(in crate::snark) z_m_at_alpha_polys: Option<VecDeque<[DensePolynomial<F>; 3]>>,
 
     /// Intermediary polynomials of the matrix sumcheck.
     pub(in crate::snark) a_polys: Option<[LabeledPolynomial<F>; 3]>,
@@ -168,6 +171,7 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
                     z_a: Some(z_as),
                     z_b: Some(z_bs),
                     z_c: Some(z_cs),
+                    z_m_at_alpha_polys: None,
                     a_polys: None,
                     b_polys: None,
                     lhs_polynomials: None,

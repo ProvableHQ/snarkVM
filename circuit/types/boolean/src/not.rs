@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 impl<E: Environment> Not for Boolean<E> {
     type Output = Boolean<E>;
@@ -39,7 +39,7 @@ impl<E: Environment> Not for &Boolean<E> {
             // Public and private cases.
             // Note: We directly instantiate a public variable to correctly represent a boolean in a linear combination.
             // For more information, see `LinearCombination::is_boolean_type`.
-            false => Boolean(Variable::Public(Rc::new((0, E::BaseField::one()))) - &self.0),
+            false => Boolean(Variable::Public(Arc::new((0, E::BaseField::one()))) - &self.0),
         }
     }
 }

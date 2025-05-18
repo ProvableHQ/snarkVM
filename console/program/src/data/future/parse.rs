@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,27 +19,48 @@ impl<N: Network> Parser for Future<N> {
     /// Parses a string into a future value.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
-        /// Parses an array of future arguments: `[arg_0, ..., arg_1]`.
-        fn parse_arguments<N: Network>(string: &str) -> ParserResult<Vec<Argument<N>>> {
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the "[" from the string.
-            let (string, _) = tag("[")(string)?;
-            // Parse the whitespace from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the members.
-            let (string, arguments) = separated_list0(
-                pair(pair(Sanitizer::parse_whitespaces, tag(",")), Sanitizer::parse),
-                alt((map(Future::parse, Argument::Future), map(Plaintext::parse, Argument::Plaintext))),
-            )(string)?;
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the ']' from the string.
-            let (string, _) = tag("]")(string)?;
-            // Output the plaintext.
-            Ok((string, arguments))
-        }
+        // Parse the future from the string.
+        Self::parse_internal(string, 0)
+    }
+}
 
+impl<N: Network> Future<N> {
+    /// Parses an array of future arguments: `[arg_0, ..., arg_1]`, while tracking the depth of the data.
+    fn parse_arguments(string: &str, depth: usize) -> ParserResult<Vec<Argument<N>>> {
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the "[" from the string.
+        let (string, _) = tag("[")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the members.
+        let (string, arguments) = separated_list0(
+            pair(pair(Sanitizer::parse_whitespaces, tag(",")), Sanitizer::parse),
+            alt((
+                map(|input| Self::parse_internal(input, depth + 1), Argument::Future),
+                map(Plaintext::parse, Argument::Plaintext),
+            )),
+        )(string)?;
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the ']' from the string.
+        let (string, _) = tag("]")(string)?;
+        // Output the plaintext.
+        Ok((string, arguments))
+    }
+
+    /// Parses a string into a future value, while tracking the depth of the data.
+    #[inline]
+    fn parse_internal(string: &str, depth: usize) -> ParserResult<Self> {
+        // Ensure that the depth is within the maximum limit.
+        // Note: `N::MAX_DATA_DEPTH` is an upper bound on the number of nested futures.
+        //  The true maximum is defined by `Transaction::<N>::MAX_TRANSITIONS`, however, that object is not accessible in this crate.
+        //  In practice, `MAX_DATA_DEPTH` is 32, while `MAX_TRANSITIONS` is 31.
+        if depth > N::MAX_DATA_DEPTH {
+            return map_res(take(0usize), |_| {
+                Err(error(format!("Found a future that exceeds maximum data depth ({})", N::MAX_DATA_DEPTH)))
+            })(string);
+        }
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "{" from the string.
@@ -90,7 +111,7 @@ impl<N: Network> Parser for Future<N> {
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the arguments from the string.
-        let (string, arguments) = parse_arguments(string)?;
+        let (string, arguments) = Self::parse_arguments(string, depth)?;
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
@@ -249,5 +270,67 @@ mod tests {
         assert_eq!("", remainder);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_deeply_nested_future() {
+        // A helper function to iteratively create a deeply nested future.
+        fn create_nested_future(depth: usize) -> String {
+            // Define the base case.
+            let root = r"{
+                program_id: foo.aleo,
+                function_name: bar,
+                arguments: []
+            }";
+            // Define the prefix and suffix for the nested future.
+            let prefix = r"{
+                program_id: foo.aleo,
+                function_name: bar,
+                arguments: ["
+                .repeat(depth);
+            let suffix = r"]}".repeat(depth);
+            // Concatenate the prefix, root, and suffix to create the nested future.
+            format!("{}{}{}", prefix, root, suffix)
+        }
+
+        // A helper function to test the parsing of a deeply nested future.
+        fn run_test(depth: usize, expected_error: bool) {
+            // Create the nested future string.
+            let nested_future_string = create_nested_future(depth);
+            // Parse the nested future.
+            let result = Future::<CurrentNetwork>::parse(&nested_future_string);
+            // Check if the result is an error.
+            match expected_error {
+                true => {
+                    assert!(result.is_err());
+                    return;
+                }
+                false => assert!(result.is_ok()),
+            };
+            // Unwrap the result.
+            let (remainder, candidate) = result.unwrap();
+            // Ensure the remainder is empty.
+            assert!(
+                remainder.is_empty(),
+                "Failed to parse deeply nested future. Found invalid character in: \"{remainder}\""
+            );
+            // Strip the expected string of whitespace.
+            let expected = nested_future_string.replace("\n", "").replace(" ", "").replace("\t", "");
+            // Strip the candidate string of whitespace.
+            let candidate_str = candidate.to_string().replace("\n", "").replace(" ", "").replace("\t", "");
+            // Ensure the expected and candidate strings are equal.
+            assert_eq!(expected, candidate_str, "Expected: {expected}, Candidate: {candidate_str}");
+        }
+
+        // Initialize a set of depths to test.
+        let mut depths = (0usize..100).collect_vec();
+        depths.extend((100..1000).step_by(100));
+        depths.extend((1000..10000).step_by(1000));
+        depths.extend((10000..100000).step_by(10000));
+
+        // For each depth, test the parsing of a deeply nested future.
+        for depth in depths {
+            run_test(depth, depth > CurrentNetwork::MAX_DATA_DEPTH);
+        }
     }
 }

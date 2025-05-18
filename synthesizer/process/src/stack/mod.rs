@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -70,6 +70,9 @@ use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::sync::{Arc, Weak};
 
@@ -353,7 +356,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
     }
 
     /// Sets the program owner.
-    /// The program owner should only be set for programs that were deployed after `ConsensusVersion::V5`
+    /// The program owner should only be set for programs that were deployed after `ConsensusVersion::V7`
     /// when the program owner was enforced by consensus.
     fn set_program_owner(&mut self, program_owner: Option<Address<N>>) {
         self.program_owner = program_owner;

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -70,15 +70,24 @@ pub(crate) type VarunaProvingKey<N> = CircuitProvingKey<<N as Environment>::Pair
 pub(crate) type VarunaVerifyingKey<N> = CircuitVerifyingKey<<N as Environment>::PairingCurve>;
 
 /// The different consensus versions.
-/// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
+/// If you need the version active for a specific height, see: `N::CONSENSUS_VERSION`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub enum ConsensusVersion {
+    /// V1: The initial genesis consensus version.
     V1 = 1,
+    /// V2: Update to the block reward and execution cost algorithms.
     V2 = 2,
+    /// V3: Update to the number of validators and finalize scope RNG seed.
     V3 = 3,
+    /// V4: Update to the Varuna version.
     V4 = 4,
-    // TODO (@d0cd): Update uses of V5 for program upgrades.
+    /// V5: Update to the number of validators and enable batch proposal spend limits.
     V5 = 5,
+    /// V6: Update to the number of validators.
+    V6 = 6,
+    /// V7: Program upgradability
+    /// TODO (@d0cd) set this to the appropriate version when ready.
+    V7 = 7,
 }
 
 pub trait Network:
@@ -218,21 +227,15 @@ pub trait Network:
 
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 5];
+    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 7];
     ///  A list of (consensus_version, size) pairs indicating the maximum number of validators in a committee.
     //  Note: This value must **not** decrease without considering the impact on serialization.
     //  Decreasing this value will break backwards compatibility of serialization without explicit
     //  declaration of migration based on round number rather than block height.
     //  Increasing this value will require a migration to prevent forking during network upgrades.
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2];
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4];
 
     /// Returns the consensus version which is active at the given height.
-    ///
-    /// V1: The initial genesis consensus version.
-    ///
-    /// V2: Update to the block reward and execution cost algorithms.
-    ///
-    /// V3: Update to the number of validators and finalize scope RNG seed.
     #[allow(non_snake_case)]
     fn CONSENSUS_VERSION(seek_height: u32) -> anyhow::Result<ConsensusVersion> {
         match Self::CONSENSUS_VERSION_HEIGHTS.binary_search_by(|(_, height)| height.cmp(&seek_height)) {

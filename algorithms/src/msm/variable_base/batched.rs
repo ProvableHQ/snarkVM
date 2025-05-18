@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,30 +50,35 @@ impl PartialOrd for BucketPosition {
     }
 }
 
-/// Returns a batch size of sufficient size to amortize the cost of an inversion,
-/// while attempting to reduce strain to the CPU cache.
+/// Returns a batch size of sufficient size to amortize the cost of an
+/// inversion, while attempting to reduce strain to the CPU cache.
 #[inline]
 const fn batch_size(msm_size: usize) -> usize {
-    // These values are determined empirically using performance benchmarks for BLS12-377
-    // on Intel, AMD, and M1 machines. These values are determined by taking the
-    // L1 and L2 cache sizes and dividing them by the size of group elements (i.e. 96 bytes).
+    // These values are determined empirically using performance benchmarks for
+    // BLS12-377 on Intel, AMD, and M1 machines. These values are determined by
+    // taking the L1 and L2 cache sizes and dividing them by the size of group
+    // elements (i.e. 96 bytes).
     //
-    // As the algorithm itself requires caching additional values beyond the group elements,
-    // the ideal batch size is less than expected, to accommodate those values.
-    // In general, it was found that undershooting is better than overshooting this heuristic.
+    // As the algorithm itself requires caching additional values beyond the group
+    // elements, the ideal batch size is less than expected, to accommodate
+    // those values. In general, it was found that undershooting is better than
+    // overshooting this heuristic.
     if cfg!(target_arch = "x86_64") && msm_size < 500_000 {
         // Assumes an L1 cache size of 32KiB. Note that larger cache sizes
-        // are not negatively impacted by this value, however smaller L1 cache sizes are.
+        // are not negatively impacted by this value, however smaller L1 cache sizes
+        // are.
         300
     } else {
         // Assumes an L2 cache size of 1MiB. Note that larger cache sizes
-        // are not negatively impacted by this value, however smaller L2 cache sizes are.
+        // are not negatively impacted by this value, however smaller L2 cache sizes
+        // are.
         3000
     }
 }
 
 /// If `(j, k)` is the `i`-th entry in `index`, then this method sets
-/// `bases[j] = bases[j] + bases[k]`. The state of `bases[k]` becomes unspecified.
+/// `bases[j] = bases[j] + bases[k]`. The state of `bases[k]` becomes
+/// unspecified.
 #[inline]
 fn batch_add_in_place_same_slice<G: AffineCurve>(bases: &mut [G], index: &[(u32, u32)]) {
     let mut inversion_tmp = G::BaseField::one();
@@ -126,7 +131,8 @@ fn batch_add_in_place_same_slice<G: AffineCurve>(bases: &mut [G], index: &[(u32,
 /// * `addition_result[i] = bases[j] + bases[k]`
 /// * `addition_result[i] = bases[j];
 ///
-/// It uses `scratch_space` to store intermediate values, and clears it after use.
+/// It uses `scratch_space` to store intermediate values, and clears it after
+/// use.
 #[inline]
 fn batch_add_write<G: AffineCurve>(
     bases: &[G],
@@ -194,7 +200,8 @@ pub(super) fn batch_add<G: AffineCurve>(
     let mut new_bases = Vec::with_capacity(bases.len());
     let mut scratch_space = Vec::with_capacity(batch_size / 2);
 
-    // In the first loop, copy the results of the first in-place addition tree to the vector `new_bases`.
+    // In the first loop, copy the results of the first in-place addition tree to
+    // the vector `new_bases`.
     while global_counter < num_scalars {
         let current_bucket = bucket_positions[global_counter].bucket_index;
         while global_counter + 1 < num_scalars && bucket_positions[global_counter + 1].bucket_index == current_bucket {
@@ -228,7 +235,8 @@ pub(super) fn batch_add<G: AffineCurve>(
             number_of_bases_in_batch += half;
             local_counter = 1;
 
-            // When the number of bases in a batch crosses the threshold, perform a batch addition.
+            // When the number of bases in a batch crosses the threshold, perform a batch
+            // addition.
             if number_of_bases_in_batch >= batch_size / 2 {
                 // We need instructions for copying data in the case of noops.
                 // We encode noops/copies as !0u32
@@ -302,7 +310,8 @@ pub(super) fn batch_add<G: AffineCurve>(
             }
             global_counter += 1;
         }
-        // If there are any remaining unprocessed instructions, proceed to perform batch addition.
+        // If there are any remaining unprocessed instructions, proceed to perform batch
+        // addition.
         if !instr.is_empty() {
             batch_add_in_place_same_slice(&mut new_bases, &instr);
             instr.clear();

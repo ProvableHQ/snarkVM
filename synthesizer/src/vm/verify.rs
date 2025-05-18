@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -170,7 +170,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 );
                 // Verify the signature corresponds to the transaction ID.
                 ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
-                // If the `CONSENSUS_VERSION` is `V5` or greater, then verify that:
+                // If the `CONSENSUS_VERSION` is `V7` or greater, then verify that:
                 //   - the program checksum is present in the deployment
                 //   - the program owner is present in the deployment
                 //   - that it has a constructor
@@ -180,7 +180,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the program owner is **not** present in the deployment
                 //   - the program does not use constructors, `Operand::Checksum`, or `Operand::Edition`.
                 let consensus_version = N::CONSENSUS_VERSION(self.block_store().current_block_height())?;
-                match consensus_version >= ConsensusVersion::V5 {
+                match consensus_version >= ConsensusVersion::V7 {
                     true => {
                         ensure!(
                             deployment.program_checksum().is_some(),
@@ -209,8 +209,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             "Invalid deployment transaction '{id}' - should not contain program owner"
                         );
                         ensure!(
-                            !deployment.program().contains_v5_syntax(),
-                            "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V5`"
+                            !deployment.program().contains_v7_syntax(),
+                            "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V7`"
                         );
                     }
                 }
@@ -241,7 +241,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //  - The program exists in the store and process.
                 //  - The new edition increments the old edition by 1.
                 //  - The existing program is upgradable, meaning that it has a constructor.
-                //    This is to prevent programs deployed before `ConsensusVersion::V5` (which do not have constructors) from being upgraded.
+                //    This is to prevent programs deployed before `ConsensusVersion::V7` (which do not have constructors) from being upgraded.
                 let is_program_in_storage = self.transaction_store().contains_program_id(deployment.program_id())?;
                 let is_program_in_process = self.contains_program(deployment.program_id());
                 match deployment.edition() {
@@ -280,6 +280,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         );
                     }
                 }
+                // Enforce the syntax restrictions on the programs based on the current consensus version.
+                let current_block_height = self.block_store().current_block_height();
+                let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
+                deployment.program().check_restricted_keywords_for_consensus_version(consensus_version)?;
                 // Verify the deployment if it has not been verified before.
                 if !is_partially_verified {
                     // Verify the deployment.
@@ -431,10 +435,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             bail!("Execution verification failed - restricted transition found");
         }
 
+        // Determine which Varuna version to use.
+        let consensus_version = N::CONSENSUS_VERSION(block_height)?;
+        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+            VarunaVersion::V1
+        } else {
+            VarunaVersion::V2
+        };
+
         // Verify the execution proof, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.read().verify_execution(execution),
+            false => self.process.read().verify_execution(varuna_version, execution),
         };
         lap!(timer, "Verify the execution");
 
@@ -469,10 +481,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let fee_amount = fee.amount()?;
         ensure!(*fee_amount <= N::MAX_FEE, "Fee verification failed: fee exceeds the maximum limit");
 
+        // Retrieve the block height.
+        let block_height = self.block_store().current_block_height();
+
+        // Determine which Varuna version to use.
+        let consensus_version = N::CONSENSUS_VERSION(block_height)?;
+        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+            VarunaVersion::V1
+        } else {
+            VarunaVersion::V2
+        };
+
         // Verify the fee, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.read().verify_fee(fee, deployment_or_execution_id),
+            false => self.process.read().verify_fee(varuna_version, fee, deployment_or_execution_id),
         };
         lap!(timer, "Verify the fee");
 
@@ -516,19 +539,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 mod tests {
     use super::*;
 
-    use crate::vm::test_helpers::sample_finalize_state;
+    use crate::vm::test_helpers::{LedgerType, sample_finalize_state};
     use console::{
         account::{Address, ViewKey},
         types::Field,
     };
     use ledger_block::{Block, Header, Metadata, Transaction, Transition};
-    use ledger_store::helpers::memory::ConsensusMemory;
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
     // A helper function to create the cache key for a transaction in the partially-verified transactions cache.
     fn create_cache_key(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         transaction: &Transaction<CurrentNetwork>,
     ) -> (<CurrentNetwork as Network>::TransactionID, Vec<u16>) {
         // Acquire a read lock on the process to ensure that the editions are not updated while we are reading them.
@@ -1021,5 +1043,69 @@ function compute:
         assert!(vm.check_transaction(&valid_transaction, None, rng).is_ok());
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_varuna_migration() {
+        let rng = &mut TestRng::default();
+
+        // Initialize the VM.
+        let vm = crate::vm::test_helpers::sample_vm();
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        // Update the VM.
+        vm.add_next_block(&genesis).unwrap();
+
+        // Fetch the private key.
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Create a transaction with on the old version.
+        let address = Address::try_from(&private_key).unwrap();
+        let inputs = [
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ]
+        .into_iter();
+        let transaction_v1 =
+            vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs, None, 0, None, rng).unwrap();
+
+        // Advance the ledger past ConsensusV4
+        let transactions: [Transaction<CurrentNetwork>; 0] = [];
+        for _ in 0..CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap() {
+            // Check that the v1 transaction is valid.
+            assert!(vm.check_transaction(&transaction_v1, None, rng).is_ok());
+            // Call the function
+            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&next_block).unwrap();
+        }
+
+        // Check that the v1 transaction is invalid
+        assert!(vm.check_transaction(&transaction_v1, None, rng).is_err());
+
+        // Create a transaction with on the new version.
+        let address = Address::try_from(&private_key).unwrap();
+        let inputs = [
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ]
+        .into_iter();
+        let transaction_v2 =
+            vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs, None, 0, None, rng).unwrap();
+
+        // Check that the v2 transaction is valid
+        assert!(vm.check_transaction(&transaction_v2, None, rng).is_ok());
+
+        // Sample a new VM
+        let new_vm = crate::vm::test_helpers::sample_vm();
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        // Update the VM.
+        new_vm.add_next_block(&genesis).unwrap();
+
+        // Check that v1 transaction is valid.
+        assert!(new_vm.check_transaction(&transaction_v1, None, rng).is_ok());
+        // Check that v2 transaction is invalid.
+        assert!(new_vm.check_transaction(&transaction_v2, None, rng).is_err());
     }
 }

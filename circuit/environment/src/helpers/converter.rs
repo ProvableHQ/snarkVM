@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -201,7 +201,7 @@ impl<F: PrimeField> R1CS<F> {
 
 #[cfg(test)]
 mod tests {
-    use snarkvm_algorithms::{AlgebraicSponge, SNARK, r1cs::ConstraintSynthesizer};
+    use snarkvm_algorithms::{AlgebraicSponge, SNARK, r1cs::ConstraintSynthesizer, snark::varuna::VarunaVersion};
     use snarkvm_circuit::prelude::*;
     use snarkvm_curves::bls12_377::Fr;
 
@@ -270,14 +270,20 @@ mod tests {
         let fs_pp = FS::sample_parameters();
 
         let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &Circuit).unwrap();
+        let varuna_version = VarunaVersion::V2;
         println!("Called circuit setup");
 
-        let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, &Circuit, rng).unwrap();
+        let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, varuna_version, &Circuit, rng).unwrap();
         println!("Called prover");
 
-        assert!(VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [*one, *one], &proof).unwrap());
+        assert!(
+            VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, varuna_version, [*one, *one], &proof).unwrap()
+        );
         println!("Called verifier");
         println!("\nShould not verify (i.e. verifier messages should print below):");
-        assert!(!VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, [*one, *one + *one], &proof).unwrap());
+        assert!(
+            !VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, varuna_version, [*one, *one + *one], &proof)
+                .unwrap()
+        );
     }
 }

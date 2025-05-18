@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -282,7 +282,7 @@ mod tests {
             };
 
             // Initialize a new transition store.
-            let transition_store = TransitionStore::open(None).unwrap();
+            let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
             // Initialize a new fee store.
             let fee_store = FeeMemory::open(transition_store).unwrap();
 
@@ -323,7 +323,7 @@ mod tests {
             let fee_transition_id = fee.id();
 
             // Initialize a new transition store.
-            let transition_store = TransitionStore::open(None).unwrap();
+            let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
             // Initialize a new fee store.
             let fee_store = FeeMemory::open(transition_store).unwrap();
 

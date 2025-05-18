@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,8 +21,14 @@ use console::{network::prelude::*, program::Request, types::Field};
 use ledger_block::{Transaction, Transition};
 
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 #[derive(Clone)]
 pub struct Authorization<N: Network> {
@@ -53,7 +59,11 @@ impl<N: Network> TryFrom<(Vec<Request<N>>, Vec<Transition<N>>)> for Authorizatio
     /// Initialize an `Authorization` instance, with the given requests and transitions.
     ///
     /// Note: This method is used primarily for serialization, and requires the
-    /// number of requests and transitions to match.
+    /// number of requests and transitions to match. Requests are added to an authorization
+    /// in the pre-order traversal sequence (parents before children), while transitions
+    /// are added to an authorization in the post-order traversal sequence (children before parents).
+    /// This method takes in as input requests and transitions in pre-order and post-order traversal
+    /// sequence, respectively, which is why the requests and transitions need to be checked independent of the ordering
     fn try_from((requests, transitions): (Vec<Request<N>>, Vec<Transition<N>>)) -> Result<Self> {
         // Ensure the number of requests and transitions matches.
         ensure!(
@@ -62,10 +72,18 @@ impl<N: Network> TryFrom<(Vec<Request<N>>, Vec<Transition<N>>)> for Authorizatio
             requests.len(),
             transitions.len()
         );
-        // Ensure the requests and transitions are in order.
-        for (index, (request, transition)) in requests.iter().zip_eq(&transitions).enumerate() {
-            // Ensure the request and transition correspond to one another.
-            ensure_request_and_transition_matches(index, request, transition)?;
+
+        // Build a map of transition commitments to their request indices
+        let tcm_indices: HashMap<_, _> = requests.iter().enumerate().map(|(i, request)| (request.tcm(), i)).collect();
+
+        // Ensure the requests and transitions match
+        for (index, transition) in transitions.iter().enumerate() {
+            let request_idx = tcm_indices
+                .get(&transition.tcm())
+                .copied()
+                .ok_or_else(|| anyhow!("Missing request for transition {}", transition.id()))?;
+
+            ensure_request_and_transition_matches(index, &requests[request_idx], transition)?;
         }
         // Return the new `Authorization` instance.
         Ok(Self {
@@ -260,8 +278,8 @@ fn ensure_request_and_transition_matches<N: Network>(
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
-    use crate::Process;
-    use console::account::PrivateKey;
+    use crate::{Identifier, Process, ProgramID, Value};
+    use console::account::{Address, PrivateKey};
 
     type CurrentNetwork = console::network::MainnetV0;
     type CurrentAleo = circuit::AleoV0;
@@ -292,5 +310,50 @@ pub(crate) mod test_helpers {
             .unwrap();
         assert!(authorization.is_fee_public(), "Authorization must be for a call to 'credits.aleo/fee_public'");
         authorization
+    }
+
+    #[test]
+    fn test_single_transition_authorization_deserialization() {
+        let rng = &mut TestRng::default();
+
+        // Sample a private key.
+        let private_key = PrivateKey::new(rng).unwrap();
+
+        // Initialize the process.
+        let process = Process::<CurrentNetwork>::load().unwrap();
+
+        // Specify the program ID
+        let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+
+        // Specify the function name
+        let function_name = Identifier::<CurrentNetwork>::from_str("transfer_public").unwrap();
+
+        // Generate the inputs
+        let destination =
+            Value::<CurrentNetwork>::from_str(&format!("{}", Address::try_from(private_key).unwrap())).unwrap();
+        let amount = Value::<CurrentNetwork>::from_str("1u64").unwrap();
+
+        // Generate the Authorization
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &private_key,
+                &program_id,
+                &function_name,
+                vec![destination, amount].iter(),
+                rng,
+            )
+            .unwrap();
+
+        // Assert there is only 1 transition
+        assert!(authorization.transitions().len() == 1);
+
+        // Serialize the Authorization into a String
+        let authorization_serialized = authorization.to_string();
+
+        // Attempt to deserialize the Authorization from String
+        let deserialization_result = Authorization::<CurrentNetwork>::from_str(&authorization_serialized);
+
+        // Assert that the deserialization result is Ok
+        assert!(deserialization_result.is_ok());
     }
 }

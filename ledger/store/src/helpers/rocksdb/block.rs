@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -100,7 +100,8 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
     type TransitionStorage = TransitionDB<N>;
 
     /// Initializes the block storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        let storage = storage.into();
         // Initialize the transition store.
         let transition_store = TransitionStore::<N, TransitionDB<N>>::open(storage.clone())?;
         // Initialize the transaction store.

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +33,8 @@ impl Fp256Parameters for FrParameters {}
 impl FftParameters for FrParameters {
     type BigInteger = BigInteger;
 
+    // `cargo doc` will fail without this attribute
+    #[doc(hidden)]
     const POWERS_OF_ROOTS_OF_UNITY: &'static [BigInteger] = unimplemented!();
     const TWO_ADICITY: u32 = 1;
     #[rustfmt::skip]

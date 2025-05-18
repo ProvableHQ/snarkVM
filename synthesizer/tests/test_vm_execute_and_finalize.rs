@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,7 @@
 
 mod utilities;
 
+use aleo_std::StorageMode;
 use console::{
     account::{PrivateKey, ViewKey},
     network::prelude::*,
@@ -31,7 +32,7 @@ use ledger_block::{
     Transactions,
     Transition,
 };
-use ledger_store::{ConsensusStorage, ConsensusStore, helpers::memory::ConsensusMemory};
+use ledger_store::{ConsensusStorage, ConsensusStore};
 use snarkvm_synthesizer::{VM, program::FinalizeOperation};
 use synthesizer_program::FinalizeGlobalState;
 
@@ -40,6 +41,11 @@ use console::account::Address;
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use utilities::*;
+
+#[cfg(not(feature = "rocks"))]
+type LedgerType<N> = ledger_store::helpers::memory::ConsensusMemory<N>;
+#[cfg(feature = "rocks")]
+type LedgerType<N> = ledger_store::helpers::rocksdb::ConsensusDB<N>;
 
 #[test]
 fn test_vm_execute_and_finalize() {
@@ -366,10 +372,10 @@ fn initialize_vm<R: Rng + CryptoRng>(
     private_key: &PrivateKey<CurrentNetwork>,
     height: u32,
     rng: &mut R,
-) -> (VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>, Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>) {
+) -> (VM<CurrentNetwork, LedgerType<CurrentNetwork>>, Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>) {
     // Initialize a VM.
-    let vm: VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>> =
-        VM::from(ConsensusStore::open(None).unwrap()).unwrap();
+    let vm: VM<CurrentNetwork, LedgerType<CurrentNetwork>> =
+        VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
 
     // Initialize the genesis block.
     let genesis = vm.genesis_beacon(private_key, rng).unwrap();

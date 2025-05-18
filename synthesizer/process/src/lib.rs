@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,6 +43,7 @@ mod verify_fee;
 #[cfg(test)]
 mod tests;
 
+use algorithms::snark::varuna::VarunaVersion;
 use console::{
     account::PrivateKey,
     network::prelude::*,
@@ -68,6 +69,9 @@ use synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::{collections::HashMap, sync::Arc};
 
@@ -301,6 +305,7 @@ pub mod test_helpers {
     use ledger_store::{BlockStore, helpers::memory::BlockMemory};
     use synthesizer_program::Program;
 
+    use aleo_std::StorageMode;
     use once_cell::sync::OnceCell;
 
     type CurrentNetwork = MainnetV0;
@@ -332,7 +337,7 @@ pub mod test_helpers {
         let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
 
         // Initialize a new block store.
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
         // Prepare the assignments from the block store.
         trace.prepare(ledger_query::Query::from(block_store)).unwrap();
@@ -341,7 +346,7 @@ pub mod test_helpers {
         let locator = format!("{:?}:{function_name:?}", program.id());
 
         // Return the execution object.
-        trace.prove_execution::<CurrentAleo, _>(&locator, rng).unwrap()
+        trace.prove_execution::<CurrentAleo, _>(&locator, VarunaVersion::V1, rng).unwrap()
     }
 
     pub fn sample_key() -> (Identifier<CurrentNetwork>, ProvingKey<CurrentNetwork>, VerifyingKey<CurrentNetwork>) {
@@ -414,7 +419,8 @@ function compute:
                 let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
                 // Initialize a new block store.
-                let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+                let block_store =
+                    BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
                 // Construct the process.
                 let process = sample_process(&program);
@@ -436,7 +442,7 @@ function compute:
                 // Prepare the trace.
                 trace.prepare(Query::from(block_store)).unwrap();
                 // Compute the execution.
-                trace.prove_execution::<CurrentAleo, _>("testing", rng).unwrap()
+                trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap()
             })
             .clone()
     }

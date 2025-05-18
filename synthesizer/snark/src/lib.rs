@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,6 +52,7 @@ pub(crate) mod test_helpers {
         types::Field,
     };
     use console::{network::MainnetV0, prelude::One as _};
+    use snarkvm_algorithms::snark::varuna::VarunaVersion;
 
     use once_cell::sync::OnceCell;
 
@@ -117,7 +118,7 @@ pub(crate) mod test_helpers {
             .get_or_init(|| {
                 let assignment = sample_assignment();
                 let (proving_key, _) = sample_keys();
-                proving_key.prove("test", &assignment, &mut TestRng::default()).unwrap()
+                proving_key.prove("test", VarunaVersion::V2, &assignment, &mut TestRng::default()).unwrap()
             })
             .clone()
     }
@@ -140,6 +141,7 @@ mod test {
     use super::*;
     use circuit::environment::{Circuit, Environment};
     use console::network::MainnetV0;
+    use snarkvm_algorithms::snark::varuna::VarunaVersion;
 
     type CurrentNetwork = MainnetV0;
 
@@ -150,16 +152,18 @@ mod test {
         // Varuna setup, prove, and verify.
         let srs = UniversalSRS::<CurrentNetwork>::load().unwrap();
         let (proving_key, verifying_key) = srs.to_circuit_key("test", &assignment).unwrap();
+        let varuna_version = VarunaVersion::V2;
         println!("Called circuit setup");
 
-        let proof = proving_key.prove("test", &assignment, &mut TestRng::default()).unwrap();
+        let proof = proving_key.prove("test", varuna_version, &assignment, &mut TestRng::default()).unwrap();
         println!("Called prover");
 
         let one = <Circuit as Environment>::BaseField::one();
-        assert!(verifying_key.verify("test", &[one, one], &proof));
+        assert!(verifying_key.verify("test", varuna_version, &[one, one], &proof));
         println!("Called verifier");
         println!("\nShould not verify (i.e. verifier messages should print below):");
-        assert!(!verifying_key.verify("test", &[one, one + one], &proof));
+        assert!(!verifying_key.verify("test", varuna_version, &[one, one + one], &proof));
+        assert!(!verifying_key.verify("test", VarunaVersion::V1, &[one, one], &proof));
     }
 
     #[test]
@@ -192,21 +196,23 @@ mod test {
 
         let srs = UniversalSRS::<CurrentNetwork>::load().unwrap();
         let (proving_key, verifying_key) = srs.to_circuit_key("test", &assignment).unwrap();
+        let varuna_version = VarunaVersion::V2;
         println!("Called circuit setup");
 
-        let proof = proving_key.prove("test", &assignment, &mut TestRng::default()).unwrap();
+        let proof = proving_key.prove("test", varuna_version, &assignment, &mut TestRng::default()).unwrap();
         println!("Called prover");
 
         // Should pass.
         let one = <Circuit as Environment>::BaseField::one();
-        assert!(verifying_key.verify("test", &[one], &proof));
+        assert!(verifying_key.verify("test", varuna_version, &[one], &proof));
 
         // Should fail.
-        assert!(!verifying_key.verify("test", &[one, one], &proof));
-        assert!(!verifying_key.verify("test", &[one, one + one], &proof));
-        assert!(!verifying_key.verify("test", &[one, one, one], &proof));
-        assert!(!verifying_key.verify("test", &[one, one, one + one], &proof));
-        assert!(!verifying_key.verify("test", &[one, one, one, one], &proof));
+        assert!(!verifying_key.verify("test", VarunaVersion::V1, &[one], &proof));
+        assert!(!verifying_key.verify("test", varuna_version, &[one, one], &proof));
+        assert!(!verifying_key.verify("test", varuna_version, &[one, one + one], &proof));
+        assert!(!verifying_key.verify("test", varuna_version, &[one, one, one], &proof));
+        assert!(!verifying_key.verify("test", varuna_version, &[one, one, one + one], &proof));
+        assert!(!verifying_key.verify("test", varuna_version, &[one, one, one, one], &proof));
 
         println!("Called verifier");
     }

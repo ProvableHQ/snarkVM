@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,10 +26,11 @@ mod verify;
 mod tests;
 
 use crate::{Restrictions, cast_mut_ref, cast_ref, convert, process};
+use algorithms::snark::varuna::VarunaVersion;
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
-    program::{Argument, Identifier, Literal, Locator, Plaintext, ProgramID, ProgramOwner, Record, Value},
+    program::{Argument, Identifier, Literal, Locator, Plaintext, ProgramID, ProgramOwner, Record, Response, Value},
     types::{Field, Group, U64},
 };
 use ledger_block::{
@@ -68,7 +69,10 @@ use utilities::try_vm_runtime;
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Either;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::{SeedableRng, rngs::StdRng};
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
@@ -153,14 +157,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let deployments = cfg_iter!(chunk)
                 .map(|(transaction_id, _)| {
                     // Retrieve the deployment from the transaction ID.
-                    let deployment = match transaction_store.get_deployment(transaction_id)? {
-                        Some(deployment) => deployment,
+                    match transaction_store.get_deployment(transaction_id)? {
+                        Some(deployment) => Ok(deployment),
                         None => bail!("Deployment transaction '{transaction_id}' is not found in storage."),
-                    };
-                    Ok(deployment)
+                    }
                 })
                 .collect::<Result<Vec<_>>>()?;
             // Add the deployments to the process.
+            // Note: This iterator must be serial, to ensure deployments are loaded in the order of their dependencies.
             deployments.iter().try_for_each(|deployment| process.load_deployment(deployment))?;
         }
 
@@ -411,6 +415,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
                 self.block_store().unpause_atomic_writes::<false>()?;
+                // If the block advances to `ConsensusVersion::V4`, clear the partial verification cache.
+                if N::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap_or_default() == block.height() {
+                    self.partially_verified_transactions().write().clear();
+                }
                 Ok(())
             }
             Err(finalize_error) => {
@@ -444,6 +452,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
+    use circuit::AleoV0;
     use console::{
         account::{Address, ViewKey},
         network::MainnetV0,
@@ -451,39 +460,35 @@ pub(crate) mod test_helpers {
         types::Field,
     };
     use ledger_block::{Block, Header, Input, Metadata, Transition};
-    use ledger_store::helpers::memory::ConsensusMemory;
-    #[cfg(feature = "rocks")]
-    use ledger_store::helpers::rocksdb::ConsensusDB;
     use ledger_test_helpers::{large_transaction_program, small_transaction_program};
     use synthesizer_program::Program;
 
+    use aleo_std::StorageMode;
     use indexmap::IndexMap;
     use once_cell::sync::OnceCell;
     use serde_json::json;
-    #[cfg(feature = "rocks")]
-    use std::path::Path;
     use synthesizer_snark::{Proof, VerifyingKey};
 
-    #[cfg(feature = "test")]
-    pub(crate) type CurrentAleo = circuit::AleoV0;
-
+    pub(crate) type CurrentAleo = AleoV0;
     pub(crate) type CurrentNetwork = MainnetV0;
+
+    #[cfg(not(feature = "rocks"))]
+    pub(super) type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    #[cfg(feature = "rocks")]
+    pub(super) type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     /// Samples a new finalize state.
     pub(crate) fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
         FinalizeGlobalState::from(block_height as u64, block_height, [0u8; 32])
     }
 
-    pub(crate) fn sample_vm() -> VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>> {
+    pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
         // Initialize a new VM.
-        VM::from(ConsensusStore::open(None).unwrap()).unwrap()
+        VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap()
     }
 
     #[cfg(feature = "test")]
-    pub(crate) fn sample_vm_at_height(
-        height: u32,
-        rng: &mut TestRng,
-    ) -> VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>> {
+    pub(crate) fn sample_vm_at_height(height: u32, rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
         // Initialize the VM with a genesis block.
         let vm = sample_vm_with_genesis_block(rng);
         // Get the genesis private key.
@@ -498,7 +503,9 @@ pub(crate) mod test_helpers {
     }
 
     #[cfg(feature = "rocks")]
-    pub(crate) fn sample_vm_rocks(path: &Path) -> VM<CurrentNetwork, ConsensusDB<CurrentNetwork>> {
+    pub(crate) fn sample_vm_rocks(
+        path: &std::path::Path,
+    ) -> VM<CurrentNetwork, ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>> {
         // Initialize a new VM.
         VM::from(ConsensusStore::open(path.to_owned()).unwrap()).unwrap()
     }
@@ -525,9 +532,7 @@ pub(crate) mod test_helpers {
             .clone()
     }
 
-    pub(crate) fn sample_vm_with_genesis_block(
-        rng: &mut TestRng,
-    ) -> VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>> {
+    pub(crate) fn sample_vm_with_genesis_block(rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
@@ -786,7 +791,7 @@ function compute:
     }
 
     pub fn sample_next_block<R: Rng + CryptoRng>(
-        vm: &VM<MainnetV0, ConsensusMemory<MainnetV0>>,
+        vm: &VM<MainnetV0, LedgerType>,
         private_key: &PrivateKey<MainnetV0>,
         transactions: &[Transaction<MainnetV0>],
         rng: &mut R,
@@ -2957,6 +2962,142 @@ function add_thrice:
         vm.puzzle.prove(rng.gen(), rng.gen(), rng.gen(), None).unwrap();
     }
 
+    #[test]
+    fn test_multi_transition_authorization_deserialization() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a private key.
+        let private_key = sample_genesis_private_key(rng);
+
+        // Initialize the genesis block.
+        let genesis = sample_genesis_block(rng);
+
+        // Initialize the VM.
+        let vm = sample_vm();
+        // Update the VM.
+        vm.add_next_block(&genesis).unwrap();
+
+        // Deploy the base program.
+        let child_program_1 = Program::from_str(
+            r"
+program child_program_1.aleo;
+
+function check:
+    input r0 as field.private;
+    assert.eq r0 123456789123456789123456789123456789123456789123456789field;
+        ",
+        )
+        .unwrap();
+
+        let child_program_2 = Program::from_str(
+            r"
+program child_program_2.aleo;
+
+function check:
+    input r0 as field.private;
+    assert.eq r0 123456789123456789123456789123456789123456789123456789field;
+        ",
+        )
+        .unwrap();
+
+        // Deploy the child programs and add them to a block
+        let deployment_1 = vm.deploy(&private_key, &child_program_1, None, 0, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment_1, None, rng).is_ok());
+        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment_1], rng).unwrap()).unwrap();
+
+        let deployment_2 = vm.deploy(&private_key, &child_program_2, None, 0, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment_2, None, rng).is_ok());
+        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment_2], rng).unwrap()).unwrap();
+
+        // Check that child programs are deployed
+        assert!(vm.contains_program(&ProgramID::from_str("child_program_1.aleo").unwrap()));
+        assert!(vm.contains_program(&ProgramID::from_str("child_program_2.aleo").unwrap()));
+
+        // Deploy the program that calls the program from the previous layer.
+        let parent_program = Program::from_str(
+            r"
+import child_program_1.aleo;
+import child_program_2.aleo;
+
+program parent_program.aleo;
+
+function check:
+    input r0 as field.private;
+    call child_program_1.aleo/check r0;
+    call child_program_2.aleo/check r0;
+        ",
+        )
+        .unwrap();
+
+        let deployment = vm.deploy(&private_key, &parent_program, None, 0, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment, None, rng).is_ok());
+        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
+
+        // Check that program is deployed.
+        assert!(vm.contains_program(&ProgramID::from_str("parent_program.aleo").unwrap()));
+
+        // Deploy the program that calls the program from the previous layer.
+        let grandparent_program = Program::from_str(
+            r"
+import parent_program.aleo;
+
+program grandparent_program.aleo;
+
+function check:
+    input r0 as field.private;
+    call parent_program.aleo/check r0;
+    call parent_program.aleo/check r0;
+    call parent_program.aleo/check r0;
+        ",
+        )
+        .unwrap();
+
+        let deployment = vm.deploy(&private_key, &grandparent_program, None, 0, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment, None, rng).is_ok());
+        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
+
+        // Check that program is deployed.
+        assert!(vm.contains_program(&ProgramID::from_str("grandparent_program.aleo").unwrap()));
+
+        // Initialize the process.
+        let mut process = Process::<CurrentNetwork>::load().unwrap();
+
+        // Load the child and parent program
+        process.add_program(&child_program_1).unwrap();
+        process.add_program(&child_program_2).unwrap();
+        process.add_program(&parent_program).unwrap();
+        process.add_program(&grandparent_program).unwrap();
+
+        // Specify the function name on the parent program
+        let function_name = Identifier::<CurrentNetwork>::from_str("check").unwrap();
+
+        // Generate a random Field for input
+        let input = Value::<CurrentNetwork>::from_str(&Field::<CurrentNetwork>::rand(rng).to_string()).unwrap();
+
+        // Generate the authorization that will contain multiple transitions
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &private_key,
+                grandparent_program.id(),
+                &function_name,
+                vec![input].iter(),
+                rng,
+            )
+            .unwrap();
+
+        // Assert the Authorization has more than 1 transitions
+        assert!(authorization.transitions().len() > 1);
+
+        // Serialize the Authorization into a String
+        let authorization_serialized = authorization.to_string();
+
+        // Attempt to deserialize the Authorization from String
+        let deserialization_result = Authorization::<CurrentNetwork>::from_str(&authorization_serialized);
+
+        // Assert that the deserialization result is Ok
+        assert!(deserialization_result.is_ok());
+    }
+
     #[cfg(feature = "rocks")]
     #[test]
     fn test_atomic_unpause_on_error() {
@@ -2976,8 +3117,7 @@ function add_thrice:
         let block2 = sample_next_block(&vm, &genesis_private_key, &[], rng).unwrap();
 
         // Create a new, rocks-based VM shadowing the 1st one.
-        let tempdir = tempfile::tempdir().unwrap();
-        let vm = sample_vm_rocks(tempdir.path());
+        let vm = sample_vm();
         vm.add_next_block(&genesis).unwrap();
         // This time, however, try to insert the 2nd block first, which fails due to height.
         assert!(vm.add_next_block(&block2).is_err());
@@ -3167,9 +3307,9 @@ function adder:
         // Initialize a new caller.
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
-        // Initialize the VM at the V5 height.
-        let v5_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V5).unwrap();
-        let vm = crate::vm::test_helpers::sample_vm_at_height(v5_height, rng);
+        // Initialize the VM at the V7 height.
+        let v7_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V7).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(v7_height, rng);
 
         // Deploy the upgradable program.
         let program_v0 = Program::from_str(
@@ -3348,9 +3488,9 @@ finalize set_first:
         // Initialize a new caller.
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
-        // Initialize the VM at the V5 height.
-        let v5_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V5).unwrap();
-        let vm = crate::vm::test_helpers::sample_vm_at_height(v5_height, rng);
+        // Initialize the VM at the V7 height.
+        let v7_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V7).unwrap();
+        let vm = crate::vm::test_helpers::sample_vm_at_height(v7_height, rng);
 
         // Deploy the upgradable program.
         let program_v0 = Program::from_str(
@@ -3562,5 +3702,69 @@ function fly:
         assert_eq!(block.transactions().num_accepted(), 1);
         assert_eq!(block.transactions().num_rejected(), 1);
         assert_eq!(block.aborted_transaction_ids().len(), 0);
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_versioned_keyword_restrictions() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the VM at a specific height.
+        // We subtract by 7 to deploy the 7 invalid programs.
+        let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V6).unwrap() - 7, rng);
+
+        // Define the invalid program bodies.
+        let invalid_program_bodies = [
+            "function constructor:",
+            "function dummy:\nclosure constructor: input r0 as u8; assert.eq r0 0u8;",
+            "function dummy:\nmapping constructor: key as boolean.public; value as boolean.public;",
+            "function dummy:\nrecord constructor: owner as address.private;",
+            "function dummy:\nrecord foo: owner as address.public; constructor as address.public;",
+            "function dummy:\nstruct constructor: foo as address;",
+            "function dummy:\nstruct foo: constructor as address;",
+        ];
+
+        println!("Current height: {}", vm.block_store().current_block_height());
+
+        // Deploy a test program for each of the invalid program bodies.
+        // They should all be accepted by the VM, because the restriction is not yet in place.
+        for (i, body) in invalid_program_bodies.iter().enumerate() {
+            println!("Deploying 'valid' test program {}: {}", i, body);
+            let program = Program::from_str(&format!("program test_valid_{}.aleo;\n{}", i, body)).unwrap();
+            let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+            let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+            assert_eq!(block.transactions().num_accepted(), 1);
+            assert_eq!(block.transactions().num_rejected(), 0);
+            assert_eq!(block.aborted_transaction_ids().len(), 0);
+            vm.add_next_block(&block).unwrap();
+        }
+
+        println!("Current height: {}", vm.block_store().current_block_height());
+
+        // Deploy a test program for each of the invalid program bodies.
+        // Verify that `check_transaction` fails for each of them.
+        for (i, body) in invalid_program_bodies.iter().enumerate() {
+            println!("Deploying 'invalid' test program {}: {}", i, body);
+            let program = Program::from_str(&format!("program test_invalid_{}.aleo;\n{}", i, body)).unwrap();
+            let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+            if let Err(e) = vm.check_transaction(&deployment, None, rng) {
+                println!("Error: {}", e);
+            } else {
+                panic!("Expected an error, but the deployment was accepted.")
+            }
+        }
+
+        // Attempt to deploy a program with the name `constructor`.
+        // Verify that `check_transaction` fails.
+        let program = Program::from_str(r"program constructor.aleo; function dummy:").unwrap();
+        let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+        if let Err(e) = vm.check_transaction(&deployment, None, rng) {
+            println!("Error: {}", e);
+        } else {
+            panic!("Expected an error, but the deployment was accepted.")
+        }
     }
 }

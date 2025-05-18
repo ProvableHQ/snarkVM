@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,8 +39,8 @@ impl<N: Network> Process<N> {
         lap!(timer, "Compute the stack");
 
         // Set the program owner.
-        // Note: The program owner is only enforced to be `Some` after `ConsensusVersion::V5`
-        // and is `None` for all programs deployed before the `V5` migration.
+        // Note: The program owner is only enforced to be `Some` after `ConsensusVersion::V7`
+        // and is `None` for all programs deployed before the `V7` migration.
         stack.set_program_owner(deployment.program_owner().copied());
 
         // Insert the verifying keys.
@@ -615,6 +615,8 @@ mod tests {
         helpers::memory::{BlockMemory, FinalizeMemory},
     };
 
+    use aleo_std::StorageMode;
+
     type CurrentNetwork = console::network::MainnetV0;
     type CurrentAleo = circuit::network::AleoV0;
 
@@ -662,9 +664,9 @@ function compute:
         let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
 
         // Initialize a new block store.
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         // Initialize a new finalize store.
-        let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(None).unwrap();
+        let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
         // Ensure the program does not exist.
         assert!(!process.contains_program(program.id()));

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,9 +22,9 @@ impl<N: Network> Header<N> {
         transactions: &Transactions<N>,
         ratified_finalize_operations: Vec<FinalizeOperation<N>>,
     ) -> Result<Self> {
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(any(debug_assertions, feature = "test")))]
         ensure!(ratifications.len() == 1, "The genesis block must contain exactly 1 ratification");
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(any(debug_assertions, feature = "test")))]
         ensure!(!ratified_finalize_operations.is_empty(), "The genesis block must contain ratify-finalize operations");
 
         // Prepare a genesis block header.

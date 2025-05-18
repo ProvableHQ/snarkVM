@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,7 @@ use snarkvm_algorithms::{
     AlgebraicSponge,
     SNARK,
     crypto_hash::PoseidonSponge,
-    snark::varuna::{CircuitVerifyingKey, TestCircuit, VarunaHidingMode, VarunaSNARK, ahp::AHPForR1CS},
+    snark::varuna::{CircuitVerifyingKey, TestCircuit, VarunaHidingMode, VarunaSNARK, VarunaVersion, ahp::AHPForR1CS},
 };
 use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
 use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, TestRng};
@@ -61,20 +61,31 @@ fn snark_circuit_setup(c: &mut Criterion) {
 fn snark_prove(c: &mut Criterion) {
     let rng = &mut TestRng::default();
 
-    c.bench_function("snark_prove", move |b| {
-        let num_constraints = 100;
-        let num_variables = 25;
-        let mul_depth = 1;
+    let num_constraints = 10000;
+    let num_variables = 2500;
+    let mul_depth = 100;
 
-        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(1000, 1000, 1000).unwrap();
-        let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
-        let universal_prover = &universal_srs.to_universal_prover().unwrap();
-        let fs_parameters = FS::sample_parameters();
+    let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(1000, 1000, 1000).unwrap();
+    let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+    let universal_prover = &universal_srs.to_universal_prover().unwrap();
+    let fs_parameters = FS::sample_parameters();
 
-        let (circuit, _) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, rng);
+    let (circuit, _) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, rng);
 
-        let params = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
-        b.iter(|| VarunaInst::prove(universal_prover, &fs_parameters, &params.0, &circuit, rng).unwrap())
+    let params = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+
+    c.bench_function("snark_prove_v1", |b| {
+        let varuna_version = VarunaVersion::V1;
+        b.iter(|| {
+            VarunaInst::prove(universal_prover, &fs_parameters, &params.0, varuna_version, &circuit, rng).unwrap()
+        })
+    });
+
+    c.bench_function("snark_prove_v2", |b| {
+        let varuna_version = VarunaVersion::V2;
+        b.iter(|| {
+            VarunaInst::prove(universal_prover, &fs_parameters, &params.0, varuna_version, &circuit, rng).unwrap()
+        })
     });
 }
 
@@ -117,7 +128,11 @@ fn snark_batch_prove(c: &mut Criterion) {
             keys_to_constraints.insert(&pks[i], all_circuits[i].as_slice());
         }
 
-        b.iter(|| VarunaInst::prove_batch(universal_prover, &fs_parameters, &keys_to_constraints, rng).unwrap())
+        let varuna_version = VarunaVersion::V2;
+        b.iter(|| {
+            VarunaInst::prove_batch(universal_prover, &fs_parameters, varuna_version, &keys_to_constraints, rng)
+                .unwrap()
+        })
     });
 }
 
@@ -139,10 +154,18 @@ fn snark_verify(c: &mut Criterion) {
 
         let (pk, vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
 
-        let proof = VarunaInst::prove(universal_prover, &fs_parameters, &pk, &circuit, rng).unwrap();
+        let varuna_version = VarunaVersion::V2;
+        let proof = VarunaInst::prove(universal_prover, &fs_parameters, &pk, varuna_version, &circuit, rng).unwrap();
         b.iter(|| {
-            let verification =
-                VarunaInst::verify(universal_verifier, &fs_parameters, &vk, public_inputs.as_slice(), &proof).unwrap();
+            let verification = VarunaInst::verify(
+                universal_verifier,
+                &fs_parameters,
+                &vk,
+                varuna_version,
+                public_inputs.as_slice(),
+                &proof,
+            )
+            .unwrap();
             assert!(verification);
         })
     });
@@ -193,12 +216,16 @@ fn snark_batch_verify(c: &mut Criterion) {
             keys_to_inputs.insert(&vks[i], all_inputs[i].as_slice());
         }
 
-        let proof = VarunaInst::prove_batch(universal_prover, &fs_parameters, &keys_to_constraints, rng).unwrap();
+        let varuna_version = VarunaVersion::V2;
+        let proof =
+            VarunaInst::prove_batch(universal_prover, &fs_parameters, varuna_version, &keys_to_constraints, rng)
+                .unwrap();
         b.iter(|| {
             let verification =
-                VarunaInst::verify_batch(universal_verifier, &fs_parameters, &keys_to_inputs, &proof).unwrap();
+                VarunaInst::verify_batch(universal_verifier, &fs_parameters, varuna_version, &keys_to_inputs, &proof)
+                    .unwrap();
             assert!(verification);
-        })
+        });
     });
 }
 

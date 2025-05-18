@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -102,7 +102,7 @@ pub trait StackProgram<N: Network> {
     fn program_edition(&self) -> &U16<N>;
 
     /// Returns the program owner.
-    /// The program owner should only be set for programs that were deployed after `ConsensusVersion::V5`
+    /// The program owner should only be set for programs that were deployed after `ConsensusVersion::V7`
     /// when the program owner was enforced by consensus.
     fn program_owner(&self) -> &Option<Address<N>>;
 

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,6 +35,7 @@ use crate::{
         Proof,
         SNARKMode,
         UniversalSRS,
+        VarunaVersion,
         ahp::{AHPError, AHPForR1CS, CircuitId, EvaluationsProvider},
         proof,
         prover,
@@ -68,7 +69,8 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
     pub const PROTOCOL_NAME: &'static [u8] = b"VARUNA-2023";
 
     // TODO: implement optimizations resulting from batching
-    //       (e.g. computing a common set of Lagrange powers, FFT precomputations, etc)
+    //       (e.g. computing a common set of Lagrange powers, FFT precomputations,
+    // etc)
     pub fn batch_circuit_setup<C: ConstraintSynthesizer<E::Fr>>(
         universal_srs: &UniversalSRS<E>,
         circuits: &[&C],
@@ -187,10 +189,14 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
     fn absorb_with_sums(commitments: &[Commitment<E>], sums: &[prover::MatrixSums<E::Fr>], sponge: &mut FS) {
         let sponge_time = start_timer!(|| "Absorbing commitments and message");
         Self::absorb(commitments, sponge);
+        Self::absorb_sums(sums, sponge);
+        end_timer!(sponge_time);
+    }
+
+    fn absorb_sums(sums: &[prover::MatrixSums<E::Fr>], sponge: &mut FS) {
         for sum in sums.iter() {
             sponge.absorb_nonnative_field_elements([sum.sum_a, sum.sum_b, sum.sum_c]);
         }
-        end_timer!(sponge_time);
     }
 }
 
@@ -232,7 +238,8 @@ where
         Ok(circuit_keys.pop().unwrap())
     }
 
-    /// Prove that the verifying key commitments commit to the indexed circuit's polynomials
+    /// Prove that the verifying key commitments commit to the indexed circuit's
+    /// polynomials
     fn prove_vk(
         universal_prover: &Self::UniversalProver,
         fs_parameters: &Self::FSParameters,
@@ -241,9 +248,10 @@ where
     ) -> Result<Self::Certificate> {
         // Initialize sponge
         let mut sponge = Self::init_sponge_for_certificate(fs_parameters, verifying_key)?;
-        // Compute challenges for linear combination, and the point to evaluate the polynomials at.
-        // The linear combination requires `num_polynomials - 1` coefficients
-        // (since the first coeff is 1), and so we squeeze out `num_polynomials` points.
+        // Compute challenges for linear combination, and the point to evaluate the
+        // polynomials at. The linear combination requires `num_polynomials - 1`
+        // coefficients (since the first coeff is 1), and so we squeeze out
+        // `num_polynomials` points.
         let mut challenges = sponge.squeeze_nonnative_field_elements(verifying_key.circuit_commitments.len());
         let point = challenges.pop().ok_or(anyhow!("Failed to squeeze random element"))?;
         let one = E::Fr::one();
@@ -252,7 +260,8 @@ where
         let circuit_id = std::iter::once(&verifying_key.id);
         let circuit_poly_info = AHPForR1CS::<E::Fr, SM>::index_polynomial_info(circuit_id);
 
-        // We will construct a linear combination and provide a proof of evaluation of the lc at `point`.
+        // We will construct a linear combination and provide a proof of evaluation of
+        // the lc at `point`.
         let mut lc = crate::polycommit::sonic_pc::LinearCombination::empty("circuit_check");
         for (label, &c) in circuit_poly_info.keys().zip(linear_combination_challenges) {
             lc.add(c, label.clone());
@@ -275,8 +284,9 @@ where
         Ok(Self::Certificate::new(certificate))
     }
 
-    /// Verify that the verifying key commitments commit to the indexed circuit's polynomials
-    /// Verify that the verifying key's circuit_info is correct
+    /// Verify that the verifying key commitments commit to the indexed
+    /// circuit's polynomials Verify that the verifying key's circuit_info
+    /// is correct
     fn verify_vk<C: ConstraintSynthesizer<Self::ScalarField>>(
         universal_verifier: &Self::UniversalVerifier,
         fs_parameters: &Self::FSParameters,
@@ -297,14 +307,16 @@ where
         // Initialize sponge.
         let mut sponge = Self::init_sponge_for_certificate(fs_parameters, verifying_key)?;
 
-        // Compute challenges for linear combination, and the point to evaluate the polynomials at.
-        // The linear combination requires `num_polynomials - 1` coefficients
-        // (since the first coeff is 1), and so we squeeze out `num_polynomials` points.
+        // Compute challenges for linear combination, and the point to evaluate the
+        // polynomials at. The linear combination requires `num_polynomials - 1`
+        // coefficients (since the first coeff is 1), and so we squeeze out
+        // `num_polynomials` points.
         let mut challenges = sponge.squeeze_nonnative_field_elements(verifying_key.circuit_commitments.len());
         let point = challenges.pop().ok_or(anyhow!("Failed to squeeze random element"))?;
         let combiners = core::iter::once(E::Fr::one()).chain(challenges);
 
-        // We will construct a linear combination and provide a proof of evaluation of the lc at `point`.
+        // We will construct a linear combination and provide a proof of evaluation of
+        // the lc at `point`.
         let (lc, evaluation) =
             AHPForR1CS::<E::Fr, SM>::evaluate_index_polynomials(state, circuit_id, point, combiners)?;
 
@@ -332,10 +344,11 @@ where
 
     /// This is the main entrypoint for creating proofs.
     /// You can find a specification of the prover algorithm in:
-    /// https://github.com/ProvableHQ/protocol-docs
+    /// <https://github.com/ProvableHQ/protocol-docs>
     fn prove_batch<C: ConstraintSynthesizer<E::Fr>, R: Rng + CryptoRng>(
         universal_prover: &Self::UniversalProver,
         fs_parameters: &Self::FSParameters,
+        varuna_version: VarunaVersion,
         keys_to_constraints: &BTreeMap<&CircuitProvingKey<E, SM>, &[C]>,
         zk_rng: &mut R,
     ) -> Result<Self::Proof> {
@@ -350,7 +363,8 @@ where
         }
         let prover_state = AHPForR1CS::<_, SM>::init_prover(&circuits_to_constraints, zk_rng)?;
 
-        // extract information from the prover key and state to consume in further calculations
+        // extract information from the prover key and state to consume in further
+        // calculations
         let mut batch_sizes = BTreeMap::new();
         let mut circuit_infos = BTreeMap::new();
         let mut inputs_and_batch_sizes = BTreeMap::new();
@@ -428,7 +442,40 @@ where
         Self::absorb_labeled(&second_commitments, &mut sponge);
 
         let (verifier_second_msg, verifier_state) =
-            AHPForR1CS::<_, SM>::verifier_second_round(verifier_state, &mut sponge)?;
+            AHPForR1CS::<_, SM>::verifier_second_round(verifier_state, &mut sponge, varuna_version)?;
+        // --------------------------------------------------------------------
+
+        // --------------------------------------------------------------------
+        // Preparation for third round
+
+        let (prover_prepare_third_message, prover_state, verifier_prepare_third_msg, verifier_state) = {
+            match varuna_version {
+                VarunaVersion::V1 => (None, prover_state, None, verifier_state),
+                VarunaVersion::V2 => {
+                    let (prover_prepare_third_message, prover_state) = AHPForR1CS::<_, SM>::prover_prepare_third_round(
+                        &verifier_first_message,
+                        &verifier_second_msg,
+                        prover_state,
+                        zk_rng,
+                    )?;
+
+                    Self::absorb_sums(
+                        &prover_prepare_third_message.sums.clone().into_iter().flatten().collect_vec(),
+                        &mut sponge,
+                    );
+
+                    let (verifier_prepare_third_msg, verifier_state) =
+                        AHPForR1CS::<_, SM>::verifier_prepare_third_round(
+                            verifier_state,
+                            &batch_sizes,
+                            &circuit_infos,
+                            &mut sponge,
+                        )?;
+
+                    (Some(prover_prepare_third_message), prover_state, Some(verifier_prepare_third_msg), verifier_state)
+                }
+            }
+        };
         // --------------------------------------------------------------------
 
         // --------------------------------------------------------------------
@@ -437,8 +484,10 @@ where
         let (prover_third_message, third_oracles, prover_state) = AHPForR1CS::<_, SM>::prover_third_round(
             &verifier_first_message,
             &verifier_second_msg,
+            &verifier_prepare_third_msg,
             prover_state,
             zk_rng,
+            varuna_version,
         )?;
 
         let third_round_comm_time = start_timer!(|| "Committing to third round polys");
@@ -450,11 +499,34 @@ where
         )?;
         end_timer!(third_round_comm_time);
 
-        Self::absorb_labeled_with_sums(
-            &third_commitments,
-            &prover_third_message.sums.clone().into_iter().flatten().collect_vec(),
-            &mut sponge,
-        );
+        match varuna_version {
+            VarunaVersion::V1 => {
+                let prover_third_message = prover_third_message
+                    .clone()
+                    .ok_or_else(|| anyhow!("Expected prover to contribute sums in the third round."))?;
+                if prover_prepare_third_message.is_some() {
+                    return Err(anyhow!("Expected prover to not contribute sums in the prepare third round."))?;
+                }
+                Self::absorb_labeled_with_sums(
+                    &third_commitments,
+                    &prover_third_message.sums.into_iter().flatten().collect_vec(),
+                    &mut sponge,
+                );
+            }
+            VarunaVersion::V2 => {
+                if prover_third_message.is_some() {
+                    return Err(anyhow!("Expected prover to not contribute sums in the third round."))?;
+                }
+                Self::absorb_labeled(&third_commitments, &mut sponge);
+            }
+        }
+
+        // Extract the prover's third message to be used in the verifier's third round.
+        let prover_third_message = match varuna_version {
+            VarunaVersion::V1 => prover_third_message,
+            VarunaVersion::V2 => prover_prepare_third_message,
+        }
+        .ok_or_else(|| anyhow!("Prover did not contribute sums in the expected round."))?;
 
         let (verifier_third_msg, verifier_state) =
             AHPForR1CS::<_, SM>::verifier_third_round(verifier_state, &mut sponge)?;
@@ -577,6 +649,7 @@ where
             &prover_third_message,
             &prover_fourth_message,
             &verifier_state,
+            varuna_version,
         )?;
 
         let eval_time = start_timer!(|| "Evaluating linear combinations over query set");
@@ -621,10 +694,11 @@ where
 
     /// This is the main entrypoint for verifying proofs.
     /// You can find a specification of the verifier algorithm in:
-    /// https://github.com/ProvableHQ/protocol-docs
+    /// <https://github.com/ProvableHQ/protocol-docs>
     fn verify_batch<B: Borrow<Self::VerifierInput>>(
         universal_verifier: &Self::UniversalVerifier,
         fs_parameters: &Self::FSParameters,
+        varuna_version: VarunaVersion,
         keys_to_inputs: &BTreeMap<&Self::VerifyingKey, &[B]>,
         proof: &Self::Proof,
     ) -> Result<bool> {
@@ -806,18 +880,47 @@ where
         // Second round
         let second_round_time = start_timer!(|| "Second round");
         Self::absorb_labeled(&second_commitments, &mut sponge);
-        let (_, verifier_state) = AHPForR1CS::<_, SM>::verifier_second_round(verifier_state, &mut sponge)?;
+        let (_, verifier_state) =
+            AHPForR1CS::<_, SM>::verifier_second_round(verifier_state, &mut sponge, varuna_version)?;
         end_timer!(second_round_time);
+        // --------------------------------------------------------------------
+
+        // --------------------------------------------------------------------
+        // Prep third round
+        let verifier_state = {
+            match varuna_version {
+                VarunaVersion::V1 => verifier_state,
+                VarunaVersion::V2 => {
+                    let prepare_third_round_time = start_timer!(|| "Prep third round");
+                    Self::absorb_sums(&proof.third_msg.sums.clone().into_iter().flatten().collect_vec(), &mut sponge);
+                    let (_, verifier_state) = AHPForR1CS::<_, SM>::verifier_prepare_third_round(
+                        verifier_state,
+                        &batch_sizes,
+                        &circuit_infos,
+                        &mut sponge,
+                    )?;
+                    end_timer!(prepare_third_round_time);
+                    verifier_state
+                }
+            }
+        };
         // --------------------------------------------------------------------
 
         // --------------------------------------------------------------------
         // Third round
         let third_round_time = start_timer!(|| "Third round");
-        Self::absorb_labeled_with_sums(
-            &third_commitments,
-            &proof.third_msg.sums.clone().into_iter().flatten().collect_vec(),
-            &mut sponge,
-        );
+        match varuna_version {
+            VarunaVersion::V1 => {
+                Self::absorb_labeled_with_sums(
+                    &third_commitments,
+                    &proof.third_msg.sums.clone().into_iter().flatten().collect_vec(),
+                    &mut sponge,
+                );
+            }
+            VarunaVersion::V2 => {
+                Self::absorb_labeled(&third_commitments, &mut sponge);
+            }
+        }
         let (_, verifier_state) = AHPForR1CS::<_, SM>::verifier_third_round(verifier_state, &mut sponge)?;
         end_timer!(third_round_time);
         // --------------------------------------------------------------------
@@ -893,6 +996,7 @@ where
             &proof.third_msg,
             &proof.fourth_msg,
             &verifier_state,
+            varuna_version,
         )?;
         end_timer!(lc_time);
 

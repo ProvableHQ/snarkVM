@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,7 +50,7 @@ pub const MAX_DELEGATORS: u32 = 100_000u32;
 pub struct Committee<N: Network> {
     /// The committee ID, defined as the hash of the starting round, members, and total stake.
     id: Field<N>,
-    /// The starting round number for this committee.
+    /// The round number (of the block) at which this committee was created (always even).
     starting_round: u64,
     /// A map of `address` to `(stake, is_open, commission)` state.
     members: IndexMap<Address<N>, (u64, bool, u8)>,
@@ -110,7 +110,7 @@ impl<N: Network> Committee<N> {
         self.id
     }
 
-    /// Returns the starting round number for this committee.
+    /// Returns the round number (of the block) at which this committee was created (always even).
     pub const fn starting_round(&self) -> u64 {
         self.starting_round
     }
@@ -255,7 +255,10 @@ impl<N: Network> Committee<N> {
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers {
     use super::*;
-    use console::{account::Address, prelude::TestRng};
+    use console::{
+        account::{Address, PrivateKey},
+        prelude::TestRng,
+    };
 
     use indexmap::IndexMap;
     use rand_distr::{Distribution, Exp};
@@ -311,6 +314,28 @@ pub mod test_helpers {
         }
         // Return the committee.
         Committee::<CurrentNetwork>::new(round, members).unwrap()
+    }
+
+    /// Generates a committee for the specified round, and private keys for its members.
+    ///
+    /// This is slower than `sample_committee_for_round` or `sample_committee_for_round_and_size` due to the additional key generation.
+    pub fn sample_committee_and_keys_for_round(
+        round: u64,
+        num_members: usize,
+        rng: &mut TestRng,
+    ) -> (Committee<CurrentNetwork>, Vec<PrivateKey<CurrentNetwork>>) {
+        // Sample the members.
+        let mut members = IndexMap::with_capacity(num_members);
+        let mut private_keys = Vec::with_capacity(num_members);
+        for _ in 0..num_members {
+            let private_key = PrivateKey::new(rng).unwrap();
+            let address = Address::try_from(private_key).unwrap();
+            let is_open = rng.gen();
+            private_keys.push(private_key);
+            members.insert(address, (2 * MIN_VALIDATOR_STAKE, is_open, 0));
+        }
+        // Return the committee and keys.
+        (Committee::<CurrentNetwork>::new(round, members).unwrap(), private_keys)
     }
 
     /// Samples a random committee for a given round and members.

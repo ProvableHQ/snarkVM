@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,9 +59,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let max_constraint_domain = state.max_constraint_domain;
 
-        let verifier::FirstMessage { batch_combiners, .. } = verifier_message;
+        let verifier::FirstMessage { first_round_batch_combiners, .. } = verifier_message;
 
-        let h_0 = Self::calculate_rowcheck_witness(&mut state, batch_combiners)?;
+        let h_0 = Self::calculate_rowcheck_witness(&mut state, first_round_batch_combiners)?;
 
         assert!(h_0.degree() <= 2 * max_constraint_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 

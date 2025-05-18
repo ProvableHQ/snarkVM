@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,38 +42,6 @@ impl<N: Network> Equal<Self> for Argument<N> {
             (Self::Plaintext(plaintext_a), Self::Plaintext(plaintext_b)) => plaintext_a.is_not_equal(plaintext_b),
             (Self::Future(future_a), Self::Future(future_b)) => future_a.is_not_equal(future_b),
             (Self::Plaintext(..), _) | (Self::Future(..), _) => Boolean::new(true),
-        }
-    }
-}
-
-impl<N: Network> FromBytes for Argument<N> {
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self>
-    where
-        Self: Sized,
-    {
-        // Read the index.
-        let index = u8::read_le(&mut reader)?;
-        // Read the argument.
-        let argument = match index {
-            0 => Self::Plaintext(Plaintext::read_le(&mut reader)?),
-            1 => Self::Future(Future::read_le(&mut reader)?),
-            2.. => return Err(error(format!("Failed to decode future argument {index}"))),
-        };
-        Ok(argument)
-    }
-}
-
-impl<N: Network> ToBytes for Argument<N> {
-    fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        match self {
-            Self::Plaintext(plaintext) => {
-                0u8.write_le(&mut writer)?;
-                plaintext.write_le(&mut writer)
-            }
-            Self::Future(future) => {
-                1u8.write_le(&mut writer)?;
-                future.write_le(&mut writer)
-            }
         }
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +15,8 @@
 
 use snarkvm_curves::PairingEngine;
 
-/// `UniversalProver` is used to compute evaluation proofs for a given commitment.
+/// `UniversalProver` is used to compute evaluation proofs for a given
+/// commitment.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UniversalProver<E: PairingEngine> {
     /// The maximum degree supported by the universal SRS.

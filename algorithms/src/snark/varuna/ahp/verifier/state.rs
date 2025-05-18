@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,7 @@ use crate::{
     snark::varuna::{
         CircuitId,
         SNARKMode,
-        ahp::verifier::{FirstMessage, FourthMessage, SecondMessage, ThirdMessage},
+        ahp::verifier::{FirstMessage, FourthMessage, PrepareThirdMessage, SecondMessage, ThirdMessage},
     },
 };
 use snarkvm_fields::PrimeField;
@@ -55,6 +55,8 @@ pub struct State<F: PrimeField, SM: SNARKMode> {
     pub(crate) first_round_message: Option<FirstMessage<F>>,
     /// The verifier message in the second round of the AHP
     pub(crate) second_round_message: Option<SecondMessage<F>>,
+    /// The verifier message in the prep third round of the AHP
+    pub(crate) prepare_third_round_message: Option<PrepareThirdMessage<F>>,
     /// The verifier message in the third round of the AHP
     pub(crate) third_round_message: Option<ThirdMessage<F>>,
     /// The verifier message in the fourth round of the AHP

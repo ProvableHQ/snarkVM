@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -140,9 +140,9 @@ impl<N: Network> Transaction<N> {
     /// Returns the Merkle tree for the given deployment.
     pub fn deployment_tree(deployment: &Deployment<N>) -> Result<DeploymentTree<N>> {
         // Use the V1 or V2 deployment tree based on implicit deployment version.
-        // Note: `ConsensusVersion::V5` requires the program checksum and program owner to be present, while prior versions require it to be absent.
+        // Note: `ConsensusVersion::V7` requires the program checksum and program owner to be present, while prior versions require it to be absent.
         //   `Deployment::version` checks that this is the case.
-        // Note: After `ConsensusVersion::V5`, the program checksum and owner are used in the header of the hash instead of the program ID.
+        // Note: After `ConsensusVersion::V7`, the program checksum and owner are used in the header of the hash instead of the program ID.
         match deployment.version() {
             Ok(DeploymentVersion::V1) => Self::deployment_tree_v1(deployment),
             Ok(DeploymentVersion::V2) => Self::deployment_tree_v2(deployment),

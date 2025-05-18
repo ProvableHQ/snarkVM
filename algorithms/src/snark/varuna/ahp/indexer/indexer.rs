@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -132,7 +132,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         end_timer!(constraint_time);
 
         let padding_time = start_timer!(|| "Padding matrices");
-        // Given that we only use the matrix for indexing, the values we choose for assignments don't matter
+        // Given that we only use the matrix for indexing, the values we choose for
+        // assignments don't matter
         let random_assignments = None;
         SM::ZK.then(|| {
             crate::snark::varuna::ahp::matrices::add_randomizing_variables::<_, _>(&mut ics, random_assignments)
@@ -227,8 +228,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         result
     }
 
-    /// Evaluate the index polynomials for this constraint system at the given point.
-    /// Return the LinearCombination of the index polynomials and the sum of the evaluations.
+    /// Evaluate the index polynomials for this constraint system at the given
+    /// point. Return the LinearCombination of the index polynomials and the
+    /// sum of the evaluations.
     pub(crate) fn evaluate_index_polynomials(
         state: IndexerState<F>,
         id: &CircuitId,

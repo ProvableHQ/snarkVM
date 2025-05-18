@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +36,7 @@ pub use snarkvm_console_types_boolean::Boolean;
 pub use snarkvm_console_types_field::Field;
 pub use snarkvm_console_types_group::Group;
 
+/// The unique ID of an Aleo account, which is derived from its view key.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Address<E: Environment> {
     /// The underlying address.

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -146,8 +146,8 @@ impl<F: FftField> EvaluationDomain<F> {
         })
     }
 
-    /// Return the size of a domain that is large enough for evaluations of a polynomial
-    /// having `num_coeffs` coefficients.
+    /// Return the size of a domain that is large enough for evaluations of a
+    /// polynomial having `num_coeffs` coefficients.
     pub fn compute_size_of_domain(num_coeffs: usize) -> Option<usize> {
         let size = num_coeffs.checked_next_power_of_two()?;
         if size.trailing_zeros() <= F::FftParameters::TWO_ADICITY { Some(size) } else { None }
@@ -212,7 +212,8 @@ impl<F: FftField> EvaluationDomain<F> {
         evals
     }
 
-    /// Compute an IFFT over a coset of the domain, modifying the input vector in place.
+    /// Compute an IFFT over a coset of the domain, modifying the input vector
+    /// in place.
     pub fn coset_ifft_in_place<T: DomainCoeff<F>>(&self, evals: &mut Vec<T>) {
         execute_with_max_available_threads(|| {
             evals.resize(self.size(), T::zero());
@@ -253,8 +254,8 @@ impl<F: FftField> EvaluationDomain<F> {
         });
     }
 
-    /// Evaluate all the lagrange polynomials defined by this domain at the point
-    /// `tau`.
+    /// Evaluate all the lagrange polynomials defined by this domain at the
+    /// point `tau`.
     pub fn evaluate_all_lagrange_coefficients(&self, tau: F) -> Vec<F> {
         // Evaluate all Lagrange polynomials
         let size = self.size as usize;
@@ -298,7 +299,8 @@ impl<F: FftField> EvaluationDomain<F> {
     }
 
     /// This evaluates the vanishing polynomial for this domain at tau.
-    /// For multiplicative subgroups, this polynomial is `z(X) = X^self.size - 1`.
+    /// For multiplicative subgroups, this polynomial is `z(X) = X^self.size -
+    /// 1`.
     pub fn evaluate_vanishing_polynomial(&self, tau: F) -> F {
         tau.pow([self.size]) - F::one()
     }
@@ -317,25 +319,27 @@ impl<F: FftField> EvaluationDomain<F> {
         cfg_iter_mut!(evals).for_each(|eval| *eval *= &i);
     }
 
-    /// Given an index in the `other` subdomain, return an index into this domain `self`
-    /// This assumes the `other`'s elements are also `self`'s first elements
+    /// Given an index in the `other` subdomain, return an index into this
+    /// domain `self` This assumes the `other`'s elements are also `self`'s
+    /// first elements
     pub fn reindex_by_subdomain(&self, other: &Self, index: usize) -> Result<usize> {
         ensure!(self.size() > other.size(), "other.size() must be smaller than self.size()");
 
         // Let this subgroup be G, and the subgroup we're re-indexing by be S.
-        // Since its a subgroup, the 0th element of S is at index 0 in G, the first element of S is at
-        // index |G|/|S|, the second at 2*|G|/|S|, etc.
+        // Since its a subgroup, the 0th element of S is at index 0 in G, the first
+        // element of S is at index |G|/|S|, the second at 2*|G|/|S|, etc.
         // Thus for an index i that corresponds to S, the index in G is i*|G|/|S|
         let period = self.size() / other.size();
         if index < other.size() {
             Ok(index * period)
         } else {
             // Let i now be the index of this element in G \ S
-            // Let x be the number of elements in G \ S, for every element in S. Then x = (|G|/|S| - 1).
-            // At index i in G \ S, the number of elements in S that appear before the index in G to which
-            // i corresponds to, is floor(i / x) + 1.
-            // The +1 is because index 0 of G is S_0, so the position is offset by at least one.
-            // The floor(i / x) term is because after x elements in G \ S, there is one more element from S
+            // Let x be the number of elements in G \ S, for every element in S. Then x =
+            // (|G|/|S| - 1). At index i in G \ S, the number of elements in S
+            // that appear before the index in G to which i corresponds to, is
+            // floor(i / x) + 1. The +1 is because index 0 of G is S_0, so the
+            // position is offset by at least one. The floor(i / x) term is
+            // because after x elements in G \ S, there is one more element from S
             // that will have appeared in G.
             let i = index - other.size();
             let x = period - 1;
@@ -343,8 +347,8 @@ impl<F: FftField> EvaluationDomain<F> {
         }
     }
 
-    /// Perform O(n) multiplication of two polynomials that are presented by their
-    /// evaluations in the domain.
+    /// Perform O(n) multiplication of two polynomials that are presented by
+    /// their evaluations in the domain.
     /// Returns the evaluations of the product over the domain.
     pub fn mul_polynomials_in_evaluation_domain(&self, self_evals: Vec<F>, other_evals: &[F]) -> Result<Vec<F>> {
         let mut result = self_evals;
@@ -847,7 +851,8 @@ pub(crate) fn compute_powers<F: Field>(size: usize, g: F) -> Vec<F> {
         .flat_map(|i| {
             let offset = g.pow([(i * num_elem_per_thread) as u64]);
             // Compute the size that this chunks' output should be
-            // (num_elem_per_thread, unless there are less than num_elem_per_thread elements remaining)
+            // (num_elem_per_thread, unless there are less than num_elem_per_thread elements
+            // remaining)
             let num_elements_to_compute = core::cmp::min(size - i * num_elem_per_thread, num_elem_per_thread);
             compute_powers_and_mul_by_const_serial(num_elements_to_compute, g, offset)
         })
@@ -987,7 +992,8 @@ mod tests {
         }
     }
 
-    /// Test that lagrange interpolation for a random polynomial at a random point works.
+    /// Test that lagrange interpolation for a random polynomial at a random
+    /// point works.
     #[test]
     fn non_systematic_lagrange_coefficients_test() {
         let mut rng = TestRng::default();
@@ -998,7 +1004,8 @@ mod tests {
             let random_point = Fr::rand(&mut rng);
             let lagrange_coefficients = domain.evaluate_all_lagrange_coefficients(random_point);
 
-            // Sample the random polynomial, evaluate it over the domain and the random point.
+            // Sample the random polynomial, evaluate it over the domain and the random
+            // point.
             let random_polynomial = DensePolynomial::<Fr>::rand(domain_size - 1, &mut rng);
             let polynomial_evaluations = domain.fft(random_polynomial.coeffs());
             let actual_evaluations = random_polynomial.evaluate(random_point);
@@ -1015,8 +1022,9 @@ mod tests {
     /// Test that lagrange coefficients for a point in the domain is correct.
     #[test]
     fn systematic_lagrange_coefficients_test() {
-        // This runs in time O(N^2) in the domain size, so keep the domain dimension low.
-        // We generate lagrange coefficients for each element in the domain.
+        // This runs in time O(N^2) in the domain size, so keep the domain dimension
+        // low. We generate lagrange coefficients for each element in the
+        // domain.
         for domain_dimension in 1..5 {
             let domain_size = 1 << domain_dimension;
             let domain = EvaluationDomain::<Fr>::new(domain_size).unwrap();

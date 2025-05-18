@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This crate implements functions for manipulating polynomials over finite fields,
-//! including FFTs.
+//! This crate implements functions for manipulating polynomials over finite
+//! fields, including FFTs.
 
 pub mod domain;
 pub use domain::EvaluationDomain;

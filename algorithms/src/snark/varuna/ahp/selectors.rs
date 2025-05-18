@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,7 +49,8 @@ pub(crate) fn precompute_selectors<F: PrimeField>(
             domains.into_iter().map(move |domain| {
                 let domain_at_challenge = domain.evaluate_vanishing_polynomial(challenge);
                 // Given two domains H and K such that H \subseteq K,
-                // evaluate polynomial that outputs 0 on all elements in K \ H, but 1 on all elements of H.
+                // evaluate polynomial that outputs 0 on all elements in K \ H, but 1 on all
+                // elements of H.
                 (
                     max_domain_at_challenge * domain.size_as_field_element,
                     domain_at_challenge * max_domain.size_as_field_element,
@@ -62,11 +63,12 @@ pub(crate) fn precompute_selectors<F: PrimeField>(
     cfg_into_iter!(numerators).zip_eq(denominators).zip_eq(keys).map(|((num, denom), key)| (key, num * denom)).collect()
 }
 
-/// Throughout the protocol, we are tasked with computing a zerocheck or sumcheck
-/// of multiple polynomials over different domains.
-/// These can be combined into a single check by taking a random linear combination
-/// of the polynomials and multiplying them by an appropriate selector polynomial.
-/// This function applies the random combiner and selector in an optimized way
+/// Throughout the protocol, we are tasked with computing a zerocheck or
+/// sumcheck of multiple polynomials over different domains.
+/// These can be combined into a single check by taking a random linear
+/// combination of the polynomials and multiplying them by an appropriate
+/// selector polynomial. This function applies the random combiner and selector
+/// in an optimized way
 pub(crate) fn apply_randomized_selector<F: PrimeField>(
     poly: &mut DensePolynomial<F>,
     combiner: F,
@@ -78,15 +80,17 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
     // Let H_i = src_domain;
     // Let v_H := H.vanishing_polynomial();
     // Let v_H_i := H_i.vanishing_polynomial();
-    // Let s_i := H.selector_polynomial(H_i) = (v_H / v_H_i) * (H_i.size() / H.size());
-    // Let c_i := circuit combiner
+    // Let s_i := H.selector_polynomial(H_i) = (v_H / v_H_i) * (H_i.size() /
+    // H.size()); Let c_i := circuit combiner
     // Let poly_i := circuit specific polynomial which is being checked
 
-    // Instead of just multiplying each poly_i by `s_i*c_i`, we reorder the check to cancel out division by v_H
-    // This removes a mul and div by v_H operation over each circuit's (target_domain - src_domain)
-    // We have two scenario's: either we return a remainder witness or there is none.
+    // Instead of just multiplying each poly_i by `s_i*c_i`, we reorder the check to
+    // cancel out division by v_H This removes a mul and div by v_H operation
+    // over each circuit's (target_domain - src_domain) We have two scenario's:
+    // either we return a remainder witness or there is none.
     if !remainder_witness {
-        // Substituting in s_i, we get that poly_i * s_i / v_H = poly_i / v_H_i * (H_i.size() / H.size());
+        // Substituting in s_i, we get that poly_i * s_i / v_H = poly_i / v_H_i *
+        // (H_i.size() / H.size());
         let selector_time = start_timer!(|| "Compute selector without remainder witness");
 
         let (mut h_i, remainder) = poly.divide_by_vanishing_poly(*src_domain)?;
@@ -101,8 +105,9 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // Substituting in s_i, we get that:
         // \sum_i{poly_i}/v_H = \sum{h_i*v_H + x_g_i}
         // \sum_i{c_i*s_i*(poly_i/v_H - x_g_i)} = \sum{h_i*v_H}
-        // \sum_i{c_i*(H_i.size()/H.size())*(poly_i/v_H_i - x_g_i*v_H/v_H_i)} = \sum{h_i*v_H}
-        // \sum_i{c_i*(H_i.size()/H.size())*(poly_i/v_H_i} = \sum{h_i*v_H} + \sum{c_i*x_g_i*(v_H/v_H_i)*(H_i.size()/H.size())}
+        // \sum_i{c_i*(H_i.size()/H.size())*(poly_i/v_H_i - x_g_i*v_H/v_H_i)} =
+        // \sum{h_i*v_H} \sum_i{c_i*(H_i.size()/H.size())*(poly_i/v_H_i} =
+        // \sum{h_i*v_H} + \sum{c_i*x_g_i*(v_H/v_H_i)*(H_i.size()/H.size())}
         // (\sum_i{c_i*s_i*poly_i})/v_H = \sum{h_i*v_H} + \sum{c_i*s_i*x_g_i}
         // (\sum_i{c_i*s_i*poly_i})/v_H = h_1*v_H + x_g_1
         // That's what we're computing here.
@@ -131,7 +136,8 @@ mod tests {
     use snarkvm_utilities::rand::TestRng;
 
     /// Given two domains H and K such that H \subseteq K,
-    /// evaluate polynomial that outputs 0 on all elements in K \ H, but 1 on all elements of H.
+    /// evaluate polynomial that outputs 0 on all elements in K \ H, but 1 on
+    /// all elements of H.
     fn evaluate_selector_polynomial<F: PrimeField>(
         this: EvaluationDomain<F>,
         other: EvaluationDomain<F>,

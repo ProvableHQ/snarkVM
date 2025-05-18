@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -106,8 +106,8 @@ pub trait ConstraintSystem<F: Field>: Sized {
     fn is_in_setup_mode(&self) -> bool;
 }
 
-/// Convenience implementation of ConstraintSystem<F> for mutable references to
-/// constraint systems.
+/// Convenience implementation of `ConstraintSystem<F>` for mutable references
+/// to constraint systems.
 impl<F: Field, CS: ConstraintSystem<F>> ConstraintSystem<F> for &mut CS {
     type Root = CS::Root;
 

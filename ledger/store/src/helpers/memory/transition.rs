@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,7 +55,8 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     type SCMMap = MemoryMap<N::TransitionID, Field<N>>;
 
     /// Initializes the transition storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        let storage = storage.into();
         Ok(Self {
             locator_map: MemoryMap::default(),
             input_store: InputStore::open(storage.clone())?,
@@ -144,7 +145,7 @@ impl<N: Network> InputStorage<N> for InputMemory<N> {
     type ExternalRecordMap = MemoryMap<Field<N>, ()>;
 
     /// Initializes the transition input storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         Ok(Self {
             id_map: MemoryMap::default(),
             reverse_id_map: MemoryMap::default(),
@@ -243,7 +244,7 @@ impl<N: Network> OutputStorage<N> for OutputMemory<N> {
     type FutureMap = MemoryMap<Field<N>, Option<Future<N>>>;
 
     /// Initializes the transition output storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         Ok(Self {
             id_map: Default::default(),
             reverse_id_map: Default::default(),

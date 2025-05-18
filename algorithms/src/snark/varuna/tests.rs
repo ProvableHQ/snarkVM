@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +22,7 @@ mod varuna {
             VarunaHidingMode,
             VarunaNonHidingMode,
             VarunaSNARK,
+            VarunaVersion,
             mode::SNARKMode,
             test_circuit::TestCircuit,
         },
@@ -45,7 +46,7 @@ mod varuna {
         ($test_struct: ident, $snark_inst: tt, $snark_mode: tt) => {
             struct $test_struct {}
             impl $test_struct {
-                pub(crate) fn test_circuit(num_constraints: usize, num_variables: usize, pk_size_expectation: usize) {
+                pub(crate) fn test_circuit(num_constraints: usize, num_variables: usize, pk_size_expectation: usize, varuna_version: VarunaVersion) {
                     let rng = &mut snarkvm_utilities::rand::TestRng::default();
                     let random = Fr::rand(rng);
 
@@ -55,9 +56,14 @@ mod varuna {
                     let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
                     let fs_parameters = FS::sample_parameters();
 
+                    let wrong_varuna_version = match varuna_version {
+                        VarunaVersion::V1 => VarunaVersion::V2,
+                        VarunaVersion::V2 => VarunaVersion::V1,
+                    };
+
                     for i in 0..5 {
                         let mul_depth = 1;
-                        println!("running test with SM::ZK: {}, mul_depth: {}, num_constraints: {}, num_variables: {}", $snark_mode::ZK, mul_depth + i, num_constraints + i, num_variables + i);
+                        println!("running test with SM::ZK: {}, mul_depth: {}, num_constraints: {}, num_variables: {}, varuna_version: {:?}", $snark_mode::ZK, mul_depth + i, num_constraints + i, num_variables + i, varuna_version);
                         let (circ, public_inputs) = TestCircuit::gen_rand(mul_depth + i, num_constraints + i, num_variables + i, rng);
                         let mut fake_inputs = public_inputs.clone();
                         fake_inputs[public_inputs.len() - 1] = random;
@@ -74,13 +80,15 @@ mod varuna {
                         }
                         assert_eq!(664, index_vk.to_bytes_le().unwrap().len(), "Update me if serialization has changed");
 
-                        let proof = $snark_inst::prove(universal_prover, &fs_parameters, &index_pk, &circ, rng).unwrap();
+                        let proof = $snark_inst::prove(universal_prover, &fs_parameters, &index_pk, varuna_version, &circ, rng).unwrap();
                         println!("Called prover");
 
-                        assert!($snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, public_inputs, &proof).unwrap());
+                        assert!($snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, varuna_version, public_inputs.clone(), &proof).unwrap());
                         println!("Called verifier");
-                        eprintln!("\nShould not verify (i.e. verifier messages should print below):");
-                        assert!(!$snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, fake_inputs, &proof).unwrap());
+                        eprintln!("\nShould not verify with fake inputs (i.e. verifier messages should print below):");
+                        assert!(!$snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, varuna_version, fake_inputs, &proof).unwrap());
+                        eprintln!("\nShould not verify with wrong varuna version (i.e. verifier messages should print below):");
+                        assert!(!$snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, wrong_varuna_version, public_inputs, &proof).unwrap());
                     }
 
                     for circuit_batch_size in (0..4).map(|i| 2usize.pow(i)) {
@@ -120,15 +128,15 @@ mod varuna {
                             println!("verified vks");
 
                             let proof =
-                                $snark_inst::prove_batch(universal_prover, &fs_parameters, &pks_to_constraints, rng).unwrap();
+                                $snark_inst::prove_batch(universal_prover, &fs_parameters, varuna_version, &pks_to_constraints, rng).unwrap();
                             println!("Called prover");
 
                             assert!(
-                                $snark_inst::verify_batch(universal_verifier, &fs_parameters, &vks_to_inputs, &proof).unwrap(),
+                                $snark_inst::verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof).unwrap(),
                                 "Batch verification failed with {instance_batch_size} instances and {circuit_batch_size} circuits for circuits: {constraints:?}"
                             );
                             println!("Called verifier");
-                            eprintln!("\nShould not verify (i.e. verifier messages should print below):");
+                            eprintln!("\nShould not verify with wrong inputs (i.e. verifier messages should print below):");
                             let mut fake_instance_inputs = Vec::with_capacity(vks_to_inputs.len());
                             for instance_input in vks_to_inputs.values() {
                                 let mut fake_instance_input = Vec::with_capacity(instance_input.len());
@@ -147,8 +155,20 @@ mod varuna {
                                 !$snark_inst::verify_batch(
                                     universal_verifier,
                                     &fs_parameters,
+                                    varuna_version,
                                     &vks_to_fake_inputs,
-                                    &proof
+                                    &proof,
+                                )
+                                .unwrap()
+                            );
+                            eprintln!("\nShould not verify with wrong varuna version (i.e. verifier messages should print below):");
+                            assert!(
+                                !$snark_inst::verify_batch(
+                                    universal_verifier,
+                                    &fs_parameters,
+                                    wrong_varuna_version,
+                                    &vks_to_inputs,
+                                    &proof,
                                 )
                                 .unwrap()
                             );
@@ -221,8 +241,11 @@ mod varuna {
         let pk_size_zk = 91971;
         let pk_size_posw = 91633;
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
 
         SonicPCTest::test_serde_json(num_constraints, num_variables);
         SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
@@ -238,8 +261,11 @@ mod varuna {
         let pk_size_zk = 25428;
         let pk_size_posw = 25090;
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
 
         SonicPCTest::test_serde_json(num_constraints, num_variables);
         SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
@@ -255,8 +281,11 @@ mod varuna {
         let pk_size_zk = 53523;
         let pk_size_posw = 53185;
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
 
         SonicPCTest::test_serde_json(num_constraints, num_variables);
         SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
@@ -272,8 +301,11 @@ mod varuna {
         let pk_size_zk = 25284;
         let pk_size_posw = 24946;
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
 
         SonicPCTest::test_serde_json(num_constraints, num_variables);
         SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
@@ -289,8 +321,11 @@ mod varuna {
         let pk_size_zk = 25284;
         let pk_size_posw = 24946;
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
 
         SonicPCTest::test_serde_json(num_constraints, num_variables);
         SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
@@ -308,6 +343,7 @@ mod varuna_hiding {
             CircuitVerifyingKey,
             VarunaHidingMode,
             VarunaSNARK,
+            VarunaVersion,
             ahp::AHPForR1CS,
             test_circuit::TestCircuit,
         },
@@ -325,7 +361,12 @@ mod varuna_hiding {
     type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
     type FS = PoseidonSponge<Fq, 2, 1>;
 
-    fn test_circuit_n_times(num_constraints: usize, num_variables: usize, num_times: usize) {
+    fn test_circuit_n_times(
+        num_constraints: usize,
+        num_variables: usize,
+        num_times: usize,
+        varuna_version: VarunaVersion,
+    ) {
         let rng = &mut TestRng::default();
 
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
@@ -333,6 +374,11 @@ mod varuna_hiding {
         let universal_prover = &universal_srs.to_universal_prover().unwrap();
         let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
         let fs_parameters = FS::sample_parameters();
+
+        let wrong_varuna_version = match varuna_version {
+            VarunaVersion::V1 => VarunaVersion::V2,
+            VarunaVersion::V2 => VarunaVersion::V1,
+        };
 
         for _ in 0..num_times {
             let mul_depth = 2;
@@ -343,18 +389,51 @@ mod varuna_hiding {
             let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
             println!("Called circuit setup");
 
-            let proof = VarunaInst::prove(universal_prover, &fs_parameters, &index_pk, &circuit, rng).unwrap();
+            let proof =
+                VarunaInst::prove(universal_prover, &fs_parameters, &index_pk, varuna_version, &circuit, rng).unwrap();
             println!("Called prover");
 
-            assert!(VarunaInst::verify(universal_verifier, &fs_parameters, &index_vk, public_inputs, &proof).unwrap());
+            assert!(
+                VarunaInst::verify(
+                    universal_verifier,
+                    &fs_parameters,
+                    &index_vk,
+                    varuna_version,
+                    public_inputs.clone(),
+                    &proof,
+                )
+                .unwrap()
+            );
             println!("Called verifier");
-            eprintln!("\nShould not verify (i.e. verifier messages should print below):");
-            assert!(!VarunaInst::verify(universal_verifier, &fs_parameters, &index_vk, fake_inputs, &proof).unwrap());
+            eprintln!("\nShould not verify with fake inputs (i.e. verifier messages should print below):");
+            assert!(
+                !VarunaInst::verify(
+                    universal_verifier,
+                    &fs_parameters,
+                    &index_vk,
+                    varuna_version,
+                    fake_inputs.clone(),
+                    &proof
+                )
+                .unwrap()
+            );
+            eprintln!("\nShould not verify with wrong varuna version (i.e. verifier messages should print below):");
+            assert!(
+                !VarunaInst::verify(
+                    universal_verifier,
+                    &fs_parameters,
+                    &index_vk,
+                    wrong_varuna_version,
+                    public_inputs.clone(),
+                    &proof,
+                )
+                .unwrap()
+            );
         }
     }
 
-    fn test_circuit(num_constraints: usize, num_variables: usize) {
-        test_circuit_n_times(num_constraints, num_variables, 100)
+    fn test_circuit(num_constraints: usize, num_variables: usize, varuna_version: VarunaVersion) {
+        test_circuit_n_times(num_constraints, num_variables, 100, varuna_version)
     }
 
     fn test_serde_json(num_constraints: usize, num_variables: usize) {
@@ -394,7 +473,8 @@ mod varuna_hiding {
         // Serialize
         let expected_bytes = index_vk.to_bytes_le().unwrap();
         let candidate_bytes = bincode::serialize(&index_vk).unwrap();
-        // TODO (howardwu): Serialization - Handle the inconsistency between ToBytes and Serialize (off by a length encoding).
+        // TODO (howardwu): Serialization - Handle the inconsistency between ToBytes and
+        // Serialize (off by a length encoding).
         assert_eq!(&expected_bytes[..], &candidate_bytes[8..]);
 
         // Deserialize
@@ -407,7 +487,8 @@ mod varuna_hiding {
         let num_constraints = 100;
         let num_variables = 25;
 
-        test_circuit(num_constraints, num_variables);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
         test_serde_json(num_constraints, num_variables);
         test_bincode(num_constraints, num_variables);
     }
@@ -417,7 +498,8 @@ mod varuna_hiding {
         let num_constraints = 26;
         let num_variables = 25;
 
-        test_circuit(num_constraints, num_variables);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
         test_serde_json(num_constraints, num_variables);
         test_bincode(num_constraints, num_variables);
     }
@@ -427,7 +509,8 @@ mod varuna_hiding {
         let num_constraints = 25;
         let num_variables = 100;
 
-        test_circuit(num_constraints, num_variables);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
         test_serde_json(num_constraints, num_variables);
         test_bincode(num_constraints, num_variables);
     }
@@ -437,7 +520,8 @@ mod varuna_hiding {
         let num_constraints = 25;
         let num_variables = 26;
 
-        test_circuit(num_constraints, num_variables);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
         test_serde_json(num_constraints, num_variables);
         test_bincode(num_constraints, num_variables);
     }
@@ -447,7 +531,8 @@ mod varuna_hiding {
         let num_constraints = 25;
         let num_variables = 25;
 
-        test_circuit(num_constraints, num_variables);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
         test_serde_json(num_constraints, num_variables);
         test_bincode(num_constraints, num_variables);
     }
@@ -457,7 +542,8 @@ mod varuna_hiding {
         let num_constraints = 1 << 16;
         let num_variables = 1 << 16;
 
-        test_circuit_n_times(num_constraints, num_variables, 1);
+        test_circuit_n_times(num_constraints, num_variables, 1, VarunaVersion::V1);
+        test_circuit_n_times(num_constraints, num_variables, 1, VarunaVersion::V2);
     }
 
     #[test]
@@ -473,21 +559,56 @@ mod varuna_hiding {
         let universal_prover = &universal_srs.to_universal_prover().unwrap();
         let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
         let fs_parameters = FS::sample_parameters();
+        for varuna_version in [VarunaVersion::V1, VarunaVersion::V2] {
+            let wrong_varuna_version = match varuna_version {
+                VarunaVersion::V1 => VarunaVersion::V2,
+                VarunaVersion::V2 => VarunaVersion::V1,
+            };
+            let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+            println!("Called circuit setup");
 
-        let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
-        println!("Called circuit setup");
+            let proof =
+                VarunaInst::prove(universal_prover, &fs_parameters, &index_pk, varuna_version, &circuit, rng).unwrap();
+            println!("Called prover");
 
-        let proof = VarunaInst::prove(universal_prover, &fs_parameters, &index_pk, &circuit, rng).unwrap();
-        println!("Called prover");
-
-        universal_srs.download_powers_for(0..2usize.pow(18)).unwrap();
-        let (new_pk, new_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
-        assert_eq!(index_pk, new_pk);
-        assert_eq!(index_vk, new_vk);
-        assert!(
-            VarunaInst::verify(universal_verifier, &fs_parameters, &index_vk, public_inputs.clone(), &proof).unwrap()
-        );
-        assert!(VarunaInst::verify(universal_verifier, &fs_parameters, &new_vk, public_inputs, &proof).unwrap());
+            universal_srs.download_powers_for(0..2usize.pow(18)).unwrap();
+            let (new_pk, new_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+            assert_eq!(index_pk, new_pk);
+            assert_eq!(index_vk, new_vk);
+            assert!(
+                VarunaInst::verify(
+                    universal_verifier,
+                    &fs_parameters,
+                    &index_vk,
+                    varuna_version,
+                    public_inputs.clone(),
+                    &proof,
+                )
+                .unwrap()
+            );
+            assert!(
+                VarunaInst::verify(
+                    universal_verifier,
+                    &fs_parameters,
+                    &new_vk,
+                    varuna_version,
+                    public_inputs.clone(),
+                    &proof
+                )
+                .unwrap()
+            );
+            assert!(
+                !VarunaInst::verify(
+                    universal_verifier,
+                    &fs_parameters,
+                    &index_vk,
+                    wrong_varuna_version,
+                    public_inputs.clone(),
+                    &proof,
+                )
+                .unwrap()
+            );
+        }
     }
 
     #[test]
@@ -499,8 +620,10 @@ mod varuna_hiding {
         let universal_prover = &universal_srs.to_universal_prover().unwrap();
         let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
         let fs_parameters = FS::sample_parameters();
+        let varuna_version = VarunaVersion::V2;
 
-        // Indexing, proving, and verifying for a circuit with 1 << 15 constraints and 1 << 15 variables.
+        // Indexing, proving, and verifying for a circuit with 1 << 15 constraints and 1
+        // << 15 variables.
         let mul_depth = 2;
         let num_constraints = 2usize.pow(15) - 10;
         let num_variables = 2usize.pow(15) - 10;
@@ -508,13 +631,25 @@ mod varuna_hiding {
         let (pk1, vk1) = VarunaInst::circuit_setup(&universal_srs, &circuit1).unwrap();
         println!("Called circuit setup");
 
-        let proof1 = VarunaInst::prove(universal_prover, &fs_parameters, &pk1, &circuit1, rng).unwrap();
+        let proof1 = VarunaInst::prove(universal_prover, &fs_parameters, &pk1, varuna_version, &circuit1, rng).unwrap();
         println!("Called prover");
-        assert!(VarunaInst::verify(universal_verifier, &fs_parameters, &vk1, public_inputs1.clone(), &proof1).unwrap());
+        assert!(
+            VarunaInst::verify(
+                universal_verifier,
+                &fs_parameters,
+                &vk1,
+                varuna_version,
+                public_inputs1.clone(),
+                &proof1
+            )
+            .unwrap()
+        );
 
-        /*****************************************************************************/
+        /***************************************************************************
+         * * */
 
-        // Indexing, proving, and verifying for a circuit with 1 << 19 constraints and 1 << 19 variables.
+        // Indexing, proving, and verifying for a circuit with 1 << 19 constraints and 1
+        // << 19 variables.
         let mul_depth = 2;
         let num_constraints = 2usize.pow(19) - 10;
         let num_variables = 2usize.pow(19) - 10;
@@ -522,18 +657,25 @@ mod varuna_hiding {
         let (pk2, vk2) = VarunaInst::circuit_setup(&universal_srs, &circuit2).unwrap();
         println!("Called circuit setup");
 
-        let proof2 = VarunaInst::prove(universal_prover, &fs_parameters, &pk2, &circuit2, rng).unwrap();
+        let proof2 = VarunaInst::prove(universal_prover, &fs_parameters, &pk2, varuna_version, &circuit2, rng).unwrap();
         println!("Called prover");
-        assert!(VarunaInst::verify(universal_verifier, &fs_parameters, &vk2, public_inputs2, &proof2).unwrap());
-        /*****************************************************************************/
-        assert!(VarunaInst::verify(universal_verifier, &fs_parameters, &vk1, public_inputs1, &proof1).unwrap());
+        assert!(
+            VarunaInst::verify(universal_verifier, &fs_parameters, &vk2, varuna_version, public_inputs2, &proof2)
+                .unwrap()
+        );
+        /***************************************************************************
+         * * */
+        assert!(
+            VarunaInst::verify(universal_verifier, &fs_parameters, &vk1, varuna_version, public_inputs1, &proof1)
+                .unwrap()
+        );
     }
 }
 
 mod varuna_test_vectors {
     use crate::{
         fft::EvaluationDomain,
-        snark::varuna::{AHPForR1CS, TestCircuit, VarunaNonHidingMode, VarunaSNARK, ahp::verifier},
+        snark::varuna::{AHPForR1CS, TestCircuit, VarunaNonHidingMode, VarunaSNARK, VarunaVersion, ahp::verifier},
         traits::snark::SNARK,
     };
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
@@ -588,7 +730,8 @@ mod varuna_test_vectors {
         path
     }
 
-    // Loads the given `test_folder/test_file` and asserts the given `candidate` matches the expected values.
+    // Loads the given `test_folder/test_file` and asserts the given `candidate`
+    // matches the expected values.
     #[track_caller]
     fn assert_test_vector_equality(test_folder: &str, test_file: &str, candidate: &str, circuit: &str) {
         // Get the path to the test file.
@@ -607,7 +750,8 @@ mod varuna_test_vectors {
         fs::write(&path, data).unwrap_or_else(|_| panic!("Failed to write to file: {:?}", path));
     }
 
-    // Tests varuna against the test vectors in all circuits in the resources folder.
+    // Tests varuna against the test vectors in all circuits in the resources
+    // folder.
     fn test_varuna_with_all_circuits(create_test_vectors: bool) {
         let entries = fs::read_dir(resources_path(create_test_vectors)).expect("Failed to read resources folder");
         entries.into_iter().for_each(|entry| {
@@ -654,7 +798,8 @@ mod varuna_test_vectors {
         let num_constraints = 7;
         let num_variables = 7;
 
-        // Create a fixed seed rng that matches those the test vectors were generated with.
+        // Create a fixed seed rng that matches those the test vectors were generated
+        // with.
         let rng = &mut snarkvm_utilities::rand::TestRng::fixed(4730);
         let max_degree =
             AHPForR1CS::<Fr, MM>::max_degree(num_constraints, num_variables, num_variables * num_constraints).unwrap();
@@ -689,8 +834,8 @@ mod varuna_test_vectors {
         }
 
         let combiners = verifier::BatchCombiners::<Fr> { circuit_combiner, instance_combiners };
-        let batch_combiners = BTreeMap::from_iter([(index_pk.circuit.id, combiners)]);
-        let verifier_first_msg = verifier::FirstMessage::<Fr> { batch_combiners };
+        let first_round_batch_combiners = BTreeMap::from_iter([(index_pk.circuit.id, combiners)]);
+        let verifier_first_msg = verifier::FirstMessage::<Fr> { first_round_batch_combiners };
 
         let (second_oracles, prover_state) =
             AHPForR1CS::<_, MM>::prover_second_round::<_>(&verifier_first_msg, prover_state, rng).unwrap();
@@ -701,10 +846,16 @@ mod varuna_test_vectors {
             create_test_vector("polynomials", "h_0", &h_0, circuit);
         }
 
-        let verifier_second_msg = verifier::SecondMessage::<Fr> { alpha, eta_b, eta_c };
-        let (_prover_third_message, third_oracles, prover_state) =
-            AHPForR1CS::<_, MM>::prover_third_round(&verifier_first_msg, &verifier_second_msg, prover_state, rng)
-                .unwrap();
+        let verifier_second_msg = verifier::SecondMessage::<Fr> { alpha, eta_b: Some(eta_b), eta_c: Some(eta_c) };
+        let (_prover_third_message, third_oracles, prover_state) = AHPForR1CS::<_, MM>::prover_third_round(
+            &verifier_first_msg,
+            &verifier_second_msg,
+            &None,
+            prover_state,
+            rng,
+            VarunaVersion::V1,
+        )
+        .unwrap();
 
         // Get coefficients round 3 univariate rowcheck polynomial oracles.
         let g_1 = format!("{:?}", third_oracles.g_1.coeffs().map(|(_, coeff)| coeff).collect::<Vec<_>>());

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -67,7 +67,8 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for TestCircuit<Cons
         }
 
         // For this test we should allocate self.num_variables number of variables
-        // 2 + mul_depth variables were already allocated above, 1 is allocated by default
+        // 2 + mul_depth variables were already allocated above, 1 is allocated by
+        // default
         let dummy_variables = self.num_variables - 3 - self.mul_depth;
         for i in 0..dummy_variables {
             let _ = cs.alloc(|| format!("var {i}"), || self.a.ok_or(SynthesisError::AssignmentMissing))?;

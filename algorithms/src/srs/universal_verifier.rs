@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,13 +18,16 @@ use snarkvm_curves::{PairingCurve, PairingEngine};
 
 use std::{collections::BTreeMap, sync::Arc};
 
-/// `UniversalVerifier` is used to check evaluation proofs for a given commitment.
+/// `UniversalVerifier` is used to check evaluation proofs for a given
+/// commitment.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UniversalVerifier<E: PairingEngine> {
     /// The verification key for the underlying KZG10 scheme.
     pub vk: kzg10::VerifierKey<E>,
-    /// Information required to enforce degree bounds. Each pair is of the form `(degree_bound, shifting_advice)`.
-    /// Each pair is in the form `(degree_bound, \beta^{max_degree - i} H),` where `H` is the generator of G2,
-    /// and `i` is of the form `2^k - 1` for `k` in `1` to `log_2(max_degree)`.
+    /// Information required to enforce degree bounds. Each pair is of the form
+    /// `(degree_bound, shifting_advice)`. Each pair is in the form
+    /// `(degree_bound, \beta^{max_degree - i} H),` where `H` is the generator
+    /// of G2, and `i` is of the form `2^k - 1` for `k` in `1` to
+    /// `log_2(max_degree)`.
     pub prepared_negative_powers_of_beta_h: Arc<BTreeMap<usize, <E::G2Affine as PairingCurve>::Prepared>>,
 }

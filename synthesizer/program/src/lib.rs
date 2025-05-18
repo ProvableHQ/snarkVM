@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -93,11 +93,12 @@ use console::{
         tag,
         take,
     },
+    prelude::ConsensusVersion,
     program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
     types::U8,
 };
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use tiny_keccak::{Hasher, Sha3 as TinySha3};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -651,11 +652,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
 }
 
 impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
-    /// Returns `true` if a program contains any V5 syntax.
+    /// Returns `true` if a program contains any V7 syntax.
     /// This includes `constructor`, `Operand::Edition`, `Operand::Checksum`, and `Operand::ProgramOwner`.
-    /// This is enforced to be `false` for programs before `ConsensusVersion::V5`.
+    /// This is enforced to be `false` for programs before `ConsensusVersion::V7`.
     #[inline]
-    pub fn contains_v5_syntax(&self) -> bool {
+    pub fn contains_v7_syntax(&self) -> bool {
         // Check if the program contains a constructor.
         if self.contains_constructor() {
             return true;
@@ -706,14 +707,17 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
                 }
             }
         }
-        // Return `false` since no V5 syntax was found.
+        // Return `false` since no V7 syntax was found.
         false
     }
 }
 
 impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
+    /// A list of reserved keywords for Aleo programs, enforced at the parser level.
+    // New keywords should be enforced through `RESTRICTED_KEYWORDS` instead, if possible.
+    // Adding keywords to this list will require a backwards-compatible versioning for programs.
     #[rustfmt::skip]
-    const KEYWORDS: &'static [&'static str] = &[
+    pub const KEYWORDS: &'static [&'static str] = &[
         // Mode
         "const",
         "constant",
@@ -788,6 +792,14 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         "future",
         "constructor",
     ];
+    /// A list of restricted keywords for Aleo programs, enforced at the VM-level for program hygiene.
+    /// Each entry is a tuple of the consensus version and a list of keywords.
+    /// If the current consensus version is greater than or equal to the specified version,
+    /// the keywords in the list should be restricted.
+    #[rustfmt::skip]
+    pub const RESTRICTED_KEYWORDS: &'static [(ConsensusVersion, &'static [&'static str])] = &[
+        (ConsensusVersion::V6, &["constructor"])
+    ];
 
     /// Returns `true` if the given name does not already exist in the program.
     fn is_unique_name(&self, name: &Identifier<N>) -> bool {
@@ -805,6 +817,75 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         let name = name.to_string();
         // Check if the name is a keyword.
         Self::KEYWORDS.iter().any(|keyword| *keyword == name)
+    }
+
+    /// Returns an iterator over the restricted keywords for the given consensus version.
+    pub fn restricted_keywords_for_consensus_version(
+        consensus_version: ConsensusVersion,
+    ) -> impl Iterator<Item = &'static str> {
+        Self::RESTRICTED_KEYWORDS
+            .iter()
+            .filter(move |(version, _)| *version <= consensus_version)
+            .flat_map(|(_, keywords)| *keywords)
+            .copied()
+    }
+
+    /// Checks a program for restricted keywords for the given consensus version.
+    /// Returns an error if any restricted keywords are found.
+    /// Note: Restrictions are not enforced on the import names in case they were deployed before the restrictions were added.
+    pub fn check_restricted_keywords_for_consensus_version(&self, consensus_version: ConsensusVersion) -> Result<()> {
+        // Get all keywords that are restricted for the consensus version.
+        let keywords =
+            Program::<N>::restricted_keywords_for_consensus_version(consensus_version).collect::<IndexSet<_>>();
+        // Check if the program name is a restricted keywords.
+        let program_name = self.id().name().to_string();
+        if keywords.contains(&program_name.as_str()) {
+            bail!("Program name '{program_name}' is a restricted keyword for the current consensus version")
+        }
+        // Check that all top-level program components are not restricted keywords.
+        for component in self.components.keys() {
+            match component {
+                ProgramLabel::Identifier(identifier) => {
+                    if keywords.contains(identifier.to_string().as_str()) {
+                        bail!(
+                            "Program component '{identifier}' is a restricted keyword for the current consensus version"
+                        )
+                    }
+                }
+                ProgramLabel::Constructor => continue,
+            }
+        }
+        // Check that all record entry names are not restricted keywords.
+        for record_type in self.records().values() {
+            for entry_name in record_type.entries().keys() {
+                if keywords.contains(entry_name.to_string().as_str()) {
+                    bail!("Record entry '{entry_name}' is a restricted keyword for the current consensus version")
+                }
+            }
+        }
+        // Check that all struct member names are not restricted keywords.
+        for struct_type in self.structs().values() {
+            for member_name in struct_type.members().keys() {
+                if keywords.contains(member_name.to_string().as_str()) {
+                    bail!("Struct member '{member_name}' is a restricted keyword for the current consensus version")
+                }
+            }
+        }
+        // Check that all `finalize` positions.
+        // Note: It is sufficient to only check the positions in `FinalizeCore` since `FinalizeTypes::initialize` checks that every
+        // `Branch` instruction targets a valid position.
+        for function in self.functions().values() {
+            if let Some(finalize_logic) = function.finalize_logic() {
+                for position in finalize_logic.positions().keys() {
+                    if keywords.contains(position.to_string().as_str()) {
+                        bail!(
+                            "Finalize position '{position}' is a restricted keyword for the current consensus version"
+                        )
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,10 +36,9 @@ pub trait SquareRoot {
     fn square_root(&self) -> Self::Output;
 }
 
-///
 /// A single-bit binary adder with a carry bit.
 ///
-/// https://en.wikipedia.org/wiki/Adder_(electronics)#Full_adder
+/// <https://en.wikipedia.org/wiki/Adder_(electronics)#Full_adder>
 ///
 /// sum = (a XOR b) XOR carry
 /// carry = a AND b OR carry AND (a XOR b)
@@ -53,10 +52,9 @@ pub trait Adder {
     fn adder(&self, other: &Self, carry: &Self) -> (Self::Sum, Self::Carry);
 }
 
-///
 /// A single-bit binary subtractor with a borrow bit.
 ///
-/// https://en.wikipedia.org/wiki/Subtractor#Full_subtractor
+/// <https://en.wikipedia.org/wiki/Subtractor#Full_subtractor>
 ///
 /// difference = (a XOR b) XOR borrow
 /// borrow = ((NOT a) AND b) OR (borrow AND (NOT (a XOR b)))

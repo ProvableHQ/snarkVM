@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -48,7 +48,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
     type ExternalRecordMap: for<'a> Map<'a, Field<N>, ()>;
 
     /// Initializes the transition input storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self>;
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
 
     /// Returns the ID map.
     fn id_map(&self) -> &Self::IDMap;
@@ -307,7 +307,7 @@ pub struct InputStore<N: Network, I: InputStorage<N>> {
 
 impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
     /// Initializes the transition input store.
-    pub fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         // Initialize a new transition input storage.
         let storage = I::open(storage)?;
         // Return the transition input store.
@@ -498,7 +498,7 @@ mod tests {
         // Sample the transition inputs.
         for (transition_id, input) in ledger_test_helpers::sample_inputs() {
             // Initialize a new input store.
-            let input_store = InputMemory::open(None).unwrap();
+            let input_store = InputMemory::open(StorageMode::Test(None)).unwrap();
 
             // Ensure the transition input does not exist.
             let candidate = input_store.get(&transition_id).unwrap();
@@ -525,7 +525,7 @@ mod tests {
         // Sample the transition inputs.
         for (transition_id, input) in ledger_test_helpers::sample_inputs() {
             // Initialize a new input store.
-            let input_store = InputMemory::open(None).unwrap();
+            let input_store = InputMemory::open(StorageMode::Test(None)).unwrap();
 
             // Ensure the transition input does not exist.
             let candidate = input_store.get(&transition_id).unwrap();

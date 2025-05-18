@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +25,10 @@ use snarkvm_ledger_puzzle::PuzzleTrait;
 
 use anyhow::{Result, bail};
 use core::{marker::PhantomData, num::NonZeroUsize};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rand_chacha::ChaChaRng;
 use std::sync::Arc;

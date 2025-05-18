@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_algorithms::crypto_hash::sha256::sha256;
+use aleo_std::StorageMode;
+use snarkvm_algorithms::{crypto_hash::sha256::sha256, snark::varuna::VarunaVersion};
 use snarkvm_circuit::{Aleo, Assignment};
 use snarkvm_console::{
     account::PrivateKey,
@@ -22,7 +23,13 @@ use snarkvm_console::{
     program::{Plaintext, Record, StatePath},
     types::Field,
 };
-use snarkvm_ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
+use snarkvm_ledger_store::ConsensusStore;
+
+#[cfg(not(feature = "rocks"))]
+type LedgerType<N> = snarkvm_ledger_store::helpers::memory::ConsensusMemory<N>;
+#[cfg(feature = "rocks")]
+type LedgerType<N> = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<N>;
+
 use snarkvm_synthesizer::{VM, process::InclusionAssignment, snark::UniversalSRS};
 
 use anyhow::{Result, anyhow};
@@ -70,7 +77,7 @@ fn write_metadata(filename: &str, metadata: &Value) -> Result<()> {
 #[allow(clippy::type_complexity)]
 pub fn sample_assignment<N: Network, A: Aleo<Network = N>>() -> Result<(Assignment<N::Field>, StatePath<N>, Field<N>)> {
     // Initialize the consensus store.
-    let store = ConsensusStore::<N, ConsensusMemory<N>>::open(None)?;
+    let store = ConsensusStore::<N, LedgerType<N>>::open(StorageMode::new_test(None))?;
     // Initialize a new VM.
     let vm = VM::from(store)?;
 
@@ -116,13 +123,25 @@ pub fn inclusion<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     let inclusion_function_name = N::INCLUSION_FUNCTION_NAME;
     let (proving_key, verifying_key) = universal_srs.to_circuit_key(inclusion_function_name, &assignment)?;
 
-    // Ensure the proving key and verifying keys are valid.
-    let proof = proving_key.prove(inclusion_function_name, &assignment, &mut thread_rng())?;
-    assert!(verifying_key.verify(
-        inclusion_function_name,
-        &[N::Field::one(), **state_path.global_state_root(), *Field::<N>::zero(), *serial_number],
-        &proof
-    ));
+    for varuna_version in [VarunaVersion::V1, VarunaVersion::V2] {
+        // Ensure the proving key and verifying keys are valid.
+        let proof = proving_key.prove(inclusion_function_name, varuna_version, &assignment, &mut thread_rng())?;
+        assert!(verifying_key.verify(
+            inclusion_function_name,
+            varuna_version,
+            &[N::Field::one(), **state_path.global_state_root(), *Field::<N>::zero(), *serial_number],
+            &proof
+        ));
+        // Ensure using the wrong varuna version is not valid.
+        let wrong_varuna_version =
+            if varuna_version == VarunaVersion::V1 { VarunaVersion::V2 } else { VarunaVersion::V1 };
+        assert!(!verifying_key.verify(
+            inclusion_function_name,
+            wrong_varuna_version,
+            &[N::Field::one(), **state_path.global_state_root(), *Field::<N>::zero(), *serial_number],
+            &proof
+        ));
+    }
 
     // Initialize a vector for the commands.
     let mut commands = vec![];

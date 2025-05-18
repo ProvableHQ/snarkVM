@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -64,8 +64,8 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
     /// Multiplies all polynomials stored in `self`.
     ///
     /// Returns `None` if any of the stored evaluations are over a domain that's
-    /// insufficiently large to interpolate the product, or if `F` does not contain
-    /// a sufficiently large subgroup for interpolation.
+    /// insufficiently large to interpolate the product, or if `F` does not
+    /// contain a sufficiently large subgroup for interpolation.
     #[allow(unused_mut)]
     pub fn multiply(mut self) -> Option<DensePolynomial<F>> {
         if self.polynomials.is_empty() && self.evaluations.is_empty() {

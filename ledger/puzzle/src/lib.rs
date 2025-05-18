@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,7 +52,10 @@ use console::{
 use aleo_std::prelude::*;
 use core::num::NonZeroUsize;
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
 use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;

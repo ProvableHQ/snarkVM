@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,17 +16,17 @@
 use crate::*;
 use snarkvm_fields::PrimeField;
 
-use std::{mem, rc::Rc};
+use std::{mem, sync::Arc};
 
 #[derive(Debug, Default, Hash)]
 pub(crate) struct Counter<F: PrimeField> {
     scope: Scope,
-    constraints: Vec<Rc<Constraint<F>>>,
+    constraints: Vec<Arc<Constraint<F>>>,
     constants: u64,
     public: u64,
     private: u64,
     nonzeros: (u64, u64, u64),
-    parents: Vec<(Scope, Vec<Rc<Constraint<F>>>, u64, u64, u64, (u64, u64, u64))>,
+    parents: Vec<(Scope, Vec<Arc<Constraint<F>>>, u64, u64, u64, (u64, u64, u64))>,
 }
 
 impl<F: PrimeField> Counter<F> {
@@ -93,7 +93,7 @@ impl<F: PrimeField> Counter<F> {
     }
 
     /// Increments the number of constraints by 1.
-    pub(crate) fn add_constraint(&mut self, constraint: Rc<Constraint<F>>) {
+    pub(crate) fn add_constraint(&mut self, constraint: Arc<Constraint<F>>) {
         let (a_nonzeros, b_nonzeros, c_nonzeros) = constraint.num_nonzeros();
         self.nonzeros.0 += a_nonzeros;
         self.nonzeros.1 += b_nonzeros;

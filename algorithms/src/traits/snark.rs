@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{AlgebraicSponge, r1cs::ConstraintSynthesizer};
+use crate::{AlgebraicSponge, r1cs::ConstraintSynthesizer, snark::varuna::VarunaVersion};
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, FromBytes, ToBytes};
 
@@ -21,7 +21,8 @@ use anyhow::Result;
 use rand::{CryptoRng, Rng};
 use std::{borrow::Borrow, collections::BTreeMap, fmt::Debug};
 
-/// Defines trait that describes preparing from an unprepared version to a prepare version.
+/// Defines trait that describes preparing from an unprepared version to a
+/// prepare version.
 pub trait Prepare {
     type Prepared;
     fn prepare(&self) -> Self::Prepared;
@@ -73,17 +74,19 @@ pub trait SNARK {
         universal_prover: &Self::UniversalProver,
         fs_parameters: &Self::FSParameters,
         proving_key: &Self::ProvingKey,
+        varuna_version: VarunaVersion,
         constraints: &C,
         rng: &mut R,
     ) -> Result<Self::Proof> {
         let mut keys_to_constraints = BTreeMap::new();
         keys_to_constraints.insert(proving_key, std::slice::from_ref(constraints));
-        Self::prove_batch(universal_prover, fs_parameters, &keys_to_constraints, rng)
+        Self::prove_batch(universal_prover, fs_parameters, varuna_version, &keys_to_constraints, rng)
     }
 
     fn prove_batch<C: ConstraintSynthesizer<Self::ScalarField>, R: Rng + CryptoRng>(
         universal_prover: &Self::UniversalProver,
         fs_parameters: &Self::FSParameters,
+        varuna_version: VarunaVersion,
         keys_to_constraints: &BTreeMap<&Self::ProvingKey, &[C]>,
         rng: &mut R,
     ) -> Result<Self::Proof>;
@@ -100,18 +103,20 @@ pub trait SNARK {
         universal_verifier: &Self::UniversalVerifier,
         fs_parameters: &Self::FSParameters,
         verifying_key: &Self::VerifyingKey,
+        varuna_version: VarunaVersion,
         input: B,
         proof: &Self::Proof,
     ) -> Result<bool> {
         let mut keys_to_inputs = BTreeMap::new();
         let inputs = [input];
         keys_to_inputs.insert(verifying_key, &inputs[..]);
-        Self::verify_batch(universal_verifier, fs_parameters, &keys_to_inputs, proof)
+        Self::verify_batch(universal_verifier, fs_parameters, varuna_version, &keys_to_inputs, proof)
     }
 
     fn verify_batch<B: Borrow<Self::VerifierInput>>(
         universal_verifier: &Self::UniversalVerifier,
         fs_parameters: &Self::FSParameters,
+        varuna_version: VarunaVersion,
         keys_to_inputs: &BTreeMap<&Self::VerifyingKey, &[B]>,
         proof: &Self::Proof,
     ) -> Result<bool>;

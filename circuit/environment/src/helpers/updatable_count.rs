@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +33,7 @@ static WORKSPACE_ROOT: OnceCell<PathBuf> = OnceCell::new();
 
 /// To update the arguments to `count_is!`, run cargo test with the `UPDATE_COUNT` flag set to the name of the file containing the macro invocation.
 /// e.g. `UPDATE_COUNT=boolean cargo test
-/// See https://github.com/ProvableHQ/snarkVM/pull/1688 for more details.
+/// See <https://github.com/ProvableHQ/snarkVM/pull/1688> for more details.
 #[macro_export]
 macro_rules! count_is {
     ($num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
@@ -51,7 +51,7 @@ macro_rules! count_is {
 
 /// To update the arguments to `count_less_than!`, run cargo test with the `UPDATE_COUNT` flag set to the name of the file containing the macro invocation.
 /// e.g. `UPDATE_COUNT=boolean cargo test
-/// See https://github.com/ProvableHQ/snarkVM/pull/1688 for more details.
+/// See <https://github.com/ProvableHQ/snarkVM/pull/1688> for more details.
 #[macro_export]
 macro_rules! count_less_than {
     ($num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {

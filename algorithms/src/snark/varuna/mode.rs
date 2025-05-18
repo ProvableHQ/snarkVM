@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,4 +34,11 @@ pub struct VarunaNonHidingMode;
 
 impl SNARKMode for VarunaNonHidingMode {
     const ZK: bool = false;
+}
+
+/// The different Varuna Versions.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum VarunaVersion {
+    V1 = 1,
+    V2 = 2,
 }

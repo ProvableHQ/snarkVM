@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -116,14 +116,16 @@ impl<F: PrimeField> SparsePolynomial<F> {
     pub fn evaluate_over_domain_by_ref(&self, domain: EvaluationDomain<F>) -> Evaluations<F> {
         let poly: Polynomial<'_, F> = self.into();
         Polynomial::<F>::evaluate_over_domain(poly, domain)
-        // unimplemented!("current implementation does not produce evals in correct order")
+        // unimplemented!("current implementation does not produce evals in
+        // correct order")
     }
 
     /// Evaluate `self` over `domain`.
     pub fn evaluate_over_domain(self, domain: EvaluationDomain<F>) -> Evaluations<F> {
         let poly: Polynomial<'_, F> = self.into();
         Polynomial::<F>::evaluate_over_domain(poly, domain)
-        // unimplemented!("current implementation does not produce evals in correct order")
+        // unimplemented!("current implementation does not produce evals in
+        // correct order")
     }
 }
 impl<F: PrimeField> core::ops::MulAssign<F> for SparsePolynomial<F> {

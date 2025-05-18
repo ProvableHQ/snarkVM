@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,8 +61,9 @@ impl PolynomialInfo {
 }
 
 /// A polynomial along with information about its degree bound (if any), and the
-/// maximum number of queries that will be made to it. This latter number determines
-/// the amount of protection that will be provided to a commitment for this polynomial.
+/// maximum number of queries that will be made to it. This latter number
+/// determines the amount of protection that will be provided to a commitment
+/// for this polynomial.
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
 pub struct LabeledPolynomial<F: Field> {
     pub info: PolynomialInfo,
@@ -135,9 +136,6 @@ impl<F: Field> LabeledPolynomial<F> {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone)]
 pub struct LabeledPolynomialWithBasis<'a, F: PrimeField> {
@@ -183,7 +181,8 @@ impl<'a, F: PrimeField> LabeledPolynomialWithBasis<'a, F> {
         &self.info.label
     }
 
-    /// Return the information about the label, degree bound, and hiding bound of `self`.
+    /// Return the information about the label, degree bound, and hiding bound
+    /// of `self`.
     pub fn info(&self) -> &PolynomialInfo {
         &self.info
     }

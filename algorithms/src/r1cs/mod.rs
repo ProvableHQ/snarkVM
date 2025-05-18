@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -68,7 +68,8 @@ impl Variable {
     }
 }
 
-/// Represents the index of either a public variable (input) or a private variable (auxiliary).
+/// Represents the index of either a public variable (input) or a private
+/// variable (auxiliary).
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 pub enum Index {
     /// Index of a public variable.

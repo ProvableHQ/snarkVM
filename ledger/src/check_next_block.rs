@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,8 @@
 // limitations under the License.
 
 use super::*;
+
+use crate::narwhal::BatchHeader;
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Checks the given block is valid next block.
@@ -112,6 +114,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Determine if the block subdag is correctly constructed and is not a combination of multiple subdags.
         self.check_block_subdag_atomicity(block)?;
 
+        // Ensure that all leafs of the subdag point to valid batches in other subdags/blocks.
+        self.check_block_subdag_leaves(block)?;
+
         // Ensure that each existing solution ID from the block exists in the ledger.
         for existing_solution_id in expected_existing_solution_ids {
             if !self.contains_solution_id(&existing_solution_id)? {
@@ -127,6 +132,48 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         }
 
         Ok(())
+    }
+
+    /// Check that leaves in the subdag point to batches in other blocks that are valid.
+    ///
+    /// This does not verify that the batches are signed correctly or that the edges are valid
+    /// (only point to the previous round), as those checks already happend when the node received the batch.
+    fn check_block_subdag_leaves(&self, block: &Block<N>) -> Result<()> {
+        // Check if the block has a subdag.
+        let Authority::Quorum(subdag) = block.authority() else {
+            return Ok(());
+        };
+
+        // Store the IDs of all certificates in this subDAG.
+        // This allows determining which edges point to other subDAGs/blocks.
+        let subdag_certs: HashSet<_> = subdag.certificate_ids().collect();
+
+        // Generate a set of all external certificates this subDAG references.
+        // If multiple certificates reference the same external certificate, the id and round number will be
+        // identical and the set will contain only one entry for the external certificate.
+        let leaf_edges: HashSet<_> = subdag
+            .certificates()
+            .flat_map(|cert| cert.previous_certificate_ids().iter().map(|prev_id| (cert.round() - 1, prev_id)))
+            .filter(|(_, prev_id)| !subdag_certs.contains(prev_id))
+            .collect();
+
+        cfg_iter!(leaf_edges).try_for_each(|(prev_round, prev_id)| {
+            if prev_round + (BatchHeader::<N>::MAX_GC_ROUNDS as u64) - 1 <= block.round() {
+                // If the previous round is at the end of GC, we cannot (and do not need to) verify the next batch.
+                // For this leaf we are at the maximum length of the DAG, so any following batches are not allowed
+                // to be part of the block and, thus, a malicious actor cannot remove them.
+                return Ok::<(), Error>(());
+            }
+
+            // Ensure that the certificate is associated with a previous block.
+            if !self.vm.block_store().contains_block_for_certificate(prev_id)? {
+                bail!(
+                    "Batch(es) in the block point(s) to a certificate {prev_id} in round {prev_round} that is not associated with a previous block"
+                )
+            }
+
+            Ok(())
+        })
     }
 
     /// Check that the certificates in the block subdag have met quorum requirements.
@@ -148,11 +195,15 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             // Note that we do not need to check the quorum requirement for the previous certificates
             // because that is done during construction in `BatchCertificate::new`.
             cfg_iter!(certificates).try_for_each(|certificate| {
-                // Collect the signature authors.
-                let authors = certificate.signatures().map(|signature| signature.to_address()).collect();
+                // Collect the certificate signers.
+                let mut signers: HashSet<_> =
+                    certificate.signatures().map(|signature| signature.to_address()).collect();
+                // Append the certificate author.
+                signers.insert(certificate.author());
+
                 // Ensure that the signers of the certificate reach the quorum threshold.
                 ensure!(
-                    committee_lookback.is_quorum_threshold_reached(&authors),
+                    committee_lookback.is_quorum_threshold_reached(&signers),
                     "Certificate '{}' for round {round} does not meet quorum requirements",
                     certificate.id()
                 );
