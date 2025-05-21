@@ -22,8 +22,10 @@ impl<N: Network> Parser for Value<N> {
         // Note that the order of the parsers matters.
         alt((
             map(Future::parse, Value::Future),
+            map(DynamicFuture::parse, Value::DynamicFuture),
             map(Plaintext::parse, Value::Plaintext),
             map(Record::parse, Value::Record),
+            
         ))(string)
     }
 }
@@ -60,6 +62,7 @@ impl<N: Network> Display for Value<N> {
             Value::Plaintext(plaintext) => Display::fmt(plaintext, f),
             Value::Record(record) => Display::fmt(record, f),
             Value::Future(future) => Display::fmt(future, f),
+            Value::DynamicFuture(future) => Display::fmt(future, f),
         }
     }
 }

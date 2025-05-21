@@ -31,6 +31,7 @@ impl<N: Network> Value<N> {
                 }
             }
             Self::Future(future) => Ok(future.find(path)?),
+            Self::DynamicFuture(future) => Ok(future.find(path)?),
         }
     }
 }

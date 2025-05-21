@@ -21,12 +21,14 @@ impl<N: Network> Future<N> {
         // Ensure the path is not empty.
         ensure!(!path.is_empty(), "Attempted to find an argument with an empty path.");
 
-        // A helper enum to track the the argument.
+        // A helper enum to track the argument.
         enum ArgumentRefType<'a, N: Network> {
             /// A plaintext type.
             Plaintext(&'a Plaintext<N>),
             /// A future.
             Future(&'a Future<N>),
+            /// A dynamic future.
+            DynamicFuture(&'a DynamicFuture<N>),
         }
 
         // Initialize a value starting from the top-level.
@@ -58,6 +60,8 @@ impl<N: Network> Future<N> {
                         Some(Argument::Future(future)) => value = ArgumentRefType::Future(future),
                         // If the argument is a plaintext, update `value` for the next iteration.
                         Some(Argument::Plaintext(plaintext)) => value = ArgumentRefType::Plaintext(plaintext),
+                        // If the argument is a dynamic future, update `value` for the next iteration.
+                        Some(Argument::DynamicFuture(future)) => value = ArgumentRefType::DynamicFuture(future),
                         // Halts if the index is out of bounds.
                         None => bail!("Index '{index}' is out of bounds"),
                     }

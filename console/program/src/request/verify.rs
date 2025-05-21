@@ -123,6 +123,7 @@ impl<N: Network> Request<N> {
                             // Ensure the input is a plaintext.
                             Value::Record(..) => bail!("Expected a plaintext input, found a record input"),
                             Value::Future(..) => bail!("Expected a plaintext input, found a future input"),
+                            Value::DynamicFuture(..) => bail!("Expected a plaintext input, found a dynamic future input"),
                         };
                         // Hash the ciphertext to a field element.
                         let candidate_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
@@ -140,6 +141,7 @@ impl<N: Network> Request<N> {
                             // Ensure the input is a record.
                             Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
                             Value::Future(..) => bail!("Expected a record input, found a future input"),
+                            Value::DynamicFuture(..) => bail!("Expected a record input, found a dynamic future input"),
                         };
                         // Retrieve the record name.
                         let record_name = match input_type {

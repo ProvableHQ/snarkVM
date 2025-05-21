@@ -100,6 +100,7 @@ impl<N: Network> Argument<N> {
         let argument = match index {
             0 => Self::Plaintext(Plaintext::read_le(&mut reader)?),
             1 => Self::Future(Future::read_le_internal(&mut reader, depth + 1)?),
+            2 => Self::DynamicFuture(DynamicFuture::read_le(&mut reader)?),
             2.. => return Err(error(format!("Failed to decode future argument {index}"))),
         };
         Ok(argument)
@@ -115,6 +116,10 @@ impl<N: Network> ToBytes for Argument<N> {
             }
             Self::Future(future) => {
                 1u8.write_le(&mut writer)?;
+                future.write_le(&mut writer)
+            }
+            Self::DynamicFuture(future) => {
+                2u8.write_le(&mut writer)?;
                 future.write_le(&mut writer)
             }
         }

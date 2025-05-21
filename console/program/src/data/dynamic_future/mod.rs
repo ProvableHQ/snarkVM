@@ -13,9 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod argument;
-pub use argument::Argument;
-
 mod bytes;
 mod equal;
 mod find;
@@ -24,28 +21,29 @@ mod serialize;
 mod to_bits;
 mod to_fields;
 
-use crate::{Access, DynamicFuture, Identifier, Plaintext, ProgramID, Value};
+use crate::{Access, Identifier, Plaintext, ProgramID, Value};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
-// TODO (@d0cd). Implement `FromBytes` and `FromBits` for `Future`.
+// TODO (@d0cd). Implement `FromBytes` and `FromBits` for `DynamicFuture`.
 
 /// A future.
 #[derive(Clone)]
-pub struct Future<N: Network> {
+pub struct DynamicFuture<N: Network> {
     /// The program ID.
     program_id: ProgramID<N>,
     /// The name of the function.
     function_name: Identifier<N>,
-    /// The arguments.
-    arguments: Vec<Argument<N>>,
+    /// The commitment.
+    commitment: Field<N>,
+    // TODO (@d0cd). The length of the arguments? The optional arguments?
 }
 
-impl<N: Network> Future<N> {
+impl<N: Network> DynamicFuture<N> {
     /// Initializes a new future.
     #[inline]
-    pub const fn new(program_id: ProgramID<N>, function_name: Identifier<N>, arguments: Vec<Argument<N>>) -> Self {
-        Self { program_id, function_name, arguments }
+    pub const fn new(program_id: ProgramID<N>, function_name: Identifier<N>, commitment: Field<N>) -> Self {
+        Self { program_id, function_name, commitment }
     }
 
     /// Returns the program ID.
@@ -60,9 +58,9 @@ impl<N: Network> Future<N> {
         &self.function_name
     }
 
-    /// Returns the arguments.
+    /// Returns the commitment.
     #[inline]
-    pub fn arguments(&self) -> &[Argument<N>] {
-        &self.arguments
+    pub fn commitment(&self) -> &Field<N> {
+        &self.commitment
     }
 }

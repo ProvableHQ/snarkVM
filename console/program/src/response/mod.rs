@@ -31,6 +31,8 @@ pub enum OutputID<N: Network> {
     ExternalRecord(Field<N>),
     /// The hash of the future output.
     Future(Field<N>),
+    /// The hash of the dynamic future output.
+    DynamicFuture(Field<N>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -130,6 +132,7 @@ impl<N: Network> Response<N> {
                             // Ensure the output is a plaintext.
                             Value::Record(..) => bail!("Expected a plaintext output, found a record output"),
                             Value::Future(..) => bail!("Expected a plaintext output, found a future output"),
+                            Value::DynamicFuture(..) => bail!("Expected a plaintext output, found a DynamicFuture output"),
                         };
                         // Hash the ciphertext to a field element.
                         let output_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
@@ -144,6 +147,7 @@ impl<N: Network> Response<N> {
                             // Ensure the input is a record.
                             Value::Plaintext(..) => bail!("Expected a record output, found a plaintext output"),
                             Value::Future(..) => bail!("Expected a record output, found a future output"),
+                            Value::DynamicFuture(..) => bail!("Expected a record output, found a dynamic future output"),
                         };
 
                         // Retrieve the output register.
@@ -210,6 +214,28 @@ impl<N: Network> Response<N> {
                         // Return the output ID.
                         Ok(OutputID::Future(output_hash))
                     }
+                    // For a dynamic future output, compute the hash (using `tcm`) of the output.
+                    ValueType::DynamicFuture => {
+                        // Ensure the output is a future.
+                        ensure!(matches!(output, Value::DynamicFuture(..)), "Expected a dynamic future output");
+
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(
+                            u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                        );
+                        // Construct the preimage as `(function ID || output || tcm || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(output.to_fields()?);
+                        preimage.push(*tcm);
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let output_hash = N::hash_psd8(&preimage)?;
+
+                        // Return the output ID.
+                        Ok(OutputID::DynamicFuture(output_hash))
+                    }
+                    
                 }
             })
             .collect::<Result<Vec<_>>>()?;

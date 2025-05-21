@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<N: Network> Parser for Future<N> {
+impl<N: Network> Parser for DynamicFuture<N> {
     /// Parses a string into a future value.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
@@ -24,31 +24,7 @@ impl<N: Network> Parser for Future<N> {
     }
 }
 
-impl<N: Network> Future<N> {
-    /// Parses an array of future arguments: `[arg_0, ..., arg_1]`, while tracking the depth of the data.
-    fn parse_arguments(string: &str, depth: usize) -> ParserResult<Vec<Argument<N>>> {
-        // Parse the whitespace and comments from the string.
-        let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "[" from the string.
-        let (string, _) = tag("[")(string)?;
-        // Parse the whitespace from the string.
-        let (string, _) = Sanitizer::parse(string)?;
-        // Parse the members.
-        let (string, arguments) = separated_list0(
-            pair(pair(Sanitizer::parse_whitespaces, tag(",")), Sanitizer::parse),
-            alt((
-                map(|input| Self::parse_internal(input, depth + 1), Argument::Future),
-                map(Plaintext::parse, Argument::Plaintext),
-            )),
-        )(string)?;
-        // Parse the whitespace and comments from the string.
-        let (string, _) = Sanitizer::parse(string)?;
-        // Parse the ']' from the string.
-        let (string, _) = tag("]")(string)?;
-        // Output the plaintext.
-        Ok((string, arguments))
-    }
-
+impl<N: Network> DynamicFuture<N> {
     /// Parses a string into a future value, while tracking the depth of the data.
     #[inline]
     fn parse_internal(string: &str, depth: usize) -> ParserResult<Self> {
@@ -99,30 +75,33 @@ impl<N: Network> Future<N> {
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the "," from the string.
         let (string, _) = tag(",")(string)?;
-
+        
+        // Parse the whitespace and comments from the string.
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "arguments" from the string.
-        let (string, _) = tag("arguments")(string)?;
+        // Parse the "function_name" from the string.
+        let (string, _) = tag("commitment")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
         let (string, _) = tag(":")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the arguments from the string.
-        let (string, arguments) = Self::parse_arguments(string, depth)?;
+        // Parse the commitment from the string.
+        let (string, commitment) = Field::parse(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "}" from the string.
         let (string, _) = tag("}")(string)?;
 
-        Ok((string, Self::new(program_id, function_name, arguments)))
+        Ok((string, Self::new(program_id, function_name, commitment)))
     }
 }
 
-impl<N: Network> FromStr for Future<N> {
+impl<N: Network> FromStr for DynamicFuture<N> {
     type Err = Error;
 
     /// Returns a future from a string literal.
@@ -139,23 +118,23 @@ impl<N: Network> FromStr for Future<N> {
     }
 }
 
-impl<N: Network> Debug for Future<N> {
+impl<N: Network> Debug for DynamicFuture<N> {
     /// Prints the future as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network> Display for Future<N> {
+impl<N: Network> Display for DynamicFuture<N> {
     /// Prints the future as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         self.fmt_internal(f, 0)
     }
 }
 
-impl<N: Network> Future<N> {
+impl<N: Network> DynamicFuture<N> {
     /// Prints the future with the given indentation depth.
-    fn fmt_internal(&self, f: &mut Formatter, depth: usize) -> fmt::Result {
+    pub(crate) fn fmt_internal(&self, f: &mut Formatter, depth: usize) -> fmt::Result {
         /// The number of spaces to indent.
         const INDENT: usize = 2;
 
@@ -178,68 +157,14 @@ impl<N: Network> Future<N> {
             indent = (depth + 1) * INDENT,
             function_name = self.function_name()
         )?;
-        // Print the arguments.
-        // If the arguments are empty, print an empty array.
-        if self.arguments.is_empty() {
-            write!(f, "\n{:indent$}arguments: []", "", indent = (depth + 1) * INDENT)?;
-        } else {
-            write!(f, "\n{:indent$}arguments: [", "", indent = (depth + 1) * INDENT)?;
-            self.arguments.iter().enumerate().try_for_each(|(i, argument)| {
-                match argument {
-                    Argument::Plaintext(plaintext) => match i == self.arguments.len() - 1 {
-                        true => {
-                            // Print the last argument without a comma.
-                            write!(
-                                f,
-                                "\n{:indent$}{plaintext}",
-                                "",
-                                indent = (depth + 2) * INDENT,
-                                plaintext = plaintext
-                            )
-                        }
-                        // Print the argument with a comma.
-                        false => {
-                            write!(
-                                f,
-                                "\n{:indent$}{plaintext},",
-                                "",
-                                indent = (depth + 2) * INDENT,
-                                plaintext = plaintext
-                            )
-                        }
-                    },
-                    Argument::Future(future) => {
-                        // Print a newline.
-                        write!(f, "\n{:indent$}", "", indent = (depth + 2) * INDENT)?;
-                        // Print the argument.
-                        future.fmt_internal(f, depth + 2)?;
-                        // Print the closing brace.
-                        match i == self.arguments.len() - 1 {
-                            // Print the last member without a comma.
-                            true => write!(f, "\n{:indent$}", "", indent = (depth + 1) * INDENT),
-                            // Print the member with a comma.
-                            false => write!(f, ","),
-                        }
-                    }
-                    Argument::DynamicFuture(future) => {
-                        // Print a newline.
-                        write!(f, "\n{:indent$}", "", indent = (depth + 2) * INDENT)?;
-                        // Print the argument.
-                        future.fmt_internal(f, depth + 2)?;
-                        // Print the closing brace.
-                        match i == self.arguments.len() - 1 {
-                            // Print the last member without a comma.
-                            true => write!(f, "\n{:indent$}", "", indent = (depth + 1) * INDENT),
-                            // Print the member with a comma.
-                            false => write!(f, ","),
-                        }
-                    }
-                }
-            })?;
-            // Print the closing bracket.
-            write!(f, "\n{:indent$}]", "", indent = (depth + 1) * INDENT)?;
-        }
-
+        // Print the commitment.
+        write!(
+            f,
+            "\n{:indent$}commitment: {commitment},",
+            "",
+            indent = (depth + 1) * INDENT,
+            commitment = self.commitment()
+        )?;
         // Print the closing brace.
         write!(f, "\n{:indent$}}}", "", indent = depth * INDENT)
     }
@@ -261,7 +186,7 @@ mod tests {
   arguments: []
 }";
         let (remainder, candidate) =
-            Future::<CurrentNetwork>::parse("{ program_id: credits.aleo, function_name: transfer, arguments: [] }")?;
+            DynamicFuture::<CurrentNetwork>::parse("{ program_id: credits.aleo, function_name: transfer, arguments: [] }")?;
         assert!(remainder.is_empty());
         assert_eq!(expected, candidate.to_string());
         assert_eq!("", remainder);
@@ -275,7 +200,7 @@ mod tests {
     100000000u64
   ]
 }";
-        let (remainder, candidate) = Future::<CurrentNetwork>::parse(
+        let (remainder, candidate) = DynamicFuture::<CurrentNetwork>::parse(
             "{ program_id: credits.aleo, function_name: transfer_public_to_private, arguments: [ aleo1g8qul5a44vk22u9uuvaewdcjw4v6xg8wx0llru39nnjn7eu08yrscxe4e2, 100000000u64 ] }",
         )?;
         assert!(remainder.is_empty());
@@ -311,7 +236,7 @@ mod tests {
             // Create the nested future string.
             let nested_future_string = create_nested_future(depth);
             // Parse the nested future.
-            let result = Future::<CurrentNetwork>::parse(&nested_future_string);
+            let result = DynamicFuture::<CurrentNetwork>::parse(&nested_future_string);
             // Check if the result is an error.
             match expected_error {
                 true => {

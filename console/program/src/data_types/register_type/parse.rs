@@ -25,6 +25,7 @@ impl<N: Network> Parser for RegisterType<N> {
             map(pair(Locator::parse, tag(".record")), |(locator, _)| Self::ExternalRecord(locator)),
             map(pair(Identifier::parse, tag(".record")), |(identifier, _)| Self::Record(identifier)),
             map(PlaintextType::parse, |plaintext_type| Self::Plaintext(plaintext_type)),
+            map(tag("future.dynamic"), |_| Self::DynamicFuture),
         ))(string)
     }
 }
@@ -65,6 +66,8 @@ impl<N: Network> Display for RegisterType<N> {
             Self::ExternalRecord(locator) => write!(f, "{locator}.record"),
             // Prints the future type, i.e. future
             Self::Future(locator) => write!(f, "{locator}.future"),
+            // Prints the dynamic future type, i.e. future.dynamic
+            Self::DynamicFuture => write!(f, "future.dynamic"),
         }
     }
 }

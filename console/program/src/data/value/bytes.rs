@@ -25,7 +25,8 @@ impl<N: Network> FromBytes for Value<N> {
             0 => Self::Plaintext(Plaintext::read_le(&mut reader)?),
             1 => Self::Record(Record::read_le(&mut reader)?),
             2 => Self::Future(Future::read_le(&mut reader)?),
-            3.. => return Err(error(format!("Failed to decode value variant {index}"))),
+            3 => Self::DynamicFuture(DynamicFuture::read_le(&mut reader)?),
+            4.. => return Err(error(format!("Failed to decode value variant {index}"))),
         };
         Ok(entry)
     }
@@ -45,6 +46,10 @@ impl<N: Network> ToBytes for Value<N> {
             }
             Self::Future(future) => {
                 2u8.write_le(&mut writer)?;
+                future.write_le(&mut writer)
+            }
+            Self::DynamicFuture(future) => {
+                3u8.write_le(&mut writer)?;
                 future.write_le(&mut writer)
             }
         }

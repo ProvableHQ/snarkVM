@@ -22,6 +22,8 @@ pub enum Argument<N: Network> {
     Plaintext(Plaintext<N>),
     /// A future.
     Future(Future<N>),
+    /// A dynamic future.
+    DynamicFuture(DynamicFuture<N>),
 }
 
 impl<N: Network> Equal<Self> for Argument<N> {
@@ -32,7 +34,8 @@ impl<N: Network> Equal<Self> for Argument<N> {
         match (self, other) {
             (Self::Plaintext(plaintext_a), Self::Plaintext(plaintext_b)) => plaintext_a.is_equal(plaintext_b),
             (Self::Future(future_a), Self::Future(future_b)) => future_a.is_equal(future_b),
-            (Self::Plaintext(..), _) | (Self::Future(..), _) => Boolean::new(false),
+            (Self::DynamicFuture(future_a), Self::DynamicFuture(future_b)) => future_a.is_equal(future_b),
+            (Self::Plaintext(..), _) | (Self::Future(..), _) | (Self::DynamicFuture(..), _) => Boolean::new(false),
         }
     }
 
@@ -41,7 +44,8 @@ impl<N: Network> Equal<Self> for Argument<N> {
         match (self, other) {
             (Self::Plaintext(plaintext_a), Self::Plaintext(plaintext_b)) => plaintext_a.is_not_equal(plaintext_b),
             (Self::Future(future_a), Self::Future(future_b)) => future_a.is_not_equal(future_b),
-            (Self::Plaintext(..), _) | (Self::Future(..), _) => Boolean::new(true),
+            (Self::DynamicFuture(future_a), Self::DynamicFuture(future_b)) => future_a.is_not_equal(future_b),
+            (Self::Plaintext(..), _) | (Self::Future(..), _) | (Self::DynamicFuture(..), _) => Boolean::new(true),
         }
     }
 }
@@ -59,6 +63,10 @@ impl<N: Network> ToBits for Argument<N> {
                 vec.push(true);
                 future.write_bits_le(vec);
             }
+            Self::DynamicFuture(future) => {
+                vec.push(true);
+                future.write_bits_le(vec);
+            }
         }
     }
 
@@ -71,6 +79,10 @@ impl<N: Network> ToBits for Argument<N> {
                 plaintext.write_bits_be(vec);
             }
             Self::Future(future) => {
+                vec.push(true);
+                future.write_bits_be(vec);
+            }
+            Self::DynamicFuture(future) => {
                 vec.push(true);
                 future.write_bits_be(vec);
             }

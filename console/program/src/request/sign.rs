@@ -154,6 +154,7 @@ impl<N: Network> Request<N> {
                         // Ensure the input is a plaintext.
                         Value::Record(..) => bail!("Expected a plaintext input, found a record input"),
                         Value::Future(..) => bail!("Expected a plaintext input, found a future input"),
+                        Value::DynamicFuture(..) => bail!("Expected a plaintext input, found a dynamic future input"),
                     };
                     // Hash the ciphertext to a field element.
                     let input_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
@@ -171,6 +172,7 @@ impl<N: Network> Request<N> {
                         // Ensure the input is a record.
                         Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
                         Value::Future(..) => bail!("Expected a record input, found a future input"),
+                        Value::DynamicFuture(..) => bail!("Expected a record input, found a dynamic future input"),
                     };
                     // Ensure the record belongs to the signer.
                     ensure!(**record.owner() == signer, "Input record for '{program_id}' must belong to the signer");
@@ -220,6 +222,8 @@ impl<N: Network> Request<N> {
                 }
                 // A future is not a valid input.
                 ValueType::Future(..) => bail!("A future is not a valid input"),
+                // A dynamic future is not a valid input.
+                ValueType::DynamicFuture => bail!("A dynamic future is not a valid input"),
             }
         }
 

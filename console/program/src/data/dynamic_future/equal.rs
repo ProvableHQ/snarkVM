@@ -15,37 +15,29 @@
 
 use super::*;
 
-impl<N: Network> Eq for Value<N> {}
+impl<N: Network> Eq for DynamicFuture<N> {}
 
-impl<N: Network> PartialEq for Value<N> {
+impl<N: Network> PartialEq for DynamicFuture<N> {
     /// Returns `true` if `self` and `other` are equal.
     fn eq(&self, other: &Self) -> bool {
         *self.is_equal(other)
     }
 }
 
-impl<N: Network> Equal<Self> for Value<N> {
+impl<N: Network> Equal<Self> for DynamicFuture<N> {
     type Output = Boolean<N>;
 
     /// Returns `true` if `self` and `other` are equal.
     fn is_equal(&self, other: &Self) -> Self::Output {
-        match (self, other) {
-            (Self::Plaintext(a), Self::Plaintext(b)) => a.is_equal(b),
-            (Self::Record(a), Self::Record(b)) => a.is_equal(b),
-            (Self::Future(a), Self::Future(b)) => a.is_equal(b),
-            (Self::DynamicFuture(a), Self::DynamicFuture(b)) => a.is_equal(b),
-            (Self::Plaintext(..), _) | (Self::Record(..), _) | (Self::Future(..), _) | (Self::DynamicFuture(..), _) => Boolean::new(false),
-        }
+        // Check the `program_id`, `function_name`, and `commitment`.
+        self.program_id.is_equal(&other.program_id)
+            .bitand(self.function_name.is_equal(&other.function_name))
+            .bitand(self.commitment.is_equal(&other.commitment))
+       
     }
 
     /// Returns `true` if `self` and `other` are *not* equal.
     fn is_not_equal(&self, other: &Self) -> Self::Output {
-        match (self, other) {
-            (Self::Plaintext(a), Self::Plaintext(b)) => a.is_not_equal(b),
-            (Self::Record(a), Self::Record(b)) => a.is_not_equal(b),
-            (Self::Future(a), Self::Future(b)) => a.is_not_equal(b),
-            (Self::DynamicFuture(a), Self::DynamicFuture(b)) => a.is_not_equal(b),
-            (Self::Plaintext(..), _) | (Self::Record(..), _) | (Self::Future(..), _) | (Self::DynamicFuture(..), _) => Boolean::new(true),
-        }
+        !self.is_equal(other)
     }
 }

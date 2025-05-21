@@ -38,6 +38,8 @@ pub enum ValueType<N: Network> {
     ExternalRecord(Locator<N>),
     /// A publicly-visible future.
     Future(Locator<N>),
+    /// A dynamic-publicly visible future.
+    DynamicFuture,
 }
 
 impl<N: Network> ValueType<N> {
@@ -50,6 +52,7 @@ impl<N: Network> ValueType<N> {
             ValueType::Record(..) => 3,
             ValueType::ExternalRecord(..) => 4,
             ValueType::Future(..) => 5,
+            ValueType::DynamicFuture => 6,
         }
     }
 }

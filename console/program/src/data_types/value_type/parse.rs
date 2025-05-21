@@ -28,6 +28,7 @@ impl<N: Network> Parser for ValueType<N> {
             map(pair(Identifier::parse, tag(".record")), |(identifier, _)| Self::Record(identifier)),
             map(pair(Locator::parse, tag(".record")), |(locator, _)| Self::ExternalRecord(locator)),
             map(pair(Locator::parse, tag(".future")), |(locator, _)| Self::Future(locator)),
+            map(tag("future.dynamic"), |_| Self::DynamicFuture),
         ))(string)
     }
 }
@@ -66,6 +67,7 @@ impl<N: Network> Display for ValueType<N> {
             Self::Record(identifier) => write!(f, "{identifier}.record"),
             Self::ExternalRecord(locator) => write!(f, "{locator}.record"),
             Self::Future(locator) => write!(f, "{locator}.future"),
+            Self::DynamicFuture => write!(f, "future.dynamic"),
         }
     }
 }
