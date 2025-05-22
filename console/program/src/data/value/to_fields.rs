@@ -56,7 +56,7 @@ impl<N: Network> ToFields for Value<N> {
             Self::Plaintext(plaintext) => plaintext.to_fields(),
             Self::Record(record) => record.to_fields(),
             Self::Future(future) => future.to_fields(),
-            Self::DynamicFuture(future) => future.to_fields()
+            Self::DynamicFuture(future) => future.to_fields(),
         }
     }
 }

@@ -138,6 +138,8 @@ impl<N: Network> RegisterTypes<N> {
             Plaintext(PlaintextType<N>),
             /// A future.
             Future(Locator<N>),
+            /// A dynamic future,
+            DynamicFuture,
         }
 
         // A literal address type.
@@ -202,6 +204,7 @@ impl<N: Network> RegisterTypes<N> {
                 }
             }
             RegisterType::Future(locator) => RegisterAccessType::Future(*locator),
+            RegisterType::DynamicFuture => RegisterAccessType::DynamicFuture,
         };
 
         // Traverse the path to find the register type.
@@ -264,7 +267,8 @@ impl<N: Network> RegisterTypes<N> {
                 }
                 (RegisterAccessType::Plaintext(PlaintextType::Struct(..)), Access::Index(..))
                 | (RegisterAccessType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (RegisterAccessType::Future(..), Access::Member(..)) => {
+                | (RegisterAccessType::Future(..), Access::Member(..))
+                | (RegisterAccessType::DynamicFuture, _) => {
                     bail!("Invalid access `{access}`")
                 }
             }
@@ -274,6 +278,7 @@ impl<N: Network> RegisterTypes<N> {
         Ok(match register_type {
             RegisterAccessType::Plaintext(plaintext_type) => RegisterType::Plaintext(plaintext_type.clone()),
             RegisterAccessType::Future(locator) => RegisterType::Future(locator),
+            RegisterAccessType::DynamicFuture => RegisterType::DynamicFuture,
         })
     }
 }

@@ -26,10 +26,8 @@ impl<N: Network> FromBytes for DynamicFuture<N> {
         let commitment = Field::read_le(&mut reader)?;
         // Return the future.
         Ok(Self::new(program_id, function_name, commitment))
-        
     }
 }
-
 
 impl<N: Network> ToBytes for DynamicFuture<N> {
     /// Writes a future to a buffer.
@@ -54,8 +52,9 @@ mod tests {
     #[test]
     fn test_bytes() -> Result<()> {
         // Check the future manually.
-        let expected =
-            DynamicFuture::<CurrentNetwork>::from_str("{ program_id: credits.aleo, function_name: transfer, commitment: 0field }")?;
+        let expected = DynamicFuture::<CurrentNetwork>::from_str(
+            "{ program_id: credits.aleo, function_name: transfer, commitment: 0field }",
+        )?;
 
         // Check the byte representation.
         let expected_bytes = expected.to_bytes_le()?;

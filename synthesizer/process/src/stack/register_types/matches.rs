@@ -66,6 +66,10 @@ impl<N: Network> RegisterTypes<N> {
                         RegisterType::Future(..) => {
                             bail!("Casting a future into a struct entry is illegal")
                         }
+                        // Ensure the register type is not a dynamic future.
+                        RegisterType::DynamicFuture => {
+                            bail!("Casting a dynamic future into a future entry is illegal")
+                        }
                         // Ensure the register type matches the member type.
                         RegisterType::Plaintext(type_) => {
                             ensure!(
@@ -143,6 +147,10 @@ impl<N: Network> RegisterTypes<N> {
                         // Ensure the register type is not a future.
                         RegisterType::Future(..) => {
                             bail!("Casting a future into an array element is illegal")
+                        }
+                        // Ensure the register type is not a dynamic future.
+                        RegisterType::DynamicFuture => {
+                            bail!("Casting a dynamic future into an array element is illegal")
                         }
                         // Ensure the register type matches the element type.
                         RegisterType::Plaintext(type_) => {
@@ -263,6 +271,10 @@ impl<N: Network> RegisterTypes<N> {
                                 // Ensure the register type is not a future.
                                 RegisterType::Future(..) => {
                                     bail!("Casting a future into a record entry is illegal")
+                                }
+                                // Ensure the register type is not a dynamic future.
+                                RegisterType::DynamicFuture => {
+                                    bail!("Casting a dynamic future into a record entry is illegal")
                                 }
                                 // Ensure the register type matches the entry type.
                                 RegisterType::Plaintext(type_) => {

@@ -15,26 +15,23 @@
 
 use super::*;
 
-impl<N: Network> ToFields for DynamicFuture<N> {
-    type Field = Field<N>;
+impl<A: Aleo> ToFields for DynamicFuture<A> {
+    type Field = Field<A>;
 
-    /// Returns the future as a list of fields.
+    /// Returns the circuit future as a list of fields.
     #[inline]
-    fn to_fields(&self) -> Result<Vec<Self::Field>> {
+    fn to_fields(&self) -> Vec<Field<A>> {
         // Encode the data as little-endian bits.
         let mut bits_le = self.to_bits_le();
         // Adds one final bit to the data, to serve as a terminus indicator.
         // During decryption, this final bit ensures we've reached the end.
-        bits_le.push(true);
+        bits_le.push(Boolean::constant(true));
         // Pack the bits into field elements.
-        let fields = bits_le
-            .chunks(Field::<N>::size_in_data_bits())
-            .map(Field::<N>::from_bits_le)
-            .collect::<Result<Vec<_>>>()?;
+        let fields = bits_le.chunks(A::BaseField::size_in_data_bits()).map(Field::from_bits_le).collect::<Vec<_>>();
         // Ensure the number of field elements does not exceed the maximum allowed size.
-        match fields.len() <= N::MAX_DATA_SIZE_IN_FIELDS as usize {
-            true => Ok(fields),
-            false => bail!("Dynamic future exceeds maximum allowed size"),
+        match fields.len() <= A::MAX_DATA_SIZE_IN_FIELDS as usize {
+            true => fields,
+            false => A::halt("Dynamic future exceeds maximum allowed size"),
         }
     }
 }

@@ -25,6 +25,7 @@ impl<A: Aleo> ToFields for Value<A> {
             Self::Plaintext(plaintext) => plaintext.to_fields(),
             Self::Record(record) => record.to_fields(),
             Self::Future(future) => future.to_fields(),
+            Self::DynamicFuture(future) => future.to_fields(),
         }
     }
 }

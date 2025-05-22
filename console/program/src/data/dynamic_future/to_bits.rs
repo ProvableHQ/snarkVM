@@ -20,41 +20,67 @@ impl<N: Network> ToBits for DynamicFuture<N> {
     #[inline]
     fn write_bits_le(&self, vec: &mut Vec<bool>) {
         // Write the bits for the program ID.
-        let program_id_bits = self.program_id.to_bits_le();
-        u16::try_from(program_id_bits.len()).or_halt_with::<N>("Program ID exceeds u16::MAX bits").write_bits_le(vec);
-        vec.extend_from_slice(&program_id_bits);
+        vec.extend_from_slice(
+            &self
+                .program_id
+                .name()
+                .to_field()
+                .or_halt_with::<N>("Unable to get field underlying program id name")
+                .to_bits_le(),
+        );
+        vec.extend_from_slice(
+            &self
+                .program_id
+                .network()
+                .to_field()
+                .or_halt_with::<N>("Unable to get field underlying program id network")
+                .to_bits_le(),
+        );
 
         // Write the bits for the function name.
-        let function_name_bits = self.function_name.to_bits_le();
-        u16::try_from(function_name_bits.len())
-            .or_halt_with::<N>("Function name exceeds u16::MAX bits")
-            .write_bits_le(vec);
-        vec.extend_from_slice(&function_name_bits);
+        vec.extend_from_slice(
+            &self
+                .function_name
+                .to_field()
+                .or_halt_with::<N>("Unable to get field underlying function name")
+                .to_bits_le(),
+        );
 
-        // Write the commitment.
-        let commitment_bits = self.commitment.to_bits_le();
-        u16::try_from(commitment_bits.len()).or_halt_with::<N>("Commitment exceeds u16::MAX bits").write_bits_le(vec);
-        vec.extend_from_slice(&commitment_bits);
+        // Write the bits for the commitment.
+        vec.extend_from_slice(&self.commitment.to_bits_le());
     }
 
     /// Returns the future as a list of **big-endian** bits.
     #[inline]
     fn write_bits_be(&self, vec: &mut Vec<bool>) {
         // Write the bits for the program ID.
-        let program_id_bits = self.program_id.to_bits_be();
-        u16::try_from(program_id_bits.len()).or_halt_with::<N>("Program ID exceeds u16::MAX bits").write_bits_be(vec);
-        vec.extend_from_slice(&program_id_bits);
+        vec.extend_from_slice(
+            &self
+                .program_id
+                .name()
+                .to_field()
+                .or_halt_with::<N>("Unable to get field underlying program id name")
+                .to_bits_be(),
+        );
+        vec.extend_from_slice(
+            &self
+                .program_id
+                .network()
+                .to_field()
+                .or_halt_with::<N>("Unable to get field underlying program id network")
+                .to_bits_be(),
+        );
 
         // Write the bits for the function name.
-        let function_name_bits = self.function_name.to_bits_be();
-        u16::try_from(function_name_bits.len())
-            .or_halt_with::<N>("Function name exceeds u16::MAX bits")
-            .write_bits_be(vec);
-        vec.extend_from_slice(&function_name_bits);
+        vec.extend_from_slice(
+            &self
+                .function_name
+                .to_field()
+                .or_halt_with::<N>("Unable to get field underlying function name")
+                .to_bits_be(),
+        );
 
         // Write the bits for the commitment.
-        let commitment_bits = self.commitment.to_bits_be();
-        u16::try_from(commitment_bits.len()).or_halt_with::<N>("Commitment exceeds u16::MAX bits").write_bits_be(vec);
-        vec.extend_from_slice(&commitment_bits);
+        vec.extend_from_slice(&self.commitment.to_bits_be());
     }
 }

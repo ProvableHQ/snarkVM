@@ -15,10 +15,9 @@
 
 use super::*;
 
-impl<N: Network> DynamicFuture<N> {
-    /// Returns a value from the given path.
-    // TODO (@d0cd) Disallow this at the syntax level.
-    pub fn find<A: Into<Access<N>> + Copy + Debug>(&self, _path: &[A]) -> Result<Value<N>> {
+impl<A: Aleo> DynamicFuture<A> {
+    /// Returns the value from the given path.
+    pub fn find<A0: Into<Access<A>> + Clone + Debug>(&self, _path: &[A0]) -> Result<Value<A>> {
         bail!("A dynamic future cannot be accessed directly.")
     }
 }

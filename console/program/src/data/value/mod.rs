@@ -34,7 +34,7 @@ pub enum Value<N: Network> {
     /// A future.
     Future(Future<N>),
     /// A dynamic future.
-    DynamicFuture(DynamicFuture<N>)
+    DynamicFuture(DynamicFuture<N>),
 }
 
 impl<N: Network> From<Literal<N>> for Value<N> {

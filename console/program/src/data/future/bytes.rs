@@ -101,7 +101,7 @@ impl<N: Network> Argument<N> {
             0 => Self::Plaintext(Plaintext::read_le(&mut reader)?),
             1 => Self::Future(Future::read_le_internal(&mut reader, depth + 1)?),
             2 => Self::DynamicFuture(DynamicFuture::read_le(&mut reader)?),
-            2.. => return Err(error(format!("Failed to decode future argument {index}"))),
+            3.. => return Err(error(format!("Failed to decode future argument {index}"))),
         };
         Ok(argument)
     }
@@ -155,6 +155,7 @@ mod tests {
             .map(|arg| match arg {
                 Argument::Plaintext(_) => 0,
                 Argument::Future(future) => 1 + get_depth(future),
+                Argument::DynamicFuture(_) => 0,
             })
             .sum()
     }

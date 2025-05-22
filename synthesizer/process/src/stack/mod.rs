@@ -423,6 +423,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
                 Ok(Value::Record(stack.sample_record(burner_address, locator.resource(), Group::rand(rng), rng)?))
             }
             ValueType::Future(locator) => Ok(Value::Future(self.sample_future(locator, rng)?)),
+            ValueType::DynamicFuture => Ok(Value::DynamicFuture(self.sample_dynamic_future(rng)?)),
         }
     }
 

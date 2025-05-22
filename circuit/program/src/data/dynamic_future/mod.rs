@@ -13,51 +13,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod argument;
-pub use argument::Argument;
-
 mod equal;
 mod find;
 mod to_bits;
 mod to_fields;
 
-use crate::{Access, DynamicFuture, Identifier, Plaintext, ProgramID, Value};
+use crate::{Access, Identifier, ProgramID, Value};
 use snarkvm_circuit_network::Aleo;
-use snarkvm_circuit_types::{Boolean, Field, U16, environment::prelude::*};
+use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 
-/// A future.
+/// A dynamic future.
 #[derive(Clone)]
-pub struct Future<A: Aleo> {
+pub struct DynamicFuture<A: Aleo> {
     /// The program ID.
     program_id: ProgramID<A>,
     /// The name of the function.
     function_name: Identifier<A>,
-    /// The arguments.
-    arguments: Vec<Argument<A>>,
+    /// The commitment.
+    commitment: Field<A>,
 }
 
-impl<A: Aleo> Inject for Future<A> {
-    type Primitive = console::Future<A::Network>;
+impl<A: Aleo> Inject for DynamicFuture<A> {
+    type Primitive = console::DynamicFuture<A::Network>;
 
     /// Initializes a circuit of the given mode and future.
     fn new(mode: Mode, value: Self::Primitive) -> Self {
         Self::from(
             Inject::new(mode, *value.program_id()),
             Inject::new(mode, *value.function_name()),
-            Inject::new(mode, value.arguments().to_vec()),
+            Inject::new(mode, *value.commitment()),
         )
     }
 }
 
-impl<A: Aleo> Eject for Future<A> {
-    type Primitive = console::Future<A::Network>;
+impl<A: Aleo> Eject for DynamicFuture<A> {
+    type Primitive = console::DynamicFuture<A::Network>;
 
     /// Ejects the mode of the circuit future.
     fn eject_mode(&self) -> Mode {
         let program_id_mode = Eject::eject_mode(self.program_id());
         let function_name_mode = Eject::eject_mode(self.function_name());
-        let inputs_mode = Eject::eject_mode(&self.inputs());
-        Mode::combine(Mode::combine(program_id_mode, function_name_mode), inputs_mode)
+        let commitment_mode = Eject::eject_mode(self.commitment());
+        Mode::combine(Mode::combine(program_id_mode, function_name_mode), commitment_mode)
     }
 
     /// Ejects the circuit value.
@@ -65,16 +62,16 @@ impl<A: Aleo> Eject for Future<A> {
         Self::Primitive::new(
             Eject::eject_value(self.program_id()),
             Eject::eject_value(self.function_name()),
-            self.inputs().iter().map(Eject::eject_value).collect(),
+            Eject::eject_value(self.commitment()),
         )
     }
 }
 
-impl<A: Aleo> Future<A> {
+impl<A: Aleo> DynamicFuture<A> {
     /// Returns a future from the given program ID, function name, and arguments.
     #[inline]
-    pub const fn from(program_id: ProgramID<A>, function_name: Identifier<A>, arguments: Vec<Argument<A>>) -> Self {
-        Self { program_id, function_name, arguments }
+    pub const fn from(program_id: ProgramID<A>, function_name: Identifier<A>, commitment: Field<A>) -> Self {
+        Self { program_id, function_name, commitment }
     }
 
     /// Returns the program ID.
@@ -89,9 +86,9 @@ impl<A: Aleo> Future<A> {
         &self.function_name
     }
 
-    /// Returns the inputs.
+    /// Returns the commitment.
     #[inline]
-    pub fn inputs(&self) -> &[Argument<A>] {
-        &self.arguments
+    pub fn commitment(&self) -> &Field<A> {
+        &self.commitment
     }
 }

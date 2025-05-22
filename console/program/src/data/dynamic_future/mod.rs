@@ -21,7 +21,7 @@ mod serialize;
 mod to_bits;
 mod to_fields;
 
-use crate::{Access, Identifier, Plaintext, ProgramID, Value};
+use crate::{Access, Identifier, ProgramID, Value};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
@@ -37,6 +37,7 @@ pub struct DynamicFuture<N: Network> {
     /// The commitment.
     commitment: Field<N>,
     // TODO (@d0cd). The length of the arguments? The optional arguments?
+    // TODO (@d0cd). Should the `program_id` and `function_name` of the dynamic future be accessible
 }
 
 impl<N: Network> DynamicFuture<N> {

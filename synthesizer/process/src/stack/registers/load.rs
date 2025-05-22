@@ -64,6 +64,8 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersLoad<N> for Registers<N
                     },
                     // Retrieve the argument from the future.
                     Value::Future(future) => future.find(path)?,
+                    // Retrieve the argument from the dynamic future.
+                    Value::DynamicFuture(future) => future.find(path)?,
                 }
             }
         };
@@ -152,6 +154,8 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersLoadCircuit<N, A> for R
                     },
                     // Retrieve the argument from the future.
                     circuit::Value::Future(future) => future.find(&path)?,
+                    // Retrieve the argument from the dynamic future.
+                    circuit::Value::DynamicFuture(future) => future.find(&path)?,
                 }
             }
         };

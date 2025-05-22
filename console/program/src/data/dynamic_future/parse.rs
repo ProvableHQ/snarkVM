@@ -19,24 +19,6 @@ impl<N: Network> Parser for DynamicFuture<N> {
     /// Parses a string into a future value.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
-        // Parse the future from the string.
-        Self::parse_internal(string, 0)
-    }
-}
-
-impl<N: Network> DynamicFuture<N> {
-    /// Parses a string into a future value, while tracking the depth of the data.
-    #[inline]
-    fn parse_internal(string: &str, depth: usize) -> ParserResult<Self> {
-        // Ensure that the depth is within the maximum limit.
-        // Note: `N::MAX_DATA_DEPTH` is an upper bound on the number of nested futures.
-        //  The true maximum is defined by `Transaction::<N>::MAX_TRANSITIONS`, however, that object is not accessible in this crate.
-        //  In practice, `MAX_DATA_DEPTH` is 32, while `MAX_TRANSITIONS` is 31.
-        if depth > N::MAX_DATA_DEPTH {
-            return map_res(take(0usize), |_| {
-                Err(error(format!("Found a future that exceeds maximum data depth ({})", N::MAX_DATA_DEPTH)))
-            })(string);
-        }
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "{" from the string.
@@ -75,7 +57,7 @@ impl<N: Network> DynamicFuture<N> {
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the "," from the string.
         let (string, _) = tag(",")(string)?;
-        
+
         // Parse the whitespace and comments from the string.
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
@@ -185,8 +167,9 @@ mod tests {
   function_name: transfer,
   arguments: []
 }";
-        let (remainder, candidate) =
-            DynamicFuture::<CurrentNetwork>::parse("{ program_id: credits.aleo, function_name: transfer, arguments: [] }")?;
+        let (remainder, candidate) = DynamicFuture::<CurrentNetwork>::parse(
+            "{ program_id: credits.aleo, function_name: transfer, arguments: [] }",
+        )?;
         assert!(remainder.is_empty());
         assert_eq!(expected, candidate.to_string());
         assert_eq!("", remainder);

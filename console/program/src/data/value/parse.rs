@@ -25,7 +25,6 @@ impl<N: Network> Parser for Value<N> {
             map(DynamicFuture::parse, Value::DynamicFuture),
             map(Plaintext::parse, Value::Plaintext),
             map(Record::parse, Value::Record),
-            
         ))(string)
     }
 }

@@ -90,6 +90,7 @@ impl<N: Network> Async<N> {
                 Value::Plaintext(plaintext) => Ok(Argument::Plaintext(plaintext)),
                 Value::Record(_) => bail!("Cannot pass a record into an `async` instruction"),
                 Value::Future(future) => Ok(Argument::Future(future)),
+                Value::DynamicFuture(future) => Ok(Argument::DynamicFuture(future)),
             })
             .try_collect()?;
 
@@ -120,6 +121,7 @@ impl<N: Network> Async<N> {
                 circuit::Value::Plaintext(plaintext) => Ok(circuit::Argument::Plaintext(plaintext)),
                 circuit::Value::Record(_) => bail!("Cannot pass a record into an `async` instruction"),
                 circuit::Value::Future(future) => Ok(circuit::Argument::Future(future)),
+                circuit::Value::DynamicFuture(future) => Ok(circuit::Argument::DynamicFuture(future)),
             })
             .try_collect()?;
 

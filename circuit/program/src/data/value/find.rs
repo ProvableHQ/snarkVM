@@ -31,6 +31,7 @@ impl<A: Aleo> Value<A> {
                 }
             }
             Self::Future(future) => Ok(future.find(path)?),
+            Self::DynamicFuture(future) => Ok(future.find(path)?),
         }
     }
 }

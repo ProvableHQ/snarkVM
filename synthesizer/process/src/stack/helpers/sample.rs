@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use console::program::DynamicFuture;
 
 impl<N: Network> Stack<N> {
     /// Samples a plaintext value according to the given plaintext type.
@@ -37,6 +38,34 @@ impl<N: Network> Stack<N> {
         // Ensure the future value matches the future type.
         self.matches_future(&future, locator)?;
         // Return the future value.
+        Ok(future)
+    }
+
+    /// Samples a dynamic future value.
+    pub fn sample_dynamic_future<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<DynamicFuture<N>> {
+        // Samples a random identifier.
+        fn sample_identifier<N: Network, R: Rng + CryptoRng>(rng: &mut R) -> Result<Identifier<N>> {
+            // Sample a random fixed-length alphanumeric string, that always starts with an alphabetic character.
+            let string = "a".to_string()
+                + &rng
+                    .sample_iter(&Alphanumeric)
+                    .take(Field::<N>::size_in_data_bits() / (8 * 2))
+                    .map(char::from)
+                    .collect::<String>();
+            // Ensure identifier fits within the data capacity of the base field.
+            let max_bytes = Field::<N>::size_in_data_bits() / 8; // Note: This intentionally rounds down.
+            if string.len() > max_bytes {
+                bail!("Identifier exceeds the maximum capacity allowed")
+            };
+            // Recover the identifier from the bits.
+            Identifier::<N>::from_bits_le(&string.as_bytes().to_bits_le())
+        }
+        // Sample a dynamic future value.
+        let program_id = ProgramID::try_from((sample_identifier(rng)?, sample_identifier(rng)?))?;
+        let function_name = sample_identifier(rng)?;
+        let commitment = Field::rand(rng);
+        let future = DynamicFuture::new(program_id, function_name, commitment);
+        // Return the dynamic future value.
         Ok(future)
     }
 

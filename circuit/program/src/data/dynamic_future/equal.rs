@@ -15,29 +15,22 @@
 
 use super::*;
 
-impl<N: Network> Eq for DynamicFuture<N> {}
-
-impl<N: Network> PartialEq for DynamicFuture<N> {
-    /// Returns `true` if `self` and `other` are equal.
-    fn eq(&self, other: &Self) -> bool {
-        *self.is_equal(other)
-    }
-}
-
-impl<N: Network> Equal<Self> for DynamicFuture<N> {
-    type Output = Boolean<N>;
+impl<A: Aleo> Equal<Self> for DynamicFuture<A> {
+    type Output = Boolean<A>;
 
     /// Returns `true` if `self` and `other` are equal.
     fn is_equal(&self, other: &Self) -> Self::Output {
-        // Check the `program_id`, `function_name`, and `commitment`.
-        self.program_id
-            .is_equal(&other.program_id)
-            .bitand(self.function_name.is_equal(&other.function_name))
-            .bitand(self.commitment.is_equal(&other.commitment))
+        // Check the `program_id`, `function_name`, and `commitment` are equal.
+        self.program_id.is_equal(&other.program_id)
+            & self.function_name.is_equal(&other.function_name)
+            & self.commitment.is_equal(&other.commitment)
     }
 
     /// Returns `true` if `self` and `other` are *not* equal.
     fn is_not_equal(&self, other: &Self) -> Self::Output {
-        !self.is_equal(other)
+        // Check the `program_id`, `function_name`, or `commitment` are not equal.
+        self.program_id.is_not_equal(&other.program_id)
+            | self.function_name.is_not_equal(&other.function_name)
+            | self.commitment.is_not_equal(&other.commitment)
     }
 }

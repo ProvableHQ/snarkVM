@@ -73,6 +73,7 @@ impl<N: Network> Future<N> {
         match value {
             ArgumentRefType::Plaintext(plaintext) => Ok(Value::Plaintext(plaintext.clone())),
             ArgumentRefType::Future(future) => Ok(Value::Future(future.clone())),
+            ArgumentRefType::DynamicFuture(future) => Ok(Value::DynamicFuture(future.clone())),
         }
     }
 }

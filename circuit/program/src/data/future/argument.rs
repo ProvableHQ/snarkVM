@@ -22,6 +22,8 @@ pub enum Argument<A: Aleo> {
     Plaintext(Plaintext<A>),
     /// A future.
     Future(Future<A>),
+    /// A dynamic future.
+    DynamicFuture(DynamicFuture<A>),
 }
 
 impl<A: Aleo> Inject for Argument<A> {
@@ -32,6 +34,7 @@ impl<A: Aleo> Inject for Argument<A> {
         match value {
             console::Argument::Plaintext(plaintext) => Self::Plaintext(Inject::new(mode, plaintext)),
             console::Argument::Future(future) => Self::Future(Inject::new(mode, future)),
+            console::Argument::DynamicFuture(future) => Self::DynamicFuture(Inject::new(mode, future)),
         }
     }
 }
@@ -44,6 +47,7 @@ impl<A: Aleo> Eject for Argument<A> {
         match self {
             Self::Plaintext(plaintext) => plaintext.eject_mode(),
             Self::Future(future) => future.eject_mode(),
+            Self::DynamicFuture(future) => future.eject_mode(),
         }
     }
 
@@ -52,6 +56,7 @@ impl<A: Aleo> Eject for Argument<A> {
         match self {
             Self::Plaintext(plaintext) => Self::Primitive::Plaintext(plaintext.eject_value()),
             Self::Future(future) => Self::Primitive::Future(future.eject_value()),
+            Self::DynamicFuture(future) => Self::Primitive::DynamicFuture(future.eject_value()),
         }
     }
 }
@@ -64,7 +69,8 @@ impl<A: Aleo> Equal<Self> for Argument<A> {
         match (self, other) {
             (Self::Plaintext(plaintext_a), Self::Plaintext(plaintext_b)) => plaintext_a.is_equal(plaintext_b),
             (Self::Future(future_a), Self::Future(future_b)) => future_a.is_equal(future_b),
-            (Self::Plaintext(..), _) | (Self::Future(..), _) => Boolean::constant(false),
+            (Self::DynamicFuture(future_a), Self::DynamicFuture(future_b)) => future_a.is_equal(future_b),
+            (Self::Plaintext(..), _) | (Self::Future(..), _) | (Self::DynamicFuture(..), _) => Boolean::constant(false),
         }
     }
 
@@ -73,7 +79,8 @@ impl<A: Aleo> Equal<Self> for Argument<A> {
         match (self, other) {
             (Self::Plaintext(plaintext_a), Self::Plaintext(plaintext_b)) => plaintext_a.is_not_equal(plaintext_b),
             (Self::Future(future_a), Self::Future(future_b)) => future_a.is_not_equal(future_b),
-            (Self::Plaintext(..), _) | (Self::Future(..), _) => Boolean::constant(true),
+            (Self::DynamicFuture(future_a), Self::DynamicFuture(future_b)) => future_a.is_not_equal(future_b),
+            (Self::Plaintext(..), _) | (Self::Future(..), _) | (Self::DynamicFuture(..), _) => Boolean::constant(true),
         }
     }
 }
@@ -93,6 +100,11 @@ impl<A: Aleo> ToBits for Argument<A> {
                 vec.push(Boolean::constant(true));
                 future.write_bits_le(vec);
             }
+            // TODO (@d0cd) Ensure that this encoding is not ambiguous.
+            Self::DynamicFuture(future) => {
+                vec.extend([Boolean::constant(true), Boolean::constant(false)]);
+                future.write_bits_le(vec);
+            }
         }
     }
 
@@ -106,6 +118,11 @@ impl<A: Aleo> ToBits for Argument<A> {
             }
             Self::Future(future) => {
                 vec.push(Boolean::constant(true));
+                future.write_bits_be(vec);
+            }
+            // TODO (@d0cd) Ensure that his encoding is not ambiguous.
+            Self::DynamicFuture(future) => {
+                vec.extend([Boolean::constant(true), Boolean::constant(false)]);
                 future.write_bits_be(vec);
             }
         }

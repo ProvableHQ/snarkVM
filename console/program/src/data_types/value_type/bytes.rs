@@ -26,7 +26,7 @@ impl<N: Network> ToBytes for ValueType<N> {
             Self::Record(identifier) => identifier.write_le(&mut writer),
             Self::ExternalRecord(locator) => locator.write_le(&mut writer),
             Self::Future(locator) => locator.write_le(&mut writer),
-            Self::DynamicFuture => { Ok(()) },
+            Self::DynamicFuture => Ok(()),
         }
     }
 }
