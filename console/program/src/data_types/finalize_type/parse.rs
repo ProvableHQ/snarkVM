@@ -21,6 +21,7 @@ impl<N: Network> Parser for FinalizeType<N> {
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the mode from the string (ordering matters).
         alt((
+            map(tag("dynamic.future"), |_| Self::DynamicFuture),
             map(pair(Locator::parse, tag(".future")), |(locator, _)| Self::Future(locator)),
             map(pair(PlaintextType::parse, tag(".public")), |(plaintext_type, _)| Self::Plaintext(plaintext_type)),
         ))(string)
@@ -59,6 +60,8 @@ impl<N: Network> Display for FinalizeType<N> {
             Self::Plaintext(plaintext_type) => write!(f, "{plaintext_type}.public"),
             // Prints the future type, i.e. future
             Self::Future(locator) => write!(f, "{locator}.future"),
+            // Prints the dynamic future type, i.e. dynamic.future
+            Self::DynamicFuture => write!(f, "dynamic.future"),
         }
     }
 }

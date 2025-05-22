@@ -225,6 +225,12 @@ impl<N: Network> Stack<N> {
                         // Return the argument.
                         Ok(Argument::Future(future))
                     }
+                    FinalizeType::DynamicFuture => {
+                        // Sample the dynamic future value.
+                        let future = self.sample_dynamic_future(rng)?;
+                        // Return the argument.
+                        Ok(Argument::DynamicFuture(future))
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;

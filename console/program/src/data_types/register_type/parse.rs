@@ -21,11 +21,11 @@ impl<N: Network> Parser for RegisterType<N> {
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the mode from the string (ordering matters).
         alt((
+            map(tag("dynamic.future"), |_| Self::DynamicFuture),
             map(pair(Locator::parse, tag(".future")), |(locator, _)| Self::Future(locator)),
             map(pair(Locator::parse, tag(".record")), |(locator, _)| Self::ExternalRecord(locator)),
             map(pair(Identifier::parse, tag(".record")), |(identifier, _)| Self::Record(identifier)),
             map(PlaintextType::parse, |plaintext_type| Self::Plaintext(plaintext_type)),
-            map(tag("future.dynamic"), |_| Self::DynamicFuture),
         ))(string)
     }
 }
@@ -66,8 +66,8 @@ impl<N: Network> Display for RegisterType<N> {
             Self::ExternalRecord(locator) => write!(f, "{locator}.record"),
             // Prints the future type, i.e. future
             Self::Future(locator) => write!(f, "{locator}.future"),
-            // Prints the dynamic future type, i.e. future.dynamic
-            Self::DynamicFuture => write!(f, "future.dynamic"),
+            // Prints the dynamic future type, i.e. dynamic.future
+            Self::DynamicFuture => write!(f, "dynamic.future"),
         }
     }
 }

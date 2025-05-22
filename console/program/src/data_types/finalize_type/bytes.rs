@@ -22,6 +22,7 @@ impl<N: Network> ToBytes for FinalizeType<N> {
         match self {
             Self::Plaintext(plaintext_type) => plaintext_type.write_le(&mut writer),
             Self::Future(locator) => locator.write_le(&mut writer),
+            Self::DynamicFuture => Ok(()),
         }
     }
 }
@@ -33,7 +34,8 @@ impl<N: Network> FromBytes for FinalizeType<N> {
         match variant {
             0 => Ok(Self::Plaintext(PlaintextType::read_le(&mut reader)?)),
             1 => Ok(Self::Future(Locator::read_le(&mut reader)?)),
-            2.. => Err(error(format!("Failed to deserialize finalize type variant {variant}"))),
+            2 => Ok(Self::DynamicFuture),
+            3.. => Err(error(format!("Failed to deserialize finalize type variant {variant}"))),
         }
     }
 }

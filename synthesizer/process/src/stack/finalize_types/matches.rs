@@ -62,6 +62,8 @@ impl<N: Network> FinalizeTypes<N> {
                         FinalizeType::Plaintext(plaintext_type) => plaintext_type,
                         // If the register is a future, throw an error.
                         FinalizeType::Future(..) => bail!("Struct member cannot be a future"),
+                        // If the register is a dynamic future, throw an error.
+                        FinalizeType::DynamicFuture => bail!("Struct member cannot be a dynamic future"),
                     };
                     // Ensure the register type matches the member type.
                     ensure!(
@@ -154,6 +156,8 @@ impl<N: Network> FinalizeTypes<N> {
                         FinalizeType::Plaintext(plaintext_type) => plaintext_type,
                         // If the register is a future, throw an error.
                         FinalizeType::Future(..) => bail!("Array element cannot be a future"),
+                        // If the register is a dynamic future, throw an error.
+                        FinalizeType::DynamicFuture => bail!("Array element cannot be a dynamic future"),
                     };
                     // Ensure the register type matches the member type.
                     ensure!(

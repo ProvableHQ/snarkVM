@@ -70,6 +70,8 @@ mod tests {
         "array.public",
         // Future
         "credits.aleo/mint_public.future",
+        // Dynamic future
+        "dynamic.future",
     ];
 
     fn check_serde_json<

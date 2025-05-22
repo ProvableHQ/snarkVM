@@ -259,6 +259,7 @@ impl<N: Network> RegisterTypes<N> {
                                     RegisterAccessType::Plaintext(plaintext_type.clone())
                                 }
                                 FinalizeType::Future(locator) => RegisterAccessType::Future(*locator),
+                                FinalizeType::DynamicFuture => RegisterAccessType::DynamicFuture,
                             }
                         }
                         // Halts if the index is out of bounds.

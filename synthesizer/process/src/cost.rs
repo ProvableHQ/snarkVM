@@ -184,6 +184,9 @@ fn cost_in_size<'a, N: Network>(
             FinalizeType::Future(future) => {
                 bail!("Future '{future}' is not a valid operand in the finalize scope");
             }
+            FinalizeType::DynamicFuture => {
+                bail!("A dynamic future is not a valid operand in the finalize scope");
+            }
         };
         // Safely add the size to the accumulator.
         acc.checked_add(operand_size).ok_or(anyhow!(
@@ -268,6 +271,7 @@ pub fn cost_per_command<N: Network>(
                 FinalizeType::Plaintext(PlaintextType::Array(_)) => bail!("'div' does not support arrays"),
                 FinalizeType::Plaintext(PlaintextType::Struct(_)) => bail!("'div' does not support structs"),
                 FinalizeType::Future(_) => bail!("'div' does not support futures"),
+                FinalizeType::DynamicFuture => bail!("'div' does not support dynamic futures"),
             }
         }
         Command::Instruction(Instruction::DivWrapped(_)) => Ok(500),
@@ -347,6 +351,7 @@ pub fn cost_per_command<N: Network>(
                 FinalizeType::Plaintext(PlaintextType::Array(_)) => bail!("'mul' does not support arrays"),
                 FinalizeType::Plaintext(PlaintextType::Struct(_)) => bail!("'mul' does not support structs"),
                 FinalizeType::Future(_) => bail!("'mul' does not support futures"),
+                FinalizeType::DynamicFuture => bail!("'mul' does not support dynamic futures"),
             }
         }
         Command::Instruction(Instruction::MulWrapped(_)) => Ok(500),
@@ -367,6 +372,7 @@ pub fn cost_per_command<N: Network>(
                 FinalizeType::Plaintext(PlaintextType::Array(_)) => bail!("'pow' does not support arrays"),
                 FinalizeType::Plaintext(PlaintextType::Struct(_)) => bail!("'pow' does not support structs"),
                 FinalizeType::Future(_) => bail!("'pow' does not support futures"),
+                FinalizeType::DynamicFuture => bail!("'pow' does not support dynamic futures"),
             }
         }
         Command::Instruction(Instruction::PowWrapped(_)) => Ok(500),

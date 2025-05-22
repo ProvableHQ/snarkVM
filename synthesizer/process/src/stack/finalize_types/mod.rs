@@ -190,7 +190,8 @@ impl<N: Network> FinalizeTypes<N> {
                 }
                 (FinalizeType::Plaintext(PlaintextType::Struct(..)), Access::Index(..))
                 | (FinalizeType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (FinalizeType::Future(..), Access::Member(..)) => {
+                | (FinalizeType::Future(..), Access::Member(..))
+                | (FinalizeType::DynamicFuture, _) => {
                     bail!("Invalid access `{access}`")
                 }
             }

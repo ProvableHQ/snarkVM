@@ -57,6 +57,7 @@ impl<N: Network> From<FinalizeType<N>> for RegisterType<N> {
         match finalize {
             FinalizeType::Plaintext(plaintext_type) => Self::Plaintext(plaintext_type),
             FinalizeType::Future(locator) => Self::Future(locator),
+            FinalizeType::DynamicFuture => Self::DynamicFuture,
         }
     }
 }
