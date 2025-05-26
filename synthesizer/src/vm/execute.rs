@@ -15,6 +15,8 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use ledger_query::QueryTarget;
+
 use super::*;
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -46,7 +48,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let fee = match is_fee_required || is_priority_fee_declared {
             true => {
                 // Compute the minimum execution cost.
-                let query = query.clone().unwrap_or(Query::VM(self.block_store().clone()));
+                let query = query.clone().unwrap_or(Query::new(QueryTarget::VM(self.block_store().clone())));
                 let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
                 let (minimum_execution_cost, (_, _)) = if consensus_version == ConsensusVersion::V1 {
                     execution_cost_v1(&self.process().read(), &execution)?
@@ -150,7 +152,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Prepare the query.
         let query = match query {
             Some(query) => query,
-            None => Query::VM(self.block_store().clone()),
+            None => Query::new(QueryTarget::VM(self.block_store().clone())),
         };
         lap!(timer, "Prepare the query");
 
@@ -203,7 +205,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Prepare the query.
         let query = match query {
             Some(query) => query,
-            None => Query::VM(self.block_store().clone()),
+            None => Query::new(QueryTarget::VM(self.block_store().clone())),
         };
         lap!(timer, "Prepare the query");
 
