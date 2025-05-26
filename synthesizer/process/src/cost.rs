@@ -276,6 +276,7 @@ pub fn cost_per_command<N: Network>(
         }
         Command::Instruction(Instruction::DivWrapped(_)) => Ok(500),
         Command::Instruction(Instruction::Double(_)) => Ok(500),
+        Command::Instruction(Instruction::DynamicCall(_)) => bail!("'dcall' is not supported in finalize"),
         Command::Instruction(Instruction::GreaterThan(_)) => Ok(500),
         Command::Instruction(Instruction::GreaterThanOrEqual(_)) => Ok(500),
         Command::Instruction(Instruction::HashBHP256(hash)) => {

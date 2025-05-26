@@ -28,6 +28,9 @@ pub use cast::*;
 mod commit;
 pub use commit::*;
 
+mod dynamic_call;
+pub use dynamic_call::*;
+
 mod hash;
 pub use hash::*;
 

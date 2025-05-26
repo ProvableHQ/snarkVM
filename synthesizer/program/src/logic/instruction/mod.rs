@@ -106,6 +106,8 @@ pub enum Instruction<N: Network> {
     DivWrapped(DivWrapped<N>),
     /// Doubles `first`, storing the outcome in `destination`.
     Double(Double<N>),
+    /// Dynamically calls an external function on the operands.
+    DynamicCall(DynamicCall<N>),
     /// Computes whether `first` is greater than `second` as a boolean, storing the outcome in `destination`.
     GreaterThan(GreaterThan<N>),
     /// Computes whether `first` is greater than or equal to `second` as a boolean, storing the outcome in `destination`.
@@ -300,6 +302,8 @@ macro_rules! instruction {
             SubWrapped,
             Ternary,
             Xor,
+            DynamicCall,
+            // Note: All new instructions must be added below this line.
         }}
     };
     // A variant **without** curly braces:
