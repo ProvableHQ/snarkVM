@@ -34,6 +34,10 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
     pub fn new(target: QueryTarget<N, B>) -> Self {
         Self { target, cached_state_root: Default::default() }
     }
+
+    pub fn new_with_state_root(target: QueryTarget<N, B>, state_root: N::StateRoot) -> Self {
+        Self { target, cached_state_root: Arc::new(OnceLock::from(state_root)) }
+    }
 }
 
 #[derive(Clone)]
