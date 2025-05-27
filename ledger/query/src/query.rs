@@ -83,13 +83,13 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     /// Returns the current state root.
     fn current_state_root(&self) -> Result<N::StateRoot> {
         if let Some(csr) = self.cached_state_root.get() {
-            return Ok(csr.clone());
+            return Ok(*csr);
         }
 
         match &self.target {
             QueryTarget::VM(block_store) => {
                 let csr = block_store.current_state_root();
-                let _ = self.cached_state_root.set(csr.clone());
+                let _ = self.cached_state_root.set(csr);
                 Ok(csr)
             }
             QueryTarget::REST(url) => {
@@ -100,7 +100,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                     _ => bail!("Unsupported network ID in inclusion query"),
                 };
                 let csr: N::StateRoot = Self::get_request(&format!("{url}/{network}/stateRoot/latest"))?.into_json()?;
-                let _ = self.cached_state_root.set(csr.clone());
+                let _ = self.cached_state_root.set(csr);
 
                 Ok(csr)
             }
@@ -111,13 +111,13 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     #[cfg(feature = "async")]
     async fn current_state_root_async(&self) -> Result<N::StateRoot> {
         if let Some(csr) = self.cached_state_root.get() {
-            return Ok(csr.clone());
+            return Ok(*csr);
         }
 
         match &self.target {
             QueryTarget::VM(block_store) => {
                 let csr = block_store.current_state_root();
-                let _ = self.cached_state_root.set(csr.clone());
+                let _ = self.cached_state_root.set(csr);
                 Ok(csr)
             }
             QueryTarget::REST(url) => {
@@ -129,7 +129,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 };
                 let csr: N::StateRoot =
                     Self::get_request_async(&format!("{url}/{network}/stateRoot/latest")).await?.json().await?;
-                let _ = self.cached_state_root.set(csr.clone());
+                let _ = self.cached_state_root.set(csr);
 
                 Ok(csr)
             }
