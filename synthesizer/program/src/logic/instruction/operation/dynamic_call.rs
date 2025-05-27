@@ -24,16 +24,19 @@ use console::{
 };
 
 /// Dynamically calls the operands into the declared type.
-/// The first operand must be a program ID or address, which is referenced against the existing set of programs.
-/// The second operand must be an identifier or field, which is converted into an identifier and checked against the program's functions.
+/// The first operand must resolve to a field element representing the program name.
+/// The second operand must resolve to a field element representing the program network.
+/// The third operand must resolve to a field element representing the function name.
 /// The remaining operands are the arguments to the call.
 /// The destination registers along with their expected types are specified after the `into` keyword.
-/// i.e. `dcall r0 r1 r0.owner 0u64 r1.amount into r1 r2 (as u64 dynamic.future);`
+/// i.e. `dcall r0 r1 r2 r0.owner 0u64 r1.amount into r1 r2 (as u64 dynamic.future);`
 // TODO (@d0cd) Should we allow operands to be identifiers so that we can allow function names to be specified directly.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct DynamicCall<N: Network> {
-    /// The program.
-    program: Operand<N>,
+    /// The program ID name.
+    program_id_name: Operand<N>,
+    /// The program ID network.
+    program_id_network: Operand<N>,
     /// The function name.
     function_name: Operand<N>,
     /// The operands.
@@ -51,10 +54,16 @@ impl<N: Network> DynamicCall<N> {
         Opcode::Call
     }
 
-    /// Returns the program.
+    /// Returns the program ID name.
     #[inline]
-    pub const fn program(&self) -> &Operand<N> {
-        &self.program
+    pub const fn program_id_name(&self) -> &Operand<N> {
+        &self.program_id_name
+    }
+
+    /// Returns the program ID network.
+    #[inline]
+    pub const fn program_id_network(&self) -> &Operand<N> {
+        &self.program_id_network
     }
 
     /// Returns the function name.
@@ -155,11 +164,15 @@ impl<N: Network> Parser for DynamicCall<N> {
         let (string, _) = tag(*Self::opcode())(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the program operand of the call from the string.
-        let (string, program) = Operand::parse(string)?;
+        // Parse the program ID name of the call from the string.
+        let (string, program_id_name) = Operand::parse(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the function name operand of the call from the string .
+        // Parse the program ID network of the call from the string.
+        let (string, program_id_network) = Operand::parse(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
+        // Parse the function name of the call from the string .
         let (string, function_name) = Operand::parse(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
@@ -211,7 +224,14 @@ impl<N: Network> Parser for DynamicCall<N> {
             }
         };
 
-        Ok((string, Self { program, function_name, operands, destinations, destination_types }))
+        Ok((string, Self {
+            program_id_name,
+            program_id_network,
+            function_name,
+            operands,
+            destinations,
+            destination_types,
+        }))
     }
 }
 
@@ -260,7 +280,7 @@ impl<N: Network> Display for DynamicCall<N> {
             return Err(fmt::Error);
         }
         // Print the operation.
-        write!(f, "{} {} {}", Self::opcode(), self.program, self.function_name)?;
+        write!(f, "{} {} {} {}", Self::opcode(), self.program_id_name, self.program_id_network, self.function_name)?;
         self.operands.iter().try_for_each(|operand| write!(f, " {operand}"))?;
         if !self.destinations.is_empty() {
             write!(f, " into")?;
@@ -274,9 +294,11 @@ impl<N: Network> Display for DynamicCall<N> {
 impl<N: Network> FromBytes for DynamicCall<N> {
     /// Reads the operation from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the program operand.
-        let program = Operand::read_le(&mut reader)?;
-        // Read the function name operand.
+        // Read the program ID name.
+        let program_id_name = Operand::read_le(&mut reader)?;
+        // Read the program ID network.
+        let program_id_network = Operand::read_le(&mut reader)?;
+        // Read the function name.
         let function_name = Operand::read_le(&mut reader)?;
         // Read the number of operands.
         let num_operands = u8::read_le(&mut reader)? as usize;
@@ -313,7 +335,7 @@ impl<N: Network> FromBytes for DynamicCall<N> {
         }
 
         // Return the operation.
-        Ok(Self { program, function_name, operands, destinations, destination_types })
+        Ok(Self { program_id_name, program_id_network, function_name, operands, destinations, destination_types })
     }
 }
 
@@ -328,10 +350,16 @@ impl<N: Network> ToBytes for DynamicCall<N> {
         if self.destinations.len() > N::MAX_OPERANDS {
             return Err(error(format!("The number of destinations must be <= {}", N::MAX_OPERANDS)));
         }
+        // Ensure the number of destinations and destination types match.
+        if self.destinations.len() != self.destination_types.len() {
+            return Err(error("The number of destination registers and destination types do not match".to_string()));
+        }
 
-        // Write the program operand.
-        self.program.write_le(&mut writer)?;
-        // Write the function name operand.
+        // Write the program ID name.
+        self.program_id_name.write_le(&mut writer)?;
+        // Write the program ID network.
+        self.program_id_network.write_le(&mut writer)?;
+        // Write the function name.
         self.function_name.write_le(&mut writer)?;
         // Write the number of operands.
         u8::try_from(self.operands.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
@@ -351,24 +379,24 @@ mod tests {
     use super::*;
     use console::{
         network::MainnetV0,
-        program::{Access, Address, Identifier, Literal, U64},
+        program::{Access, Identifier, LiteralType, PlaintextType},
     };
 
     type CurrentNetwork = MainnetV0;
 
     const TEST_CASES: &[&str] = &[
-        "dcall r0 f1",
-        "dcall foo r0",
-        "dcall foo r0.owner",
-        "dcall foo r0 r1",
-        "dcall foo into r0",
-        "dcall foo into r0 r1",
-        "dcall foo into r0 r1 r2",
-        "dcall foo r0 into r1",
-        "dcall foo r0 r1 into r2",
-        "dcall foo r0 r1 into r2 r3",
-        "dcall foo r0 r1 r2 into r3 r4",
-        "dcall foo r0 r1 r2 into r3 r4 r5",
+        "dcall r0 r1 r2",
+        "dcall r0 r1 r2 r0",
+        "dcall r0 r1 r2 r0.owner",
+        "dcall r0 r1 r2 r0 r1",
+        "dcall r0 r1 r2 into r0",
+        "dcall r0 r1 r2 into r0 r1",
+        "dcall r0 r1 r2 into r0 r1 r2",
+        "dcall r0 r1 r2 r0 into r1",
+        "dcall r0 r1 r2 r0 r1 into r2",
+        "dcall r0 r1 r2 r0 r1 into r2 r3",
+        "dcall r0 r1 r2 r0 r1 r2 into r3 r4",
+        "dcall r0 r1 r2 r0 r1 r2 into r3 r4 r5",
     ];
 
     fn check_parser(
@@ -377,6 +405,7 @@ mod tests {
         expected_function_name: Operand<CurrentNetwork>,
         expected_operands: Vec<Operand<CurrentNetwork>>,
         expected_destinations: Vec<Register<CurrentNetwork>>,
+        exepcted_destination_types: Vec<RegisterType<CurrentNetwork>>,
     ) {
         // Check that the parser works.
         let (string, call) = DynamicCall::<CurrentNetwork>::parse(string).unwrap();
@@ -396,18 +425,36 @@ mod tests {
             assert_eq!(given, expected, "The {i}-th operand is incorrect");
         }
 
+        // Check that the number of destinations and destination types match.
+        assert_eq!(
+            call.destinations.len(),
+            call.destination_types.len(),
+            "The number of destinations and destination types do not match"
+        );
+
         // Check that the destinations are correct.
         assert_eq!(call.destinations.len(), expected_destinations.len(), "The number of destinations is incorrect");
         for (i, (given, expected)) in call.destinations.iter().zip(expected_destinations.iter()).enumerate() {
             assert_eq!(given, expected, "The {i}-th destination is incorrect");
+        }
+
+        // Check that the destination types are correct.
+        assert_eq!(
+            call.destination_types.len(),
+            exepcted_destination_types.len(),
+            "The number of destination types is incorrect"
+        );
+        for (i, (given, expected)) in call.destination_types.iter().zip(exepcted_destination_types.iter()).enumerate() {
+            assert_eq!(given, expected, "The {i}-th destination type is incorrect");
         }
     }
 
     #[test]
     fn test_parse() {
         check_parser(
-            "dcall r4 r5 r0.owner r0.token_amount into r1 r2 r3",
-            CallOperator::from_str("transfer").unwrap(),
+            "dcall r4 r5 r0.owner r0.token_amount into r1 r2 r3 (as u64 u8 dynamic.future)",
+            Operand::Register(Register::Locator(4)),
+            Operand::Register(Register::Locator(5)),
             vec![
                 Operand::Register(Register::Access(0, vec![Access::from(Identifier::from_str("owner").unwrap())])),
                 Operand::Register(Register::Access(0, vec![Access::from(
@@ -415,25 +462,36 @@ mod tests {
                 )])),
             ],
             vec![Register::Locator(1), Register::Locator(2), Register::Locator(3)],
+            vec![
+                RegisterType::Plaintext(PlaintextType::Literal(LiteralType::U64)),
+                RegisterType::Plaintext(PlaintextType::Literal(LiteralType::U8)),
+                RegisterType::DynamicFuture,
+            ],
         );
+
+        // // TODO (@d0cd) Support for this test case.
+        // check_parser(
+        //     "dcall credits.aleo transfer_public aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 into r0 (as dynamic.future)",
+        //     Operand::ProgramID(ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap()),
+        //     Operand::Identifier(Identifier::from_str("transfer_public").unwrap()),
+        //     vec![
+        //         Operand::Literal(Literal::Address(
+        //             Address::from_str("aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw").unwrap(),
+        //         )),
+        //         Operand::Literal(Literal::U64(U64::from_str("100u64").unwrap())),
+        //     ],
+        //     vec![Register::Locator(0)],
+        //     vec![RegisterType::DynamicFuture],
+        // );
 
         check_parser(
-            "dcall r0 r1 aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64",
-            CallOperator::from_str("mint_public").unwrap(),
-            vec![
-                Operand::Literal(Literal::Address(
-                    Address::from_str("aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw").unwrap(),
-                )),
-                Operand::Literal(Literal::U64(U64::from_str("100u64").unwrap())),
-            ],
+            "dcall r0 r1",
+            Operand::Register(Register::Locator(0)),
+            Operand::Register(Register::Locator(1)),
             vec![],
-        );
-
-        check_parser("dcall into r0", CallOperator::from_str("get_magic_number").unwrap(), vec![], vec![
-            Register::Locator(0),
-        ]);
-
-        check_parser("dcall noop", CallOperator::from_str("noop").unwrap(), vec![], vec![])
+            vec![],
+            vec![],
+        )
     }
 
     #[test]

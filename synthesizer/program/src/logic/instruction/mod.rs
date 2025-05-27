@@ -222,6 +222,7 @@ pub enum Instruction<N: Network> {
 ///         Self::Div(instruction) => write!(f, "{} {};", self.opcode(), instruction),
 ///     }
 /// ```
+// Note: All new instructions must be added at the bottom of the macro definition to avoid breaking changes.
 #[macro_export]
 macro_rules! instruction {
     // A variant **with** curly braces:

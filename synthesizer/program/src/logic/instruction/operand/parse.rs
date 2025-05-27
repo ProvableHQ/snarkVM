@@ -33,6 +33,8 @@ impl<N: Network> Parser for Operand<N> {
             map(ProgramID::parse, |program_id| Self::ProgramID(program_id)),
             map(Literal::parse, |literal| Self::Literal(literal)),
             map(Register::parse, |register| Self::Register(register)),
+            // Note that `Operand::Identifier` must be parsed last to ensure that it does not conflict with other operand variants.
+            map(Identifier::parse, |identifier| Self::Identifier(identifier)),
         ))(string)
     }
 }
@@ -80,6 +82,8 @@ impl<N: Network> Display for Operand<N> {
             Self::BlockHeight => write!(f, "block.height"),
             // Prints the identifier for the network ID, i.e. network.id
             Self::NetworkID => write!(f, "network.id"),
+            // Prints the identifier operand, i.e. foo
+            Self::Identifier(identifier) => Display::fmt(identifier, f),
         }
     }
 }

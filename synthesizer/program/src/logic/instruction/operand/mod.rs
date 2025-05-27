@@ -18,7 +18,7 @@ mod parse;
 
 use console::{
     network::prelude::*,
-    program::{Literal, ProgramID, Register},
+    program::{Identifier, Literal, ProgramID, Register},
     types::Group,
 };
 
@@ -30,7 +30,7 @@ pub enum Operand<N: Network> {
     Literal(Literal<N>),
     /// The operand is a register.
     Register(Register<N>),
-    /// The operand is the program ID.
+    /// The operand is a program ID.
     ProgramID(ProgramID<N>),
     /// The operand is the signer address.
     /// Note: This variant is only accessible in the `function` scope.
@@ -44,6 +44,8 @@ pub enum Operand<N: Network> {
     /// The operand is the network ID.
     /// Note: This variant is only accessible in the `finalize` scope.
     NetworkID,
+    /// The operand is an identifier.
+    Identifier(Identifier<N>),
 }
 
 impl<N: Network> From<Literal<N>> for Operand<N> {
@@ -75,6 +77,22 @@ impl<N: Network> From<&Register<N>> for Operand<N> {
     #[inline]
     fn from(register: &Register<N>) -> Self {
         Operand::Register(register.clone())
+    }
+}
+
+impl<N: Network> From<Identifier<N>> for Operand<N> {
+    /// Initializes a new operand from an identifier.
+    #[inline]
+    fn from(identifier: Identifier<N>) -> Self {
+        Operand::Identifier(identifier)
+    }
+}
+
+impl<N: Network> From<&Identifier<N>> for Operand<N> {
+    /// Initializes a new operand from a reference to an identifier.
+    #[inline]
+    fn from(identifier: &Identifier<N>) -> Self {
+        Operand::Identifier(*identifier)
     }
 }
 
