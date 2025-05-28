@@ -998,6 +998,66 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             aborted_transaction_ids,
         )?))
     }
+
+    /// Returns the block for the given `block hash` without checking for well-formedness.
+    fn get_block_unchecked(&self, block_hash: &N::BlockHash) -> Result<Option<Block<N>>> {
+        // Retrieve the block height.
+        let Some(height) = self.get_block_height(block_hash)? else { return Ok(None) };
+
+        // Retrieve the block header.
+        let Some(header) = self.get_block_header(block_hash)? else {
+            bail!("Missing block header for block {height} ('{block_hash}')");
+        };
+        // Ensure the block height matches.
+        if header.height() != height {
+            bail!("Mismatching block height for block {height} ('{block_hash}')")
+        }
+
+        // Retrieve the previous block hash.
+        let Some(previous_hash) = self.get_previous_block_hash(height)? else {
+            bail!("Missing previous block hash for block {height} ('{block_hash}')");
+        };
+        // Retrieve the block authority.
+        let Some(authority) = self.get_block_authority(block_hash)? else {
+            bail!("Missing authority for block {height} ('{block_hash}')");
+        };
+        // Retrieve the block ratifications.
+        let Some(ratifications) = self.get_block_ratifications(block_hash)? else {
+            bail!("Missing ratifications for block {height} ('{block_hash}')");
+        };
+        // Retrieve the block solutions.
+        let Ok(solutions) = self.get_block_solutions(block_hash) else {
+            bail!("Missing solutions for block {height} ('{block_hash}')");
+        };
+        // Retrieve the block aborted solution IDs.
+        let Some(aborted_solution_ids) = self.get_block_aborted_solution_ids(block_hash)? else {
+            bail!("Missing aborted solutions IDs for block {height} ('{block_hash}')");
+        };
+        // Retrieve the block transactions.
+        let Some(transactions) = self.get_block_transactions(block_hash)? else {
+            bail!("Missing transactions for block {height} ('{block_hash}')");
+        };
+        // Retrieve the block aborted transaction IDs.
+        let Some(aborted_transaction_ids) = self.get_block_aborted_transaction_ids(block_hash)? else {
+            bail!("Missing aborted transaction IDs for block {height} ('{block_hash}')");
+        };
+
+        // Compute the block hash.
+        let block_hash = N::hash_bhp1024(&to_bits_le![previous_hash, header.to_root()?])?;
+
+        // Return the block.
+        Ok(Some(Block::from_unchecked(
+            block_hash.into(),
+            previous_hash,
+            header,
+            authority,
+            ratifications,
+            solutions,
+            aborted_solution_ids,
+            transactions,
+            aborted_transaction_ids,
+        )?))
+    }
 }
 
 /// The block store.
@@ -1284,6 +1344,11 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Returns the block for the given `block hash`.
     pub fn get_block(&self, block_hash: &N::BlockHash) -> Result<Option<Block<N>>> {
         self.storage.get_block(block_hash)
+    }
+
+    /// Returns the block for the given `block hash` without checking for well-formedness.
+    pub fn get_block_unchecked(&self, block_hash: &N::BlockHash) -> Result<Option<Block<N>>> {
+        self.storage.get_block_unchecked(block_hash)
     }
 
     /// Returns the program for the given `program ID`.

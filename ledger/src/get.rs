@@ -105,10 +105,34 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         }
     }
 
+    /// Returns the block for the given block height.
+    pub fn get_block_unchecked(&self, height: u32) -> Result<Block<N>> {
+        // If the height is 0, return the genesis block.
+        if height == 0 {
+            return Ok(self.genesis_block.clone());
+        }
+        // Retrieve the block hash.
+        let block_hash = match self.vm.block_store().get_block_hash(height)? {
+            Some(block_hash) => block_hash,
+            None => bail!("Block {height} does not exist in storage"),
+        };
+        // Retrieve the block.
+        match self.vm.block_store().get_block_unchecked(&block_hash)? {
+            Some(block) => Ok(block),
+            None => bail!("Block {height} ('{block_hash}') does not exist in storage"),
+        }
+    }
+
     /// Returns the blocks in the given block range.
     /// The range is inclusive of the start and exclusive of the end.
     pub fn get_blocks(&self, heights: Range<u32>) -> Result<Vec<Block<N>>> {
         cfg_into_iter!(heights).map(|height| self.get_block(height)).collect()
+    }
+
+    /// Returns the blocks in the given block range, without checking for well-formedness.
+    /// The range is inclusive of the start and exclusive of the end.
+    pub fn get_blocks_unchecked(&self, heights: Range<u32>) -> Result<Vec<Block<N>>> {
+        cfg_into_iter!(heights).map(|height| self.get_block_unchecked(height)).collect()
     }
 
     /// Returns the block for the given block hash.
