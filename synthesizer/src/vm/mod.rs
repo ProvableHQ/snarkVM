@@ -405,10 +405,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
                 self.block_store().unpause_atomic_writes::<false>()?;
-                // If the block advances to a new consensus version, clear the partial verification cache.
-                // TODO: This may have performance implications if the version
-                // list grows large as it is in the hot path.
-                if N::CONSENSUS_VERSION_HEIGHTS.iter().any(|(_, height)| height == &block.height()) {
+                // If the block advances to `ConsensusVersion::V4`, clear the partial verification cache.
+                if N::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap_or_default() == block.height() {
                     self.partially_verified_transactions().write().clear();
                 }
                 Ok(())
