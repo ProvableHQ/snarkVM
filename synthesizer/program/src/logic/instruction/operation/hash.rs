@@ -105,14 +105,19 @@ fn check_number_of_operands(variant: u8, opcode: Opcode, num_operands: usize) ->
 }
 
 /// Returns 'true' if the destination type is valid.
-fn is_valid_destination_type<N: Network>(destination_type: &PlaintextType<N>) -> bool {
-    !matches!(
-        destination_type,
+fn is_valid_destination_type<N: Network>(variant: u8, destination_type: &PlaintextType<N>) -> bool {
+    match destination_type {
         PlaintextType::Literal(LiteralType::Boolean)
-            | PlaintextType::Literal(LiteralType::String)
-            | PlaintextType::Struct(..)
-            | PlaintextType::Array(..)
-    )
+        | PlaintextType::Literal(LiteralType::String)
+        | PlaintextType::Struct(..) => false,
+        PlaintextType::Array(array) => match variant {
+            4 | 12 => **array.length() == 32 && *array.base_element_type() == PlaintextType::Literal(LiteralType::U8),
+            5 | 13 => **array.length() == 24 && *array.base_element_type() == PlaintextType::Literal(LiteralType::U16),
+            6 | 14 => **array.length() == 32 && *array.base_element_type() == PlaintextType::Literal(LiteralType::U16),
+            _ => false,
+        },
+        _ => true,
+    }
 }
 
 /// Hashes the operand into the declared type.
@@ -137,9 +142,11 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
         // Sanity check the number of operands.
         check_number_of_operands(VARIANT, Self::opcode(), operands.len())?;
         // Sanity check the destination type.
-        if !is_valid_destination_type(&destination_type) {
-            bail!("Invalid destination type for 'hash' instruction")
-        }
+        ensure!(
+            is_valid_destination_type(VARIANT, &destination_type),
+            "Invalid destination type for 'hash' instruction"
+        );
+
         // Return the instruction.
         Ok(Self { operands, destination, destination_type })
     }
@@ -196,6 +203,103 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
     }
 }
 
+fn to_destination_literal_type<N: Network>(
+    output: Literal<N>,
+    destination_type: &PlaintextType<N>,
+) -> Result<Value<N>> {
+    let dest = match destination_type {
+        PlaintextType::Literal(literal_type) => output.cast_lossy(*literal_type)?,
+        PlaintextType::Struct(..) => bail!("Cannot hash into a struct"),
+        PlaintextType::Array(..) => bail!("Cannot hash into an array (yet)"),
+    };
+
+    Ok(Value::Plaintext(Plaintext::from(dest)))
+}
+
+fn to_destination_circuit_literal<A: circuit::Aleo, N: Network>(
+    output: circuit::Literal<A>,
+    destination_type: &PlaintextType<N>,
+) -> Result<circuit::Value<A>> {
+    let dest = match destination_type {
+        PlaintextType::Literal(literal) => output.cast_lossy(*literal)?,
+        PlaintextType::Struct(..) => bail!("Cannot hash into a struct"),
+        PlaintextType::Array(..) => bail!("Cannot hash into an array (yet)"),
+    };
+
+    Ok(circuit::Value::Plaintext(circuit::Plaintext::Literal(dest, Default::default())))
+}
+
+fn to_console_array<N: Network>(hash: &[bool], len: usize, literal_type: LiteralType) -> Result<Plaintext<N>> {
+    let chunk_size = match literal_type {
+        LiteralType::U8 => 8,
+        LiteralType::U16 => 16,
+        _ => bail!("Unsupported literal type: {literal_type} for array"),
+    };
+
+    ensure!(
+        hash.len() % chunk_size == 0,
+        "Expected hash length to be a multiple of {chunk_size}, but found {}",
+        hash.len()
+    );
+
+    let hash = hash
+        .chunks(chunk_size)
+        .map(|element| match literal_type {
+            LiteralType::U8 => {
+                let value = console::types::U8::from_bits_le(element)?;
+                Ok(Plaintext::Literal(Literal::U8(value), Default::default()))
+            }
+            LiteralType::U16 => {
+                let value = console::types::U16::from_bits_le(element)?;
+                Ok(Plaintext::Literal(Literal::U16(value), Default::default()))
+            }
+            _ => bail!("Unsupported literal type: {literal_type} for array"),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    ensure!(len == hash.len(), "Expected to produce {len} elements, but produced {}", hash.len());
+
+    Ok(Plaintext::Array(hash, Default::default()))
+}
+
+fn to_circuit_array_u8<A: circuit::Aleo>(hash: &[circuit::Boolean<A>], len: usize) -> Result<circuit::Plaintext<A>> {
+    use circuit::traits::FromBits;
+
+    ensure!(hash.len() % 8 == 0, "Expected hash length to be a multiple of 8, but found {}", hash.len());
+
+    let hash: Vec<_> = hash
+        .chunks(8)
+        .map(|element| {
+            let value = circuit::types::U8::<A>::from_bits_le(element);
+
+            circuit::Plaintext::Literal(circuit::Literal::U8(value), Default::default())
+        })
+        .collect();
+
+    ensure!(len == hash.len(), "Expected to produce {len} elements, but produced {}", hash.len());
+
+    Ok(circuit::Plaintext::Array(hash, Default::default()))
+}
+
+fn to_circuit_array_u16<A: circuit::Aleo>(hash: &[circuit::Boolean<A>], len: usize) -> Result<circuit::Plaintext<A>> {
+    use circuit::traits::FromBits;
+
+    ensure!(hash.len() % 16 == 0, "Expected hash length to be a multiple of 16, but found {}", hash.len());
+
+    let hash: Vec<_> = hash
+        .chunks(16)
+        .map(|element| {
+            let value = circuit::types::U16::<A>::from_bits_le(element);
+
+            circuit::Plaintext::Literal(circuit::Literal::U16(value), Default::default())
+        })
+        .collect();
+
+    ensure!(len == hash.len(), "Expected to produce {len} elements, but produced {}", hash.len());
+
+    Ok(circuit::Plaintext::Array(hash, Default::default()))
+}
+
 impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
     /// Evaluates the instruction.
     #[inline]
@@ -207,47 +311,132 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
         // Ensure the number of operands is correct.
         check_number_of_operands(VARIANT, Self::opcode(), self.operands.len())?;
         // Ensure the destination type is valid.
-        ensure!(is_valid_destination_type(&self.destination_type), "Invalid destination type in 'hash' instruction");
+        ensure!(
+            is_valid_destination_type(VARIANT, &self.destination_type),
+            "Invalid destination type in 'hash' instruction"
+        );
 
         // Load the operand.
         let input = registers.load(stack, &self.operands[0])?;
         // Hash the input.
         let output = match (VARIANT, &self.destination_type) {
-            (0, PlaintextType::Literal(..)) => Literal::Group(N::hash_to_group_bhp256(&input.to_bits_le())?),
-            (1, PlaintextType::Literal(..)) => Literal::Group(N::hash_to_group_bhp512(&input.to_bits_le())?),
-            (2, PlaintextType::Literal(..)) => Literal::Group(N::hash_to_group_bhp768(&input.to_bits_le())?),
-            (3, PlaintextType::Literal(..)) => Literal::Group(N::hash_to_group_bhp1024(&input.to_bits_le())?),
+            (0, PlaintextType::Literal(..)) => {
+                let output = Literal::Group(N::hash_to_group_bhp256(&input.to_bits_le())?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
+            (1, PlaintextType::Literal(..)) => {
+                let output = Literal::Group(N::hash_to_group_bhp512(&input.to_bits_le())?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
+            (2, PlaintextType::Literal(..)) => {
+                let output = Literal::Group(N::hash_to_group_bhp768(&input.to_bits_le())?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
+            (3, PlaintextType::Literal(..)) => {
+                let output = Literal::Group(N::hash_to_group_bhp1024(&input.to_bits_le())?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
             (4, PlaintextType::Literal(..)) => {
-                Literal::Group(N::hash_to_group_bhp256(&N::hash_keccak256(&input.to_bits_le())?)?)
+                let output = Literal::Group(N::hash_to_group_bhp256(&N::hash_keccak256(&input.to_bits_le())?)?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
+            (4, PlaintextType::Array(..)) => {
+                let hash = &N::hash_keccak256(&input.to_bits_le())?;
+
+                Value::Plaintext(to_console_array(hash, 32, LiteralType::U8)?)
             }
             (5, PlaintextType::Literal(..)) => {
-                Literal::Group(N::hash_to_group_bhp512(&N::hash_keccak384(&input.to_bits_le())?)?)
+                let output = Literal::Group(N::hash_to_group_bhp512(&N::hash_keccak384(&input.to_bits_le())?)?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
+            (5, PlaintextType::Array(..)) => {
+                let hash = &N::hash_keccak384(&input.to_bits_le())?;
+
+                Value::Plaintext(to_console_array(hash, 24, LiteralType::U16)?)
             }
             (6, PlaintextType::Literal(..)) => {
-                Literal::Group(N::hash_to_group_bhp512(&N::hash_keccak512(&input.to_bits_le())?)?)
+                let output = Literal::Group(N::hash_to_group_bhp512(&N::hash_keccak512(&input.to_bits_le())?)?);
+
+                to_destination_literal_type(output, &self.destination_type)?
             }
-            (7, PlaintextType::Literal(..)) => Literal::Group(N::hash_to_group_ped64(&input.to_bits_le())?),
-            (8, PlaintextType::Literal(..)) => Literal::Group(N::hash_to_group_ped128(&input.to_bits_le())?),
+            (6, PlaintextType::Array(..)) => {
+                let hash = N::hash_keccak512(&input.to_bits_le())?;
+
+                Value::Plaintext(to_console_array(&hash, 32, LiteralType::U16)?)
+            }
+            (7, PlaintextType::Literal(..)) => {
+                let output = Literal::Group(N::hash_to_group_ped64(&input.to_bits_le())?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
+            (8, PlaintextType::Literal(..)) => {
+                let output = Literal::Group(N::hash_to_group_ped128(&input.to_bits_le())?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
             (9, PlaintextType::Literal(LiteralType::Address)) | (9, PlaintextType::Literal(LiteralType::Group)) => {
-                Literal::Group(N::hash_to_group_psd2(&input.to_fields()?)?)
+                let output = Literal::Group(N::hash_to_group_psd2(&input.to_fields()?)?);
+
+                to_destination_literal_type(output, &self.destination_type)?
             }
-            (9, PlaintextType::Literal(..)) => Literal::Field(N::hash_psd2(&input.to_fields()?)?),
+            (9, PlaintextType::Literal(..)) => {
+                let output = Literal::Field(N::hash_psd2(&input.to_fields()?)?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
             (10, PlaintextType::Literal(LiteralType::Address)) | (10, PlaintextType::Literal(LiteralType::Group)) => {
-                Literal::Group(N::hash_to_group_psd4(&input.to_fields()?)?)
+                let output = Literal::Group(N::hash_to_group_psd4(&input.to_fields()?)?);
+
+                to_destination_literal_type(output, &self.destination_type)?
             }
-            (10, PlaintextType::Literal(..)) => Literal::Field(N::hash_psd4(&input.to_fields()?)?),
+            (10, PlaintextType::Literal(..)) => {
+                let output = Literal::Field(N::hash_psd4(&input.to_fields()?)?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
             (11, PlaintextType::Literal(LiteralType::Address)) | (11, PlaintextType::Literal(LiteralType::Group)) => {
-                Literal::Group(N::hash_to_group_psd8(&input.to_fields()?)?)
+                let output = Literal::Group(N::hash_to_group_psd8(&input.to_fields()?)?);
+
+                to_destination_literal_type(output, &self.destination_type)?
             }
-            (11, PlaintextType::Literal(..)) => Literal::Field(N::hash_psd8(&input.to_fields()?)?),
+            (11, PlaintextType::Literal(..)) => {
+                let output = Literal::Field(N::hash_psd8(&input.to_fields()?)?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
             (12, PlaintextType::Literal(..)) => {
-                Literal::Group(N::hash_to_group_bhp256(&N::hash_sha3_256(&input.to_bits_le())?)?)
+                let output = Literal::Group(N::hash_to_group_bhp256(&N::hash_sha3_256(&input.to_bits_le())?)?);
+                to_destination_literal_type(output, &self.destination_type)?
+            }
+            (12, PlaintextType::Array(..)) => {
+                let hash = &N::hash_sha3_256(&input.to_bits_le())?;
+
+                Value::Plaintext(to_console_array(hash, 32, LiteralType::U8)?)
             }
             (13, PlaintextType::Literal(..)) => {
-                Literal::Group(N::hash_to_group_bhp512(&N::hash_sha3_384(&input.to_bits_le())?)?)
+                let output = Literal::Group(N::hash_to_group_bhp512(&N::hash_sha3_384(&input.to_bits_le())?)?);
+                to_destination_literal_type(output, &self.destination_type)?
+            }
+            (13, PlaintextType::Array(..)) => {
+                let hash = &N::hash_sha3_384(&input.to_bits_le())?;
+
+                Value::Plaintext(to_console_array(hash, 24, LiteralType::U16)?)
             }
             (14, PlaintextType::Literal(..)) => {
-                Literal::Group(N::hash_to_group_bhp512(&N::hash_sha3_512(&input.to_bits_le())?)?)
+                let output = Literal::Group(N::hash_to_group_bhp512(&N::hash_sha3_512(&input.to_bits_le())?)?);
+
+                to_destination_literal_type(output, &self.destination_type)?
+            }
+            (14, PlaintextType::Array(..)) => {
+                let hash = &N::hash_sha3_512(&input.to_bits_le())?;
+
+                Value::Plaintext(to_console_array(hash, 32, LiteralType::U16)?)
             }
             (15, _) => bail!("'hash_many.psd2' is not yet implemented"),
             (16, _) => bail!("'hash_many.psd4' is not yet implemented"),
@@ -256,14 +445,9 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
             (_, PlaintextType::Struct(..)) => bail!("Cannot hash into a struct"),
             (_, PlaintextType::Array(..)) => bail!("Cannot hash into an array (yet)"),
         };
-        // Cast the output to the destination type.
-        let output = match self.destination_type {
-            PlaintextType::Literal(literal_type) => output.cast_lossy(literal_type)?,
-            PlaintextType::Struct(..) => bail!("Cannot hash into a struct"),
-            PlaintextType::Array(..) => bail!("Cannot hash into an array (yet)"),
-        };
+
         // Store the output.
-        registers.store(stack, &self.destination, Value::Plaintext(Plaintext::from(output)))
+        registers.store(stack, &self.destination, output)
     }
 
     /// Executes the instruction.
@@ -278,47 +462,110 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
         // Ensure the number of operands is correct.
         check_number_of_operands(VARIANT, Self::opcode(), self.operands.len())?;
         // Ensure the destination type is valid.
-        ensure!(is_valid_destination_type(&self.destination_type), "Invalid destination type in 'hash' instruction");
+        ensure!(
+            is_valid_destination_type(VARIANT, &self.destination_type),
+            "Invalid destination type in 'hash' instruction"
+        );
 
         // Load the operand.
         let input = registers.load_circuit(stack, &self.operands[0])?;
         // Hash the input.
         let output = match (VARIANT, &self.destination_type) {
-            (0, PlaintextType::Literal(..)) => circuit::Literal::Group(A::hash_to_group_bhp256(&input.to_bits_le())),
-            (1, PlaintextType::Literal(..)) => circuit::Literal::Group(A::hash_to_group_bhp512(&input.to_bits_le())),
-            (2, PlaintextType::Literal(..)) => circuit::Literal::Group(A::hash_to_group_bhp768(&input.to_bits_le())),
-            (3, PlaintextType::Literal(..)) => circuit::Literal::Group(A::hash_to_group_bhp1024(&input.to_bits_le())),
+            (0, PlaintextType::Literal(..)) => {
+                let output = circuit::Literal::Group(A::hash_to_group_bhp256(&input.to_bits_le()));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
+            (1, PlaintextType::Literal(..)) => {
+                let output = circuit::Literal::Group(A::hash_to_group_bhp512(&input.to_bits_le()));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
+            (2, PlaintextType::Literal(..)) => {
+                let output = circuit::Literal::Group(A::hash_to_group_bhp768(&input.to_bits_le()));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
+            (3, PlaintextType::Literal(..)) => {
+                let output = circuit::Literal::Group(A::hash_to_group_bhp1024(&input.to_bits_le()));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
             (4, PlaintextType::Literal(..)) => {
-                circuit::Literal::Group(A::hash_to_group_bhp256(&A::hash_keccak256(&input.to_bits_le())))
+                let output = circuit::Literal::Group(A::hash_to_group_bhp256(&A::hash_keccak256(&input.to_bits_le())));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
+            (4, PlaintextType::Array(..)) => {
+                let hash = A::hash_keccak256(&input.to_bits_le());
+                circuit::Value::Plaintext(to_circuit_array_u8(&hash, 32).unwrap())
             }
             (5, PlaintextType::Literal(..)) => {
-                circuit::Literal::Group(A::hash_to_group_bhp512(&A::hash_keccak384(&input.to_bits_le())))
+                let output = circuit::Literal::Group(A::hash_to_group_bhp512(&A::hash_keccak384(&input.to_bits_le())));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
+            (5, PlaintextType::Array(..)) => {
+                let hash = A::hash_keccak384(&input.to_bits_le());
+                circuit::Value::Plaintext(to_circuit_array_u16(&hash, 24).unwrap())
             }
             (6, PlaintextType::Literal(..)) => {
-                circuit::Literal::Group(A::hash_to_group_bhp512(&A::hash_keccak512(&input.to_bits_le())))
+                let output = circuit::Literal::Group(A::hash_to_group_bhp512(&A::hash_keccak512(&input.to_bits_le())));
+                to_destination_circuit_literal(output, &self.destination_type)?
             }
-            (7, PlaintextType::Literal(..)) => circuit::Literal::Group(A::hash_to_group_ped64(&input.to_bits_le())),
-            (8, PlaintextType::Literal(..)) => circuit::Literal::Group(A::hash_to_group_ped128(&input.to_bits_le())),
+            (6, PlaintextType::Array(..)) => {
+                let hash = A::hash_keccak512(&input.to_bits_le());
+                circuit::Value::Plaintext(to_circuit_array_u16(&hash, 32).unwrap())
+            }
+            (7, PlaintextType::Literal(..)) => {
+                let output = circuit::Literal::Group(A::hash_to_group_ped64(&input.to_bits_le()));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
+            (8, PlaintextType::Literal(..)) => {
+                let output = circuit::Literal::Group(A::hash_to_group_ped128(&input.to_bits_le()));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
             (9, PlaintextType::Literal(LiteralType::Address)) | (9, PlaintextType::Literal(LiteralType::Group)) => {
-                circuit::Literal::Group(A::hash_to_group_psd2(&input.to_fields()))
+                let output = circuit::Literal::Group(A::hash_to_group_psd2(&input.to_fields()));
+                to_destination_circuit_literal(output, &self.destination_type)?
             }
-            (9, PlaintextType::Literal(..)) => circuit::Literal::Field(A::hash_psd2(&input.to_fields())),
+            (9, PlaintextType::Literal(..)) => {
+                let output = circuit::Literal::Field(A::hash_psd2(&input.to_fields()));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
             (10, PlaintextType::Literal(LiteralType::Address)) | (10, PlaintextType::Literal(LiteralType::Group)) => {
-                circuit::Literal::Group(A::hash_to_group_psd4(&input.to_fields()))
+                let output = circuit::Literal::Group(A::hash_to_group_psd4(&input.to_fields()));
+                to_destination_circuit_literal(output, &self.destination_type)?
             }
-            (10, PlaintextType::Literal(..)) => circuit::Literal::Field(A::hash_psd4(&input.to_fields())),
+            (10, PlaintextType::Literal(..)) => {
+                let output = circuit::Literal::Field(A::hash_psd4(&input.to_fields()));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
             (11, PlaintextType::Literal(LiteralType::Address)) | (11, PlaintextType::Literal(LiteralType::Group)) => {
-                circuit::Literal::Group(A::hash_to_group_psd8(&input.to_fields()))
+                let output = circuit::Literal::Group(A::hash_to_group_psd8(&input.to_fields()));
+                to_destination_circuit_literal(output, &self.destination_type)?
             }
-            (11, PlaintextType::Literal(..)) => circuit::Literal::Field(A::hash_psd8(&input.to_fields())),
+            (11, PlaintextType::Literal(..)) => {
+                let output = circuit::Literal::Field(A::hash_psd8(&input.to_fields()));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
             (12, PlaintextType::Literal(..)) => {
-                circuit::Literal::Group(A::hash_to_group_bhp256(&A::hash_sha3_256(&input.to_bits_le())))
+                let output = circuit::Literal::Group(A::hash_to_group_bhp256(&A::hash_sha3_256(&input.to_bits_le())));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
+            (12, PlaintextType::Array(..)) => {
+                let hash = A::hash_sha3_256(&input.to_bits_le());
+                circuit::Value::Plaintext(to_circuit_array_u8(&hash, 32).unwrap())
             }
             (13, PlaintextType::Literal(..)) => {
-                circuit::Literal::Group(A::hash_to_group_bhp512(&A::hash_sha3_384(&input.to_bits_le())))
+                let output = circuit::Literal::Group(A::hash_to_group_bhp512(&A::hash_sha3_384(&input.to_bits_le())));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
+            (13, PlaintextType::Array(..)) => {
+                let hash = A::hash_sha3_384(&input.to_bits_le());
+                circuit::Value::Plaintext(to_circuit_array_u16(&hash, 24).unwrap())
             }
             (14, PlaintextType::Literal(..)) => {
-                circuit::Literal::Group(A::hash_to_group_bhp512(&A::hash_sha3_512(&input.to_bits_le())))
+                let output = circuit::Literal::Group(A::hash_to_group_bhp512(&A::hash_sha3_512(&input.to_bits_le())));
+                to_destination_circuit_literal(output, &self.destination_type)?
+            }
+            (14, PlaintextType::Array(..)) => {
+                let hash = A::hash_sha3_512(&input.to_bits_le());
+                circuit::Value::Plaintext(to_circuit_array_u16(&hash, 32).unwrap())
             }
             (15, _) => bail!("'hash_many.psd2' is not yet implemented"),
             (16, _) => bail!("'hash_many.psd4' is not yet implemented"),
@@ -327,15 +574,7 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
             (_, PlaintextType::Struct(..)) => bail!("Cannot hash into a struct"),
             (_, PlaintextType::Array(..)) => bail!("Cannot hash into an array (yet)"),
         };
-        // Cast the output to the destination type.
-        let output = match self.destination_type {
-            PlaintextType::Literal(literal_type) => output.cast_lossy(literal_type)?,
-            PlaintextType::Struct(..) => bail!("Cannot hash into a struct"),
-            PlaintextType::Array(..) => bail!("Cannot hash into an array (yet)"),
-        };
-        // Convert the output to a stack value.
-        let output = circuit::Value::Plaintext(circuit::Plaintext::Literal(output, Default::default()));
-        // Store the output.
+
         registers.store_circuit(stack, &self.destination, output)
     }
 
@@ -361,7 +600,10 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
         // Ensure the number of operands is correct.
         check_number_of_operands(VARIANT, Self::opcode(), self.operands.len())?;
         // Ensure the destination type is valid.
-        ensure!(is_valid_destination_type(&self.destination_type), "Invalid destination type in 'hash' instruction");
+        ensure!(
+            is_valid_destination_type(VARIANT, &self.destination_type),
+            "Invalid destination type in 'hash' instruction"
+        );
 
         // TODO (howardwu): If the operation is Pedersen, check that it is within the number of bits.
 
