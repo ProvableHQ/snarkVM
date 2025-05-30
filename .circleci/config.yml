@@ -77,7 +77,6 @@ commands:
             mv $CIRCLE_WORKING_DIRECTORY/.bin/sccache-v0.3.0-x86_64-unknown-linux-musl/sccache /home/circleci/bin/sccache
             rm -rf "/home/circleci/.cargo/registry"
             DEBIAN_FRONTEND=noninteractive sudo apt-get update
-            DEBIAN_FRONTEND=noninteractive sudo apt-get dist-upgrade -y -o DPkg::Options::=--force-confold
             DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends clang llvm-dev llvm pkg-config xz-utils make libssl-dev libssl-dev
       - restore_cache:
           keys:
