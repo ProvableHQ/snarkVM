@@ -100,6 +100,7 @@ impl<N: Network> RegisterTypes<N> {
             }
             Operand::BlockHeight => bail!("'block.height' is not a valid operand in a non-finalize context."),
             Operand::NetworkID => bail!("'network.id' is not a valid operand in a non-finalize context."),
+            Operand::Identifier(_) => RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Field)),
         })
     }
 

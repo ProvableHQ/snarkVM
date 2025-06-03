@@ -46,6 +46,10 @@ impl<N: Network> RegistersLoad<N> for FinalizeRegisters<N> {
             Operand::NetworkID => {
                 return Ok(Value::Plaintext(Plaintext::from(Literal::U16(U16::new(N::ID)))));
             }
+            // If the operand is an identifier, load the identifier.
+            Operand::Identifier(identifier) => {
+                return Ok(Value::Plaintext(Plaintext::from(Literal::Field(identifier.to_field()?))));
+            }
         };
 
         // Retrieve the value.

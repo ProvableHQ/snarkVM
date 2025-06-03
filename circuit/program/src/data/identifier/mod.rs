@@ -23,6 +23,7 @@ mod size_in_bits;
 mod to_bits;
 mod to_field;
 
+use console::ToField as TF;
 use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::{Boolean, Field, U8, environment::prelude::*};
 use snarkvm_utilities::ToBits as TB;
@@ -64,6 +65,7 @@ impl<A: Aleo> Eject for Identifier<A> {
 
     /// Ejects the mode of the identifier.
     fn eject_mode(&self) -> Mode {
+        // TODO (@d0cd)
         debug_assert!(self.0.eject_mode() == Mode::Constant, "Identifier::eject_mode - Mode must be 'Constant'");
         Mode::Constant
     }
@@ -150,6 +152,23 @@ impl<A: Aleo> From<&Identifier<A>> for LinearCombination<A::BaseField> {
     /// Note: Identifier is always `Mode::Constant`.
     fn from(identifier: &Identifier<A>) -> Self {
         LinearCombination::from(&identifier.0)
+    }
+}
+
+impl<A: Aleo> Identifier<A> {
+    /// Initializes a new identifier directly from a console `Identifier` and a given `Mode`.
+    /// Any invocation of this function **MUST** be thoroughly audited to ensure that it is sufficiently constrained.
+    #[doc(hidden)]
+    pub fn new_unchecked(mode: Mode, console_identifier: console::Identifier<A::Network>) -> Self {
+        // Get the length of the identifier.
+        // Note: The call to `to_string()` is ensures that the identifier is valid.
+        let length = console_identifier.to_string().len() as u8;
+        // Get the console field representation of the identifier.
+        let console_field = console_identifier.to_field().unwrap_or_else(|e| A::halt(format!("Unexpected error - {:?}", e)));
+        // Initialize a circuit field from the console field.
+        let field = Field::new(mode, console_field);
+        // Return the identifier.
+        Self(field, length)
     }
 }
 

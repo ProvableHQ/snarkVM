@@ -85,6 +85,10 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
                     Operand::BlockHeight => bail!("Cannot retrieve the block height from a closure scope."),
                     // If the operand is the network id, throw an error.
                     Operand::NetworkID => bail!("Cannot retrieve the network ID from a closure scope."),
+                    // If the operand is an identifier, conver the identifier into a field.
+                    Operand::Identifier(identifier) => {
+                        Ok(Value::Plaintext(Plaintext::from(Literal::Field(identifier.to_field()?))))
+                    }
                 }
             })
             .collect();
@@ -218,6 +222,10 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
                     Operand::BlockHeight => bail!("Cannot retrieve the block height from a function scope."),
                     // If the operand is the network id, throw an error.
                     Operand::NetworkID => bail!("Cannot retrieve the network ID from a function scope."),
+                    // If the operand is an identifier, convert the identifier into a field.
+                    Operand::Identifier(identifier) => {
+                        Ok(Value::Plaintext(Plaintext::from(Literal::Field(identifier.to_field()?))))
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;

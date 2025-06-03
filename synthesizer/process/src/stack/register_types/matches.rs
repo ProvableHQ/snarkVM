@@ -97,6 +97,16 @@ impl<N: Network> RegisterTypes<N> {
                 Operand::NetworkID => bail!(
                     "Struct member '{struct_name}.{member_name}' cannot be from a network ID in a non-finalize scope"
                 ),
+                // Ensure the identifier (field) type matches the member type.
+                Operand::Identifier(_) => {
+                    // Retrieve the operand type.
+                    let operand_type = PlaintextType::Literal(LiteralType::Field);
+                    // Ensure the operand type matches the member type.
+                    ensure!(
+                        &operand_type == member_type,
+                        "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{operand_type}' in the operand '{operand}'.",
+                    )
+                }
             }
         }
         Ok(())
@@ -177,6 +187,17 @@ impl<N: Network> RegisterTypes<N> {
                 Operand::BlockHeight => bail!("Array element cannot be from a block height in a non-finalize scope"),
                 // If the operand is a network ID type, throw an error.
                 Operand::NetworkID => bail!("Array element cannot be from a network ID in a non-finalize scope"),
+                // Ensure the identifier (field) type matches the element type.
+                Operand::Identifier(_) => {
+                    // Retrieve the operand type.
+                    let operand_type = PlaintextType::Literal(LiteralType::Field);
+                    // Ensure the operand type matches the element type.
+                    ensure!(
+                        &operand_type == array_type.next_element_type(),
+                        "Array element expects {}, but found '{operand_type}' in the operand '{operand}'.",
+                        array_type.next_element_type()
+                    )
+                }
             }
         }
         Ok(())
@@ -242,6 +263,7 @@ impl<N: Network> RegisterTypes<N> {
             Operand::NetworkID => {
                 bail!("Forbidden operation: Cannot cast a network ID as a record owner")
             }
+            Operand::Identifier(_) => bail!("Forbidden operation: Cannot cast an identifier as a record owner"),
         }
 
         // Ensure the operand types match the record entry types.
@@ -305,6 +327,16 @@ impl<N: Network> RegisterTypes<N> {
                         Operand::NetworkID => {
                             bail!(
                                 "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found a network ID in the operand '{operand}'."
+                            )
+                        }
+                        // Ensure the identifier (field) type matches the entry type.
+                        Operand::Identifier(_) => {
+                            // Retrieve the operand type.
+                            let operand_type = &PlaintextType::Literal(LiteralType::Field);
+                            // Ensure the operand type matches the entry type.
+                            ensure!(
+                                operand_type == plaintext_type,
+                                "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found '{operand_type}' in the operand '{operand}'.",
                             )
                         }
                     }

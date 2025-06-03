@@ -109,6 +109,16 @@ impl<N: Network> FinalizeTypes<N> {
                         "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{network_id_type}' in the operand '{operand}'.",
                     )
                 }
+                // Ensure the identifier (field) type matches the member type.
+                Operand::Identifier(_) => {
+                    // Retrieve the identifier type.
+                    let identifier_type = PlaintextType::Literal(LiteralType::Field);
+                    // Ensure the identifier type matches the member type.
+                    ensure!(
+                        &identifier_type == member_type,
+                        "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{identifier_type}' in the operand '{operand}'.",
+                    )
+                }
             }
         }
         Ok(())
@@ -200,6 +210,17 @@ impl<N: Network> FinalizeTypes<N> {
                     ensure!(
                         &network_id_type == array_type.next_element_type(),
                         "Array element expects {}, but found '{network_id_type}' in the operand '{operand}'.",
+                        array_type.next_element_type()
+                    )
+                }
+                // Ensure the identifier (field) type matches the member type.
+                Operand::Identifier(_) => {
+                    // Retrieve the identifier type.
+                    let identifier_type = PlaintextType::Literal(LiteralType::Field);
+                    // Ensure the identifier type matches the member type.
+                    ensure!(
+                        &identifier_type == array_type.next_element_type(),
+                        "Array element expects {}, but found '{identifier_type}' in the operand '{operand}'.",
                         array_type.next_element_type()
                     )
                 }

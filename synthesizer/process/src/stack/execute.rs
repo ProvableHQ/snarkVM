@@ -120,6 +120,13 @@ impl<N: Network> StackExecute<N> for Stack<N> {
                     Operand::NetworkID => {
                         bail!("Illegal operation: cannot retrieve the network id in a closure scope")
                     }
+                    // If the operand is an identifier, convert the identifier into a field.
+                    Operand::Identifier(identifier) => {
+                        // Convert the identifier into a field.
+                        Ok(circuit::Value::Plaintext(circuit::Plaintext::from(circuit::Literal::Field(
+                            circuit::Field::<A>::new(circuit::Mode::Constant, identifier.to_field()?),
+                        ))))
+                    }
                 }
             })
             .collect();
@@ -354,6 +361,13 @@ impl<N: Network> StackExecute<N> for Stack<N> {
                     // If the operand is the network id, throw an error.
                     Operand::NetworkID => {
                         bail!("Illegal operation: cannot retrieve the network id in a function scope")
+                    }
+                    // If the operand is an identifier, convert the identifier into a field.
+                    Operand::Identifier(identifier) => {
+                        // Convert the identifier into a field.
+                        Ok(circuit::Value::Plaintext(circuit::Plaintext::from(circuit::Literal::Field(
+                            circuit::Field::<A>::new(circuit::Mode::Constant, identifier.to_field()?),
+                        ))))
                     }
                 }
             })

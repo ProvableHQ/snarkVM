@@ -34,16 +34,21 @@ mod tests {
 
     const ITERATIONS: u64 = 100;
 
-    fn check_from_field(num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) -> Result<()> {
+    fn check_from_field(mode: Mode, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) -> Result<()> {
         for _ in 0..ITERATIONS {
             // Initialize the console identifier.
             let console_identifier = sample_console_identifier::<Circuit>()?;
             // Initialize the circuit list of bits.
-            let circuit_field = Field::constant(console::ToField::to_field(&console_identifier)?);
+            let circuit_field = Field::new(mode, console::ToField::to_field(&console_identifier)?);
 
             Circuit::scope("Identifier FromField", || {
                 let candidate = Identifier::<Circuit>::from_field(circuit_field);
-                assert_eq!(Mode::Constant, candidate.eject_mode());
+                let expected_mode = match mode {
+                    Mode::Constant => Mode::Constant,
+                    Mode::Public => Mode::Private,
+                    Mode::Private => Mode::Private,
+                };
+                assert_eq!(expected_mode, candidate.eject_mode());
                 assert_eq!(console_identifier, candidate.eject_value());
                 assert_scope!(num_constants, num_public, num_private, num_constraints);
             });
@@ -54,6 +59,8 @@ mod tests {
 
     #[test]
     fn test_from_field() -> Result<()> {
-        check_from_field(253, 0, 0, 0)
+        check_from_field(Mode::Constant, 253, 0, 0, 0)?;
+        check_from_field(Mode::Public, 0, 0, 757, 760)?;
+        check_from_field(Mode::Private, 0, 0, 757, 760)
     }
 }

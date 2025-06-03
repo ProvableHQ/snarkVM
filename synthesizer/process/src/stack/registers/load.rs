@@ -41,6 +41,10 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersLoad<N> for Registers<N
             Operand::BlockHeight => bail!("Cannot load the block height in a non-finalize context"),
             // If the operand is the network ID, throw an error.
             Operand::NetworkID => bail!("Cannot load the network ID in a non-finalize context"),
+            // If the operand is an identifier, load the identifier.
+            Operand::Identifier(identifier) => {
+                return Ok(Value::Plaintext(Plaintext::from(Literal::Field(identifier.to_field()?))));
+            }
         };
 
         // Retrieve the stack value.
@@ -128,6 +132,12 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersLoadCircuit<N, A> for R
             Operand::BlockHeight => bail!("Cannot load the block height in a non-finalize context"),
             // If the operand is the network ID, throw an error.
             Operand::NetworkID => bail!("Cannot load the network ID in a non-finalize context"),
+            // If the operand is an identifier, load the identifier.
+            Operand::Identifier(identifier) => {
+                return Ok(circuit::Value::Plaintext(circuit::Plaintext::from(circuit::Literal::constant(
+                    Literal::Field(identifier.to_field()?),
+                ))));
+            }
         };
 
         // Retrieve the circuit value.

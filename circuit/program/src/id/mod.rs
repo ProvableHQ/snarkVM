@@ -67,6 +67,7 @@ impl<A: Aleo> Eject for ProgramID<A> {
 
     /// Ejects the mode of the program ID.
     fn eject_mode(&self) -> Mode {
+        // TODO (@d0cd)
         Mode::Constant
     }
 
@@ -90,5 +91,17 @@ impl<A: Aleo> Equal<Self> for ProgramID<A> {
     /// Returns `true` if `self` and `other` are **not** equal.
     fn is_not_equal(&self, other: &Self) -> Self::Output {
         self.name.is_not_equal(&other.name) | (self.network.is_not_equal(&other.network))
+    }
+}
+
+impl <A: Aleo> ProgramID<A> {
+    /// Initializes a program ID as a public variable.
+    /// Any invocation of this function **MUST** be thoroughly audited to ensure that it is sufficiently constrained.
+    #[doc(hidden)]
+    pub fn new_public(id: console::ProgramID<A::Network>) -> Self {
+        Self {
+            name: Identifier::new_unchecked(Mode::Public, *id.name()),
+            network: Identifier::new_unchecked(Mode::Public, *id.network()),
+        }
     }
 }
