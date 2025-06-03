@@ -1422,6 +1422,18 @@ mod tests {
     type CurrentNetwork = console::network::MainnetV0;
 
     #[test]
+    fn test_current_block_height_empty() {
+        // Initialize a new block store.
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+
+        // Current_block_height shouldn't panic.
+        assert_eq!(block_store.current_block_height(), 0);
+
+        // Verify the equivalence of the alternative method.
+        assert_eq!(block_store.max_height().unwrap_or_default(), 0);
+    }
+
+    #[test]
     fn test_insert_get_remove() {
         let rng = &mut TestRng::default();
 
