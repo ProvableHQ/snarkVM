@@ -138,45 +138,48 @@ impl Database for RocksDB {
 
         // Retrieve the database.
         let db_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
-        let database = DATABASES
-            .lock()
-            .entry(db_path.clone())
-            .or_insert_with(|| {
-                // Customize database options.
-                let mut options = rocksdb::Options::default();
-                options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+        let mut databases = DATABASES.lock();
+        let database = if let Some(db) = databases.get(&db_path) {
+            db.clone()
+        } else {
+            // Customize database options.
+            let mut options = rocksdb::Options::default();
+            options.set_compression_type(rocksdb::DBCompressionType::Lz4);
 
-                // Register the prefix length.
-                let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
-                options.set_prefix_extractor(prefix_extractor);
+            // Register the prefix length.
+            let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
+            options.set_prefix_extractor(prefix_extractor);
 
-                let rocksdb = {
-                    options.increase_parallelism(2);
-                    options.set_max_background_jobs(4);
-                    options.create_if_missing(true);
-                    options.set_max_open_files(8192);
+            let rocksdb = {
+                options.increase_parallelism(2);
+                options.set_max_background_jobs(4);
+                options.create_if_missing(true);
+                options.set_max_open_files(8192);
 
-                    Arc::new(rocksdb::DB::open(&options, db_path).expect("Couldn't open the database"))
-                };
+                Arc::new(rocksdb::DB::open(&options, &db_path)?)
+            };
 
-                RocksDB {
-                    rocksdb,
-                    network_id,
-                    storage_mode: storage.clone(),
-                    atomic_batch: Default::default(),
-                    atomic_depth: Default::default(),
-                    atomic_writes_paused: Default::default(),
-                    default_readopts: Default::default(),
-                }
-            })
-            .clone();
+            let db = RocksDB {
+                rocksdb,
+                network_id,
+                storage_mode: storage.clone(),
+                atomic_batch: Default::default(),
+                atomic_depth: Default::default(),
+                atomic_writes_paused: Default::default(),
+                default_readopts: Default::default(),
+            };
+
+            databases.insert(db_path.clone(), db.clone());
+
+            db
+        };
 
         // Ensure that multiple database instances are possible only when using the test storage
         // mode, and that in such scenarios, all of the instances are only using the test mode.
         if !matches!(storage, StorageMode::Test(_)) {
-            ensure!(DATABASES.lock().len() == 1);
+            ensure!(databases.len() == 1);
         } else {
-            ensure!(DATABASES.lock().values().all(|db| matches!(&db.storage_mode, StorageMode::Test(_))));
+            ensure!(databases.values().all(|db| matches!(&db.storage_mode, StorageMode::Test(_))));
         }
 
         // Ensure the database network ID and storage mode match.

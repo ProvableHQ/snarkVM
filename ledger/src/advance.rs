@@ -91,6 +91,20 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn advance_to_next_block(&self, block: &Block<N>) -> Result<()> {
         // Acquire the write lock on the current block.
         let mut current_block = self.current_block.write();
+        // Check again for any possible race conditions.
+        if current_block.is_genesis() {
+            // current block is initialized as the genesis block, but the ledger will
+            // also advance to it on startup.
+            ensure!(
+                current_block.height() == block.height() || current_block.height() + 1 == block.height(),
+                "The given block is not the direct successor of the latest block"
+            );
+        } else {
+            ensure!(
+                current_block.height() + 1 == block.height(),
+                "The given block is not the direct successor of the latest block"
+            );
+        }
         // Update the VM.
         self.vm.add_next_block(block)?;
         // Update the current block.

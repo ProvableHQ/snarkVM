@@ -51,9 +51,6 @@ fn check_file_licenses<P: AsRef<Path>>(path: P) {
             );
         }
     }
-
-    // Re-run upon any changes to the workspace.
-    println!("cargo:rerun-if-changed=.");
 }
 
 // The build script; it currently only checks the licenses.

@@ -552,12 +552,20 @@ pub fn sample_genesis_block_and_components(
     INSTANCE.get_or_init(|| crate::sample_genesis_block_and_components_raw(rng)).clone()
 }
 
+pub fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
+    static INSTANCE: OnceCell<PrivateKey<CurrentNetwork>> = OnceCell::new();
+    *INSTANCE.get_or_init(|| {
+        // Initialize a new caller.
+        PrivateKey::<CurrentNetwork>::new(rng).unwrap()
+    })
+}
+
 /// Samples a random genesis block, the transaction from the genesis block, and the genesis private key.
 fn sample_genesis_block_and_components_raw(
     rng: &mut TestRng,
 ) -> (Block<CurrentNetwork>, Transaction<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
     // Sample the genesis private key.
-    let private_key = PrivateKey::new(rng).unwrap();
+    let private_key = sample_genesis_private_key(rng);
     let address = Address::<CurrentNetwork>::try_from(private_key).unwrap();
 
     // Prepare the locator.

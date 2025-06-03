@@ -166,6 +166,12 @@ impl<N: Network> ConfirmedTransaction<N> {
     }
 
     /// Returns a new instance of a rejected execute transaction.
+    ///
+    /// Arguments:
+    /// - `index`: The index of the tranaction within the block.
+    /// - `transaction`: The associated fee transaction.
+    /// - `rejected`: The rejected execute transaction.
+    /// - `finalize_operations`: The finalize operations for the fee transaction.
     pub fn rejected_execute(
         index: u32,
         transaction: Transaction<N>,
@@ -237,7 +243,10 @@ impl<N: Network> ConfirmedTransaction<N> {
         }
     }
 
-    /// Returns the transaction.
+    /// Returns the underlying transaction.
+    ///
+    /// For an accepted transaction, it is the original/unconfirmed transaction issued by the client.
+    /// For a rejected transaction, it is the fee transaction, not the original transaction.
     pub const fn transaction(&self) -> &Transaction<N> {
         match self {
             Self::AcceptedDeploy(_, transaction, _) => transaction,
