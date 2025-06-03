@@ -52,7 +52,7 @@ fn hash_to_sha256<T: Hash>(t: &T) -> [u8; 32] {
 pub type Scope = String;
 
 /// A list of hashes of all the R1CS objects that have reached the
-/// coversion to Assignment stage. It's a vector in case there are
+/// conversion to Assignment stage. It's a vector in case there are
 /// any duplicates (which could indicate no change or redundant
 /// work) and since they need to eventually be sorted in order to
 /// have deterministic order, as they may be created in parallel.

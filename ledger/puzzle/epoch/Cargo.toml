@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-puzzle-epoch"
-version = "1.6.0"
+version = "3.7.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Epoch puzzle for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -46,26 +46,26 @@ wasm = [ "console/wasm" ]
 [dependencies.circuit]
 package = "snarkvm-circuit"
 path = "../../../circuit"
-version = "=1.6.0"
+version = "=3.7.1"
 optional = true
 
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../../console"
-version = "=1.6.0"
+version = "=3.7.1"
 
 [dependencies.snarkvm-ledger-puzzle]
 path = "../."
-version = "=1.6.0"
+version = "=3.7.1"
 
 [dependencies.snarkvm-synthesizer-process]
 path = "../../../synthesizer/process"
-version = "=1.6.0"
+version = "=3.7.1"
 optional = true
 
 [dependencies.snarkvm-synthesizer-program]
 path = "../../../synthesizer/program"
-version = "=1.6.0"
+version = "=3.7.1"
 optional = true
 
 [dependencies.aleo-std]

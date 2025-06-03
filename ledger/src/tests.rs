@@ -73,7 +73,7 @@ fn extract_transmissions(
     transmissions
 }
 
-/// Helper to build chains with custom sturctures for testing
+/// Helper to build chains with custom structures for testing
 struct TestChainBuilder {
     /// The keys of all validators.
     private_keys: Vec<PrivateKey<CurrentNetwork>>,
@@ -96,7 +96,7 @@ struct TestChainBuilder {
 }
 
 impl TestChainBuilder {
-    /// Initialize the builder with the specified commitee and gensis block
+    /// Initialize the builder with the specified committee and genesis block
     pub fn new(private_keys: Vec<PrivateKey<CurrentNetwork>>, genesis: Block<CurrentNetwork>) -> Self {
         // Initialize the ledger with the genesis block.
         let ledger =
@@ -152,7 +152,7 @@ impl TestChainBuilder {
 
         let block_height = self.current_height + 1;
 
-        // SubDAGs can be at most GC roudns long.
+        // SubDAGs can be at most GC rounds long.
         let mut round = if self.last_block_round < BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64 {
             1
         } else {
@@ -796,7 +796,7 @@ fn test_bond_and_unbond_validator() {
     let new_member_withdrawal_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let new_member_withdrawal_address = Address::try_from(&new_member_withdrawal_private_key).unwrap();
 
-    // Fund the new committee member and their withdrawwal address.
+    // Fund the new committee member and their withdrawal address.
     let inputs = [
         Value::from_str(&format!("{new_member_address}")).unwrap(),
         Value::from_str("20000000000000u64").unwrap(), // 20 million credits.
@@ -863,7 +863,7 @@ fn test_bond_and_unbond_validator() {
     let committee = ledger.latest_committee().unwrap();
     assert!(committee.is_committee_member(new_member_address));
 
-    // Check that number of validators in the `metadata` mapping in `credtis.aleo` is updated.
+    // Check that number of validators in the `metadata` mapping in `credits.aleo` is updated.
     let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
     let metadata_mapping_name = Identifier::from_str("metadata").unwrap();
     let key = Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")

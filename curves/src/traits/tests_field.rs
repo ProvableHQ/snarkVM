@@ -103,7 +103,7 @@ fn random_inversion_tests<F: Field, R: Rng>(rng: &mut R) {
 
     for _ in 0..ITERATIONS {
         let mut a = F::rand(rng);
-        let b = a.inverse().unwrap(); // probablistically nonzero
+        let b = a.inverse().unwrap(); // probabilistically nonzero
         a *= &b;
 
         assert_eq!(a, F::one());

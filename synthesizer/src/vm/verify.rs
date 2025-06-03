@@ -284,6 +284,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let current_block_height = self.block_store().current_block_height();
                 let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
                 deployment.program().check_restricted_keywords_for_consensus_version(consensus_version)?;
+                // Perform additional program checks if the consensus version is V7 or beyond.
+                if self.block_store().current_block_height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V7)? {
+                    deployment.program().check_program_naming_structure()?;
+                }
                 // Verify the deployment if it has not been verified before.
                 if !is_partially_verified {
                     // Verify the deployment.
@@ -1107,5 +1111,161 @@ function compute:
         assert!(new_vm.check_transaction(&transaction_v1, None, rng).is_ok());
         // Check that v2 transaction is invalid.
         assert!(new_vm.check_transaction(&transaction_v2, None, rng).is_err());
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_program_rules_migration() {
+        let rng = &mut TestRng::default();
+
+        // Initialize the VM.
+        let vm = crate::vm::test_helpers::sample_vm();
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        // Update the VM.
+        vm.add_next_block(&genesis).unwrap();
+
+        // Track the vm blocks.
+        let mut vm_blocks = vec![genesis.clone()];
+
+        // Fetch the private key.
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Advance the ledger past ConsensusV4 where the new varuna version starts to take place.
+        let transactions: [Transaction<CurrentNetwork>; 0] = [];
+        while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap()
+        {
+            // Call the function
+            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&next_block).unwrap();
+            vm_blocks.push(next_block);
+        }
+
+        // Create a new program that contains "aleo" in the name.
+        let program_1 = Program::from_str(
+            r"
+program testing_1_aleo.aleo;
+
+record token:
+    owner as address.private;
+    amount as u64.private;
+
+function compute:
+    input r0 as u32.private;
+    add r0 r0 into r1;
+    output r1 as u32.public;",
+        )
+        .unwrap();
+
+        // Create a new program that contains "aleo" in the record name.
+        let program_2 = Program::from_str(
+            r"
+program testing_2.aleo;
+
+record token_aleo:
+    owner as address.private;
+    amount as u64.private;
+
+function compute:
+    input r0 as u32.private;
+    add r0 r0 into r1;
+    output r1 as u32.public;",
+        )
+        .unwrap();
+
+        // Create a new program with records names that have other record names as a prefix.
+        let program_3 = Program::from_str(
+            r"
+program testing_3.aleo;
+
+record token:
+    owner as address.private;
+    amount as u64.private;
+
+record token_2:
+    owner as address.private;
+    amount as u64.private;
+
+function compute:
+    input r0 as u32.private;
+    add r0 r0 into r1;
+    output r1 as u32.public;",
+        )
+        .unwrap();
+
+        // Create a new program with records that has an entry containing "aleo".
+        let program_4 = Program::from_str(
+            r"
+program testing_4.aleo;
+
+record token:
+    owner as address.private;
+    test_aleo as u64.private;
+    amount as u64.private;
+
+function compute:
+    input r0 as u32.private;
+    add r0 r0 into r1;
+    output r1 as u32.public;",
+        )
+        .unwrap();
+
+        // Create a deployment transaction for the first program.
+        let deploy_1 = vm.deploy(&private_key, &program_1, None, 0, None, rng).unwrap();
+
+        // Create a deployment transaction for the second program.
+        let deploy_2 = vm.deploy(&private_key, &program_2, None, 0, None, rng).unwrap();
+
+        // Create a deployment transaction for the third program.
+        let deploy_3 = vm.deploy(&private_key, &program_3, None, 0, None, rng).unwrap();
+
+        // Create a deployment transaction for the fourth program.
+        let deploy_4 = vm.deploy(&private_key, &program_4, None, 0, None, rng).unwrap();
+
+        // // Ensure that the deployments are valid.
+        assert!(vm.check_transaction(&deploy_1, None, rng).is_ok());
+        assert!(vm.check_transaction(&deploy_2, None, rng).is_ok());
+        assert!(vm.check_transaction(&deploy_3, None, rng).is_ok());
+        assert!(vm.check_transaction(&deploy_4, None, rng).is_ok());
+
+        // Advance the ledger past ConsensusVersion::V7
+        let transactions: [Transaction<CurrentNetwork>; 0] = [];
+        while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V7).unwrap()
+        {
+            // // Ensure that the deployments are valid.
+            assert!(vm.check_transaction(&deploy_1, None, rng).is_ok());
+            assert!(vm.check_transaction(&deploy_2, None, rng).is_ok());
+            assert!(vm.check_transaction(&deploy_3, None, rng).is_ok());
+            assert!(vm.check_transaction(&deploy_4, None, rng).is_ok());
+            // Call the function
+            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&next_block).unwrap();
+            vm_blocks.push(next_block);
+        }
+
+        // Ensure that the deployments are no longer valid.
+        assert!(vm.check_transaction(&deploy_1, None, rng).is_err());
+        assert!(vm.check_transaction(&deploy_2, None, rng).is_err());
+        assert!(vm.check_transaction(&deploy_3, None, rng).is_err());
+        assert!(vm.check_transaction(&deploy_4, None, rng).is_err());
+
+        // Check that the next block will abort the deployments.
+        let deploy_1_tx_id = deploy_1.id();
+        let deploy_2_tx_id = deploy_2.id();
+        let deploy_3_tx_id = deploy_3.id();
+        let deploy_4_tx_id = deploy_4.id();
+        let next_block = crate::vm::test_helpers::sample_next_block(
+            &vm,
+            &private_key,
+            &[deploy_1, deploy_2, deploy_3, deploy_4],
+            rng,
+        )
+        .unwrap();
+        assert_eq!(next_block.aborted_transaction_ids(), &vec![
+            deploy_1_tx_id,
+            deploy_2_tx_id,
+            deploy_3_tx_id,
+            deploy_4_tx_id
+        ]);
     }
 }

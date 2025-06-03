@@ -48,6 +48,7 @@ use indexmap::IndexMap;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
+/// The set of transactions included in a block.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Transactions<N: Network> {
     /// The transactions included in a block.
@@ -134,8 +135,27 @@ impl<N: Network> Transactions<N> {
     }
 
     /// Returns the transaction with the given transition ID, if it exists.
+    ///
+    /// If the given transition ID is a fee transition for a rejected transaction,
+    /// this will return the fee transaction.
     pub fn find_transaction_for_transition_id(&self, transition_id: &N::TransitionID) -> Option<&Transaction<N>> {
         cfg_find!(self.transactions, transition_id, contains_transition).map(|tx| tx.transaction())
+    }
+
+    /// Returns the unconfirmed transaction with the given transition ID, if it exists.
+    ///
+    /// If the given transition ID is a fee transition for a rejected transaction,
+    /// this will return the original/unconfirmed transaction, not the fee transaction.
+    pub fn find_unconfirmed_transaction_for_transition_id(
+        &self,
+        transition_id: &N::TransitionID,
+    ) -> Result<Option<Transaction<N>>> {
+        let result = cfg_find!(self.transactions, transition_id, contains_transition);
+
+        match result {
+            Some(txn) => Ok(Some(txn.to_unconfirmed_transaction()?)),
+            None => Ok(None),
+        }
     }
 
     /// Returns the transaction with the given serial number, if it exists.

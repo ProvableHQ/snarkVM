@@ -483,7 +483,7 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
         let dest_elements = bits
             .chunks_exact(num_bits_per_nonnative)
             .map(|per_nonnative_bits| {
-                // technically, this can be done via BigInterger::from_bits; here, we use this
+                // technically, this can be done via BigInteger::from_bits; here, we use this
                 // method for consistency with the gadget counterpart
                 let mut res = TargetField::zero();
 

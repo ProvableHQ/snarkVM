@@ -99,6 +99,7 @@ use console::{
 };
 
 use indexmap::{IndexMap, IndexSet};
+use std::collections::BTreeSet;
 use tiny_keccak::{Hasher, Sha3 as TinySha3};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -108,7 +109,6 @@ enum ProgramLabel<N: Network> {
     /// A named component.
     Identifier(Identifier<N>),
 }
-
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 enum ProgramDefinition {
     /// A program constructor.
@@ -885,6 +885,52 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
                 }
             }
         }
+        Ok(())
+    }
+}
+
+impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
+    /// Returns `true` if the program structure is well formed under the following rules:
+    ///  1. The program ID must not contain the keyword "aleo" in the program name.
+    ///  2. The record name must not contain the keyword "aleo".
+    ///  3. Record names must not be prefixes of other record names.
+    ///  4. Record entry names must not contain the keyword "aleo".
+    pub fn check_program_naming_structure(&self) -> Result<()> {
+        // 1. Check if the program ID contains the "aleo" substring
+        let program_id = self.id().name().to_string();
+        if program_id.contains("aleo") {
+            bail!("Program ID '{program_id}' can't contain the reserved keyword 'aleo'.");
+        }
+
+        // Fetch the record names in a sorted BTreeSet.
+        let record_names: BTreeSet<String> = self.records.keys().map(|name| name.to_string()).collect();
+
+        // 2. Check if any record name contains the "aleo" substring.
+        for record_name in &record_names {
+            if record_name.contains("aleo") {
+                bail!("Record name '{record_name}' can't contain the reserved keyword 'aleo'.");
+            }
+        }
+
+        // 3. Check if any of the record names are a prefix of another.
+        let mut record_names_iter = record_names.iter();
+        let mut previous_record_name = record_names_iter.next();
+        for record_name in record_names_iter {
+            if let Some(previous) = previous_record_name {
+                if record_name.starts_with(previous) {
+                    bail!("Record name '{previous}' can't be a prefix of record name '{record_name}'.");
+                }
+            }
+            previous_record_name = Some(record_name);
+        }
+
+        // 4. Check if any record entry names contain the "aleo" substring.
+        for record_entry_name in self.records.values().flat_map(|record_type| record_type.entries().keys()) {
+            if record_entry_name.to_string().contains("aleo") {
+                bail!("Record entry name '{record_entry_name}' can't contain the reserved keyword 'aleo'.");
+            }
+        }
+
         Ok(())
     }
 }
