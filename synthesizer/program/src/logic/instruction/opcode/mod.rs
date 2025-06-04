@@ -30,6 +30,8 @@ pub enum Opcode {
     Command(&'static str),
     /// The opcode is for a commit operation (i.e. `commit.psd4`).
     Commit(&'static str),
+    /// The opcode for a dynamic call operation (i.e. `dcall`).
+    DynamicCall,
     /// The opcode is for a hash operation (i.e. `hash.psd4`).
     Hash(&'static str),
     /// The opcode is for an 'is' operation (i.e. `is.eq`).
@@ -52,6 +54,7 @@ impl Deref for Opcode {
             Opcode::Cast(opcode) => opcode,
             Opcode::Command(opcode) => opcode,
             Opcode::Commit(opcode) => opcode,
+            Opcode::DynamicCall => &"dcall",
             Opcode::Hash(opcode) => opcode,
             Opcode::Is(opcode) => opcode,
             Opcode::Literal(opcode) => opcode,
@@ -77,6 +80,7 @@ impl Display for Opcode {
             Self::Cast(opcode) => write!(f, "{opcode}"),
             Self::Command(opcode) => write!(f, "{opcode}"),
             Self::Commit(opcode) => write!(f, "{opcode}"),
+            Self::DynamicCall => write!(f, "{}", self.deref()),
             Self::Hash(opcode) => write!(f, "{opcode}"),
             Self::Is(opcode) => write!(f, "{opcode}"),
             Self::Literal(opcode) => write!(f, "{opcode}"),

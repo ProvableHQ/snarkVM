@@ -297,6 +297,8 @@ impl<N: Network> StackExecute<N> for Stack<N> {
                 let result = match instruction {
                     // If the instruction is a `call` instruction, we need to handle it separately.
                     Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers),
+                    // If the instruction is a `dcall` instruction, we need to handle it separately.
+                    Instruction::DynamicCall(dcall) => CallTrait::evaluate(dcall, self, &mut registers),
                     // Otherwise, evaluate the instruction normally.
                     _ => instruction.evaluate(self, &mut registers),
                 };
@@ -310,6 +312,8 @@ impl<N: Network> StackExecute<N> for Stack<N> {
             let result = match instruction {
                 // If the instruction is a `call` instruction, we need to handle it separately.
                 Instruction::Call(call) => CallTrait::execute(call, self, &mut registers, rng),
+                // If the instruction is a `dcall` instruction, we need to handle it separately.
+                Instruction::DynamicCall(dcall) => CallTrait::execute(dcall, self, &mut registers, rng),
                 // Otherwise, execute the instruction normally.
                 _ => instruction.execute(self, &mut registers),
             };
@@ -318,12 +322,22 @@ impl<N: Network> StackExecute<N> for Stack<N> {
                 bail!("Failed to execute instruction ({instruction}): {error}");
             }
 
-            // If the instruction was a function call, then set the tracker to `true`.
-            if let Instruction::Call(call) = instruction {
-                // Check if the call is a function call.
-                if call.is_function_call(self)? {
+            // Determine whether the execution contains a function call.
+            match instruction {
+                // If the instruction was a static function call, then set the tracker to `true`.
+                Instruction::Call(call) => {
+                    // Check if the call is a function call.
+                    if call.is_function_call(self)? {
+                        contains_function_call = true;
+                    }
+                }
+                // If the instruction was a dynamic call, then set the tracker to `true`.
+                // Note: Dynamic calls are always function calls.
+                Instruction::DynamicCall(_) => {
                     contains_function_call = true;
                 }
+                // Otherwise, continue.
+                _ => {}
             }
         }
         lap!(timer, "Execute the instructions");

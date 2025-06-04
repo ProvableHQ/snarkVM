@@ -16,6 +16,7 @@
 mod bytes;
 mod equal;
 mod find;
+mod from_future;
 mod parse;
 mod serialize;
 mod to_bits;

@@ -187,6 +187,8 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
             let result = match instruction {
                 // If the instruction is a `call` instruction, we need to handle it separately.
                 Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers),
+                // If the instruction is a `dcall` instruction, we need to handle it separately.
+                Instruction::DynamicCall(dcall) => CallTrait::evaluate(dcall, self, &mut registers),
                 // Otherwise, evaluate the instruction normally.
                 _ => instruction.evaluate(self, &mut registers),
             };

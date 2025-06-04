@@ -34,7 +34,13 @@ mod tests {
 
     const ITERATIONS: u64 = 100;
 
-    fn check_from_field(mode: Mode, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) -> Result<()> {
+    fn check_from_field(
+        mode: Mode,
+        num_constants: u64,
+        num_public: u64,
+        num_private: u64,
+        num_constraints: u64,
+    ) -> Result<()> {
         for _ in 0..ITERATIONS {
             // Initialize the console identifier.
             let console_identifier = sample_console_identifier::<Circuit>()?;

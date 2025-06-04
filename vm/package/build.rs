@@ -226,6 +226,7 @@ impl<N: Network> Package<N> {
             let function = program.get_function(function_name)?;
             // Save all the prover and verifier files for any function calls that are made.
             for instruction in function.instructions() {
+                // TODO (@d0cd) Dynamic call
                 if let Instruction::Call(call) = instruction {
                     // Get the external stack and resource.
                     let (external_stack, resource) = match call.operator() {

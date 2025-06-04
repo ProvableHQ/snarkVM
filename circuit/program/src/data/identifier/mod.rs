@@ -164,7 +164,8 @@ impl<A: Aleo> Identifier<A> {
         // Note: The call to `to_string()` is ensures that the identifier is valid.
         let length = console_identifier.to_string().len() as u8;
         // Get the console field representation of the identifier.
-        let console_field = console_identifier.to_field().unwrap_or_else(|e| A::halt(format!("Unexpected error - {:?}", e)));
+        let console_field =
+            console_identifier.to_field().unwrap_or_else(|e| A::halt(format!("Unexpected error - {:?}", e)));
         // Initialize a circuit field from the console field.
         let field = Field::new(mode, console_field);
         // Return the identifier.

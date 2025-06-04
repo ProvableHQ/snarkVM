@@ -351,6 +351,7 @@ impl<N: Network> Process<N> {
                 // Collect the children of the current transition.
                 let mut children = Vec::new();
                 for instruction in function.instructions() {
+                    // TODO (@d0cd) Dynamic calls
                     if let Instruction::Call(call) = instruction {
                         let (pid, fname) = match call.operator() {
                             synthesizer_program::CallOperator::Locator(locator) => {

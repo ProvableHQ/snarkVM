@@ -94,14 +94,14 @@ impl<A: Aleo> Equal<Self> for ProgramID<A> {
     }
 }
 
-impl <A: Aleo> ProgramID<A> {
-    /// Initializes a program ID as a public variable.
+impl<A: Aleo> ProgramID<A> {
+    /// Initializes a program ID directly from a console `ProgramID` and `Mode`.
     /// Any invocation of this function **MUST** be thoroughly audited to ensure that it is sufficiently constrained.
     #[doc(hidden)]
-    pub fn new_public(id: console::ProgramID<A::Network>) -> Self {
+    pub fn new_unchecked(mode: Mode, id: console::ProgramID<A::Network>) -> Self {
         Self {
-            name: Identifier::new_unchecked(Mode::Public, *id.name()),
-            network: Identifier::new_unchecked(Mode::Public, *id.network()),
+            name: Identifier::new_unchecked(mode, *id.name()),
+            network: Identifier::new_unchecked(mode, *id.network()),
         }
     }
 }

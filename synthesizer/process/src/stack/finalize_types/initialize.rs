@@ -741,6 +741,9 @@ impl<N: Network> FinalizeTypes<N> {
                 bail!("Fatal error: Cannot check command '{opcode}' as an instruction in 'finalize {finalize_name}'.")
             }
             Opcode::Commit(opcode) => RegisterTypes::check_commit_opcode(opcode, instruction)?,
+            Opcode::DynamicCall => {
+                bail!("Instruction 'dcall' is not allowed in 'finalize'");
+            }
             Opcode::Hash(opcode) => RegisterTypes::check_hash_opcode(opcode, instruction)?,
             Opcode::Is(opcode) => match opcode {
                 "is.eq" => ensure!(

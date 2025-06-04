@@ -13,9 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod call;
-
 mod dynamic_call;
+mod static_call;
 
 use crate::{CallStack, Registers, RegistersCall, StackEvaluate, StackExecute, stack::Address};
 

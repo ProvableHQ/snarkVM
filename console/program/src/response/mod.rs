@@ -31,6 +31,8 @@ pub enum OutputID<N: Network> {
     ExternalRecord(Field<N>),
     /// The hash of the future output.
     Future(Field<N>),
+    /// The hash of the dynamic future output.
+    DynamicFuture(Field<N>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

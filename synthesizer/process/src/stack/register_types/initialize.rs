@@ -586,6 +586,13 @@ impl<N: Network> RegisterTypes<N> {
                 bail!("Forbidden operation: Instruction '{instruction}' cannot invoke command '{opcode}'.");
             }
             Opcode::Commit(opcode) => Self::check_commit_opcode(opcode, instruction)?,
+            Opcode::DynamicCall => {
+                // Check that the instruction is a dynamic call.
+                ensure!(
+                    matches!(instruction, Instruction::DynamicCall(..)),
+                    "Instruction '{instruction}' is not a dynamic call operation."
+                );
+            }
             Opcode::Hash(opcode) => Self::check_hash_opcode(opcode, instruction)?,
             Opcode::Is(opcode) => match opcode {
                 "is.eq" => ensure!(

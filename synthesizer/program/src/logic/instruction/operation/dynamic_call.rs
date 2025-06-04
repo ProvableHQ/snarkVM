@@ -51,7 +51,7 @@ impl<N: Network> DynamicCall<N> {
     /// Returns the opcode.
     #[inline]
     pub const fn opcode() -> Opcode {
-        Opcode::Call
+        Opcode::DynamicCall
     }
 
     /// Returns the program ID name.
@@ -401,7 +401,8 @@ mod tests {
 
     fn check_parser(
         string: &str,
-        expected_program: Operand<CurrentNetwork>,
+        expected_program_id_name: Operand<CurrentNetwork>,
+        expected_program_id_network: Operand<CurrentNetwork>,
         expected_function_name: Operand<CurrentNetwork>,
         expected_operands: Vec<Operand<CurrentNetwork>>,
         expected_destinations: Vec<Register<CurrentNetwork>>,
@@ -414,7 +415,8 @@ mod tests {
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
         // Check that the program operand is correct.
-        assert_eq!(call.program, expected_program);
+        assert_eq!(call.program_id_name, expected_program_id_name);
+        assert_eq!(call.program_id_network, expected_program_id_network);
 
         // Check that the function operand is correct.
         assert_eq!(call.function_name, expected_function_name);
@@ -452,8 +454,9 @@ mod tests {
     #[test]
     fn test_parse() {
         check_parser(
-            "dcall r4 r5 r0.owner r0.token_amount into r1 r2 r3 (as u64 u8 dynamic.future)",
+            "dcall r4 aleo r5 r0.owner r0.token_amount into r1 r2 r3 (as u64 u8 dynamic.future)",
             Operand::Register(Register::Locator(4)),
+            Operand::Identifier(Identifier::from_str("aleo").unwrap()),
             Operand::Register(Register::Locator(5)),
             vec![
                 Operand::Register(Register::Access(0, vec![Access::from(Identifier::from_str("owner").unwrap())])),
@@ -485,9 +488,10 @@ mod tests {
         // );
 
         check_parser(
-            "dcall r0 r1",
+            "dcall r0 r1 r2",
             Operand::Register(Register::Locator(0)),
             Operand::Register(Register::Locator(1)),
+            Operand::Register(Register::Locator(2)),
             vec![],
             vec![],
             vec![],

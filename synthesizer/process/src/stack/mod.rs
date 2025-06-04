@@ -377,6 +377,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
             );
             // Determine the number of calls for the function.
             for instruction in stack_ref.get_function_ref(&function_name)?.instructions() {
+                // TODO (@d0cd) Dynamic calls
                 if let Instruction::Call(call) = instruction {
                     // Determine if this is a function call.
                     if call.is_function_call(&*stack_ref)? {
