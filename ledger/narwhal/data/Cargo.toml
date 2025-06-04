@@ -25,6 +25,7 @@ edition = "2021"
 
 [features]
 async = [ "tokio" ]
+test = ["ledger-block/test"]
 
 [dependencies.console]
 package = "snarkvm-console"

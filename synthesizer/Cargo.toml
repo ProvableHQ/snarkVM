@@ -51,7 +51,7 @@ serial = [
   "synthesizer-snark/serial"
 ]
 setup = [ ]
-test = [ "console/test" ]
+test = [ "console/test", "ledger-block/test" ]
 timer = [ "aleo-std/timer" ]
 wasm = [
   "process",

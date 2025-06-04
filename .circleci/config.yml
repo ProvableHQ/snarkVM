@@ -108,13 +108,16 @@ commands:
       flags:
         type: string
         default: ""
+      release_flag:
+        type: string
+        default: ""
     steps:
       - checkout
       - setup_environment:
           cache_key: << parameters.cache_key >>
       - run:
           no_output_timeout: 60m
-          command: cd << parameters.workspace_member >> && RUST_MIN_STACK=67108864 cargo test << parameters.flags >>
+          command: cd << parameters.workspace_member >> && RUST_MIN_STACK=67108864 cargo test << parameters.release_flag >> << parameters.flags >>
       - clear_environment:
           cache_key: << parameters.cache_key >>
 
@@ -140,7 +143,7 @@ commands:
             TEST_NAMES=$(circleci tests split test_names.txt)
             for i in $(echo $TEST_NAMES | sed "s/ / /g")
             do
-                RUST_MIN_STACK=67108864 cargo test $i << parameters.flags >>
+                RUST_MIN_STACK=67108864 cargo test --release $i << parameters.flags >>
             done
       - clear_environment:
           cache_key: << parameters.cache_key >>
@@ -159,7 +162,7 @@ jobs:
       - checkout
       - run:
           no_output_timeout: 30m
-          command: RUST_MIN_STACK=67108864 cargo test
+          command: RUST_MIN_STACK=67108864 cargo test --release --features=test
 
   algorithms:
     docker:
@@ -505,7 +508,7 @@ jobs:
     resource_class: << pipeline.parameters.medium >>
     steps:
       - run_serial:
-          flags: --release --features=rocks -- --test-threads=2
+          flags: --features=rocks -- --test-threads=2
           workspace_member: ledger
           cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-with-rocksdb-cache
 
@@ -534,6 +537,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
+          flags: --features=test
           workspace_member: ledger/block
           cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-block-cache
 
@@ -579,6 +583,7 @@ jobs:
     resource_class: << pipeline.parameters.small >>
     steps:
       - run_serial:
+          flags: --features=test
           workspace_member: ledger/narwhal/data
           cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-narwhal-data-cache
 
@@ -642,7 +647,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: --features=rocks
+          flags: --features=rocks,test
           workspace_member: ledger/store
           cache_key: v1.3.0-rust-1.83.0-snarkvm-ledger-store-cache
 
@@ -691,17 +696,19 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: --lib --bins
+          flags: --features test --lib --bins
           workspace_member: synthesizer
-          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-cache
+          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-test-cache
 
-  synthesizer-test:
+  # Same as synthesizer but in debug mode to trigger debug_asserts
+  synthesizer-debug:
     docker:
       - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_serial:
-          flags: --lib --bins --features test
+          flags: --features test --lib --bins
+          release_flag:
           workspace_member: synthesizer
           cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-test-cache
 
@@ -731,7 +738,7 @@ jobs:
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
-          flags: -- --test-threads=8
+          flags:  --features=test -- --test-threads=8
           workspace_member: synthesizer/process
           cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-process-cache
 
@@ -741,7 +748,7 @@ jobs:
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_serial:
-          flags: --features=rocks
+          flags: --features=rocks,test
           workspace_member: synthesizer/process
           cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-process-cache
 
@@ -1037,7 +1044,7 @@ workflows:
       - parameters-large
       - parameters-uncached
       - synthesizer
-      - synthesizer-test
+      - synthesizer-debug
       - synthesizer-mem-heavy
       - synthesizer-integration
       - synthesizer-process

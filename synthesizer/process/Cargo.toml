@@ -45,6 +45,7 @@ wasm = [
   "synthesizer-snark/wasm"
 ]
 timer = [ "aleo-std/timer" ]
+test = [ "ledger-store/test", "ledger-block/test" ]
 
 [[bench]]
 name = "stack_operations"
