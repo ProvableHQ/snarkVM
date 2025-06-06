@@ -43,6 +43,7 @@ use console::{
     network::prelude::*,
     program::{
         Argument,
+        DynamicFuture,
         Entry,
         EntryType,
         FinalizeType,
@@ -76,6 +77,7 @@ use locktick::parking_lot::RwLock;
 use parking_lot::RwLock;
 use std::sync::{Arc, Weak};
 
+use crate::stack::helpers::{sample_identifier, sample_program_id};
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
@@ -410,6 +412,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
         value_type: &ValueType<N>,
         rng: &mut R,
     ) -> Result<Value<N>> {
+        println!("Sampling value for type: {value_type}");
         match value_type {
             ValueType::Constant(plaintext_type)
             | ValueType::Public(plaintext_type)
@@ -459,6 +462,17 @@ impl<N: Network> StackProgram<N> for Stack<N> {
         let record_nonce = N::g_scalar_multiply(&randomizer);
         // Sample the record with that nonce.
         self.sample_record(burner_address, record_name, record_nonce, rng)
+    }
+
+    /// Returns a future with a random locator and empty arguments.
+    /// This should only be used to sample a return value for a dynamic call in `Synthesize` or `CheckDeployment` mode.
+    fn sample_random_future<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<Future<N>> {
+        // Sample a random program ID.
+        let program_id = sample_program_id(rng)?;
+        // Sample a random function name.
+        let function_name = sample_identifier(false, rng)?;
+        // Construct the future.
+        Ok(Future::new(program_id, function_name, vec![]))
     }
 }
 

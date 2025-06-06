@@ -592,6 +592,7 @@ impl<N: Network> RegisterTypes<N> {
                     matches!(instruction, Instruction::DynamicCall(..)),
                     "Instruction '{instruction}' is not a dynamic call operation."
                 );
+                // TODO (@d0cd): If the program and function name operand are static, then we can check that they exist.
             }
             Opcode::Hash(opcode) => Self::check_hash_opcode(opcode, instruction)?,
             Opcode::Is(opcode) => match opcode {

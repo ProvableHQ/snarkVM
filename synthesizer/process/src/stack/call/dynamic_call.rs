@@ -15,6 +15,7 @@
 
 use super::*;
 
+use crate::stack::helpers::{sample_identifier, sample_program_id};
 use circuit::prelude::ToField;
 use console::{
     prelude::FromField,
@@ -37,14 +38,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
             _ => bail!("Expected the operand '{}' to be a valid field element", self.program_id_name()),
         };
 
-        // Load the program ID network.
-        let program_id_network = match registers.load(stack, self.program_id_network())? {
-            Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the operand '{}' to be a valid field element", self.program_id_network()),
-        };
-
-        // Construct the program ID.
-        let program_id = ProgramID::try_from((program_id_name, program_id_network))?;
+        let program_id = ProgramID::try_from((program_id_name, Identifier::from_str("aleo")?))?;
 
         // Load the function name.
         let function_name = match registers.load(stack, self.function_name())? {
@@ -103,65 +97,93 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
     ) -> Result<()> {
         let timer = timer!("DynamicCall::execute");
 
+        // Determine the input types from the instruction.
+        let input_types = self.operand_types();
+        // Determine the output types from the instruction.
+        let output_types = self.destination_types();
+
         // Load the program ID name.
         let program_id_name_as_field = match registers.load_circuit(stack, self.program_id_name())? {
             circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(field), _)) => field,
             _ => bail!("Expected the operand '{}' to be a valid field element", self.program_id_name()),
         };
-        let program_id_name_console = Identifier::from_field(&program_id_name_as_field.eject_value())?;
-
-        // Load the program ID network.
-        let program_id_network = match registers.load_circuit(stack, self.program_id_network())? {
-            circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(field), _)) => field,
-            _ => bail!("Expected the operand '{}' to be a valid field element", self.program_id_network()),
-        };
-        let program_id_network_console = Identifier::from_field(&program_id_network.eject_value())?;
-
-        // Construct the console program ID.
-        let program_id_console = ProgramID::try_from((program_id_name_console, program_id_network_console))?;
 
         // Load the function name.
-        let function_name = match registers.load_circuit(stack, self.function_name())? {
+        let function_name_as_field = match registers.load_circuit(stack, self.function_name())? {
             circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(field), _)) => field,
             _ => bail!("Expected the operand '{}' to be a valid field element", self.function_name()),
         };
-        let function_name_console = Identifier::from_field(&function_name.eject_value())?;
-        let function_name_string = function_name_console.to_string();
-
-        // Ensure that the program ID is not the current program ID.
-        ensure!(stack.program_id() != &program_id_console, "Cannot dynamically call a function in the same program");
-
-        // Check the external call.
-        let is_credits_program = program_id_console.to_string() == "credits.aleo";
-        let is_fee_private = &function_name_string == "fee_private";
-        let is_fee_public = &function_name_string == "fee_public";
-
-        // Ensure the external call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
-        if is_credits_program && (is_fee_private || is_fee_public) {
-            bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
-        }
 
         // Load the operands values.
         let inputs: Vec<_> =
             self.operands().iter().map(|operand| registers.load_circuit(stack, operand)).try_collect()?;
 
-        // Retrieve the substack.
-        let substack = stack.get_external_stack(&program_id_console)?;
-        lap!(timer, "Retrieve the substack and resource");
+        // Get the the program ID and function name.
+        // - If we are in `Synthesize` or `CheckDeployment` mode, sample random values.
+        //      This is necessary because the registers are initialized to random values, which often
+        //      do not map to valid identifiers.
+        // - Otherwise, eject the values from the registers.
+        let (program_id_console, function_name_console) = match registers.call_stack() {
+            CallStack::Synthesize(..) | CallStack::CheckDeployment(..) => {
+                // Sample a random program ID.
+                let program_id_console = sample_program_id(rng)?;
+                // Sample a random function name.
+                let function_name_console = sample_identifier(false, rng)?;
+
+                (program_id_console, function_name_console)
+            }
+            CallStack::Authorize(..) | CallStack::Evaluate(..) | CallStack::Execute(..) | CallStack::PackageRun(..) => {
+                // Construct the program ID.
+                let program_id_name_console = Identifier::from_field(&program_id_name_as_field.eject_value())?;
+                let program_id_console = ProgramID::try_from((program_id_name_console, Identifier::from_str("aleo")?))?;
+
+                // Construct the function name.
+                let function_name_console = Identifier::from_field(&function_name_as_field.eject_value())?;
+                let function_name_string = function_name_console.to_string();
+
+                // Ensure that the program ID is not the current program ID.
+                ensure!(
+                    stack.program_id() != &program_id_console,
+                    "Cannot dynamically call a function in the same program"
+                );
+
+                // Check the external call.
+                let is_credits_program = program_id_console.to_string() == "credits.aleo";
+                let is_fee_private = &function_name_string == "fee_private";
+                let is_fee_public = &function_name_string == "fee_public";
+
+                // Ensure the external call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
+                if is_credits_program && (is_fee_private || is_fee_public) {
+                    bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
+                }
+
+                // Retrieve the substack.
+                let substack = stack.get_external_stack(&program_id_console)?;
+
+                // Retrieve the function from the substack.
+                let function = substack.program().get_function_ref(&function_name_console)?;
+
+                // Retrieve the number of inputs.
+                let num_inputs = function.inputs().len();
+                // Ensure the number of inputs matches the number of input statements.
+                if num_inputs != inputs.len() {
+                    bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
+                }
+
+                (program_id_console, function_name_console)
+            }
+        };
+
+        // A closure to lazily get the substack.
+        let get_substack = || {
+            // Retrieve the substack.
+            stack.get_external_stack(&program_id_console)
+        };
 
         // If we are not handling the root request, retrieve the root request's tvk
         let root_tvk = registers.root_tvk().ok();
 
-        // Retrieve the function from the substack.
-        let function = substack.program().get_function_ref(&function_name_console)?;
-
         lap!(timer, "Execute the function");
-        // Retrieve the number of inputs.
-        let num_inputs = function.inputs().len();
-        // Ensure the number of inputs matches the number of input statements.
-        if num_inputs != inputs.len() {
-            bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
-        }
 
         // Retrieve the number of public variables in the circuit.
         let num_public = A::num_public();
@@ -172,14 +194,13 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         use circuit::Eject;
         // Eject the existing circuit.
         let r1cs = A::eject_r1cs_and_reset();
-        let (request, response) = {
+        let (request, outputs) = {
             // Eject the circuit inputs.
             let inputs = inputs.eject_value();
 
             // Set the (console) caller.
             let console_caller = Some(*stack.program_id());
             // Check if the substack has a proving key or not.
-            let pk_missing = !substack.contains_proving_key(function.name());
 
             match registers.call_stack() {
                 // If the circuit is in authorize mode, then add any external calls to the stack.
@@ -187,10 +208,10 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                     // Compute the request.
                     let request = Request::sign(
                         &private_key,
-                        *substack.program_id(),
-                        *function.name(),
+                        program_id_console,
+                        function_name_console,
                         inputs.iter(),
-                        &function.input_types(),
+                        input_types,
                         root_tvk,
                         is_root,
                         rng,
@@ -205,113 +226,61 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                     authorization.push(request.clone())?;
 
                     // Execute the request.
-                    let response = substack.execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
+                    let response =
+                        get_substack()?.execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
-                    // Return the request and response.
-                    (request, response)
-                }
-                // If the proving key is missing, build real sub-circuit.
-                CallStack::Synthesize(_, private_key, ..) if pk_missing => {
-                    // Compute the request.
-                    let request = Request::sign(
-                        &private_key,
-                        *substack.program_id(),
-                        *function.name(),
-                        inputs.iter(),
-                        &function.input_types(),
-                        root_tvk,
-                        is_root,
-                        rng,
-                    )?;
-
-                    // Retrieve the call stack.
-                    let mut call_stack = registers.call_stack();
-
-                    // Push the request onto the call stack.
-                    call_stack.push(request.clone())?;
-
-                    // Execute the request.
-                    let response = substack.execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
-
-                    // Return the request and response.
-                    (request, response)
+                    // Return the request and outputs.
+                    (request, response.outputs().to_vec())
                 }
                 // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
                 CallStack::Synthesize(_, private_key, _) | CallStack::CheckDeployment(_, private_key, ..) => {
+                    println!("1.1");
+                    println!("Program ID: {}", program_id_console);
+                    println!("Function Name: {}", function_name_console);
                     // Compute the request.
                     let request = Request::sign(
                         &private_key,
-                        *substack.program_id(),
-                        *function.name(),
+                        program_id_console,
+                        function_name_console,
                         inputs.iter(),
-                        &function.input_types(),
+                        input_types,
                         root_tvk,
                         is_root,
                         rng,
                     )?;
+
+                    println!("1.1.1");
 
                     // Compute the address.
                     let address = Address::try_from(&private_key)?;
 
-                    // For each output, if it's a record, compute the randomizer and nonce.
-                    let outputs = function
-                        .outputs()
+                    // For each output, sample a dummy value.
+                    let outputs = output_types
                         .iter()
-                        .map(|output| match output.value_type() {
-                            ValueType::Record(record_name) => {
-                                let index = match output.operand() {
-                                    Operand::Register(Register::Locator(index)) => Field::from_u64(*index),
-                                    _ => bail!("Expected a `Register::Locator` operand for a record output."),
-                                };
-                                // Sample the record.
-                                Ok(Value::Record(substack.sample_record_using_tvk(
-                                    &address,
-                                    record_name,
-                                    *request.tvk(),
-                                    index,
-                                    rng,
-                                )?))
+                        .map(|output_type| {
+                            // TODO (@d0cd) Verify that this is sound.
+                            // If the output type is a dynamic future, sample a random future value.
+                            match output_type {
+                                ValueType::DynamicFuture => Ok(Value::Future(stack.sample_random_future(rng)?)),
+                                _ => stack.sample_value(&address, output_type, rng),
                             }
-                            // For non-record outputs, call sample_value.
-                            _ => substack.sample_value(&address, output.value_type(), rng),
                         })
                         .collect::<Result<Vec<_>>>()?;
 
-                    // Construct the dummy response from these outputs.
-                    let output_registers = function
-                        .outputs()
-                        .iter()
-                        .map(|output| match output.operand() {
-                            Operand::Register(register) => Some(register.clone()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>();
+                    println!("1.2");
 
-                    // Execute the request.
-                    let response = crate::Response::new(
-                        request.network_id(),
-                        substack.program().id(),
-                        function.name(),
-                        request.inputs().len(),
-                        request.tvk(),
-                        request.tcm(),
-                        outputs,
-                        &function.output_types(),
-                        &output_registers,
-                    )?;
-
-                    // Return the request and response.
-                    (request, response)
+                    // Return the request and outputs.
+                    (request, outputs)
                 }
                 // In PackageRun mode, we sign and execute the request once.
                 CallStack::PackageRun(_, private_key, ..) => {
                     // Compute the request.
                     let request = Request::sign(
                         &private_key,
-                        *substack.program_id(),
-                        *function.name(),
+                        program_id_console,
+                        function_name_console,
                         inputs.iter(),
-                        &function.input_types(),
+                        input_types,
                         root_tvk,
                         is_root,
                         rng,
@@ -323,10 +292,11 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                     call_stack.push(request.clone())?;
 
                     // Evaluate the request.
-                    let response = substack.execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
+                    let response =
+                        get_substack()?.execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
 
-                    // Return the request and response.
-                    (request, response)
+                    // Return the request and outputs.
+                    (request, response.outputs().to_vec())
                 }
                 // If the circuit is in evaluate mode, then throw an error.
                 CallStack::Evaluate(..) => {
@@ -342,6 +312,8 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                         Ok(())
                     })?;
 
+                    // Get the substack.
+                    let substack = get_substack()?;
                     // Evaluate the function, and load the outputs.
                     let console_response =
                         substack.evaluate_function::<A>(registers.call_stack().replicate(), console_caller)?;
@@ -352,10 +324,10 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                     if console_response.outputs() != response.outputs() {
                         #[cfg(debug_assertions)]
                         eprintln!("\n{:#?} != {:#?}\n", console_response.outputs(), response.outputs());
-                        bail!("Function '{}' outputs do not match in a 'call' instruction.", function.name())
+                        bail!("Function '{}' outputs do not match in a 'call' instruction.", function_name_console)
                     }
-                    // Return the request and response.
-                    (request, response)
+                    // Return the request and outputs.
+                    (request, response.outputs().to_vec())
                 }
             }
         };
@@ -364,14 +336,18 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         // Inject the existing circuit.
         A::inject_r1cs(r1cs);
 
+        println!("2");
+
+        println!("(1) Is satisfied: {}", A::is_satisfied());
+
         use circuit::Inject;
 
         // Inject the network ID as `Mode::Constant`.
         let network_id = circuit::U16::constant(*request.network_id());
         // Inject the program ID as `Mode::Public`.
-        let program_id = circuit::ProgramID::new_unchecked(circuit::Mode::Public, *substack.program_id());
+        let program_id = circuit::ProgramID::new_unchecked(circuit::Mode::Public, program_id_console);
         // Inject the function name as `Mode::Public`.
-        let function_name = circuit::Identifier::new_unchecked(circuit::Mode::Public, *function.name());
+        let function_name = circuit::Identifier::new_unchecked(circuit::Mode::Public, function_name_console);
 
         // Ensure the number of public variables remains the same.
         ensure!(A::num_public() == num_public + 3, "Forbidden: 'dcall' injected excess public variables");
@@ -395,12 +371,17 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
             .map(|input_id| circuit::InputID::new(circuit::Mode::Public, *input_id))
             .collect::<Vec<_>>();
 
+        println!("(1.2) Is satisfied: {}", A::is_satisfied());
+
         // Ensure that the injected program ID matches the one in dynamic call.
         A::assert_eq(program_id.name().to_field(), program_id_name_as_field);
-        A::assert_eq(program_id.network().to_field(), program_id_network);
+
+        println!("(1.2.1) Is satisfied: {}", A::is_satisfied());
 
         // Ensure the function name matches the one in dynamic call.
         A::assert_eq(function_name.to_field(), &function_name);
+
+        println!("(1.3) Is satisfied: {}", A::is_satisfied());
 
         // Ensure the candidate input IDs match their computed inputs.
         let (check_input_ids, _) = circuit::Request::check_input_ids::<false>(
@@ -409,7 +390,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
             &function_name,
             &input_ids,
             &inputs,
-            &function.input_types(),
+            input_types,
             &signer,
             &sk_tag,
             &tvk,
@@ -419,18 +400,22 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         A::assert(check_input_ids);
         lap!(timer, "Checked the input ids");
 
+        println!("(1.4) Is satisfied: {}", A::is_satisfied());
+
         // Inject the outputs as `Mode::Private` (with the 'tcm' and output IDs as `Mode::Public`).
-        let outputs = circuit::Response::process_outputs_from_callback::</* IS DYNAMIC */ true>(
+        let outputs = circuit::Response::process_outputs_from_dynamic_callback(
             &network_id,
             &program_id,
             &function_name,
-            num_inputs,
+            self.operands().len(),
             &tvk,
             &tcm,
-            response.outputs().to_vec(),
-            &function.output_types(),
+            outputs,
+            output_types,
         );
         lap!(timer, "Checked the outputs");
+
+        println!("(2) Is satisfied: {}", A::is_satisfied());
 
         // Assign the outputs to the destination registers.
         for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {

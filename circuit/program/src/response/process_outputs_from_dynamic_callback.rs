@@ -16,8 +16,8 @@
 use super::*;
 
 impl<A: Aleo> Response<A> {
-    /// Returns the injected circuit outputs, given the number of inputs, tvk, tcm, outputs, and output types.
-    pub fn process_outputs_from_callback<const IS_DYNAMIC: bool>(
+    /// Returns the injected circuit outputs from a dynamic call, given the number of inputs, tvk, tcm, outputs, and output types.
+    pub fn process_outputs_from_dynamic_callback(
         network_id: &U16<A>,
         program_id: &ProgramID<A>,
         function_name: &Identifier<A>,
@@ -114,129 +114,45 @@ impl<A: Aleo> Response<A> {
                         // Return the output ID.
                         Ok((OutputID::private(A::hash_psd8(&ciphertext.to_fields())), output))
                     }
-                    // For a record output, compute the record commitment.
-                    console::ValueType::Record(record_name) => {
-                        // Inject the output as `Mode::Private`.
-                        let output = Value::new(Mode::Private, output.clone());
-
-                        // Retrieve the record.
-                        let record = match &output {
-                            Value::Record(record) => record,
-                            // Ensure the output is a record.
-                            Value::Plaintext(..) => A::halt("Expected a record output, found a plaintext output"),
-                            Value::Future(..) => A::halt("Expected a record output, found a future output"),
-                            Value::DynamicFuture(..) => {
-                                A::halt("Expected a record output, found a dynamic future output")
-                            }
+                    // TODO (@d0cd). Direct record outputs should not be allowed.
+                    console::ValueType::Record(_) => todo!(),
+                    // TODO (@d0cd). Direct external record outputs should not be allowed.
+                    console::ValueType::ExternalRecord(..) => todo!(),
+                    // A future cannot be returned from a dynamic call.
+                    console::ValueType::Future(..) => A::halt("A future cannot be returned from a dynamic call"),
+                    // For a future output in a dynamic call, witness the dynamic future, and compute the hash (using `tcm`) of the output.
+                    console::ValueType::DynamicFuture => {
+                        // Unpack the future output.
+                        let console::Value::Future(future) = output else {
+                            return A::halt("Expected a future output");
                         };
-                        // Compute the record commitment.
-                        let commitment = record.to_commitment(program_id, &Identifier::constant(*record_name));
-
-                        // Return the output ID.
-                        // Note: Because this is a callback, the output ID is an **external record** ID.
-                        Ok((OutputID::external_record(commitment), output))
-                    }
-                    // For an external record output, compute the hash (using `tvk`) of the output.
-                    console::ValueType::ExternalRecord(..) => {
-                        // Inject the output as `Mode::Private`.
-                        let output = Value::new(Mode::Private, output.clone());
-                        // Ensure the output is a record.
-                        ensure!(matches!(output, Value::Record(..)), "Expected a record output");
+                        // Initialize the dynamic future and inject it as `Mode::Public`.
+                        let output = Value::new(
+                            Mode::Public,
+                            console::Value::DynamicFuture(console::DynamicFuture::from_future(future)?),
+                        );
+                        // Ensure the output is a future.
+                        ensure!(matches!(output, Value::DynamicFuture(..)), "Expected a dynamic future output");
 
                         // Prepare the index as a constant field element.
                         let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
-                        // Construct the preimage as `(function ID || output || tvk || index)`.
+                        // Construct the preimage as `(function ID || output || tcm || index)`.
                         let mut preimage = Vec::new();
                         preimage.push(function_id.clone());
                         preimage.extend(output.to_fields());
-                        preimage.push(tvk.clone());
+                        preimage.push(tcm.clone());
                         preimage.push(output_index);
 
-                        // Return the output ID.
+                        // Hash the output to a field element.
                         match &output {
-                            Value::Record(..) => Ok((OutputID::external_record(A::hash_psd8(&preimage)), output)),
-                            // Ensure the output is a record.
-                            Value::Plaintext(..) => A::halt("Expected a record output, found a plaintext output"),
-                            Value::Future(..) => A::halt("Expected a record output, found a future output"),
-                            Value::DynamicFuture(..) => A::halt("Expected a record output, found a dynamic future"),
+                            // Return the output ID.
+                            Value::DynamicFuture(..) => Ok((OutputID::dynamic_future(A::hash_psd8(&preimage)), output)),
+                            // Ensure the output is a future.
+                            Value::Plaintext(..) => A::halt("Expected a future output, found a plaintext output"),
+                            Value::Record(..) => A::halt("Expected a future output, found a record output"),
+                            Value::Future(..) => A::halt("Expected a dynamic future output, found a future"),
                         }
                     }
-                    // Handle future output in static and dynamic calls.
-                    console::ValueType::Future(..) => {
-                        match IS_DYNAMIC {
-                            // For a future output in a static call, compute the hash (using `tcm`) of the output.
-                            false => {
-                                // Inject the output as `Mode::Private`.
-                                let output = Value::new(Mode::Private, output.clone());
-                                // Ensure the output is a future.
-                                ensure!(matches!(output, Value::Future(..)), "Expected a future output");
-
-                                // Prepare the index as a constant field element.
-                                let output_index =
-                                    Field::constant(console::Field::from_u16((num_inputs + index) as u16));
-                                // Construct the preimage as `(function ID || output || tcm || index)`.
-                                let mut preimage = Vec::new();
-                                preimage.push(function_id.clone());
-                                preimage.extend(output.to_fields());
-                                preimage.push(tcm.clone());
-                                preimage.push(output_index);
-
-                                // Hash the output to a field element.
-                                match &output {
-                                    // Return the output ID.
-                                    Value::Future(..) => Ok((OutputID::future(A::hash_psd8(&preimage)), output)),
-                                    // Ensure the output is a future.
-                                    Value::Plaintext(..) => {
-                                        A::halt("Expected a future output, found a plaintext output")
-                                    }
-                                    Value::Record(..) => A::halt("Expected a future output, found a record output"),
-                                    Value::DynamicFuture(..) => {
-                                        A::halt("Expected a future output, found a dynamic future")
-                                    }
-                                }
-                            }
-                            // For a future output in a dynamic call, witness the dynamic future, and compute the hash (using `tcm`) of the output.
-                            true => {
-                                // Unpack the future output.
-                                let console::Value::Future(future) = output else {
-                                    return A::halt("Expected a future output");
-                                };
-                                // Initialize the dynamic future and inject it as `Mode::Public`.
-                                let output = Value::new(
-                                    Mode::Public,
-                                    console::Value::DynamicFuture(console::DynamicFuture::from_future(future)?),
-                                );
-                                // Ensure the output is a future.
-                                ensure!(matches!(output, Value::DynamicFuture(..)), "Expected a dynamic future output");
-
-                                // Prepare the index as a constant field element.
-                                let output_index =
-                                    Field::constant(console::Field::from_u16((num_inputs + index) as u16));
-                                // Construct the preimage as `(function ID || output || tcm || index)`.
-                                let mut preimage = Vec::new();
-                                preimage.push(function_id.clone());
-                                preimage.extend(output.to_fields());
-                                preimage.push(tcm.clone());
-                                preimage.push(output_index);
-
-                                // Hash the output to a field element.
-                                match &output {
-                                    // Return the output ID.
-                                    Value::DynamicFuture(..) => {
-                                        Ok((OutputID::dynamic_future(A::hash_psd8(&preimage)), output))
-                                    }
-                                    // Ensure the output is a future.
-                                    Value::Plaintext(..) => {
-                                        A::halt("Expected a future output, found a plaintext output")
-                                    }
-                                    Value::Record(..) => A::halt("Expected a future output, found a record output"),
-                                    Value::Future(..) => A::halt("Expected a dynamic future output, found a future"),
-                                }
-                            }
-                        }
-                    }
-                    // A dynamic future cannot be returned directly.
-                    console::ValueType::DynamicFuture => A::halt("A dynamic future cannot be returned directly"),
                 }
             })
             .collect::<Result<Vec<_>>>()
@@ -347,7 +263,7 @@ mod tests {
             let tcm = Field::<Circuit>::new(mode, tcm);
 
             Circuit::scope(format!("Response {i}"), || {
-                let outputs = Response::process_outputs_from_callback::</* IS_DYNAMIC */ false>(
+                let outputs = Response::process_outputs_from_dynamic_callback(
                     &network_id,
                     &program_id,
                     &function_name,

@@ -136,7 +136,7 @@ pub mod prelude {
         character::complete::{alpha1, alphanumeric1, char, one_of},
         combinator::{complete, fail, map, map_res, opt, recognize},
         error::{ErrorKind, make_error},
-        multi::{count, many0, many0_count, many1, separated_list0, separated_list1},
+        multi::{count, many_m_n, many0, many0_count, many1, separated_list0, separated_list1},
         sequence::{pair, terminated},
     };
     pub use num_traits::{AsPrimitive, One, Pow, Zero};

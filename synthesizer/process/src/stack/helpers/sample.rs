@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use console::program::DynamicFuture;
 
 impl<N: Network> Stack<N> {
     /// Samples a plaintext value according to the given plaintext type.
@@ -43,27 +42,13 @@ impl<N: Network> Stack<N> {
 
     /// Samples a dynamic future value.
     pub fn sample_dynamic_future<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<DynamicFuture<N>> {
-        // Samples a random identifier.
-        fn sample_identifier<N: Network, R: Rng + CryptoRng>(rng: &mut R) -> Result<Identifier<N>> {
-            // Sample a random fixed-length alphanumeric string, that always starts with an alphabetic character.
-            let string = "a".to_string()
-                + &rng
-                    .sample_iter(&Alphanumeric)
-                    .take(Field::<N>::size_in_data_bits() / (8 * 2))
-                    .map(char::from)
-                    .collect::<String>();
-            // Ensure identifier fits within the data capacity of the base field.
-            let max_bytes = Field::<N>::size_in_data_bits() / 8; // Note: This intentionally rounds down.
-            if string.len() > max_bytes {
-                bail!("Identifier exceeds the maximum capacity allowed")
-            };
-            // Recover the identifier from the bits.
-            Identifier::<N>::from_bits_le(&string.as_bytes().to_bits_le())
-        }
-        // Sample a dynamic future value.
-        let program_id = ProgramID::try_from((sample_identifier(rng)?, sample_identifier(rng)?))?;
-        let function_name = sample_identifier(rng)?;
+        // Sample a program ID.
+        let program_id = sample_program_id(rng)?;
+        // Sample a function name.
+        let function_name = sample_identifier(false, rng)?;
+        // Sample a commitment.
         let commitment = Field::rand(rng);
+        // Create a new dynamic future.
         let future = DynamicFuture::new(program_id, function_name, commitment);
         // Return the dynamic future value.
         Ok(future)
@@ -237,4 +222,34 @@ impl<N: Network> Stack<N> {
 
         Ok(Future::new(*locator.program_id(), *locator.resource(), arguments))
     }
+}
+
+/// Samples a random program ID.
+pub(crate) fn sample_program_id<N: Network, R: Rng + CryptoRng>(rng: &mut R) -> Result<ProgramID<N>> {
+    // Sample a random identifier.
+    let identifier = sample_identifier(true, rng)?;
+    // Sample a random version.
+    let version = Identifier::from_str("aleo")?;
+    // Return the program ID.
+    ProgramID::try_from((identifier, version))
+}
+
+/// Samples a random identifier.
+pub(crate) fn sample_identifier<N: Network, R: Rng + CryptoRng>(lowercase: bool, rng: &mut R) -> Result<Identifier<N>> {
+    // Sample a random fixed-length alphanumeric string, that always starts with an alphabetic character.
+    let string = "a".to_string()
+        + &rng
+            .sample_iter(&Alphanumeric)
+            .take(Field::<N>::size_in_data_bits() / (8 * 2))
+            .map(char::from)
+            .collect::<String>();
+    // Lowercase the identifier if requested.
+    let string = if lowercase { string.to_lowercase() } else { string };
+    // Ensure identifier fits within the data capacity of the base field.
+    let max_bytes = Field::<N>::size_in_data_bits() / 8; // Note: This intentionally rounds down.
+    if string.len() > max_bytes {
+        bail!("Identifier exceeds the maximum capacity allowed")
+    };
+    // Recover the identifier from the bits.
+    Identifier::<N>::from_bits_le(&string.as_bytes().to_bits_le())
 }

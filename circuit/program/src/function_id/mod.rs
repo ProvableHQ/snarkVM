@@ -36,3 +36,28 @@ pub fn compute_function_id<A: Aleo>(
             .to_bits_le(),
     )
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use console::Network;
+    use snarkvm_circuit_network::AleoV0;
+
+    use anyhow::Result;
+
+    type CurrentAleo = AleoV0;
+    #[test]
+    fn test_compute_function_id() -> Result<()> {
+        // Initialize the console variants.
+        let console_network_id =
+            console::U16::<<AleoV0 as Environment>::Network>::new(<AleoV0 as Environment>::Network::ID);
+        let console_program_id = console::ProgramID::<<AleoV0 as Environment>::Network>::from_str("credits.aleo")?;
+        let console_function_name =
+            console::Identifier::<<AleoV0 as Environment>::Network>::from_str("transfer_public")?;
+
+        // Initialize the circuit variants
+
+        Ok(())
+    }
+}

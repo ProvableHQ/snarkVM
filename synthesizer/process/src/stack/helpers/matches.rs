@@ -30,6 +30,7 @@ impl<N: Network> StackMatches<N> for Stack<N> {
                 self.matches_external_record(record, locator)
             }
             (Value::Future(future), ValueType::Future(locator)) => self.matches_future(future, locator),
+            (Value::DynamicFuture(_), ValueType::DynamicFuture) => Ok(()),
             _ => bail!("A value does not match its declared value type '{value_type}'"),
         }
     }
@@ -45,6 +46,7 @@ impl<N: Network> StackMatches<N> for Stack<N> {
                 self.matches_external_record(record, locator)
             }
             (Value::Future(future), RegisterType::Future(locator)) => self.matches_future(future, locator),
+            (Value::DynamicFuture(_), RegisterType::DynamicFuture) => Ok(()),
             _ => bail!("A value does not match its declared register type '{register_type}'"),
         }
     }
@@ -328,6 +330,7 @@ impl<N: Network> Stack<N> {
                 (Argument::Future(future), FinalizeType::Future(locator)) => {
                     self.matches_future_internal(future, locator, depth + 1)?
                 }
+                (Argument::DynamicFuture(_), FinalizeType::DynamicFuture) => {} // Do nothing, as this is valid.
                 (_, input_type) => {
                     bail!("Argument type does not match input type: expected '{input_type}'")
                 }

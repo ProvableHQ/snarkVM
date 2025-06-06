@@ -654,7 +654,8 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// the keywords in the list should be restricted.
     #[rustfmt::skip]
     pub const RESTRICTED_KEYWORDS: &'static [(ConsensusVersion, &'static [&'static str])] = &[
-        (ConsensusVersion::V6, &["constructor"])
+        (ConsensusVersion::V6, &["constructor"]),
+        // TODO (@d0cd) Add keywords "into" and "as"
     ];
 
     /// Returns `true` if the given name does not already exist in the program.

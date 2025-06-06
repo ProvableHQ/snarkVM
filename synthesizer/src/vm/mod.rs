@@ -22,6 +22,9 @@ mod execute;
 mod finalize;
 mod verify;
 
+#[cfg(test)]
+mod tests;
+
 use crate::{Restrictions, cast_mut_ref, cast_ref, convert, process};
 use algorithms::snark::varuna::VarunaVersion;
 use console::{

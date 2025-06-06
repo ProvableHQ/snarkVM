@@ -39,8 +39,8 @@ impl<A: Aleo> Inject for DynamicFuture<A> {
     /// Initializes a circuit of the given mode and future.
     fn new(mode: Mode, value: Self::Primitive) -> Self {
         Self::from(
-            Inject::new(mode, *value.program_id()),
-            Inject::new(mode, *value.function_name()),
+            ProgramID::new_unchecked(mode, *value.program_id()),
+            Identifier::new_unchecked(mode, *value.function_name()),
             Inject::new(mode, *value.commitment()),
         )
     }

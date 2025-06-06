@@ -13,10 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::*;
+#[cfg(feature = "test")]
+mod test_dynamic_dispatch;
 
-mod initialize;
-mod matches;
-mod sample;
-pub(crate) use sample::*;
-mod synthesize;
+#[cfg(feature = "test")]
+use super::*;

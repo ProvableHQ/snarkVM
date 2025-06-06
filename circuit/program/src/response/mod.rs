@@ -17,7 +17,8 @@
 use snarkvm_circuit_types::environment::assert_scope;
 
 mod from_outputs;
-mod process_outputs_from_callback;
+mod process_outputs_from_dynamic_callback;
+mod process_outputs_from_static_callback;
 
 use crate::{Identifier, ProgramID, Value, compute_function_id};
 use snarkvm_circuit_network::Aleo;

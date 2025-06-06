@@ -426,7 +426,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             lap!(timer, "Checked the input ids");
 
             // Inject the outputs as `Mode::Private` (with the 'tcm' and output IDs as `Mode::Public`).
-            let outputs = circuit::Response::process_outputs_from_callback::</* IS DYNAMIC */ false>(
+            let outputs = circuit::Response::process_outputs_from_static_callback(
                 &network_id,
                 &program_id,
                 &function_name,

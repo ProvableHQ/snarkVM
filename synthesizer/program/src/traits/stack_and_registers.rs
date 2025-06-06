@@ -133,6 +133,10 @@ pub trait StackProgram<N: Network> {
         index: Field<N>,
         rng: &mut R,
     ) -> Result<Record<N, Plaintext<N>>>;
+
+    /// Returns a future with a random locator and empty arguments.
+    /// This should only be used to sample a return value for a dynamic call in `Synthesize` or `CheckDeployment` mode.
+    fn sample_random_future<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<Future<N>>;
 }
 
 pub trait FinalizeRegistersState<N: Network> {

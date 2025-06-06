@@ -14,11 +14,30 @@
 // limitations under the License.
 
 use super::*;
+use crate::{Instruction, InstructionTrait, Program};
 
 impl<N: Network> Parser for Operand<N> {
     /// Parses a string into a operand.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
+        // A helper function to parse an identifier operand.
+        fn parse_identifier_operand<N: Network>(input: &str) -> ParserResult<Identifier<N>> {
+            let (string, identifier) = Identifier::parse(input)?;
+            // Check that the identifier is not a reserved keyword, opcode, or a special identifier.
+            let identifier_string = identifier.to_string();
+            let is_reserved_keyword = Program::<N>::is_reserved_keyword(&identifier);
+            let is_reserved_opcode = Instruction::<N>::is_reserved_opcode(&identifier_string);
+            let is_into_or_as = identifier_string == "into" || identifier_string == "as";
+            // If the identifier is reserved, return an error.
+            if is_reserved_keyword || is_reserved_opcode || is_into_or_as {
+                return map_res(take(0usize), |_| {
+                    Err(error(format!("Identifier '{identifier}' cannot be an operand as it is a reserved keyword")))
+                })(string);
+            }
+            // Otherwise, return the identifier.
+            Ok((string, identifier))
+        }
+
         // Parse to determine the operand (order matters).
         alt((
             // Parse special operands before literals, registers, and program IDs.
@@ -34,7 +53,7 @@ impl<N: Network> Parser for Operand<N> {
             map(Literal::parse, |literal| Self::Literal(literal)),
             map(Register::parse, |register| Self::Register(register)),
             // Note that `Operand::Identifier` must be parsed last to ensure that it does not conflict with other operand variants.
-            map(Identifier::parse, |identifier| Self::Identifier(identifier)),
+            map(parse_identifier_operand, |identifier| Self::Identifier(identifier)),
         ))(string)
     }
 }
