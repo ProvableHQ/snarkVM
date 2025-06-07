@@ -19,7 +19,7 @@ use crate::stack::helpers::{sample_identifier, sample_program_id};
 use circuit::prelude::ToField;
 use console::{
     prelude::FromField,
-    program::{Identifier, Literal, Plaintext, ProgramID},
+    program::{DynamicFuture, Identifier, Literal, Plaintext, ProgramID},
 };
 
 impl<N: Network> CallTrait<N> for DynamicCall<N> {
@@ -64,7 +64,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
             bail!("Expected {} inputs, found {}", function.inputs().len(), inputs.len())
         }
         // Set the (console) caller.
-        let console_caller = Some(*substack.program_id());
+        let console_caller = Some(*stack.program_id());
         // Evaluate the function.
         let response = substack.evaluate_function::<A>(registers.call_stack(), console_caller)?;
         // Load the outputs.
@@ -73,6 +73,13 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
 
         // Assign the outputs to the destination registers.
         for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {
+            // If the output is a future, then store it as a dynamic future.
+            let output = if let Value::Future(future) = output {
+                // Convert the future to a dynamic future.
+                Value::DynamicFuture(DynamicFuture::from_future(&future)?)
+            } else {
+                output
+            };
             // Assign the output to the register.
             registers.store(stack, register, output)?;
         }
@@ -234,9 +241,6 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                 }
                 // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
                 CallStack::Synthesize(_, private_key, _) | CallStack::CheckDeployment(_, private_key, ..) => {
-                    println!("1.1");
-                    println!("Program ID: {}", program_id_console);
-                    println!("Function Name: {}", function_name_console);
                     // Compute the request.
                     let request = Request::sign(
                         &private_key,
@@ -248,8 +252,6 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                         is_root,
                         rng,
                     )?;
-
-                    println!("1.1.1");
 
                     // Compute the address.
                     let address = Address::try_from(&private_key)?;
@@ -266,8 +268,6 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                             }
                         })
                         .collect::<Result<Vec<_>>>()?;
-
-                    println!("1.2");
 
                     // Return the request and outputs.
                     (request, outputs)
@@ -336,10 +336,6 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         // Inject the existing circuit.
         A::inject_r1cs(r1cs);
 
-        println!("2");
-
-        println!("(1) Is satisfied: {}", A::is_satisfied());
-
         use circuit::Inject;
 
         // Inject the network ID as `Mode::Constant`.
@@ -371,17 +367,11 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
             .map(|input_id| circuit::InputID::new(circuit::Mode::Public, *input_id))
             .collect::<Vec<_>>();
 
-        println!("(1.2) Is satisfied: {}", A::is_satisfied());
-
         // Ensure that the injected program ID matches the one in dynamic call.
         A::assert_eq(program_id.name().to_field(), program_id_name_as_field);
 
-        println!("(1.2.1) Is satisfied: {}", A::is_satisfied());
-
         // Ensure the function name matches the one in dynamic call.
         A::assert_eq(function_name.to_field(), &function_name);
-
-        println!("(1.3) Is satisfied: {}", A::is_satisfied());
 
         // Ensure the candidate input IDs match their computed inputs.
         let (check_input_ids, _) = circuit::Request::check_input_ids::<false>(
@@ -400,8 +390,6 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         A::assert(check_input_ids);
         lap!(timer, "Checked the input ids");
 
-        println!("(1.4) Is satisfied: {}", A::is_satisfied());
-
         // Inject the outputs as `Mode::Private` (with the 'tcm' and output IDs as `Mode::Public`).
         let outputs = circuit::Response::process_outputs_from_dynamic_callback(
             &network_id,
@@ -414,8 +402,6 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
             output_types,
         );
         lap!(timer, "Checked the outputs");
-
-        println!("(2) Is satisfied: {}", A::is_satisfied());
 
         // Assign the outputs to the destination registers.
         for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {

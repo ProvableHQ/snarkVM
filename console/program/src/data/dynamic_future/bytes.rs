@@ -19,9 +19,17 @@ impl<N: Network> FromBytes for DynamicFuture<N> {
     /// Reads in a future from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the program ID.
-        let program_id = ProgramID::read_le(&mut reader)?;
+        let program_id_name = Identifier::<N>::from_field(&Field::read_le(&mut reader)?)
+            .map_err(|e| error(format!("Failed to read program ID name: {e}")))?;
+        let program_id_network = Identifier::<N>::from_field(&Field::read_le(&mut reader)?)
+            .map_err(|e| error(format!("Failed to read program ID network: {e}")))?;
+        let program_id = ProgramID::try_from((program_id_name, program_id_network))
+            .map_err(|e| error(format!("Failed to read program ID: {e}")))?;
+
         // Read the function name.
-        let function_name = Identifier::<N>::read_le(&mut reader)?;
+        let function_name = Identifier::<N>::from_field(&Field::read_le(&mut reader)?)
+            .map_err(|e| error(format!("Failed to read function name: {e}")))?;
+
         // Read the commitment.
         let commitment = Field::read_le(&mut reader)?;
         // Return the future.
@@ -33,9 +41,23 @@ impl<N: Network> ToBytes for DynamicFuture<N> {
     /// Writes a future to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the program ID.
-        self.program_id.write_le(&mut writer)?;
+        self.program_id
+            .name()
+            .to_field()
+            .map_err(|e| error(format!("Failed to write program ID name: {e}")))?
+            .write_le(&mut writer)?;
+        self.program_id
+            .network()
+            .to_field()
+            .map_err(|e| error(format!("Failed to write program ID network: {e}")))?
+            .write_le(&mut writer)?;
+
         // Write the function name.
-        self.function_name.write_le(&mut writer)?;
+        self.function_name
+            .to_field()
+            .map_err(|e| error(format!("Failed to write function name: {e}")))?
+            .write_le(&mut writer)?;
+
         // Write the commitment.
         self.commitment.write_le(&mut writer)?;
         Ok(())

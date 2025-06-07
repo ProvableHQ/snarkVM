@@ -18,7 +18,7 @@ use super::*;
 use crate::Future;
 
 impl<N: Network> DynamicFuture<N> {
-    /// Initializea a dynamic future from a future.
+    /// Initialize a dynamic future from a future.
     pub fn from_future(future: &Future<N>) -> Result<Self> {
         Ok(Self::new(*future.program_id(), *future.function_name(), N::hash_bhp1024(&future.arguments().to_bits_le())?))
     }

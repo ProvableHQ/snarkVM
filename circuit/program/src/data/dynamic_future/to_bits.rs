@@ -23,7 +23,7 @@ impl<A: Aleo> ToBits for DynamicFuture<A> {
     fn write_bits_le(&self, vec: &mut Vec<Boolean<A>>) {
         // Write the bits for the program ID.
         vec.extend_from_slice(&self.program_id.name().to_field().to_bits_le());
-        vec.extend_from_slice(&self.program_id.network().to_bits_le());
+        vec.extend_from_slice(&self.program_id.network().to_field().to_bits_le());
 
         // Write the bits for the function name.
         vec.extend_from_slice(&self.function_name.to_field().to_bits_le());
@@ -37,7 +37,7 @@ impl<A: Aleo> ToBits for DynamicFuture<A> {
     fn write_bits_be(&self, vec: &mut Vec<Boolean<A>>) {
         // Write the bits for the program ID.
         vec.extend_from_slice(&self.program_id.name().to_field().to_bits_be());
-        vec.extend_from_slice(&self.program_id.network().to_bits_be());
+        vec.extend_from_slice(&self.program_id.network().to_field().to_bits_be());
 
         // Write the bits for the function name.
         vec.extend_from_slice(&self.function_name.to_field().to_bits_be());

@@ -64,7 +64,7 @@ impl<N: Network> ToBits for Argument<N> {
                 future.write_bits_le(vec);
             }
             Self::DynamicFuture(future) => {
-                vec.push(true);
+                vec.extend([true, false]);
                 future.write_bits_le(vec);
             }
         }

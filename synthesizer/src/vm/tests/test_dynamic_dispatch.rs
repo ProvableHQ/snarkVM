@@ -80,7 +80,7 @@ finalize dynamic:
     println!("Executing the `static` function...");
     let transaction = vm.execute(
         &caller_private_key,
-        ("test_dynamic_call_to_transfer_public.aleo", "static"),
+        ("test_dcall_to_transfer_public.aleo", "static"),
         vec![Value::from_str(&format!("{caller_address}"))?, Value::from_str("1234u64")?].into_iter(),
         None,
         0,
