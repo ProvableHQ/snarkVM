@@ -183,7 +183,7 @@ impl<N: Network> DynamicCall<N> {
         _stack: &impl StackProgram<N>,
         _input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
-        Ok(self.destination_types.clone().into_iter().map(|value_type| RegisterType::from(value_type)).collect())
+        Ok(self.destination_types.clone().into_iter().map(RegisterType::from).collect())
     }
 }
 
