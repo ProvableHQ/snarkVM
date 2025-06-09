@@ -330,6 +330,7 @@ mod tests {
         num_public: u64,
         num_private: u64,
         num_constraints: u64,
+        set_call_graph_checksum: bool,
     ) -> Result<()> {
         let rng = &mut TestRng::default();
 
@@ -375,7 +376,7 @@ mod tests {
             // Sample 'is_root'.
             let is_root = true;
             // Sample 'call_graph_checksum'.
-            let call_graph_checksum = if i % 2 == 0 { None } else { Some(console::Field::from_u64(i as u64)) };
+            let call_graph_checksum = set_call_graph_checksum.then(|| console::Field::from_u64(i as u64));
 
             // Compute the signed request.
             let request = console::Request::sign(
@@ -433,16 +434,19 @@ mod tests {
         // Note: This is correct. At this (high) level of a program, we override the default mode in the `Record` case,
         // based on the user-defined visibility in the record type. Thus, we have nonzero private and constraint values.
         // These bounds are determined experimentally.
-        check_verify(Mode::Constant, 43000, 0, 18000, 18000)
+        check_verify(Mode::Constant, 43000, 0, 18000, 18000, false)?;
+        check_verify(Mode::Constant, 43000, 0, 18273, 18296, true)
     }
 
     #[test]
     fn test_sign_and_verify_public() -> Result<()> {
-        check_verify(Mode::Public, 40131, 0, 26675, 26702)
+        check_verify(Mode::Public, 40131, 0, 26675, 26702, false)?;
+        check_verify(Mode::Public, 40131, 0, 27190, 27217, true)
     }
 
     #[test]
     fn test_sign_and_verify_private() -> Result<()> {
-        check_verify(Mode::Private, 40131, 0, 26675, 26702)
+        check_verify(Mode::Private, 40131, 0, 26675, 26702, false)?;
+        check_verify(Mode::Private, 40131, 0, 27190, 27217, true)
     }
 }
