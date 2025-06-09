@@ -642,18 +642,18 @@ function dummy:",
 
             // Verify the deployment costs.
             let deployment_0 = process.deploy::<A, _>(&program_0, rng).unwrap();
-            assert_eq!(deployment_cost(&process, &deployment_0).unwrap(), (2474725, (847000, 577725, 50000, 1000000)));
+            assert_eq!(deployment_cost(&process, &deployment_0).unwrap(), (2500500, (847000, 603500, 50000, 1000000)));
 
             let deployment_1 = process.deploy::<A, _>(&program_1, rng).unwrap();
-            assert_eq!(deployment_cost(&process, &deployment_1).unwrap(), (2473725, (846000, 577725, 50000, 1000000)));
+            assert_eq!(deployment_cost(&process, &deployment_1).unwrap(), (2499500, (846000, 603500, 50000, 1000000)));
 
             let deployment_2 = process.deploy::<A, _>(&program_2, rng).unwrap();
-            assert_eq!(deployment_cost(&process, &deployment_2).unwrap(), (2638725, (879000, 577725, 182000, 1000000)));
+            assert_eq!(deployment_cost(&process, &deployment_2).unwrap(), (2664500, (879000, 603500, 182000, 1000000)));
 
             let deployment_3 = process.deploy::<A, _>(&program_3, rng).unwrap();
             assert_eq!(
                 deployment_cost(&process, &deployment_3).unwrap(),
-                (4128725, (911000, 577725, 1640000, 1000000))
+                (4154500, (911000, 603500, 1640000, 1000000))
             );
         }
 

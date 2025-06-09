@@ -84,6 +84,7 @@ impl<N: Network> Stack<N> {
 
         // Check Verifying Keys //
 
+        // Get the program ID.
         let program_id = self.program.id();
 
         // Check that the number of combined variables does not exceed the deployment limit.
@@ -98,9 +99,6 @@ impl<N: Network> Stack<N> {
         let root_tvk = None;
         // Sample a dummy `caller` for circuit synthesis.
         let caller = None;
-        // Sample a dummy call graph checksum if the program has a constructor.
-        let call_graph_checksum =
-            if deployment.program().contains_constructor() { Some(Field::<N>::zero()) } else { None };
 
         // Check that the number of functions matches the number of verifying keys.
         ensure!(
@@ -124,6 +122,8 @@ impl<N: Network> Stack<N> {
             let burner_address = Address::try_from(&burner_private_key)?;
             // Retrieve the input types.
             let input_types = function.input_types();
+            // Retrieve the call graph checksum.
+            let call_graph_checksum = self.call_graph_checksum(function.name())?;
             // Sample the inputs.
             let inputs = input_types
                 .iter()

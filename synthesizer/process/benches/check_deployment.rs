@@ -46,12 +46,12 @@ fn prepare_check_deployment<N: Network, A: circuit::Aleo<Network = N>>(
     let program_id = *program.id();
     // Retrieve the input types.
     let input_types = program.get_function(&function_name).unwrap().input_types();
+    // Retrieve the 'call_graph_checksum'.
+    let call_graph_checksum = stack.call_graph_checksum(&function_name).unwrap();
     // Sample 'root_tvk'.
     let root_tvk = None;
     // Sample 'is_root'.
     let is_root = true;
-    // Sample `call_graph_checksum`.
-    let call_graph_checksum = None;
     // Compute the request.
     let request = Request::sign(
         private_key,

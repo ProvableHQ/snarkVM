@@ -36,13 +36,13 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Retrieve the input types");
         // Set is_root to true.
         let is_root = true;
+        // Retrieve the call graph checksum.
+        let call_graph_checksum = self.call_graph_checksum(&function_name)?;
 
         // This is the root request and does not have a caller.
         let caller = None;
         // This is the root request and we do not have a root_tvk to pass on.
         let root_tvk = None;
-        // Sample `call_graph_checksum`.
-        let call_graph_checksum = None;
         // Compute the request.
         let request = Request::sign(
             private_key,

@@ -32,6 +32,8 @@ impl<N: Network> Stack<N> {
         let program_id = self.program_id();
         // Retrieve the function input types.
         let input_types = self.get_function(function_name)?.input_types();
+        // Retrieve the call graph checksum.
+        let call_graph_checksum = self.call_graph_checksum(function_name)?;
 
         // Initialize a burner private key.
         let burner_private_key = PrivateKey::new(rng)?;
@@ -55,8 +57,6 @@ impl<N: Network> Stack<N> {
         let root_tvk = None;
         // Sample a dummy `caller` for circuit synthesis.
         let caller = None;
-        // Sample a dummy call graph checksum if the program has a constructor.
-        let call_graph_checksum = if self.program().contains_constructor() { Some(Field::<N>::zero()) } else { None };
         // Sample a dummy 'is_root'.
         let is_root = true;
 
