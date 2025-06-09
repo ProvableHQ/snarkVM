@@ -24,7 +24,7 @@ type CurrentNetwork = MainnetV0;
 
 // A helper function to sample the default process.
 fn sample_process() -> Result<Process<CurrentNetwork>, Error> {
-    let mut process = Process::load()?;
+    let process = Process::load()?;
     // Add the default program to the process.
     let default_program = Program::from_str(
         r"
@@ -42,7 +42,7 @@ constructor:
 #[test]
 fn test_add_simple_program() -> Result<()> {
     // Sample the default process.
-    let mut process = Process::<CurrentNetwork>::load()?;
+    let process = Process::<CurrentNetwork>::load()?;
     // Add a simple program to the process.
     let initial_program = Program::from_str(
         r"
@@ -63,7 +63,7 @@ function foo:
 #[test]
 fn test_upgrade_without_constructor() -> Result<()> {
     // Sample the default process.
-    let mut process = Process::<CurrentNetwork>::load()?;
+    let process = Process::<CurrentNetwork>::load()?;
     // Add a program without a constructor to the process.
     let initial_program = Program::from_str(
         r"
@@ -88,7 +88,7 @@ function bar:
 #[test]
 fn test_upgrade_with_constructor() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -107,7 +107,7 @@ function bar:
 #[test]
 fn test_add_import() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -129,7 +129,7 @@ function foo:
 #[test]
 fn test_add_struct() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -152,7 +152,7 @@ function foo:
 #[test]
 fn test_add_record() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -176,7 +176,7 @@ function foo:
 #[test]
 fn test_add_mapping() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -200,7 +200,7 @@ function foo:
 #[test]
 fn test_add_closure() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -226,7 +226,7 @@ function foo:
 #[test]
 fn test_add_function() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -252,7 +252,7 @@ function foo:
 #[test]
 fn test_modify_function_logic() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -291,7 +291,7 @@ function adder:
 #[test]
 fn test_modify_function_signature() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -327,7 +327,7 @@ function adder:
 #[test]
 fn test_modify_finalize_logic() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -374,7 +374,7 @@ finalize assert_on_chain:
 #[test]
 fn test_modify_finalize_signature() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -418,7 +418,7 @@ finalize assert_on_chain:
 #[test]
 fn test_modify_struct() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -450,7 +450,7 @@ function foo:
 #[test]
 fn test_modify_record() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -484,7 +484,7 @@ function foo:
 #[test]
 fn test_modify_mapping() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -518,7 +518,7 @@ function foo:
 #[test]
 fn test_modify_closure_logic() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -556,7 +556,7 @@ function foo:
 #[test]
 fn test_modify_closure_signature() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -594,7 +594,7 @@ function foo:
 #[test]
 fn test_remove_import() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -623,7 +623,7 @@ function foo:
 #[test]
 fn test_remove_struct() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -653,7 +653,7 @@ function foo:
 #[test]
 fn test_remove_record() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -684,7 +684,7 @@ function foo:
 #[test]
 fn test_remove_mapping() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -715,7 +715,7 @@ function foo:
 #[test]
 fn test_remove_closure() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -748,7 +748,7 @@ function foo:
 #[test]
 fn test_remove_function() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -781,7 +781,7 @@ function foo:
 #[test]
 fn test_add_call_to_non_async_transition() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add a program with a non-async transition.
     let new_program = Program::from_str(
         r"
@@ -835,7 +835,7 @@ function adder:
 #[test]
 fn test_add_call_to_async_transition() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add a program with an async transition.
     let new_program = Program::from_str(
         r"
@@ -896,7 +896,7 @@ finalize adder:
 #[test]
 fn test_add_import_cycle() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
 
     // Add the initial program to the process.
     let initial_program = Program::from_str(
@@ -971,7 +971,7 @@ function adder:
 #[test]
 fn test_constructor_upgrade() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"

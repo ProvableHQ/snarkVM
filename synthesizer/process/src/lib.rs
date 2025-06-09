@@ -84,6 +84,8 @@ pub struct Process<N: Network> {
     universal_srs: UniversalSRS<N>,
     /// The mapping of program IDs to stacks.
     stacks: Arc<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
+    /// The mapping of program IDs to old stacks.
+    old_stacks: Arc<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
 }
 
 impl<N: Network> Process<N> {
@@ -93,7 +95,8 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process:setup");
 
         // Initialize the process.
-        let mut process = Self { universal_srs: UniversalSRS::load()?, stacks: Default::default() };
+        let process =
+            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -122,7 +125,7 @@ impl<N: Network> Process<N> {
     /// Adds a new program to the process.
     /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
     #[inline]
-    pub fn add_program(&mut self, program: &Program<N>) -> Result<()> {
+    pub fn add_program(&self, program: &Program<N>) -> Result<()> {
         // Initialize the 'credits.aleo' program ID.
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
@@ -135,13 +138,48 @@ impl<N: Network> Process<N> {
     /// Adds a new stack to the process.
     /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
     #[inline]
-    pub fn add_stack(&mut self, stack: Stack<N>) {
+    pub fn add_stack(&self, stack: Stack<N>) -> Option<Arc<Stack<N>>> {
         // Get the program ID.
         let program_id = *stack.program_id();
         // Arc the stack first to limit the scope of the write lock.
         let stack = Arc::new(stack);
         // Insert the stack into the process, replacing the existing stack if it exists.
-        self.stacks.write().insert(program_id, stack);
+        self.stacks.write().insert(program_id, stack)
+    }
+
+    /// Stages a stack to be added to the process.
+    /// The new stack is active, while the old stack is retained in `old_stacks`.
+    /// The `commit_stacks` method must be called to finalize the addition of the new stack.
+    /// The `revert_stacks` method can be called to revert the staged stacks.
+    #[inline]
+    pub fn stage_stack(&self, stack: Stack<N>) {
+        // Get the program ID.
+        let program_id = *stack.program_id();
+        // Arc the stack first to limit the scope of the write lock.
+        let stack = Arc::new(stack);
+        // If the stack already exists, move it to `old_stacks`.
+        if let Some(old_stack) = self.stacks.write().insert(program_id, stack.clone()) {
+            // Insert the old stack into the old_stacks.
+            self.old_stacks.write().insert(program_id, old_stack);
+        };
+    }
+
+    /// Commits the staged stacks to the process.
+    /// This finalizes the addition of the new stacks and clears the old stacks.
+    #[inline]
+    pub fn commit_stacks(&self) {
+        // Clear the old stacks.
+        self.old_stacks.write().clear();
+    }
+
+    /// Reverts the staged stacks, restoring the previous state of the process.
+    /// This will remove the new stacks and restore the old stacks.
+    #[inline]
+    pub fn revert_stacks(&self) {
+        // Restore the old stacks.
+        for (program_id, stack) in self.old_stacks.write().drain(..) {
+            self.stacks.write().insert(program_id, stack);
+        }
     }
 }
 
@@ -152,7 +190,8 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load");
 
         // Initialize the process.
-        let mut process = Self { universal_srs: UniversalSRS::load()?, stacks: Default::default() };
+        let process =
+            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -190,7 +229,8 @@ impl<N: Network> Process<N> {
     #[cfg(feature = "wasm")]
     pub fn load_web() -> Result<Self> {
         // Initialize the process.
-        let mut process = Self { universal_srs: UniversalSRS::load()?, stacks: Default::default() };
+        let process =
+            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
@@ -459,7 +499,7 @@ function compute:
     /// Initializes a new process with the given program.
     pub(crate) fn sample_process(program: &Program<CurrentNetwork>) -> Process<CurrentNetwork> {
         // Construct a new process.
-        let mut process = Process::load().unwrap();
+        let process = Process::load().unwrap();
         // Add the program to the process.
         process.add_program(program).unwrap();
         // Return the process.

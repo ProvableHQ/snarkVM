@@ -455,7 +455,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             let program = large_transaction_program();
 
             // Construct the process.
-            let mut process = synthesizer_process::Process::load().unwrap();
+            let process = synthesizer_process::Process::load().unwrap();
             // Add the program.
             process.add_program(&program).unwrap();
 

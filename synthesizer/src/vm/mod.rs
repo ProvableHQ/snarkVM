@@ -3059,7 +3059,7 @@ function check:
         assert!(vm.contains_program(&ProgramID::from_str("grandparent_program.aleo").unwrap()));
 
         // Initialize the process.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
 
         // Load the child and parent program
         process.add_program(&child_program_1).unwrap();
@@ -3572,7 +3572,7 @@ function baz:
 
         // Generate the deployments.
         // Note that we are attempting to upgrade twice with consecutive editions.
-        let mut process = Process::load().unwrap();
+        let process = Process::load().unwrap();
         process.add_program(&program_v0).unwrap();
         let mut deployment_v1 = process.deploy::<CurrentAleo, _>(&program_v1, rng).unwrap();
         deployment_v1.set_program_owner_raw(Some(Address::try_from(&private_key_1).unwrap()));
