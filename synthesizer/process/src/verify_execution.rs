@@ -55,6 +55,21 @@ impl<N: Network> Process<N> {
         // Note: This is a mapping of the child transition ID to the parent transition ID.
         let reverse_call_graph = Self::reverse_call_graph(&call_graph);
 
+        // Serialize the call graph checksums for all programs referenced in the Execution.
+        let serialized_call_graph_checksums = execution
+            .transitions()
+            .map(|t| Ok(*self.get_stack(t.program_id())?.program_checksum()))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flat_map(|checksum| checksum.into_iter().map(|i| *i.deref()))
+            .collect::<Vec<u8>>();
+        // Hash the serialized call graph checksums.
+        let mut keccak = TinySha3::v256();
+        keccak.update(&serialized_call_graph_checksums);
+        let mut call_graph_hash = [0u8; 32];
+        keccak.finalize(&mut call_graph_hash);
+        let call_graph_checksum = N::Field::from_bytes_le(&call_graph_hash)?;
+
         // Initialize a map of verifying keys to public inputs.
         let mut verifier_inputs = HashMap::new();
 
@@ -113,6 +128,10 @@ impl<N: Network> Process<N> {
             let stack = self.get_stack(transition.program_id())?;
             // Retrieve the function from the stack.
             let function = stack.get_function(transition.function_name())?;
+            // Retrieve whether the program has a constructor from the stack.
+            let contains_constructor = stack.program().contains_constructor();
+            // Set the call graph checksum only if the program has a constructor.
+            let call_graph_checksum = contains_constructor.then_some(call_graph_checksum);
 
             // Ensure the number of inputs and outputs match the expected number in the function.
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
@@ -131,7 +150,13 @@ impl<N: Network> Process<N> {
             let parent = reverse_call_graph.get(transition.id()).and_then(|tid| execution.get_program_id(tid));
 
             // Construct the verifier inputs for the transition.
-            let inputs = self.to_transition_verifier_inputs(transition, parent, &call_graph, &mut transition_map)?;
+            let inputs = self.to_transition_verifier_inputs(
+                transition,
+                parent,
+                &call_graph,
+                call_graph_checksum,
+                &mut transition_map,
+            )?;
             lap!(timer, "Constructed the verifier inputs for a transition of {}", function.name());
 
             // Save the verifying key and its inputs.
@@ -181,6 +206,7 @@ impl<N: Network> Process<N> {
         transition: &Transition<N>,
         parent: Option<&ProgramID<N>>,
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
+        call_graph_checksum: Option<N::Field>,
         transition_map: &mut HashMap<N::TransitionID, &Transition<N>>,
     ) -> Result<Vec<N::Field>> {
         // Compute the x- and y-coordinate of `tpk`.
@@ -202,7 +228,13 @@ impl<N: Network> Process<N> {
         let (parent_x, parent_y) = parent_address.to_xy_coordinates();
 
         // [Inputs] Construct the verifier inputs to verify the proof.
-        let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **transition.tcm(), **transition.scm()];
+        let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y];
+        // [Inputs] Extend the root transition verifier inputs with the call graph checksum if it was provided.
+        if let Some(call_graph_checksum) = call_graph_checksum {
+            inputs.push(call_graph_checksum);
+        }
+        // [Inputs] Extend the verifier inputs with the transition and signer commitments.
+        inputs.extend([**transition.tcm(), **transition.scm()]);
         // [Inputs] Extend the verifier inputs with the input IDs.
         inputs.extend(transition.inputs().iter().flat_map(|input| input.verifier_inputs()));
         // [Inputs] Extend the verifier inputs with the public inputs for 'self.caller'.

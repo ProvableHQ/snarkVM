@@ -222,8 +222,22 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         })?;
         lap!(timer, "Verify the input types");
 
+        // Retrieve the call graph checksum, mandatory from ConsensusVersion::V8.
+        let console_call_graph_checksum =
+            if let Some(call_graph_checksums) = &self.call_graph_checksums {
+                Some(*call_graph_checksums.get(console_request.function_name()).ok_or(anyhow!(
+                    "Call graph checksum for function '{}' is missing",
+                    console_request.function_name()
+                ))?)
+            } else {
+                None
+            };
+
         // Ensure the request is well-formed.
-        ensure!(console_request.verify(&input_types, console_is_root), "Request is invalid");
+        ensure!(
+            console_request.verify(&input_types, console_is_root, console_call_graph_checksum),
+            "Request is invalid"
+        );
         lap!(timer, "Verify the console request");
 
         // Initialize the registers.
@@ -241,6 +255,13 @@ impl<N: Network> StackExecute<N> for Stack<N> {
 
         let root_tvk = Some(registers.root_tvk_circuit()?);
 
+        // If a call graph checksum was passed in, Inject it as `Mode::Public`.
+        let call_graph_checksum =
+            console_call_graph_checksum.map(|hash| circuit::Field::<A>::new(circuit::Mode::Public, hash));
+        // Set the call graph checksum in the registers.
+        registers.set_call_graph_checksum(console_call_graph_checksum);
+        registers.set_call_graph_checksum_circuit(call_graph_checksum.clone());
+
         use circuit::{Eject, Inject};
 
         // Inject the transition public key `tpk` as `Mode::Public`.
@@ -256,7 +277,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
         // Ensure the request has a valid signature, inputs, and transition view key.
-        A::assert(request.verify(&input_types, &tpk, root_tvk, is_root));
+        A::assert(request.verify(&input_types, &tpk, root_tvk, is_root, call_graph_checksum));
         lap!(timer, "Verify the circuit request");
 
         // Set the transition signer.

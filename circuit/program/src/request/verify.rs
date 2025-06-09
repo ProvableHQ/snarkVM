@@ -20,13 +20,14 @@ impl<A: Aleo> Request<A> {
     /// and the signature is valid.
     ///
     /// Verifies (challenge == challenge') && (address == address') && (serial_numbers == serial_numbers') where:
-    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, input IDs\])
+    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, Option<call_graph_hash>, input IDs\])
     pub fn verify(
         &self,
         input_types: &[console::ValueType<A::Network>],
         tpk: &Group<A>,
         root_tvk: Option<Field<A>>,
         is_root: Boolean<A>,
+        call_graph_checksum: Option<Field<A>>,
     ) -> Boolean<A> {
         // Compute the function ID.
         let function_id = compute_function_id(&self.network_id, &self.program_id, &self.function_name);
@@ -40,6 +41,10 @@ impl<A: Aleo> Request<A> {
         message.push(self.tcm.clone());
         message.push(function_id);
         message.push(is_root);
+        // Add the call graph hash to the signature message if it was provided.
+        if let Some(call_graph_checksum) = call_graph_checksum {
+            message.push(call_graph_checksum);
+        }
 
         // Check the input IDs and construct the rest of the signature message.
         let (input_checks, append_to_message) = Self::check_input_ids::<true>(
@@ -61,6 +66,7 @@ impl<A: Aleo> Request<A> {
             None => A::halt("Missing input elements in request verification"),
         }
 
+        // Determine the root transition view key.
         let root_tvk = root_tvk.unwrap_or(Field::<A>::new(Mode::Private, self.tvk.eject_value()));
 
         // Verify the transition public key and commitments are well-formed.
@@ -366,9 +372,10 @@ mod tests {
 
             // Sample 'root_tvk'.
             let root_tvk = None;
-
             // Sample 'is_root'.
             let is_root = true;
+            // Sample 'call_graph_checksum'.
+            let call_graph_checksum = if i % 2 == 0 { None } else { Some(console::Field::from_u64(i as u64)) };
 
             // Compute the signed request.
             let request = console::Request::sign(
@@ -379,18 +386,20 @@ mod tests {
                 &input_types,
                 root_tvk,
                 is_root,
+                call_graph_checksum,
                 rng,
             )?;
-            assert!(request.verify(&input_types, is_root));
+            assert!(request.verify(&input_types, is_root, call_graph_checksum));
 
             // Inject the request into a circuit.
             let tpk = Group::<Circuit>::new(mode, request.to_tpk());
             let request = Request::<Circuit>::new(mode, request);
             let is_root = Boolean::new(mode, is_root);
+            let call_graph_checksum = call_graph_checksum.map(|hash| Field::<Circuit>::new(mode, hash));
 
             Circuit::scope(format!("Request {i}"), || {
                 let root_tvk = None;
-                let candidate = request.verify(&input_types, &tpk, root_tvk, is_root);
+                let candidate = request.verify(&input_types, &tpk, root_tvk, is_root, call_graph_checksum);
                 assert!(candidate.eject_value());
                 match mode.is_constant() {
                     true => assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints),

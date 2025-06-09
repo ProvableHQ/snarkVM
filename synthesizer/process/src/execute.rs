@@ -33,9 +33,9 @@ impl<N: Network> Process<N> {
         #[cfg(feature = "aleo-cli")]
         println!("{}", format!(" • Executing '{locator}'...",).dimmed());
 
-        // This is the root request and does not have a caller.
+        // The root request does not have a caller.
         let caller = None;
-        // This is the root request and we do not have a root_tvk to pass on.
+        // The root request does not have to pass on another request's root_tvk.
         let root_tvk = None;
         // Initialize the trace.
         let trace = Arc::new(RwLock::new(Trace::new()));

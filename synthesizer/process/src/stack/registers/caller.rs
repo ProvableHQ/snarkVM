@@ -63,6 +63,18 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     fn set_tvk(&mut self, tvk: Field<N>) {
         self.tvk = Some(tvk);
     }
+
+    /// Returns the call graph checksum.
+    #[inline]
+    fn call_graph_checksum(&self) -> Result<Field<N>> {
+        self.call_graph_checksum.ok_or_else(|| anyhow!("Call graph checksum (console) is not set in the registers."))
+    }
+
+    /// Sets the call graph checksum.
+    #[inline]
+    fn set_call_graph_checksum(&mut self, call_graph_checksum: Option<Field<N>>) {
+        self.call_graph_checksum = call_graph_checksum;
+    }
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSignerCircuit<N, A> for Registers<N, A> {
@@ -112,5 +124,19 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSignerCircuit<N, A> for
     #[inline]
     fn set_tvk_circuit(&mut self, tvk_circuit: circuit::Field<A>) {
         self.tvk_circuit = Some(tvk_circuit);
+    }
+
+    /// Returns the call graph checksum, as a circuit.
+    #[inline]
+    fn call_graph_checksum_circuit(&self) -> Result<circuit::Field<A>> {
+        self.call_graph_checksum_circuit
+            .clone()
+            .ok_or_else(|| anyhow!("Call graph checksum (circuit) is not set in the registers."))
+    }
+
+    /// Sets the call graph checksum, as a circuit.
+    #[inline]
+    fn set_call_graph_checksum_circuit(&mut self, call_graph_checksum: Option<circuit::Field<A>>) {
+        self.call_graph_checksum_circuit = call_graph_checksum;
     }
 }

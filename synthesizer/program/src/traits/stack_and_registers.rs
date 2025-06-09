@@ -113,6 +113,9 @@ pub trait StackProgram<N: Network> {
     /// Returns the expected number of calls for the given function name.
     fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
 
+    /// Returns the call graph checksum for the given function name.
+    fn get_call_graph_checksum(&self, function_name: &Identifier<N>) -> Result<Field<N>>;
+
     /// Samples a value for the given value_type.
     fn sample_value<R: Rng + CryptoRng>(
         &self,
@@ -179,6 +182,12 @@ pub trait RegistersSigner<N: Network> {
 
     /// Sets the transition view key.
     fn set_tvk(&mut self, tvk: Field<N>);
+
+    /// Returns the call graph checksum.
+    fn call_graph_checksum(&self) -> Result<Field<N>>;
+
+    /// Sets the call graph checksum.
+    fn set_call_graph_checksum(&mut self, call_graph_checksum: Option<Field<N>>);
 }
 
 pub trait RegistersSignerCircuit<N: Network, A: circuit::Aleo<Network = N>> {
@@ -205,6 +214,12 @@ pub trait RegistersSignerCircuit<N: Network, A: circuit::Aleo<Network = N>> {
 
     /// Sets the transition view key, as a circuit.
     fn set_tvk_circuit(&mut self, tvk_circuit: circuit::Field<A>);
+
+    /// Returns the call graph checksum.
+    fn call_graph_checksum_circuit(&self) -> Result<circuit::Field<A>>;
+
+    /// Sets the call graph checksum.
+    fn set_call_graph_checksum_circuit(&mut self, call_graph_checksum: Option<circuit::Field<A>>);
 }
 
 pub trait RegistersLoad<N: Network> {

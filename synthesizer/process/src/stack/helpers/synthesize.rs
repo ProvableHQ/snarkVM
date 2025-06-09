@@ -50,14 +50,15 @@ impl<N: Network> Stack<N> {
                 _ => self.sample_value(&burner_address, input_type, rng),
             })
             .collect::<Result<Vec<_>>>()?;
-        // Sample 'is_root'.
-        let is_root = true;
 
-        // The `root_tvk` is `None` when deploying an individual circuit.
+        // Sample a dummy `root_tvk` for circuit synthesis.
         let root_tvk = None;
-
-        // The caller is `None` when deploying an individual circuit.
+        // Sample a dummy `caller` for circuit synthesis.
         let caller = None;
+        // Sample a dummy call graph checksum if the program has a constructor.
+        let call_graph_checksum = if self.program().contains_constructor() { Some(Field::<N>::zero()) } else { None };
+        // Sample a dummy 'is_root'.
+        let is_root = true;
 
         // Compute the request, with a burner private key.
         let request = Request::sign(
@@ -68,6 +69,7 @@ impl<N: Network> Stack<N> {
             &input_types,
             root_tvk,
             is_root,
+            call_graph_checksum,
             rng,
         )?;
         // Initialize the authorization.

@@ -94,11 +94,13 @@ impl<N: Network> Stack<N> {
         // Construct the call stacks and assignments used to verify the certificates.
         let mut call_stacks = Vec::with_capacity(deployment.verifying_keys().len());
 
-        // The `root_tvk` is `None` when verifying the deployment of an individual circuit.
+        // Sample a dummy `root_tvk` for circuit synthesis.
         let root_tvk = None;
-
-        // The `caller` is `None` when verifying the deployment of an individual circuit.
+        // Sample a dummy `caller` for circuit synthesis.
         let caller = None;
+        // Sample a dummy call graph checksum if the program has a constructor.
+        let call_graph_checksum =
+            if deployment.program().contains_constructor() { Some(Field::<N>::zero()) } else { None };
 
         // Check that the number of functions matches the number of verifying keys.
         ensure!(
@@ -136,7 +138,7 @@ impl<N: Network> Stack<N> {
                 })
                 .collect::<Result<Vec<_>>>()?;
             lap!(timer, "Sample the inputs");
-            // Sample 'is_root'.
+            // Sample a dummy 'is_root'.
             let is_root = true;
 
             // Compute the request, with a burner private key.
@@ -148,6 +150,7 @@ impl<N: Network> Stack<N> {
                 &input_types,
                 root_tvk,
                 is_root,
+                call_graph_checksum,
                 rng,
             )?;
             lap!(timer, "Compute the request for {}", function.name());

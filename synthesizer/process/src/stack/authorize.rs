@@ -41,9 +41,20 @@ impl<N: Network> Stack<N> {
         let caller = None;
         // This is the root request and we do not have a root_tvk to pass on.
         let root_tvk = None;
+        // Sample `call_graph_checksum`.
+        let call_graph_checksum = None;
         // Compute the request.
-        let request =
-            Request::sign(private_key, program_id, function_name, inputs, &input_types, root_tvk, is_root, rng)?;
+        let request = Request::sign(
+            private_key,
+            program_id,
+            function_name,
+            inputs,
+            &input_types,
+            root_tvk,
+            is_root,
+            call_graph_checksum,
+            rng,
+        )?;
         lap!(timer, "Compute the request");
         // Initialize the authorization.
         let authorization = Authorization::new(request.clone());

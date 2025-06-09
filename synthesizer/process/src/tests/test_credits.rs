@@ -2846,10 +2846,21 @@ mod sanity_checks {
         let root_tvk = None;
         // Sample 'is_root'.
         let is_root = true;
+        // Sample `call_graph_checksum`.
+        let call_graph_checksum = None;
         // Compute the request.
-        let request =
-            Request::sign(private_key, program_id, function_name, inputs.iter(), &input_types, root_tvk, is_root, rng)
-                .unwrap();
+        let request = Request::sign(
+            private_key,
+            program_id,
+            function_name,
+            inputs.iter(),
+            &input_types,
+            root_tvk,
+            is_root,
+            call_graph_checksum,
+            rng,
+        )
+        .unwrap();
         // Initialize the assignments.
         let assignments = Assignments::<N>::default();
         // Initialize the call stack.

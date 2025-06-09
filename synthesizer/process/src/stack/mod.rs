@@ -75,19 +75,27 @@ use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::sync::{Arc, Weak};
+use tiny_keccak::{Hasher, Sha3 as TinySha3};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
 
+/// The call stack is used to track the current state of the program execution.
 #[derive(Clone)]
 pub enum CallStack<N: Network> {
+    /// The `Authorize` call stack allows a client to authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
+    /// The `Synthesize` call stack allows a client to synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
+    /// The `CheckDeployment` call stack allows a validator to validate a `Deploy` transaction's function circuit.
     CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>),
+    /// The `Evaluate` call stack allows a client to evaluate a function.
     Evaluate(Authorization<N>),
+    /// The `Execute` call stack allows a client to prove function calls in an `Execute` transaction.
     Execute(Authorization<N>, Arc<RwLock<Trace<N>>>),
+    /// The `PackageRun` call stack is deprecated.
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
 }
 
@@ -205,6 +213,9 @@ pub struct Stack<N: Network> {
     program_address: Address<N>,
     /// The program checksum.
     program_checksum: [U8<N>; 32],
+    /// The mapping of function names to their call graph checksum.
+    /// These are required from ConsensusVersion::V8 onwards to avoid malleability due to program upgrades.
+    call_graph_checksums: Option<IndexMap<Identifier<N>, Field<N>>>,
     /// The program edition.
     program_edition: U16<N>,
 }
@@ -420,6 +431,57 @@ impl<N: Network> StackProgram<N> for Stack<N> {
         }
         // Return the number of calls.
         Ok(num_calls)
+    }
+
+    /// Returns the call graph checksum for the given function name.
+    #[inline]
+    fn get_call_graph_checksum(&self, function_name: &Identifier<N>) -> Result<Field<N>> {
+        // Initialize a queue of functions to check.
+        let mut queue = vec![(StackRef::Internal(self), *function_name)];
+        // Initialize a container for the program checksums.
+        let mut program_checksums = Vec::new();
+
+        // Iterate over the queue.
+        while let Some((stack_ref, function_name)) = queue.pop() {
+            // Save the program checksum for the current stack reference.
+            program_checksums.push(*stack_ref.program_checksum());
+
+            // Determine the Stacks of calls for the function.
+            for instruction in stack_ref.get_function_ref(&function_name)?.instructions() {
+                if let Instruction::Call(call) = instruction {
+                    // Determine if this is a function call.
+                    if call.is_function_call(&*stack_ref)? {
+                        // Add the function to the queue.
+                        match call.operator() {
+                            CallOperator::Locator(locator) => {
+                                queue.push((
+                                    StackRef::External(stack_ref.get_external_stack(locator.program_id())?),
+                                    *locator.resource(),
+                                ));
+                            }
+                            CallOperator::Resource(resource) => {
+                                queue.push((stack_ref.clone(), *resource));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Collect the program checksums as bytes.
+        let program_checksum_bytes = program_checksums
+            .into_iter()
+            .flat_map(|program_checksum| program_checksum.into_iter().map(|b| *b.deref()))
+            .collect::<Vec<u8>>();
+        // Hash the program checksums to produce a call graph checksum.
+        let mut keccak = TinySha3::v256();
+        keccak.update(&program_checksum_bytes);
+        let mut call_graph_hash = [0u8; 32];
+        keccak.finalize(&mut call_graph_hash);
+        // Convert the hash of call graph checksums to a field element.
+        let call_graph_checksum = Field::<N>::from_bytes_le(&call_graph_hash)?;
+        // Return the call graph checksum.
+        Ok(call_graph_checksum)
     }
 
     /// Returns a value for the given value type.

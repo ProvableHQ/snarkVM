@@ -17,7 +17,7 @@ use super::*;
 
 impl<N: Network> Request<N> {
     /// Returns the request for a given private key, program ID, function name, inputs, input types, and RNG, where:
-    ///     challenge := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, input IDs\])
+    ///     challenge := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, Option<call_graph_hash>, input IDs\])
     ///     response := r - challenge * sk_sig
     pub fn sign<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
@@ -27,6 +27,7 @@ impl<N: Network> Request<N> {
         input_types: &[ValueType<N>],
         root_tvk: Option<Field<N>>,
         is_root: bool,
+        call_graph_checksum: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Self> {
         // Ensure the number of inputs matches the number of input types.
@@ -77,10 +78,14 @@ impl<N: Network> Request<N> {
         // Compute the function ID.
         let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
 
-        // Construct the hash input as `(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, input IDs])`.
+        // Construct the hash input as `(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, Option<call_graph_hash>, input IDs])`.
         let mut message = Vec::with_capacity(9 + 2 * inputs.len());
         message.extend([g_r, pk_sig, pr_sig, *signer].map(|point| point.to_x_coordinate()));
         message.extend([tvk, tcm, function_id, is_root]);
+        // Add the call graph hash to the hash input if it was provided.
+        if let Some(call_graph_checksum) = call_graph_checksum {
+            message.push(call_graph_checksum);
+        }
 
         // Initialize a vector to store the prepared inputs.
         let mut prepared_inputs = Vec::with_capacity(inputs.len());
@@ -223,7 +228,7 @@ impl<N: Network> Request<N> {
             }
         }
 
-        // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, input IDs])`.
+        // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, Option<call_graph_hash>, input IDs])`.
         let challenge = N::hash_to_scalar_psd8(&message)?;
         // Compute `response` as `r - challenge * sk_sig`.
         let response = r - challenge * sk_sig;
