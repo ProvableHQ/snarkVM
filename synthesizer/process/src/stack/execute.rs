@@ -158,7 +158,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         &self,
         mut call_stack: CallStack<N>,
         console_caller: Option<ProgramID<N>>,
-        root_tvk: Option<Field<N>>,
+        console_root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Response<N>> {
         let timer = timer!("Stack::execute_function");
@@ -187,7 +187,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         );
 
         // We can only have a root_tvk if this request was called by another request
-        ensure!(console_caller.is_some() == root_tvk.is_some());
+        ensure!(console_caller.is_some() == console_root_tvk.is_some());
         // Determine if this is the top-level caller.
         let console_is_root = console_caller.is_none();
 
@@ -228,31 +228,28 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         // Ensure the request is well-formed.
         ensure!(
             console_request.verify(&input_types, console_is_root, console_call_graph_checksum),
-            "Request is invalid"
+            "[Execute] Request is invalid"
         );
         lap!(timer, "Verify the console request");
+
+        // Retrieve the CallStack mode;
+        let call_stack_mode = call_stack.variant_as_str().to_string();
 
         // Initialize the registers.
         let mut registers = Registers::new(call_stack, self.get_register_types(function.name())?.clone());
 
         // Set the root tvk, from a parent request or the current request.
-        // inject the `root_tvk` as `Mode::Private`.
-        if let Some(root_tvk) = root_tvk {
-            registers.set_root_tvk(root_tvk);
-            registers.set_root_tvk_circuit(circuit::Field::<A>::new(circuit::Mode::Private, root_tvk));
-        } else {
-            registers.set_root_tvk(*console_request.tvk());
-            registers.set_root_tvk_circuit(circuit::Field::<A>::new(circuit::Mode::Private, *console_request.tvk()));
-        }
+        let console_root_tvk = match console_root_tvk {
+            Some(console_root_tvk) => console_root_tvk,
+            None => *console_request.tvk(),
+        };
 
-        let root_tvk = Some(registers.root_tvk_circuit()?);
+        // Inject the `root_tvk` as `Mode::Private`.
+        let root_tvk = circuit::Field::<A>::new(circuit::Mode::Private, console_root_tvk);
 
         // If a call graph checksum was passed in, Inject it as `Mode::Public`.
         let call_graph_checksum =
             console_call_graph_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
-        // Set the call graph checksum in the registers.
-        registers.set_call_graph_checksum(console_call_graph_checksum);
-        registers.set_call_graph_checksum_circuit(call_graph_checksum.clone());
 
         use circuit::{Eject, Inject};
 
@@ -269,8 +266,13 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
         // Ensure the request has a valid signature, inputs, and transition view key.
-        A::assert(request.verify(&input_types, &tpk, root_tvk, is_root, call_graph_checksum));
+        A::assert(request.verify(&input_types, &tpk, Some(root_tvk.clone()), is_root, call_graph_checksum));
         lap!(timer, "Verify the circuit request");
+
+        // Set the root tvk.
+        registers.set_root_tvk(console_root_tvk);
+        // Set the root tvk, as a circuit.
+        registers.set_root_tvk_circuit(root_tvk);
 
         // Set the transition signer.
         registers.set_signer(*console_request.signer());
@@ -290,7 +292,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         lap!(timer, "Initialize the registers");
 
         #[cfg(debug_assertions)]
-        Self::log_circuit::<A, _>("Request");
+        Self::log_circuit::<A, _>(&call_stack_mode, "Request");
 
         // Retrieve the number of constraints for verifying the request in the circuit.
         let num_request_constraints = A::num_constraints();
@@ -419,7 +421,10 @@ impl<N: Network> StackExecute<N> for Stack<N> {
             .collect::<Vec<_>>();
 
         #[cfg(debug_assertions)]
-        Self::log_circuit::<A, _>(format!("Function '{}()'", function.name()));
+        Self::log_circuit::<A, _>(
+            &call_stack_mode,
+            format!("fn '{}::{}()'", console_request.program_id(), function.name()),
+        );
 
         // Retrieve the number of constraints for executing the function in the circuit.
         let num_function_constraints = A::num_constraints().saturating_sub(num_request_constraints);
@@ -445,14 +450,14 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         lap!(timer, "Construct the response");
 
         #[cfg(debug_assertions)]
-        Self::log_circuit::<A, _>("Response");
+        Self::log_circuit::<A, _>(&call_stack_mode, "Response");
 
         // Retrieve the number of constraints for verifying the response in the circuit.
         let num_response_constraints =
             A::num_constraints().saturating_sub(num_request_constraints).saturating_sub(num_function_constraints);
 
         #[cfg(debug_assertions)]
-        Self::log_circuit::<A, _>("Complete");
+        Self::log_circuit::<A, _>(&call_stack_mode, "Complete");
 
         // Eject the response.
         let response = response.eject_value();
@@ -563,7 +568,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
 impl<N: Network> Stack<N> {
     /// Prints the current state of the circuit.
     #[cfg(debug_assertions)]
-    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>, S: Into<String>>(scope: S) {
+    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>, S: Into<String>>(mode: &str, scope: S) {
         use colored::Colorize;
 
         // Determine if the circuit is satisfied.
@@ -573,7 +578,8 @@ impl<N: Network> Stack<N> {
 
         // Print the log.
         println!(
-            "{is_satisfied} {:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
+            "{is_satisfied} {} {:width$} (Const: {num_constant}, Pub: {num_public}, Priv: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
+            mode.bold(),
             scope.into().bold(),
             width = 20
         );

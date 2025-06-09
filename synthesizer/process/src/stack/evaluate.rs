@@ -186,7 +186,7 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
         lap!(timer, "Initialize the registers");
 
         // Ensure the request is well-formed.
-        ensure!(request.verify(&function.input_types(), is_root, call_graph_checksum), "Request is invalid");
+        ensure!(request.verify(&function.input_types(), is_root, call_graph_checksum), "[Evaluate] Request is invalid");
         lap!(timer, "Verify the request");
 
         // Store the inputs.

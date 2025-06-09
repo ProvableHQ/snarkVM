@@ -197,7 +197,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         let root_tvk = registers.root_tvk().ok();
 
         // If it exists for this (upgradable) call, retrieve the call graph checksum.
-        let call_graph_checksum = registers.call_graph_checksum().ok();
+        let call_graph_checksum = substack.call_graph_checksum(resource)?;
 
         // If the operator is a closure, retrieve the closure and compute the output.
         let outputs = if let Ok(closure) = substack.program().get_closure(resource) {

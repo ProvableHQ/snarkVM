@@ -64,10 +64,6 @@ pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     tvk: Option<Field<N>>,
     /// The transition view key, as a circuit.
     tvk_circuit: Option<circuit::Field<A>>,
-    /// The optional call graph checksum.
-    call_graph_checksum: Option<Field<N>>,
-    /// The optional call graph checksum, as a circuit
-    call_graph_checksum_circuit: Option<circuit::Field<A>>,
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
@@ -87,8 +83,6 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
             caller_circuit: None,
             tvk: None,
             tvk_circuit: None,
-            call_graph_checksum: None,
-            call_graph_checksum_circuit: None,
         }
     }
 

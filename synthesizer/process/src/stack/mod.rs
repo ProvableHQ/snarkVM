@@ -99,6 +99,19 @@ pub enum CallStack<N: Network> {
 }
 
 impl<N: Network> CallStack<N> {
+    fn variant_as_str(&self) -> &str {
+        match &self {
+            CallStack::Authorize(..) => "Authorize",
+            CallStack::Synthesize(..) => "Synthesize",
+            CallStack::CheckDeployment(..) => "CheckDeployment",
+            CallStack::Evaluate(..) => "Evaluate",
+            CallStack::Execute(..) => "Execute",
+            CallStack::PackageRun(..) => "PackageRun",
+        }
+    }
+}
+
+impl<N: Network> CallStack<N> {
     /// Initializes a call stack as `Self::Evaluate`.
     pub fn evaluate(authorization: Authorization<N>) -> Result<Self> {
         Ok(CallStack::Evaluate(authorization))

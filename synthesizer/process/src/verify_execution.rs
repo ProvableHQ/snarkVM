@@ -31,8 +31,8 @@ impl<N: Network> Process<N> {
             Transaction::<N>::MAX_TRANSITIONS
         );
 
-        // Determine the main function's locator and call graph checksum.
-        let (locator, call_graph_checksum) = {
+        // Determine the main function's locator.
+        let locator = {
             // Retrieve the transition (without popping it).
             let transition = execution.peek()?;
             // Retrieve the stack.
@@ -44,12 +44,8 @@ impl<N: Network> Process<N> {
                 "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
                 execution.len()
             );
-            // Retrieve the call stack checksum.
-            let call_graph_checksum = stack.call_graph_checksum(transition.function_name())?.map(|c| *c);
-            // Construct the locator
-            let locator = Locator::new(*transition.program_id(), *transition.function_name()).to_string();
-            // Output the locator and call stack checksum of the main function.
-            (locator, call_graph_checksum)
+            // Output the locator of the main function.
+            Locator::new(*transition.program_id(), *transition.function_name()).to_string()
         };
         lap!(timer, "Verify the number of transitions");
 
@@ -117,6 +113,8 @@ impl<N: Network> Process<N> {
             let stack = self.get_stack(transition.program_id())?;
             // Retrieve the function from the stack.
             let function = stack.get_function(transition.function_name())?;
+            // Retrieve the call stack checksum.
+            let call_graph_checksum = stack.call_graph_checksum(transition.function_name())?.map(|c| *c);
 
             // Ensure the number of inputs and outputs match the expected number in the function.
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
