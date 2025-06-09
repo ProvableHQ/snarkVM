@@ -3717,7 +3717,6 @@ dependencies = [
  "snarkvm-synthesizer-snark",
  "snarkvm-utilities",
  "tempfile",
- "tiny-keccak",
 ]
 
 [[package]]

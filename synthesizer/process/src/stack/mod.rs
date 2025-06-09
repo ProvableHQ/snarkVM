@@ -75,7 +75,6 @@ use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::sync::{Arc, Weak};
-use tiny_keccak::{Hasher, Sha3 as TinySha3};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -483,18 +482,16 @@ impl<N: Network> StackProgram<N> for Stack<N> {
             }
         }
 
-        // Collect the program checksums as bytes.
-        let program_checksum_bytes = program_checksums
+        // Collect the program checksums as bits.
+        let program_checksum_bits = program_checksums
             .into_iter()
-            .flat_map(|program_checksum| program_checksum.into_iter().map(|b| *b.deref()))
-            .collect::<Vec<u8>>();
-        // Hash the program checksums to produce a call graph checksum.
-        let mut keccak = TinySha3::v256();
-        keccak.update(&program_checksum_bytes);
-        let mut call_graph_hash = [0u8; 32];
-        keccak.finalize(&mut call_graph_hash);
+            .flat_map(|program_checksum| program_checksum.into_iter().flat_map(|b| b.to_bits_le())) //*b.deref()))
+            .collect::<Vec<bool>>();
+        // Hash the program checksums to produce a call graph hash.
+        let call_graph_hash = N::hash_sha3_256(&program_checksum_bits)?;
         // Convert the hash of call graph checksums to a field element.
-        let call_graph_checksum = Field::<N>::from_bytes_le(&call_graph_hash)?;
+        let num_bits = Field::<N>::size_in_data_bits();
+        let call_graph_checksum = Field::<N>::from_bits_le(&call_graph_hash[..num_bits])?;
         // Return the call graph checksum.
         Ok(call_graph_checksum)
     }
