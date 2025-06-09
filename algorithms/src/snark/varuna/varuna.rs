@@ -304,6 +304,11 @@ where
             bail!(SNARKError::CircuitNotFound);
         }
 
+        // Make sure certificate is not hiding
+        if certificate.pc_proof.is_hiding() {
+            bail!("Certificate should not be hiding");
+        }
+
         // Initialize sponge.
         let mut sponge = Self::init_sponge_for_certificate(fs_parameters, verifying_key)?;
 
