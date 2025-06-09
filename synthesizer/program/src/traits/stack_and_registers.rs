@@ -98,6 +98,9 @@ pub trait StackProgram<N: Network> {
     /// Returns the program checksum.
     fn program_checksum(&self) -> &[U8<N>; 32];
 
+    /// Returns the call graph checksum for a function, if it exists.
+    fn call_graph_checksum(&self, function_name: &Identifier<N>) -> Result<Option<Field<N>>>;
+
     /// Returns the program edition.
     fn program_edition(&self) -> &U16<N>;
 
@@ -114,7 +117,7 @@ pub trait StackProgram<N: Network> {
     fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
 
     /// Returns the call graph checksum for the given function name.
-    fn get_call_graph_checksum(&self, function_name: &Identifier<N>) -> Result<Field<N>>;
+    fn compute_call_graph_checksum(&self, function_name: &Identifier<N>) -> Result<Field<N>>;
 
     /// Samples a value for the given value_type.
     fn sample_value<R: Rng + CryptoRng>(

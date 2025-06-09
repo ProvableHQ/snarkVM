@@ -108,7 +108,7 @@ impl<N: Network> Stack<N> {
             // Compute and store a call graph checksum for each function if the program contains a constructor.
             // All programs have a constructor only from ConsensusVersion::V8 onwards.
             if program.contains_constructor() {
-                let call_graph_checksum = stack.get_call_graph_checksum(function.name())?;
+                let call_graph_checksum = stack.compute_call_graph_checksum(function.name())?;
                 let call_graph_checksums = stack.call_graph_checksums.get_or_insert_with(IndexMap::new);
                 call_graph_checksums.insert(*function.name(), call_graph_checksum);
             }

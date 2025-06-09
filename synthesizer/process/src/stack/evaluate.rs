@@ -158,16 +158,8 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
             None => (true, signer),
         };
         let tvk = *request.tvk();
-        // Retrieve the call graph checksum, mandatory from ConsensusVersion::V8.
-        let call_graph_checksum = if let Some(call_graph_checksums) = &self.call_graph_checksums {
-            Some(
-                *call_graph_checksums
-                    .get(request.function_name())
-                    .ok_or(anyhow!("Call graph checksum for function '{}' is missing", request.function_name()))?,
-            )
-        } else {
-            None
-        };
+        // Retrieve the call graph checksum.
+        let call_graph_checksum = self.call_graph_checksum(request.function_name())?;
 
         // Ensure the number of inputs matches.
         if function.inputs().len() != inputs.len() {

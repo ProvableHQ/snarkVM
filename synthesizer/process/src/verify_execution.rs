@@ -31,8 +31,8 @@ impl<N: Network> Process<N> {
             Transaction::<N>::MAX_TRANSITIONS
         );
 
-        // Ensure the number of transitions matches the program function.
-        let locator = {
+        // Determine the main function's locator and call graph checksum.
+        let (locator, call_graph_checksum) = {
             // Retrieve the transition (without popping it).
             let transition = execution.peek()?;
             // Retrieve the stack.
@@ -44,8 +44,12 @@ impl<N: Network> Process<N> {
                 "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
                 execution.len()
             );
-            // Output the locator of the main function.
-            Locator::new(*transition.program_id(), *transition.function_name()).to_string()
+            // Retrieve the call stack checksum.
+            let call_graph_checksum = stack.call_graph_checksum(transition.function_name())?.map(|c| *c);
+            // Construct the locator
+            let locator = Locator::new(*transition.program_id(), *transition.function_name()).to_string();
+            // Output the locator and call stack checksum of the main function.
+            (locator, call_graph_checksum)
         };
         lap!(timer, "Verify the number of transitions");
 
@@ -54,21 +58,6 @@ impl<N: Network> Process<N> {
         // Construct the reverse call graph of the execution.
         // Note: This is a mapping of the child transition ID to the parent transition ID.
         let reverse_call_graph = Self::reverse_call_graph(&call_graph);
-
-        // Serialize the call graph checksums for all programs referenced in the Execution.
-        let serialized_call_graph_checksums = execution
-            .transitions()
-            .map(|t| Ok(*self.get_stack(t.program_id())?.program_checksum()))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flat_map(|checksum| checksum.into_iter().map(|i| *i.deref()))
-            .collect::<Vec<u8>>();
-        // Hash the serialized call graph checksums.
-        let mut keccak = TinySha3::v256();
-        keccak.update(&serialized_call_graph_checksums);
-        let mut call_graph_hash = [0u8; 32];
-        keccak.finalize(&mut call_graph_hash);
-        let call_graph_checksum = N::Field::from_bytes_le(&call_graph_hash)?;
 
         // Initialize a map of verifying keys to public inputs.
         let mut verifier_inputs = HashMap::new();
@@ -128,10 +117,6 @@ impl<N: Network> Process<N> {
             let stack = self.get_stack(transition.program_id())?;
             // Retrieve the function from the stack.
             let function = stack.get_function(transition.function_name())?;
-            // Retrieve whether the program has a constructor from the stack.
-            let contains_constructor = stack.program().contains_constructor();
-            // Set the call graph checksum only if the program has a constructor.
-            let call_graph_checksum = contains_constructor.then_some(call_graph_checksum);
 
             // Ensure the number of inputs and outputs match the expected number in the function.
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");

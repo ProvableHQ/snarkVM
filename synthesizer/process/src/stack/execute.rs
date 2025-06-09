@@ -222,16 +222,8 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         })?;
         lap!(timer, "Verify the input types");
 
-        // Retrieve the call graph checksum, mandatory from ConsensusVersion::V8.
-        let console_call_graph_checksum =
-            if let Some(call_graph_checksums) = &self.call_graph_checksums {
-                Some(*call_graph_checksums.get(console_request.function_name()).ok_or(anyhow!(
-                    "Call graph checksum for function '{}' is missing",
-                    console_request.function_name()
-                ))?)
-            } else {
-                None
-            };
+        // Retrieve the call graph checksum.
+        let console_call_graph_checksum = self.call_graph_checksum(console_request.function_name())?;
 
         // Ensure the request is well-formed.
         ensure!(
@@ -257,7 +249,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
 
         // If a call graph checksum was passed in, Inject it as `Mode::Public`.
         let call_graph_checksum =
-            console_call_graph_checksum.map(|hash| circuit::Field::<A>::new(circuit::Mode::Public, hash));
+            console_call_graph_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
         // Set the call graph checksum in the registers.
         registers.set_call_graph_checksum(console_call_graph_checksum);
         registers.set_call_graph_checksum_circuit(call_graph_checksum.clone());

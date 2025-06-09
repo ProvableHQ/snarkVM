@@ -74,7 +74,6 @@ use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::{collections::HashMap, sync::Arc};
-use tiny_keccak::{Hasher, Sha3 as TinySha3};
 
 #[cfg(feature = "aleo-cli")]
 use colored::Colorize;

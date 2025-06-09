@@ -349,6 +349,21 @@ impl<N: Network> StackProgram<N> for Stack<N> {
         &self.program_checksum
     }
 
+    /// Returns the call graph checksum for a function.
+    /// The call graph checksum must exist from ConsensusVersion::V8 onwards.
+    #[inline]
+    fn call_graph_checksum(&self, function_name: &Identifier<N>) -> Result<Option<Field<N>>> {
+        if let Some(call_graph_checksums) = &self.call_graph_checksums {
+            Ok(Some(
+                *call_graph_checksums
+                    .get(function_name)
+                    .ok_or(anyhow!("Call graph checksum missing for '{}'", function_name))?,
+            ))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Returns the program edition.
     #[inline]
     fn program_edition(&self) -> &U16<N> {
@@ -435,7 +450,7 @@ impl<N: Network> StackProgram<N> for Stack<N> {
 
     /// Returns the call graph checksum for the given function name.
     #[inline]
-    fn get_call_graph_checksum(&self, function_name: &Identifier<N>) -> Result<Field<N>> {
+    fn compute_call_graph_checksum(&self, function_name: &Identifier<N>) -> Result<Field<N>> {
         // Initialize a queue of functions to check.
         let mut queue = vec![(StackRef::Internal(self), *function_name)];
         // Initialize a container for the program checksums.
