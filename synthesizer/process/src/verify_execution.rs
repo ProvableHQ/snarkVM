@@ -213,13 +213,13 @@ impl<N: Network> Process<N> {
         let (parent_x, parent_y) = parent_address.to_xy_coordinates();
 
         // [Inputs] Construct the verifier inputs to verify the proof.
-        let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y];
+        let mut inputs = vec![N::Field::one()];
         // [Inputs] Extend the root transition verifier inputs with the call graph checksum if it was provided.
         if let Some(call_graph_checksum) = call_graph_checksum {
             inputs.push(call_graph_checksum);
         }
-        // [Inputs] Extend the verifier inputs with the transition and signer commitments.
-        inputs.extend([**transition.tcm(), **transition.scm()]);
+        // [Inputs] Extend the verifier inputs with the tpk, transition and signer commitments.
+        inputs.extend([*tpk_x, *tpk_y, **transition.tcm(), **transition.scm()]);
         // [Inputs] Extend the verifier inputs with the input IDs.
         inputs.extend(transition.inputs().iter().flat_map(|input| input.verifier_inputs()));
         // [Inputs] Extend the verifier inputs with the public inputs for 'self.caller'.
