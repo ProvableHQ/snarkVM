@@ -318,7 +318,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     &output_ids,
                     &tpks,
                     &deployment_payers,
-                    &deployments,
                 ) {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), reason));
@@ -817,7 +816,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         output_ids: &IndexSet<Field<N>>,
         tpks: &IndexSet<Group<N>>,
         deployment_payers: &IndexSet<Address<N>>,
-        deployments: &IndexSet<ProgramID<N>>,
     ) -> Option<String> {
         // Ensure that the transaction is not producing a duplicate transition.
         for transition_id in transaction.transition_ids() {
@@ -952,8 +950,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut valid_transactions = Vec::with_capacity(transactions.len());
         let mut aborted_transactions = Vec::with_capacity(transactions.len());
 
-        // Initialize a list of the successful deployments.
-        let mut deployments = IndexSet::new();
         // Initialize a list of created transition IDs.
         let mut transition_ids: IndexSet<N::TransitionID> = Default::default();
         // Initialize a list of spent input IDs.
@@ -982,7 +978,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 &output_ids,
                 &tpks,
                 &deployment_payers,
-                &deployments,
             ) {
                 // Store the aborted transaction.
                 Some(reason) => aborted_transactions.push((*transaction, reason.to_string())),
@@ -998,9 +993,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     tpks.extend(transaction.transition_public_keys());
                     // Add any public deployment payer to the set of deployment payers.
                     // Add the program ID to the list of deployed programs.
-                    if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
+                    if let Transaction::Deploy(_, _, _, _, fee) = transaction {
                         fee.payer().map(|payer| deployment_payers.insert(payer));
-                        deployments.insert(*deployment.program_id());
                     }
 
                     // Add the transaction to the list of transactions to verify.
