@@ -785,7 +785,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Start the commit process. */
 
-            // Commit all of the stacks to the process.
+            // Commit all the stacks to the process.
             process.commit_stacks();
 
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
@@ -802,7 +802,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is producing a duplicate output
     /// - The transaction is producing a duplicate transition public key
     /// - The transaction is another deployment in the block from the same public fee payer.
-    /// - The transaction is an execution for a program following its deployment or redeployment in this block.
     /// - The transaction is an execution with a state root whose corresponding block height is greater than or
     ///     equal to the latest block at which any of the execution's programs were deployed or upgraded. This
     ///     check is enforced only after `ConsensusVersion::V8` when program upgrades were introduced.
@@ -866,15 +865,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         if let Transaction::Execute(_, id, execution, _) = transaction {
-            // If the transaction is an execution, ensure that its corresponding program(s)
-            // have not been deployed or redeployed prior to this transaction in this block.
-            // Note: This logic is compatible with deployments prior to `ConsensusVersion::V8`.
-            for program_id in execution.transitions().map(|t| t.program_id()) {
-                if deployments.contains(program_id) {
-                    return Some(format!("Program {program_id} has been deployed or upgraded in this block"));
-                }
-            }
-
             // If the current height is at `ConsensusVersion::V8` or higher, then enforce that the execution's
             // state root is from a block whose height is greater than the latest block height at which any of
             // the execution's programs were deployed or upgraded.
