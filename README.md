@@ -31,7 +31,7 @@
 | snarkvm-ledger      | [![crates.io](https://img.shields.io/crates/v/snarkvm-ledger)     ](https://crates.io/crates/snarkvm-ledger)      | [![docs.rs](https://img.shields.io/docsrs/snarkvm-ledger)     ](https://docs.rs/snarkvm-ledger)      | :white_check_mark: | :white_check_mark: | Ledger implementation for the Aleo blockchain |
 | snarkvm-parameters  | [![crates.io](https://img.shields.io/crates/v/snarkvm-parameters) ](https://crates.io/crates/snarkvm-parameters)  | [![docs.rs](https://img.shields.io/docsrs/snarkvm-parameters) ](https://docs.rs/snarkvm-parameters)  | :white_check_mark: | :white_check_mark: |                                               |
 | snarkvm-synthesizer | [![crates.io](https://img.shields.io/crates/v/snarkvm-synthesizer)](https://crates.io/crates/snarkvm-synthesizer) | [![docs.rs](https://img.shields.io/docsrs/snarkvm-synthesizer)](https://docs.rs/snarkvm-synthesizer) | :white_check_mark: | :white_check_mark: | Program synthesizer for snarkVM               |
-| snarkvm-utilities   | [![crates.io](https://img.shields.io/crates/v/snarkvm-utilities)  ](https://crates.io/crates/snarkvm-utilities)   | [![docs.rs](https://img.shields.io/docsrs/snarkvm-utilities)  ](https://docs.rs/snarkvm-utilities)   | :white_check_mark: | :white_check_mark: | Helper funtions for snarkVM                   |
+| snarkvm-utilities   | [![crates.io](https://img.shields.io/crates/v/snarkvm-utilities)  ](https://crates.io/crates/snarkvm-utilities)   | [![docs.rs](https://img.shields.io/docsrs/snarkvm-utilities)  ](https://docs.rs/snarkvm-utilities)   | :white_check_mark: | :white_check_mark: | Helper functions for snarkVM                   |
 | snarkvm-wasm        | [![crates.io](https://img.shields.io/crates/v/snarkvm-wasm)       ](https://crates.io/crates/snarkvm-wasm)        | [![docs.rs](https://img.shields.io/docsrs/snarkvm-wasm)       ](https://docs.rs/snarkvm-wasm)        | :white_check_mark: | :white_check_mark: | WASM bindings for snarkVM                     |
   
 For more information, visit [Welcome to Aleo](https://github.com/AleoNet/welcome) to get started.
@@ -54,7 +54,7 @@ We recommend installing Rust using [rustup](https://www.rustup.rs/). You can ins
 
 ### 2.2.1 Build from Crates.io
 
-We recommend installing `snarkvm` this way. In your terminal, run:
+This is the recommend way to install `snarkvm`. In your terminal, run:
 
 ```bash
 cargo install snarkvm
@@ -67,21 +67,37 @@ snarkvm
 
 ### 2.2.2 Build from Source Code
 
-Alternatively, you can install `snarkvm` by building from the source code as follows:
+Alternatively, you can install `snarkvm` by building from the source code as follows.
 
+1. Check out the git repository. `staging` is the branch used for development.
 ```bash
-# Download the source code
-git clone --branch mainnet --single-branch https://github.com/ProvableHQ/snarkVM.git 
+git clone --branch staging --single-branch https://github.com/ProvableHQ/snarkVM.git 
+```
+2. Pick the a version/tag. If you want to install, for example, version 3.8.0, run the following.
+
+```
 cd snarkVM
 git checkout tags/testnet-beta
-# Install snarkVM
 cargo install --path .
 ```
 
-Now to use `snarkvm`, in your terminal, run:
+### 2.3 Running snarkVM
+
+After successful installation, Rust will install the `snarkvm` executable.
+
+The following will show you all available commands.
 ```bash
-snarkvm
+snarkvm --help
 ```
+
+If your system cannot find the executable on Mac/Linux, you may need to add `~/.cargo/bin` to your `PATH`.
+For bash, run `source ~/.cargo/env`.
+
+## 2.4 Feature Flags
+* **test** -
+  This feature enables certain code paths needed for unit tests. This flag is used when running unit tests in a release build, and should not be used in other contexts.
+* **test_targets** -
+  This feature lowers the coinbase and proof targets. It is intended to be used when setting up a test network, not for unit tests. 
 
 ## 3. Usage Guide
 
