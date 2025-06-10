@@ -258,16 +258,24 @@ impl<N: Network> Process<N> {
         execution: &Execution<N>,
     ) -> Result<HashMap<N::TransitionID, Vec<N::TransitionID>>> {
         // Metadata for each transition the execution.
+        // TODO (@d0cd) Documentation.
         struct TransitionMetadata<N: Network> {
             uid: usize,
-            pid: ProgramID<N>,
-            fname: Identifier<N>,
+            pid: Option<ProgramID<N>>,
+            fname: Option<Identifier<N>>,
             tid: Option<N::TransitionID>,
             children: Option<Vec<usize>>,
         }
 
+        //
+
         impl<N: Network> TransitionMetadata<N> {
-            fn new(counter: &mut usize, pid: ProgramID<N>, fname: Identifier<N>, tid: Option<N::TransitionID>) -> Self {
+            fn new(
+                counter: &mut usize,
+                pid: Option<ProgramID<N>>,
+                fname: Option<Identifier<N>>,
+                tid: Option<N::TransitionID>,
+            ) -> Self {
                 let uid = *counter;
                 *counter += 1;
                 Self { uid, pid, fname, tid, children: None }
@@ -275,7 +283,7 @@ impl<N: Network> Process<N> {
 
             /// Returns 'true' if the subgraph starting from this transition has been fully-indexed.
             fn is_complete(&self) -> bool {
-                self.tid.is_some() && self.children.is_some()
+                self.pid.is_some() && self.fname.is_some() && self.tid.is_some() && self.children.is_some()
             }
         }
 
@@ -324,45 +332,79 @@ impl<N: Network> Process<N> {
                 None => {
                     traversal_stack.push(TransitionMetadata::new(
                         &mut counter,
-                        *transition.program_id(),
-                        *transition.function_name(),
+                        Some(*transition.program_id()),
+                        Some(*transition.function_name()),
                         Some(*transition.id()),
                     ));
                 }
-                // If the stack is not empty, then add the current transition ID to the entry.
-                Some(head) => match head.pid == *transition.program_id() && head.fname == *transition.function_name() {
-                    true => head.tid = Some(*transition.id()),
-                    false => bail!("Invalid traversal - unexpected transition in the execution"),
-                },
+                // If the stack is not empty, then update/check the current entry.
+                Some(head) => {
+                    // If the program ID, function name, or transition ID is not present, then update it with the current transition.
+                    // Otherwise, check that it matches the current transition.
+                    match head.pid {
+                        Some(pid) => ensure!(
+                            pid == *transition.program_id(),
+                            "Invalid traversal - expected program ID '{pid}' does not match transition program ID '{}'",
+                            transition.program_id()
+                        ),
+                        None => head.pid = Some(*transition.program_id()),
+                    }
+                    match head.fname {
+                        Some(fname) => ensure!(
+                            fname == *transition.function_name(),
+                            "Invalid traversal - expected function name '{fname}' does not match transition function name '{}'",
+                            transition.function_name()
+                        ),
+                        None => head.fname = Some(*transition.function_name()),
+                    }
+                    match head.tid {
+                        Some(tid) => ensure!(
+                            tid == *transition.id(),
+                            "Invalid traversal - expected transition ID '{tid}' does not match transition ID '{}'",
+                            transition.id()
+                        ),
+                        None => head.tid = Some(*transition.id()),
+                    }
+                }
             }
 
-            // Process the entry at the top of the stack. By the previous step, this entry has a transition ID.
+            // Process the entry at the top of the stack.
             // Note this unwrap is safe, since we either pushed an entry to the stack or modified the one at the top of the stack.
             let top = traversal_stack.last().unwrap();
+
             // If the entry is complete, then add it to the call graph.
             if top.is_complete() {
                 // Note this unwrap is safe, for the same reason as above.
                 update_call_graph(traversal_stack.pop().unwrap(), &mut call_graph, &mut uid_to_tid)?;
             } else {
+                // Get the program ID, function name, and transition ID,
+                // Note: The previous code ensures that this data is present.
+                let Some(pid) = &top.pid else { bail!("Invalid traversal - program ID is missing") };
+                let Some(fname) = &top.fname else { bail!("Invalid traversal - function name is missing") };
+
                 // Retrieve the stack.
-                let stack = self.get_stack(top.pid)?;
+                let stack = self.get_stack(pid)?;
                 // Retrieve the function from the stack.
-                let function = stack.get_function(&top.fname)?;
+                let function = stack.get_function(fname)?;
                 // Collect the children of the current transition.
                 let mut children = Vec::new();
                 for instruction in function.instructions() {
-                    // TODO (@d0cd) Dynamic calls
+                    // Add transition metadata for static calls.
                     if let Instruction::Call(call) = instruction {
                         let (pid, fname) = match call.operator() {
                             synthesizer_program::CallOperator::Locator(locator) => {
-                                (locator.program_id(), locator.resource())
+                                (*locator.program_id(), locator.resource())
                             }
-                            synthesizer_program::CallOperator::Resource(fname) => (&top.pid, fname),
+                            synthesizer_program::CallOperator::Resource(fname) => (*pid, fname),
                         };
                         // Add the child to the traversal stack, only if it is a call to a transition.
-                        if self.get_stack(pid)?.get_function(fname).is_ok() {
-                            children.push(TransitionMetadata::new(&mut counter, *pid, *fname, None));
+                        if self.get_stack(&pid)?.get_function(fname).is_ok() {
+                            children.push(TransitionMetadata::new(&mut counter, Some(pid), Some(*fname), None));
                         }
+                    }
+                    // Add transition metadata for dynamic calls.
+                    if let Instruction::DynamicCall(_) = instruction {
+                        children.push(TransitionMetadata::new(&mut counter, None, None, None))
                     }
                 }
 
