@@ -178,8 +178,7 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
         lap!(timer, "Perform input checks");
 
         // Initialize the registers.
-        let mut registers =
-            Registers::<N, A>::new(call_stack.clone(), self.get_register_types(function.name())?.clone());
+        let mut registers = Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone());
         // Set the transition signer.
         registers.set_signer(signer);
         // Set the transition caller.

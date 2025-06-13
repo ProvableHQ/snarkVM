@@ -31,7 +31,7 @@ impl<N: Network> Process<N> {
             Transaction::<N>::MAX_TRANSITIONS
         );
 
-        // Determine the main function's locator.
+        // Determine the function locator and ensure the number of transitions matches the number of calls.
         let locator = {
             // Retrieve the transition (without popping it).
             let transition = execution.peek()?;
@@ -215,7 +215,7 @@ impl<N: Network> Process<N> {
 
         // [Inputs] Construct the verifier inputs to verify the proof.
         let mut inputs = vec![N::Field::one()];
-        // [Inputs] Extend the root transition verifier inputs with the program checksum if it was provided.
+        // [Inputs] Extend the verifier inputs with the program checksum if it was provided.
         if let Some(program_checksum) = program_checksum {
             inputs.push(program_checksum);
         }

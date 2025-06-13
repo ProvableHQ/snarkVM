@@ -81,20 +81,20 @@ use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
 
-/// The call stack is used to track the current state of the program execution.
+/// The `CallStack` is used to track the current state of the program execution.
 #[derive(Clone)]
 pub enum CallStack<N: Network> {
-    /// The `Authorize` call stack allows a client to authorize an `Execute` transaction.
+    /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
-    /// The `Synthesize` call stack allows a client to synthesize a function circuit before a `Deploy` transaction.
+    /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
-    /// The `CheckDeployment` call stack allows a validator to validate a `Deploy` transaction's function circuit.
+    /// Validate a `Deploy` transaction's function circuit.
     CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>),
-    /// The `Evaluate` call stack allows a client to evaluate a function.
+    /// Evaluate a function.
     Evaluate(Authorization<N>),
-    /// The `Execute` call stack allows a client to prove function calls in an `Execute` transaction.
+    /// Execute a function and produce a proof.
     Execute(Authorization<N>, Arc<RwLock<Trace<N>>>),
-    /// The `PackageRun` call stack is deprecated.
+    /// Execute a function and create the circuit assignment.
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
 }
 

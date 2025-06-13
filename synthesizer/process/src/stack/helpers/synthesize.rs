@@ -55,13 +55,12 @@ impl<N: Network> Stack<N> {
                 _ => self.sample_value(&burner_address, input_type, rng),
             })
             .collect::<Result<Vec<_>>>()?;
-
+        // Sample a dummy 'is_root'.
+        let is_root = true;
         // Sample a dummy `root_tvk` for circuit synthesis.
         let root_tvk = None;
         // Sample a dummy `caller` for circuit synthesis.
         let caller = None;
-        // Sample a dummy 'is_root'.
-        let is_root = true;
 
         // Compute the request, with a burner private key.
         let request = Request::sign(

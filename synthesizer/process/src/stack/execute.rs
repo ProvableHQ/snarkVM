@@ -242,13 +242,13 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         let mut registers = Registers::new(call_stack, self.get_register_types(function.name())?.clone());
 
         // Set the root tvk, from a parent request or the current request.
-        let console_root_tvk = match console_root_tvk {
-            Some(console_root_tvk) => console_root_tvk,
-            None => *console_request.tvk(),
-        };
-
+        let console_root_tvk = console_root_tvk.unwrap_or(*console_request.tvk());
         // Inject the `root_tvk` as `Mode::Private`.
         let root_tvk = circuit::Field::<A>::new(circuit::Mode::Private, console_root_tvk);
+        // Set the root tvk.
+        registers.set_root_tvk(console_root_tvk);
+        // Set the root tvk, as a circuit.
+        registers.set_root_tvk_circuit(root_tvk.clone());
 
         // If a program checksum was passed in, Inject it as `Mode::Public`.
         let program_checksum = program_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
@@ -268,13 +268,8 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
         // Ensure the request has a valid signature, inputs, and transition view key.
-        A::assert(request.verify(&input_types, &tpk, Some(root_tvk.clone()), is_root, program_checksum));
+        A::assert(request.verify(&input_types, &tpk, Some(root_tvk), is_root, program_checksum));
         lap!(timer, "Verify the circuit request");
-
-        // Set the root tvk.
-        registers.set_root_tvk(console_root_tvk);
-        // Set the root tvk, as a circuit.
-        registers.set_root_tvk_circuit(root_tvk);
 
         // Set the transition signer.
         registers.set_signer(*console_request.signer());

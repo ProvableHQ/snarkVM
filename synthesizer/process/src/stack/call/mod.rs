@@ -197,8 +197,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
         let root_tvk = registers.root_tvk().ok();
 
         // Retrieve the program checksum, if the program has a constructor.
-        let program_checksum = match stack.program().contains_constructor() {
-            true => Some(stack.program_checksum_as_field()?),
+        let program_checksum = match substack.program().contains_constructor() {
+            true => Some(substack.program_checksum_as_field()?),
             false => None,
         };
 
