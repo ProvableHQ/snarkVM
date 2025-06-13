@@ -222,12 +222,15 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         })?;
         lap!(timer, "Verify the input types");
 
-        // Retrieve the call graph checksum.
-        let console_call_graph_checksum = self.call_graph_checksum(console_request.function_name())?;
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match self.program().contains_constructor() {
+            true => Some(self.program_checksum_as_field()?),
+            false => None,
+        };
 
         // Ensure the request is well-formed.
         ensure!(
-            console_request.verify(&input_types, console_is_root, console_call_graph_checksum),
+            console_request.verify(&input_types, console_is_root, program_checksum),
             "[Execute] Request is invalid"
         );
         lap!(timer, "Verify the console request");
@@ -247,9 +250,8 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         // Inject the `root_tvk` as `Mode::Private`.
         let root_tvk = circuit::Field::<A>::new(circuit::Mode::Private, console_root_tvk);
 
-        // If a call graph checksum was passed in, Inject it as `Mode::Public`.
-        let call_graph_checksum =
-            console_call_graph_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
+        // If a program checksum was passed in, Inject it as `Mode::Public`.
+        let program_checksum = program_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
 
         use circuit::{Eject, Inject};
 
@@ -266,7 +268,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
         // Ensure the request has a valid signature, inputs, and transition view key.
-        A::assert(request.verify(&input_types, &tpk, Some(root_tvk.clone()), is_root, call_graph_checksum));
+        A::assert(request.verify(&input_types, &tpk, Some(root_tvk.clone()), is_root, program_checksum));
         lap!(timer, "Verify the circuit request");
 
         // Set the root tvk.

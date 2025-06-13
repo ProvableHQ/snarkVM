@@ -196,8 +196,11 @@ impl<N: Network> CallTrait<N> for Call<N> {
         // If we are not handling the root request, retrieve the root request's tvk
         let root_tvk = registers.root_tvk().ok();
 
-        // If it exists for this (upgradable) call, retrieve the call graph checksum.
-        let call_graph_checksum = substack.call_graph_checksum(resource)?;
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match stack.program().contains_constructor() {
+            true => Some(stack.program_checksum_as_field()?),
+            false => None,
+        };
 
         // If the operator is a closure, retrieve the closure and compute the output.
         let outputs = if let Ok(closure) = substack.program().get_closure(resource) {
@@ -252,7 +255,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             &function.input_types(),
                             root_tvk,
                             is_root,
-                            call_graph_checksum,
+                            program_checksum,
                             rng,
                         )?;
 
@@ -281,7 +284,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             &function.input_types(),
                             root_tvk,
                             is_root,
-                            call_graph_checksum,
+                            program_checksum,
                             rng,
                         )?;
 
@@ -308,7 +311,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             &function.input_types(),
                             root_tvk,
                             is_root,
-                            call_graph_checksum,
+                            program_checksum,
                             rng,
                         )?;
 
@@ -376,7 +379,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             &function.input_types(),
                             root_tvk,
                             is_root,
-                            call_graph_checksum,
+                            program_checksum,
                             rng,
                         )?;
 

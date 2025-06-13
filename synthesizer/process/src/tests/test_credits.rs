@@ -2842,8 +2842,11 @@ mod sanity_checks {
         let program_id = *program.id();
         // Retrieve the input types.
         let input_types = program.get_function(&function_name).unwrap().input_types();
-        // Retrieve the call graph checksum.
-        let call_graph_checksum = stack.call_graph_checksum(&function_name).unwrap();
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match stack.program().contains_constructor() {
+            true => Some(stack.program_checksum_as_field().unwrap()),
+            false => None,
+        };
         // Sample 'root_tvk'.
         let root_tvk = None;
         // Sample 'is_root'.
@@ -2857,7 +2860,7 @@ mod sanity_checks {
             &input_types,
             root_tvk,
             is_root,
-            call_graph_checksum,
+            program_checksum,
             rng,
         )
         .unwrap();

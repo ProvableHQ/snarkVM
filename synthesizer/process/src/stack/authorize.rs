@@ -36,8 +36,11 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Retrieve the input types");
         // Set is_root to true.
         let is_root = true;
-        // Retrieve the call graph checksum.
-        let call_graph_checksum = self.call_graph_checksum(&function_name)?;
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match self.program().contains_constructor() {
+            true => Some(self.program_checksum_as_field()?),
+            false => None,
+        };
 
         // This is the root request and does not have a caller.
         let caller = None;
@@ -52,7 +55,7 @@ impl<N: Network> Stack<N> {
             &input_types,
             root_tvk,
             is_root,
-            call_graph_checksum,
+            program_checksum,
             rng,
         )?;
         lap!(timer, "Compute the request");

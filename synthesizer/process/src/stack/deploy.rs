@@ -122,8 +122,11 @@ impl<N: Network> Stack<N> {
             let burner_address = Address::try_from(&burner_private_key)?;
             // Retrieve the input types.
             let input_types = function.input_types();
-            // Retrieve the call graph checksum.
-            let call_graph_checksum = self.call_graph_checksum(function.name())?;
+            // Retrieve the program checksum, if the program has a constructor.
+            let program_checksum = match self.program().contains_constructor() {
+                true => Some(self.program_checksum_as_field()?),
+                false => None,
+            };
             // Sample the inputs.
             let inputs = input_types
                 .iter()
@@ -150,7 +153,7 @@ impl<N: Network> Stack<N> {
                 &input_types,
                 root_tvk,
                 is_root,
-                call_graph_checksum,
+                program_checksum,
                 rng,
             )?;
             lap!(timer, "Compute the request for {}", function.name());

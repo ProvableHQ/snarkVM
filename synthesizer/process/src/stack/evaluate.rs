@@ -159,8 +159,11 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
             None => (true, signer),
         };
         let tvk = *request.tvk();
-        // Retrieve the call graph checksum.
-        let call_graph_checksum = self.call_graph_checksum(request.function_name())?;
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match self.program().contains_constructor() {
+            true => Some(self.program_checksum_as_field()?),
+            false => None,
+        };
 
         // Ensure the number of inputs matches.
         if function.inputs().len() != inputs.len() {
@@ -186,7 +189,7 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
         lap!(timer, "Initialize the registers");
 
         // Ensure the request is well-formed.
-        ensure!(request.verify(&function.input_types(), is_root, call_graph_checksum), "[Evaluate] Request is invalid");
+        ensure!(request.verify(&function.input_types(), is_root, program_checksum), "[Evaluate] Request is invalid");
         lap!(timer, "Verify the request");
 
         // Store the inputs.

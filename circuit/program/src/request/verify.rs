@@ -20,14 +20,15 @@ impl<A: Aleo> Request<A> {
     /// and the signature is valid.
     ///
     /// Verifies (challenge == challenge') && (address == address') && (serial_numbers == serial_numbers') where:
-    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, Option<call_graph_hash>, input IDs\])
+    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs\])
+    /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.
     pub fn verify(
         &self,
         input_types: &[console::ValueType<A::Network>],
         tpk: &Group<A>,
         root_tvk: Option<Field<A>>,
         is_root: Boolean<A>,
-        call_graph_checksum: Option<Field<A>>,
+        program_checksum: Option<Field<A>>,
     ) -> Boolean<A> {
         // Compute the function ID.
         let function_id = compute_function_id(&self.network_id, &self.program_id, &self.function_name);
@@ -41,9 +42,9 @@ impl<A: Aleo> Request<A> {
         message.push(self.tcm.clone());
         message.push(function_id);
         message.push(is_root);
-        // Add the call graph hash to the signature message if it was provided.
-        if let Some(call_graph_checksum) = call_graph_checksum {
-            message.push(call_graph_checksum);
+        // Add the program checksum to the signature message if it was provided.
+        if let Some(program_checksum) = program_checksum {
+            message.push(program_checksum);
         }
 
         // Check the input IDs and construct the rest of the signature message.
@@ -330,7 +331,7 @@ mod tests {
         num_public: u64,
         num_private: u64,
         num_constraints: u64,
-        set_call_graph_checksum: bool,
+        set_program_checksum: bool,
     ) -> Result<()> {
         let rng = &mut TestRng::default();
 
@@ -375,8 +376,8 @@ mod tests {
             let root_tvk = None;
             // Sample 'is_root'.
             let is_root = true;
-            // Sample 'call_graph_checksum'.
-            let call_graph_checksum = set_call_graph_checksum.then(|| console::Field::from_u64(i as u64));
+            // Sample 'program_checksum'.
+            let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
 
             // Compute the signed request.
             let request = console::Request::sign(
@@ -387,20 +388,20 @@ mod tests {
                 &input_types,
                 root_tvk,
                 is_root,
-                call_graph_checksum,
+                program_checksum,
                 rng,
             )?;
-            assert!(request.verify(&input_types, is_root, call_graph_checksum));
+            assert!(request.verify(&input_types, is_root, program_checksum));
 
             // Inject the request into a circuit.
             let tpk = Group::<Circuit>::new(mode, request.to_tpk());
             let request = Request::<Circuit>::new(mode, request);
             let is_root = Boolean::new(mode, is_root);
-            let call_graph_checksum = call_graph_checksum.map(|hash| Field::<Circuit>::new(mode, hash));
+            let program_checksum = program_checksum.map(|hash| Field::<Circuit>::new(mode, hash));
 
             Circuit::scope(format!("Request {i}"), || {
                 let root_tvk = None;
-                let candidate = request.verify(&input_types, &tpk, root_tvk, is_root, call_graph_checksum);
+                let candidate = request.verify(&input_types, &tpk, root_tvk, is_root, program_checksum);
                 assert!(candidate.eject_value());
                 match mode.is_constant() {
                     true => assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints),

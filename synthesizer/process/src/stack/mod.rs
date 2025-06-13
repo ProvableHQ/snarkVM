@@ -225,9 +225,6 @@ pub struct Stack<N: Network> {
     program_address: Address<N>,
     /// The program checksum.
     program_checksum: [U8<N>; 32],
-    /// The mapping of function names to their call graph checksum.
-    /// These are required from ConsensusVersion::V8 onwards to avoid malleability due to program upgrades.
-    call_graph_checksums: Option<IndexMap<Identifier<N>, Field<N>>>,
     /// The program edition.
     program_edition: U16<N>,
 }
@@ -361,19 +358,18 @@ impl<N: Network> StackProgram<N> for Stack<N> {
         &self.program_checksum
     }
 
-    /// Returns the call graph checksum for a function.
-    /// The call graph checksum must exist from ConsensusVersion::V8 onwards.
+    /// Returns the program checksum as a field element.
     #[inline]
-    fn call_graph_checksum(&self, function_name: &Identifier<N>) -> Result<Option<Field<N>>> {
-        if let Some(call_graph_checksums) = &self.call_graph_checksums {
-            Ok(Some(
-                *call_graph_checksums
-                    .get(function_name)
-                    .ok_or(anyhow!("Call graph checksum missing for '{}'", function_name))?,
-            ))
-        } else {
-            Ok(None)
-        }
+    fn program_checksum_as_field(&self) -> Result<Field<N>> {
+        // Get the bits of the program checksum, truncated to the field size.
+        let bits = self
+            .program_checksum
+            .iter()
+            .flat_map(|byte| byte.to_bits_le())
+            .take(Field::<N>::SIZE_IN_DATA_BITS)
+            .collect::<Vec<_>>();
+        // Return the field element from the bits.
+        Field::from_bits_le(&bits)
     }
 
     /// Returns the program edition.
@@ -458,55 +454,6 @@ impl<N: Network> StackProgram<N> for Stack<N> {
         }
         // Return the number of calls.
         Ok(num_calls)
-    }
-
-    /// Returns the call graph checksum for the given function name.
-    #[inline]
-    fn compute_call_graph_checksum(&self, function_name: &Identifier<N>) -> Result<Field<N>> {
-        // Initialize a queue of functions to check.
-        let mut queue = vec![(StackRef::Internal(self), *function_name)];
-        // Initialize a container for the program checksums.
-        let mut program_checksums = Vec::new();
-
-        // Iterate over the queue.
-        while let Some((stack_ref, function_name)) = queue.pop() {
-            // Save the program checksum for the current stack reference.
-            program_checksums.push(*stack_ref.program_checksum());
-
-            // Determine the Stacks of calls for the function.
-            for instruction in stack_ref.get_function_ref(&function_name)?.instructions() {
-                if let Instruction::Call(call) = instruction {
-                    // Determine if this is a function call.
-                    if call.is_function_call(&*stack_ref)? {
-                        // Add the function to the queue.
-                        match call.operator() {
-                            CallOperator::Locator(locator) => {
-                                queue.push((
-                                    StackRef::External(stack_ref.get_external_stack(locator.program_id())?),
-                                    *locator.resource(),
-                                ));
-                            }
-                            CallOperator::Resource(resource) => {
-                                queue.push((stack_ref.clone(), *resource));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Collect the program checksums as bits.
-        let program_checksum_bits = program_checksums
-            .into_iter()
-            .flat_map(|program_checksum| program_checksum.into_iter().flat_map(|b| b.to_bits_le())) //*b.deref()))
-            .collect::<Vec<bool>>();
-        // Hash the program checksums to produce a call graph hash.
-        let call_graph_hash = N::hash_sha3_256(&program_checksum_bits)?;
-        // Convert the hash of call graph checksums to a field element.
-        let num_bits = Field::<N>::size_in_data_bits();
-        let call_graph_checksum = Field::<N>::from_bits_le(&call_graph_hash[..num_bits])?;
-        // Return the call graph checksum.
-        Ok(call_graph_checksum)
     }
 
     /// Returns a value for the given value type.

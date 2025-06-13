@@ -32,8 +32,11 @@ impl<N: Network> Stack<N> {
         let program_id = self.program_id();
         // Retrieve the function input types.
         let input_types = self.get_function(function_name)?.input_types();
-        // Retrieve the call graph checksum.
-        let call_graph_checksum = self.call_graph_checksum(function_name)?;
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match self.program().contains_constructor() {
+            true => Some(self.program_checksum_as_field()?),
+            false => None,
+        };
 
         // Initialize a burner private key.
         let burner_private_key = PrivateKey::new(rng)?;
@@ -69,7 +72,7 @@ impl<N: Network> Stack<N> {
             &input_types,
             root_tvk,
             is_root,
-            call_graph_checksum,
+            program_checksum,
             rng,
         )?;
         // Initialize the authorization.

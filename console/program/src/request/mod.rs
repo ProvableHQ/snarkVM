@@ -207,16 +207,16 @@ mod test_helpers {
                 let root_tvk = None;
                 // Construct 'is_root'.
                 let is_root = Uniform::rand(rng);
-                // Sample the call graph checksum.
-                let call_graph_checksum = match i % 2 == 0 {
+                // Sample the program checksum.
+                let program_checksum = match i % 2 == 0 {
                     true => Some(Field::rand(rng)),
                     false => None,
                 };
 
                 // Compute the signed request.
                 let request =
-                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, call_graph_checksum, rng).unwrap();
-                assert!(request.verify(&input_types, is_root, call_graph_checksum));
+                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap();
+                assert!(request.verify(&input_types, is_root, program_checksum));
                 request
             })
             .collect()

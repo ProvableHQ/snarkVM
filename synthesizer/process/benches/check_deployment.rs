@@ -46,8 +46,11 @@ fn prepare_check_deployment<N: Network, A: circuit::Aleo<Network = N>>(
     let program_id = *program.id();
     // Retrieve the input types.
     let input_types = program.get_function(&function_name).unwrap().input_types();
-    // Retrieve the 'call_graph_checksum'.
-    let call_graph_checksum = stack.call_graph_checksum(&function_name).unwrap();
+    // Retrieve the 'program_checksum', if the program has a constructor.
+    let program_checksum = match program.contains_constructor() {
+        true => Some(stack.program_checksum_as_field().unwrap()),
+        false => None,
+    };
     // Sample 'root_tvk'.
     let root_tvk = None;
     // Sample 'is_root'.
@@ -61,7 +64,7 @@ fn prepare_check_deployment<N: Network, A: circuit::Aleo<Network = N>>(
         &input_types,
         root_tvk,
         is_root,
-        call_graph_checksum,
+        program_checksum,
         rng,
     )
     .unwrap();

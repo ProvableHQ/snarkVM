@@ -53,7 +53,6 @@ impl<N: Network> Stack<N> {
             verifying_keys: Default::default(),
             program_address: program.id().to_address()?,
             program_checksum: program.to_checksum(),
-            call_graph_checksums: None,
             program_edition: U16::new(edition),
         };
 
@@ -104,14 +103,6 @@ impl<N: Network> Stack<N> {
                 function.name(),
                 N::TRANSACTION_SPEND_LIMIT
             );
-
-            // Compute and store a call graph checksum for each function if the program contains a constructor.
-            // All programs have a constructor only from ConsensusVersion::V8 onwards.
-            if program.contains_constructor() {
-                let call_graph_checksum = stack.compute_call_graph_checksum(function.name())?;
-                let call_graph_checksums = stack.call_graph_checksums.get_or_insert_with(IndexMap::new);
-                call_graph_checksums.insert(*function.name(), call_graph_checksum);
-            }
         }
 
         // Return the stack.

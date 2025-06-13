@@ -19,8 +19,9 @@ impl<N: Network> Request<N> {
     /// Returns `true` if the request is valid, and `false` otherwise.
     ///
     /// Verifies (challenge == challenge') && (address == address') && (serial_numbers == serial_numbers') where:
-    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, Option<call_graph_hash>, input IDs\])
-    pub fn verify(&self, input_types: &[ValueType<N>], is_root: bool, call_graph_checksum: Option<Field<N>>) -> bool {
+    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs\])
+    /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.
+    pub fn verify(&self, input_types: &[ValueType<N>], is_root: bool, program_checksum: Option<Field<N>>) -> bool {
         // Verify the transition public key, transition view key, and transition commitment are well-formed.
         {
             // Compute the transition commitment `tcm` as `Hash(tvk)`.
@@ -62,9 +63,9 @@ impl<N: Network> Request<N> {
         message.push(self.tcm);
         message.push(function_id);
         message.push(is_root);
-        // Add the call graph hash to the signature message if it was provided.
-        if let Some(call_graph_checksum) = call_graph_checksum {
-            message.push(call_graph_checksum);
+        // Add the program checksum to the signature message if it was provided.
+        if let Some(program_checksum) = program_checksum {
+            message.push(program_checksum);
         }
 
         if let Err(error) = self.input_ids.iter().zip_eq(&self.inputs).zip_eq(input_types).enumerate().try_for_each(
@@ -261,8 +262,8 @@ mod tests {
             let root_tvk = None;
             // Sample 'is_root'.
             let is_root = Uniform::rand(rng);
-            // Sample 'call_graph_checksum'.
-            let call_graph_checksum = match i % 2 == 0 {
+            // Sample 'program_checksum'.
+            let program_checksum = match i % 2 == 0 {
                 true => Some(Field::rand(rng)),
                 false => None,
             };
@@ -276,11 +277,11 @@ mod tests {
                 &input_types,
                 root_tvk,
                 is_root,
-                call_graph_checksum,
+                program_checksum,
                 rng,
             )
             .unwrap();
-            assert!(request.verify(&input_types, is_root, call_graph_checksum));
+            assert!(request.verify(&input_types, is_root, program_checksum));
         }
     }
 }

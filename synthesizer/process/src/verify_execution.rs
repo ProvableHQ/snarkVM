@@ -113,8 +113,11 @@ impl<N: Network> Process<N> {
             let stack = self.get_stack(transition.program_id())?;
             // Retrieve the function from the stack.
             let function = stack.get_function(transition.function_name())?;
-            // Retrieve the call stack checksum.
-            let call_graph_checksum = stack.call_graph_checksum(transition.function_name())?.map(|c| *c);
+            // Retrieve the program checksum, if the program has a constructor.
+            let program_checksum = match stack.program().contains_constructor() {
+                true => Some(stack.program_checksum_as_field()?),
+                false => None,
+            };
 
             // Ensure the number of inputs and outputs match the expected number in the function.
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
@@ -137,7 +140,7 @@ impl<N: Network> Process<N> {
                 transition,
                 parent,
                 &call_graph,
-                call_graph_checksum,
+                program_checksum.map(|checksum| *checksum),
                 &mut transition_map,
             )?;
             lap!(timer, "Constructed the verifier inputs for a transition of {}", function.name());
@@ -189,7 +192,7 @@ impl<N: Network> Process<N> {
         transition: &Transition<N>,
         parent: Option<&ProgramID<N>>,
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
-        call_graph_checksum: Option<N::Field>,
+        program_checksum: Option<N::Field>,
         transition_map: &mut HashMap<N::TransitionID, &Transition<N>>,
     ) -> Result<Vec<N::Field>> {
         // Compute the x- and y-coordinate of `tpk`.
@@ -212,9 +215,9 @@ impl<N: Network> Process<N> {
 
         // [Inputs] Construct the verifier inputs to verify the proof.
         let mut inputs = vec![N::Field::one()];
-        // [Inputs] Extend the root transition verifier inputs with the call graph checksum if it was provided.
-        if let Some(call_graph_checksum) = call_graph_checksum {
-            inputs.push(call_graph_checksum);
+        // [Inputs] Extend the root transition verifier inputs with the program checksum if it was provided.
+        if let Some(program_checksum) = program_checksum {
+            inputs.push(program_checksum);
         }
         // [Inputs] Extend the verifier inputs with the tpk, transition and signer commitments.
         inputs.extend([*tpk_x, *tpk_y, **transition.tcm(), **transition.scm()]);
