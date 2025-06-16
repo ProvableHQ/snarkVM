@@ -136,7 +136,7 @@ impl Network for TestnetV0 {
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
     #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 7] = [
+    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = [
         (ConsensusVersion::V1, 0),
         (ConsensusVersion::V2, 2_950_000),
         (ConsensusVersion::V3, 4_800_000),
@@ -144,11 +144,12 @@ impl Network for TestnetV0 {
         (ConsensusVersion::V5, 6_765_000),
         (ConsensusVersion::V6, 7_600_000),
         (ConsensusVersion::V7, 8_365_000),
+        (ConsensusVersion::V8, 9_200_000),
     ];
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
     #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 7] = [
+    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = [
         (ConsensusVersion::V1, 0),
         (ConsensusVersion::V2, 10),
         (ConsensusVersion::V3, 11),
@@ -156,6 +157,7 @@ impl Network for TestnetV0 {
         (ConsensusVersion::V5, 13),
         (ConsensusVersion::V6, 14),
         (ConsensusVersion::V7, 15),
+        (ConsensusVersion::V8, 16),
     ];
     /// The network edition.
     const EDITION: u16 = 0;

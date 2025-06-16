@@ -137,7 +137,7 @@ impl Network for MainnetV0 {
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
     #[cfg(not(any(test, feature = "test")))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 7] = [
+    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = [
         (ConsensusVersion::V1, 0),
         (ConsensusVersion::V2, 2_800_000),
         (ConsensusVersion::V3, 4_900_000),
@@ -145,11 +145,12 @@ impl Network for MainnetV0 {
         (ConsensusVersion::V5, 7_060_000),
         (ConsensusVersion::V6, 7_560_000),
         (ConsensusVersion::V7, 7_570_000),
+        (ConsensusVersion::V8, 9_850_000),
     ];
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
     #[cfg(any(test, feature = "test"))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 7] = [
+    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = [
         (ConsensusVersion::V1, 0),
         (ConsensusVersion::V2, 10),
         (ConsensusVersion::V3, 11),
@@ -157,6 +158,7 @@ impl Network for MainnetV0 {
         (ConsensusVersion::V5, 13),
         (ConsensusVersion::V6, 14),
         (ConsensusVersion::V7, 15),
+        (ConsensusVersion::V8, 16),
     ];
     /// The network edition.
     const EDITION: u16 = 0;
