@@ -633,6 +633,9 @@ finalize test:
         // Assert the size of the execution.
         assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
         if let Transaction::Execute(_, _, execution, _) = &transaction {
+            let proof_size = execution.proof().unwrap().to_bytes_le().unwrap().len();
+            println!("Proof size: {}", proof_size);
+
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
             assert_eq!(2242, execution_size_in_bytes, "Update me if serialization has changed");
         }
@@ -667,6 +670,9 @@ finalize test:
         // Assert the size of the execution.
         assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
         if let Transaction::Execute(_, _, execution, _) = &transaction {
+            let proof_size = execution.proof().unwrap().to_bytes_le().unwrap().len();
+            println!("Proof size: {}", proof_size);
+
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
             assert_eq!(1420, execution_size_in_bytes, "Update me if serialization has changed");
         }

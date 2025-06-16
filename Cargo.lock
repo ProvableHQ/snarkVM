@@ -3645,6 +3645,7 @@ name = "snarkvm-wasm"
 version = "3.7.1"
 dependencies = [
  "getrandom 0.2.16",
+ "js-sys",
  "snarkvm-console",
  "snarkvm-curves",
  "snarkvm-fields",
@@ -3654,6 +3655,7 @@ dependencies = [
  "snarkvm-synthesizer",
  "snarkvm-utilities",
  "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]

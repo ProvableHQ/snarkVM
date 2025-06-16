@@ -223,7 +223,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         for _ in 0..ITERATIONS {
-            // Sample a random private key and address.
+            // Sample a random private key and add`re`ss.
             let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
             let address = Address::try_from(&private_key).unwrap();
 

@@ -103,6 +103,13 @@ features = [ "js" ]
 [dev-dependencies.wasm-bindgen-test]
 version = "0.3.37"
 
+[dev-dependencies.web-sys]
+version = "0.3"
+features = ["console"]
+
+[dev-dependencies.js-sys]
+version = "0.3"
+
 [package.metadata.cargo-machete]
 ignored = [
   "getrandom", # Needed to enable js feature

@@ -3256,4 +3256,43 @@ function adder:
             panic!("Expected an error, but the deployment was accepted.")
         }
     }
+
+    #[test]
+    fn test_authorization_time() {
+        let rng = &mut TestRng::default();
+
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let address = Address::try_from(&private_key).unwrap();
+
+        // Initialize a new process.
+        let timer = std::time::Instant::now();
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        println!("Loaded process in: {}ms", timer.elapsed().as_millis());
+
+        let timer = std::time::Instant::now();
+        use circuit::{Aleo, Environment};
+        CurrentAleo::initialize_global_constants();
+        CurrentAleo::reset();
+        println!("Initialized global constants: {}ms", timer.elapsed().as_millis());
+
+        let mut total_auth_time = 0;
+        const ITERATIONS: u32 = 10;
+        for _ in 0..ITERATIONS {
+            // Create an authorization for "transfer_public"
+            let timer = std::time::Instant::now();
+            let inputs = [
+                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+            ]
+            .into_iter();
+            process.authorize::<CurrentAleo, _>(&private_key, "credits.aleo", "transfer_public", inputs, rng).unwrap();
+            let auth_time = timer.elapsed().as_millis();
+            println!("Created authorization in: {auth_time}ms");
+
+            total_auth_time += auth_time;
+        }
+
+        let average_auth_time = total_auth_time / ITERATIONS as u128;
+        println!("Average authorization time: {}ms", average_auth_time);
+    }
 }

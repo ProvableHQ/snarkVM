@@ -1116,4 +1116,66 @@ function compute:
             deploy_4_tx_id
         ]);
     }
+
+    #[test]
+    fn test_commitment_generation() {
+        let rng = &mut TestRng::default();
+
+        // Initialize the VM.
+        let vm = crate::vm::test_helpers::sample_vm();
+
+        // Generate an account.
+        let private_key = PrivateKey::new(rng).unwrap();
+        let view_key = ViewKey::try_from(&private_key).unwrap();
+        let address = Address::try_from(&private_key).unwrap();
+
+        // Initialize the genesis block.
+        let genesis = vm.genesis_beacon(&private_key, rng).unwrap();
+
+        // Select a record to spend.
+        let record_ciphertexts =
+            genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+        let record_plaintexts =
+            record_ciphertexts.values().map(|record| record.decrypt(&view_key).unwrap()).collect::<Vec<_>>();
+
+        println!("\n------------------- Decrypt records -------------------\n");
+        let _record_ciphertext = record_ciphertexts.values().next().unwrap();
+        let record_plaintext = record_plaintexts.first().unwrap();
+
+        let credits_program = Program::credits().unwrap();
+        let record_name = credits_program.records().first().unwrap().1.name();
+        let expected_commitment = record_plaintext.to_commitment(&credits_program.id(), &record_name).unwrap();
+
+        let microcredits = Identifier::from_str("microcredits").unwrap();
+        let amount = match record_plaintext.data().get(&microcredits) {
+            Some(console::program::Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => **amount,
+            _ => panic!("Invalid record"),
+        };
+
+        println!("\n------------------- Record - owner {address}, amount: {amount} -------------------\n");
+
+        println!("\n------------------- Generate a plaintext record using plaintext data -------------------\n");
+
+        let nonce = record_plaintext.nonce();
+        let record_value = Value::<CurrentNetwork>::from_str(&format!(
+            "{{ owner: {address}.private, microcredits: {amount}u64.private, _nonce: {nonce}.public }}"
+        ))
+        .unwrap();
+
+        match record_value {
+            Value::Record(constructed_record) => {
+                println!("\n------------------- Derive the commitment from the generated record -------------------\n");
+                let constructed_commitment =
+                    constructed_record.to_commitment(&credits_program.id(), &record_name).unwrap();
+
+                println!("\n------------------- Check that the commitments are equivalent  -------------------");
+                println!("expected_commitment: {expected_commitment}");
+                println!("constructed_commitment: {constructed_commitment}");
+                assert_eq!(constructed_commitment, expected_commitment);
+            }
+            _ => {
+                panic!("Expected a record value");
+            }
+        }
+    }
 }
