@@ -239,9 +239,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             .unwrap_or_default();
                         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
                         let (cost, (_, _)) = if consensus_version == ConsensusVersion::V1 {
-                            execution_cost_v1(&self.process().read(), execution)?
+                            execution_cost_v1(&self.process(), execution)?
                         } else {
-                            execution_cost_v2(&self.process().read(), execution)?
+                            execution_cost_v2(&self.process(), execution)?
                         };
                         // Ensure the cost does not exceed the transaction spend limit.
                         ensure!(
@@ -331,7 +331,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the execution proof, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.read().verify_execution(varuna_version, execution),
+            false => self.process.verify_execution(varuna_version, execution),
         };
         lap!(timer, "Verify the execution");
 
@@ -380,7 +380,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the fee, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.read().verify_fee(varuna_version, fee, deployment_or_execution_id),
+            false => self.process.verify_fee(varuna_version, fee, deployment_or_execution_id),
         };
         lap!(timer, "Verify the fee");
 

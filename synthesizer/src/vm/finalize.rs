@@ -16,6 +16,7 @@
 use super::*;
 
 use ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
+use synthesizer_program::StackProgram;
 use utilities::cfg_sort_by_cached_key;
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -275,10 +276,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Perform the atomic finalize over the transactions. */
 
-            // Acquire the write lock on the process.
+            // Acquire the write lock on the stacks.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
             // we choose to acquire the write lock for the entire duration of this atomic batch.
-            let process = self.process.write();
+            let process = &self.process;
+            let _stacks = self.process.stacks().write();
 
             // Initialize a list of the confirmed transactions.
             let mut confirmed = Vec::with_capacity(num_transactions);
@@ -586,10 +588,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Perform the atomic finalize over the transactions. */
 
-            // Acquire the write lock on the process.
+            // Acquire the write lock on the stacks.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
             // we choose to acquire the write lock for the entire duration of this atomic batch.
-            let mut process = self.process.write();
+            let process = &self.process;
+            let mut process_stacks = self.process.stacks().write();
 
             // Initialize a list for the deployed stacks.
             let mut stacks = Vec::new();
@@ -769,7 +772,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             // Commit all of the stacks to the process.
             if !stacks.is_empty() {
-                stacks.into_iter().for_each(|stack| process.add_stack(stack))
+                stacks.into_iter().for_each(|stack| {
+                    process_stacks.insert(*stack.program_id(), Arc::new(stack));
+                })
             }
 
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.

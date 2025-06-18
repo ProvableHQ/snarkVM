@@ -124,7 +124,7 @@ impl<N: Network> Package<N> {
         println!("⏳ Deploying '{}'...\n", program_id.to_string().bold());
 
         // Construct the process.
-        let mut process = Process::<N>::load()?;
+        let process = Process::<N>::load()?;
 
         // Add program imports to the process.
         let imports_directory = self.imports_directory();

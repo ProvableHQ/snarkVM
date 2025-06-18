@@ -2350,7 +2350,7 @@ fn test_deployment_exceeding_max_transaction_spend() {
 
         // Attempt to initialize a `Stack` for the program.
         // If this fails, then by `Stack::initialize` the finalize cost exceeds the `TRANSACTION_SPEND_LIMIT`.
-        if Stack::<CurrentNetwork>::new(&ledger.vm().process().read(), &program).is_err() {
+        if Stack::<CurrentNetwork>::new(&ledger.vm().process(), &program).is_err() {
             exceeding_program = Some(program);
             break;
         } else {
@@ -2727,11 +2727,10 @@ function foo:
             };
             let deployment = deployment_tx.deployment().unwrap().clone();
             for _ in 0..ITERATIONS {
-                let result =
-                    match try_vm_runtime!(|| process.read().verify_deployment::<CurrentAleo, _>(&deployment, rng)) {
-                        Ok(result) => result.is_ok(),
-                        Err(_) => false,
-                    };
+                let result = match try_vm_runtime!(|| process.verify_deployment::<CurrentAleo, _>(&deployment, rng)) {
+                    Ok(result) => result.is_ok(),
+                    Err(_) => false,
+                };
                 assert_eq!(result, expected_result);
             }
         };

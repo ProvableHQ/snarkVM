@@ -81,9 +81,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Compute the minimum execution cost.
                 let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
                 let (minimum_execution_cost, (_, _)) = if consensus_version == ConsensusVersion::V1 {
-                    execution_cost_v1(&self.process().read(), &execution)?
+                    execution_cost_v1(&self.process(), &execution)?
                 } else {
-                    execution_cost_v2(&self.process().read(), &execution)?
+                    execution_cost_v2(&self.process(), &execution)?
                 };
                 // Compute the execution ID.
                 let execution_id = execution.to_execution_id()?;
@@ -420,8 +420,8 @@ mod tests {
 
         let query = Query::VM(vm.block_store().clone());
         let (execution, _) = vm.execute_authorization_raw(authorization, &query, rng).unwrap();
-        let (cost, _) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
-        let (old_cost, _) = execution_cost_v1(&vm.process().read(), &execution).unwrap();
+        let (cost, _) = execution_cost_v2(&vm.process(), &execution).unwrap();
+        let (old_cost, _) = execution_cost_v1(&vm.process(), &execution).unwrap();
 
         assert_eq!(34_060, cost);
         assert_eq!(51_060, old_cost);
@@ -557,7 +557,7 @@ finalize test:
 
         let query = Query::VM(vm.block_store().clone());
         let (execution, _) = vm.execute_authorization_raw(authorization, &query, rng).unwrap();
-        let (cost, _) = execution_cost_v1(&vm.process().read(), &execution).unwrap();
+        let (cost, _) = execution_cost_v1(&vm.process(), &execution).unwrap();
         println!("Cost: {}", cost);
     }
 
@@ -942,7 +942,7 @@ finalize test:
         assert_eq!(execution.transitions().len(), <CurrentNetwork as Network>::MAX_INPUTS + 1);
 
         // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
+        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process(), &execution).unwrap();
 
         // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
         let mut expected_cost = 0;
@@ -951,7 +951,7 @@ finalize test:
             let program_id = transition.program_id();
             let function_name = transition.function_name();
             // Get the stack.
-            let stack = vm.process().read().get_stack(program_id).unwrap().clone();
+            let stack = vm.process().get_stack(program_id).unwrap().clone();
             // Get the finalize block of the transition and sum the cost of each command.
             let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
                 None => 0,
@@ -1078,7 +1078,7 @@ finalize test:
         assert_eq!(execution.transitions().len(), Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1);
 
         // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
+        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process(), &execution).unwrap();
 
         // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
         let mut expected_cost = 0;
@@ -1087,7 +1087,7 @@ finalize test:
             let program_id = transition.program_id();
             let function_name = transition.function_name();
             // Get the stack.
-            let stack = vm.process().read().get_stack(program_id).unwrap().clone();
+            let stack = vm.process().get_stack(program_id).unwrap().clone();
             // Get the finalize block of the transition and sum the cost of each command.
             let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
                 None => 0,

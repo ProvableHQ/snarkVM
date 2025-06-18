@@ -263,7 +263,7 @@ function main:
         let inputs = [Value::from_str("2group").unwrap()].into_iter();
 
         // Add the program to the VM.
-        vm.process().write().add_program(&program).unwrap();
+        vm.process().add_program(&program).unwrap();
 
         // Create an execution transaction that is 164613 bytes in size.
         let transaction = vm.execute(&private_key, ("too_big.aleo", "main"), inputs, None, 0, None, rng).unwrap();
