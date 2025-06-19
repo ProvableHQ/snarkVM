@@ -16,6 +16,11 @@ version = "=3.8.0"
 path = "../boolean"
 version = "=3.8.0"
 
+[dependencies.smallvec]
+version = "1.14"
+default-features = false
+features = ["const_generics"]
+
 [dependencies.zeroize]
 version = "1"
 features = [ "derive" ]
