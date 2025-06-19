@@ -3101,6 +3101,7 @@ version = "3.8.0"
 dependencies = [
  "bincode",
  "serde_json",
+ "smallvec",
  "snarkvm-console-network-environment",
  "snarkvm-console-types-boolean",
  "zeroize",
