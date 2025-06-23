@@ -44,12 +44,23 @@ impl<'de, N: Network> Deserialize<'de> for Metadata<N> {
         match deserializer.is_human_readable() {
             true => {
                 let mut metadata = serde_json::Value::deserialize(deserializer)?;
-                let cumulative_weight: String =
-                    DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_weight")?;
-                let cumulative_proof_target: String =
-                    DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_proof_target")?;
-                let cumulative_weight = cumulative_weight.parse::<u128>().map_err(de::Error::custom)?;
-                let cumulative_proof_target = cumulative_proof_target.parse::<u128>().map_err(de::Error::custom)?;
+                // Try parsing as a string for cumulative_weight and cumulative_proof_target.
+                // If it fails, fall back to parsing as a u128.
+                // This is necessary due to the non-backwards-compatible change introduced in https://github.com/ProvableHQ/snarkVM/pull/2559
+                let cumulative_weight: u128 = if let Ok(cumulative_weight) =
+                    <String as DeserializeExt>::take_from_value::<D>(&mut metadata, "cumulative_weight")
+                {
+                    cumulative_weight.parse::<u128>().map_err(de::Error::custom)?
+                } else {
+                    DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_weight")?
+                };
+                let cumulative_proof_target: u128 = if let Ok(cumulative_proof_target) =
+                    <String as DeserializeExt>::take_from_value::<D>(&mut metadata, "cumulative_proof_target")
+                {
+                    cumulative_proof_target.parse::<u128>().map_err(de::Error::custom)?
+                } else {
+                    DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_proof_target")?
+                };
                 Ok(Self::new(
                     DeserializeExt::take_from_value::<D>(&mut metadata, "network")?,
                     DeserializeExt::take_from_value::<D>(&mut metadata, "round")?,
