@@ -24,8 +24,8 @@ impl<N: Network> Serialize for Metadata<N> {
                 metadata.serialize_field("network", &self.network)?;
                 metadata.serialize_field("round", &self.round)?;
                 metadata.serialize_field("height", &self.height)?;
-                metadata.serialize_field("cumulative_weight", &self.cumulative_weight.to_string())?;
-                metadata.serialize_field("cumulative_proof_target", &self.cumulative_proof_target.to_string())?;
+                metadata.serialize_field("cumulative_weight", &self.cumulative_weight)?;
+                metadata.serialize_field("cumulative_proof_target", &self.cumulative_proof_target)?;
                 metadata.serialize_field("coinbase_target", &self.coinbase_target)?;
                 metadata.serialize_field("proof_target", &self.proof_target)?;
                 metadata.serialize_field("last_coinbase_target", &self.last_coinbase_target)?;
@@ -48,14 +48,14 @@ impl<'de, N: Network> Deserialize<'de> for Metadata<N> {
                 // If it fails, fall back to parsing as a u128.
                 // This is necessary due to the non-backwards-compatible change introduced in https://github.com/ProvableHQ/snarkVM/pull/2559
                 let cumulative_weight: u128 = if let Ok(cumulative_weight) =
-                    <String as DeserializeExt>::take_from_value::<D>(&mut metadata, "cumulative_weight")
+                    <String as DeserializeExt>::take_from_value::<D>(&mut metadata.clone(), "cumulative_weight")
                 {
                     cumulative_weight.parse::<u128>().map_err(de::Error::custom)?
                 } else {
                     DeserializeExt::take_from_value::<D>(&mut metadata, "cumulative_weight")?
                 };
                 let cumulative_proof_target: u128 = if let Ok(cumulative_proof_target) =
-                    <String as DeserializeExt>::take_from_value::<D>(&mut metadata, "cumulative_proof_target")
+                    <String as DeserializeExt>::take_from_value::<D>(&mut metadata.clone(), "cumulative_proof_target")
                 {
                     cumulative_proof_target.parse::<u128>().map_err(de::Error::custom)?
                 } else {
