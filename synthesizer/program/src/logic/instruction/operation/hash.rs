@@ -108,6 +108,7 @@ fn is_valid_destination_type<N: Network>(destination_type: &PlaintextType<N>) ->
         PlaintextType::Literal(LiteralType::Boolean)
             | PlaintextType::Literal(LiteralType::String)
             | PlaintextType::Struct(..)
+            | PlaintextType::ExternalStruct(..)
             | PlaintextType::Array(..)
     )
 }
@@ -203,7 +204,7 @@ macro_rules! do_hash {
 
         let literal_type = match $destination_type {
             PlaintextType::Literal(literal_type) => *literal_type,
-            PlaintextType::Struct(..) => bail!("Cannot hash into a struct"),
+            PlaintextType::Struct(..) | PlaintextType::ExternalStruct(..) => bail!("Cannot hash into a struct"),
             PlaintextType::Array(..) => bail!("Cannot hash into an array (yet)"),
         };
 

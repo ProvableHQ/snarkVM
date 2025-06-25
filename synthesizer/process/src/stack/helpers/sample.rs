@@ -140,6 +140,11 @@ impl<N: Network> Stack<N> {
 
                 Plaintext::Struct(members, Default::default())
             }
+            PlaintextType::ExternalStruct(locator) => {
+                let external_stack = self.get_external_stack(locator.program_id())?;
+                let new_type = PlaintextType::Struct(*locator.resource());
+                return external_stack.sample_plaintext_internal(&new_type, depth, rng);
+            }
             // Sample an array.
             PlaintextType::Array(array_type) => {
                 // Sample each element of the array.

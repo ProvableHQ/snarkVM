@@ -159,6 +159,7 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
             .map(|input_type| match input_type {
                 RegisterType::Plaintext(PlaintextType::Literal(literal_type)) => Ok(*literal_type),
                 RegisterType::Plaintext(PlaintextType::Struct(..))
+                | RegisterType::Plaintext(PlaintextType::ExternalStruct(..))
                 | RegisterType::Plaintext(PlaintextType::Array(..))
                 | RegisterType::Record(..)
                 | RegisterType::ExternalRecord(..)

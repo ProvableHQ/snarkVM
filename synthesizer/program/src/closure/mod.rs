@@ -69,6 +69,11 @@ impl<N: Network> ClosureCore<N> {
     pub const fn outputs(&self) -> &IndexSet<Output<N>> {
         &self.outputs
     }
+
+    /// Returns the closure output types.
+    pub fn output_types(&self) -> Vec<RegisterType<N>> {
+        self.outputs.iter().map(|output| output.register_type()).cloned().collect()
+    }
 }
 
 impl<N: Network> ClosureCore<N> {

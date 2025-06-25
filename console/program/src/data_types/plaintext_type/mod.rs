@@ -17,7 +17,7 @@ mod bytes;
 mod parse;
 mod serialize;
 
-use crate::{ArrayType, Identifier, LiteralType};
+use crate::{ArrayType, Identifier, LiteralType, Locator, ProgramID};
 use snarkvm_console_network::prelude::*;
 
 /// A `PlaintextType` defines the type parameter for a literal, struct, or array.
@@ -26,12 +26,47 @@ pub enum PlaintextType<N: Network> {
     /// A literal type contains its type name.
     /// The format of the type is `<type_name>`.
     Literal(LiteralType),
-    /// An struct type contains its identifier.
+    /// A struct type contains its identifier.
     /// The format of the type is `<identifier>`.
     Struct(Identifier<N>),
+    /// An external struct type contains its locator.
+    /// The format of the type is `<program_id>/<identifier>`.
+    ExternalStruct(Locator<N>),
     /// An array type contains its element type and length.
     /// The format of the type is `[<element_type>; <length>]`.
     Array(ArrayType<N>),
+}
+
+impl<N: Network> PlaintextType<N> {
+    /// Are the two types equivalent for the purposes of static checking?
+    ///
+    /// Since struct types are compared by structure, we can't determine equality
+    /// by only looking at their names.
+    pub fn equal_or_structs(&self, rhs: &Self) -> bool {
+        use PlaintextType::*;
+
+        match (self, rhs) {
+            (ExternalStruct(..) | Struct(..), ExternalStruct(..) | Struct(..)) => true,
+            (Literal(lit0), Literal(lit1)) => lit0 == lit1,
+            (Array(array0), Array(array1)) => {
+                array0.length() == array1.length()
+                    && array0.base_element_type().equal_or_structs(array1.base_element_type())
+            }
+            _ => false,
+        }
+    }
+
+    // Make unqualified structs into external ones with the given `id`.
+    pub fn qualify(self, id: ProgramID<N>) -> Self {
+        match self {
+            PlaintextType::ExternalStruct(..) | PlaintextType::Literal(..) => self,
+            PlaintextType::Struct(name) => PlaintextType::ExternalStruct(Locator::new(id, name)),
+            PlaintextType::Array(array_type) => {
+                let element_type = array_type.next_element_type().clone().qualify(id);
+                PlaintextType::Array(ArrayType::new(element_type, vec![*array_type.length()]).unwrap())
+            }
+        }
+    }
 }
 
 impl<N: Network> From<LiteralType> for PlaintextType<N> {
@@ -45,6 +80,13 @@ impl<N: Network> From<Identifier<N>> for PlaintextType<N> {
     /// Initializes a plaintext type from a struct type.
     fn from(struct_: Identifier<N>) -> Self {
         PlaintextType::Struct(struct_)
+    }
+}
+
+impl<N: Network> From<Locator<N>> for PlaintextType<N> {
+    /// Initializes a plaintext type from an external struct type.
+    fn from(locator: Locator<N>) -> Self {
+        PlaintextType::ExternalStruct(locator)
     }
 }
 

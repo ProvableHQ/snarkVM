@@ -64,7 +64,7 @@ impl<N: Network> RegisterTypes<N> {
                         // Ensure the register type matches the member type.
                         RegisterType::Plaintext(type_) => {
                             ensure!(
-                                &type_ == member_type,
+                                types_structurally_equivalent(stack, &type_, stack, member_type)?,
                                 "Struct entry '{struct_name}.{member_name}' expects a '{member_type}', but found '{type_}' in the operand '{operand}'.",
                             )
                         }
@@ -137,7 +137,7 @@ impl<N: Network> RegisterTypes<N> {
                         // Ensure the register type matches the element type.
                         RegisterType::Plaintext(type_) => {
                             ensure!(
-                                &type_ == array_type.next_element_type(),
+                                types_structurally_equivalent(stack, &type_, stack, array_type.next_element_type())?,
                                 "Array element expects a '{}', but found '{type_}' in the operand '{operand}'.",
                                 array_type.next_element_type()
                             )
