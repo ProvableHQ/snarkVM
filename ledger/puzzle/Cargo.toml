@@ -24,14 +24,21 @@ license = "Apache-2.0"
 edition = "2021"
 
 [[bench]]
-name = "puzzle"
-path = "benches/puzzle.rs"
+name = "merkle_puzzle"
+path = "benches/merkle_puzzle.rs"
+harness = false
+required-features = [ "setup" ]
+
+[[bench]]
+name = "synthesis_puzzle"
+path = "benches/synthesis_puzzle.rs"
 harness = false
 required-features = [ "setup" ]
 
 [features]
 default = [ "indexmap/rayon", "rayon" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
+merkle = [ "snarkvm-ledger-puzzle-epoch/merkle"]
 locktick = [ "dep:locktick", "snarkvm-algorithms/locktick" ]
 serial = [ "console/serial", "snarkvm-algorithms/serial" ]
 setup = [ ]
@@ -85,6 +92,10 @@ optional = true
 [dependencies.serde_json]
 version = "1.0"
 features = [ "preserve_order" ]
+
+[dev-dependencies.circuit]
+package = "snarkvm-circuit"
+path = "../../circuit"
 
 [dev-dependencies.console]
 package = "snarkvm-console"
