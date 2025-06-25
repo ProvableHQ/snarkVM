@@ -3527,6 +3527,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "rand",
+ "rand_chacha",
  "rayon",
  "serde",
  "serde_json",

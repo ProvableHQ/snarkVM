@@ -462,7 +462,7 @@ pub(crate) mod test_helpers {
     use synthesizer_snark::{Proof, VerifyingKey};
 
     pub(crate) type CurrentNetwork = MainnetV0;
-    type CurrentAleo = AleoV0;
+    pub(crate) type CurrentAleo = AleoV0;
 
     #[cfg(not(feature = "rocks"))]
     type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
@@ -3255,5 +3255,146 @@ function adder:
         } else {
             panic!("Expected an error, but the deployment was accepted.")
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{
+        program::StackProgram,
+        vm::test_helpers::{CurrentAleo, CurrentNetwork},
+    };
+    use circuit::Assignment;
+    use ledger_puzzle::PuzzleTrait;
+    use synthesizer_snark::{Certificate, UniversalSRS};
+
+    const ITERATIONS: u128 = 100;
+
+    // This is a rudimentary timer test for a varuna extension on the synthesis puzzle.
+    // We check the following metrics:
+    //   - R1CS time
+    //   - Key synthesis time
+    //   - Number of instructions
+    //   - Number of constraints
+    //   - Proof generation time
+    //   - PK size
+    //   - Certificate creation time
+    //   - Certificate verification time
+    #[test]
+    fn synthesis_puzzle_extension_timer() {
+        let rng = &mut TestRng::default();
+
+        let mut total_epoch_creation_time: u128 = 0;
+        let mut total_r1cs_time: u128 = 0;
+        let mut total_key_synthesis_time: u128 = 0;
+        let mut total_pk_size: u128 = 0;
+        let mut total_num_instructions: u128 = 0;
+        let mut total_num_constraints: u128 = 0;
+        let mut total_proof_generation_time: u128 = 0;
+        let mut largest_pk_size = 0;
+        let mut largest_num_constraints = 0;
+        let mut largest_num_instructions = 0;
+        let mut total_certificate_creation_time = 0;
+        let mut total_certificate_verification_time = 0;
+        let mut total_certificate_size = 0;
+
+        let universal_srs = UniversalSRS::<CurrentNetwork>::load().unwrap();
+
+        for _ in 0..ITERATIONS {
+            let puzzle = ledger_puzzle_epoch::SynthesisPuzzle::<CurrentNetwork, CurrentAleo>::new();
+
+            let epoch_hash = rng.gen();
+
+            // Create the epoch program
+            let timer = std::time::Instant::now();
+            let epoch_program = puzzle.get_epoch_program(epoch_hash).unwrap();
+            let function_name = Identifier::<CurrentNetwork>::from_str("synthesize").unwrap();
+            let elapsed = timer.elapsed().as_millis();
+            total_epoch_creation_time += elapsed;
+            println!("Created epoch program in {elapsed}ms");
+
+            let stack = epoch_program.stack();
+            println!("\n Program: {}\n", stack.program());
+
+            // Construct the assignment.
+            let timer = std::time::Instant::now();
+            let inputs = epoch_program.construct_inputs(&mut rand_chacha::ChaChaRng::seed_from_u64(0)).unwrap();
+            let r1cs = epoch_program.to_r1cs::<CurrentAleo>(inputs.clone()).unwrap();
+            let assignment = Assignment::from(r1cs);
+            let elapsed = timer.elapsed().as_millis();
+            total_r1cs_time += elapsed;
+            println!("Constructed inputs and r1cs in {elapsed}ms");
+
+            // Synthesize the proving and verifying key.
+            let timer = std::time::Instant::now();
+            let (pk, vk) = universal_srs.to_circuit_key(&function_name.to_string(), &assignment).unwrap();
+            let elapsed = timer.elapsed().as_millis();
+            total_key_synthesis_time += elapsed;
+            println!("Synthesized keys {elapsed}ms");
+
+            // Create certificate
+            let timer = std::time::Instant::now();
+            let certificate = Certificate::certify(&function_name.to_string(), &pk, &vk).unwrap();
+            let elapsed = timer.elapsed().as_millis();
+            total_certificate_creation_time += elapsed;
+            println!("Certificate created in {elapsed}ms");
+
+            // Verify the certificate
+            let timer = std::time::Instant::now();
+            assert!(certificate.verify(&function_name.to_string(), &assignment, &vk));
+            let elapsed = timer.elapsed().as_millis();
+            total_certificate_verification_time += elapsed;
+            println!("Certificate verified in {elapsed}ms");
+
+            // Check the proving and verifying key sizes.
+            let num_instructions = epoch_program.instructions().unwrap().len();
+            let num_constraints = vk.circuit_info.num_constraints as u64;
+            let proving_key_size = pk.to_bytes_le().unwrap().len();
+            let verifying_key_size = vk.to_bytes_le().unwrap().len();
+            let certificate_size = certificate.to_bytes_le().unwrap().len();
+
+            total_num_instructions += num_instructions as u128;
+            total_num_constraints += num_constraints as u128;
+            total_pk_size += proving_key_size as u128;
+            largest_pk_size = largest_pk_size.max(proving_key_size as u128);
+            largest_num_constraints = largest_num_constraints.max(num_constraints as u128);
+            largest_num_instructions = largest_num_instructions.max(num_instructions as u128);
+            total_certificate_size += certificate_size as u128;
+
+            println!("\nnum_instructions: {num_instructions}, num_constraints: {num_constraints}");
+            println!("proving_key_size: {proving_key_size} bytes");
+            println!("certificate_size: {certificate_size} bytes \n");
+            println!("verifying_key_size: {verifying_key_size} bytes \n");
+
+            let timer = std::time::Instant::now();
+            let _proof = pk.prove(&function_name.to_string(), VarunaVersion::V2, &assignment, rng).unwrap();
+            let elapsed = timer.elapsed().as_millis();
+            total_proof_generation_time += elapsed;
+            println!("Created proof in {elapsed}ms");
+        }
+
+        let avg_epoch_creation_time = total_epoch_creation_time / ITERATIONS;
+        let avg_r1cs_time = total_r1cs_time / ITERATIONS;
+        let avg_key_synthesis_time = total_key_synthesis_time / ITERATIONS;
+        let avg_num_instructions = total_num_instructions / ITERATIONS;
+        let avg_num_constraints = total_num_constraints / ITERATIONS;
+        let avg_pk_size = total_pk_size / ITERATIONS;
+        let avg_proof_generation_time = total_proof_generation_time / ITERATIONS;
+        let avg_certificate_creation_time = total_certificate_creation_time / ITERATIONS;
+        let avg_certificate_verification_time = total_certificate_verification_time / ITERATIONS;
+        let avg_certificate_size = total_certificate_size / ITERATIONS;
+
+        println!();
+        println!("Average number of instructions: {avg_num_instructions}, largest was {largest_num_instructions}");
+        println!("Average number of constraints: {avg_num_constraints}, largest was {largest_num_constraints}");
+        println!("Average proving key size: {avg_pk_size} bytes, largest was {largest_pk_size} bytes");
+        println!("Average epoch program creation time: {avg_epoch_creation_time}ms");
+        println!("Average r1cs/assignment generation time: {avg_r1cs_time}ms");
+        println!("Average key synthesis time: {avg_key_synthesis_time}ms");
+        println!("Average proof generation time: {avg_proof_generation_time}ms");
+        println!("Average certificate creation time: {avg_certificate_creation_time}ms");
+        println!("Average certificate verification time: {avg_certificate_verification_time}ms");
+        println!("Average certificate size: {avg_certificate_size} bytes");
     }
 }
