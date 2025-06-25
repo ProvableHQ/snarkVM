@@ -34,6 +34,22 @@ pub enum RegisterType<N: Network> {
     Future(Locator<N>),
 }
 
+impl<N: Network> RegisterType<N> {
+    /// Are the two types either equal, or both structs?
+    ///
+    /// Since struct types are compared by structure, we can't determine equality
+    /// by only looking at their names.
+    pub fn equal_or_structs(&self, rhs: &Self) -> bool {
+        use RegisterType::*;
+        for x in [self, rhs] {
+            if !matches!(x, Plaintext(PlaintextType::Struct(..) | PlaintextType::ExternalStruct(..))) {
+                return self == rhs;
+            }
+        }
+        true
+    }
+}
+
 impl<N: Network> From<ValueType<N>> for RegisterType<N> {
     /// Converts a value type to a register type.
     fn from(value: ValueType<N>) -> Self {

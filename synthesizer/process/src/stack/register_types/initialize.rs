@@ -267,6 +267,10 @@ impl<N: Network> RegisterTypes<N> {
         match register_type {
             RegisterType::Plaintext(PlaintextType::Literal(..)) => (),
             RegisterType::Plaintext(PlaintextType::Struct(struct_name)) => Self::check_struct(stack, struct_name)?,
+            RegisterType::Plaintext(PlaintextType::ExternalStruct(locator)) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                Self::check_struct(&*external_stack, locator.resource())?;
+            }
             RegisterType::Plaintext(PlaintextType::Array(array_type)) => Self::check_array(stack, array_type)?,
             RegisterType::Record(identifier) => {
                 // Ensure the record type is defined in the program.
@@ -321,6 +325,10 @@ impl<N: Network> RegisterTypes<N> {
         match register_type {
             RegisterType::Plaintext(PlaintextType::Literal(..)) => (),
             RegisterType::Plaintext(PlaintextType::Struct(struct_name)) => Self::check_struct(stack, struct_name)?,
+            RegisterType::Plaintext(PlaintextType::ExternalStruct(locator)) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                Self::check_struct(&*external_stack, locator.resource())?;
+            }
             RegisterType::Plaintext(PlaintextType::Array(array_type)) => Self::check_array(stack, array_type)?,
             RegisterType::Record(identifier) => {
                 // Ensure the record type is defined in the program.
@@ -348,10 +356,11 @@ impl<N: Network> RegisterTypes<N> {
         };
 
         // Ensure the operand type and the output type match.
-        if *register_type != self.get_type_from_operand(stack, operand)? {
+        let operand_type = self.get_type_from_operand(stack, operand)?;
+        if !register_type.equal_or_structs(&operand_type) {
             bail!(
                 "Output '{operand}' does not match the expected output operand type: expected '{}', found '{}'",
-                self.get_type_from_operand(stack, operand)?,
+                operand_type,
                 register_type
             )
         }
@@ -536,6 +545,18 @@ impl<N: Network> RegisterTypes<N> {
                             // Ensure the operand types match the struct.
                             self.matches_struct(stack, instruction.operands(), struct_)?;
                         }
+                        CastType::Plaintext(PlaintextType::ExternalStruct(locator)) => {
+                            // Ensure the struct name exists in the external program.
+                            let external_stack = stack.get_external_stack(locator.program_id())?;
+                            let struct_name = locator.resource();
+                            if !external_stack.program().contains_struct(struct_name) {
+                                bail!("Struct '{locator}' is not defined.")
+                            }
+                            // Retrieve the struct.
+                            let struct_ = external_stack.program().get_struct(struct_name)?;
+                            // Ensure the operand types match the struct.
+                            self.matches_struct(&*external_stack, instruction.operands(), struct_)?;
+                        }
                         CastType::Plaintext(PlaintextType::Array(array_type)) => {
                             // Ensure that the array type is valid.
                             RegisterTypes::check_array(stack, array_type)?;
@@ -671,6 +692,10 @@ impl<N: Network> RegisterTypes<N> {
             match member {
                 PlaintextType::Literal(..) => (),
                 PlaintextType::Struct(struct_name) => Self::check_struct(stack, struct_name)?,
+                PlaintextType::ExternalStruct(locator) => {
+                    let external_stack = stack.get_external_stack(locator.program_id())?;
+                    Self::check_struct(&*external_stack, locator.resource())?;
+                }
                 PlaintextType::Array(array_type) => Self::check_array(stack, array_type)?,
             }
         }

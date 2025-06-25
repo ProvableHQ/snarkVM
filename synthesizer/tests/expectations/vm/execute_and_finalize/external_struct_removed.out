@@ -1,0 +1,19 @@
+errors: []
+outputs:
+- verified: true
+  execute:
+    child.aleo/foo:
+      outputs: []
+  speculate: the execution was accepted
+  add_next_block: succeeded.
+additional:
+- child_outputs:
+    parent0.aleo/foo:
+      outputs:
+      - '{"type":"public","id":"6448260230717673003223478757145209815080058090345295700202663329455426952493field","value":"{\n  x: 12field\n}"}'
+    parent1.aleo/foo:
+      outputs:
+      - '{"type":"public","id":"885872919638524645838485642209354866002760158757501681201313125565346268957field","value":"{\n  x: 12field\n}"}'
+    credits.aleo/fee_public:
+      outputs:
+      - '{"type":"future","id":"3329606591783081622386721859561743677947217907434924521279363563620798058477field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2560u64\n  ]\n}"}'

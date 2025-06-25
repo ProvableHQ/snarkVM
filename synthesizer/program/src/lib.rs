@@ -396,6 +396,14 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
                         bail!("'{member_identifier}' in struct '{}' is not defined.", struct_name)
                     }
                 }
+                PlaintextType::ExternalStruct(locator) => {
+                    if !self.imports.contains_key(locator.program_id()) {
+                        bail!(
+                            "External program {} referenced in struct '{struct_name}' does not exist",
+                            locator.program_id()
+                        );
+                    }
+                }
                 PlaintextType::Array(array_type) => {
                     if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
                         // Ensure the member struct name exists in the program.
@@ -451,6 +459,14 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
                 PlaintextType::Struct(identifier) => {
                     if !self.structs.contains_key(identifier) {
                         bail!("Struct '{identifier}' in record '{record_name}' is not defined.")
+                    }
+                }
+                PlaintextType::ExternalStruct(locator) => {
+                    if !self.imports.contains_key(locator.program_id()) {
+                        bail!(
+                            "External program {} referenced in record '{record_name}' does not exist",
+                            locator.program_id()
+                        );
                     }
                 }
                 PlaintextType::Array(array_type) => {

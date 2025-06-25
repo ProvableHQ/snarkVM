@@ -20,7 +20,7 @@ use crate::{
 };
 use console::{
     network::prelude::*,
-    program::{Identifier, Locator, Register, RegisterType, ValueType},
+    program::{Identifier, Locator, PlaintextType, Register, RegisterType, ValueType},
 };
 
 /// The operator references a function name or closure name.
@@ -197,10 +197,12 @@ impl<N: Network> Call<N> {
         stack: &impl StackProgram<N>,
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
-        // Retrieve the external stack, if needed, and the resource.
-        let (external_stack, resource) = match &self.operator {
+        let stack_value;
+        let (is_external, program, name) = match &self.operator {
             CallOperator::Locator(locator) => {
-                (Some(stack.get_external_stack(locator.program_id())?), locator.resource())
+                let program_name = locator.program_id();
+                stack_value = Some(stack.get_external_stack(program_name)?);
+                (true, stack_value.as_ref().unwrap().program(), locator.resource())
             }
             CallOperator::Resource(resource) => {
                 // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
@@ -209,16 +211,12 @@ impl<N: Network> Call<N> {
                 if stack.program().contains_function(resource) {
                     bail!("Cannot call '{resource}'. Use a closure ('closure {resource}:') instead.")
                 }
-                (None, resource)
+                (false, stack.program(), resource)
             }
         };
-        // Retrieve the program.
-        let (is_external, program) = match &external_stack {
-            Some(external_stack) => (true, external_stack.program()),
-            None => (false, stack.program()),
-        };
+
         // If the operator is a closure, retrieve the closure and compute the output types.
-        if let Ok(closure) = program.get_closure(resource) {
+        if let Ok(closure) = program.get_closure(name) {
             // Ensure the number of operands matches the number of input statements.
             if closure.inputs().len() != self.operands.len() {
                 bail!("Expected {} inputs, found {}", closure.inputs().len(), self.operands.len())
@@ -235,7 +233,7 @@ impl<N: Network> Call<N> {
             Ok(closure.outputs().iter().map(|output| output.register_type()).cloned().collect())
         }
         // If the operator is a function, retrieve the function and compute the output types.
-        else if let Ok(function) = program.get_function(resource) {
+        else if let Ok(function) = program.get_function(name) {
             // Ensure the number of operands matches the number of input statements.
             if function.inputs().len() != self.operands.len() {
                 bail!("Expected {} inputs, found {}", function.inputs().len(), self.operands.len())
@@ -254,9 +252,19 @@ impl<N: Network> Call<N> {
                 .into_iter()
                 .map(|output_type| match (is_external, output_type) {
                     // If the output is a record and the function is external, return the external record type.
-                    (true, ValueType::Record(record_name)) => Ok(RegisterType::ExternalRecord(Locator::from_str(
-                        &format!("{}/{}", program.id(), record_name),
-                    )?)),
+                    (true, ValueType::Record(record_name)) => {
+                        Ok(RegisterType::ExternalRecord(Locator::new(*program.id(), record_name)))
+                    }
+                    // If the output is a simple Struct and the function is external, return an external struct type.
+                    (
+                        true,
+                        ValueType::Constant(PlaintextType::Struct(identifier))
+                        | ValueType::Public(PlaintextType::Struct(identifier))
+                        | ValueType::Private(PlaintextType::Struct(identifier)),
+                    ) => Ok(RegisterType::Plaintext(PlaintextType::ExternalStruct(Locator::new(
+                        *program.id(),
+                        identifier,
+                    )))),
                     // Else, return the register type.
                     (_, output_type) => Ok(RegisterType::from(output_type)),
                 })

@@ -22,6 +22,7 @@ impl<N: Network> Parser for PlaintextType<N> {
         // Parse to determine the plaintext type (order matters).
         alt((
             map(ArrayType::parse, |type_| Self::Array(type_)),
+            map(Locator::parse, |locator| Self::ExternalStruct(locator)),
             map(Identifier::parse, |identifier| Self::Struct(identifier)),
             map(LiteralType::parse, |type_| Self::Literal(type_)),
         ))(string)
@@ -60,6 +61,7 @@ impl<N: Network> Display for PlaintextType<N> {
             Self::Literal(literal) => Display::fmt(literal, f),
             // Prints the struct, i.e. signature
             Self::Struct(struct_) => Display::fmt(struct_, f),
+            Self::ExternalStruct(locator) => Display::fmt(locator, f),
             // Prints the array type, i.e. [field; 2u32]
             Self::Array(array) => Display::fmt(array, f),
         }

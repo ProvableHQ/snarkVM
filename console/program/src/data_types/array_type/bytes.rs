@@ -58,7 +58,7 @@ impl<N: Network> ToBytes for ArrayType<N> {
         // Note that the lengths are in the order of the outermost dimension to the innermost dimension.
         for _ in 1..N::MAX_DATA_DEPTH {
             element_type = match element_type {
-                PlaintextType::Literal(_) | PlaintextType::Struct(_) => break,
+                PlaintextType::Literal(_) | PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_) => break,
                 PlaintextType::Array(array_type) => {
                     lengths.push(*array_type.length());
                     array_type.next_element_type().clone()
@@ -85,6 +85,10 @@ impl<N: Network> ToBytes for ArrayType<N> {
                 // This is technically unreachable by definition, however we return an error
                 // out of an abundance of caution.
                 return Err(error(format!("Array type exceeds the maximum depth of {}.", N::MAX_DATA_DEPTH)));
+            }
+            PlaintextType::ExternalStruct(locator) => {
+                3u8.write_le(&mut writer)?;
+                locator.write_le(&mut writer)?;
             }
         }
 

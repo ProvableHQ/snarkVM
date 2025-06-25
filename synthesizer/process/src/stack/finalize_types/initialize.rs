@@ -143,6 +143,10 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(PlaintextType::Struct(struct_name)) => {
                 RegisterTypes::check_struct(stack, struct_name)?
             }
+            FinalizeType::Plaintext(PlaintextType::ExternalStruct(locator)) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                return self.check_input(&*external_stack, register, finalize_type);
+            }
             FinalizeType::Plaintext(PlaintextType::Array(array_type)) => RegisterTypes::check_array(stack, array_type)?,
             FinalizeType::Future(..) => (),
         };
@@ -670,6 +674,18 @@ impl<N: Network> FinalizeTypes<N> {
                             let struct_ = stack.program().get_struct(struct_name)?;
                             // Ensure the operand types match the struct.
                             self.matches_struct(stack, instruction.operands(), struct_)?;
+                        }
+                        CastType::Plaintext(PlaintextType::ExternalStruct(locator)) => {
+                            let external_stack = stack.get_external_stack(locator.program_id())?;
+                            let struct_name = locator.resource();
+                            // Ensure the struct name exists in the program.
+                            if !external_stack.program().contains_struct(struct_name) {
+                                bail!("Struct '{locator}' is not defined.")
+                            }
+                            // Retrieve the struct.
+                            let struct_ = external_stack.program().get_struct(struct_name)?;
+                            // Ensure the operand types match the struct.
+                            self.matches_struct(&*external_stack, instruction.operands(), struct_)?;
                         }
                         CastType::Plaintext(PlaintextType::Array(array_type)) => {
                             // Ensure that the array type is valid.

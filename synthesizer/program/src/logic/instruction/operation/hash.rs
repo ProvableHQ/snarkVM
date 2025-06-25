@@ -210,7 +210,7 @@ macro_rules! do_hash {
 
         let literal_type = match $destination_type {
             PlaintextType::Literal(literal_type) => *literal_type,
-            PlaintextType::Struct(..) => bail!("Cannot hash into a struct"),
+            PlaintextType::Struct(..) | PlaintextType::ExternalStruct(..) => bail!("Cannot hash into a struct"),
             PlaintextType::Array(..) => bail!("Cannot hash into an array (yet)"),
         };
 
