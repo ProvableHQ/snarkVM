@@ -69,7 +69,10 @@ fn puzzle_verify(c: &mut Criterion) {
         let solutions = PuzzleSolutions::new(solutions).unwrap();
 
         c.bench_function("Puzzle::check_solutions", |b| {
-            b.iter(|| puzzle.check_solutions(&solutions, epoch_hash, 0u64).unwrap())
+            b.iter(|| {
+                puzzle.clear_proof_target_cache();
+                puzzle.check_solutions(&solutions, epoch_hash, 0u64).unwrap()
+            })
         });
     }
 }

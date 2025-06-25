@@ -225,6 +225,12 @@ impl<N: Network> Puzzle<N> {
         })
     }
 
+    /// Clears the proof target cache.
+    pub fn clear_proof_target_cache(&self) {
+        // Clear the proof target cache.
+        self.proof_target_cache.write().clear();
+    }
+
     /// Returns a solution to the puzzle.
     pub fn prove(
         &self,
