@@ -136,7 +136,7 @@ impl Network for MainnetV0 {
 
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
-    #[cfg(not(any(test, feature = "test")))]
+    #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
     const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 7] = [
         (ConsensusVersion::V1, 0),
         (ConsensusVersion::V2, 2_800_000),
@@ -148,7 +148,7 @@ impl Network for MainnetV0 {
     ];
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
-    #[cfg(any(test, feature = "test"))]
+    #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
     const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 7] = [
         (ConsensusVersion::V1, 0),
         (ConsensusVersion::V2, 10),
@@ -161,18 +161,18 @@ impl Network for MainnetV0 {
     /// The network edition.
     const EDITION: u16 = 0;
     /// The genesis block coinbase target.
-    #[cfg(not(feature = "test"))]
+    #[cfg(not(feature = "test_targets"))]
     const GENESIS_COINBASE_TARGET: u64 = (1u64 << 29).saturating_sub(1);
     /// The genesis block coinbase target.
     /// This is deliberately set to a low value (32) for testing purposes only.
-    #[cfg(feature = "test")]
+    #[cfg(feature = "test_targets")]
     const GENESIS_COINBASE_TARGET: u64 = (1u64 << 5).saturating_sub(1);
     /// The genesis block proof target.
-    #[cfg(not(feature = "test"))]
+    #[cfg(not(feature = "test_targets"))]
     const GENESIS_PROOF_TARGET: u64 = 1u64 << 27;
     /// The genesis block proof target.
     /// This is deliberately set to a low value (8) for testing purposes only.
-    #[cfg(feature = "test")]
+    #[cfg(feature = "test_targets")]
     const GENESIS_PROOF_TARGET: u64 = 1u64 << 3;
     /// The fixed timestamp of the genesis block.
     const GENESIS_TIMESTAMP: i64 = 1725462000 /* 2024-09-04 11:00:00 UTC */;
@@ -181,7 +181,7 @@ impl Network for MainnetV0 {
     /// The function name for the inclusion circuit.
     const INCLUSION_FUNCTION_NAME: &'static str = snarkvm_parameters::mainnet::NETWORK_INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
-    #[cfg(not(any(test, feature = "test")))]
+    #[cfg(not(any(test, feature = "test", feature = "test_max_certificates")))]
     const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4] = [
         (ConsensusVersion::V1, 16),
         (ConsensusVersion::V3, 25),
@@ -189,7 +189,7 @@ impl Network for MainnetV0 {
         (ConsensusVersion::V6, 35),
     ];
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
-    #[cfg(any(test, feature = "test"))]
+    #[cfg(any(test, feature = "test", feature = "test_max_certificates"))]
     const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4] = [
         (ConsensusVersion::V1, 100),
         (ConsensusVersion::V3, 100),
