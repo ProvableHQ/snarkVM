@@ -3391,6 +3391,7 @@ dependencies = [
  "snarkvm-algorithms",
  "snarkvm-console",
  "snarkvm-ledger-puzzle-epoch",
+ "snarkvm-utilities",
 ]
 
 [[package]]

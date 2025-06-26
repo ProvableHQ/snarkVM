@@ -42,7 +42,7 @@ use console::{
 use ledger_committee::Committee;
 use ledger_narwhal_batch_header::BatchHeader;
 use synthesizer_program::FinalizeOperation;
-use utilities::{cfg_find_value, cfg_find_value_map};
+use utilities::{cfg_find_value, cfg_find_value_map, cfg_values};
 
 use indexmap::IndexMap;
 
@@ -95,17 +95,17 @@ impl<N: Network> Transactions<N> {
 
     /// Returns the number of accepted transactions.
     pub fn num_accepted(&self) -> usize {
-        cfg_values!(self.transactions).filter(|tx| tx.is_accepted()).count()
+        cfg_values(&self.transactions).filter(|tx| tx.is_accepted()).count()
     }
 
     /// Returns the number of rejected transactions.
     pub fn num_rejected(&self) -> usize {
-        cfg_values!(self.transactions).filter(|tx| tx.is_rejected()).count()
+        cfg_values(&self.transactions).filter(|tx| tx.is_rejected()).count()
     }
 
     /// Returns the number of finalize operations.
     pub fn num_finalize(&self) -> usize {
-        cfg_values!(self.transactions).map(|tx| tx.num_finalize()).sum()
+        cfg_values(&self.transactions).map(|tx| tx.num_finalize()).sum()
     }
 
     /// Returns the index of the transaction with the given ID, if it exists.
@@ -117,17 +117,17 @@ impl<N: Network> Transactions<N> {
 impl<N: Network> Transactions<N> {
     /// Returns `true` if the transactions contains the given transition ID.
     pub fn contains_transition(&self, transition_id: &N::TransitionID) -> bool {
-        cfg_values!(self.transactions).any(|tx| tx.contains_transition(transition_id))
+        cfg_values(&self.transactions).any(|tx| tx.contains_transition(transition_id))
     }
 
     /// Returns `true` if the transactions contains the given serial number.
     pub fn contains_serial_number(&self, serial_number: &Field<N>) -> bool {
-        cfg_values!(self.transactions).any(|tx| tx.contains_serial_number(serial_number))
+        cfg_values(&self.transactions).any(|tx| tx.contains_serial_number(serial_number))
     }
 
     /// Returns `true` if the transactions contains the given commitment.
     pub fn contains_commitment(&self, commitment: &Field<N>) -> bool {
-        cfg_values!(self.transactions).any(|tx| tx.contains_commitment(commitment))
+        cfg_values(&self.transactions).any(|tx| tx.contains_commitment(commitment))
     }
 }
 

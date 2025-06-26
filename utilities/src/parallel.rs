@@ -207,17 +207,14 @@ macro_rules! cfg_keys {
 }
 
 /// Turns a collection into an iterator.
-#[macro_export]
-macro_rules! cfg_values {
-    ($e: expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $e.par_values();
+#[cfg(all(feature = "serial", feature = "indexmap"))]
+pub fn cfg_values<K: Sync, V: Sync>(collection: &indexmap::IndexMap<K, V>) -> indexmap::map::Values<K, V> {
+    collection.values()
+}
 
-        #[cfg(feature = "serial")]
-        let result = $e.values();
-
-        result
-    }};
+#[cfg(all(not(feature = "serial"), feature = "indexmap"))]
+pub fn cfg_values<K: Sync, V: Sync>(collection: &indexmap::IndexMap<K, V>) -> indexmap::map::rayon::ParValues<K, V> {
+    collection.par_values()
 }
 
 /// Find a value `v` in an indexmap where `lambda(v)` evalutes to true (if any).

@@ -115,7 +115,7 @@ impl<N: Network> Puzzle<N> {
     pub fn get_all_leaves(&self, solutions: &PuzzleSolutions<N>) -> Result<Vec<Vec<Vec<bool>>>> {
         // Ensure all of the solutions are for the same epoch.
         ensure!(
-            cfg_values!(solutions).all(|solution| solution.epoch_hash() == solutions[0].epoch_hash()),
+            cfg_values(&**solutions).all(|solution| solution.epoch_hash() == solutions[0].epoch_hash()),
             "The solutions are for different epochs"
         );
         // Construct the RNGs.
