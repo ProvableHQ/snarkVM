@@ -119,7 +119,7 @@ impl<N: Network> Puzzle<N> {
             "The solutions are for different epochs"
         );
         // Construct the RNGs.
-        let rngs = cfg_keys!(solutions).map(|solution_id| ChaChaRng::seed_from_u64(**solution_id)).collect::<Vec<_>>();
+        let rngs = cfg_keys(solutions).map(|solution_id| ChaChaRng::seed_from_u64(**solution_id)).collect::<Vec<_>>();
         // Output the leaves.
         self.inner.to_all_leaves(solutions[0].epoch_hash(), rngs)
     }

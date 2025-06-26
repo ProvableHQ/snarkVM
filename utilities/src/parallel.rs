@@ -192,26 +192,25 @@ macro_rules! cfg_reduce_with {
     }};
 }
 
-/// Turns a collection into an iterator.
-#[macro_export]
-macro_rules! cfg_keys {
-    ($e: expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $e.par_keys();
-
-        #[cfg(feature = "serial")]
-        let result = $e.keys();
-
-        result
-    }};
+/// Returns an iterator over all values in an indexmap.
+#[cfg(all(feature = "serial", feature = "indexmap"))]
+pub fn cfg_keys<K: Sync, V: Sync>(collection: &indexmap::IndexMap<K, V>) -> indexmap::map::Keys<K, V> {
+    collection.keys()
 }
 
-/// Turns a collection into an iterator.
+/// Returns an iterator over all values in an indexmap.
+#[cfg(all(not(feature = "serial"), feature = "indexmap"))]
+pub fn cfg_keys<K: Sync, V: Sync>(collection: &indexmap::IndexMap<K, V>) -> indexmap::map::rayon::ParKeys<K, V> {
+    collection.par_keys()
+}
+
+/// Returns an iterator over all values in an indexmap.
 #[cfg(all(feature = "serial", feature = "indexmap"))]
 pub fn cfg_values<K: Sync, V: Sync>(collection: &indexmap::IndexMap<K, V>) -> indexmap::map::Values<K, V> {
     collection.values()
 }
 
+/// Returns an iterator over all values in an indexmap.
 #[cfg(all(not(feature = "serial"), feature = "indexmap"))]
 pub fn cfg_values<K: Sync, V: Sync>(collection: &indexmap::IndexMap<K, V>) -> indexmap::map::rayon::ParValues<K, V> {
     collection.par_values()
