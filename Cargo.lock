@@ -3256,6 +3256,7 @@ dependencies = [
  "snarkvm-synthesizer-process",
  "snarkvm-synthesizer-program",
  "snarkvm-synthesizer-snark",
+ "snarkvm-utilities",
 ]
 
 [[package]]
@@ -3622,6 +3623,7 @@ dependencies = [
  "aleo-std",
  "anyhow",
  "bincode",
+ "indexmap 2.9.0",
  "num-bigint",
  "num_cpus",
  "rand",

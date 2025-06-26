@@ -15,6 +15,9 @@
 
 use crate::{boxed::Box, vec::Vec};
 
+#[cfg(all(not(feature = "serial"), feature = "indexmap"))]
+use rayon::iter::ParallelIterator;
+
 pub struct ExecutionPool<'a, T> {
     jobs: Vec<Box<dyn 'a + FnOnce() -> T + Send>>,
 }
@@ -217,22 +220,23 @@ macro_rules! cfg_values {
     }};
 }
 
-/// Find an element `e` where `lambda(e)` evalutes to true (if any).
+/// Find a value `v` in an indexmap where `lambda(v)` evalutes to true (if any).
 ///
 /// # Notes
 /// - This returns at most one entry that satisfies the given condition, not necessarily the first one.
 /// - `closure` must be a lambda function returning a boolean, e.g., `|e| e > 0`.
-#[macro_export]
-macro_rules! cfg_find {
-    ($object:expr, $closure:expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $object.par_values().find_any($closure);
+#[cfg(feature = "indexmap")]
+#[inline(always)]
+pub fn cfg_find_value<K: Sync, V: Sync, F: Sync + Fn(&V) -> bool>(
+    collection: &indexmap::IndexMap<K, V>,
+    closure: F,
+) -> Option<&V> {
+    #[cfg(feature = "serial")]
+    let result = collection.values().find(|v| closure(*v));
+    #[cfg(not(feature = "serial"))]
+    let result = collection.par_values().find_any(|v| closure(*v));
 
-        #[cfg(feature = "serial")]
-        let result = $object.values().find($closure);
-
-        result
-    }};
+    result
 }
 
 /// Applies a function and returns an entry where `lambda(e)` is not None.
@@ -240,17 +244,18 @@ macro_rules! cfg_find {
 /// # Notes
 /// - This returns at most one entry that satisfies the given condition, not necessarily the first one.
 /// - `closure` must be a lambda function returning Option, e.g., `|e| Some(e)`.
-#[macro_export]
-macro_rules! cfg_find_map {
-    ($object:expr, $closure:expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $object.par_values().filter_map($closure).find_any(|_| true);
+#[cfg(feature = "indexmap")]
+#[inline(always)]
+pub fn cfg_find_value_map<'a, K: Sync, V: Sync, V2: Sync + Send, F: Sync + Send + Fn(&'a V) -> Option<&'a V2>>(
+    collection: &'a indexmap::IndexMap<K, V>,
+    closure: F,
+) -> Option<&'a V2> {
+    #[cfg(feature = "serial")]
+    let result = collection.values().find_map(closure);
+    #[cfg(not(feature = "serial"))]
+    let result = collection.par_values().filter_map(closure).find_any(|_| true);
 
-        #[cfg(feature = "serial")]
-        let result = $object.values().find_map($closure);
-
-        result
-    }};
+    result
 }
 
 /// Applies fold to the iterator

@@ -73,8 +73,6 @@ pub mod prelude {
         Uniform,
         cfg_chunks,
         cfg_chunks_mut,
-        cfg_find,
-        cfg_find_map,
         cfg_into_iter,
         cfg_iter,
         cfg_keys,
