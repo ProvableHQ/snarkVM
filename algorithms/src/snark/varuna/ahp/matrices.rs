@@ -25,7 +25,7 @@ use crate::{
     },
 };
 use snarkvm_fields::{Field, PrimeField};
-use snarkvm_utilities::{cfg_into_iter, cfg_iter, cfg_iter_mut, serialize::*};
+use snarkvm_utilities::{cfg_into_iter, cfg_iter, serialize::*};
 
 use anyhow::{Result, anyhow, ensure};
 
@@ -170,8 +170,8 @@ pub(crate) fn matrix_evals<F: PrimeField>(
     let non_zero_entries = row_indices.len();
 
     // Zip safety: we intentionally only multiply the first non_zero_entries
-    cfg_iter_mut!(row_col_indices).zip(&col_indices).for_each(|(rc, &col)| *rc *= col);
-    cfg_iter_mut!(row_col_vals).zip(&row_col_indices).for_each(|(v, rc)| *v *= rc);
+    cfg_iter(&mut row_col_indices).zip(&col_indices).for_each(|(rc, &col)| *rc *= col);
+    cfg_iter(&mut row_col_vals).zip(&row_col_indices).for_each(|(v, rc)| *v *= rc);
 
     // Fill up the evaluations to the next power of two
     let padding = non_zero_domain.size() - non_zero_entries;

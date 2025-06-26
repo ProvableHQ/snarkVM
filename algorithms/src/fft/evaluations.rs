@@ -22,7 +22,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{cfg_iter, cfg_iter_mut, serialize::*};
+use snarkvm_utilities::{cfg_iter, serialize::*};
 
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
@@ -115,7 +115,7 @@ impl<'a, F: PrimeField> MulAssign<&'a Evaluations<F>> for Evaluations<F> {
     #[inline]
     fn mul_assign(&mut self, other: &'a Evaluations<F>) {
         assert_eq!(self.domain, other.domain, "domains are unequal");
-        cfg_iter_mut!(self.evaluations).zip_eq(&other.evaluations).for_each(|(a, b)| *a *= b);
+        cfg_iter(&mut self.evaluations).zip_eq(&other.evaluations).for_each(|(a, b)| *a *= b);
     }
 }
 
@@ -134,7 +134,7 @@ impl<'a, F: PrimeField> AddAssign<&'a Evaluations<F>> for Evaluations<F> {
     #[inline]
     fn add_assign(&mut self, other: &'a Evaluations<F>) {
         assert_eq!(self.domain, other.domain, "domains are unequal");
-        cfg_iter_mut!(self.evaluations).zip_eq(&other.evaluations).for_each(|(a, b)| *a += b);
+        cfg_iter(&mut self.evaluations).zip_eq(&other.evaluations).for_each(|(a, b)| *a += b);
     }
 }
 
@@ -153,7 +153,7 @@ impl<'a, F: PrimeField> SubAssign<&'a Evaluations<F>> for Evaluations<F> {
     #[inline]
     fn sub_assign(&mut self, other: &'a Evaluations<F>) {
         assert_eq!(self.domain, other.domain, "domains are unequal");
-        cfg_iter_mut!(self.evaluations).zip_eq(&other.evaluations).for_each(|(a, b)| *a -= b);
+        cfg_iter(&mut self.evaluations).zip_eq(&other.evaluations).for_each(|(a, b)| *a -= b);
     }
 }
 
@@ -172,6 +172,6 @@ impl<'a, F: PrimeField> DivAssign<&'a Evaluations<F>> for Evaluations<F> {
     #[inline]
     fn div_assign(&mut self, other: &'a Evaluations<F>) {
         assert_eq!(self.domain, other.domain, "domains are unequal");
-        cfg_iter_mut!(self.evaluations).zip_eq(&other.evaluations).for_each(|(a, b)| *a /= b);
+        cfg_iter(&mut self.evaluations).zip_eq(&other.evaluations).for_each(|(a, b)| *a /= b);
     }
 }

@@ -16,7 +16,7 @@
 use super::PolynomialLabel;
 use crate::fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, Polynomial, SparsePolynomial};
 use snarkvm_fields::{Field, PrimeField};
-use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, cfg_iter, cfg_iter_mut};
+use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, cfg_iter};
 
 use anyhow::Result;
 use std::borrow::Cow;
@@ -327,7 +327,7 @@ impl<'a, F: PrimeField> PolynomialWithBasis<'a, F> {
                 let powers: Vec<_> = domain.elements().collect();
                 let mut denominators = cfg_iter(&powers).map(|pow| point - pow).collect::<Vec<_>>();
                 snarkvm_fields::batch_inversion(&mut denominators);
-                cfg_iter_mut!(denominators)
+                cfg_iter(&mut denominators)
                     .zip_eq(powers)
                     .zip_eq(&evaluations.evaluations)
                     .map(|((denom, power), coeff)| *denom * power * coeff)

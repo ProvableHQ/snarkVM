@@ -18,7 +18,7 @@
 use crate::fft::{EvaluationDomain, Evaluations};
 use Polynomial::*;
 use snarkvm_fields::{Field, PrimeField};
-use snarkvm_utilities::{SerializationError, cfg_iter_mut, serialize::*};
+use snarkvm_utilities::{SerializationError, cfg_iter, serialize::*};
 
 use anyhow::{Result, ensure};
 use std::{borrow::Cow, convert::TryInto};
@@ -281,7 +281,7 @@ impl<F: PrimeField> Polynomial<'_, F> {
                         .chunks(domain.size())
                         .map(|d| Evaluations::from_vec_and_domain(domain.fft(d), domain))
                         .fold(Evaluations::from_vec_and_domain(vec![F::zero(); domain.size()], domain), |mut acc, e| {
-                            cfg_iter_mut!(acc.evaluations).zip(e.evaluations).for_each(|(a, e)| *a += e);
+                            cfg_iter(&mut acc.evaluations).zip(e.evaluations).for_each(|(a, e)| *a += e);
                             acc
                         })
                 } else {
@@ -294,7 +294,7 @@ impl<F: PrimeField> Polynomial<'_, F> {
                         .chunks(domain.size())
                         .map(|d| Evaluations::from_vec_and_domain(domain.fft(d), domain))
                         .fold(Evaluations::from_vec_and_domain(vec![F::zero(); domain.size()], domain), |mut acc, e| {
-                            cfg_iter_mut!(acc.evaluations).zip(e.evaluations).for_each(|(a, e)| *a += e);
+                            cfg_iter(&mut acc.evaluations).zip(e.evaluations).for_each(|(a, e)| *a += e);
                             acc
                         })
                 } else {

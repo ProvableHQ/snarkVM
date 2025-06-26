@@ -18,7 +18,7 @@ use crate::{
     traits::{AffineCurve, ProjectiveCurve, ShortWeierstrassParameters as Parameters},
 };
 use snarkvm_fields::{Field, One, Zero, impl_add_sub_from_field_ref};
-use snarkvm_utilities::{FromBytes, ToBytes, cfg_iter_mut, rand::Uniform, serialize::*};
+use snarkvm_utilities::{FromBytes, ToBytes, cfg_iter, rand::Uniform, serialize::*};
 
 use core::{
     fmt::{Display, Formatter, Result as FmtResult},
@@ -209,7 +209,7 @@ impl<P: Parameters> ProjectiveCurve for Projective<P> {
             g.z = tmp * s;
             tmp = newtmp;
         }
-        cfg_iter_mut!(v).filter(|g| !g.is_normalized()).for_each(|g| {
+        cfg_iter(v).filter(|g| !g.is_normalized()).for_each(|g| {
             // Perform affine transformations
             let z2 = g.z.square(); // 1/z
             g.x *= &z2; // x/z^2

@@ -75,5 +75,5 @@ default-features = false
 [features]
 default = [ "snarkvm-utilities/default" ]
 profiler = [ "aleo-std/profiler" ]
-serial = [ ]
+serial = [ "snarkvm-utilities/serial" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]

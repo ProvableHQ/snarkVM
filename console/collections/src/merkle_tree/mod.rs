@@ -698,7 +698,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
                     // If any level requires computing more than 100 nodes, borrow the tree for performance.
                     match tuples.len() >= 100 {
                         // Option 1: Borrow the tree to compute and store the hashes for the new indices in the current level.
-                        true => cfg_iter_mut!(tree[middle..middle_precompute]).zip_eq(cfg_iter(&tuples)).try_for_each(
+                        true => cfg_iter(&mut tree[middle..middle_precompute]).zip_eq(cfg_iter(&tuples)).try_for_each(
                             |(node, (left, right))| {
                                 *node = self.path_hasher.hash_children(left, right)?;
                                 Ok::<_, Error>(())
@@ -740,7 +740,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
                 // If any level requires computing more than 100 nodes, borrow the tree for performance.
                 match tuples.len() >= 100 {
                     // Option 1: Borrow the tree to compute and store the hashes for the new indices in the current level.
-                    true => cfg_iter_mut!(tree[middle..end]).zip_eq(cfg_iter(&tuples)).try_for_each(
+                    true => cfg_iter(&mut tree[middle..end]).zip_eq(cfg_iter(&tuples)).try_for_each(
                         |(node, (left, right))| {
                             *node = self.path_hasher.hash_children(left, right)?;
                             Ok::<_, Error>(())

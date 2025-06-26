@@ -32,7 +32,7 @@ use crate::{
     },
 };
 use snarkvm_fields::{PrimeField, batch_inversion_and_mul};
-use snarkvm_utilities::{ExecutionPool, cfg_iter, cfg_iter_mut};
+use snarkvm_utilities::{ExecutionPool, cfg_iter};
 
 use anyhow::Result;
 use core::convert::TryInto;
@@ -208,7 +208,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let matrix_sumcheck_constants = v_R_i_alpha_v_C_i_beta * constraint_domain.size_inv * variable_domain.size_inv;
         batch_inversion_and_mul(&mut inverses, &matrix_sumcheck_constants);
 
-        cfg_iter_mut!(inverses).zip_eq(&row_col_val.evaluations).for_each(|(inv, v)| *inv *= v);
+        cfg_iter(&mut inverses).zip_eq(&row_col_val.evaluations).for_each(|(inv, v)| *inv *= v);
         let f_evals_on_K = inverses;
 
         end_timer!(f_evals_time);

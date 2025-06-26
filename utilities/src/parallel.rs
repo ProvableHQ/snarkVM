@@ -104,20 +104,6 @@ pub fn cfg_iter<C: rayon::iter::IntoParallelIterator>(collection: C) -> C::Iter 
     collection.into_par_iter()
 }
 
-/// Creates parallel iterator over mut refs if `parallel` feature is enabled.
-#[macro_export]
-macro_rules! cfg_iter_mut {
-    ($e: expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $e.par_iter_mut();
-
-        #[cfg(feature = "serial")]
-        let result = $e.iter_mut();
-
-        result
-    }};
-}
-
 /// Creates parallel iterator if `parallel` feature is enabled.
 #[macro_export]
 macro_rules! cfg_into_iter {

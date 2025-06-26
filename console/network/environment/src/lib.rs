@@ -77,7 +77,6 @@ pub mod prelude {
         cfg_find_map,
         cfg_into_iter,
         cfg_iter,
-        cfg_iter_mut,
         cfg_keys,
         cfg_par_bridge,
         cfg_reduce,

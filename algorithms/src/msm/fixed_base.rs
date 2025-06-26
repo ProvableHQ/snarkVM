@@ -15,7 +15,7 @@
 
 use snarkvm_curves::traits::ProjectiveCurve;
 use snarkvm_fields::{FieldParameters, PrimeField};
-use snarkvm_utilities::{ToBits, cfg_into_iter, cfg_iter, cfg_iter_mut};
+use snarkvm_utilities::{ToBits, cfg_into_iter, cfg_iter};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -46,7 +46,7 @@ impl FixedBase {
             }
         }
 
-        cfg_iter_mut!(multiples_of_g).enumerate().take(outerc).zip(g_outers).for_each(
+        cfg_iter(&mut multiples_of_g).enumerate().take(outerc).zip(g_outers).for_each(
             |((outer, multiples_of_g), g_outer)| {
                 let cur_in_window = if outer == outerc - 1 { last_in_window } else { in_window };
 

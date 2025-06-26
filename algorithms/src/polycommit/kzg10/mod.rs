@@ -28,7 +28,7 @@ use crate::{
 };
 use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, PrimeField, Zero};
-use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, rand::Uniform};
+use snarkvm_utilities::{BitIteratorBE, cfg_iter, rand::Uniform};
 
 use anyhow::{Result, anyhow, ensure};
 use core::{marker::PhantomData, ops::Mul};
@@ -294,7 +294,7 @@ impl<E: PairingEngine> KZG10<E> {
         let mut divisor_evals = cfg_iter(domain_elements).map(|&e| e - point).collect::<Vec<_>>();
         snarkvm_fields::batch_inversion(&mut divisor_evals);
         ensure!(divisor_evals.len() == evaluations.len());
-        cfg_iter_mut!(divisor_evals).zip_eq(evaluations).for_each(|(divisor_eval, &eval)| {
+        cfg_iter(&mut divisor_evals).zip_eq(evaluations).for_each(|(divisor_eval, &eval)| {
             *divisor_eval *= eval - evaluation_at_point;
         });
         let (witness_comm, _) = Self::commit_lagrange(lagrange_basis, &divisor_evals, None, None)?;
