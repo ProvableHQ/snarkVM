@@ -291,7 +291,7 @@ impl<E: PairingEngine> KZG10<E> {
             Err(anyhow!("`evaluations.len()` must equal `domain.size()`"))?;
         }
 
-        let mut divisor_evals = cfg_iter!(domain_elements).map(|&e| e - point).collect::<Vec<_>>();
+        let mut divisor_evals = cfg_iter(domain_elements).map(|&e| e - point).collect::<Vec<_>>();
         snarkvm_fields::batch_inversion(&mut divisor_evals);
         ensure!(divisor_evals.len() == evaluations.len());
         cfg_iter_mut!(divisor_evals).zip_eq(evaluations).for_each(|(divisor_eval, &eval)| {
@@ -471,7 +471,7 @@ fn skip_leading_zeros_and_convert_to_bigints<F: PrimeField>(p: &DensePolynomial<
 
 fn convert_to_bigints<F: PrimeField>(p: &[F]) -> Vec<F::BigInteger> {
     let to_bigint_time = start_timer!(|| "Converting polynomial coeffs to bigints");
-    let coeffs = cfg_iter!(p).map(|s| s.to_bigint()).collect::<Vec<_>>();
+    let coeffs = cfg_iter(p).map(|s| s.to_bigint()).collect::<Vec<_>>();
     end_timer!(to_bigint_time);
     coeffs
 }

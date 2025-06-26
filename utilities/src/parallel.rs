@@ -88,18 +88,20 @@ fn execute_with_threads<T: Sync + Send>(f: impl FnOnce() -> T + Send, num_thread
     }
 }
 
-/// Creates parallel iterator over refs if `parallel` feature is enabled.
-#[macro_export]
-macro_rules! cfg_iter {
-    ($e: expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $e.par_iter();
+/// Creates serial iterator over refs if `serial` feature is enabled.
+///
+/// Note this uses IntoIter because iter() is not supplied by a trait.
+#[cfg(feature = "serial")]
+#[inline(always)]
+pub fn cfg_iter<C: IntoIterator>(collection: C) -> C::IntoIter {
+    collection.into_iter()
+}
 
-        #[cfg(feature = "serial")]
-        let result = $e.iter();
-
-        result
-    }};
+/// Creates parallel iterator over refs if `serial` feature not enabled.
+#[cfg(not(feature = "serial"))]
+#[inline(always)]
+pub fn cfg_iter<C: rayon::iter::IntoParallelIterator>(collection: C) -> C::Iter {
+    collection.into_par_iter()
 }
 
 /// Creates parallel iterator over mut refs if `parallel` feature is enabled.

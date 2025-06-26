@@ -33,7 +33,7 @@ pub trait LeafHash: Clone + Send + Sync {
         match leaves.len() {
             0 => Ok(vec![]),
             1..=100 => leaves.iter().map(|leaf| self.hash_leaf(leaf)).collect(),
-            _ => cfg_iter!(leaves).map(|leaf| self.hash_leaf(leaf)).collect(),
+            _ => cfg_iter(leaves).map(|leaf| self.hash_leaf(leaf)).collect(),
         }
     }
 }

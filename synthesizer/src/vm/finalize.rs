@@ -116,7 +116,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let timer = timer!("VM::check_speculate");
 
         // Retrieve the transactions and their rejected IDs.
-        let transactions_and_rejected_ids = cfg_iter!(transactions)
+        let transactions_and_rejected_ids = cfg_iter(transactions)
             .map(|transaction| transaction.to_rejected_id().map(|rejected_id| (transaction.deref(), rejected_id)))
             .collect::<Result<Vec<_>>>()?;
         // Ensure each transaction is well-formed and unique.

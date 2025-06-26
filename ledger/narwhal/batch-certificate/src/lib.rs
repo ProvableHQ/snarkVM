@@ -65,7 +65,7 @@ impl<N: Network> BatchCertificate<N> {
         ensure!(signature_authors.len() == signatures.len(), "A duplicate author was found in the set of signatures");
 
         // Verify the signatures are valid.
-        cfg_iter!(signatures).try_for_each(|signature| {
+        cfg_iter(&signatures).try_for_each(|signature| {
             if !signature.verify(&signature.to_address(), &[batch_header.batch_id()]) {
                 bail!("Invalid batch certificate signature")
             }

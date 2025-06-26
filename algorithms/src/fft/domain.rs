@@ -684,7 +684,7 @@ impl<F: FftField> EvaluationDomain<F> {
             // we parallelize the butterfly operation within the chunk.
 
             if gap > MIN_GAP_SIZE_FOR_PARALLELISATION && num_chunks < max_threads {
-                cfg_iter_mut!(lo).zip(hi).zip(cfg_iter!(roots).step_by(step)).for_each(g);
+                cfg_iter_mut!(lo).zip(hi).zip(cfg_iter(roots).step_by(step)).for_each(g);
             } else {
                 lo.iter_mut().zip(hi).zip(roots.iter().step_by(step)).for_each(g);
             }
@@ -763,7 +763,7 @@ impl<F: FftField> EvaluationDomain<F> {
             // Which also implies a large lookup stride.
             let (roots, step) = if num_chunks >= MIN_NUM_CHUNKS_FOR_COMPACTION && gap < xi.len() / 2 {
                 cfg_iter_mut!(compacted_roots[..gap])
-                    .zip(cfg_iter!(roots_cache[..(gap * num_chunks)]).step_by(num_chunks))
+                    .zip(cfg_iter(&roots_cache[..(gap * num_chunks)]).step_by(num_chunks))
                     .for_each(|(a, b)| *a = *b);
                 (&compacted_roots[..gap], 1)
             } else {

@@ -54,7 +54,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         for transactions in deployments_for_verification.chain(executions_for_verification) {
             // Ensure each transaction is well-formed and unique.
             let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.gen())).collect::<Vec<_>>();
-            cfg_iter!(transactions).zip(rngs).try_for_each(|((transaction, rejected_id), mut rng)| {
+            cfg_iter(transactions).zip(rngs).try_for_each(|((transaction, rejected_id), mut rng)| {
                 self.check_transaction(transaction, *rejected_id, &mut rng)
                     .map_err(|e| anyhow!("Invalid transaction found in the transactions list: {e}"))
             })?;

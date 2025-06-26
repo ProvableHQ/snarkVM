@@ -175,7 +175,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         job_pool.add_job(|| {
             let a_poly_time = start_timer!(|| format!("Computing a poly for {label}"));
             let a_poly = {
-                let evals = cfg_iter!(row_col_val.evaluations).map(|v| v_R_i_alpha_v_C_i_beta * v).collect();
+                let evals = cfg_iter(&row_col_val.evaluations).map(|v| v_R_i_alpha_v_C_i_beta * v).collect();
                 EvaluationsOnDomain::from_vec_and_domain(evals, non_zero_domain)
                     .interpolate_with_pc(ifft_precomputation)
             };
@@ -187,7 +187,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let b_poly_time = start_timer!(|| format!("Computing b poly for {label}"));
             let alpha_beta = alpha * beta;
             let b_poly = {
-                let evals: Vec<F> = cfg_iter!(row_on_K.evaluations)
+                let evals: Vec<F> = cfg_iter(&row_on_K.evaluations)
                     .zip_eq(&col_on_K.evaluations)
                     .map(|(&r, &c)| R_size * C_size * (alpha_beta - beta * r - alpha * c + r * c))
                     .collect();
@@ -200,7 +200,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let [a_poly, b_poly]: [_; 2] = job_pool.execute_all().try_into().unwrap();
 
         let f_evals_time = start_timer!(|| format!("Computing f evals on K for {label}"));
-        let mut inverses: Vec<_> = cfg_iter!(row_on_K.evaluations)
+        let mut inverses: Vec<_> = cfg_iter(&row_on_K.evaluations)
             .zip_eq(&col_on_K.evaluations)
             .map(|(r, c)| (alpha - r) * (beta - c))
             .collect();

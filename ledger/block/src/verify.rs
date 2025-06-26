@@ -255,7 +255,7 @@ impl<N: Network> Block<N> {
             );
 
             // Check that all certificates on each round have the same committee ID.
-            cfg_iter!(subdag).try_for_each(|(round, certificates)| {
+            cfg_iter(&**subdag).try_for_each(|(round, certificates)| {
                 // Check that every certificate for a given round shares the same committee ID.
                 let expected_committee_id = certificates
                     .first()
@@ -568,7 +568,7 @@ impl<N: Network> Block<N> {
         // Prepare an iterator over the solution IDs.
         let mut solutions = solutions.as_ref().map(|s| s.deref()).into_iter().flatten().peekable();
         // Prepare an iterator over the unconfirmed transactions.
-        let unconfirmed_transactions = cfg_iter!(transactions)
+        let unconfirmed_transactions = cfg_iter(transactions)
             .map(|confirmed| confirmed.to_unconfirmed_transaction())
             .collect::<Result<Vec<_>>>()?;
         let mut unconfirmed_transactions = unconfirmed_transactions.iter().peekable();

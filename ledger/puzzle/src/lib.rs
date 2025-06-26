@@ -191,8 +191,8 @@ impl<N: Network> Puzzle<N> {
             // Construct the leaves of the Merkle tree.
             let leaves = self.get_all_leaves(&solutions_subset)?;
             // Construct the Merkle roots and truncate them to a u64.
-            let targets_subset = cfg_iter!(leaves)
-                .zip(cfg_iter!(solutions_subset))
+            let targets_subset = cfg_iter(&leaves)
+                .zip(cfg_iter(&*solutions_subset))
                 .map(|(leaves, (solution_id, solution))| {
                     // Get the proof target.
                     let proof_target = Self::leaves_to_proof_target(leaves)?;
@@ -320,7 +320,7 @@ impl<N: Network> Puzzle<N> {
         lap!(timer, "Perform initial checks");
 
         // Ensure the epoch hash matches.
-        cfg_iter!(solutions).try_for_each(|(solution_id, solution)| {
+        cfg_iter(&**solutions).try_for_each(|(solution_id, solution)| {
             if solution.epoch_hash() != expected_epoch_hash {
                 bail!("Solution '{solution_id}' did not match the expected epoch hash (found '{}', expected '{expected_epoch_hash}')", solution.epoch_hash())
             }

@@ -80,7 +80,7 @@ pub fn staking_rewards<N: Network>(
     let missing_validators = Mutex::new(std::collections::HashSet::<Address<N>>::with_capacity(hashset_capacity));
 
     // Compute the updated stakers.
-    cfg_iter!(stakers)
+    cfg_iter(stakers)
         .map(|(staker, (validator, stake))| {
             // If the validator is not in the valid validators list, skip the staker.
             let Some((validator_stake, commission_rate)) = valid_validators.get(validator) else {

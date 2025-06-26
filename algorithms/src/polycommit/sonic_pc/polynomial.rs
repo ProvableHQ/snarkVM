@@ -325,7 +325,7 @@ impl<'a, F: PrimeField> PolynomialWithBasis<'a, F> {
                 let degree = domain.size() as u64;
                 let multiplier = (point.pow([degree]) - F::one()) / F::from(degree);
                 let powers: Vec<_> = domain.elements().collect();
-                let mut denominators = cfg_iter!(powers).map(|pow| point - pow).collect::<Vec<_>>();
+                let mut denominators = cfg_iter(&powers).map(|pow| point - pow).collect::<Vec<_>>();
                 snarkvm_fields::batch_inversion(&mut denominators);
                 cfg_iter_mut!(denominators)
                     .zip_eq(powers)

@@ -824,7 +824,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     /// Checks that the program does not make external calls to `credits.aleo/upgrade`.
     pub fn check_external_calls_to_credits_upgrade(&self) -> Result<()> {
         // Check if the program makes external calls to `credits.aleo/upgrade`.
-        cfg_iter!(self.functions()).flat_map(|(_, function)| function.instructions()).try_for_each(|instruction| {
+        cfg_iter(self.functions()).flat_map(|(_, function)| function.instructions()).try_for_each(|instruction| {
             if let Some(CallOperator::Locator(locator)) = instruction.call_operator() {
                 // Check if the locator is restricted.
                 if locator.to_string() == "credits.aleo/upgrade" {

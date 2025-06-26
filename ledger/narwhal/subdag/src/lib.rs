@@ -213,7 +213,7 @@ impl<N: Network> Subdag<N> {
     /// Returns the subdag root of the certificates.
     pub fn to_subdag_root(&self) -> Result<Field<N>> {
         // Prepare the leaves.
-        let leaves = cfg_iter!(self.subdag)
+        let leaves = cfg_iter(&self.subdag)
             .map(|(_, certificates)| {
                 certificates.iter().flat_map(|certificate| certificate.id().to_bits_le()).collect::<Vec<_>>()
             })

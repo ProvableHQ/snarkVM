@@ -226,7 +226,7 @@ impl<F: PrimeField> MatrixArithmetization<F> {
             row_col.clone().interpolate()
         } else {
             ensure!(matrix_evals.row.evaluations.len() == matrix_evals.col.evaluations.len());
-            let row_col_evals: Vec<F> = cfg_iter!(matrix_evals.row.evaluations)
+            let row_col_evals: Vec<F> = cfg_iter(&matrix_evals.row.evaluations)
                 .zip_eq(&matrix_evals.col.evaluations)
                 .map(|(&r, &c)| r * c)
                 .collect();

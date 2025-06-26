@@ -179,7 +179,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 deployment_ids.len()
             );
             // Load the deployments.
-            let deployments = cfg_iter!(chunk)
+            let deployments = cfg_iter(chunk)
                 .map(|(transaction_id, _)| {
                     // Retrieve the deployment from the transaction ID.
                     match transaction_store.get_deployment(transaction_id)? {

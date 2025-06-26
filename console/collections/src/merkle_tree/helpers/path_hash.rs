@@ -17,7 +17,7 @@ use snarkvm_console_algorithms::{BHP, Poseidon};
 use snarkvm_console_types::prelude::*;
 
 #[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
+use rayon::iter::ParallelIterator;
 
 /// A trait for a Merkle path hash function.
 pub trait PathHash: Clone + Send + Sync {
@@ -36,7 +36,7 @@ pub trait PathHash: Clone + Send + Sync {
         match child_nodes.len() {
             0 => Ok(vec![]),
             1..=100 => child_nodes.iter().map(|(left, right)| self.hash_children(left, right)).collect(),
-            _ => cfg_iter!(child_nodes).map(|(left, right)| self.hash_children(left, right)).collect(),
+            _ => cfg_iter(child_nodes).map(|(left, right)| self.hash_children(left, right)).collect(),
         }
     }
 }

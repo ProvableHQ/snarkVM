@@ -166,7 +166,7 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
         }
         let p = pool.execute_all().into_iter().collect::<BTreeMap<_, _>>();
         assert_eq!(p.len(), 4);
-        let mut result = cfg_iter!(p[labels[0].borrow()])
+        let mut result = cfg_iter(&p[labels[0].borrow()])
             .zip(&p[labels[1].borrow()])
             .zip(&p[labels[2].borrow()])
             .zip(&p[labels[3].borrow()])

@@ -173,7 +173,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             .filter(|(_, prev_id)| !subdag_certs.contains(prev_id))
             .collect();
 
-        cfg_iter!(leaf_edges).try_for_each(|(prev_round, prev_id)| {
+        cfg_iter(leaf_edges).try_for_each(|(prev_round, prev_id)| {
             if prev_round + (BatchHeader::<N>::MAX_GC_ROUNDS as u64) - 1 <= block.round() {
                 // If the previous round is at the end of GC, we cannot (and do not need to) verify the next batch.
                 // For this leaf we are at the maximum length of the DAG, so any following batches are not allowed
@@ -201,7 +201,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         };
 
         // Check that all certificates on each round have met quorum requirements.
-        cfg_iter!(subdag).try_for_each(|(round, certificates)| {
+        cfg_iter(&**subdag).try_for_each(|(round, certificates)| {
             // Retrieve the committee lookback for the round.
             let committee_lookback = self
                 .get_committee_lookback_for_round(*round)?
@@ -210,7 +210,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             // Check that each certificate for this round has met quorum requirements.
             // Note that we do not need to check the quorum requirement for the previous certificates
             // because that is done during construction in `BatchCertificate::new`.
-            cfg_iter!(certificates).try_for_each(|certificate| {
+            cfg_iter(certificates).try_for_each(|certificate| {
                 // Collect the certificate signers.
                 let mut signers: HashSet<_> =
                     certificate.signatures().map(|signature| signature.to_address()).collect();

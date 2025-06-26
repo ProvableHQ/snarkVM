@@ -166,7 +166,7 @@ pub fn ensure_stakers_matches<N: Network>(
 
     // Compute the total microcredits.
     let total_microcredits =
-        cfg_reduce!(cfg_iter!(validator_map).map(|(_, microcredits)| *microcredits), || 0u64, |a, b| {
+        cfg_reduce!(cfg_iter(&validator_map).map(|(_, microcredits)| *microcredits), || 0u64, |a, b| {
             // Add the staker's microcredits to the total microcredits.
             a.saturating_add(b)
         });
@@ -198,7 +198,7 @@ pub fn to_next_committee<N: Network>(
     // Return the next committee.
     Committee::new(
         next_round,
-        cfg_iter!(next_delegated)
+        cfg_iter(next_delegated)
             .flat_map(|(delegatee, microcredits)| {
                 let Some((_, is_open, commission)) = current_committee.members().get(delegatee) else {
                     // Do nothing, as the delegatee is not part of the committee.
@@ -242,7 +242,7 @@ pub fn to_next_committee_bonded_delegated_map<N: Network>(
     let commission_identifier = Identifier::from_str("commission").expect("Failed to parse 'commission'");
 
     // Construct the committee map.
-    let committee_map = cfg_iter!(next_committee.members())
+    let committee_map = cfg_iter(next_committee.members())
         .map(|(validator, (_, is_open, commission))| {
             // Construct the committee state.
             let committee_state = indexmap! {
@@ -258,7 +258,7 @@ pub fn to_next_committee_bonded_delegated_map<N: Network>(
         .collect::<Vec<_>>();
 
     // Construct the bonded map.
-    let bonded_map = cfg_iter!(next_stakers)
+    let bonded_map = cfg_iter(next_stakers)
         .map(|(staker, (validator, microcredits))| {
             // Construct the bonded state.
             let bonded_state = indexmap! {
@@ -274,7 +274,7 @@ pub fn to_next_committee_bonded_delegated_map<N: Network>(
         .collect::<Vec<_>>();
 
     // Construct the delegated map.
-    let delegated_map = cfg_iter!(next_delegated)
+    let delegated_map = cfg_iter(next_delegated)
         .map(|(delegatee, microcredits)| {
             (
                 Plaintext::from(Literal::Address(*delegatee)),
@@ -290,7 +290,7 @@ pub fn to_next_committee_bonded_delegated_map<N: Network>(
 pub fn to_next_withdraw_map<N: Network>(
     withdrawal_addresses: &IndexMap<Address<N>, Address<N>>,
 ) -> Vec<(Plaintext<N>, Value<N>)> {
-    cfg_iter!(withdrawal_addresses)
+    cfg_iter(withdrawal_addresses)
         .map(|(staker, withdraw_address)| {
             (
                 Plaintext::from(Literal::Address(*staker)),

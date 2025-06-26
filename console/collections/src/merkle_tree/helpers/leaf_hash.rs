@@ -17,7 +17,7 @@ use snarkvm_console_algorithms::{BHP, Poseidon};
 use snarkvm_console_types::prelude::*;
 
 #[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
+use rayon::iter::ParallelIterator;
 
 /// A trait for a Merkle leaf hash function.
 pub trait LeafHash: Clone + Send + Sync {
@@ -32,7 +32,7 @@ pub trait LeafHash: Clone + Send + Sync {
         match leaves.len() {
             0 => Ok(vec![]),
             1..=100 => leaves.iter().map(|leaf| self.hash_leaf(leaf)).collect(),
-            _ => cfg_iter!(leaves).map(|leaf| self.hash_leaf(leaf)).collect(),
+            _ => cfg_iter(leaves).map(|leaf| self.hash_leaf(leaf)).collect(),
         }
     }
 }

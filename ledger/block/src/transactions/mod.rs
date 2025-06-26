@@ -207,13 +207,13 @@ impl<N: Network> Transactions<N> {
 
     /// Returns an iterator over all transactions, for all transactions in `self`.
     pub fn iter(&self) -> impl '_ + ExactSizeIterator<Item = &ConfirmedTransaction<N>> {
-        self.transactions.values()
+        self.into_iter()
     }
 
     /// Returns a parallel iterator over all transactions, for all transactions in `self`.
     #[cfg(not(feature = "serial"))]
     pub fn par_iter(&self) -> impl '_ + IndexedParallelIterator<Item = &ConfirmedTransaction<N>> {
-        self.transactions.par_values()
+        self.into_par_iter()
     }
 
     /// Returns an iterator over the transaction IDs, for all transactions in `self`.
@@ -297,16 +297,6 @@ impl<N: Network> Transactions<N> {
     }
 }
 
-impl<N: Network> IntoIterator for Transactions<N> {
-    type IntoIter = indexmap::map::IntoValues<N::TransactionID, Self::Item>;
-    type Item = ConfirmedTransaction<N>;
-
-    /// Returns a consuming iterator over all transactions, for all transactions in `self`.
-    fn into_iter(self) -> Self::IntoIter {
-        self.transactions.into_values()
-    }
-}
-
 impl<N: Network> Transactions<N> {
     /// Returns a consuming iterator over the transaction IDs, for all transactions in `self`.
     pub fn into_transaction_ids(self) -> impl ExactSizeIterator<Item = N::TransactionID> {
@@ -361,6 +351,35 @@ impl<N: Network> Transactions<N> {
     /// Returns a consuming iterator over the nonces, for all transition outputs that are records.
     pub fn into_nonces(self) -> impl Iterator<Item = Group<N>> {
         self.into_iter().flat_map(|tx| tx.into_transaction().into_nonces())
+    }
+}
+
+impl<N: Network> IntoIterator for Transactions<N> {
+    type IntoIter = indexmap::map::IntoValues<N::TransactionID, Self::Item>;
+    type Item = ConfirmedTransaction<N>;
+
+    /// Returns a consuming iterator over all transactions, for all transactions in `self`.
+    fn into_iter(self) -> Self::IntoIter {
+        self.transactions.into_values()
+    }
+}
+
+impl<'a, N: Network> IntoIterator for &'a Transactions<N> {
+    type IntoIter = indexmap::map::Values<'a, N::TransactionID, ConfirmedTransaction<N>>;
+    type Item = &'a ConfirmedTransaction<N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.transactions.values()
+    }
+}
+
+#[cfg(not(feature = "serial"))]
+impl<'a, N: Network> rayon::iter::IntoParallelIterator for &'a Transactions<N> {
+    type Item = &'a ConfirmedTransaction<N>;
+    type Iter = indexmap::map::rayon::ParValues<'a, N::TransactionID, ConfirmedTransaction<N>>;
+
+    fn into_par_iter(self) -> Self::Iter {
+        self.transactions.par_values()
     }
 }
 
