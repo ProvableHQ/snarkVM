@@ -20,7 +20,7 @@ use std::slice::{Chunks, ChunksMut};
 
 #[cfg(not(feature = "serial"))]
 use rayon::{
-    iter::ParallelIterator,
+    iter::{IterBridge, ParallelBridge, ParallelIterator},
     slice::{Chunks, ChunksMut, ParallelSlice, ParallelSliceMut},
 };
 
@@ -149,17 +149,15 @@ pub fn cfg_chunks_mut<T: Send + Sync>(slice: &mut [T], size: usize) -> ChunksMut
 }
 
 /// Creates parallel iterator from iterator if `parallel` feature is enabled.
-#[macro_export]
-macro_rules! cfg_par_bridge {
-    ($e: expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $e.par_bridge();
-
-        #[cfg(feature = "serial")]
-        let result = $e;
-
-        result
-    }};
+#[cfg(feature = "serial")]
+#[inline(always)]
+pub fn cfg_par_bridge<T, I: Iterator<Item = T>>(iter: I) -> I {
+    iter
+}
+#[cfg(not(feature = "serial"))]
+#[inline(always)]
+pub fn cfg_par_bridge<T, I: Iterator<Item = T> + ParallelBridge>(iter: I) -> IterBridge<I> {
+    iter.par_bridge()
 }
 
 /// Applies the reduce operation over an iterator.
