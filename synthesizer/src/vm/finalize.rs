@@ -961,8 +961,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Sort the valid and aborted transactions based on their position in the original list.
         let position: IndexSet<_> = transactions.iter().map(|tx| tx.id()).collect();
-        cfg_sort_by_cached_key!(valid_transactions, |tx| position.get_index_of(&tx.id()));
-        cfg_sort_by_cached_key!(aborted_transactions, |tx| position.get_index_of(&tx.0.id()));
+        cfg_sort_by_cached_key(&mut valid_transactions, |tx| position.get_index_of(&tx.id()));
+        cfg_sort_by_cached_key(&mut aborted_transactions, |tx| position.get_index_of(&tx.0.id()));
 
         // Return the valid and invalid transactions.
         Ok((valid_transactions, aborted_transactions))

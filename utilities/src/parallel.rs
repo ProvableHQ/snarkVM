@@ -18,6 +18,9 @@ use crate::{boxed::Box, vec::Vec};
 #[cfg(all(not(feature = "serial"), feature = "indexmap"))]
 use rayon::iter::ParallelIterator;
 
+#[cfg(not(feature = "serial"))]
+use rayon::slice::ParallelSliceMut;
+
 pub struct ExecutionPool<'a, T> {
     jobs: Vec<Box<dyn 'a + FnOnce() -> T + Send>>,
 }
@@ -270,15 +273,17 @@ macro_rules! cfg_sort_unstable_by {
 }
 
 /// Performs a sort that caches the extracted keys
-#[macro_export]
-macro_rules! cfg_sort_by_cached_key {
-    ($self: expr, $closure: expr) => {{
-        #[cfg(feature = "serial")]
-        $self.sort_by_cached_key($closure);
+pub fn cfg_sort_by_cached_key<T, F, K>(slice: &mut [T], key_fn: F)
+where
+    F: Fn(&T) -> K + Sync,
+    K: Ord + Send,
+    T: Send,
+{
+    #[cfg(feature = "serial")]
+    slice.sort_by_cached_key(key_fn);
 
-        #[cfg(not(feature = "serial"))]
-        $self.par_sort_by_cached_key($closure);
-    }};
+    #[cfg(not(feature = "serial"))]
+    slice.par_sort_by_cached_key(key_fn);
 }
 
 /// Returns a sorted, by-value iterator for the given IndexMap/IndexSet
