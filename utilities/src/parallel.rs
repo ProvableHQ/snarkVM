@@ -297,9 +297,10 @@ pub mod indexmap {
     }
 }
 
-/// Applies fold to the iterator
-#[macro_export]
-macro_rules! cfg_zip_fold {
+/*
+/// Applies fold to the iterators
+#[inline(always)]
+pub fn cfg_zip_fold<I: Iterator>(iter1: I, iter2: I,
     ($self: expr, $other: expr, $init: expr, $op: expr, $type: ty) => {{
         let default = $init;
 
@@ -312,7 +313,7 @@ macro_rules! cfg_zip_fold {
 
         result
     }};
-}
+}*/
 
 /// Performs an unstable sort
 #[inline(always)]

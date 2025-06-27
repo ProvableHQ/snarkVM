@@ -79,7 +79,7 @@ pub mod prelude {
         cfg_reduce_with,
         cfg_sort_by_cached_key,
         cfg_sort_unstable_by,
-        cfg_zip_fold,
+        // cfg_zip_fold,
         error,
         has_duplicates,
         io::{Read, Result as IoResult, Write},
