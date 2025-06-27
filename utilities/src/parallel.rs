@@ -15,8 +15,14 @@
 
 use crate::{boxed::Box, vec::Vec};
 
+#[cfg(feature = "serial")]
+use std::slice::{Chunks, ChunksMut};
+
 #[cfg(not(feature = "serial"))]
-use rayon::{iter::ParallelIterator, slice::ParallelSliceMut};
+use rayon::{
+    iter::ParallelIterator,
+    slice::{Chunks, ChunksMut, ParallelSlice, ParallelSliceMut},
+};
 
 pub struct ExecutionPool<'a, T> {
     jobs: Vec<Box<dyn 'a + FnOnce() -> T + Send>>,
@@ -118,33 +124,28 @@ pub fn cfg_iter<C: rayon::iter::IntoParallelIterator>(collection: C) -> C::Iter 
     collection.into_par_iter()
 }
 
-/// Returns an iterator over `chunk_size` elements of the slice at a
-/// time.
-#[macro_export]
-macro_rules! cfg_chunks {
-    ($e: expr, $size: expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $e.par_chunks($size);
-
-        #[cfg(feature = "serial")]
-        let result = $e.chunks($size);
-
-        result
-    }};
+/// Returns an iterator over `chunk_size` elements of the slice at a time.
+#[cfg(feature = "serial")]
+#[inline(always)]
+pub fn cfg_chunks<T>(slice: &[T], size: usize) -> Chunks<T> {
+    slice.chunks(size)
+}
+#[cfg(not(feature = "serial"))]
+#[inline(always)]
+pub fn cfg_chunks<T: Send + Sync>(slice: &[T], size: usize) -> Chunks<T> {
+    slice.par_chunks(size)
 }
 
-/// Returns an iterator over `chunk_size` elements of the slice at a time.
-#[macro_export]
-macro_rules! cfg_chunks_mut {
-    ($e: expr, $size: expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $e.par_chunks_mut($size);
-
-        #[cfg(feature = "serial")]
-        let result = $e.chunks_mut($size);
-
-        result
-    }};
+/// Returns a mutable iterator over `chunk_size` elements of the slice at a time.
+#[cfg(feature = "serial")]
+#[inline(always)]
+pub fn cfg_chunks_mut<T>(slice: &mut [T], size: usize) -> ChunksMut<T> {
+    slice.chunks_mut(size)
+}
+#[cfg(not(feature = "serial"))]
+#[inline(always)]
+pub fn cfg_chunks_mut<T: Send + Sync>(slice: &mut [T], size: usize) -> ChunksMut<T> {
+    slice.par_chunks_mut(size)
 }
 
 /// Creates parallel iterator from iterator if `parallel` feature is enabled.

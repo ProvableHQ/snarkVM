@@ -242,7 +242,7 @@ impl<F: FftField> EvaluationDomain<F> {
         let num_cpus_available = max_available_threads();
         let num_elem_per_thread = core::cmp::max(coeffs.len() / num_cpus_available, min_parallel_chunk_size);
 
-        cfg_chunks_mut!(coeffs, num_elem_per_thread).enumerate().for_each(|(i, chunk)| {
+        cfg_chunks_mut(coeffs, num_elem_per_thread).enumerate().for_each(|(i, chunk)| {
             let offset = c * g.pow([(i * num_elem_per_thread) as u64]);
             let mut pow = offset;
             chunk.iter_mut().for_each(|coeff| {
@@ -676,7 +676,7 @@ impl<F: FftField> EvaluationDomain<F> {
         max_threads: usize,
         gap: usize,
     ) {
-        cfg_chunks_mut!(xi, chunk_size).for_each(|cxi| {
+        cfg_chunks_mut(xi, chunk_size).for_each(|cxi| {
             let (lo, hi) = cxi.split_at_mut(gap);
             // If the chunk is sufficiently big that parallelism helps,
             // we parallelize the butterfly operation within the chunk.

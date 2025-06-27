@@ -45,7 +45,7 @@ impl<N: Network> FromBytes for Committee<N> {
         let mut member_bytes = vec![0u8; num_members as usize * member_byte_size];
         reader.read_exact(&mut member_bytes)?;
         // Read the members.
-        let members = cfg_chunks!(member_bytes, member_byte_size)
+        let members = cfg_chunks(&member_bytes, member_byte_size)
             .map(|mut bytes| {
                 // Read the address.
                 let member = Address::<N>::read_le(&mut bytes)?;
