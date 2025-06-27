@@ -122,7 +122,7 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
                 }
                 let results = pool.execute_all();
                 let iter = cfg_iter(results);
-                let mut result = cfg_reduce_with!(iter, |mut a, b| {
+                let mut result = cfg_reduce_with(iter, |mut a, b| {
                     cfg_iter(&mut a).zip(b).for_each(|(a, b)| *a *= b);
                     a
                 })

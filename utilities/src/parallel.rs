@@ -161,16 +161,8 @@ pub fn cfg_par_bridge<T, I: Iterator<Item = T> + ParallelBridge>(iter: I) -> Ite
 }
 
 /// Applies the reduce operation over an iterator.
-#[inline(always)]
-#[cfg(not(feature = "serial"))]
-pub fn cfg_reduce<I: ParallelIterator, D, R>(iter: I, default_fn: D, reduce_fn: R) -> I::Item
-where
-    D: Fn() -> I::Item + Sync + Send,
-    R: Fn(I::Item, I::Item) -> I::Item + Sync + Send,
-{
-    iter.reduce(default_fn, reduce_fn)
-}
 #[cfg(feature = "serial")]
+#[inline(always)]
 pub fn cfg_reduce<I: Iterator, D, R>(iter: I, default_fn: D, reduce_fn: R) -> I::Item
 where
     D: Fn() -> I::Item,
@@ -178,21 +170,68 @@ where
 {
     iter.fold(default_fn(), reduce_fn)
 }
-
-/// Applies `reduce_with` or `reduce` depending on the `serial` feature.
-#[macro_export]
-macro_rules! cfg_reduce_with {
-    ($e: expr, $op: expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $e.reduce_with($op);
-
-        #[cfg(feature = "serial")]
-        let result = $e.reduce($op);
-
-        result
-    }};
+#[cfg(not(feature = "serial"))]
+#[inline(always)]
+pub fn cfg_reduce<I: ParallelIterator, D, R>(iter: I, default_fn: D, reduce_fn: R) -> I::Item
+where
+    D: Fn() -> I::Item + Sync + Send,
+    R: Fn(I::Item, I::Item) -> I::Item + Sync + Send,
+{
+    iter.reduce(default_fn, reduce_fn)
 }
 
+/// Applies `reduce_with` or `reduce` depending on the `serial` feature.
+#[cfg(feature = "serial")]
+#[inline(always)]
+pub fn cfg_reduce_with<I: Iterator, R>(iter: I, reduce_fn: R) -> Option<I::Item>
+where
+    R: FnMut(I::Item, I::Item) -> I::Item,
+{
+    iter.reduce(reduce_fn)
+}
+#[cfg(not(feature = "serial"))]
+#[inline(always)]
+pub fn cfg_reduce_with<I: ParallelIterator, R>(iter: I, reduce_fn: R) -> Option<I::Item>
+where
+    R: Fn(I::Item, I::Item) -> I::Item + Sync + Send,
+{
+    iter.reduce_with(reduce_fn)
+}
+
+/// Performs an unstable sort on a slice of data.
+#[inline(always)]
+pub fn cfg_sort_unstable_by<T, F>(slice: &mut [T], sort_fn: F)
+where
+    F: Fn(&T, &T) -> std::cmp::Ordering + Sync,
+    T: Send,
+{
+    #[cfg(feature = "serial")]
+    slice.sort_unstable_by(sort_fn);
+
+    #[cfg(not(feature = "serial"))]
+    slice.par_sort_unstable_by(sort_fn);
+}
+
+/// Performs a sort that caches the extracted keys.
+///
+/// The given function will generate a key for each entry in the slice,
+/// and caches the keys when possible.
+/// This is useful, if whatever you sort by is expensive to compute.
+#[inline(always)]
+pub fn cfg_sort_by_cached_key<T, F, K>(slice: &mut [T], key_fn: F)
+where
+    F: Fn(&T) -> K + Sync,
+    K: Ord + Send,
+    T: Send,
+{
+    #[cfg(feature = "serial")]
+    slice.sort_by_cached_key(key_fn);
+
+    #[cfg(not(feature = "serial"))]
+    slice.par_sort_by_cached_key(key_fn);
+}
+
+/// IndexMap specific functions.
 #[cfg(feature = "indexmap")]
 pub mod indexmap {
     use indexmap::{IndexMap, map};
@@ -301,7 +340,7 @@ pub mod indexmap {
     }
 }
 
-/*
+/* TODO(kaimast): determine if this can be removed.
 /// Applies fold to the iterators
 #[inline(always)]
 pub fn cfg_zip_fold<I: Iterator>(iter1: I, iter2: I,
@@ -318,32 +357,3 @@ pub fn cfg_zip_fold<I: Iterator>(iter1: I, iter2: I,
         result
     }};
 }*/
-
-/// Performs an unstable sort
-#[inline(always)]
-pub fn cfg_sort_unstable_by<T, F>(slice: &mut [T], sort_fn: F)
-where
-    F: Fn(&T, &T) -> std::cmp::Ordering + Sync,
-    T: Send,
-{
-    #[cfg(feature = "serial")]
-    slice.sort_unstable_by(sort_fn);
-
-    #[cfg(not(feature = "serial"))]
-    slice.par_sort_unstable_by(sort_fn);
-}
-
-/// Performs a sort that caches the extracted keys.
-#[inline(always)]
-pub fn cfg_sort_by_cached_key<T, F, K>(slice: &mut [T], key_fn: F)
-where
-    F: Fn(&T) -> K + Sync,
-    K: Ord + Send,
-    T: Send,
-{
-    #[cfg(feature = "serial")]
-    slice.sort_by_cached_key(key_fn);
-
-    #[cfg(not(feature = "serial"))]
-    slice.par_sort_by_cached_key(key_fn);
-}
