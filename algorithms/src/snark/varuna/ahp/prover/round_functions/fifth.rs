@@ -47,12 +47,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     ) -> Result<prover::FifthOracles<F>, AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::FifthRound");
 
-        let lhs_sum: DensePolynomial<F> = cfg_reduce!(
+        let lhs_sum: DensePolynomial<F> = cfg_reduce(
             cfg_par_bridge!(verifier_message.into_iter().zip_eq(state.lhs_polys_into_iter())).map(
                 |(delta, mut lhs)| {
                     lhs *= delta;
                     lhs
-                }
+                },
             ),
             || DensePolynomial::zero(),
             |mut a, mut b| {
@@ -60,7 +60,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     a += &std::mem::take(&mut b);
                 }
                 a
-            }
+            },
         );
         let h_2 = LabeledPolynomial::new("h_2", lhs_sum, None, None);
         let oracles = prover::FifthOracles { h_2 };

@@ -127,15 +127,18 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
 
         let h_sum_time = start_timer!(|| "AHP::Prover::SecondRound h_sum");
-        let h_sum: DensePolynomial<F> =
-            cfg_reduce!(cfg_iter(job_pool.execute_all()), || Ok(DensePolynomial::zero()), |a, b| {
+        let h_sum: DensePolynomial<F> = cfg_reduce(
+            cfg_iter(job_pool.execute_all()),
+            || Ok(DensePolynomial::zero()),
+            |a, b| {
                 a.and_then(|a| {
                     b.map(|mut b| {
                         b += &a;
                         b
                     })
                 })
-            })?;
+            },
+        )?;
         end_timer!(h_sum_time);
 
         Ok(h_sum)

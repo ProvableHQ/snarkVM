@@ -111,7 +111,7 @@ impl<F: Field> DensePolynomial<F> {
         }
         let zero = F::zero();
         let mapping = crate::cfg_iter(powers_of_point).zip_eq(&self.coeffs).map(|(power, coeff)| power * coeff);
-        crate::cfg_reduce!(mapping, || zero, |a, b| a + b)
+        crate::cfg_reduce(mapping, || zero, |a, b| a + b)
     }
 
     /// Outputs a univariate polynomial of degree `d` where each non-leading

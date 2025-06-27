@@ -144,7 +144,7 @@ pub fn ensure_stakers_matches<N: Network>(
     stakers: &IndexMap<Address<N>, (Address<N>, u64)>,
 ) -> Result<()> {
     // Construct the validator map.
-    let validator_map: IndexMap<_, _> = cfg_reduce!(
+    let validator_map: IndexMap<_, _> = cfg_reduce(
         cfg_iter(stakers).filter_map(|(_, (validator, microcredits))| {
             if committee.members().contains_key(validator) {
                 Some(indexmap! {*validator => *microcredits})
@@ -159,15 +159,18 @@ pub fn ensure_stakers_matches<N: Network>(
                 *entry = entry.saturating_add(microcredits);
             }
             acc
-        }
+        },
     );
 
     // Compute the total microcredits.
-    let total_microcredits =
-        cfg_reduce!(cfg_iter(&validator_map).map(|(_, microcredits)| *microcredits), || 0u64, |a, b| {
+    let total_microcredits = cfg_reduce(
+        cfg_iter(&validator_map).map(|(_, microcredits)| *microcredits),
+        || 0u64,
+        |a, b| {
             // Add the staker's microcredits to the total microcredits.
             a.saturating_add(b)
-        });
+        },
+    );
 
     // Ensure the committee and committee map match.
     ensure!(committee.members().len() == validator_map.len(), "Committee and validator map length do not match");
@@ -212,7 +215,7 @@ pub fn to_next_delegated<N: Network>(
     next_stakers: &IndexMap<Address<N>, (Address<N>, u64)>,
 ) -> IndexMap<Address<N>, u64> {
     // Construct the delegated map.
-    let delegated_map: IndexMap<Address<N>, u64> = cfg_reduce!(
+    let delegated_map: IndexMap<Address<N>, u64> = cfg_reduce(
         cfg_iter(next_stakers).map(|(_, (delegatee, microcredits))| indexmap! {*delegatee => *microcredits}),
         || IndexMap::new(),
         |mut acc, e| {
@@ -221,7 +224,7 @@ pub fn to_next_delegated<N: Network>(
                 *entry = entry.saturating_add(microcredits);
             }
             acc
-        }
+        },
     );
 
     delegated_map

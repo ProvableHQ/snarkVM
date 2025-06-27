@@ -16,7 +16,7 @@
 use crate::{boxed::Box, vec::Vec};
 
 #[cfg(not(feature = "serial"))]
-use rayon::slice::ParallelSliceMut;
+use rayon::{iter::ParallelIterator, slice::ParallelSliceMut};
 
 pub struct ExecutionPool<'a, T> {
     jobs: Vec<Box<dyn 'a + FnOnce() -> T + Send>>,
@@ -162,17 +162,22 @@ macro_rules! cfg_par_bridge {
 }
 
 /// Applies the reduce operation over an iterator.
-#[macro_export]
-macro_rules! cfg_reduce {
-    ($e: expr, $default: expr, $op: expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $e.reduce($default, $op);
-
-        #[cfg(feature = "serial")]
-        let result = $e.fold($default(), $op);
-
-        result
-    }};
+#[inline(always)]
+#[cfg(not(feature = "serial"))]
+pub fn cfg_reduce<I: ParallelIterator, D, R>(iter: I, default_fn: D, reduce_fn: R) -> I::Item
+where
+    D: Fn() -> I::Item + Sync + Send,
+    R: Fn(I::Item, I::Item) -> I::Item + Sync + Send,
+{
+    iter.reduce(default_fn, reduce_fn)
+}
+#[cfg(feature = "serial")]
+pub fn cfg_reduce<I: Iterator, D, R>(iter: I, default_fn: D, reduce_fn: R) -> I::Item
+where
+    D: Fn() -> I::Item,
+    R: FnMut(I::Item, I::Item) -> I::Item,
+{
+    iter.fold(default_fn(), reduce_fn)
 }
 
 /// Applies `reduce_with` or `reduce` depending on the `serial` feature.
