@@ -3624,6 +3624,7 @@ dependencies = [
  "aleo-std",
  "anyhow",
  "bincode",
+ "cfg-if",
  "indexmap 2.9.0",
  "num-bigint",
  "num_cpus",

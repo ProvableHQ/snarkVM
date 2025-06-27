@@ -39,6 +39,9 @@ version = "1.0"
 [dependencies.bincode]
 version = "1.3.3"
 
+[dependencies.cfg-if]
+version = "1"
+
 [dependencies.num_cpus]
 version = "1"
 optional = true

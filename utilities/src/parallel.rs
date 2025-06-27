@@ -193,35 +193,44 @@ macro_rules! cfg_reduce_with {
 mod indexmap {
     use indexmap::{IndexMap, map};
 
-    #[cfg(not(feature = "serial"))]
-    use rayon::iter::ParallelIterator;
+    cfg_if::cfg_if! {
+        if #[cfg(feature="serial")] {
+            pub type IndexmapIntoIter<K, V> = map::IntoIter<K, V>;
+            pub type IndexmapKeys<'a, K, V> = map::Keys<'a, K, V>;
+            pub type IndexmapValues<'a, K, V> = map::Values<'a, K, V>;
+        } else {
+            use rayon::iter::ParallelIterator;
 
-    /// Returns an iterator over all values in an indexmap.
-    #[cfg(feature = "serial")]
-    #[inline(always)]
-    pub fn cfg_keys<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> map::Keys<K, V> {
-        imap.keys()
+            pub type IndexmapIntoIter<K, V> = map::rayon::IntoParIter<K, V>;
+            pub type IndexmapKeys<'a, K, V> = map::rayon::ParKeys<'a, K, V>;
+            pub type IndexmapValues<'a, K, V> = map::rayon::ParValues<'a, K, V>;
+        }
     }
 
-    /// Returns an iterator over all values in an indexmap.
-    #[cfg(not(feature = "serial"))]
+    /// Returns an iterator over all keys in an `IndexMap`.
     #[inline(always)]
-    pub fn cfg_keys<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> map::rayon::ParKeys<K, V> {
-        imap.par_keys()
+    pub fn cfg_keys<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> IndexmapKeys<K, V> {
+        #[cfg(feature = "serial")]
+        {
+            imap.keys()
+        }
+        #[cfg(not(feature = "serial"))]
+        {
+            imap.par_keys()
+        }
     }
 
-    /// Returns an iterator over all values in an indexmap.
-    #[cfg(feature = "serial")]
+    /// Returns an iterator over all values in an `IndexMap`.
     #[inline(always)]
-    pub fn cfg_values<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> map::Values<K, V> {
-        imap.values()
-    }
-
-    /// Returns an iterator over all values in an indexmap.
-    #[cfg(not(feature = "serial"))]
-    #[inline(always)]
-    pub fn cfg_values<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> map::rayon::ParValues<K, V> {
-        imap.par_values()
+    pub fn cfg_values<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> IndexmapValues<K, V> {
+        #[cfg(feature = "serial")]
+        {
+            imap.values()
+        }
+        #[cfg(not(feature = "serial"))]
+        {
+            imap.par_values()
+        }
     }
 
     /// Find a value `v` in an indexmap where `lambda(v)` evalutes to true (if any).
@@ -230,13 +239,21 @@ mod indexmap {
     /// - This returns at most one entry that satisfies the given condition, not necessarily the first one.
     /// - `closure` must be a lambda function returning a boolean, e.g., `|e| e > 0`.
     #[inline(always)]
-    pub fn cfg_find_value<K: Sync, V: Sync, F: Sync + Fn(&V) -> bool>(imap: &IndexMap<K, V>, closure: F) -> Option<&V> {
+    pub fn cfg_find_value<K, V, F>(imap: &IndexMap<K, V>, closure: F) -> Option<&V>
+    where
+        K: Sync,
+        V: Sync,
+        F: Sync + Fn(&V) -> bool,
+    {
         #[cfg(feature = "serial")]
-        let result = imap.values().find(|v| closure(*v));
-        #[cfg(not(feature = "serial"))]
-        let result = imap.par_values().find_any(|v| closure(*v));
+        {
+            imap.values().find(|v| closure(*v))
+        }
 
-        result
+        #[cfg(not(feature = "serial"))]
+        {
+            imap.par_values().find_any(|v| closure(*v))
+        }
     }
 
     /// Returns `v'=lambda(v)` for a value `v` in the map where `v'` is not None (if any).
@@ -245,16 +262,38 @@ mod indexmap {
     /// - This returns at most one `v'` not necessarily the first one.
     /// - `closure` must be a lambda function returning Option, e.g., `|v| Some(v)`.
     #[inline(always)]
-    pub fn cfg_find_value_map<'a, K: Sync, V: Sync, V2: Sync + Send, F: Sync + Send + Fn(&'a V) -> Option<&'a V2>>(
-        imap: &'a IndexMap<K, V>,
-        closure: F,
-    ) -> Option<&'a V2> {
+    pub fn cfg_find_value_map<'a, K, V, V2, F>(imap: &'a IndexMap<K, V>, closure: F) -> Option<&'a V2>
+    where
+        K: Sync,
+        V: Sync,
+        V2: Sync + Send,
+        F: Sync + Send + Fn(&'a V) -> Option<&'a V2>,
+    {
         #[cfg(feature = "serial")]
         let result = imap.values().find_map(closure);
         #[cfg(not(feature = "serial"))]
         let result = imap.par_values().filter_map(closure).find_any(|_| true);
 
         result
+    }
+
+    /// Returns a sorted, by-value, iterator for the given IndexMap/IndexSet
+    #[inline(always)]
+    pub fn cfg_sorted_by<K, V, F>(imap: IndexMap<K, V>, closure: F) -> IndexmapIntoIter<K, V>
+    where
+        K: Sync + Send,
+        V: Sync + Send,
+        F: Sync + Send + Fn(&K, &V, &K, &V) -> std::cmp::Ordering,
+    {
+        #[cfg(feature = "serial")]
+        {
+            imap.sorted_by(closure)
+        }
+
+        #[cfg(not(feature = "serial"))]
+        {
+            imap.par_sorted_by(closure)
+        }
     }
 }
 
@@ -303,20 +342,4 @@ where
 
     #[cfg(not(feature = "serial"))]
     slice.par_sort_by_cached_key(key_fn);
-}
-
-/// Returns a sorted, by-value iterator for the given IndexMap/IndexSet
-#[macro_export]
-macro_rules! cfg_sorted_by {
-    ($self: expr, $closure: expr) => {{
-        #[cfg(feature = "serial")]
-        {
-            $self.sorted_by($closure)
-        }
-
-        #[cfg(not(feature = "serial"))]
-        {
-            $self.par_sorted_by($closure)
-        }
-    }};
 }
