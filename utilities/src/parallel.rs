@@ -15,9 +15,6 @@
 
 use crate::{boxed::Box, vec::Vec};
 
-#[cfg(all(not(feature = "serial"), feature = "indexmap"))]
-use rayon::iter::ParallelIterator;
-
 #[cfg(not(feature = "serial"))]
 use rayon::slice::ParallelSliceMut;
 
@@ -71,14 +68,14 @@ pub fn max_available_threads() -> usize {
     }
 }
 
-#[inline(always)]
 #[cfg(not(any(feature = "serial", feature = "wasm")))]
+#[inline(always)]
 pub fn execute_with_max_available_threads<T: Sync + Send>(f: impl FnOnce() -> T + Send) -> T {
     execute_with_threads(f, max_available_threads())
 }
 
-#[inline(always)]
 #[cfg(any(feature = "serial", feature = "wasm"))]
+#[inline(always)]
 pub fn execute_with_max_available_threads<T>(f: impl FnOnce() -> T + Send) -> T {
     f()
 }
@@ -94,16 +91,27 @@ fn execute_with_threads<T: Sync + Send>(f: impl FnOnce() -> T + Send, num_thread
     }
 }
 
-/// Creates serial iterator over refs if `serial` feature is enabled.
+/// Creates an iterator from a collection. The iterator is serial if the `serial` feature is enabled,
+/// otherwise it will be parallel using rayon.
 ///
-/// Note this uses IntoIter because iter() is not supplied by a trait.
+/// # Usage
+/// This function works for any struct that implements `IntoIterator`.
+///
+/// If you want to iterate over an object without consuming it (similar to how `iter()` behaves), use a reference.
+/// ```rust
+/// let my_data = vec![1, 2, 3,];
+///
+/// // This will not consume the vector and the iterator will return references to each entry.
+/// let _it = cfg_iter(&my_data);
+///
+/// // This will consume the vector and the iterator returns the element directly (to avoid copying).
+/// let _it = cfg_iter(my_data);
+/// ```
 #[cfg(feature = "serial")]
 #[inline(always)]
 pub fn cfg_iter<C: IntoIterator>(collection: C) -> C::IntoIter {
     collection.into_iter()
 }
-
-/// Creates parallel iterator over refs if `serial` feature not enabled.
 #[cfg(not(feature = "serial"))]
 #[inline(always)]
 pub fn cfg_iter<C: rayon::iter::IntoParallelIterator>(collection: C) -> C::Iter {
@@ -181,67 +189,77 @@ macro_rules! cfg_reduce_with {
     }};
 }
 
-/// Returns an iterator over all values in an indexmap.
-#[cfg(all(feature = "serial", feature = "indexmap"))]
-pub fn cfg_keys<K: Sync, V: Sync>(collection: &indexmap::IndexMap<K, V>) -> indexmap::map::Keys<K, V> {
-    collection.keys()
-}
-
-/// Returns an iterator over all values in an indexmap.
-#[cfg(all(not(feature = "serial"), feature = "indexmap"))]
-pub fn cfg_keys<K: Sync, V: Sync>(collection: &indexmap::IndexMap<K, V>) -> indexmap::map::rayon::ParKeys<K, V> {
-    collection.par_keys()
-}
-
-/// Returns an iterator over all values in an indexmap.
-#[cfg(all(feature = "serial", feature = "indexmap"))]
-pub fn cfg_values<K: Sync, V: Sync>(collection: &indexmap::IndexMap<K, V>) -> indexmap::map::Values<K, V> {
-    collection.values()
-}
-
-/// Returns an iterator over all values in an indexmap.
-#[cfg(all(not(feature = "serial"), feature = "indexmap"))]
-pub fn cfg_values<K: Sync, V: Sync>(collection: &indexmap::IndexMap<K, V>) -> indexmap::map::rayon::ParValues<K, V> {
-    collection.par_values()
-}
-
-/// Find a value `v` in an indexmap where `lambda(v)` evalutes to true (if any).
-///
-/// # Notes
-/// - This returns at most one entry that satisfies the given condition, not necessarily the first one.
-/// - `closure` must be a lambda function returning a boolean, e.g., `|e| e > 0`.
 #[cfg(feature = "indexmap")]
-#[inline(always)]
-pub fn cfg_find_value<K: Sync, V: Sync, F: Sync + Fn(&V) -> bool>(
-    collection: &indexmap::IndexMap<K, V>,
-    closure: F,
-) -> Option<&V> {
-    #[cfg(feature = "serial")]
-    let result = collection.values().find(|v| closure(*v));
-    #[cfg(not(feature = "serial"))]
-    let result = collection.par_values().find_any(|v| closure(*v));
+mod indexmap {
+    use indexmap::{IndexMap, map};
 
-    result
+    #[cfg(not(feature = "serial"))]
+    use rayon::iter::ParallelIterator;
+
+    /// Returns an iterator over all values in an indexmap.
+    #[cfg(feature = "serial")]
+    #[inline(always)]
+    pub fn cfg_keys<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> map::Keys<K, V> {
+        imap.keys()
+    }
+
+    /// Returns an iterator over all values in an indexmap.
+    #[cfg(not(feature = "serial"))]
+    #[inline(always)]
+    pub fn cfg_keys<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> map::rayon::ParKeys<K, V> {
+        imap.par_keys()
+    }
+
+    /// Returns an iterator over all values in an indexmap.
+    #[cfg(feature = "serial")]
+    #[inline(always)]
+    pub fn cfg_values<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> map::Values<K, V> {
+        imap.values()
+    }
+
+    /// Returns an iterator over all values in an indexmap.
+    #[cfg(not(feature = "serial"))]
+    #[inline(always)]
+    pub fn cfg_values<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> map::rayon::ParValues<K, V> {
+        imap.par_values()
+    }
+
+    /// Find a value `v` in an indexmap where `lambda(v)` evalutes to true (if any).
+    ///
+    /// # Notes
+    /// - This returns at most one entry that satisfies the given condition, not necessarily the first one.
+    /// - `closure` must be a lambda function returning a boolean, e.g., `|e| e > 0`.
+    #[inline(always)]
+    pub fn cfg_find_value<K: Sync, V: Sync, F: Sync + Fn(&V) -> bool>(imap: &IndexMap<K, V>, closure: F) -> Option<&V> {
+        #[cfg(feature = "serial")]
+        let result = imap.values().find(|v| closure(*v));
+        #[cfg(not(feature = "serial"))]
+        let result = imap.par_values().find_any(|v| closure(*v));
+
+        result
+    }
+
+    /// Returns `v'=lambda(v)` for a value `v` in the map where `v'` is not None (if any).
+    ///
+    /// # Notes
+    /// - This returns at most one `v'` not necessarily the first one.
+    /// - `closure` must be a lambda function returning Option, e.g., `|v| Some(v)`.
+    #[inline(always)]
+    pub fn cfg_find_value_map<'a, K: Sync, V: Sync, V2: Sync + Send, F: Sync + Send + Fn(&'a V) -> Option<&'a V2>>(
+        imap: &'a IndexMap<K, V>,
+        closure: F,
+    ) -> Option<&'a V2> {
+        #[cfg(feature = "serial")]
+        let result = imap.values().find_map(closure);
+        #[cfg(not(feature = "serial"))]
+        let result = imap.par_values().filter_map(closure).find_any(|_| true);
+
+        result
+    }
 }
 
-/// Applies a function and returns an entry where `lambda(e)` is not None.
-///
-/// # Notes
-/// - This returns at most one entry that satisfies the given condition, not necessarily the first one.
-/// - `closure` must be a lambda function returning Option, e.g., `|e| Some(e)`.
 #[cfg(feature = "indexmap")]
-#[inline(always)]
-pub fn cfg_find_value_map<'a, K: Sync, V: Sync, V2: Sync + Send, F: Sync + Send + Fn(&'a V) -> Option<&'a V2>>(
-    collection: &'a indexmap::IndexMap<K, V>,
-    closure: F,
-) -> Option<&'a V2> {
-    #[cfg(feature = "serial")]
-    let result = collection.values().find_map(closure);
-    #[cfg(not(feature = "serial"))]
-    let result = collection.par_values().filter_map(closure).find_any(|_| true);
-
-    result
-}
+pub use indexmap::*;
 
 /// Applies fold to the iterator
 #[macro_export]
@@ -273,6 +291,7 @@ macro_rules! cfg_sort_unstable_by {
 }
 
 /// Performs a sort that caches the extracted keys
+#[inline(always)]
 pub fn cfg_sort_by_cached_key<T, F, K>(slice: &mut [T], key_fn: F)
 where
     F: Fn(&T) -> K + Sync,
