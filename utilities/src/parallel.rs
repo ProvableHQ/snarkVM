@@ -315,18 +315,20 @@ macro_rules! cfg_zip_fold {
 }
 
 /// Performs an unstable sort
-#[macro_export]
-macro_rules! cfg_sort_unstable_by {
-    ($self: expr, $closure: expr) => {{
-        #[cfg(feature = "serial")]
-        $self.sort_unstable_by($closure);
+#[inline(always)]
+pub fn cfg_sort_unstable_by<T, F>(slice: &mut [T], sort_fn: F)
+where
+    F: Fn(&T, &T) -> std::cmp::Ordering + Sync,
+    T: Send,
+{
+    #[cfg(feature = "serial")]
+    slice.sort_unstable_by(sort_fn);
 
-        #[cfg(not(feature = "serial"))]
-        $self.par_sort_unstable_by($closure);
-    }};
+    #[cfg(not(feature = "serial"))]
+    slice.par_sort_unstable_by(sort_fn);
 }
 
-/// Performs a sort that caches the extracted keys
+/// Performs a sort that caches the extracted keys.
 #[inline(always)]
 pub fn cfg_sort_by_cached_key<T, F, K>(slice: &mut [T], key_fn: F)
 where
