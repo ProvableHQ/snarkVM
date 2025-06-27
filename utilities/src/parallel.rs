@@ -24,6 +24,8 @@ use rayon::{
     slice::{Chunks, ChunksMut, ParallelSlice, ParallelSliceMut},
 };
 
+use cfg_if::cfg_if;
+
 pub struct ExecutionPool<'a, T> {
     jobs: Vec<Box<dyn 'a + FnOnce() -> T + Send>>,
 }
@@ -125,27 +127,27 @@ pub fn cfg_iter<C: rayon::iter::IntoParallelIterator>(collection: C) -> C::Iter 
 }
 
 /// Returns an iterator over `chunk_size` elements of the slice at a time.
-#[cfg(feature = "serial")]
-#[inline(always)]
-pub fn cfg_chunks<T>(slice: &[T], size: usize) -> Chunks<T> {
-    slice.chunks(size)
-}
-#[cfg(not(feature = "serial"))]
 #[inline(always)]
 pub fn cfg_chunks<T: Send + Sync>(slice: &[T], size: usize) -> Chunks<T> {
-    slice.par_chunks(size)
+    cfg_if! {
+        if #[cfg(feature="serial")] {
+            slice.chunks(size)
+        } else {
+            slice.par_chunks(size)
+        }
+    }
 }
 
 /// Returns a mutable iterator over `chunk_size` elements of the slice at a time.
-#[cfg(feature = "serial")]
-#[inline(always)]
-pub fn cfg_chunks_mut<T>(slice: &mut [T], size: usize) -> ChunksMut<T> {
-    slice.chunks_mut(size)
-}
-#[cfg(not(feature = "serial"))]
 #[inline(always)]
 pub fn cfg_chunks_mut<T: Send + Sync>(slice: &mut [T], size: usize) -> ChunksMut<T> {
-    slice.par_chunks_mut(size)
+    cfg_if! {
+        if #[cfg(feature="serial")] {
+            slice.chunks_mut(size)
+        } else {
+            slice.par_chunks_mut(size)
+        }
+    }
 }
 
 /// Creates parallel iterator from iterator if `parallel` feature is enabled.
@@ -205,11 +207,13 @@ where
     F: Fn(&T, &T) -> std::cmp::Ordering + Sync,
     T: Send,
 {
-    #[cfg(feature = "serial")]
-    slice.sort_unstable_by(sort_fn);
-
-    #[cfg(not(feature = "serial"))]
-    slice.par_sort_unstable_by(sort_fn);
+    cfg_if! {
+        if #[cfg(feature = "serial")] {
+            slice.sort_unstable_by(sort_fn);
+        } else {
+            slice.par_sort_unstable_by(sort_fn);
+        }
+    }
 }
 
 /// Performs a sort that caches the extracted keys.
@@ -224,19 +228,22 @@ where
     K: Ord + Send,
     T: Send,
 {
-    #[cfg(feature = "serial")]
-    slice.sort_by_cached_key(key_fn);
-
-    #[cfg(not(feature = "serial"))]
-    slice.par_sort_by_cached_key(key_fn);
+    cfg_if! {
+        if #[cfg(feature = "serial")] {
+            slice.sort_by_cached_key(key_fn);
+        } else {
+            slice.par_sort_by_cached_key(key_fn);
+        }
+    }
 }
 
 /// IndexMap specific functions.
 #[cfg(feature = "indexmap")]
 pub mod indexmap {
+    use super::cfg_if;
     use indexmap::{IndexMap, map};
 
-    cfg_if::cfg_if! {
+    cfg_if! {
         if #[cfg(feature="serial")] {
             pub type IndexmapIntoIter<K, V> = map::IntoIter<K, V>;
             pub type IndexmapKeys<'a, K, V> = map::Keys<'a, K, V>;
@@ -253,26 +260,24 @@ pub mod indexmap {
     /// Returns an iterator over all keys in an `IndexMap`.
     #[inline(always)]
     pub fn cfg_keys<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> IndexmapKeys<K, V> {
-        #[cfg(feature = "serial")]
-        {
-            imap.keys()
-        }
-        #[cfg(not(feature = "serial"))]
-        {
-            imap.par_keys()
+        cfg_if! {
+            if #[cfg(feature = "serial")] {
+                imap.keys()
+            } else {
+                imap.par_keys()
+            }
         }
     }
 
     /// Returns an iterator over all values in an `IndexMap`.
     #[inline(always)]
     pub fn cfg_values<K: Sync, V: Sync>(imap: &IndexMap<K, V>) -> IndexmapValues<K, V> {
-        #[cfg(feature = "serial")]
-        {
-            imap.values()
-        }
-        #[cfg(not(feature = "serial"))]
-        {
-            imap.par_values()
+        cfg_if! {
+            if #[cfg(feature = "serial")] {
+                imap.values()
+            } else {
+                imap.par_values()
+            }
         }
     }
 
@@ -288,14 +293,12 @@ pub mod indexmap {
         V: Sync,
         F: Sync + Fn(&V) -> bool,
     {
-        #[cfg(feature = "serial")]
-        {
-            imap.values().find(|v| closure(*v))
-        }
-
-        #[cfg(not(feature = "serial"))]
-        {
-            imap.par_values().find_any(|v| closure(*v))
+        cfg_if! {
+            if  #[cfg(feature = "serial")] {
+                imap.values().find(|v| closure(*v))
+            } else {
+                imap.par_values().find_any(|v| closure(*v))
+            }
         }
     }
 
@@ -312,10 +315,13 @@ pub mod indexmap {
         V2: Sync + Send,
         F: Sync + Send + Fn(&'a V) -> Option<&'a V2>,
     {
-        #[cfg(feature = "serial")]
-        let result = imap.values().find_map(closure);
-        #[cfg(not(feature = "serial"))]
-        let result = imap.par_values().filter_map(closure).find_any(|_| true);
+        cfg_if! {
+            if #[cfg(feature = "serial") ] {
+                let result = imap.values().find_map(closure);
+            } else {
+                let result = imap.par_values().filter_map(closure).find_any(|_| true);
+            }
+        }
 
         result
     }
@@ -328,14 +334,12 @@ pub mod indexmap {
         V: Sync + Send,
         F: Sync + Send + Fn(&K, &V, &K, &V) -> std::cmp::Ordering,
     {
-        #[cfg(feature = "serial")]
-        {
-            imap.sorted_by(closure)
-        }
-
-        #[cfg(not(feature = "serial"))]
-        {
-            imap.par_sorted_by(closure)
+        cfg_if! {
+            if #[cfg(feature = "serial")] {
+                imap.sorted_by(closure)
+            } else {
+                imap.par_sorted_by(closure)
+            }
         }
     }
 }
