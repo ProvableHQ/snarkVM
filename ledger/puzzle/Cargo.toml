@@ -33,7 +33,7 @@ required-features = [ "setup" ]
 default = [ "indexmap/rayon", "rayon" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 locktick = [ "dep:locktick", "snarkvm-algorithms/locktick" ]
-serial = [ "snarkvm-utilities/serial", "console/serial", "snarkvm-algorithms/serial" ]
+serial = [ "utilities/serial", "console/serial", "snarkvm-algorithms/serial" ]
 setup = [ ]
 timer = [ "aleo-std/timer" ]
 wasm = [ "console/wasm", "snarkvm-algorithms/wasm" ]
@@ -47,7 +47,8 @@ version = "=3.8.0"
 path = "../../algorithms"
 version = "=3.8.0"
 
-[dependencies.snarkvm-utilities]
+[dependencies.utilities]
+package = "snarkvm-utilities"
 path = "../../utilities"
 version = "=3.8.0"
 features = [ "indexmap" ]

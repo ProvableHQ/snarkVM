@@ -20,7 +20,7 @@ use snarkvm_curves::{
 };
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{
-    cfg_into_iter,
+    cfg_iter,
     rand::{TestRng, Uniform},
 };
 
@@ -54,7 +54,7 @@ pub fn main() -> Result<()> {
     // Sample the bases and scalars.
     let samples = 1 << power_of_two;
 
-    let scalars = cfg_into_iter!(0..samples)
+    let scalars = cfg_iter(0..samples)
         .step_by(1 << 16)
         .flat_map(|_| {
             let rng = &mut TestRng::fixed(123456789);
@@ -65,7 +65,7 @@ pub fn main() -> Result<()> {
     println!("Sampled 1 << {power_of_two} scalars.");
 
     let bases = G1Projective::batch_normalization_into_affine(
-        cfg_into_iter!(0..samples)
+        cfg_iter(0..samples)
             .step_by(1 << 16)
             .flat_map(|_| {
                 let rng = &mut TestRng::fixed(123456789);

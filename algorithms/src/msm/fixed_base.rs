@@ -15,7 +15,7 @@
 
 use snarkvm_curves::traits::ProjectiveCurve;
 use snarkvm_fields::{FieldParameters, PrimeField};
-use snarkvm_utilities::{ToBits, cfg_into_iter, cfg_iter};
+use snarkvm_utilities::{ToBits, cfg_iter};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -68,7 +68,7 @@ impl FixedBase {
     ) -> T {
         let scalar_val = scalar.to_bigint().to_bits_le();
 
-        cfg_into_iter!(0..outerc)
+        cfg_iter(0..outerc)
             .map(|outer| {
                 let mut inner = 0usize;
                 for i in 0..window {

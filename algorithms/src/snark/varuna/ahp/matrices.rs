@@ -25,7 +25,7 @@ use crate::{
     },
 };
 use snarkvm_fields::{Field, PrimeField};
-use snarkvm_utilities::{cfg_into_iter, cfg_iter, serialize::*};
+use snarkvm_utilities::{cfg_iter, serialize::*};
 
 use anyhow::{Result, anyhow, ensure};
 
@@ -40,7 +40,7 @@ pub(crate) fn into_matrix_helper<F: Field>(
     matrix: Vec<Vec<(F, VarIndex)>>,
     num_input_variables: usize,
 ) -> Result<Matrix<F>> {
-    cfg_into_iter!(matrix)
+    cfg_iter(matrix)
         .map(|row| {
             let mut row_map = Vec::with_capacity(row.len());
             for (val, column) in row {

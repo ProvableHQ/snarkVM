@@ -15,7 +15,7 @@
 
 use console::{
     network::Network,
-    prelude::{FromBytes, ToBits as TBits, ToBytes, Uniform, cfg_into_iter},
+    prelude::{FromBytes, ToBits as TBits, ToBytes, Uniform, cfg_iter},
     types::Field,
 };
 use snarkvm_ledger_puzzle::PuzzleTrait;
@@ -54,7 +54,7 @@ impl<N: Network> PuzzleTrait<N> for MerklePuzzle<N> {
         // Sample a random number of leaves.
         let num_leaves = self.num_leaves(epoch_hash)?;
         // Construct the epoch inputs.
-        let leaves = cfg_into_iter!(rngs)
+        let leaves = cfg_iter(rngs)
             .map(|mut rng| {
                 // Sample random field elements for each of the leaves, and convert them to bits.
                 (0..num_leaves).map(|_| Field::<N>::rand(&mut rng).to_bits_le()).collect::<Vec<_>>()

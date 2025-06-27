@@ -108,7 +108,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the blocks in the given block range.
     /// The range is inclusive of the start and exclusive of the end.
     pub fn get_blocks(&self, heights: Range<u32>) -> Result<Vec<Block<N>>> {
-        cfg_into_iter!(heights).map(|height| self.get_block(height)).collect()
+        cfg_iter(heights).map(|height| self.get_block(height)).collect()
     }
 
     /// Returns the block for the given block hash.
@@ -309,7 +309,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Get the credits.aleo bonded mapping.
         let bonded = self.vm.finalize_store().get_mapping_confirmed(credits_program_id, bonded_mapping)?;
         // Select the delegators for the given validator.
-        cfg_into_iter!(bonded)
+        cfg_iter(bonded)
             .filter_map(|(bonded_address, bond_state)| {
                 let Plaintext::Literal(Literal::Address(bonded_address), _) = bonded_address else {
                     return Some(Err(anyhow!("Invalid delegator in finalize storage.")));

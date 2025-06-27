@@ -26,7 +26,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::cfg_into_iter;
+use snarkvm_utilities::cfg_iter;
 
 use itertools::Itertools;
 use rand_core::RngCore;
@@ -144,7 +144,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         };
 
         let w_poly_time = start_timer!(|| "Computing w polynomial");
-        let w_poly_evals = cfg_into_iter!(0..variable_domain.size())
+        let w_poly_evals = cfg_iter(0..variable_domain.size())
             .map(|k| match k % ratio {
                 0 => F::zero(),
                 _ => w_extended[k - (k / ratio) - 1] - x_evals[k],

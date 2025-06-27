@@ -28,7 +28,7 @@ use crate::{
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{cfg_into_iter, dev_println};
+use snarkvm_utilities::{cfg_iter, dev_println};
 
 use anyhow::{Result, anyhow, ensure};
 use core::marker::PhantomData;
@@ -185,7 +185,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let variable_domain_elements = variable_domain.elements().collect::<Vec<_>>();
 
         let [a_arith, b_arith, c_arith]: [_; 3] =
-            cfg_into_iter!([(&a, &non_zero_a_domain), (&b, &non_zero_b_domain), (&c, &non_zero_c_domain)])
+            cfg_iter([(&a, &non_zero_a_domain), (&b, &non_zero_b_domain), (&c, &non_zero_c_domain)])
                 .map(|(matrix, non_zero_domain)| {
                     matrix_evals(
                         matrix,

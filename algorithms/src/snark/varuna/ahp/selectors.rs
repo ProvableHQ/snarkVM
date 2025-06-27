@@ -16,7 +16,7 @@
 use super::verifier::QueryPoints;
 use crate::fft::{DensePolynomial, EvaluationDomain};
 use snarkvm_fields::{PrimeField, batch_inversion};
-use snarkvm_utilities::{cfg_into_iter, cfg_iter, serialize::*};
+use snarkvm_utilities::{cfg_iter, serialize::*};
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
@@ -60,7 +60,7 @@ pub(crate) fn precompute_selectors<F: PrimeField>(
         })
         .multiunzip::<(Vec<F>, Vec<F>, Vec<(u64, u64, F)>)>();
     batch_inversion(&mut denominators);
-    cfg_into_iter!(numerators).zip_eq(denominators).zip_eq(keys).map(|((num, denom), key)| (key, num * denom)).collect()
+    cfg_iter(numerators).zip_eq(denominators).zip_eq(keys).map(|((num, denom), key)| (key, num * denom)).collect()
 }
 
 /// Throughout the protocol, we are tasked with computing a zerocheck or

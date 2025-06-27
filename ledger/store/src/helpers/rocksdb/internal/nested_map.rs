@@ -17,7 +17,7 @@
 
 use super::*;
 use crate::helpers::{NestedMap, NestedMapRead};
-use console::prelude::{FromBytes, anyhow, cfg_into_iter};
+use console::prelude::{FromBytes, anyhow, cfg_iter};
 
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering};
@@ -463,7 +463,7 @@ impl<
         }
 
         // Possibly deserialize the entries in parallel.
-        Ok(cfg_into_iter!(entries)
+        Ok(cfg_iter(entries)
             .map(|(k, v)| {
                 let k = bincode::deserialize::<K>(&k);
                 let v = bincode::deserialize::<V>(&v);

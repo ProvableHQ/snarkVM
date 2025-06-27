@@ -27,7 +27,6 @@
 
 use crate::{
     cfg_chunks_mut,
-    cfg_into_iter,
     cfg_iter,
     fft::{DomainCoeff, SparsePolynomial},
 };
@@ -713,7 +712,7 @@ impl<F: FftField> EvaluationDomain<F> {
             // Which also implies a large lookup stride.
             if num_chunks >= MIN_NUM_CHUNKS_FOR_COMPACTION {
                 if !first {
-                    roots = Cow::Owned(cfg_into_iter!(roots.into_owned()).step_by(step * 2).collect());
+                    roots = Cow::Owned(cfg_iter(roots.into_owned()).step_by(step * 2).collect());
                 }
                 step = 1;
                 roots.to_mut().shrink_to_fit();

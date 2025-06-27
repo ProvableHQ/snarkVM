@@ -145,7 +145,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
-        let mut deployment_ids = cfg_into_iter!(deployment_ids)
+        let mut deployment_ids = cfg_iter(deployment_ids)
             .map(|transaction_id| {
                 // Retrieve the block hash for the deployment transaction ID.
                 let Some(hash) = block_store.find_block_hash(&transaction_id)? else {

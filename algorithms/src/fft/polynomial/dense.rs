@@ -110,7 +110,7 @@ impl<F: Field> DensePolynomial<F> {
             cur *= point;
         }
         let zero = F::zero();
-        let mapping = crate::cfg_into_iter!(powers_of_point).zip_eq(&self.coeffs).map(|(power, coeff)| power * coeff);
+        let mapping = crate::cfg_iter(powers_of_point).zip_eq(&self.coeffs).map(|(power, coeff)| power * coeff);
         crate::cfg_reduce!(mapping, || zero, |a, b| a + b)
     }
 

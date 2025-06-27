@@ -107,20 +107,6 @@ pub fn cfg_iter<C: rayon::iter::IntoParallelIterator>(collection: C) -> C::Iter 
     collection.into_par_iter()
 }
 
-/// Creates parallel iterator if `parallel` feature is enabled.
-#[macro_export]
-macro_rules! cfg_into_iter {
-    ($e: expr) => {{
-        #[cfg(not(feature = "serial"))]
-        let result = $e.into_par_iter();
-
-        #[cfg(feature = "serial")]
-        let result = $e.into_iter();
-
-        result
-    }};
-}
-
 /// Returns an iterator over `chunk_size` elements of the slice at a
 /// time.
 #[macro_export]

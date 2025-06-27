@@ -944,7 +944,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.gen())).collect::<Vec<_>>();
             // Verify the transactions and collect the error message if there is one.
             let (valid, invalid): (Vec<_>, Vec<_>) =
-                cfg_into_iter!(transactions).zip(rngs).partition_map(|(transaction, mut rng)| {
+                cfg_iter(transactions).zip(rngs).partition_map(|(transaction, mut rng)| {
                     // Verify the transaction.
                     match self.check_transaction(transaction, None, &mut rng) {
                         // If the transaction is valid, add it to the list of valid transactions.

@@ -1110,7 +1110,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             None => bail!("Failed to remove last '{n}' blocks: no blocks in storage"),
         };
         // Fetch the block hashes to remove.
-        let hashes = cfg_into_iter!(heights)
+        let hashes = cfg_iter(heights)
             .map(|height| match self.storage.get_block_hash(height)? {
                 Some(hash) => Ok(hash),
                 None => bail!("Failed to remove last '{n}' blocks: missing block hash for block {height}"),

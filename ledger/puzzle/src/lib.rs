@@ -29,23 +29,13 @@ pub use solution_id::*;
 mod solutions;
 pub use solutions::*;
 
+use utilities::{cfg_keys, cfg_values};
+
 use console::{
     account::Address,
     algorithms::Sha3_256,
     collections::kary_merkle_tree::KaryMerkleTree,
-    prelude::{
-        FromBits,
-        Network,
-        Result,
-        anyhow,
-        bail,
-        cfg_into_iter,
-        cfg_iter,
-        cfg_keys,
-        cfg_values,
-        ensure,
-        has_duplicates,
-    },
+    prelude::{FromBits, Network, Result, anyhow, bail, cfg_iter, ensure, has_duplicates},
     types::U64,
 };
 
@@ -329,7 +319,7 @@ impl<N: Network> Puzzle<N> {
         lap!(timer, "Verify each epoch hash matches");
 
         // Ensure the solutions meet the proof target requirement.
-        cfg_into_iter!(self.get_proof_targets(solutions)?).enumerate().try_for_each(|(i, proof_target)| {
+        cfg_iter(self.get_proof_targets(solutions)?).enumerate().try_for_each(|(i, proof_target)| {
             if proof_target < expected_proof_target {
                 bail!(
                     "Solution '{:?}' did not meet the proof target requirement ({proof_target} < {expected_proof_target})",

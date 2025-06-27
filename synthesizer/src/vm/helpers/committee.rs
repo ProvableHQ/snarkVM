@@ -18,7 +18,7 @@
 use console::{
     account::Address,
     network::Network,
-    prelude::{cfg_into_iter, cfg_iter, cfg_reduce},
+    prelude::{cfg_iter, cfg_reduce},
     program::{Identifier, Literal, Plaintext, Value},
     types::{Boolean, U8, U64},
 };
@@ -145,15 +145,13 @@ pub fn ensure_stakers_matches<N: Network>(
 ) -> Result<()> {
     // Construct the validator map.
     let validator_map: IndexMap<_, _> = cfg_reduce!(
-        cfg_into_iter!(stakers)
-            .map(|(_, (validator, microcredits))| {
-                if committee.members().contains_key(validator) {
-                    Some(indexmap! {*validator => *microcredits})
-                } else {
-                    None
-                }
-            })
-            .flatten(),
+        cfg_iter(stakers).filter_map(|(_, (validator, microcredits))| {
+            if committee.members().contains_key(validator) {
+                Some(indexmap! {*validator => *microcredits})
+            } else {
+                None
+            }
+        }),
         || IndexMap::new(),
         |mut acc, e| {
             for (validator, microcredits) in e {
@@ -215,7 +213,7 @@ pub fn to_next_delegated<N: Network>(
 ) -> IndexMap<Address<N>, u64> {
     // Construct the delegated map.
     let delegated_map: IndexMap<Address<N>, u64> = cfg_reduce!(
-        cfg_into_iter!(next_stakers).map(|(_, (delegatee, microcredits))| indexmap! {*delegatee => *microcredits}),
+        cfg_iter(next_stakers).map(|(_, (delegatee, microcredits))| indexmap! {*delegatee => *microcredits}),
         || IndexMap::new(),
         |mut acc, e| {
             for (delegatee, microcredits) in e {
@@ -326,7 +324,7 @@ pub(crate) mod test_helpers {
 
                 // Construct the map of stakers.
                 let rngs = (0..num_iterations).map(|_| TestRng::from_seed(rng.gen())).collect::<Vec<_>>();
-                let mut stakers: IndexMap<_, _> = cfg_into_iter!(rngs)
+                let mut stakers: IndexMap<_, _> = cfg_iter(rngs)
                     .map(|mut rng| {
                         // Sample a random staker.
                         let staker = Address::<N>::new(rng.gen());

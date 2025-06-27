@@ -15,7 +15,7 @@
 
 use snarkvm_curves::{AffineCurve, ProjectiveCurve};
 use snarkvm_fields::{One, PrimeField, Zero};
-use snarkvm_utilities::{BigInteger, cfg_into_iter};
+use snarkvm_utilities::{BigInteger, cfg_iter};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -89,7 +89,7 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
     // We divide up the bits 0..num_bits into windows of size `c`, and
     // in parallel process each such window.
     let window_sums: Vec<_> =
-        cfg_into_iter!(0..num_bits).step_by(c).map(|w_start| standard_window(bases, scalars, w_start, c)).collect();
+        cfg_iter(0..num_bits).step_by(c).map(|w_start| standard_window(bases, scalars, w_start, c)).collect();
 
     // We store the sum for the lowest window.
     let (lowest, window_sums) = window_sums.split_first().unwrap();

@@ -31,7 +31,7 @@ use crate::{
 use anyhow::Result;
 use rand_core::RngCore;
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter, cfg_reduce};
+use snarkvm_utilities::{ExecutionPool, cfg_iter, cfg_reduce};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -128,7 +128,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let h_sum_time = start_timer!(|| "AHP::Prover::SecondRound h_sum");
         let h_sum: DensePolynomial<F> =
-            cfg_reduce!(cfg_into_iter!(job_pool.execute_all()), || Ok(DensePolynomial::zero()), |a, b| {
+            cfg_reduce!(cfg_iter(job_pool.execute_all()), || Ok(DensePolynomial::zero()), |a, b| {
                 a.and_then(|a| {
                     b.map(|mut b| {
                         b += &a;

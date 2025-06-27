@@ -415,7 +415,7 @@ mod tests {
         // Initialize a tracker for the leaders.
         let leaders = Arc::new(RwLock::new(IndexMap::<Address<CurrentNetwork>, i64>::new()));
         // Iterate through the rounds.
-        cfg_into_iter!(1..=num_rounds).for_each(|round| {
+        cfg_iter(1..=num_rounds).for_each(|round| {
             // Compute the leader.
             let leader = committee.get_leader(round).unwrap();
             // Increment the leader count for the current leader.
