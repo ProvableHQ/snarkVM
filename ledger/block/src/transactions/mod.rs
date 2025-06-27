@@ -42,7 +42,7 @@ use console::{
 use ledger_committee::Committee;
 use ledger_narwhal_batch_header::BatchHeader;
 use synthesizer_program::FinalizeOperation;
-use utilities::{cfg_find_value, cfg_find_value_map, cfg_values};
+use utilities::indexmap::{cfg_find_value, cfg_find_value_map, cfg_values};
 
 use indexmap::IndexMap;
 

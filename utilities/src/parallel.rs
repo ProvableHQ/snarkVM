@@ -190,7 +190,7 @@ macro_rules! cfg_reduce_with {
 }
 
 #[cfg(feature = "indexmap")]
-mod indexmap {
+pub mod indexmap {
     use indexmap::{IndexMap, map};
 
     cfg_if::cfg_if! {
@@ -296,9 +296,6 @@ mod indexmap {
         }
     }
 }
-
-#[cfg(feature = "indexmap")]
-pub use indexmap::*;
 
 /// Applies fold to the iterator
 #[macro_export]

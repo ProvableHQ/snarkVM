@@ -29,7 +29,7 @@ pub use solution_id::*;
 mod solutions;
 pub use solutions::*;
 
-use utilities::{cfg_keys, cfg_values};
+use utilities::indexmap::{cfg_keys, cfg_values};
 
 use console::{
     account::Address,
