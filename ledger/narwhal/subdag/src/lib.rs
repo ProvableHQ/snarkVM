@@ -27,7 +27,7 @@ use narwhal_batch_header::BatchHeader;
 use narwhal_transmission_id::TransmissionID;
 
 use indexmap::IndexSet;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -230,6 +230,25 @@ impl<N: Network> Deref for Subdag<N> {
     /// Returns the batch certificates.
     fn deref(&self) -> &Self::Target {
         &self.subdag
+    }
+}
+
+impl<'a, N: Network> IntoIterator for &'a Subdag<N> {
+    type IntoIter = btree_map::Iter<'a, u64, IndexSet<BatchCertificate<N>>>;
+    type Item = (&'a u64, &'a IndexSet<BatchCertificate<N>>);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.subdag.iter()
+    }
+}
+
+#[cfg(not(feature = "serial"))]
+impl<'a, N: Network> IntoParallelIterator for &'a Subdag<N> {
+    type Item = (&'a u64, &'a IndexSet<BatchCertificate<N>>);
+    type Iter = rayon::collections::btree_map::Iter<'a, u64, IndexSet<BatchCertificate<N>>>;
+
+    fn into_par_iter(self) -> Self::Iter {
+        (&self.subdag).into_par_iter()
     }
 }
 

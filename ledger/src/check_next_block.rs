@@ -130,7 +130,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Determine if the block subdag is correctly constructed and is not a combination of multiple subdags.
         self.check_block_subdag_atomicity(block)?;
 
-        // Ensure that all leafs of the subdag point to valid batches in other subdags/blocks.
+        // Ensure that all leaves of the subdag point to valid batches in other subdags/blocks.
         self.check_block_subdag_leaves(block)?;
 
         // Ensure that each existing solution ID from the block exists in the ledger.
@@ -201,7 +201,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         };
 
         // Check that all certificates on each round have met quorum requirements.
-        cfg_iter(&**subdag).try_for_each(|(round, certificates)| {
+        cfg_iter(subdag).try_for_each(|(round, certificates)| {
             // Retrieve the committee lookback for the round.
             let committee_lookback = self
                 .get_committee_lookback_for_round(*round)?
