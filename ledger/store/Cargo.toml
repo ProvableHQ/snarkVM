@@ -113,6 +113,9 @@ optional = true
 [dev-dependencies.aleo-std]
 workspace = true
 
+[dev-dependencies.snarkvm-ledger-block]
+workspace = true
+
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true
 features = [ "test-helpers" ]

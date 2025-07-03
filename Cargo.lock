@@ -3344,6 +3344,7 @@ name = "snarkvm-ledger"
 version = "4.1.0"
 dependencies = [
  "aleo-std",
+ "aleo-std-storage",
  "anyhow",
  "bincode",
  "criterion",
