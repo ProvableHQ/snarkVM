@@ -15,9 +15,9 @@
 
 use super::*;
 
-impl<N: Network> FromBytes for Subdag<N> {
-    /// Reads the subdag from the buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+impl<N: Network> Subdag<N> {
+    /// Shared functionality between FromBytes and FromBytesUnchecked.
+    fn internal_read_le<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -45,60 +45,32 @@ impl<N: Network> FromBytes for Subdag<N> {
             // Read the certificates.
             let mut certificates = IndexSet::new();
             for _ in 0..num_certificates {
-                // Read the certificate.
-                certificates.insert(BatchCertificate::read_le(&mut reader)?);
+                let cert = if unchecked {
+                    BatchCertificate::read_le_unchecked(&mut reader)?
+                } else {
+                    BatchCertificate::read_le(&mut reader)?
+                };
+                certificates.insert(cert);
             }
             // Insert the round and certificates.
             subdag.insert(round, certificates);
         }
 
         // Return the subdag.
-        Self::from(subdag).map_err(error)
+        if unchecked { Ok(Self::from_unchecked(subdag)) } else { Self::from(subdag).map_err(error) }
+    }
+}
+impl<N: Network> FromBytes for Subdag<N> {
+    /// Reads the subdag from the buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::internal_read_le(reader, false)
     }
 }
 
 impl<N: Network> FromBytesUnchecked for Subdag<N> {
     /// Reads the subdag from the buffer.
-    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the version.
-        let version = u8::read_le(&mut reader)?;
-        // Ensure the version is valid.
-        if version != 1 {
-            return Err(error(format!("Invalid subdag version ({version})")));
-        }
-
-        // Read the number of rounds.
-        let num_rounds = u32::read_le(&mut reader)?;
-        // Ensure the number of rounds is within bounds.
-        if num_rounds as u64 > Self::MAX_ROUNDS {
-            return Err(error(format!("Number of rounds ({num_rounds}) exceeds the maximum ({})", Self::MAX_ROUNDS)));
-        }
-        // Read the round certificates.
-        let mut subdag = BTreeMap::new();
-        for _ in 0..num_rounds {
-            // Read the round.
-            let round = u64::read_le(&mut reader)?;
-            // Read the number of certificates.
-            let num_certificates = u16::read_le(&mut reader)?;
-            // Ensure the number of certificates is within bounds.
-            if num_certificates > BatchHeader::<N>::MAX_CERTIFICATES {
-                return Err(error(format!(
-                    "Number of certificates ({num_certificates}) exceeds the maximum ({})",
-                    BatchHeader::<N>::MAX_CERTIFICATES
-                )));
-            }
-            // Read the certificates.
-            let mut certificates = IndexSet::new();
-            for _ in 0..num_certificates {
-                // Read the certificate.
-                certificates.insert(BatchCertificate::read_le_unchecked(&mut reader)?);
-            }
-            // Insert the round and certificates.
-            subdag.insert(round, certificates);
-        }
-
-        // Return the subdag.
-        Ok(Self::from_unchecked(subdag))
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::internal_read_le(reader, true)
     }
 }
 

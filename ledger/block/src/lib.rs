@@ -239,7 +239,9 @@ impl<N: Network> Block<N> {
 
     /// Initializes a new block from the given block hash, previous block hash, block header,
     /// authority, ratifications, solutions, transactions, and aborted transaction IDs.
-    /// This is only called by [`Block::from`], which validates the block components.
+    ///
+    /// This function does *not* perform any checks on the given data, and should only be called
+    /// if the inputs are trusted.
     fn from_unchecked(
         block_hash: N::BlockHash,
         previous_hash: N::BlockHash,
