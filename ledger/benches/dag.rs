@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use console::prelude::*;
+use snarkvm_console::prelude::*;
 use snarkvm_ledger::narwhal::subdag::test_helpers::sample_subdag;
 
 use criterion::{Criterion, criterion_group, criterion_main};

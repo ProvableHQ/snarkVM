@@ -36,6 +36,7 @@ wasm = [
 ]
 tracing = [ "dep:tracing" ]
 test = [ "snarkvm-synthesizer-process/test" ]
+test-helpers = [ ]
 
 [dependencies.snarkvm-console]
 workspace = true

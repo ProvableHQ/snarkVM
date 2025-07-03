@@ -27,6 +27,12 @@ path = "benches/bonded_mapping.rs"
 harness = false
 
 [[bench]]
+name = "store"
+path = "benches/store.rs"
+harness = false
+required-features = [ "test-helpers", "test", "rocks" ]
+
+[[bench]]
 name = "dag"
 path = "benches/dag.rs"
 harness = false
@@ -162,10 +168,14 @@ features = [ "filesystem" ]
 
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true
-features = [ "test" ]
+features = [ "test-helpers", "test" ]
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
 workspace = true
+
+[dev-dependencies.aleo-std-storage]
+version = "1"
+default-features = false
 
 [dev-dependencies.serde_json]
 workspace = true
@@ -173,6 +183,10 @@ features = [ "preserve_order" ]
 
 [dev-dependencies.snarkvm-circuit]
 workspace = true
+
+[dependencies.snarkvm-circuit]
+path = "../circuit"
+optional = true
 
 [dev-dependencies.snarkvm-utilities]
 workspace = true

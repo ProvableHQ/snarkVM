@@ -242,7 +242,7 @@ impl<N: Network> Block<N> {
     ///
     /// This function does *not* perform any checks on the given data, and should only be called
     /// if the inputs are trusted.
-    fn from_unchecked(
+    pub fn from_unchecked(
         block_hash: N::BlockHash,
         previous_hash: N::BlockHash,
         header: Header<N>,
