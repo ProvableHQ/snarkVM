@@ -15,10 +15,9 @@
 
 use super::*;
 
-impl<N: Network> FromBytes for Block<N> {
-    /// Reads the block from the buffer.
-    #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+impl<N: Network> Block<N> {
+    /// Shared functionality between FromBytes and FromBytesUnchecked.
+    fn internal_read_le<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -34,7 +33,11 @@ impl<N: Network> FromBytes for Block<N> {
         let header = FromBytes::read_le(&mut reader)?;
 
         // Read the authority.
-        let authority = FromBytes::read_le(&mut reader)?;
+        let authority = if unchecked {
+            Authority::<N>::read_le_unchecked(&mut reader)?
+        } else {
+            Authority::<N>::read_le(&mut reader)?
+        };
 
         // Read the ratifications.
         let ratifications = Ratifications::read_le(&mut reader)?;
@@ -70,16 +73,30 @@ impl<N: Network> FromBytes for Block<N> {
         }
 
         // Construct the block.
-        let block = Self::from(
-            previous_hash,
-            header,
-            authority,
-            ratifications,
-            solutions,
-            aborted_solution_ids,
-            transactions,
-            aborted_transaction_ids,
-        )
+        let block = if unchecked {
+            Self::from_unchecked(
+                previous_hash,
+                block_hash,
+                header,
+                authority,
+                ratifications,
+                solutions,
+                aborted_solution_ids,
+                transactions,
+                aborted_transaction_ids,
+            )
+        } else {
+            Self::from(
+                previous_hash,
+                header,
+                authority,
+                ratifications,
+                solutions,
+                aborted_solution_ids,
+                transactions,
+                aborted_transaction_ids,
+            )
+        }
         .map_err(error)?;
 
         // Ensure the block hash matches.
@@ -90,73 +107,17 @@ impl<N: Network> FromBytes for Block<N> {
     }
 }
 
+impl<N: Network> FromBytes for Block<N> {
+    /// Reads the block from the buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::internal_read_le(reader, false)
+    }
+}
+
 impl<N: Network> FromBytesUnchecked for Block<N> {
     /// Reads the block from the buffer without performing expensive input validation.
-    #[inline]
-    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the version.
-        let version = u8::read_le(&mut reader)?;
-        // Ensure the version is valid.
-        if version != 1 {
-            return Err(error("Invalid block version"));
-        }
-
-        // Read the block hash.
-        let block_hash: N::BlockHash = FromBytes::read_le(&mut reader)?;
-        // Read the previous block hash.
-        let previous_hash = FromBytes::read_le(&mut reader)?;
-        // Read the header.
-        let header = FromBytes::read_le(&mut reader)?;
-
-        // Write the authority.
-        let authority = FromBytesUnchecked::read_le_unchecked(&mut reader)?;
-
-        // Read the number of ratifications.
-        let ratifications = Ratifications::read_le(&mut reader)?;
-
-        // Read the solutions.
-        let solutions: Solutions<N> = FromBytes::read_le(&mut reader)?;
-
-        // Read the number of aborted solution IDs.
-        let num_aborted_solutions = u32::read_le(&mut reader)?;
-        // Ensure the number of aborted solutions IDs is within bounds (this is an early safety check).
-        if num_aborted_solutions as usize > Solutions::<N>::MAX_ABORTED_SOLUTIONS {
-            return Err(error("Invalid number of aborted solutions IDs in the block"));
-        }
-        // Read the aborted solution IDs.
-        let mut aborted_solution_ids = Vec::with_capacity(num_aborted_solutions as usize);
-        for _ in 0..num_aborted_solutions {
-            aborted_solution_ids.push(FromBytes::read_le(&mut reader)?);
-        }
-
-        // Read the transactions.
-        let transactions = FromBytes::read_le(&mut reader)?;
-
-        // Read the number of aborted transaction IDs.
-        let num_aborted_transactions = u32::read_le(&mut reader)?;
-        // Ensure the number of aborted transaction IDs is within bounds (this is an early safety check).
-        if num_aborted_transactions as usize > Transactions::<N>::MAX_ABORTED_TRANSACTIONS {
-            return Err(error("Invalid number of aborted transaction IDs in the block"));
-        }
-        // Read the aborted transaction IDs.
-        let mut aborted_transaction_ids = Vec::with_capacity(num_aborted_transactions as usize);
-        for _ in 0..num_aborted_transactions {
-            aborted_transaction_ids.push(FromBytes::read_le(&mut reader)?);
-        }
-
-        // Construct the block.
-        Self::from_unchecked(
-            block_hash,
-            previous_hash,
-            header,
-            authority,
-            ratifications,
-            solutions,
-            aborted_solution_ids,
-            transactions,
-            aborted_transaction_ids,
-        )
-        .map_err(error)
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::internal_read_le(reader, true)
     }
 }
 

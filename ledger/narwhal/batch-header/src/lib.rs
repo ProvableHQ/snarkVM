@@ -194,7 +194,8 @@ impl<N: Network> BatchHeader<N> {
         ))
     }
 
-    /// Initializes a new batch header.
+    /// Initializes a new batch header from the given data,
+    /// *without* checking it for correctness/consistency.
     pub fn from_unchecked(
         author: Address<N>,
         batch_id: Field<N>,

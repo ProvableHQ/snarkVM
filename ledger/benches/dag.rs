@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,13 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[macro_use]
-extern crate criterion;
-
-use console::{network::MainnetV0, prelude::*};
+use console::prelude::*;
 use snarkvm_ledger::narwhal::subdag::test_helpers::sample_subdag;
 
-use criterion::Criterion;
+use criterion::{Criterion, criterion_group, criterion_main};
 
 /// Helper method to benchmark serialization.
 fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + FromBytesUnchecked + Clone>(

@@ -15,9 +15,9 @@
 
 use super::*;
 
-impl<N: Network> FromBytes for BatchHeader<N> {
-    /// Reads the batch header from the buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+impl<N: Network> BatchHeader<N> {
+    /// Shared functionality between FromBytes and FromBytesUnchecked.
+    fn internal_read_le<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -71,12 +71,25 @@ impl<N: Network> FromBytes for BatchHeader<N> {
             .collect::<Result<IndexSet<_>, _>>()?;
 
         // Read the signature.
-        let signature = Signature::read_le(&mut reader)?;
 
         // Construct the batch.
-        let batch =
+        let batch = if unchecked {
+            let signature = Signature::read_le_unchecked(&mut reader)?;
+            Self::from_unchecked(
+                author,
+                batch_id,
+                round,
+                timestamp,
+                committee_id,
+                transmission_ids,
+                previous_certificate_ids,
+                signature,
+            )
+        } else {
+            let signature = Signature::read_le(&mut reader)?;
             Self::from(author, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, signature)
-                .map_err(error)?;
+                .map_err(error)?
+        };
 
         // Return the batch.
         match batch.batch_id == batch_id {
@@ -86,76 +99,18 @@ impl<N: Network> FromBytes for BatchHeader<N> {
     }
 }
 
-impl<N: Network> FromBytesUnchecked for BatchHeader<N> {
+impl<N: Network> FromBytes for BatchHeader<N> {
     /// Reads the batch header from the buffer.
-    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the version.
-        let version = u8::read_le(&mut reader)?;
-        // Ensure the version is valid.
-        if version != 1 {
-            return Err(error("Invalid batch header version"));
-        }
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::internal_read_le(reader, false)
+    }
+}
 
-        // Read the batch ID.
-        let batch_id = Field::read_le(&mut reader)?;
-        // Read the author.
-        let author = Address::read_le(&mut reader)?;
-        // Read the round number.
-        let round = u64::read_le(&mut reader)?;
-        // Read the timestamp.
-        let timestamp = i64::read_le(&mut reader)?;
-        // Read the committee ID.
-        let committee_id = Field::read_le(&mut reader)?;
-
-        // Read the number of transmission IDs.
-        let num_transmission_ids = u32::read_le(&mut reader)?;
-        // Ensure the number of transmission IDs is within bounds.
-        if num_transmission_ids as usize > Self::MAX_TRANSMISSIONS_PER_BATCH {
-            return Err(error(format!(
-                "Number of transmission IDs ({num_transmission_ids}) exceeds the maximum ({})",
-                Self::MAX_TRANSMISSIONS_PER_BATCH,
-            )));
-        }
-        // Read the transmission IDs.
-        let mut transmission_ids = IndexSet::new();
-        for _ in 0..num_transmission_ids {
-            // Insert the transmission ID.
-            transmission_ids.insert(TransmissionID::read_le(&mut reader)?);
-        }
-
-        // Read the number of previous certificate IDs.
-        let num_previous_certificate_ids = u16::read_le(&mut reader)?;
-        // Ensure the number of previous certificate IDs is within bounds.
-        if num_previous_certificate_ids > Self::MAX_CERTIFICATES {
-            return Err(error(format!(
-                "Number of previous certificate IDs ({num_previous_certificate_ids}) exceeds the maximum ({})",
-                Self::MAX_CERTIFICATES
-            )));
-        }
-
-        // Read the previous certificate ID bytes.
-        let mut previous_certificate_id_bytes =
-            vec![0u8; num_previous_certificate_ids as usize * Field::<N>::size_in_bytes()];
-        reader.read_exact(&mut previous_certificate_id_bytes)?;
-        // Read the previous certificate IDs.
-        let previous_certificate_ids = cfg_chunks!(previous_certificate_id_bytes, Field::<N>::size_in_bytes())
-            .map(Field::read_le)
-            .collect::<Result<IndexSet<_>, _>>()?;
-
-        // Read the signature.
-        let signature = Signature::read_le_unchecked(&mut reader)?;
-
-        // Construct the batch.
-        Ok(Self::from_unchecked(
-            author,
-            batch_id,
-            round,
-            timestamp,
-            committee_id,
-            transmission_ids,
-            previous_certificate_ids,
-            signature,
-        ))
+impl<N: Network> FromBytesUnchecked for BatchHeader<N> {
+    /// Reads the batch header from the buffer *without* performing any checks
+    /// for consistency/correctness.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::internal_read_le(reader, true)
     }
 }
 
