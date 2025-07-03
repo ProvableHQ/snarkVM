@@ -64,6 +64,7 @@ test-helpers = [
   "ledger-narwhal/test-helpers"
 ]
 timer = [ "aleo-std/timer" ]
+test_targets = [ "console/test_targets" ]
 
 [dependencies.console]
 package = "snarkvm-console"

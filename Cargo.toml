@@ -159,7 +159,7 @@ synthesizer = [ "snarkvm-synthesizer" ]
 utilities = [ "snarkvm-utilities" ]
 wasm = [ "snarkvm-wasm" ]
 test_exports = [ "snarkvm-algorithms/test_exports" ]
-test_targets = [ "snarkvm-console/test_targets" ]
+test_targets = [ "snarkvm-ledger/test_targets", "snarkvm-console/test_targets", "snarkvm-synthesizer/test_targets" ]
 test_consensus_heights = [ "snarkvm-console/test_consensus_heights" ]
 
 [dependencies.snarkvm-algorithms]
