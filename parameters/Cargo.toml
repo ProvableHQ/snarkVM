@@ -26,6 +26,11 @@ edition = "2021"
 [features]
 large_params = [ ]
 default = [ "colored" ]
+full = [
+  "colored",
+  "remote",
+  "filesystem"
+]
 locktick = [ "dep:locktick" ]
 no_std_out = [ ]
 filesystem = [ "aleo-std/storage" ]

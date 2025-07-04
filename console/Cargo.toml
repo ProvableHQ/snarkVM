@@ -53,11 +53,12 @@ test = [
   "snarkvm-console-network/test",
   "snarkvm-console-program/test"
 ]
-account = [ "network", "snarkvm-console-account" ]
+account = [ "snarkvm-console-account" ]
 algorithms = [ "snarkvm-console-algorithms" ]
 collections = [ "algorithms", "snarkvm-console-collections" ]
-network = [ "collections", "snarkvm-console-network" ]
-program = [ "network", "snarkvm-console-program" ]
+network = [ "collections", "snarkvm-console-network/full" ]
+network_min = [ "collections", "snarkvm-console-network" ]
+program = [ "snarkvm-console-program" ]
 serial = [ "snarkvm-console-collections/serial" ]
 types = [ "snarkvm-console-types" ]
 test_targets = [ "snarkvm-console-network/test_targets" ]

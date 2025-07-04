@@ -9,7 +9,11 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
-default = [ "snarkvm-algorithms/polycommit_full" ]
+default = []
+full = [
+  "snarkvm-algorithms/polycommit_full",
+  "snarkvm-parameters/full"
+]
 wasm = [
   "snarkvm-algorithms/polycommit_wasm",
   "snarkvm-parameters/wasm"
@@ -50,6 +54,7 @@ default-features = false
 [dependencies.snarkvm-parameters]
 path = "../../parameters"
 version = "=3.8.0"
+default-features = false
 
 [dependencies.anyhow]
 version = "1.0.73"
