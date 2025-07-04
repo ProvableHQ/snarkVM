@@ -25,9 +25,10 @@ edition = "2021"
 
 [features]
 large_params = [ ]
-default = [ "colored", "remote" ]
+default = [ "colored" ]
 locktick = [ "dep:locktick" ]
 no_std_out = [ ]
+filesystem = [ "aleo-std/storage" ]
 remote = [ "curl" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 wasm = [ "encoding", "js-sys", "web-sys" ]
@@ -45,7 +46,6 @@ version = "=3.8.0"
 [dependencies.aleo-std]
 version = "1.0.1"
 default-features = false
-features = [ "storage" ]
 
 [dependencies.anyhow]
 version = "1"

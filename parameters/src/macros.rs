@@ -68,7 +68,7 @@ macro_rules! impl_store_and_remote_fetch {
             Ok(())
         }
 
-        #[cfg(not(feature = "wasm"))]
+        #[cfg(all(not(feature = "wasm"), feature = "remote"))]
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
             let mut easy = curl::easy::Easy::new();
             easy.follow_location(true)?;
@@ -170,9 +170,12 @@ macro_rules! impl_load_bytes_logic_local {
 macro_rules! impl_load_bytes_logic_remote {
     ($remote_url: expr, $local_dir: expr, $filename: expr, $metadata: expr, $expected_checksum: expr, $expected_size: expr) => {
         // Compose the correct file path for the parameter file.
-        let mut file_path = aleo_std::aleo_dir();
-        file_path.push($local_dir);
-        file_path.push($filename);
+        let mut file_path = std::path::PathBuf::new();
+        #[cfg(feature = "filesystem")] {
+            file_path = aleo_std::aleo_dir();
+            file_path.push($local_dir);
+            file_path.push($filename);
+        }
 
         let buffer = if file_path.exists() {
             // Attempts to load the parameter file locally with an absolute path.
@@ -194,7 +197,7 @@ macro_rules! impl_load_bytes_logic_remote {
 
             // Load remote file
             cfg_if::cfg_if! {
-                if #[cfg(not(feature = "wasm"))] {
+                if #[cfg(all(not(feature = "wasm"), feature = "remote"))] {
                     let mut buffer = vec![];
                     Self::remote_fetch(&mut buffer, &url)?;
 

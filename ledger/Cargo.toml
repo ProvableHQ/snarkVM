@@ -120,6 +120,7 @@ version = "=3.8.0"
 [dependencies.aleo-std]
 version = "1.0.1"
 default-features = false
+features = [ "storage" ]
 
 [dependencies.anyhow]
 version = "1.0.73"
