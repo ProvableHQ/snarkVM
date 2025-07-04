@@ -34,6 +34,9 @@ pub enum ParameterError {
 
     #[error("{}", _0)]
     Wasm(String),
+
+    #[error("Filesystem access is disabled, enable compiler flag for feature")]
+    FilesystemDisabled,
 }
 
 #[cfg(all(not(feature = "wasm"), feature = "remote"))]
