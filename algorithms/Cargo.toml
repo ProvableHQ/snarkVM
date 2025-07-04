@@ -181,7 +181,7 @@ msm = [ ]
 test = [ ]
 polycommit = [ "crypto_hash", "fft", "msm", "rand_core", "snarkvm-parameters" ]
 polycommit_wasm = [ "polycommit", "snarkvm-parameters/wasm" ]
-polycommit_full = [ "polycommit", "snarkvm-parameters/default" ]
+polycommit_full = [ "polycommit", "snarkvm-parameters/full" ]
 r1cs = [ "cfg-if", "fxhash", "indexmap" ]
 serial = [
   "snarkvm-curves/serial",
