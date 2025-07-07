@@ -138,9 +138,9 @@ pub trait Network:
     /// The cost in microcredits per constraint for the deployment transaction.
     const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
     /// The maximum number of variables in a deployment.
-    const MAX_DEPLOYMENT_VARIABLES: u64 = (1 << 20) + (1 << 19); // 1,572,864 variables
+    const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
     /// The maximum number of constraints in a deployment.
-    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = (1 << 20) + (1 << 19); // 1,572,864 constraints
+    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
     /// The maximum number of microcredits that can be spent on a transaction's finalize scope.
