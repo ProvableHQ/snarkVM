@@ -445,7 +445,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // If the block advances to a new consensus version, clear the partial verification cache.
                 // TODO: This may have performance implications if the version
                 // list grows large as it is in the hot path.
-                if N::CONSENSUS_VERSION_HEIGHTS.iter().any(|(_, height)| height == &block.height()) {
+                if N::CONSENSUS_VERSION_HEIGHTS().iter().any(|(_, height)| height == &block.height()) {
                     self.partially_verified_transactions().write().clear();
                 }
                 Ok(())

@@ -146,32 +146,6 @@ impl Network for TestnetV0 {
     /// The transmission checksum type.
     type TransmissionChecksum = u128;
 
-    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
-    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
-    #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = [
-        (ConsensusVersion::V1, 0),
-        (ConsensusVersion::V2, 2_950_000),
-        (ConsensusVersion::V3, 4_800_000),
-        (ConsensusVersion::V4, 6_625_000),
-        (ConsensusVersion::V5, 6_765_000),
-        (ConsensusVersion::V6, 7_600_000),
-        (ConsensusVersion::V7, 8_365_000),
-        (ConsensusVersion::V8, 9_155_000),
-    ];
-    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
-    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
-    #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = [
-        (ConsensusVersion::V1, 0),
-        (ConsensusVersion::V2, 10),
-        (ConsensusVersion::V3, 11),
-        (ConsensusVersion::V4, 12),
-        (ConsensusVersion::V5, 13),
-        (ConsensusVersion::V6, 14),
-        (ConsensusVersion::V7, 15),
-        (ConsensusVersion::V8, 16),
-    ];
     /// The network edition.
     const EDITION: u16 = 0;
     /// The genesis block coinbase target.
@@ -208,6 +182,10 @@ impl Network for TestnetV0 {
     ];
     /// The network name.
     const NAME: &'static str = "Aleo Testnet (v0)";
+    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
+    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
+    /// Do not read this directly outside of tests, use `N::CONSENSUS_VERSION_HEIGHTS()` instead.
+    const _CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = TESTNET_V0_CONSENSUS_VERSION_HEIGHTS;
 
     /// Returns the block height where the the inclusion proof will be updated.
     #[allow(non_snake_case)]

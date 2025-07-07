@@ -29,6 +29,9 @@ pub use helpers::*;
 mod canary_v0;
 pub use canary_v0::*;
 
+mod consensus_heights;
+pub use consensus_heights::*;
+
 mod mainnet_v0;
 pub use mainnet_v0::*;
 
@@ -68,6 +71,8 @@ pub type FiatShamirParameters<N> = <FiatShamir<N> as AlgebraicSponge<Fq<N>, 2>>:
 /// Helper types for the Varuna proving and verifying key.
 pub(crate) type VarunaProvingKey<N> = CircuitProvingKey<<N as Environment>::PairingCurve, VarunaHidingMode>;
 pub(crate) type VarunaVerifyingKey<N> = CircuitVerifyingKey<<N as Environment>::PairingCurve>;
+
+static CONSENSUS_VERSION_HEIGHTS: OnceCell<[(ConsensusVersion, u32); 8]> = OnceCell::new();
 
 /// The different consensus versions.
 /// If you need the version active for a specific height, see: `N::CONSENSUS_VERSION`.
@@ -138,9 +143,9 @@ pub trait Network:
     /// The cost in microcredits per constraint for the deployment transaction.
     const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
     /// The maximum number of variables in a deployment.
-    const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
+    const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 20; // 1,048,576 variables
     /// The maximum number of constraints in a deployment.
-    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
+    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 20; // 1,048,576 constraints
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
     /// The maximum number of microcredits that can be spent on a transaction's finalize scope.
@@ -228,7 +233,9 @@ pub trait Network:
 
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8];
+    /// Do not read this directly outside of tests, use `N::CONSENSUS_VERSION_HEIGHTS()` instead.
+    const _CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8];
+
     ///  A list of (consensus_version, size) pairs indicating the maximum number of validators in a committee.
     //  Note: This value must **not** decrease without considering the impact on serialization.
     //  Decreasing this value will break backwards compatibility of serialization without explicit
@@ -236,19 +243,66 @@ pub trait Network:
     //  Increasing this value will require a migration to prevent forking during network upgrades.
     const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4];
 
+    /// Returns the list of consensus versions.
+    #[allow(non_snake_case)]
+    #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
+    fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); 8] {
+        // Initialize the consensus version heights directly from the constant.
+        CONSENSUS_VERSION_HEIGHTS.get_or_init(|| Self::_CONSENSUS_VERSION_HEIGHTS)
+    }
+    /// Returns the list of consensus versions.
+    #[allow(non_snake_case)]
+    #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
+    fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); 8] {
+        CONSENSUS_VERSION_HEIGHTS.get_or_init(|| {
+            // Read the environment variable.
+            let Ok(height_string) = std::env::var("CONSENSUS_VERSION_HEIGHTS") else {
+                return TEST_CONSENSUS_VERSION_HEIGHTS;
+            };
+            // Parse the heights from the environment variable.
+            let Ok(heights) = height_string
+                .replace(" ", "")
+                .split(",")
+                .map(|height| height.parse::<u32>().or_else(|_| bail!("Failed to parse heights")))
+                .collect::<Result<Vec<u32>>>()
+            else {
+                return TEST_CONSENSUS_VERSION_HEIGHTS;
+            };
+            // Validate the heights.
+            if heights.len() != TEST_CONSENSUS_VERSION_HEIGHTS.len() {
+                return TEST_CONSENSUS_VERSION_HEIGHTS;
+            }
+            for window in heights.windows(2) {
+                if window[0] >= window[1] {
+                    return TEST_CONSENSUS_VERSION_HEIGHTS;
+                }
+            }
+            // Return the heights.
+            [
+                (ConsensusVersion::V1, heights[0]),
+                (ConsensusVersion::V2, heights[1]),
+                (ConsensusVersion::V3, heights[2]),
+                (ConsensusVersion::V4, heights[3]),
+                (ConsensusVersion::V5, heights[4]),
+                (ConsensusVersion::V6, heights[5]),
+                (ConsensusVersion::V7, heights[6]),
+                (ConsensusVersion::V8, heights[7]),
+            ]
+        })
+    }
     /// Returns the consensus version which is active at the given height.
     #[allow(non_snake_case)]
     fn CONSENSUS_VERSION(seek_height: u32) -> anyhow::Result<ConsensusVersion> {
-        match Self::CONSENSUS_VERSION_HEIGHTS.binary_search_by(|(_, height)| height.cmp(&seek_height)) {
+        match Self::CONSENSUS_VERSION_HEIGHTS().binary_search_by(|(_, height)| height.cmp(&seek_height)) {
             // If a consensus version was found at this height, return it.
-            Ok(index) => Ok(Self::CONSENSUS_VERSION_HEIGHTS[index].0),
+            Ok(index) => Ok(Self::CONSENSUS_VERSION_HEIGHTS()[index].0),
             // If the specified height was not found, determine whether to return an appropriate version.
             Err(index) => {
                 if index == 0 {
                     Err(anyhow!("Expected consensus version 1 to exist at height 0."))
                 } else {
                     // Return the appropriate version belonging to the height *lower* than the sought height.
-                    Ok(Self::CONSENSUS_VERSION_HEIGHTS[index - 1].0)
+                    Ok(Self::CONSENSUS_VERSION_HEIGHTS()[index - 1].0)
                 }
             }
         }
@@ -256,7 +310,7 @@ pub trait Network:
     /// Returns the height at which a specified consensus version becomes active.
     #[allow(non_snake_case)]
     fn CONSENSUS_HEIGHT(version: ConsensusVersion) -> Result<u32> {
-        Ok(Self::CONSENSUS_VERSION_HEIGHTS.get(version as usize - 1).ok_or(anyhow!("Invalid consensus version"))?.1)
+        Ok(Self::CONSENSUS_VERSION_HEIGHTS().get(version as usize - 1).ok_or(anyhow!("Invalid consensus version"))?.1)
     }
     /// Returns the last `MAX_CERTIFICATES` value.
     #[allow(non_snake_case)]
@@ -511,20 +565,20 @@ mod tests {
     /// Ensure that the consensus constants are defined and correct at genesis.
     /// It is possible this invariant no longer holds in the future, e.g. due to pruning or novel types of constants.
     fn consensus_constants_at_genesis<N: Network>() {
-        let height = N::CONSENSUS_VERSION_HEIGHTS.first().unwrap().1;
+        let height = N::_CONSENSUS_VERSION_HEIGHTS.first().unwrap().1;
         assert_eq!(height, 0);
-        let consensus_version = N::CONSENSUS_VERSION_HEIGHTS.first().unwrap().0;
+        let consensus_version = N::_CONSENSUS_VERSION_HEIGHTS.first().unwrap().0;
         assert_eq!(consensus_version, ConsensusVersion::V1);
         assert_eq!(consensus_version as usize, 1);
     }
 
     /// Ensure that the consensus *versions* are unique, incrementing and start with 1.
     fn consensus_versions<N: Network>() {
-        let mut previous_version = N::CONSENSUS_VERSION_HEIGHTS.first().unwrap().0;
+        let mut previous_version = N::_CONSENSUS_VERSION_HEIGHTS.first().unwrap().0;
         // Ensure that the consensus versions start with 1.
         assert_eq!(previous_version as usize, 1);
         // Ensure that the consensus versions are unique and incrementing by 1.
-        for (version, _) in N::CONSENSUS_VERSION_HEIGHTS.iter().skip(1) {
+        for (version, _) in N::_CONSENSUS_VERSION_HEIGHTS.iter().skip(1) {
             assert_eq!(*version as usize, previous_version as usize + 1);
             previous_version = *version;
         }
@@ -538,8 +592,8 @@ mod tests {
 
     /// Ensure that consensus *heights* are unique and incrementing.
     fn consensus_constants_increasing_heights<N: Network>() {
-        let mut previous_height = N::CONSENSUS_VERSION_HEIGHTS.first().unwrap().1;
-        for (version, height) in N::CONSENSUS_VERSION_HEIGHTS.iter().skip(1) {
+        let mut previous_height = N::_CONSENSUS_VERSION_HEIGHTS.first().unwrap().1;
+        for (version, height) in N::_CONSENSUS_VERSION_HEIGHTS.iter().skip(1) {
             assert!(*height > previous_height);
             previous_height = *height;
             // Ensure that N::CONSENSUS_VERSION returns the expected value.
@@ -553,7 +607,7 @@ mod tests {
     fn consensus_constants_valid_heights<N: Network>() {
         for (version, value) in N::MAX_CERTIFICATES.iter() {
             // Ensure that the height at which an update occurs are present in CONSENSUS_VERSION_HEIGHTS.
-            let height = N::CONSENSUS_VERSION_HEIGHTS.iter().find(|(c_version, _)| *c_version == *version).unwrap().1;
+            let height = N::_CONSENSUS_VERSION_HEIGHTS.iter().find(|(c_version, _)| *c_version == *version).unwrap().1;
             // Double-check that consensus_config_value returns the correct value.
             assert_eq!(consensus_config_value!(N, MAX_CERTIFICATES, height).unwrap(), *value);
         }
