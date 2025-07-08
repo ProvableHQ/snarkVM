@@ -174,7 +174,13 @@ impl<N: Network> Request<N> {
                     };
                     // Ensure the record belongs to the signer.
                     ensure!(**record.owner() == signer, "Input record for '{program_id}' must belong to the signer");
-
+                    // Ensure version 0 credits.aleo Records are only allowed when calling upgrade().
+                    if program_id == ProgramID::from_str("credits.aleo")?
+                        && record.version() == &U8::zero()
+                        && function_name != Identifier::from_str("upgrade")?
+                    {
+                        bail!("Version 0 credits.aleo Records are only allowed when calling 'upgrade()'");
+                    }
                     // Compute the record view key.
                     let record_view_key = (*record.nonce() * *view_key).to_x_coordinate();
                     // Compute the record commitment.

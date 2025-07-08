@@ -1438,7 +1438,8 @@ program synthesis_overload.aleo;
 function do:
     input r0 as [[u128; 32u32]; 2u32].private;
     hash.sha3_256 r0 into r1 as field;
-    output r1 as field.public;",
+    hash.sha3_256 r0 into r2 as field;
+    output r2 as field.public;",
         )
         .unwrap();
 

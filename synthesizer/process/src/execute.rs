@@ -88,7 +88,7 @@ mod tests {
         // Sample a credits record.
         let fee_in_microcredits = base_fee_in_microcredits.saturating_add(priority_fee_in_microcredits);
         let credits = Record::<CurrentNetwork, Plaintext<_>>::from_str(&format!(
-            "{{ owner: {owner}.private, microcredits: {fee_in_microcredits}u64.private, _nonce: 0group.public }}"
+            "{{ owner: {owner}.private, microcredits: {fee_in_microcredits}u64.private, _nonce: 0group.public, _version: 1u8.public }}"
         ))
         .unwrap();
 

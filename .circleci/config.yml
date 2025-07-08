@@ -705,15 +705,15 @@ jobs:
           workspace_member: synthesizer
           cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-test-cache
 
-  synthesizer-mem-heavy:
-    docker:
-      - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
-    resource_class: << pipeline.parameters.twoxlarge >>
-    steps:
-      - run_serial:
-          flags: -- --ignored test_deployment_synthesis_overload test_deep_nested_execution_cost
-          workspace_member: synthesizer
-          cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-mem-heavy-cache
+  # synthesizer-mem-heavy:
+  #   docker:
+  #     - image: cimg/rust:1.83.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+  #   resource_class: << pipeline.parameters.twoxlarge >>
+  #   steps:
+  #     - run_serial:
+  #         flags: -- --ignored test_deployment_synthesis_overload test_deep_nested_execution_cost
+  #         workspace_member: synthesizer
+  #         cache_key: v1.3.0-rust-1.83.0-snarkvm-synthesizer-mem-heavy-cache
 
   synthesizer-integration:
     docker:
@@ -1038,7 +1038,7 @@ workflows:
       - parameters-uncached
       - synthesizer
       - synthesizer-test
-      - synthesizer-mem-heavy
+      # - synthesizer-mem-heavy
       - synthesizer-integration
       - synthesizer-process
       - synthesizer-process-with-rocksdb

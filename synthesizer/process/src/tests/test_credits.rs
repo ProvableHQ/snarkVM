@@ -2879,7 +2879,7 @@ mod sanity_checks {
 
         // Declare the inputs.
         let r0 = Value::from_str(&format!(
-            "{{ owner: {caller}.private, microcredits: 1_500_000_000_000_000_u64.private, _nonce: {}.public }}",
+            "{{ owner: {caller}.private, microcredits: 1_500_000_000_000_000_u64.private, _nonce: {}.public, _version: 1u8.public }}",
             console::types::Group::<CurrentNetwork>::zero()
         ))
         .unwrap();
@@ -2968,7 +2968,7 @@ mod sanity_checks {
 
         // Declare the inputs.
         let r0 = Value::from_str(&format!(
-            "{{ owner: {caller}.private, microcredits: 1_500_000_000_000_000_u64.private, _nonce: {}.public }}",
+            "{{ owner: {caller}.private, microcredits: 1_500_000_000_000_000_u64.private, _nonce: {}.public, _version: 1u8.public }}",
             console::types::Group::<CurrentNetwork>::zero()
         ))
         .unwrap();
