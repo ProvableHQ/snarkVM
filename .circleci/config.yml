@@ -35,7 +35,7 @@ commands:
           command: |
             $ProgressPreference = "SilentlyContinue"
             # Remove the circleci installed rustc.
-            choco uninstall rust
+            choco uninstall -y rust
             # Install rust with rustup.
             Invoke-WebRequest -Uri "https://win.rustup.rs/" -OutFile "C:\rustup-init.exe"
             & C:\rustup-init.exe -y --default-toolchain "1.83.0-x86_64-pc-windows-msvc" --no-modify-path --profile minimal # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
