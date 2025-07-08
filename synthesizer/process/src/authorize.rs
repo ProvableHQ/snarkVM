@@ -30,6 +30,35 @@ impl<N: Network> Process<N> {
         self.get_stack(program_id)?.authorize::<A, R>(private_key, function_name, inputs, rng)
     }
 
+    /// Authorizes a call to the program function for the given inputs.
+    /// Compared to `authorize`, this method also checks for circuit satisfiability of the request.
+    #[inline]
+    pub fn authorize_checked<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        private_key: &PrivateKey<N>,
+        program_id: impl TryInto<ProgramID<N>>,
+        function_name: impl TryInto<Identifier<N>>,
+        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
+        rng: &mut R,
+    ) -> Result<Authorization<N>> {
+        // Authorize the call.
+        self.get_stack(program_id)?.authorize_checked::<A, R>(private_key, function_name, inputs, rng)
+    }
+
+    /// Authorizes a call to the program function for the given inputs.
+    /// Compared to `authorize`, no private key is needed, but this only works for single public requests.
+    #[inline]
+    pub fn authorize_request<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        request: Request<N>,
+        rng: &mut R,
+    ) -> Result<Authorization<N>> {
+        // Initialize the program id.
+        let program_id = request.program_id();
+        // Authorize the call.
+        self.get_stack(program_id)?.authorize_request::<A, R>(request, rng)
+    }
+
     /// Authorizes the fee given the credits record, the fee amount (in microcredits),
     /// and the deployment or execution ID.
     #[inline]

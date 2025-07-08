@@ -68,6 +68,11 @@ impl ProgramTest {
     pub fn keys(&self) -> &[PrivateKey<CurrentNetwork>] {
         &self.keys
     }
+
+    /// Returns the path to the expectation file.
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
 }
 
 impl ExpectedTest for ProgramTest {

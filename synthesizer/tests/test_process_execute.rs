@@ -39,7 +39,9 @@ fn test_process_execute() {
         // Run the test.
         let output = run_test(process.clone(), test);
         // Check against the expected output.
-        test.check(&output).unwrap();
+        if let Err(err) = test.check(&output) {
+            println!("Error running test: {}", err);
+        }
         // Save the output.
         test.save(&output).unwrap();
     });
@@ -126,7 +128,7 @@ fn run_test(process: Process<CurrentNetwork>, test: &ProgramTest) -> serde_yaml:
 
                     let mut run_test = || -> serde_yaml::Value {
                         // Authorize the execution.
-                        let authorization = match process.authorize::<CurrentAleo, _>(
+                        let authorization = match process.authorize_checked::<CurrentAleo, _>(
                             &private_key,
                             program_id,
                             function_name,

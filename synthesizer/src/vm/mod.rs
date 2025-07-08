@@ -3038,7 +3038,8 @@ function check:
         let function_name = Identifier::<CurrentNetwork>::from_str("check").unwrap();
 
         // Generate a random Field for input
-        let input = Value::<CurrentNetwork>::from_str(&Field::<CurrentNetwork>::rand(rng).to_string()).unwrap();
+        let input =
+            Value::<CurrentNetwork>::from_str("123456789123456789123456789123456789123456789123456789field").unwrap();
 
         // Generate the authorization that will contain multiple transitions
         let authorization = process

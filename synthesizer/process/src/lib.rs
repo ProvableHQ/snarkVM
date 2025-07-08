@@ -47,7 +47,18 @@ use algorithms::snark::varuna::VarunaVersion;
 use console::{
     account::PrivateKey,
     network::prelude::*,
-    program::{Identifier, Literal, Locator, Plaintext, ProgramID, Record, Response, Value, compute_function_id},
+    program::{
+        Identifier,
+        Literal,
+        Locator,
+        Plaintext,
+        ProgramID,
+        Record,
+        Request,
+        Response,
+        Value,
+        compute_function_id,
+    },
     types::{Field, U16, U64},
 };
 use ledger_block::{Deployment, Execution, Fee, Input, Output, Transaction, Transition};

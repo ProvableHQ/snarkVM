@@ -124,11 +124,11 @@ function foo:
     // Construct the process.
     let process = crate::test_helpers::sample_process(&program);
 
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
     // Compute the authorization.
     let authorization = {
-        // Initialize an RNG.
-        let rng = &mut TestRng::default();
-
         // Initialize caller private key.
         let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
@@ -147,14 +147,17 @@ function foo:
     let expected = Value::Plaintext(Plaintext::<CurrentNetwork>::from_str("5field").unwrap());
 
     // Run the function.
-    let response =
-        stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization.replicate()).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization.replicate()).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
 
     // Re-run to ensure state continues to work.
-    let response = stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
@@ -189,11 +192,11 @@ output r1 as field.private;",
     // Construct the process.
     let process = crate::test_helpers::sample_process(&program);
 
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
     // Compute the authorization.
     let authorization = {
-        // Initialize an RNG.
-        let rng = &mut TestRng::default();
-
         // Initialize caller private key.
         let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
@@ -209,14 +212,17 @@ output r1 as field.private;",
     let stack = process.get_stack(program.id()).unwrap();
 
     // Compute the output value.
-    let response =
-        stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization.replicate()).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization.replicate()).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
 
     // Re-run to ensure state continues to work.
-    let response = stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
@@ -274,14 +280,17 @@ output r1 as u64.private;",
     let stack = process.get_stack(program.id()).unwrap();
 
     // Compute the output value.
-    let response =
-        stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization.replicate()).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization.replicate()).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
 
     // Re-run to ensure state continues to work.
-    let response = stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
@@ -338,11 +347,11 @@ output r4 as field.private;",
     // Construct the process.
     let process = crate::test_helpers::sample_process(&program);
 
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
     // Compute the authorization.
     let authorization = {
-        // Initialize an RNG.
-        let rng = &mut TestRng::default();
-
         // Initialize caller private key.
         let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
@@ -364,8 +373,9 @@ output r4 as field.private;",
     let stack = process.get_stack(program.id()).unwrap();
 
     // Compute the output value.
-    let response =
-        stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization.replicate()).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization.replicate()).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(3, candidate.len());
     assert_eq!(r2, candidate[0]);
@@ -373,7 +383,9 @@ output r4 as field.private;",
     assert_eq!(r4, candidate[2]);
 
     // Re-run to ensure state continues to work.
-    let response = stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(3, candidate.len());
     assert_eq!(r2, candidate[0]);
@@ -469,14 +481,17 @@ output r1 as token.record;",
     let stack = process.get_stack(program.id()).unwrap();
 
     // Compute the output value.
-    let response =
-        stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization.replicate()).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization.replicate()).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
 
     // Re-run to ensure state continues to work.
-    let response = stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);

@@ -21,4 +21,10 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersCall<N> for Registers<N
     fn call_stack(&self) -> CallStack<N> {
         self.call_stack.clone()
     }
+
+    /// Returns a reference to the current call stack.
+    #[inline]
+    fn call_stack_ref(&self) -> &CallStack<N> {
+        &self.call_stack
+    }
 }
