@@ -43,7 +43,7 @@ impl<N: Network> Subdag<N> {
                 return Err(error(format!("Number of certificates ({num_certificates}) exceeds the maximum.",)));
             }
             // Read the certificates.
-            let mut certificates = IndexSet::new();
+            let mut certificates = IndexSet::with_capacity(num_certificates as usize);
             for _ in 0..num_certificates {
                 let cert = if unchecked {
                     BatchCertificate::read_le_unchecked(&mut reader)?

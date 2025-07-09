@@ -113,7 +113,7 @@ fn transition_serialization(c: &mut Criterion) {
 criterion_group! {
     name = block;
     config = Criterion::default().sample_size(10);
-    targets = block_serialization, block_header_serialization, block_transactions_serialization, transaction_serialization, transition_serialization
+    targets = block_serialization, block_header_serialization, block_transactions_serialization, transaction_serialization, transition_serialization,
 }
 
 criterion_main!(block);
