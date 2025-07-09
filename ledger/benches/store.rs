@@ -86,6 +86,35 @@ fn bench_block_store<S: BlockStorage<Network>>(name: &str, c: &mut Criterion) {
             BatchSize::SmallInput,
         )
     });
+
+    c.bench_function(&format!("{name}::get_block_height"), |b| {
+        b.iter_batched(
+            || {
+                const NUM_READS: usize = 10;
+
+                let store = BlockStore::<Network, S>::open(StorageMode::new_test(None)).unwrap();
+                let mut builder = TestChainBuilder::from_components(private_keys.clone(), genesis.clone()).unwrap();
+                store.insert(builder.genesis_block()).unwrap();
+                let blocks = builder.generate_blocks(NUM_READS, rng);
+
+                let hashes: Vec<_> = blocks.iter().map(|b| b.hash()).collect();
+
+                for block in blocks {
+                    if let Err(err) = store.insert(&block) {
+                        panic!("Failed to insert block at height {}: {err}", block.height());
+                    }
+                }
+
+                (store, hashes)
+            },
+            |(store, hashes)| {
+                for hash in hashes {
+                    let _ = store.get_block_height(&hash).unwrap();
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
 }
 
 fn memory_store(c: &mut Criterion) {
