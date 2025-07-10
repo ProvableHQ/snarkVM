@@ -16,7 +16,7 @@
 #[macro_use]
 extern crate criterion;
 
-use snarkvm_console::{network::MainnetV0, prelude::*};
+use snarkvm_console::{account::PrivateKey, network::MainnetV0, prelude::*};
 use snarkvm_ledger_block::Block;
 use snarkvm_utilities::PrettyUnwrap;
 
@@ -85,8 +85,17 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
 }
 
 fn block_serialization(c: &mut Criterion) {
-    let block = load_genesis_block();
-    bench_serialization(c, "Block", block);
+    #[cfg(feature = "test")]
+    {
+        let _ = c;
+        panic!("This benchmark does not work with the `test` feature enabled");
+    }
+
+    #[cfg(not(feature = "test"))]
+    {
+        let block = load_genesis_block();
+        bench_serialization(c, "Block", block);
+    }
 }
 
 fn block_header_serialization(c: &mut Criterion) {
@@ -110,10 +119,20 @@ fn transition_serialization(c: &mut Criterion) {
     bench_serialization(c, "Transition", transition);
 }
 
+fn signature_serialization(c: &mut Criterion) {
+    let mut rng = TestRng::default();
+    let data = rng.r#gen();
+
+    let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap();
+    let signature = private_key.sign(&[data], &mut rng).unwrap();
+
+    bench_serialization(c, "Signature", signature);
+}
+
 criterion_group! {
     name = block;
     config = Criterion::default().sample_size(10);
-    targets = block_serialization, block_header_serialization, block_transactions_serialization, transaction_serialization, transition_serialization,
+    targets = block_serialization, block_header_serialization, block_transactions_serialization, transaction_serialization, transition_serialization, signature_serialization,
 }
 
 criterion_main!(block);
