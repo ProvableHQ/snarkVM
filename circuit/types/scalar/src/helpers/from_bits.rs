@@ -43,26 +43,31 @@ impl<E: Environment> FromBits for Scalar<E> {
             // and `bits_le` is greater than `size_in_data_bits`, it is safe to truncate `bits_le` to `size_in_bits`.
             let bits_le = &bits_le[..size_in_bits];
 
-            // Reconstruct the bits as a linear combination representing the original scalar as a field.
-            let mut accumulator = Field::zero();
-            let mut coefficient = Field::one();
-            for bit in bits_le {
-                accumulator += Field::from_boolean(bit) * &coefficient;
-                coefficient = coefficient.double();
-            }
-
-            // Construct the scalar.
-            let scalar = Scalar { field: accumulator, bits_le: OnceCell::with_value(bits_le.to_vec()) };
-
             // Retrieve the modulus & subtract by 1 as we'll check `bits_le` is less than or *equal* to this value.
             // (For advanced users) ScalarField::MODULUS - 1 is equivalent to -1 in the field.
             let modulus_minus_one = -E::ScalarField::one();
 
             // Assert `bits_le <= (ScalarField::MODULUS - 1)`, which is equivalent to `bits_le < ScalarField::MODULUS`.
-            Boolean::assert_less_than_or_equal_constant(bits_le, &modulus_minus_one.to_bits_le());
+            let modulus_minus_one_bits_le = modulus_minus_one.to_bits_le();
+            let is_less_or_equal = Boolean::is_less_than_or_equal_constant(bits_le, &modulus_minus_one_bits_le);
+            E::assert(is_less_or_equal.clone());
 
-            // Return the scalar.
-            scalar
+            // If our assertion failed, set the most significant bit to 0.
+            // In this case it doesn't matter what value we construct; we just need
+            // its bits to be <= modulus_minus_one_bits_le.
+            let mut bits = bits_le.to_vec();
+            bits.last_mut().unwrap().bitand_assign(is_less_or_equal);
+
+            // Reconstruct the bits as a linear combination representing the value as a field.
+            let mut accumulator = Field::zero();
+            let mut coefficient = Field::one();
+            for bit in &bits {
+                accumulator += Field::from_boolean(bit) * &coefficient;
+                coefficient = coefficient.double();
+            }
+
+            // Construct and return the scalar.
+            Scalar { field: accumulator, bits_le: OnceCell::with_value(bits) }
         } else {
             // Construct the sanitized list of bits, resizing up if necessary.
             let mut bits_le = bits_le.iter().take(size_in_bits).cloned().collect::<Vec<_>>();
@@ -188,12 +193,12 @@ mod tests {
 
     #[test]
     fn test_from_bits_le_public() {
-        check_from_bits_le(Mode::Public, 0, 0, 250, 251);
+        check_from_bits_le(Mode::Public, 0, 0, 251, 252);
     }
 
     #[test]
     fn test_from_bits_le_private() {
-        check_from_bits_le(Mode::Private, 0, 0, 250, 251);
+        check_from_bits_le(Mode::Private, 0, 0, 251, 252);
     }
 
     #[test]
@@ -203,11 +208,11 @@ mod tests {
 
     #[test]
     fn test_from_bits_be_public() {
-        check_from_bits_be(Mode::Public, 0, 0, 250, 251);
+        check_from_bits_be(Mode::Public, 0, 0, 251, 252);
     }
 
     #[test]
     fn test_from_bits_be_private() {
-        check_from_bits_be(Mode::Private, 0, 0, 250, 251);
+        check_from_bits_be(Mode::Private, 0, 0, 251, 252);
     }
 }

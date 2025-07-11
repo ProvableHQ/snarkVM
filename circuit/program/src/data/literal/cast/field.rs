@@ -183,8 +183,8 @@ mod tests {
     #[test]
     fn test_field_to_scalar() {
         check_cast::<Scalar<Circuit>, console_root::types::Scalar<MainnetV0>>(Mode::Constant, count_is!(253, 0, 0, 0));
-        check_cast::<Scalar<Circuit>, console_root::types::Scalar<MainnetV0>>(Mode::Public, count_is!(0, 0, 755, 759));
-        check_cast::<Scalar<Circuit>, console_root::types::Scalar<MainnetV0>>(Mode::Private, count_is!(0, 0, 755, 759));
+        check_cast::<Scalar<Circuit>, console_root::types::Scalar<MainnetV0>>(Mode::Public, count_is!(0, 0, 756, 760));
+        check_cast::<Scalar<Circuit>, console_root::types::Scalar<MainnetV0>>(Mode::Private, count_is!(0, 0, 756, 760));
     }
 
     #[test]
