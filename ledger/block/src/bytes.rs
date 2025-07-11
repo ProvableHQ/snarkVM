@@ -75,8 +75,8 @@ impl<N: Network> Block<N> {
         // Construct the block.
         let block = if unchecked {
             Self::from_unchecked(
-                previous_hash,
                 block_hash,
+                previous_hash,
                 header,
                 authority,
                 ratifications,
@@ -186,6 +186,19 @@ mod tests {
         let expected_bytes = genesis_block.to_bytes_le()?;
         assert_eq!(genesis_block, Block::read_le(&expected_bytes[..])?);
         assert_eq!(genesis_block, Block::read_le_unchecked(&expected_bytes[..])?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bincode() -> Result<()> {
+        // Load the genesis block.
+        let genesis_block = Block::<CurrentNetwork>::read_le(CurrentNetwork::genesis_bytes()).unwrap();
+
+        let bincode_data = bincode::serialize(&genesis_block)?;
+        let block = bincode::deserialize(&bincode_data)?;
+
+        assert_eq!(genesis_block, block);
 
         Ok(())
     }

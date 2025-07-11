@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod chain_builder;
+pub mod chain_builder;
 pub use chain_builder::TestChainBuilder;
 
 use crate::Ledger;

@@ -22,28 +22,40 @@ use snarkvm_ledger::{
     },
     test_helpers::TestChainBuilder,
 };
+use snarkvm_utilities::PrettyUnwrap;
 
 use aleo_std_storage::StorageMode;
 
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{
+    BatchSize,
+    BenchmarkGroup,
+    Criterion,
+    Throughput,
+    criterion_group,
+    criterion_main,
+    measurement::Measurement,
+};
 
 type Network = snarkvm_console::network::MainnetV0;
 
 // Helper method to benchmark serialization.
-fn bench_block_store<S: BlockStorage<Network>>(name: &str, c: &mut Criterion) {
+fn bench_block_store<S: BlockStorage<Network>, M: Measurement>(
+    name: &str,
+    group: &mut BenchmarkGroup<M>,
+    num_validators: usize,
+    num_ops: usize,
+) {
     let rng = &mut TestRng::default();
 
-    let (private_keys, genesis) = TestChainBuilder::initialize_components(rng).unwrap();
+    let (private_keys, genesis) = TestChainBuilder::initialize_components(num_validators, rng).pretty_unwrap();
 
-    c.bench_function(&format!("{name}::insert"), |b| {
+    group.bench_function(format!("{name}::insert/{num_validators}validators"), |b| {
         b.iter_batched(
             || {
-                const NUM_WRITES: usize = 10;
-
                 let store = BlockStore::<Network, S>::open(StorageMode::new_test(None)).unwrap();
                 let mut builder = TestChainBuilder::from_components(private_keys.clone(), genesis.clone()).unwrap();
                 store.insert(builder.genesis_block()).unwrap();
-                let blocks = builder.generate_blocks(NUM_WRITES, rng);
+                let blocks = builder.generate_blocks(num_ops, rng).unwrap();
 
                 (store, blocks)
             },
@@ -58,15 +70,13 @@ fn bench_block_store<S: BlockStorage<Network>>(name: &str, c: &mut Criterion) {
         )
     });
 
-    c.bench_function(&format!("{name}::get_block"), |b| {
+    group.bench_function(format!("{name}::get_block/{num_validators}validators"), |b| {
         b.iter_batched(
             || {
-                const NUM_READS: usize = 10;
-
                 let store = BlockStore::<Network, S>::open(StorageMode::new_test(None)).unwrap();
                 let mut builder = TestChainBuilder::from_components(private_keys.clone(), genesis.clone()).unwrap();
                 store.insert(builder.genesis_block()).unwrap();
-                let blocks = builder.generate_blocks(NUM_READS, rng);
+                let blocks = builder.generate_blocks(num_ops, rng).unwrap();
 
                 let hashes: Vec<_> = blocks.iter().map(|b| b.hash()).collect();
 
@@ -87,15 +97,13 @@ fn bench_block_store<S: BlockStorage<Network>>(name: &str, c: &mut Criterion) {
         )
     });
 
-    c.bench_function(&format!("{name}::get_block_height"), |b| {
+    group.bench_function(format!("{name}::get_block_height/{num_validators}validators"), |b| {
         b.iter_batched(
             || {
-                const NUM_READS: usize = 10;
-
                 let store = BlockStore::<Network, S>::open(StorageMode::new_test(None)).unwrap();
                 let mut builder = TestChainBuilder::from_components(private_keys.clone(), genesis.clone()).unwrap();
                 store.insert(builder.genesis_block()).unwrap();
-                let blocks = builder.generate_blocks(NUM_READS, rng);
+                let blocks = builder.generate_blocks(num_validators, rng).unwrap();
 
                 let hashes: Vec<_> = blocks.iter().map(|b| b.hash()).collect();
 
@@ -117,18 +125,20 @@ fn bench_block_store<S: BlockStorage<Network>>(name: &str, c: &mut Criterion) {
     });
 }
 
-fn memory_store(c: &mut Criterion) {
-    bench_block_store::<BlockMemory<Network>>("BlockMemory", c);
+fn block_store(c: &mut Criterion) {
+    let mut group = c.benchmark_group("block_store");
+
+    for f in [1, 2, 3, 4] {
+        let num_validators = 3 * f + 1;
+        let num_ops = 10;
+
+        group.throughput(Throughput::Elements(num_ops as u64));
+        bench_block_store::<BlockMemory<Network>, _>("BlockMemory", &mut group, num_validators, num_ops);
+        bench_block_store::<BlockDB<Network>, _>("BlockDB", &mut group, num_validators, num_ops);
+    }
+
+    group.finish();
 }
 
-fn rocksdb_store(c: &mut Criterion) {
-    bench_block_store::<BlockDB<Network>>("BlockDB", c);
-}
-
-criterion_group! {
-    name = block_store;
-    config = Criterion::default().sample_size(10);
-    targets = memory_store,rocksdb_store
-}
-
-criterion_main!(block_store);
+criterion_group!(benches, block_store);
+criterion_main!(benches);

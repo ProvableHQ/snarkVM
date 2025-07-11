@@ -17,6 +17,8 @@ use super::*;
 
 use crate::narwhal::BatchHeader;
 
+use anyhow::Context;
+
 /// Wrapper for a block that has a valid subDAG, but where the block header,
 /// solutions, and transmissions have not been verified yet.
 ///
@@ -80,13 +82,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             }
         }
         // Ensure the certificates in the block subdag have met quorum requirements.
-        self.check_block_subdag_quorum(block)?;
+        self.check_block_subdag_quorum(block).with_context(|| "Check for subDAG quorum failed")?;
 
         // Determine if the block subdag is correctly constructed and is not a combination of multiple subdags.
-        self.check_block_subdag_atomicity(block)?;
+        self.check_block_subdag_atomicity(block).with_context(|| "Check for subDAG atomicity failed")?;
 
         // Ensure that all leaves of the subdag point to valid batches in other subdags/blocks.
-        self.check_block_subdag_leaves(block, pending_blocks)?;
+        self.check_block_subdag_leaves(block, pending_blocks).with_context(|| "Check for subDAG leaves failed")?;
 
         Ok(())
     }

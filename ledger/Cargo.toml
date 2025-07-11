@@ -16,10 +16,16 @@ categories = [ "cryptography", "web-programming" ]
 license = "Apache-2.0"
 edition = "2024"
 
+[[test]]
+name = "pending-blocks"
+path = "tests/pending_blocks.rs"
+required-features = [ "test-helpers" ]
+
 [[bench]]
 name = "block"
 path = "benches/block.rs"
 harness = false
+required-features = [ "test-helpers", "rocks" ]
 
 [[bench]]
 name = "bonded_mapping"
@@ -30,7 +36,7 @@ harness = false
 name = "store"
 path = "benches/store.rs"
 harness = false
-required-features = [ "test-helpers", "test", "rocks" ]
+required-features = [ "test-helpers", "rocks" ]
 
 [[bench]]
 name = "dag"
@@ -83,7 +89,8 @@ test = [
 test-helpers = [
   "snarkvm-ledger-test-helpers",
   "snarkvm-ledger-committee/test-helpers",
-  "snarkvm-ledger-narwhal/test-helpers"
+  "snarkvm-ledger-narwhal/test-helpers",
+  "dep:snarkvm-circuit"
 ]
 test_targets = [
   "snarkvm-console/test_targets",
@@ -101,6 +108,10 @@ workspace = true
 
 [dependencies.snarkvm-ledger-committee]
 workspace = true
+
+[dependencies.snarkvm-circuit]
+workspace = true
+optional = true
 
 [dependencies.snarkvm-ledger-narwhal]
 workspace = true
@@ -166,9 +177,13 @@ workspace = true
 workspace = true
 features = [ "filesystem" ]
 
+[dev-dependencies.snarkvm-ledger]
+workspace = true
+features = [ "test-helpers" ]
+
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true
-features = [ "test-helpers", "test" ]
+features = [ "test" ]
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
 workspace = true
@@ -183,10 +198,6 @@ features = [ "preserve_order" ]
 
 [dev-dependencies.snarkvm-circuit]
 workspace = true
-
-[dependencies.snarkvm-circuit]
-path = "../circuit"
-optional = true
 
 [dev-dependencies.snarkvm-utilities]
 workspace = true
