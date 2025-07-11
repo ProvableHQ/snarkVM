@@ -17,8 +17,15 @@ use crate::{
     Ledger,
     RecordsFilter,
     advance::split_candidate_solutions,
-    test_helpers::{CurrentAleo, CurrentConsensusStorage, CurrentLedger, CurrentNetwork},
+    test_helpers::{
+        CurrentAleo,
+        CurrentConsensusStorage,
+        CurrentLedger,
+        CurrentNetwork,
+        chain_builder::GenerateBlockOptions,
+    },
 };
+
 use aleo_std::StorageMode;
 use console::{
     account::{Address, PrivateKey},
@@ -38,11 +45,11 @@ use snarkvm_synthesizer::{
 };
 use snarkvm_utilities::try_vm_runtime;
 
+use anyhow::Context;
 use indexmap::IndexMap;
 use rand::seq::SliceRandom;
-use std::collections::HashSet;
 
-use crate::test_helpers::{LedgerType, TestChainBuilder};
+use crate::test_helpers::{LedgerType, TestChainBuilder, chain_builder::GenerateBlocksOptions};
 
 /// Initializes a sample VM.
 fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
@@ -216,7 +223,7 @@ fn test_insufficient_private_fees() {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -391,7 +398,7 @@ finalize foo:
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -493,7 +500,7 @@ finalize failed_assert:
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -820,11 +827,12 @@ fn test_aborted_transaction_indexing() {
 }
 
 #[test]
-fn test_aborted_solution_ids() {
+fn test_aborted_solution_ids() -> Result<()> {
     let rng = &mut TestRng::default();
-
-    // Initialize the test environment.
-    let crate::test_helpers::TestEnv { ledger, private_key, address, .. } = crate::test_helpers::sample_test_env(rng);
+    let mut builder = TestChainBuilder::new(rng)?;
+    let ledger = builder.instantiate_ledger();
+    let private_key = builder.validator_key(0);
+    let address = builder.validator_address(0);
 
     // Retrieve the puzzle parameters.
     let puzzle = ledger.puzzle();
@@ -839,31 +847,29 @@ fn test_aborted_solution_ids() {
 
     // Create a valid transaction for the block.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("10u64").unwrap()];
-    let transfer_transaction = ledger
-        .vm
-        .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
-        .unwrap();
+    let transfer_transaction =
+        ledger.vm.execute(private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng).unwrap();
 
-    // Create a block.
-    let block = ledger
-        .prepare_advance_to_next_beacon_block(
-            &private_key,
-            vec![],
-            vec![invalid_solution],
-            vec![transfer_transaction],
-            rng,
-        )
-        .unwrap();
+    let block = builder.generate_block_with_opts(
+        GenerateBlockOptions {
+            solutions: vec![invalid_solution],
+            transactions: vec![transfer_transaction],
+            ..Default::default()
+        },
+        rng,
+    )?;
 
     // Check that the next block is valid.
-    ledger.check_next_block(&block, rng).unwrap();
+    ledger.check_next_block(&block, rng).with_context(|| "Failed to check next block")?;
 
     // Add the deployment block to the ledger.
-    ledger.advance_to_next_block(&block).unwrap();
+    ledger.advance_to_next_block(&block).with_context(|| "Failed to advance to next block")?;
 
     // Enforce that the block solution was aborted properly.
     assert!(block.solutions().is_empty());
     assert_eq!(block.aborted_solution_ids(), &vec![invalid_solution.id()]);
+
+    Ok(())
 }
 
 #[test]
@@ -884,7 +890,7 @@ fn test_execute_duplicate_input_ids() {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -1132,7 +1138,7 @@ function create_duplicate_record:
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -1705,9 +1711,15 @@ function empty_function:
 #[test]
 fn test_abort_fee_transaction() {
     let rng = &mut TestRng::default();
+    let mut chain_builder = TestChainBuilder::new(rng).unwrap();
 
-    // Initialize the test environment.
-    let crate::test_helpers::TestEnv { ledger, private_key, address, .. } = crate::test_helpers::sample_test_env(rng);
+    let private_key = chain_builder.private_keys()[0];
+    let address = Address::try_from(&private_key).unwrap();
+
+    // Construct the ledger.
+    let ledger =
+        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))
+            .unwrap();
 
     // Construct valid transaction for the ledger.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -1726,8 +1738,11 @@ fn test_abort_fee_transaction() {
     let fee_transaction_id = fee_transaction.id();
 
     // Create a block using a fee transaction.
-    let block = ledger
-        .prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![fee_transaction, transaction], rng)
+    let block = chain_builder
+        .generate_block_with_opts(
+            GenerateBlockOptions { transactions: vec![fee_transaction, transaction], ..Default::default() },
+            rng,
+        )
         .unwrap();
 
     // Check that the block aborts the invalid transaction.
@@ -1818,7 +1833,7 @@ fn test_deployment_duplicate_program_id() {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
                 _ => false,
             })
-            .collect::<indexmap::IndexMap<_, _>>()
+            .collect::<IndexMap<_, _>>()
     };
 
     // Fetch the unspent records.
@@ -2852,16 +2867,6 @@ mod valid_solutions {
         }
         let valid_solution_1 = valid_solutions.remove(0);
         let valid_solution_2 = valid_solutions.remove(0);
-        let valid_solution_1_transmission = Transmission::from(valid_solution_1);
-        let valid_solution_1_transmission_id = TransmissionID::Solution(
-            valid_solution_1.id(),
-            valid_solution_1_transmission.to_checksum().unwrap().unwrap(),
-        );
-        let valid_solution_2_transmission = Transmission::from(valid_solution_2);
-        let valid_solution_2_transmission_id = TransmissionID::Solution(
-            valid_solution_2.id(),
-            valid_solution_2_transmission.to_checksum().unwrap().unwrap(),
-        );
 
         // 1. Advance to the latest timestamp.
 
@@ -2874,41 +2879,44 @@ mod valid_solutions {
             .vm
             .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
             .unwrap();
-        let transfer_transmission = Transmission::from(transfer_transaction.clone());
-        // Construct the transmission ID.
-        let transmission_id = TransmissionID::Transaction(
-            transfer_transaction.id(),
-            transfer_transmission.to_checksum().unwrap().unwrap(),
-        );
         // Create a block that advances the ledger past the first solution limit timestamp.
         let timestamp_1 = stake_requirements[0].0;
-        let next_block = chain_builder.generate_block_with_partition(
-            &Default::default(),
-            timestamp_1,
-            IndexMap::from([(transmission_id, transfer_transmission)]),
-            true,
-            rng,
-        );
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    transactions: vec![transfer_transaction],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate first block")?;
         // Advance to the next block.
-        ledger.advance_to_next_block(&next_block).unwrap();
+        ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to first block")?;
 
         // 2. Check that the solution limit is reached because the prover does not have any stake.
         assert_eq!(ledger.num_remaining_solutions(&prover_address, 0), 0);
         assert!(ledger.is_solution_limit_reached(&prover_address, 0));
 
         // Create a block with a solution.
-        let next_block = chain_builder.generate_block_with_partition(
-            &Default::default(),
-            timestamp_1,
-            IndexMap::from([(valid_solution_1_transmission_id, valid_solution_1_transmission.clone())]),
-            true,
-            rng,
-        );
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    solutions: vec![valid_solution_1],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate second block")?;
+
         // Check that the solution is aborted.
         assert!(next_block.solutions().is_empty());
         assert_eq!(next_block.aborted_solution_ids().len(), 1);
         // Advance to the next block.
-        ledger.advance_to_next_block(&next_block).unwrap();
+        ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to second block")?;
 
         // 3. Bond the required stake.
 
@@ -2922,18 +2930,20 @@ mod valid_solutions {
             .vm
             .execute(&prover_private_key, ("credits.aleo", "bond_public"), inputs.iter(), None, 0, None, rng)
             .unwrap();
-        let bond_transmission = Transmission::from(bond_transaction.clone());
-        let bond_transmission_transmission_id =
-            TransmissionID::Transaction(bond_transaction.id(), bond_transmission.to_checksum().unwrap().unwrap());
-        let next_block = chain_builder.generate_block_with_partition(
-            &Default::default(),
-            timestamp_1,
-            IndexMap::from([(bond_transmission_transmission_id, bond_transmission)]),
-            true,
-            rng,
-        );
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    transactions: vec![bond_transaction],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate third block")?;
+
         // Advance to the next block.
-        ledger.advance_to_next_block(&next_block)?;
+        ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to third block")?;
 
         // 4. Check that the solution is valid with sufficient stake.
 
@@ -2942,24 +2952,24 @@ mod valid_solutions {
         assert!(!ledger.is_solution_limit_reached(&prover_address, 0));
 
         // 5. Check that the next block will accept the solution and abort any excess.
-
-        let next_block = chain_builder.generate_block_with_partition(
-            &Default::default(),
-            timestamp_1,
-            IndexMap::from([
-                (valid_solution_1_transmission_id, valid_solution_1_transmission.clone()),
-                (valid_solution_2_transmission_id, valid_solution_2_transmission.clone()),
-            ]),
-            true,
-            rng,
-        );
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    solutions: vec![valid_solution_1, valid_solution_2],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate fourth block")?;
 
         // Check that the first solution is accepted and the second is aborted.
         assert!(next_block.solutions().solution_ids().contains(&valid_solution_1.id()));
         assert_eq!(next_block.aborted_solution_ids(), &vec![valid_solution_2.id()]);
 
         // Advance to the next block.
-        ledger.advance_to_next_block(&next_block)?;
+        ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to fourth block")?;
 
         // Check that the prover can no longer submit solutions.
         assert_eq!(ledger.num_remaining_solutions(&prover_address, 0), 0);
@@ -3294,18 +3304,9 @@ mod valid_solutions {
 #[test]
 fn test_forged_block_subdags() -> Result<()> {
     let rng = &mut TestRng::default();
-
+    let mut chain_builder = TestChainBuilder::new_with_quorum_size(10, rng)?;
     // Construct 3 quorum blocks.
-    let mut quorum_blocks = TestChainBuilder::new(rng)?.generate_blocks(3, rng);
-
-    // Sample the genesis private key.
-    let private_key = PrivateKey::<CurrentNetwork>::new(rng)?;
-    // Initialize the store.
-    let store = ConsensusStore::<_, LedgerType>::open(StorageMode::new_test(None))?;
-    // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
-    let seed: u64 = rng.r#gen();
-    let genesis_rng = &mut TestRng::from_seed(seed);
-    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, genesis_rng)?;
+    let mut quorum_blocks = chain_builder.generate_blocks(3, rng)?;
 
     // Extract the individual blocks.
     let block_1 = quorum_blocks.remove(0);
@@ -3313,13 +3314,14 @@ fn test_forged_block_subdags() -> Result<()> {
     let block_3 = quorum_blocks.remove(0);
 
     // Construct the ledger.
-    let ledger = Ledger::<CurrentNetwork, LedgerType>::load(genesis, StorageMode::new_test(None))?;
+    let ledger =
+        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))?;
 
     // Advance to block 1.
     ledger.advance_to_next_block(&block_1)?;
 
     // Check that the original block 2 is accepted.
-    ledger.check_next_block(&block_2, rng).expect("Unmodified block 2 must be accepted by the ledger");
+    ledger.check_next_block(&block_2, rng).with_context(|| "Unmodified block 2 must be accepted by the ledger")?;
 
     // Fetch the unmodified/correct subdags.
     let Authority::Quorum(block_2_subdag) = block_2.authority() else { unreachable!("") };
@@ -3423,27 +3425,25 @@ fn test_subdag_with_long_branch() -> Result<()> {
     let rng = &mut TestRng::default();
     let mut chain_builder = TestChainBuilder::new(rng)?;
 
-    let skip_nodes: HashSet<usize> = [0].into();
-    let blocks = chain_builder.generate_blocks_with_partition(
+    let blocks = chain_builder.generate_blocks_with_opts(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS / 4,
-        &skip_nodes,
+        GenerateBlocksOptions { skip_nodes: [0].into(), ..Default::default() },
         rng,
-    );
+    )?;
 
     // Construct the ledger.
     let ledger =
-        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))
-            .unwrap();
+        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))?;
 
     for block in blocks {
-        ledger.advance_to_next_block(&block).unwrap();
+        ledger.advance_to_next_block(&block)?;
     }
 
     // Now create a long block.
-    let block = chain_builder.generate_block(rng);
+    let block = chain_builder.generate_block(rng)?;
 
     // Ensure it is still accepted
-    ledger.advance_to_next_block(&block).unwrap();
+    ledger.advance_to_next_block(&block)?;
 
     Ok(())
 }
@@ -3454,24 +3454,22 @@ fn test_subdag_with_gc_length() -> Result<()> {
     let rng = &mut TestRng::default();
     let mut chain_builder = TestChainBuilder::new(rng)?;
 
-    let skip_nodes: HashSet<usize> = [0].into();
-    let blocks = chain_builder.generate_blocks_with_partition(
+    let blocks = chain_builder.generate_blocks_with_opts(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS / 2,
-        &skip_nodes,
+        GenerateBlocksOptions { skip_nodes: [0].into(), ..Default::default() },
         rng,
-    );
+    )?;
 
     // Construct the ledger.
     let ledger =
-        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))
-            .unwrap();
+        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))?;
 
     for block in blocks {
         ledger.advance_to_next_block(&block)?;
     }
 
     // Now create a long block.
-    let block = chain_builder.generate_block(rng);
+    let block = chain_builder.generate_block(rng)?;
 
     {
         // First, let us ensure that the leaf check still works by removing the lowest round and trying to reinsert.
@@ -3492,13 +3490,11 @@ fn test_subdag_with_gc_length() -> Result<()> {
             .collect();
 
         // Forge the block.
-        let forged_block = ledger
-            .prepare_advance_to_next_quorum_block(
-                Subdag::from(forged_subdag).unwrap(),
-                transmissions,
-                &mut rand::thread_rng(),
-            )
-            .unwrap();
+        let forged_block = ledger.prepare_advance_to_next_quorum_block(
+            Subdag::from(forged_subdag).unwrap(),
+            transmissions,
+            &mut rand::thread_rng(),
+        )?;
 
         assert_ne!(forged_block, block);
 

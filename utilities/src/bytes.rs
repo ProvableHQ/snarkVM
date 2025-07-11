@@ -98,7 +98,7 @@ pub trait FromBytesUnchecked {
     }
 }
 
-/// Transparant wrapper struct to indicate that a value has been verified and does not require expensive input validation on deserialization.
+/// Transparent wrapper struct to indicate that a value has been verified and does not require expensive input validation on deserialization.
 /// TODO: consider bounding database read operations by Verified and consider automatically dereferencing to the inner type.
 /// TODO: add a serialize/deserialize test for Verified wrapped data.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]

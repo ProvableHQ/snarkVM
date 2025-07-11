@@ -21,6 +21,7 @@ pub use modules::*;
 
 pub mod prelude {
     pub use crate::modules::*;
+    pub use io_error as error;
     pub use snarkvm_console_network_environment::prelude::*;
 }
 

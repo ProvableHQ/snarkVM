@@ -29,11 +29,11 @@ impl<N: Network> FromBytesUnchecked for ComputeKey<N> {
     /// Reads an account compute key from a buffer.
     #[inline]
     fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
-        let pk_sig = Group::from_x_coordinate_unchecked(Field::new(N::Field::read_le(&mut reader)?))
-            .map_err(|e| error(format!("{e}")))?;
-        let pr_sig = Group::from_x_coordinate_unchecked(Field::new(N::Field::read_le(&mut reader)?))
-            .map_err(|e| error(format!("{e}")))?;
-        Self::try_from((pk_sig, pr_sig)).map_err(|e| error(format!("{e}")))
+        let pk_sig =
+            Group::from_x_coordinate_unchecked(Field::new(N::Field::read_le(&mut reader)?)).map_err(io_error)?;
+        let pr_sig =
+            Group::from_x_coordinate_unchecked(Field::new(N::Field::read_le(&mut reader)?)).map_err(io_error)?;
+        Self::try_from((pk_sig, pr_sig)).map_err(io_error)
     }
 }
 

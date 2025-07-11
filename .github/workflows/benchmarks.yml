@@ -76,18 +76,21 @@ jobs:
           cargo bench --locked --bench curves -- --output-format bencher | tee -a ../output.txt
           cd ..
 
-      - name: Benchmark ledger
+      - name: Benchmark ledger (block)
         run: |
-          cd ledger
-          cargo bench --locked --bench block -- --output-format bencher | tee -a ../output.txt
-          cargo bench --locked --bench transaction -- --output-format bencher | tee -a ../output.txt
-          cd ..
+          cargo bench --package=snarkvm-ledger --bench block  --features=rocks,test-helpers,test -- --output-format bencher | tee -a output.txt
+
+      - name: Benchmark ledger (dag)
+        run: |
+          cargo bench --package=snarkvm-ledger --bench dag -- --output-format bencher | tee -a output.txt
+
+      - name: Benchmark ledger (transaction)
+        run: |
+          cargo bench --package=snarkvm-ledger --bench transaction -- --output-format bencher | tee -a output.txt
 
       - name: Benchmark ledger/puzzle
         run: |
-          cd ledger/puzzle
-          cargo bench --locked --bench puzzle --features "setup" -- --output-format bencher | tee -a ../../output.txt
-          cd ../..
+          cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- --output-format bencher | tee -a output.txt
 
       # Clean benchmark output to remove unnecessary lines
       - name: Clean benchmark output
