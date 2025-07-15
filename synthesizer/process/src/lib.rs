@@ -191,6 +191,13 @@ impl<N: Network> Process<N> {
             }
         }
     }
+
+    /// Returns the program IDs and editions for all stacks in the process.
+    #[inline]
+    pub fn program_ids_and_editions(&self) -> Vec<(ProgramID<N>, U16<N>)> {
+        // Retrieve the program IDs and editions from the stacks.
+        self.stacks.read().iter().map(|(program_id, stack)| (*program_id, stack.program_edition())).collect()
+    }
 }
 
 impl<N: Network> Process<N> {
