@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm"
-version = "3.8.0"
+version = "4.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -176,58 +176,58 @@ test_consensus_heights = [ "snarkvm-console/test_consensus_heights" ]
 
 [dependencies.snarkvm-algorithms]
 path = "./algorithms"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.snarkvm-circuit]
 path = "./circuit"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.snarkvm-console]
 path = "./console"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.snarkvm-curves]
 path = "./curves"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.snarkvm-fields]
 path = "./fields"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.snarkvm-ledger]
 path = "./ledger"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.snarkvm-metrics]
 path = "./metrics"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.snarkvm-parameters]
 path = "./parameters"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.snarkvm-synthesizer]
 path = "./synthesizer"
-version = "=3.8.0"
+version = "=4.0.0"
 default-features = false
 optional = true
 
 [dependencies.snarkvm-utilities]
 path = "./utilities"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.snarkvm-wasm]
 path = "./wasm"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.anstyle]
@@ -270,8 +270,9 @@ optional = true
 
 [dependencies.ureq]
 workspace = true
-features = ["json"]
+features = [ "json" ]
 optional = true
+default-features = true
 
 # Some cli helper functions are used in the tests.
 [dev-dependencies.snarkvm]

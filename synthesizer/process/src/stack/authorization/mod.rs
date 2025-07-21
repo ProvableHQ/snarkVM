@@ -182,16 +182,14 @@ impl<N: Network> Authorization<N> {
             .flat_map(|transition| transition.outputs().iter().filter_map(|output| output.record()));
         // Ensure the records are valid.
         for (_, record) in output_records {
-            // If the consensus version are before `ConsensusVersion::V8`, ensure the output record is on Version 0.
             // if the consensus version is on or after `ConsensusVersion::V8`, ensure the output record is on Version 1.
-            if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
-                #[cfg(not(any(test, feature = "test")))]
-                ensure!(record.version().is_zero(), "Output record must be Version 0 before Consensus V8");
-                #[cfg(any(test, feature = "test"))]
-                ensure!(record.version().is_one(), "Output record must be Version 1 before Consensus V8 in tests.");
-            } else {
+            if consensus_version >= ConsensusVersion::V8 {
                 ensure!(record.version().is_one(), "Output record must be Version 1 on or after Consensus V8");
             }
+            // We do not impose checks on record versions before
+            // `ConsensusVersion::V8`, to avoid:
+            // - breaking snarkOS tests which have version 1 records in their genesis blocks.
+            // - breaking production wallets which use version 0 records before ConsensusVersion::V8.
         }
         Ok(())
     }

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-algorithms"
-version = "3.8.0"
+version = "4.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -47,27 +47,27 @@ required-features = [ "test" ]
 
 [dependencies.snarkvm-curves]
 path = "../curves"
-version = "=3.8.0"
+version = "=4.0.0"
 default-features = false
 
 [dependencies.snarkvm-fields]
 path = "../fields"
-version = "=3.8.0"
+version = "=4.0.0"
 default-features = false
 
 [dependencies.snarkvm-parameters]
 path = "../parameters"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.snarkvm-utilities]
 path = "../utilities"
-version = "=3.8.0"
+version = "=4.0.0"
 default-features = false
 
 [dependencies.snarkvm-algorithms-cuda]
 path = "./cuda"
-version = "=3.8.0"
+version = "=4.0.0"
 optional = true
 
 [dependencies.aleo-std]
@@ -170,7 +170,7 @@ wasm = [
   "msm",
   "polycommit_wasm",
   "r1cs",
-  "snark",
+  "snark"
 ]
 cuda = [ "snarkvm-algorithms-cuda" ]
 profiler = [ "aleo-std/profiler" ]
