@@ -3568,6 +3568,7 @@ dependencies = [
 name = "snarkvm-ledger-query"
 version = "4.0.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "reqwest",
  "snarkvm-console",

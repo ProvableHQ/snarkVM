@@ -22,6 +22,7 @@ use console::{
 use snarkvm_ledger_store::{BlockStorage, BlockStore};
 use snarkvm_synthesizer_program::Program;
 
+use anyhow::{Context, Result};
 // ureq re-exports the `http` crate.
 use ureq::http;
 
@@ -30,7 +31,7 @@ pub enum Query<N: Network, B: BlockStorage<N>> {
     /// The block store from the VM.
     VM(BlockStore<N, B>),
     /// The base URL of the node.
-    REST(String),
+    REST(http::Uri),
 }
 
 impl<N: Network, B: BlockStorage<N>> From<BlockStore<N, B>> for Query<N, B> {
@@ -45,21 +46,33 @@ impl<N: Network, B: BlockStorage<N>> From<&BlockStore<N, B>> for Query<N, B> {
     }
 }
 
-impl<N: Network, B: BlockStorage<N>> From<String> for Query<N, B> {
-    fn from(url: String) -> Self {
-        Self::REST(url)
+impl<N: Network, B: BlockStorage<N>> TryFrom<String> for Query<N, B> {
+    type Error = anyhow::Error;
+
+    fn try_from(uri: String) -> Result<Self> {
+        Self::try_from(uri.as_str())
     }
 }
 
-impl<N: Network, B: BlockStorage<N>> From<&String> for Query<N, B> {
-    fn from(url: &String) -> Self {
-        Self::REST(url.to_string())
+impl<N: Network, B: BlockStorage<N>> From<http::Uri> for Query<N, B> {
+    fn from(uri: http::Uri) -> Self {
+        Self::REST(uri)
+    }
+}
+impl<N: Network, B: BlockStorage<N>> TryFrom<&String> for Query<N, B> {
+    type Error = anyhow::Error;
+
+    fn try_from(uri: &String) -> Result<Self> {
+        Self::try_from(uri.as_str())
     }
 }
 
-impl<N: Network, B: BlockStorage<N>> From<&str> for Query<N, B> {
-    fn from(url: &str) -> Self {
-        Self::REST(url.to_string())
+impl<N: Network, B: BlockStorage<N>> TryFrom<&str> for Query<N, B> {
+    type Error = anyhow::Error;
+
+    fn try_from(uri: &str) -> Result<Self> {
+        let uri = http::Uri::try_from(uri).with_context(|| "Failed to parse URL")?;
+        Ok(Self::REST(uri))
     }
 }
 

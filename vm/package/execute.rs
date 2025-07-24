@@ -15,6 +15,8 @@
 
 use super::*;
 
+use anyhow::Context;
+
 impl<N: Network> Package<N> {
     /// Executes a program function with the given inputs.
     #[allow(clippy::type_complexity)]
@@ -45,7 +47,7 @@ impl<N: Network> Package<N> {
         println!("🚀 Executing '{}'...\n", locator.to_string().bold());
 
         // Prepare the query.
-        let query = Query::<_, BlockMemory<_>>::from(endpoint);
+        let query = Query::<_, BlockMemory<_>>::try_from(endpoint).with_context(|| "The given endpoint is invalid")?;
         // Fetch the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
 
