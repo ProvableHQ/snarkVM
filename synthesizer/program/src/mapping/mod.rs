@@ -54,6 +54,10 @@ impl<N: Network> Mapping<N> {
     pub const fn value(&self) -> &MapValue<N> {
         &self.value
     }
+
+    pub fn contains_external_struct(&self) -> bool {
+        self.key.plaintext_type().contains_external_struct() || self.value.plaintext_type().contains_external_struct()
+    }
 }
 
 impl<N: Network> TypeName for Mapping<N> {

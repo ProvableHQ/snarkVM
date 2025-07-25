@@ -135,6 +135,13 @@ impl<N: Network> FromBytes for CastType<N> {
     }
 }
 
+impl<N: Network> CastType<N> {
+    /// Does this type refer to an external struct explicitly?
+    pub fn contains_external_struct(&self) -> bool {
+        matches!(self, CastType::Plaintext(plaintext_type) if plaintext_type.contains_external_struct())
+    }
+}
+
 /// The `cast` instruction.
 pub type Cast<N> = CastOperation<N, { CastVariant::Cast as u8 }>;
 /// The `cast.lossy` instruction.

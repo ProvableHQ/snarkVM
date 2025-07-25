@@ -55,6 +55,10 @@ impl<N: Network> RegisterType<N> {
             RegisterType::ExternalRecord(..) | RegisterType::Future(..) => self,
         }
     }
+
+    pub fn contains_external_struct(&self) -> bool {
+        matches!(self, RegisterType::Plaintext(t) if t.contains_external_struct())
+    }
 }
 
 impl<N: Network> From<ValueType<N>> for RegisterType<N> {

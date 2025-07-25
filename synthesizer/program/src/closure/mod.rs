@@ -74,6 +74,13 @@ impl<N: Network> ClosureCore<N> {
     pub fn output_types(&self) -> Vec<RegisterType<N>> {
         self.outputs.iter().map(|output| output.register_type()).cloned().collect()
     }
+
+    /// Does this closure refer to an external struct explicitly?
+    pub fn contains_external_struct(&self) -> bool {
+        self.inputs.iter().any(|input| input.register_type().contains_external_struct())
+            || self.outputs.iter().any(|output| output.register_type().contains_external_struct())
+            || self.instructions.iter().any(|instruction| instruction.contains_external_struct())
+    }
 }
 
 impl<N: Network> ClosureCore<N> {

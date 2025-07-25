@@ -430,6 +430,16 @@ impl<N: Network> Instruction<N> {
     ) -> Result<Vec<RegisterType<N>>> {
         instruction!(self, |instruction| instruction.output_types(stack, input_types))
     }
+
+    /// Does this instruction refer to an external struct explicitly?
+    pub fn contains_external_struct(&self) -> bool {
+        // Only cast instructions may contain an explicit reference to an external struct.
+        // Calls may produce them, but they don't explicitly reference the type, and that's
+        // always been allowed.
+        matches!(self,
+            Instruction::Cast(instruction) if instruction.cast_type().contains_external_struct()
+        )
+    }
 }
 
 impl<N: Network> Debug for Instruction<N> {

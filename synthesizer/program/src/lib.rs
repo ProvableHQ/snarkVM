@@ -952,6 +952,27 @@ impl<N: Network> ProgramCore<N> {
         // Return `false` since no V9 syntax was found.
         false
     }
+
+    /// Does this program explicitly reference an external struct, like `other_program.aleo/StructType`?
+    ///
+    /// This function exists to check if programs to be deployed use external structs so they can be gated
+    /// by consensus version.
+    pub fn contains_external_struct(&self) -> bool {
+        self.mappings.values().any(|mapping| mapping.contains_external_struct())
+            || self
+                .structs
+                .values()
+                .flat_map(|struct_| struct_.members().values())
+                .any(|plaintext_type| plaintext_type.contains_external_struct())
+            || self
+                .records
+                .values()
+                .flat_map(|record| record.entries().values())
+                .any(|entry| entry.plaintext_type().contains_external_struct())
+            || self.closures.values().any(|closure| closure.contains_external_struct())
+            || self.functions.values().any(|function| function.contains_external_struct())
+            || self.constructor.iter().any(|constructor| constructor.contains_external_struct())
+    }
 }
 
 impl<N: Network> TypeName for ProgramCore<N> {

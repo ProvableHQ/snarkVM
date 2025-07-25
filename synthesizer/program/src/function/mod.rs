@@ -95,6 +95,13 @@ impl<N: Network> FunctionCore<N> {
     pub const fn finalize_logic(&self) -> Option<&FinalizeCore<N>> {
         self.finalize_logic.as_ref()
     }
+
+    /// Does this function refer to an external struct explicitly?
+    pub fn contains_external_struct(&self) -> bool {
+        self.inputs.iter().any(|input| input.value_type().contains_external_struct())
+            || self.outputs.iter().any(|output| output.value_type().contains_external_struct())
+            || self.instructions.iter().any(|instruction| instruction.contains_external_struct())
+    }
 }
 
 impl<N: Network> FunctionCore<N> {

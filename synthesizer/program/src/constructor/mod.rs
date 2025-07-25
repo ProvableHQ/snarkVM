@@ -50,6 +50,16 @@ impl<N: Network> ConstructorCore<N> {
     pub const fn positions(&self) -> &HashMap<Identifier<N>, usize> {
         &self.positions
     }
+
+    /// Does this constructor refer to an external struct explicitly?
+    pub fn contains_external_struct(&self) -> bool {
+        self.commands.iter().any(|command| {
+            matches!(
+                command,
+                Command::Instruction(instruction) if instruction.contains_external_struct()
+            )
+        })
+    }
 }
 
 impl<N: Network> ConstructorCore<N> {

@@ -56,6 +56,17 @@ impl<N: Network> PlaintextType<N> {
         }
     }
 
+    /// Does this type refer to an external struct explicitly?
+    pub fn contains_external_struct(&self) -> bool {
+        use PlaintextType::*;
+
+        match self {
+            Literal(..) | Struct(..) => false,
+            ExternalStruct(..) => true,
+            Array(array_type) => array_type.base_element_type().contains_external_struct(),
+        }
+    }
+
     // Make unqualified structs into external ones with the given `id`.
     pub fn qualify(self, id: ProgramID<N>) -> Self {
         match self {
