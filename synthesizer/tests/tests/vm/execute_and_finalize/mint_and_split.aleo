@@ -37,3 +37,6 @@ function split:
     cast r0.owner r2 into r4 as credits.record;
     output r3 as credits.record;
     output r4 as credits.record;
+    
+constructor:
+    assert.eq edition 0u16;

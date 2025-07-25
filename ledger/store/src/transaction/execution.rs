@@ -471,11 +471,11 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample the execution transaction.
-        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
         insert_get_remove(transaction).unwrap();
 
         // Sample the execution transaction.
-        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0);
         insert_get_remove(transaction).unwrap();
     }
 
@@ -484,11 +484,11 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample the execution transaction.
-        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
         find_transaction_id(transaction).unwrap();
 
         // Sample the execution transaction.
-        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0);
         find_transaction_id(transaction).unwrap();
     }
 }

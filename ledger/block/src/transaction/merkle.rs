@@ -93,17 +93,11 @@ impl<N: Network> Transaction<N> {
         match self {
             // Compute the deployment tree.
             Transaction::Deploy(_, _, _, deployment, fee) => {
-                let deployment_tree = Self::deployment_tree(deployment)?;
-                Self::transaction_tree(deployment_tree, deployment.len(), fee)
+                Self::transaction_tree(Self::deployment_tree(deployment)?, Some(fee))
             }
             // Compute the execution tree.
             Transaction::Execute(_, _, execution, fee) => {
-                let execution_tree = Self::execution_tree(execution)?;
-                if let Some(fee) = fee {
-                    Ok(Transaction::transaction_tree(execution_tree, execution.len(), fee)?)
-                } else {
-                    Ok(execution_tree)
-                }
+                Self::transaction_tree(Self::execution_tree(execution)?, fee.as_ref())
             }
             // Compute the fee tree.
             Transaction::Fee(_, fee) => Self::fee_tree(fee),
@@ -112,28 +106,48 @@ impl<N: Network> Transaction<N> {
 }
 
 impl<N: Network> Transaction<N> {
+    /// Returns the Merkle tree for the given transaction tree, fee index, and fee.
+    pub fn transaction_tree(
+        mut deployment_or_execution_tree: TransactionTree<N>,
+        fee: Option<&Fee<N>>,
+    ) -> Result<TransactionTree<N>> {
+        // Retrieve the fee index, defined as the last index in the transaction tree.
+        let fee_index = deployment_or_execution_tree.number_of_leaves();
+        // Ensure the fee index is within the Merkle tree size.
+        ensure!(
+            fee_index <= N::MAX_FUNCTIONS,
+            "The fee index ('{fee_index}') in the transaction tree must be at most {}",
+            N::MAX_FUNCTIONS
+        );
+        // Ensure the fee index is within the Merkle tree size.
+        ensure!(
+            fee_index < Self::MAX_TRANSITIONS,
+            "The fee index ('{fee_index}') in the transaction tree must be less than {}",
+            Self::MAX_TRANSITIONS
+        );
+
+        // If a fee is provided, append the fee leaf to the transaction tree.
+        if let Some(fee) = fee {
+            // Construct the transaction leaf.
+            let leaf = TransactionLeaf::new_fee(u16::try_from(fee_index)?, **fee.transition_id()).to_bits_le();
+            // Append the fee leaf to the transaction tree.
+            deployment_or_execution_tree.append(&[leaf])?;
+        }
+        // Return the transaction tree.
+        Ok(deployment_or_execution_tree)
+    }
+
     /// Returns the Merkle tree for the given deployment.
     pub fn deployment_tree(deployment: &Deployment<N>) -> Result<DeploymentTree<N>> {
-        // Ensure the number of leaves is within the Merkle tree size.
-        Self::check_deployment_size(deployment)?;
-        // Retrieve the program.
-        let program = deployment.program();
-        // Prepare the leaves.
-        let leaves = program
-            .functions()
-            .values()
-            .enumerate()
-            .map(|(index, function)| {
-                // Construct the transaction leaf.
-                Ok(TransactionLeaf::new_deployment(
-                    u16::try_from(index)?,
-                    N::hash_bhp1024(&to_bits_le![program.id(), function.to_bytes_le()?])?,
-                )
-                .to_bits_le())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        // Compute the deployment tree.
-        N::merkle_tree_bhp::<TRANSACTION_DEPTH>(&leaves)
+        // Use the V1 or V2 deployment tree based on implicit deployment version.
+        // Note: `ConsensusVersion::V9` requires the program checksum and program owner to be present, while prior versions require it to be absent.
+        //   `Deployment::version` checks that this is the case.
+        // Note: After `ConsensusVersion::V9`, the program checksum and owner are used in the header of the hash instead of the program ID.
+        match deployment.version() {
+            Ok(DeploymentVersion::V1) => Self::deployment_tree_v1(deployment),
+            Ok(DeploymentVersion::V2) => Self::deployment_tree_v2(deployment),
+            Err(e) => bail!("Malformed deployment - {e}"),
+        }
     }
 
     /// Returns the Merkle tree for the given execution.
@@ -150,29 +164,12 @@ impl<N: Network> Transaction<N> {
         // Ensure the number of leaves is within the Merkle tree size.
         Self::check_execution_size(num_transitions)?;
         // Prepare the leaves.
-        let leaves = transitions
-            .enumerate()
-            .map(|(index, transition)| {
-                // Construct the transaction leaf.
-                Ok::<_, Error>(TransactionLeaf::new_execution(u16::try_from(index)?, **transition.id()).to_bits_le())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let leaves = transitions.enumerate().map(|(index, transition)| {
+            // Construct the transaction leaf.
+            Ok::<_, Error>(TransactionLeaf::new_execution(u16::try_from(index)?, **transition.id()).to_bits_le())
+        });
         // Compute the execution tree.
-        N::merkle_tree_bhp::<TRANSACTION_DEPTH>(&leaves)
-    }
-
-    /// Returns the Merkle tree for the given 1. transaction or deployment tree and 2. fee.
-    pub fn transaction_tree(
-        mut deployment_or_execution_tree: TransactionTree<N>,
-        fee_index: usize,
-        fee: &Fee<N>,
-    ) -> Result<TransactionTree<N>> {
-        // Construct the transaction leaf.
-        let leaf = TransactionLeaf::new_fee(u16::try_from(fee_index)?, **fee.transition_id()).to_bits_le();
-        // Compute the updated transaction tree.
-        deployment_or_execution_tree.append(&[leaf])?;
-
-        Ok(deployment_or_execution_tree)
+        N::merkle_tree_bhp::<TRANSACTION_DEPTH>(&leaves.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Returns the Merkle tree for the given fee.
@@ -191,20 +188,28 @@ impl<N: Network> Transaction<N> {
         let functions = program.functions();
         // Retrieve the verifying keys.
         let verifying_keys = deployment.verifying_keys();
+        // Retrieve the number of functions.
+        let num_functions = functions.len();
 
         // Ensure the number of functions and verifying keys match.
         ensure!(
-            functions.len() == verifying_keys.len(),
-            "Number of functions ('{}') and verifying keys ('{}') do not match",
-            functions.len(),
+            num_functions == verifying_keys.len(),
+            "Number of functions ('{num_functions}') and verifying keys ('{}') do not match",
             verifying_keys.len()
+        );
+        // Ensure there are functions.
+        ensure!(num_functions != 0, "Deployment must contain at least one function");
+        // Ensure the number of functions is within the allowed range.
+        ensure!(
+            num_functions <= N::MAX_FUNCTIONS,
+            "Deployment must contain at most {} functions, found {num_functions}",
+            N::MAX_FUNCTIONS,
         );
         // Ensure the number of functions is within the allowed range.
         ensure!(
-            functions.len() < Self::MAX_TRANSITIONS, // Note: Observe we hold back 1 for the fee.
-            "Deployment must contain less than {} functions, found {}",
+            num_functions < Self::MAX_TRANSITIONS, // Note: Observe we hold back 1 for the fee.
+            "Deployment must contain less than {} functions, found {num_functions}",
             Self::MAX_TRANSITIONS,
-            functions.len()
         );
         Ok(())
     }
@@ -216,9 +221,72 @@ impl<N: Network> Transaction<N> {
         // Ensure the number of functions is within the allowed range.
         ensure!(
             num_transitions < Self::MAX_TRANSITIONS, // Note: Observe we hold back 1 for the fee.
-            "Execution must contain less than {num_transitions} transitions, found {}",
+            "Execution must contain less than {} transitions, found {num_transitions}",
             Self::MAX_TRANSITIONS,
         );
         Ok(())
+    }
+}
+
+impl<N: Network> Transaction<N> {
+    /// Returns the V1 deployment tree.
+    pub fn deployment_tree_v1(deployment: &Deployment<N>) -> Result<DeploymentTree<N>> {
+        // Ensure the number of leaves is within the Merkle tree size.
+        Self::check_deployment_size(deployment)?;
+        // Prepare the header for the hash.
+        let header = deployment.program().id().to_bits_le();
+        // Prepare the leaves.
+        let leaves = deployment.program().functions().values().enumerate().map(|(index, function)| {
+            // Construct the transaction leaf.
+            Ok(TransactionLeaf::new_deployment(
+                u16::try_from(index)?,
+                N::hash_bhp1024(&to_bits_le![header, function.to_bytes_le()?])?,
+            )
+            .to_bits_le())
+        });
+        // Compute the deployment tree.
+        N::merkle_tree_bhp::<TRANSACTION_DEPTH>(&leaves.collect::<Result<Vec<_>>>()?)
+    }
+
+    /// Returns the V2 deployment tree.
+    pub fn deployment_tree_v2(deployment: &Deployment<N>) -> Result<DeploymentTree<N>> {
+        // Ensure the number of leaves is within the Merkle tree size.
+        Self::check_deployment_size(deployment)?;
+        // Compute a hash of the deployment bytes.
+        let deployment_hash = N::hash_sha3_256(&to_bits_le!(deployment.to_bytes_le()?))?;
+        // Prepare the header for the hash.
+        let header = to_bits_le![deployment.version()? as u8, deployment_hash];
+        // Prepare the leaves.
+        let leaves = deployment.program().functions().values().enumerate().map(|(index, function)| {
+            // Construct the transaction leaf.
+            Ok(TransactionLeaf::new_deployment(
+                u16::try_from(index)?,
+                N::hash_bhp1024(&to_bits_le![header, function.to_bytes_le()?])?,
+            )
+            .to_bits_le())
+        });
+        // Compute the deployment tree.
+        N::merkle_tree_bhp::<TRANSACTION_DEPTH>(&leaves.collect::<Result<Vec<_>>>()?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type CurrentNetwork = console::network::MainnetV0;
+
+    #[test]
+    fn test_transaction_depth_is_correct() {
+        // We ensure 2^TRANSACTION_DEPTH == MAX_FUNCTIONS + 1.
+        // The "1 extra" is for the fee transition.
+        assert_eq!(
+            2u32.checked_pow(TRANSACTION_DEPTH as u32).unwrap() as usize,
+            Transaction::<CurrentNetwork>::MAX_TRANSITIONS
+        );
+        assert_eq!(
+            CurrentNetwork::MAX_FUNCTIONS.checked_add(1).unwrap(),
+            Transaction::<CurrentNetwork>::MAX_TRANSITIONS
+        );
     }
 }

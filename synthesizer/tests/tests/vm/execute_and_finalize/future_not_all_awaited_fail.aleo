@@ -28,6 +28,9 @@ finalize boo:
     get.or_use count[r0] 0field into r1;
     add r1 1field into r2;
     set r2 into count[r0];
+    
+constructor:
+    assert.eq edition 0u16;
 
 /////////////////////////////////////////////////
 
@@ -57,4 +60,7 @@ finalize foo:
     await r2;
     await r0;
     await r5;
+    
+constructor:
+    assert.eq edition 0u16;
 

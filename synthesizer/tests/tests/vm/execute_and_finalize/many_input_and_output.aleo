@@ -97,6 +97,9 @@ function inner_trash_private:
     output r13 as u8.private;
     output r14 as u8.private;
     output r15 as u8.private;
+    
+constructor:
+    assert.eq edition 0u16;
 
 
 /////////////////////////////////////////////////
@@ -224,3 +227,6 @@ function make_trash_call_inner_private:
     call child.aleo/inner_trash_private 0u8 1u8 2u8 3u8 4u8 5u8 6u8 7u8 8u8 9u8 10u8 11u8 12u8 13u8 14u8 15u8 into r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31;
     call child.aleo/inner_trash_private 0u8 1u8 2u8 3u8 4u8 5u8 6u8 7u8 8u8 9u8 10u8 11u8 12u8 13u8 14u8 15u8 into r32 r33 r34 r35 r36 r37 r38 r39 r40 r41 r42 r43 r44 r45 r46 r47;
     call child.aleo/inner_trash_private 0u8 1u8 2u8 3u8 4u8 5u8 6u8 7u8 8u8 9u8 10u8 11u8 12u8 13u8 14u8 15u8 into r48 r49 r50 r51 r52 r53 r54 r55 r56 r57 r58 r59 r60 r61 r62 r63;
+    
+constructor:
+    assert.eq edition 0u16;

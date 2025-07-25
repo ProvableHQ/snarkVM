@@ -21,8 +21,15 @@ use console::{
 };
 
 pub trait FinalizeStoreTrait<N: Network> {
-    /// Returns `true` if the given `program ID` and `mapping name` exist.
+    /// Returns `true` if the given `program ID` and `mapping name` is confirmed to exist.
     fn contains_mapping_confirmed(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<bool>;
+
+    /// Returns `true` if the given `program ID` and `mapping name` exist.
+    /// This method was added to support execution of constructors during deployment.
+    /// Prior to supporting program upgrades, `contains_mapping_confirmed` was used to check that a mapping exists before executing a command like `set`, `get`, `remove`, etc.
+    /// However, during deployment, the mapping only speculatively exists, so `contains_mapping_speculative` should be used instead.
+    /// This usage is safe because the mappings used in a program are statically verified to exist in `FinalizeTypes::from_*` before the deployment or upgrade's constructor is executed.
+    fn contains_mapping_speculative(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<bool>;
 
     /// Returns `true` if the given `program ID`, `mapping name`, and `key` exist.
     fn contains_key_speculative(

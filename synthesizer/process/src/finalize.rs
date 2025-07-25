@@ -35,8 +35,13 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::finalize_deployment");
 
         // Compute the program stack.
-        let stack = Stack::new(self, deployment.program())?;
+        let mut stack = Stack::new(self, deployment.program())?;
         lap!(timer, "Compute the stack");
+
+        // Set the program owner.
+        // Note: The program owner is only enforced to be `Some` after `ConsensusVersion::V9`
+        // and is `None` for all programs deployed before the `V9` migration.
+        stack.set_program_owner(deployment.program_owner());
 
         // Insert the verifying keys.
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
@@ -86,8 +91,17 @@ impl<N: Network> Process<N> {
                 // Initialize the mapping.
                 finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
             }
-            finish!(timer, "Initialize the program mappings");
+            lap!(timer, "Initialize the program mappings");
 
+            // If the program has a constructor, execute it and extend the finalize operations.
+            // This must happen after the mappings are initialized as the constructor may depend on them.
+            if deployment.program().contains_constructor() {
+                let operations = finalize_constructor(state, store, &stack, N::TransitionID::default())?;
+                finalize_operations.extend(operations);
+                lap!(timer, "Execute the constructor");
+            }
+
+            finish!(timer, "Finished finalizing the deployment");
             // Return the stack and finalize operations.
             Ok((stack, finalize_operations))
         })
@@ -201,6 +215,64 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     }
 }
 
+/// Finalizes the constructor.
+fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
+    state: FinalizeGlobalState,
+    store: &FinalizeStore<N, P>,
+    stack: &Stack<N>,
+    transition_id: N::TransitionID,
+) -> Result<Vec<FinalizeOperation<N>>> {
+    // Retrieve the program ID.
+    let program_id = stack.program_id();
+    #[cfg(debug_assertions)]
+    println!("Finalizing constructor for {}...", stack.program_id());
+
+    // Initialize a list for finalize operations.
+    let mut finalize_operations = Vec::new();
+
+    // Initialize a nonce for the constructor registers.
+    // Currently, this nonce is set to zero for every constructor.
+    let nonce = 0;
+
+    // Get the constructor logic. If the program does not have a constructor, return early.
+    let Some(constructor) = stack.program().constructor() else {
+        return Ok(finalize_operations);
+    };
+
+    // Get the constructor types.
+    let constructor_types = stack.get_constructor_types()?.clone();
+
+    // Initialize the finalize registers.
+    let mut registers = FinalizeRegisters::new(state, transition_id, *program_id.name(), constructor_types, nonce);
+
+    // Initialize a counter for the commands.
+    let mut counter = 0;
+
+    // Evaluate the commands.
+    while counter < constructor.commands().len() {
+        // Retrieve the command.
+        let command = &constructor.commands()[counter];
+        // Finalize the command.
+        match &command {
+            Command::Await(_) => {
+                bail!("Cannot `await` a Future in a constructor")
+            }
+            _ => finalize_command_except_await(
+                store,
+                stack,
+                &mut registers,
+                constructor.positions(),
+                command,
+                &mut counter,
+                &mut finalize_operations,
+            )?,
+        };
+    }
+
+    // Return the finalize operations.
+    Ok(finalize_operations)
+}
+
 /// Finalizes the given transition.
 fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     state: FinalizeGlobalState,
@@ -250,7 +322,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
         // Get the finalize logic.
         let Some(finalize) = stack.get_function_ref(registers.function_name())?.finalize_logic() else {
             bail!(
-                "The function '{}/{}' does not have an associated finalize block",
+                "The function '{}/{}' does not have an associated finalize scope",
                 stack.program_id(),
                 registers.function_name()
             )
@@ -261,32 +333,6 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
             let command = &finalize.commands()[counter];
             // Finalize the command.
             match &command {
-                Command::BranchEq(branch_eq) => {
-                    let result =
-                        try_vm_runtime!(|| branch_to(counter, branch_eq, finalize.positions(), &stack, &registers));
-                    match result {
-                        Ok(Ok(new_counter)) => {
-                            counter = new_counter;
-                        }
-                        // If the evaluation fails, bail and return the error.
-                        Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
-                        // If the evaluation fails, bail and return the error.
-                        Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
-                    }
-                }
-                Command::BranchNeq(branch_neq) => {
-                    let result =
-                        try_vm_runtime!(|| branch_to(counter, branch_neq, finalize.positions(), &stack, &registers));
-                    match result {
-                        Ok(Ok(new_counter)) => {
-                            counter = new_counter;
-                        }
-                        // If the evaluation fails, bail and return the error.
-                        Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
-                        // If the evaluation fails, bail and return the error.
-                        Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
-                    }
-                }
                 Command::Await(await_) => {
                     // Check that the `await` register's is a locator.
                     if let Register::Access(_, _) = await_.register() {
@@ -354,20 +400,15 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
 
                     continue 'outer;
                 }
-                _ => {
-                    let result = try_vm_runtime!(|| command.finalize(stack.deref(), store, &mut registers));
-                    match result {
-                        // If the evaluation succeeds with an operation, add it to the list.
-                        Ok(Ok(Some(finalize_operation))) => finalize_operations.push(finalize_operation),
-                        // If the evaluation succeeds with no operation, continue.
-                        Ok(Ok(None)) => {}
-                        // If the evaluation fails, bail and return the error.
-                        Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
-                        // If the evaluation fails, bail and return the error.
-                        Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
-                    }
-                    counter += 1;
-                }
+                _ => finalize_command_except_await(
+                    store,
+                    stack.deref(),
+                    &mut registers,
+                    finalize.positions(),
+                    command,
+                    &mut counter,
+                    &mut finalize_operations,
+                )?,
             };
         }
         // Check that all future registers have been awaited.
@@ -388,7 +429,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     Ok(finalize_operations)
 }
 
-// A helper struct to track the execution of a finalize block.
+// A helper struct to track the execution of a finalize scope.
 struct FinalizeState<N: Network> {
     // A counter for the index of the commands.
     counter: usize,
@@ -416,13 +457,12 @@ fn initialize_finalize_state<N: Network>(
         false => stack.get_external_stack(future.program_id())?,
     };
     // Get the finalize logic and check that it exists.
-    let finalize = match stack.get_function_ref(future.function_name())?.finalize_logic() {
-        Some(finalize) => finalize,
-        None => bail!(
-            "The function '{}/{}' does not have an associated finalize block",
+    let Some(finalize) = stack.get_function_ref(future.function_name())?.finalize_logic() else {
+        bail!(
+            "The function '{}/{}' does not have an associated finalize scope",
             future.program_id(),
             future.function_name()
-        ),
+        )
     };
     // Initialize the registers.
     let mut registers = FinalizeRegisters::new(
@@ -442,6 +482,64 @@ fn initialize_finalize_state<N: Network>(
     )?;
 
     Ok(FinalizeState { counter: 0, registers, stack, call_counter: 0, awaited: Default::default() })
+}
+
+// A helper function to finalize all commands except `await`, updating the finalize operations and the counter.
+#[inline]
+fn finalize_command_except_await<N: Network>(
+    store: &FinalizeStore<N, impl FinalizeStorage<N>>,
+    stack: &impl StackTrait<N>,
+    registers: &mut FinalizeRegisters<N>,
+    positions: &HashMap<Identifier<N>, usize>,
+    command: &Command<N>,
+    counter: &mut usize,
+    finalize_operations: &mut Vec<FinalizeOperation<N>>,
+) -> Result<()> {
+    // Finalize the command.
+    match &command {
+        Command::BranchEq(branch_eq) => {
+            let result = try_vm_runtime!(|| branch_to(*counter, branch_eq, positions, stack, registers));
+            match result {
+                Ok(Ok(new_counter)) => {
+                    *counter = new_counter;
+                }
+                // If the evaluation fails, bail and return the error.
+                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                // If the evaluation fails, bail and return the error.
+                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+            }
+        }
+        Command::BranchNeq(branch_neq) => {
+            let result = try_vm_runtime!(|| branch_to(*counter, branch_neq, positions, stack, registers));
+            match result {
+                Ok(Ok(new_counter)) => {
+                    *counter = new_counter;
+                }
+                // If the evaluation fails, bail and return the error.
+                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                // If the evaluation fails, bail and return the error.
+                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+            }
+        }
+        Command::Await(_) => {
+            bail!("Cannot use `finalize_command_except_await` with an 'await' command")
+        }
+        _ => {
+            let result = try_vm_runtime!(|| command.finalize(stack, store, registers));
+            match result {
+                // If the evaluation succeeds with an operation, add it to the list.
+                Ok(Ok(Some(finalize_operation))) => finalize_operations.push(finalize_operation),
+                // If the evaluation succeeds with no operation, continue.
+                Ok(Ok(None)) => {}
+                // If the evaluation fails, bail and return the error.
+                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                // If the evaluation fails, bail and return the error.
+                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+            }
+            *counter += 1;
+        }
+    };
+    Ok(())
 }
 
 // A helper function that sets up the await operation.
@@ -468,7 +566,7 @@ fn branch_to<N: Network, const VARIANT: u8>(
     counter: usize,
     branch: &Branch<N, VARIANT>,
     positions: &HashMap<Identifier<N>, usize>,
-    stack: &Stack<N>,
+    stack: &impl StackTrait<N>,
     registers: &impl RegistersTrait<N>,
 ) -> Result<usize> {
     // Retrieve the inputs.

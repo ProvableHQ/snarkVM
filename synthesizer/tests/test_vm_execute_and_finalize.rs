@@ -76,7 +76,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
     let genesis_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
     // Initialize the VM.
-    let (vm, _) = initialize_vm(&genesis_private_key, rng);
+    let (vm, _) = initialize_vm(&genesis_private_key, test.start_height(), rng);
 
     // Fund the additional keys.
     for key in test.keys() {
@@ -370,6 +370,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
 #[allow(clippy::type_complexity)]
 fn initialize_vm<R: Rng + CryptoRng>(
     private_key: &PrivateKey<CurrentNetwork>,
+    height: u32,
     rng: &mut R,
 ) -> (VM<CurrentNetwork, LedgerType>, Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>) {
     // Initialize a VM.
@@ -386,6 +387,36 @@ fn initialize_vm<R: Rng + CryptoRng>(
 
     // Add the genesis block to the VM.
     vm.add_next_block(&genesis).unwrap();
+
+    // If the desired height is greater than zero, add additional blocks to the VM.
+    for _ in 0..height {
+        let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
+            .speculate(
+                construct_finalize_global_state(&vm),
+                time_since_last_block,
+                Some(0u64),
+                vec![],
+                &None.into(),
+                [].into_iter(),
+                rng,
+            )
+            .unwrap();
+        assert!(aborted_transaction_ids.is_empty());
+
+        let block = construct_next_block(
+            &vm,
+            time_since_last_block,
+            private_key,
+            ratifications,
+            transactions,
+            aborted_transaction_ids,
+            ratified_finalize_operations,
+            rng,
+        )
+        .unwrap();
+        vm.add_next_block(&block).unwrap();
+    }
 
     (vm, records)
 }

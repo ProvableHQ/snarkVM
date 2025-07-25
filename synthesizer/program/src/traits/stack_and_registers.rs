@@ -35,7 +35,7 @@ use console::{
         Value,
         ValueType,
     },
-    types::{Address, Field, U16},
+    types::{Address, Field, U8, U16},
 };
 use rand::{CryptoRng, Rng};
 use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
@@ -95,8 +95,21 @@ pub trait StackTrait<N: Network> {
     /// Returns the program address.
     fn program_address(&self) -> &Address<N>;
 
+    /// Returns the program checksum.
+    fn program_checksum(&self) -> &[U8<N>; 32];
+
+    /// Returns the program checksum as a field element.
+    fn program_checksum_as_field(&self) -> Result<Field<N>>;
+
     /// Returns the program edition.
     fn program_edition(&self) -> U16<N>;
+
+    /// Returns the program owner.
+    /// The program owner should only be set for programs that are deployed after `ConsensusVersion::V9` is active.
+    fn program_owner(&self) -> &Option<Address<N>>;
+
+    /// Sets the program owner.
+    fn set_program_owner(&mut self, program_owner: Option<Address<N>>);
 
     /// Returns the external stack for the given program ID.
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;

@@ -578,9 +578,14 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<N, P> {
-    /// Returns `true` if the given `program ID` and `mapping name` exist.
+    /// Returns `true` if the given `program ID` and `mapping name` is confirmed to exist.
     fn contains_mapping_confirmed(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<bool> {
         self.storage.contains_mapping_confirmed(program_id, mapping_name)
+    }
+
+    /// Returns `true` if the given `program ID` and `mapping name` exist.
+    fn contains_mapping_speculative(&self, program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<bool> {
+        self.storage.contains_mapping_speculative(program_id, mapping_name)
     }
 
     /// Returns `true` if the given `program ID`, `mapping name`, and `key` exist.

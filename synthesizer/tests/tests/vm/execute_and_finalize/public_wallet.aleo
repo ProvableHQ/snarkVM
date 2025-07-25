@@ -42,6 +42,9 @@ finalize mint_public:
     add r2 r1 into r3;
     // Set `r3` into `account[r0]`.
     set r3 into account[r0];
+    
+constructor:
+    assert.eq edition 0u16;
 
 /////////////////////////////////////////////////
 
@@ -58,3 +61,6 @@ function init:
 finalize init:
     input r0 as token.aleo/mint_public.future;
     await r0;
+    
+constructor:
+    assert.eq edition 0u16;

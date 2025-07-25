@@ -28,6 +28,7 @@ use crate::{
 use console::{
     prelude::*,
     program::{Identifier, ProgramID, ProgramOwner},
+    types::U8,
 };
 use snarkvm_synthesizer_program::Program;
 use snarkvm_synthesizer_snark::{Certificate, Proof, VerifyingKey};
@@ -102,6 +103,8 @@ pub struct DeploymentMemory<N: Network> {
     owner_map: MemoryMap<(ProgramID<N>, u16), ProgramOwner<N>>,
     /// The program map.
     program_map: MemoryMap<(ProgramID<N>, u16), Program<N>>,
+    /// The checksum map.
+    checksum_map: MemoryMap<(ProgramID<N>, u16), [U8<N>; 32]>,
     /// The verifying key map.
     verifying_key_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>,
     /// The certificate map.
@@ -118,6 +121,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
     type ReverseIDMap = MemoryMap<(ProgramID<N>, u16), N::TransactionID>;
     type OwnerMap = MemoryMap<(ProgramID<N>, u16), ProgramOwner<N>>;
     type ProgramMap = MemoryMap<(ProgramID<N>, u16), Program<N>>;
+    type ChecksumMap = MemoryMap<(ProgramID<N>, u16), [U8<N>; 32]>;
     type VerifyingKeyMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     type CertificateMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     type FeeStorage = FeeMemory<N>;
@@ -131,6 +135,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
             reverse_id_map: MemoryMap::default(),
             owner_map: MemoryMap::default(),
             program_map: MemoryMap::default(),
+            checksum_map: MemoryMap::default(),
             verifying_key_map: MemoryMap::default(),
             certificate_map: MemoryMap::default(),
             fee_store,
@@ -165,6 +170,11 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
     /// Returns the program map.
     fn program_map(&self) -> &Self::ProgramMap {
         &self.program_map
+    }
+
+    /// Returns the checksum map.
+    fn checksum_map(&self) -> &Self::ChecksumMap {
+        &self.checksum_map
     }
 
     /// Returns the verifying key map.

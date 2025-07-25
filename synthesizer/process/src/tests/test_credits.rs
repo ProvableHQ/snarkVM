@@ -2842,14 +2842,28 @@ mod sanity_checks {
         let program_id = *program.id();
         // Retrieve the input types.
         let input_types = program.get_function(&function_name).unwrap().input_types();
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match stack.program().contains_constructor() {
+            true => Some(stack.program_checksum_as_field().unwrap()),
+            false => None,
+        };
         // Sample 'root_tvk'.
         let root_tvk = None;
         // Sample 'is_root'.
         let is_root = true;
         // Compute the request.
-        let request =
-            Request::sign(private_key, program_id, function_name, inputs.iter(), &input_types, root_tvk, is_root, rng)
-                .unwrap();
+        let request = Request::sign(
+            private_key,
+            program_id,
+            function_name,
+            inputs.iter(),
+            &input_types,
+            root_tvk,
+            is_root,
+            program_checksum,
+            rng,
+        )
+        .unwrap();
         // Initialize the assignments.
         let assignments = Assignments::<N>::default();
         // Initialize the call stack.

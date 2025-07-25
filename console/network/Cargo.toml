@@ -41,6 +41,9 @@ workspace = true
 [dependencies.anyhow]
 workspace = true
 
+[dependencies.enum-iterator]
+version = "2.1"
+
 [dependencies.indexmap]
 workspace = true
 

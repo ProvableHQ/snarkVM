@@ -181,9 +181,41 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         &self.program_address
     }
 
+    /// Returns the program checksum.
+    fn program_checksum(&self) -> &[U8<N>; 32] {
+        &self.program_checksum
+    }
+
+    /// Returns the program checksum as a field element.
+    #[inline]
+    fn program_checksum_as_field(&self) -> Result<Field<N>> {
+        // Get the bits of the program checksum, truncated to the field size.
+        let bits = self
+            .program_checksum
+            .iter()
+            .flat_map(|byte| byte.to_bits_le())
+            .take(Field::<N>::SIZE_IN_DATA_BITS)
+            .collect::<Vec<_>>();
+        // Return the field element from the bits.
+        Field::from_bits_le(&bits)
+    }
+
     /// Returns the program edition.
+    #[inline]
     fn program_edition(&self) -> U16<N> {
         self.program_edition
+    }
+
+    /// Returns the program owner.
+    #[inline]
+    fn program_owner(&self) -> &Option<Address<N>> {
+        &self.program_owner
+    }
+
+    /// Sets the program owner.
+    /// The program owner should only be set for programs that are deployed after `ConsensusVersion::V9` is active.
+    fn set_program_owner(&mut self, program_owner: Option<Address<N>>) {
+        self.program_owner = program_owner;
     }
 
     /// Returns the external stack for the given program ID.
@@ -243,10 +275,14 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                         // Add the function to the queue.
                         match call.operator() {
                             CallOperator::Locator(locator) => {
-                                queue.push((
-                                    StackRef::External(stack_ref.get_external_stack(locator.program_id())?),
-                                    *locator.resource(),
-                                ));
+                                // If the locator matches the program ID of the provided stack, use it directly.
+                                // Otherwise, retrieve the external stack.
+                                let stack = if locator.program_id() == self.program().id() {
+                                    StackRef::Internal(self)
+                                } else {
+                                    StackRef::External(stack_ref.get_external_stack(locator.program_id())?)
+                                };
+                                queue.push((stack, *locator.resource()));
                             }
                             CallOperator::Resource(resource) => {
                                 queue.push((stack_ref.clone(), *resource));

@@ -22,38 +22,14 @@ use console::{
 /// A get command that uses the provided default in case of failure, e.g. `get.or_use accounts[r0] r1 into r2;`.
 /// Gets the value stored at `operand` in `mapping` and stores the result in `destination`.
 /// If the key is not present, `default` is stored in `destination`.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct GetOrUse<N: Network> {
     /// The mapping.
     mapping: CallOperator<N>,
-    /// The key to access the mapping.
-    key: Operand<N>,
-    /// The default value.
-    default: Operand<N>,
+    /// The operands.
+    operands: [Operand<N>; 2],
     /// The destination register.
     destination: Register<N>,
-}
-
-impl<N: Network> PartialEq for GetOrUse<N> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.mapping == other.mapping
-            && self.key == other.key
-            && self.default == other.default
-            && self.destination == other.destination
-    }
-}
-
-impl<N: Network> Eq for GetOrUse<N> {}
-
-impl<N: Network> std::hash::Hash for GetOrUse<N> {
-    #[inline]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.mapping.hash(state);
-        self.key.hash(state);
-        self.default.hash(state);
-        self.destination.hash(state);
-    }
 }
 
 impl<N: Network> GetOrUse<N> {
@@ -65,8 +41,8 @@ impl<N: Network> GetOrUse<N> {
 
     /// Returns the operands in the operation.
     #[inline]
-    pub fn operands(&self) -> Vec<Operand<N>> {
-        vec![self.key.clone(), self.default.clone()]
+    pub fn operands(&self) -> &[Operand<N>] {
+        &self.operands
     }
 
     /// Returns the mapping.
@@ -78,13 +54,13 @@ impl<N: Network> GetOrUse<N> {
     /// Returns the operand containing the key.
     #[inline]
     pub const fn key(&self) -> &Operand<N> {
-        &self.key
+        &self.operands[0]
     }
 
     /// Returns the default value.
     #[inline]
     pub const fn default(&self) -> &Operand<N> {
-        &self.default
+        &self.operands[1]
     }
 
     /// Returns the destination register.
@@ -109,13 +85,13 @@ impl<N: Network> GetOrUse<N> {
             CallOperator::Resource(mapping_name) => (*stack.program_id(), mapping_name),
         };
 
-        // Ensure the mapping exists in storage.
-        if !store.contains_mapping_confirmed(&program_id, &mapping_name)? {
-            bail!("Mapping '{program_id}/{mapping_name}' does not exist in storage");
+        // Ensure the mapping exists.
+        if !store.contains_mapping_speculative(&program_id, &mapping_name)? {
+            bail!("Mapping '{program_id}/{mapping_name}' does not exist");
         }
 
         // Load the operand as a plaintext.
-        let key = registers.load_plaintext(stack, &self.key)?;
+        let key = registers.load_plaintext(stack, self.key())?;
 
         // Retrieve the value from storage as a literal.
         let value = match store.get_value_speculative(program_id, mapping_name, &key)? {
@@ -123,7 +99,7 @@ impl<N: Network> GetOrUse<N> {
             Some(Value::Record(..)) => bail!("Cannot 'get.or_use' a 'record'"),
             Some(Value::Future(..)) => bail!("Cannot 'get.or_use' a 'future'"),
             // If a key does not exist, then use the default value.
-            None => Value::Plaintext(registers.load_plaintext(stack, &self.default)?),
+            None => Value::Plaintext(registers.load_plaintext(stack, self.default())?),
         };
 
         // Assign the value to the destination register.
@@ -176,7 +152,7 @@ impl<N: Network> Parser for GetOrUse<N> {
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self { mapping, key, default, destination }))
+        Ok((string, Self { mapping, operands: [key, default], destination }))
     }
 }
 
@@ -211,7 +187,7 @@ impl<N: Network> Display for GetOrUse<N> {
         // Print the command.
         write!(f, "{} ", Self::opcode())?;
         // Print the mapping and key operand.
-        write!(f, "{}[{}] {} into ", self.mapping, self.key, self.default)?;
+        write!(f, "{}[{}] {} into ", self.mapping, self.key(), self.default())?;
         // Print the destination register.
         write!(f, "{};", self.destination)
     }
@@ -229,7 +205,7 @@ impl<N: Network> FromBytes for GetOrUse<N> {
         // Read the destination register.
         let destination = Register::read_le(&mut reader)?;
         // Return the command.
-        Ok(Self { mapping, key, default, destination })
+        Ok(Self { mapping, operands: [key, default], destination })
     }
 }
 
@@ -239,9 +215,9 @@ impl<N: Network> ToBytes for GetOrUse<N> {
         // Write the mapping name.
         self.mapping.write_le(&mut writer)?;
         // Write the key operand.
-        self.key.write_le(&mut writer)?;
+        self.key().write_le(&mut writer)?;
         // Write the default value.
-        self.default.write_le(&mut writer)?;
+        self.default().write_le(&mut writer)?;
         // Write the destination register.
         self.destination.write_le(&mut writer)
     }
@@ -260,8 +236,8 @@ mod tests {
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(get_or_use.mapping, CallOperator::from_str("account").unwrap());
         assert_eq!(get_or_use.operands().len(), 2, "The number of operands is incorrect");
-        assert_eq!(get_or_use.key, Operand::Register(Register::Locator(0)), "The first operand is incorrect");
-        assert_eq!(get_or_use.default, Operand::Register(Register::Locator(1)), "The second operand is incorrect");
+        assert_eq!(get_or_use.key(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
+        assert_eq!(get_or_use.default(), &Operand::Register(Register::Locator(1)), "The second operand is incorrect");
         assert_eq!(get_or_use.destination, Register::Locator(2), "The second operand is incorrect");
 
         let (string, get_or_use) =
@@ -269,8 +245,8 @@ mod tests {
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(get_or_use.mapping, CallOperator::from_str("token.aleo/balances").unwrap());
         assert_eq!(get_or_use.operands().len(), 2, "The number of operands is incorrect");
-        assert_eq!(get_or_use.key, Operand::Register(Register::Locator(0)), "The first operand is incorrect");
-        assert_eq!(get_or_use.default, Operand::Register(Register::Locator(1)), "The second operand is incorrect");
+        assert_eq!(get_or_use.key(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
+        assert_eq!(get_or_use.default(), &Operand::Register(Register::Locator(1)), "The second operand is incorrect");
         assert_eq!(get_or_use.destination, Register::Locator(2), "The second operand is incorrect");
     }
 

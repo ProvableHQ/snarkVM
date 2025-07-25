@@ -24,9 +24,13 @@ pub type Program<N> = crate::ProgramCore<N>;
 pub type Function<N> = crate::FunctionCore<N>;
 pub type Finalize<N> = crate::FinalizeCore<N>;
 pub type Closure<N> = crate::ClosureCore<N>;
+pub type Constructor<N> = crate::ConstructorCore<N>;
 
 mod closure;
 pub use closure::*;
+
+mod constructor;
+pub use constructor::*;
 
 pub mod finalize;
 pub use finalize::*;
@@ -49,6 +53,7 @@ pub use traits::*;
 mod bytes;
 mod parse;
 mod serialize;
+mod to_checksum;
 
 use console::{
     network::{
@@ -66,6 +71,7 @@ use console::{
             FromBytesDeserializer,
             FromStr,
             IoResult,
+            Itertools,
             Network,
             Parser,
             ParserResult,
@@ -94,18 +100,29 @@ use console::{
         },
     },
     program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
+    types::U8,
 };
 use snarkvm_utilities::cfg_iter;
 
-use console::prelude::Itertools;
 use indexmap::{IndexMap, IndexSet};
 use std::collections::BTreeSet;
+use tiny_keccak::{Hasher, Sha3 as TinySha3};
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+enum ProgramLabel<N: Network> {
+    /// A program constructor.
+    Constructor,
+    /// A named component.
+    Identifier(Identifier<N>),
+}
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 enum ProgramDefinition {
+    /// A program constructor.
+    Constructor,
     /// A program mapping.
     Mapping,
     /// A program struct.
@@ -124,8 +141,10 @@ pub struct ProgramCore<N: Network> {
     id: ProgramID<N>,
     /// A map of the declared imports for the program.
     imports: IndexMap<ProgramID<N>, Import<N>>,
-    /// A map of identifiers to their program declaration.
-    components: IndexMap<Identifier<N>, ProgramDefinition>,
+    /// A map of program labels to their program definitions.
+    components: IndexMap<ProgramLabel<N>, ProgramDefinition>,
+    /// An optional constructor for the program.
+    constructor: Option<ConstructorCore<N>>,
     /// A map of the declared mappings for the program.
     mappings: IndexMap<Identifier<N>, Mapping<N>>,
     /// A map of the declared structs for the program.
@@ -262,6 +281,7 @@ impl<N: Network> ProgramCore<N> {
         Ok(Self {
             id,
             imports: IndexMap::new(),
+            constructor: None,
             components: IndexMap::new(),
             mappings: IndexMap::new(),
             structs: IndexMap::new(),
@@ -285,6 +305,11 @@ impl<N: Network> ProgramCore<N> {
     /// Returns the imports in the program.
     pub const fn imports(&self) -> &IndexMap<ProgramID<N>, Import<N>> {
         &self.imports
+    }
+
+    /// Returns the constructor for the program.
+    pub const fn constructor(&self) -> Option<&ConstructorCore<N>> {
+        self.constructor.as_ref()
     }
 
     /// Returns the mappings in the program.
@@ -315,6 +340,11 @@ impl<N: Network> ProgramCore<N> {
     /// Returns `true` if the program contains an import with the given program ID.
     pub fn contains_import(&self, id: &ProgramID<N>) -> bool {
         self.imports.contains_key(id)
+    }
+
+    /// Returns `true` if the program contains a constructor.
+    pub const fn contains_constructor(&self) -> bool {
+        self.constructor.is_some()
     }
 
     /// Returns `true` if the program contains a mapping with the given name.
@@ -446,6 +476,26 @@ impl<N: Network> ProgramCore<N> {
         Ok(())
     }
 
+    /// Adds a constructor to the program.
+    ///
+    /// # Errors
+    /// This method will halt if a constructor was previously added.
+    /// This method will halt if a constructor exceeds the maximum number of commands.
+    fn add_constructor(&mut self, constructor: ConstructorCore<N>) -> Result<()> {
+        // Ensure the program does not already have a constructor.
+        ensure!(self.constructor.is_none(), "Program already has a constructor.");
+        // Ensure the number of commands is within the allowed range.
+        ensure!(!constructor.commands().is_empty(), "Constructor must have at least one command");
+        ensure!(constructor.commands().len() <= N::MAX_COMMANDS, "Constructor exceeds maximum number of commands");
+        // Add the constructor to the components.
+        if self.components.insert(ProgramLabel::Constructor, ProgramDefinition::Constructor).is_some() {
+            bail!("Constructor already exists in the program.")
+        }
+        // Add the constructor to the program.
+        self.constructor = Some(constructor);
+        Ok(())
+    }
+
     /// Adds a new mapping to the program.
     ///
     /// # Errors
@@ -467,7 +517,7 @@ impl<N: Network> ProgramCore<N> {
         ensure!(!Self::is_reserved_opcode(&mapping_name.to_string()), "'{mapping_name}' is a reserved opcode.");
 
         // Add the mapping name to the identifiers.
-        if self.components.insert(mapping_name, ProgramDefinition::Mapping).is_some() {
+        if self.components.insert(ProgramLabel::Identifier(mapping_name), ProgramDefinition::Mapping).is_some() {
             bail!("'{mapping_name}' already exists in the program.")
         }
         // Add the mapping to the program.
@@ -548,7 +598,7 @@ impl<N: Network> ProgramCore<N> {
         }
 
         // Add the struct name to the identifiers.
-        if self.components.insert(struct_name, ProgramDefinition::Struct).is_some() {
+        if self.components.insert(ProgramLabel::Identifier(struct_name), ProgramDefinition::Struct).is_some() {
             bail!("'{}' already exists in the program.", struct_name)
         }
         // Add the struct to the program.
@@ -625,7 +675,7 @@ impl<N: Network> ProgramCore<N> {
         }
 
         // Add the record name to the identifiers.
-        if self.components.insert(record_name, ProgramDefinition::Record).is_some() {
+        if self.components.insert(ProgramLabel::Identifier(record_name), ProgramDefinition::Record).is_some() {
             bail!("'{record_name}' already exists in the program.")
         }
         // Add the record to the program.
@@ -673,7 +723,7 @@ impl<N: Network> ProgramCore<N> {
         ensure!(closure.outputs().len() <= N::MAX_OUTPUTS, "Closure exceeds maximum number of outputs");
 
         // Add the function name to the identifiers.
-        if self.components.insert(closure_name, ProgramDefinition::Closure).is_some() {
+        if self.components.insert(ProgramLabel::Identifier(closure_name), ProgramDefinition::Closure).is_some() {
             bail!("'{closure_name}' already exists in the program.")
         }
         // Add the closure to the program.
@@ -719,7 +769,7 @@ impl<N: Network> ProgramCore<N> {
         ensure!(function.outputs().len() <= N::MAX_OUTPUTS, "Function exceeds maximum number of outputs");
 
         // Add the function name to the identifiers.
-        if self.components.insert(function_name, ProgramDefinition::Function).is_some() {
+        if self.components.insert(ProgramLabel::Identifier(function_name), ProgramDefinition::Function).is_some() {
             bail!("'{function_name}' already exists in the program.")
         }
         // Add the function to the program.
@@ -731,7 +781,7 @@ impl<N: Network> ProgramCore<N> {
 
     /// Returns `true` if the given name does not already exist in the program.
     fn is_unique_name(&self, name: &Identifier<N>) -> bool {
-        !self.components.contains_key(name)
+        !self.components.contains_key(&ProgramLabel::Identifier(*name))
     }
 
     /// Returns `true` if the given name is a reserved opcode.
@@ -771,9 +821,16 @@ impl<N: Network> ProgramCore<N> {
             bail!("Program name '{program_name}' is a restricted keyword for the current consensus version")
         }
         // Check that all top-level program components are not restricted keywords.
-        for identifier in self.components.keys() {
-            if keywords.contains(identifier.to_string().as_str()) {
-                bail!("Program component '{identifier}' is a restricted keyword for the current consensus version")
+        for component in self.components.keys() {
+            match component {
+                ProgramLabel::Identifier(identifier) => {
+                    if keywords.contains(identifier.to_string().as_str()) {
+                        bail!(
+                            "Program component '{identifier}' is a restricted keyword for the current consensus version"
+                        )
+                    }
+                }
+                ProgramLabel::Constructor => continue,
             }
         }
         // Check that all record entry names are not restricted keywords.
@@ -866,6 +923,34 @@ impl<N: Network> ProgramCore<N> {
             Ok(())
         })?;
         Ok(())
+    }
+
+    /// Returns `true` if a program contains any V9 syntax.
+    /// This includes `constructor`, `Operand::Edition`, `Operand::Checksum`, and `Operand::ProgramOwner`.
+    /// This is enforced to be `false` for programs before `ConsensusVersion::V9`.
+    #[inline]
+    pub fn contains_v9_syntax(&self) -> bool {
+        // Check if the program contains a constructor.
+        if self.contains_constructor() {
+            return true;
+        }
+        // Check each instruction and output in each function's finalize scope for the use of
+        // `Operand::Checksum`, `Operand::Edition` or `Operand::ProgramOwner`.
+        for function in self.functions().values() {
+            // Check the finalize scope if it exists.
+            if let Some(finalize_logic) = function.finalize_logic() {
+                // Check the command operands.
+                for command in finalize_logic.commands() {
+                    for operand in command.operands() {
+                        if matches!(operand, Operand::Checksum(_) | Operand::Edition(_) | Operand::ProgramOwner(_)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        // Return `false` since no V9 syntax was found.
+        false
     }
 }
 
@@ -1049,5 +1134,84 @@ function swap:
         assert_eq!(function.output_types()[1].variant(), expected_output_type_2.variant());
 
         Ok(())
+    }
+
+    #[test]
+    fn test_program_with_constructor() {
+        // Initialize a new program.
+        let program_string = r"import credits.aleo;
+
+program good_constructor.aleo;
+
+constructor:
+    assert.eq edition 0u16;
+    assert.eq credits.aleo/edition 0u16;
+    assert.neq checksum 0field;
+    assert.eq credits.aleo/checksum 6192738754253668739186185034243585975029374333074931926190215457304721124008field;
+    set 1u8 into data[0u8];
+
+mapping data:
+    key as u8.public;
+    value as u8.public;
+
+function dummy:
+
+function check:
+    async check into r0;
+    output r0 as good_constructor.aleo/check.future;
+
+finalize check:
+    get data[0u8] into r0;
+    assert.eq r0 1u8;
+";
+        let program = Program::<CurrentNetwork>::from_str(program_string).unwrap();
+
+        // Check that the string and bytes (de)serialization works.
+        let serialized = program.to_string();
+        let deserialized = Program::<CurrentNetwork>::from_str(&serialized).unwrap();
+        assert_eq!(program, deserialized);
+
+        let serialized = program.to_bytes_le().unwrap();
+        let deserialized = Program::<CurrentNetwork>::from_bytes_le(&serialized).unwrap();
+        assert_eq!(program, deserialized);
+
+        // Check that the display works.
+        let display = format!("{program}");
+        assert_eq!(display, program_string);
+
+        // Ensure the program contains a constructor.
+        assert!(program.contains_constructor());
+        assert_eq!(program.constructor().unwrap().commands().len(), 5);
+    }
+
+    #[test]
+    fn test_program_equality_and_checksum() {
+        fn run_test(program1: &str, program2: &str, expected_equal: bool) {
+            println!("Comparing programs:\n{program1}\n{program2}");
+            let program1 = Program::<CurrentNetwork>::from_str(program1).unwrap();
+            let program2 = Program::<CurrentNetwork>::from_str(program2).unwrap();
+            assert_eq!(program1 == program2, expected_equal);
+            assert_eq!(program1.to_checksum() == program2.to_checksum(), expected_equal);
+        }
+
+        // Test two identical programs, with different whitespace.
+        run_test(r"program test.aleo; function dummy:    ", r"program  test.aleo;     function dummy:   ", true);
+
+        // Test two programs, one with a different function name.
+        run_test(r"program test.aleo; function dummy:    ", r"program test.aleo; function bummy:   ", false);
+
+        // Test two programs, one with a constructor and one without.
+        run_test(
+            r"program test.aleo; function dummy:    ",
+            r"program test.aleo; constructor: assert.eq true true; function dummy: ",
+            false,
+        );
+
+        // Test two programs, both with a struct and function, but in different order.
+        run_test(
+            r"program test.aleo; struct foo: data as u8; function dummy:",
+            r"program test.aleo; function dummy: struct foo: data as u8;",
+            false,
+        );
     }
 }

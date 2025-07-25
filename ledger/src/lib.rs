@@ -497,6 +497,11 @@ pub(crate) mod test_helpers {
     pub(crate) type CurrentConsensusStore =
         ConsensusStore<CurrentNetwork, snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>>;
 
+    #[cfg(not(feature = "rocks"))]
+    pub(crate) type CurrentConsensusStorage = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    #[cfg(feature = "rocks")]
+    pub(crate) type CurrentConsensusStorage = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+
     #[allow(dead_code)]
     pub(crate) struct TestEnv {
         pub ledger: CurrentLedger,

@@ -137,40 +137,43 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Get the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(self.block_store().current_block_height())?;
 
-        // Acquire a read lock on the process.
-        let process = self.process.read();
-
-        // Get the program editions.
-        // If the transaction is an execution
-        //   AND the consensus version is V8 or greater
-        //   AND any of the component program editions (except for `credits.aleo`) are zero
-        // then fail.
-        if let Transaction::Execute(id, _, execution, _) = transaction {
-            if consensus_version >= ConsensusVersion::V8 {
-                for transition in execution.transitions() {
-                    // Get the stack.
-                    let stack = process.get_stack(transition.program_id())?;
-                    // Get the program ID.
-                    let program_id = *stack.program_id();
-                    // If the program edition is zero, then fail.
-                    if program_id != ProgramID::from_str("credits.aleo")? && stack.program_edition().is_zero() {
-                        drop(process); // Drop the process lock. 
-                        bail!(
-                            "Invalid execution transaction '{id}' - the program edition for '{program_id}' cannot be zero for `ConsensusVersion::V8` or greater. Please redeploy the program."
-                        );
-                    }
-                }
-            }
-        }
-        // Drop the process lock.
-        drop(process);
-
         // Construct the transaction checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
 
+        // Get the program editions from the transaction.
+
+        let mut program_editions = Vec::with_capacity(Transaction::<N>::MAX_TRANSITIONS);
+        for transition in transaction.transitions() {
+            // Get the stack.
+            let stack = self.process.read().get_stack(transition.program_id())?;
+            // Get the program ID.
+            let program_id = *stack.program_id();
+            // Get the program edition.
+            let edition = stack.program_edition();
+
+            // If the consensus version is V8 or greater and any of the component programs (except for `credits.aleo`)
+            //   - have edition 0
+            //   - and the program does not have a constructor.
+            // then fail.
+            if consensus_version >= ConsensusVersion::V8
+                && program_id != ProgramID::from_str("credits.aleo")?
+                && edition.is_zero()
+                && !stack.program().contains_constructor()
+            {
+                bail!(
+                    "Invalid transaction '{}' - the program edition for '{program_id}' cannot be zero for `ConsensusVersion::V8` or greater. Please redeploy the program.",
+                    transaction.id()
+                );
+            }
+            // Add the program editions.
+            program_editions.push(edition);
+        }
+
+        // Prepare the cache key.
+        let cache_key = (transaction.id(), program_editions);
+
         // Check if the transaction exists in the partially-verified cache.
-        let is_partially_verified =
-            self.partially_verified_transactions.read().peek(&(transaction.id())) == Some(&checksum);
+        let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum);
 
         // Verify the fee.
         self.check_fee(transaction, rejected_id, is_partially_verified)?;
@@ -185,30 +188,75 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 );
                 // Verify the signature corresponds to the transaction ID.
                 ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
-                // If the `CONSENSUS_VERSION` is `V8` or greater, then verify that:
-                //   - the edition is zero or one
-                // Otherwise, verify that:
-                //   - the deployment edition is zero
-                match consensus_version >= ConsensusVersion::V8 {
-                    true => {
-                        ensure!(
-                            deployment.edition() <= 1,
-                            "Invalid deployment transaction '{id}' - edition should be zero or one for `ConsensusVersion::V8` or greater"
-                        )
-                    }
-                    false => {
-                        ensure!(
-                            deployment.edition().is_zero(),
-                            "Invalid deployment transaction '{id}' - edition should be zero"
-                        );
-                    }
+                // If the `CONSENSUS_VERSION` is less than `V8`, ensure that
+                //   - the deployment edition is zero.
+                // If the `CONSENSUS_VERSION` is less than `V9` ensure that
+                //   - the deployment edition is zero or one.
+                //   - the program checksum is **not** present in the deployment,
+                //   - the program owner is **not** present in the deployment
+                //   - the program does not use constructors, `Operand::Checksum`, `Operand::Edition`, or `Operand::ProgramOwner`
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V9`, then verify that:
+                //   - the program checksum is present in the deployment
+                //   - the program owner is present in the deployment
+                if consensus_version < ConsensusVersion::V8 {
+                    ensure!(
+                        deployment.edition().is_zero(),
+                        "Invalid deployment transaction '{id}' - edition should be zero before `ConsensusVersion::V8`",
+                    );
                 }
+                if consensus_version < ConsensusVersion::V9 {
+                    ensure!(
+                        deployment.edition() <= 1,
+                        "Invalid deployment transaction '{id}' - edition should be zero or one for before `ConsensusVersion::V9`"
+                    );
+                    ensure!(
+                        deployment.program_checksum().is_none(),
+                        "Invalid deployment transaction '{id}' - should not contain program checksum"
+                    );
+                    ensure!(
+                        deployment.program_owner().is_none(),
+                        "Invalid deployment transaction '{id}' - should not contain program owner"
+                    );
+                    ensure!(
+                        !deployment.program().contains_v9_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V9`"
+                    );
+                }
+                if consensus_version >= ConsensusVersion::V9 {
+                    ensure!(
+                        deployment.program_checksum().is_some(),
+                        "Invalid deployment transaction '{id}' - missing program checksum"
+                    );
+                    ensure!(
+                        deployment.program_owner().is_some(),
+                        "Invalid deployment transaction '{id}' - missing program owner"
+                    );
+                }
+
+                // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.
+                if let Some(given_owner) = deployment.program_owner() {
+                    // Ensure the program owner matches the owner in the transaction.
+                    ensure!(
+                        given_owner == owner.address(),
+                        "The program owner in the deployment did not match the owner in the transaction\n('[{}]' != '[{}]')",
+                        given_owner,
+                        owner.address()
+                    );
+                }
+
                 // If the edition is zero, then check that:
                 //  - The program does not exist in the store or process.
-                // If the edition is one, then check that:
+                //  - The program contains a constructor.
+                // Otherwise, check that:
                 //  - The program exists in the store and process.
                 //  - The new edition increments the old edition by 1.
-                //  - The new program exactly matches the old program.
+                //  - If the new program does not contain a constructor
+                //      - the existing program does not have a constructor
+                //      - the new program exactly matches the existing program
+                //      - the edition is exactly one.
+                //  - Otherwise, if the new program contains a constructor.
+                //      - the existing program has a constructor.
+                //        Note. Constructor validity is checked at a later point.
                 let is_program_in_storage = self.transaction_store().contains_program_id(deployment.program_id())?;
                 let is_program_in_process = self.contains_program(deployment.program_id());
                 match deployment.edition() {
@@ -217,6 +265,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         ensure!(!is_program_in_storage, "Program ID '{}' is already deployed", deployment.program_id());
                         // Ensure the program does not already exist in the process.
                         ensure!(!is_program_in_process, "Program ID '{}' already exists", deployment.program_id());
+                        // Ensure that the program contains a constructor if the program is deployed after `ConsensusVersion::V9`.
+                        if consensus_version >= ConsensusVersion::V9 {
+                            // Check that the program contains a constructor.
+                            ensure!(
+                                deployment.program().contains_constructor(),
+                                "Invalid deployment transaction '{id}' - a new program after `ConsensusVersion::V9` must contain a constructor"
+                            );
+                        }
                     }
                     new_edition => {
                         // Check that the program exists.
@@ -231,6 +287,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Get the existing program.
                         // It should be the case that the stored program matches the process program.
                         let stack = self.process().read().get_stack(deployment.program_id())?;
+                        let existing_program = stack.program();
                         // Check that the new edition increments the old edition by 1.
                         let old_edition = *stack.program_edition();
                         let expected_edition = old_edition
@@ -240,19 +297,42 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             expected_edition == new_edition,
                             "Invalid deployment transaction '{id}' - next edition ('{new_edition}') does not match the expected edition ('{expected_edition}')",
                         );
-                        // Ensure the new program matches the old program.
-                        ensure!(
-                            stack.program() == deployment.program(),
-                            "Invalid deployment transaction '{id}' - new program does not match the old program"
-                        );
+
+                        // Validate the deployment depending on whether the program has a constructor.
+                        // The exact rules are listed above.
+                        match deployment.program().contains_constructor() {
+                            false => {
+                                // Check that the existing program does not have a constructor.
+                                ensure!(
+                                    !existing_program.contains_constructor(),
+                                    "Invalid deployment transaction '{id}' - the existing program has a constructor, but the deployment program does not"
+                                );
+                                // Ensure the new program matches the old program.
+                                ensure!(
+                                    existing_program == deployment.program(),
+                                    "Invalid deployment transaction '{id}' - new program does not match the old program"
+                                );
+                                // Ensure that the new edition is exactly one.
+                                ensure!(
+                                    new_edition == 1,
+                                    "Invalid deployment transaction '{id}' - programs without constructors can only be re-deployed one time."
+                                );
+                            }
+                            true => {
+                                // Ensure the existing program has a constructor.
+                                ensure!(
+                                    existing_program.contains_constructor(),
+                                    "Invalid deployment transaction '{id}' - the existing program does not have a constructor, but the deployment program does"
+                                );
+                            }
+                        }
                     }
                 }
 
                 // Enforce the syntax restrictions on the programs based on the current consensus version.
-                // Note: We do not enforce this restriction for programs with edition one, since they may have been deployed before the restrictions were introduced.
+                // Note: We do not enforce this restriction for programs with non-zero editions without constructors, since they may have been deployed before the restrictions were introduced.
                 //  However, we do enforce that programs with edition one, EXACTLY match their previous edition.
-                // TODO(@d0cd) This logic will need to be updated to handle programs with constructors, once upgradability rolls in.
-                if deployment.edition() == 0 {
+                if deployment.edition() == 0 || deployment.program().contains_constructor() {
                     // Check restricted keywords for the consensus version.
                     deployment.program().check_restricted_keywords_for_consensus_version(consensus_version)?;
                     // Perform additional program checks if the consensus version is V7 or beyond.
@@ -290,7 +370,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // If the above checks have passed and this is not a fee transaction,
         // then add the transaction ID to the partially-verified transactions cache.
         if !matches!(transaction, Transaction::Fee(..)) && !is_partially_verified {
-            self.partially_verified_transactions.write().push(transaction.id(), checksum);
+            self.partially_verified_transactions.write().push(cache_key, checksum);
         }
 
         finish!(timer, "Verify the transaction");
@@ -310,7 +390,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Ensure the rejected ID is not present.
                 ensure!(rejected_id.is_none(), "Transaction '{id}' should not have a rejected ID (deployment)");
                 // Compute the minimum deployment cost.
-                let (cost, _) = deployment_cost(deployment)?;
+                let (cost, _) = deployment_cost(&self.process().read(), deployment)?;
                 // Ensure the fee is sufficient to cover the cost.
                 if *fee.base_amount()? < cost {
                     bail!("Transaction '{id}' has an insufficient base fee (deployment) - requires {cost} microcredits")
@@ -560,7 +640,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 mod tests {
     use super::*;
 
-    use crate::vm::test_helpers::sample_finalize_state;
+    use crate::vm::test_helpers::{LedgerType, sample_finalize_state};
     use console::{
         account::{Address, ViewKey},
         types::Field,
@@ -569,6 +649,23 @@ mod tests {
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
+    // A helper function to create the cache key for a transaction in the partially-verified transactions cache.
+    fn create_cache_key(
+        vm: &VM<CurrentNetwork, LedgerType>,
+        transaction: &Transaction<CurrentNetwork>,
+    ) -> (<CurrentNetwork as Network>::TransactionID, Vec<U16<CurrentNetwork>>) {
+        // Get the program editions.
+        let program_editions = transaction
+            .transitions()
+            .map(|transition| {
+                vm.process().read().get_stack(transition.program_id()).map(|stack| stack.program_edition())
+            })
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        // Return the cache key.
+        (transaction.id(), program_editions)
+    }
+
     #[test]
     fn test_verify() {
         let rng = &mut TestRng::default();
@@ -576,24 +673,27 @@ mod tests {
 
         // Fetch a deployment transaction.
         let deployment_transaction = crate::vm::test_helpers::sample_deployment_transaction(rng);
+        let cache_key = create_cache_key(&vm, &deployment_transaction);
         // Ensure the transaction verifies.
         vm.check_transaction(&deployment_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&deployment_transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
+        let cache_key = create_cache_key(&vm, &execution_transaction);
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&execution_transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
+        let cache_key = create_cache_key(&vm, &execution_transaction);
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&execution_transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
     }
 
     #[test]
@@ -607,17 +707,20 @@ mod tests {
         // Deploy the program.
         let deployment = vm.deploy_raw(&program, rng).unwrap();
 
+        // Get the size of the cache.
+        let cache_size = vm.partially_verified_transactions.read().len();
+
         // Ensure the deployment is valid.
         vm.check_deployment_internal(&deployment, rng).unwrap();
-        // Ensure the partially_verified_transactions cache is not updated.
-        assert!(vm.partially_verified_transactions.read().peek(&deployment.to_deployment_id().unwrap()).is_none());
+        // Ensure the partially_verified_transactions cache has the same size.
+        assert_eq!(vm.partially_verified_transactions.read().len(), cache_size);
 
         // Ensure that deserialization doesn't break the transaction verification.
         let serialized_deployment = deployment.to_string();
         let deployment_transaction: Deployment<CurrentNetwork> = serde_json::from_str(&serialized_deployment).unwrap();
         vm.check_deployment_internal(&deployment_transaction, rng).unwrap();
-        // Ensure the partially_verified_transactions cache is not updated.
-        assert!(vm.partially_verified_transactions.read().peek(&deployment.to_deployment_id().unwrap()).is_none());
+        // Ensure the partially_verified_transactions cache has the same size.
+        assert_eq!(vm.partially_verified_transactions.read().len(), cache_size);
     }
 
     #[test]
@@ -631,6 +734,9 @@ mod tests {
             crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng),
         ];
 
+        // Get the cache size.
+        let cache_size = vm.partially_verified_transactions.read().len();
+
         for transaction in transactions {
             match transaction {
                 Transaction::Execute(_, _, execution, _) => {
@@ -638,23 +744,16 @@ mod tests {
                     assert!(execution.proof().is_some());
                     // Verify the execution.
                     vm.check_execution_internal(&execution, false).unwrap();
-                    // Ensure the partially_verified_transactions cache is not updated.
-                    assert!(
-                        vm.partially_verified_transactions.read().peek(&execution.to_execution_id().unwrap()).is_none()
-                    );
+                    // Ensure the partially_verified_transactions cache has the same size.
+                    assert_eq!(vm.partially_verified_transactions.read().len(), cache_size);
 
                     // Ensure that deserialization doesn't break the transaction verification.
                     let serialized_execution = execution.to_string();
                     let recovered_execution: Execution<CurrentNetwork> =
                         serde_json::from_str(&serialized_execution).unwrap();
                     vm.check_execution_internal(&recovered_execution, false).unwrap();
-                    // Ensure the partially_verified_transactions cache is not updated.
-                    assert!(
-                        vm.partially_verified_transactions
-                            .read()
-                            .peek(&recovered_execution.to_execution_id().unwrap())
-                            .is_none()
-                    );
+                    // Ensure the partially_verified_transactions cache has the same size.
+                    assert_eq!(vm.partially_verified_transactions.read().len(), cache_size);
                 }
                 _ => panic!("Expected an execution transaction"),
             }
@@ -672,6 +771,9 @@ mod tests {
             crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng),
         ];
 
+        // Get the cache size.
+        let cache_size = vm.partially_verified_transactions.read().len();
+
         for transaction in transactions {
             match transaction {
                 Transaction::Execute(_, _, execution, Some(fee)) => {
@@ -681,15 +783,15 @@ mod tests {
                     assert!(fee.proof().is_some());
                     // Verify the fee.
                     vm.check_fee_internal(&fee, execution_id, false).unwrap();
-                    // Ensure the partially_verified_transactions cache is not updated.
-                    assert!(vm.partially_verified_transactions.read().peek(&execution_id).is_none());
+                    // Ensure the partially_verified_transactions cache has the same size.
+                    assert_eq!(vm.partially_verified_transactions.read().len(), cache_size);
 
                     // Ensure that deserialization doesn't break the transaction verification.
                     let serialized_fee = fee.to_string();
                     let recovered_fee: Fee<CurrentNetwork> = serde_json::from_str(&serialized_fee).unwrap();
                     vm.check_fee_internal(&recovered_fee, execution_id, false).unwrap();
-                    // Ensure the partially_verified_transactions cache is not updated.
-                    assert!(vm.partially_verified_transactions.read().peek(&execution_id).is_none());
+                    // Ensure the partially_verified_transactions cache has the same size.
+                    assert_eq!(vm.partially_verified_transactions.read().len(), cache_size);
                 }
                 _ => panic!("Expected an execution with a fee"),
             }
@@ -709,21 +811,24 @@ mod tests {
 
         // Fetch a valid execution transaction with a private fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
+        let cache_key = create_cache_key(&vm, &valid_transaction);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
+        let cache_key = create_cache_key(&vm, &valid_transaction);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch a valid execution transaction with no fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_without_fee(rng);
+        let cache_key = create_cache_key(&vm, &valid_transaction);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
     }
 
     #[test]
@@ -828,11 +933,12 @@ mod tests {
         // Execute.
         let transaction =
             vm.execute(&caller_private_key, ("testing.aleo", "initialize"), inputs, credits, 10, None, rng).unwrap();
+        let cache_key = create_cache_key(&vm, &transaction);
 
         // Verify.
         vm.check_transaction(&transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
     }
 
     #[test]
@@ -882,8 +988,9 @@ function compute:
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
+        let cache_key = create_cache_key(&vm, &valid_transaction);
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Mutate the execution transaction by inserting a Field::Zero as an output.
         let execution = valid_transaction.execution().unwrap();
@@ -932,11 +1039,12 @@ function compute:
 
         // Construct the transaction.
         let mutated_transaction = Transaction::from_execution(mutated_execution, Some(fee)).unwrap();
+        let cache_key = create_cache_key(&vm, &mutated_transaction);
 
         // Ensure that the mutated transaction fails verification due to an extra output.
         assert!(vm.check_transaction(&mutated_transaction, None, rng).is_err());
         // Ensure the partially_verified_transactions cache is not updated.
-        assert!(vm.partially_verified_transactions.read().peek(&mutated_transaction.id()).is_none());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_none());
     }
 
     #[cfg(feature = "test")]
@@ -956,6 +1064,7 @@ function compute:
 
         // Create the base transaction
         let transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
+        let cache_key = create_cache_key(&vm, &transaction);
 
         // Try to submit a tx with the new fee before the migration block height
         let fee_too_low_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
@@ -965,7 +1074,7 @@ function compute:
         );
         assert!(vm.check_transaction(&fee_too_low_transaction, None, rng).is_err());
         // Ensure the partially_verified_transactions cache is not updated.
-        assert!(vm.partially_verified_transactions.read().peek(&fee_too_low_transaction.id()).is_none());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_none());
 
         // Try to submit a tx with the old fee before the migration block height
         let old_valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
@@ -973,9 +1082,10 @@ function compute:
             transaction.clone(),
             old_minimum_credits_transfer_public_fee,
         );
+        let cache_key = create_cache_key(&vm, &old_valid_transaction);
         assert!(vm.check_transaction(&old_valid_transaction, None, rng).is_ok());
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&old_valid_transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Update the VM to the migration block height
         let private_key = test_helpers::sample_genesis_private_key(rng);
@@ -1018,9 +1128,10 @@ function compute:
             transaction.clone(),
             old_minimum_credits_transfer_public_fee,
         );
+        let cache_key = create_cache_key(&vm, &fee_too_high_transaction);
         assert!(vm.check_transaction(&fee_too_high_transaction, None, rng).is_ok());
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&fee_too_high_transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Try to submit a tx with the new fee after the migration block height
         let valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
@@ -1028,9 +1139,10 @@ function compute:
             transaction.clone(),
             minimum_credits_transfer_public_fee,
         );
+        let cache_key = create_cache_key(&vm, &valid_transaction);
         assert!(vm.check_transaction(&valid_transaction, None, rng).is_ok());
         // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
+        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
     }
 
     #[cfg(feature = "test")]

@@ -9,10 +9,10 @@ cases:
     inputs: ["{ first: 0field, second: 0field, third: 0field, fourth: 0field, fifth: 0field }"]
   - program: test_rand.aleo
     function: rand_chacha_check
-    inputs: [0field, false]
+    inputs: [1field, false]
   - program: test_rand.aleo
     function: rand_chacha_check
-    inputs: [1field, true]
+    inputs: [2field, true]
 */
 
 program test_rand.aleo;
@@ -90,3 +90,6 @@ finalize rand_chacha_with_literals:
     rand.chacha r4 r5 into r29 as u32;
     rand.chacha r5 r6 into r30 as i64;
     rand.chacha r6 r7 into r31 as u128;
+    
+constructor:
+    assert.eq edition 0u16;

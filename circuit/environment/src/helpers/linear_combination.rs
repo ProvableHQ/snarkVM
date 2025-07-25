@@ -435,14 +435,10 @@ impl<F: PrimeField> Mul<&F> for LinearCombination<F> {
     fn mul(self, coefficient: &F) -> Self::Output {
         let mut output = self;
         output.constant *= coefficient;
-        output.terms = output
-            .terms
-            .into_iter()
-            .filter_map(|(v, current_coefficient)| {
-                let res = current_coefficient * coefficient;
-                (!res.is_zero()).then_some((v, res))
-            })
-            .collect();
+        output.terms.retain_mut(|(_v, current_coefficient)| {
+            *current_coefficient *= coefficient;
+            !current_coefficient.is_zero()
+        });
         output.value *= coefficient;
         output
     }

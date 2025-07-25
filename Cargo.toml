@@ -443,10 +443,10 @@ version = "1"
 version = "1.0.0"
 
 [workspace.dependencies.criterion]
-version = "0.5.1"
+version = "0.6"
 
 [workspace.dependencies.colored]
-version = "2"
+version = "3"
 
 [workspace.dependencies.expect-test]
 version = "1.4.1"
@@ -458,7 +458,7 @@ version = "0.4.3"
 version = "2.0"
 
 [workspace.dependencies.itertools]
-version = "0.11.0"
+version = "0.14"
 
 [workspace.dependencies.lazy_static]
 version = "1.4"
@@ -467,7 +467,7 @@ version = "1.4"
 version = "0.3"
 
 [workspace.dependencies.lru]
-version = "0.12"
+version = "0.16"
 
 [workspace.dependencies.num-traits]
 version = "0.2"
@@ -582,7 +582,7 @@ features = [ "derive", "color" ]
 optional = true
 
 [dependencies.colored]
-version = "2"
+workspace = true
 optional = true
 
 [dependencies.dotenvy]

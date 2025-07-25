@@ -21,8 +21,9 @@ impl<N: Network> Parser for ProgramCore<N> {
     fn parse(string: &str) -> ParserResult<Self> {
         // A helper to parse a program.
         enum P<N: Network> {
+            Constructor(ConstructorCore<N>),
             M(Mapping<N>),
-            I(StructType<N>),
+            S(StructType<N>),
             R(RecordType<N>),
             C(ClosureCore<N>),
             F(FunctionCore<N>),
@@ -47,10 +48,12 @@ impl<N: Network> Parser for ProgramCore<N> {
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
 
-            if string.starts_with(Mapping::<N>::type_name()) {
+            if string.starts_with(ConstructorCore::<N>::type_name()) {
+                map(ConstructorCore::parse, |constructor| P::<N>::Constructor(constructor))(string)
+            } else if string.starts_with(Mapping::<N>::type_name()) {
                 map(Mapping::parse, |mapping| P::<N>::M(mapping))(string)
             } else if string.starts_with(StructType::<N>::type_name()) {
-                map(StructType::parse, |struct_| P::<N>::I(struct_))(string)
+                map(StructType::parse, |struct_| P::<N>::S(struct_))(string)
             } else if string.starts_with(RecordType::<N>::type_name()) {
                 map(RecordType::parse, |record| P::<N>::R(record))(string)
             } else if string.starts_with(ClosureCore::<N>::type_name()) {
@@ -90,8 +93,9 @@ impl<N: Network> Parser for ProgramCore<N> {
         // Construct the program with the parsed components.
         for component in components {
             let result = match component {
+                P::Constructor(constructor) => program.add_constructor(constructor),
                 P::M(mapping) => program.add_mapping(mapping),
-                P::I(struct_) => program.add_struct(struct_),
+                P::S(struct_) => program.add_struct(struct_),
                 P::R(record) => program.add_record(record),
                 P::C(closure) => program.add_closure(closure),
                 P::F(function) => program.add_function(function),
@@ -153,32 +157,43 @@ impl<N: Network> Display for ProgramCore<N> {
         // Print the program name.
         write!(f, "{} {};\n\n", Self::type_name(), self.id)?;
 
-        let mut identifier_iter = self.components.iter().peekable();
-        while let Some((identifier, definition)) = identifier_iter.next() {
-            match definition {
-                ProgramDefinition::Mapping => match self.mappings.get(identifier) {
-                    Some(mapping) => writeln!(f, "{mapping}")?,
-                    None => return Err(fmt::Error),
-                },
-                ProgramDefinition::Struct => match self.structs.get(identifier) {
-                    Some(struct_) => writeln!(f, "{struct_}")?,
-                    None => return Err(fmt::Error),
-                },
-                ProgramDefinition::Record => match self.records.get(identifier) {
-                    Some(record) => writeln!(f, "{record}")?,
-                    None => return Err(fmt::Error),
-                },
-                ProgramDefinition::Closure => match self.closures.get(identifier) {
-                    Some(closure) => writeln!(f, "{closure}")?,
-                    None => return Err(fmt::Error),
-                },
-                ProgramDefinition::Function => match self.functions.get(identifier) {
-                    Some(function) => writeln!(f, "{function}")?,
-                    None => return Err(fmt::Error),
+        // Write the components.
+        let mut components_iter = self.components.iter().peekable();
+        while let Some((label, definition)) = components_iter.next() {
+            match label {
+                ProgramLabel::Constructor => {
+                    // Write the constructor, if it exists.
+                    if let Some(constructor) = &self.constructor {
+                        writeln!(f, "{constructor}")?;
+                    }
+                }
+                ProgramLabel::Identifier(identifier) => match definition {
+                    ProgramDefinition::Constructor => return Err(fmt::Error),
+                    ProgramDefinition::Mapping => match self.mappings.get(identifier) {
+                        Some(mapping) => writeln!(f, "{mapping}")?,
+                        None => return Err(fmt::Error),
+                    },
+                    ProgramDefinition::Struct => match self.structs.get(identifier) {
+                        Some(struct_) => writeln!(f, "{struct_}")?,
+                        None => return Err(fmt::Error),
+                    },
+                    ProgramDefinition::Record => match self.records.get(identifier) {
+                        Some(record) => writeln!(f, "{record}")?,
+                        None => return Err(fmt::Error),
+                    },
+                    ProgramDefinition::Closure => match self.closures.get(identifier) {
+                        Some(closure) => writeln!(f, "{closure}")?,
+                        None => return Err(fmt::Error),
+                    },
+                    ProgramDefinition::Function => match self.functions.get(identifier) {
+                        Some(function) => writeln!(f, "{function}")?,
+                        None => return Err(fmt::Error),
+                    },
                 },
             }
+
             // Omit the last newline.
-            if identifier_iter.peek().is_some() {
+            if components_iter.peek().is_some() {
                 writeln!(f)?;
             }
         }

@@ -194,9 +194,6 @@ mod test_helpers {
                 let input_external_record = Value::from_str(&record_string).unwrap();
                 let inputs = vec![input_constant, input_public, input_private, input_record, input_external_record];
 
-                // Construct 'is_root'.
-                let is_root = false;
-
                 // Construct the input types.
                 let input_types = [
                     ValueType::from_str("amount.constant").unwrap(),
@@ -208,11 +205,18 @@ mod test_helpers {
 
                 // Sample root_tvk.
                 let root_tvk = None;
+                // Construct 'is_root'.
+                let is_root = Uniform::rand(rng);
+                // Sample the program checksum.
+                let program_checksum = match i % 2 == 0 {
+                    true => Some(Field::rand(rng)),
+                    false => None,
+                };
 
                 // Compute the signed request.
                 let request =
-                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk,  is_root, rng).unwrap();
-                assert!(request.verify(&input_types, is_root));
+                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap();
+                assert!(request.verify(&input_types, is_root, program_checksum));
                 request
             })
             .collect()

@@ -22,6 +22,7 @@ use crate::{
 use console::{
     network::prelude::*,
     program::{Identifier, ProgramID, ProgramOwner},
+    types::U8,
 };
 use snarkvm_ledger_block::{Deployment, Fee, Transaction};
 use snarkvm_synthesizer_program::Program;
@@ -33,10 +34,19 @@ use core::marker::PhantomData;
 use std::borrow::Cow;
 
 /// A trait for deployment storage.
+/// The deployment storage contains the `Deployment`s for all programs deployed on the network.
+/// The storage has been migrated a few to times to support new features.
+/// Here we describe the changes made to the storage and the invariants that must hold.
+/// - **ConsensusVersion::V1..V7**: The deployment edition is always zero. The `IDEditionMap` and `ChecksumMap` did not exist.
+/// - **ConsensusVersion::V8**: The deployment edition is either zero or one. The `IDEditionMap` is introduced and the `EditionMap`
+///   is interpreted as the latest edition for the program ID. The `ChecksumMap` did not exist.
+/// - **ConsensusVersion::V9**: The deployment edition can be any value from zero to `u16::MAX`. The `ChecksumMap` is introduced and
+///   stores the program checksum, required in each deployment after `ConsensusVersion::V9`.
 pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `transaction ID` to `program ID`.
     type IDMap: for<'a> Map<'a, N::TransactionID, ProgramID<N>>;
     /// The mapping of `transaction ID` to `edition`.
+    /// This was introduced in `ConsensusVersion::V8`.
     type IDEditionMap: for<'a> Map<'a, N::TransactionID, u16>;
     /// The mapping of `program ID` to the **latest** `edition`.
     type EditionMap: for<'a> Map<'a, ProgramID<N>, u16>;
@@ -46,6 +56,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     type OwnerMap: for<'a> Map<'a, (ProgramID<N>, u16), ProgramOwner<N>>;
     /// The mapping of `(program ID, edition)` to `program`.
     type ProgramMap: for<'a> Map<'a, (ProgramID<N>, u16), Program<N>>;
+    /// The mapping of `(program ID, edition)` to `checksum`.
+    /// This was introduced in `ConsensusVersion::V9`.
+    type ChecksumMap: for<'a> Map<'a, (ProgramID<N>, u16), [U8<N>; 32]>;
     /// The mapping of `(program ID, function name, edition)` to `verifying key`.
     type VerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     /// The mapping of `(program ID, function name, edition)` to `certificate`.
@@ -68,6 +81,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     fn owner_map(&self) -> &Self::OwnerMap;
     /// Returns the program map.
     fn program_map(&self) -> &Self::ProgramMap;
+    /// Returns the checksum map.
+    fn checksum_map(&self) -> &Self::ChecksumMap;
     /// Returns the verifying key map.
     fn verifying_key_map(&self) -> &Self::VerifyingKeyMap;
     /// Returns the certificate map.
@@ -88,6 +103,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.reverse_id_map().start_atomic();
         self.owner_map().start_atomic();
         self.program_map().start_atomic();
+        self.checksum_map().start_atomic();
         self.verifying_key_map().start_atomic();
         self.certificate_map().start_atomic();
         self.fee_store().start_atomic();
@@ -101,6 +117,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             || self.reverse_id_map().is_atomic_in_progress()
             || self.owner_map().is_atomic_in_progress()
             || self.program_map().is_atomic_in_progress()
+            || self.checksum_map().is_atomic_in_progress()
             || self.verifying_key_map().is_atomic_in_progress()
             || self.certificate_map().is_atomic_in_progress()
             || self.fee_store().is_atomic_in_progress()
@@ -114,6 +131,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.reverse_id_map().atomic_checkpoint();
         self.owner_map().atomic_checkpoint();
         self.program_map().atomic_checkpoint();
+        self.checksum_map().atomic_checkpoint();
         self.verifying_key_map().atomic_checkpoint();
         self.certificate_map().atomic_checkpoint();
         self.fee_store().atomic_checkpoint();
@@ -127,6 +145,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.reverse_id_map().clear_latest_checkpoint();
         self.owner_map().clear_latest_checkpoint();
         self.program_map().clear_latest_checkpoint();
+        self.checksum_map().clear_latest_checkpoint();
         self.verifying_key_map().clear_latest_checkpoint();
         self.certificate_map().clear_latest_checkpoint();
         self.fee_store().clear_latest_checkpoint();
@@ -140,6 +159,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.reverse_id_map().atomic_rewind();
         self.owner_map().atomic_rewind();
         self.program_map().atomic_rewind();
+        self.checksum_map().atomic_rewind();
         self.verifying_key_map().atomic_rewind();
         self.certificate_map().atomic_rewind();
         self.fee_store().atomic_rewind();
@@ -153,6 +173,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.reverse_id_map().abort_atomic();
         self.owner_map().abort_atomic();
         self.program_map().abort_atomic();
+        self.checksum_map().abort_atomic();
         self.verifying_key_map().abort_atomic();
         self.certificate_map().abort_atomic();
         self.fee_store().abort_atomic();
@@ -166,6 +187,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.reverse_id_map().finish_atomic()?;
         self.owner_map().finish_atomic()?;
         self.program_map().finish_atomic()?;
+        self.checksum_map().finish_atomic()?;
         self.verifying_key_map().finish_atomic()?;
         self.certificate_map().finish_atomic()?;
         self.fee_store().finish_atomic()
@@ -192,6 +214,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         let program = deployment.program();
         // Retrieve the program ID.
         let program_id = *program.id();
+        // Retrieve the checksum.
+        let checksum = deployment.program_checksum();
 
         // If the deployment edition is greater than zero, then ensure that it increments the latest edition for the program ID.
         let expected_edition = match self.get_latest_edition_for_program(&program_id)? {
@@ -215,10 +239,17 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             self.owner_map().insert((program_id, edition), *owner)?;
             // Store the program.
             self.program_map().insert((program_id, edition), program.clone())?;
+
             // Store the edition in the ID edition map.
             // Note: Prior to `ConsensusVersion::V8`, the edition is always zero.
             //  `ConsensusVersion::V8` allows the edition to be one via a one-time redeployment.
+            //  `ConsensusVersion::V9` introduces upgradability which allows editions to be incremented up to `u16::MAX`
             self.id_edition_map().insert(*transaction_id, edition)?;
+
+            // If the checksum exists, then store it into the `ChecksumMap`.
+            if let Some(checksum) = checksum {
+                self.checksum_map().insert((program_id, edition), checksum)?;
+            }
 
             // Store the verifying keys and certificates.
             for (function_name, (verifying_key, certificate)) in deployment.verifying_keys() {
@@ -285,6 +316,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             self.owner_map().remove(&(program_id, edition))?;
             // Remove the program.
             self.program_map().remove(&(program_id, edition))?;
+            // Remove the checksum.
+            self.checksum_map().remove(&(program_id, edition))?;
 
             // Remove the verifying keys and certificates.
             for function_name in program.functions().keys() {
@@ -376,12 +409,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             Some(edition) => Ok(Some(*edition)),
             None => {
                 // Check if the program exists in the store.
-                if self.get_program_id(transaction_id)?.is_none() {
-                    return Ok(None);
-                };
-                // Prior to `ConsensusVersion::V8`, if a program is not in the `IDEditionMap` but exists,
-                // then it must have been deployed when editions were exclusively zero.
-                Ok(Some(0))
+                match self.get_program_id(transaction_id)?.is_none() {
+                    true => Ok(None),
+                    // If a program is not in the `IDEditionMap` but exists in the store,
+                    // then it must have been deployed prior to `ConsensusVersion::V8` when editions were exclusively zero.
+                    false => Ok(Some(0)),
+                }
             }
         }
     }
@@ -542,6 +575,19 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         let Some(program) = self.program_map().get_confirmed(&(program_id, edition))?.map(|x| x.into_owned()) else {
             bail!("Failed to get the deployed program '{program_id}' (edition {edition})");
         };
+        // Retrieve the checksum.
+        let program_checksum =
+            self.checksum_map().get_confirmed(&(program_id, edition))?.map(|checksum| checksum.into_owned());
+        // If the checksum is present, then retrieve the owner address.
+        // Note: This is done to ensure that `Deployment` is consistent. Both the checksum and owner must be present or absent.
+        // This invariant is also enforced in `check_transaction`.
+        let program_owner = match program_checksum.is_some() {
+            false => None,
+            true => match self.owner_map().get_confirmed(&(program_id, edition))? {
+                Some(owner) => Some(owner.address()),
+                None => bail!("Failed to get the owner for program '{program_id}' (edition {edition})"),
+            },
+        };
 
         // Initialize a vector for the verifying keys and certificates.
         let mut verifying_keys = Vec::with_capacity(program.functions().len());
@@ -565,7 +611,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Return the deployment.
-        Ok(Some(Deployment::new(edition, program, verifying_keys)?))
+        Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?))
     }
 
     /// Returns the fee for the given `transaction ID`.
@@ -834,7 +880,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         self.storage.edition_map().contains_key_confirmed(program_id)
     }
 
-    /// Returns `true` if the given program ID and edition exists.
+    /// Returns `true` if the given program ID and edition exist.
     pub fn contains_program_id_and_edition(&self, program_id: &ProgramID<N>, edition: u16) -> Result<bool> {
         self.storage.reverse_id_map().contains_key_confirmed(&(*program_id, edition))
     }
@@ -907,13 +953,17 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Sample the transactions.
-        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(0, true, rng);
-        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, false, rng);
-        let transactions = vec![transaction_0, transaction_1];
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng);
+        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
+        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
+        let transactions = vec![transaction_0, transaction_1, transaction_2, transaction_3, transaction_4];
 
         for transaction in transactions {
             let transaction_id = transaction.id();
             let program_id = *transaction.deployment().unwrap().program_id();
+            let checksum = transaction.deployment().unwrap().program_checksum();
             let edition = transaction.deployment().unwrap().edition();
 
             // Ensure the deployment transaction does not exist.
@@ -923,6 +973,19 @@ mod tests {
             // Insert the deployment transaction.
             deployment_store.insert(&transaction).unwrap();
 
+            // If the deployment has a checksum, then check that it exists in the checksum map.
+            match checksum {
+                Some(checksum) => {
+                    let candidate = deployment_store.checksum_map().get_confirmed(&(program_id, edition)).unwrap();
+                    assert_eq!(Some(checksum), candidate.map(|c| c.into_owned()));
+                }
+                None => {
+                    let candidate = deployment_store.checksum_map().get_confirmed(&(program_id, edition)).unwrap();
+                    assert_eq!(None, candidate);
+                }
+            }
+
+            // Check that the transaction exists in the ID edition map
             let candidate = deployment_store.id_edition_map().get_confirmed(&transaction_id).unwrap();
             assert_eq!(Some(edition), candidate.map(|e| *e));
 
@@ -936,6 +999,10 @@ mod tests {
 
             // Retrieve the latest edition for the program ID and verify that it matches.
             let actual = deployment_store.get_latest_edition_for_program(&program_id).unwrap();
+            assert_eq!(Some(edition), actual);
+
+            // Retrieve the latest edition for the transaction ID and verify that it matches.
+            let actual = deployment_store.get_edition_for_transaction(&transaction_id).unwrap();
             assert_eq!(Some(edition), actual);
 
             // Remove the deployment.
@@ -976,9 +1043,12 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Sample the transactions.
-        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(0, true, rng);
-        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, false, rng);
-        let transactions = vec![transaction_0, transaction_1];
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng);
+        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
+        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
+        let transactions = vec![transaction_0, transaction_1, transaction_2, transaction_3, transaction_4];
 
         for transaction in transactions {
             let transaction_id = transaction.id();
@@ -986,27 +1056,46 @@ mod tests {
                 Transaction::Deploy(_, _, _, ref deployment, _) => (*deployment.program_id(), deployment.edition()),
                 _ => panic!("Incorrect transaction type"),
             };
+            let fee_id = *transaction.fee_transition().unwrap().id();
 
             // Ensure the deployment transaction does not exist.
             let candidate = deployment_store.get_transaction(&transaction_id).unwrap();
             assert_eq!(None, candidate);
 
+            // A helper to test the `find_*` methods.
+            let test_find_methods = |program_exists: bool, transaction_exists: bool| {
+                // Find the latest transaction ID from the program ID.
+                let candidate_0 = deployment_store.find_latest_transaction_id_from_program_id(&program_id).unwrap();
+                // Find the transaction ID from the program ID and edition.
+                let candidate_1 =
+                    deployment_store.find_transaction_id_from_program_id_and_edition(&program_id, edition).unwrap();
+                // Find the transaction ID from the transition ID.
+                let candidate_2 = deployment_store.find_transaction_id_from_transition_id(&fee_id).unwrap();
+
+                // If the program exists, then the latest transaction ID should be found.
+                assert_eq!(program_exists, candidate_0.is_some());
+                // If the transaction exists, then the transaction ID should be found.
+                assert_eq!(transaction_exists, candidate_1.is_some());
+                assert_eq!(candidate_1, candidate_2);
+            };
+
             // If the edition is zero, then check that a transaction is not found.
             // Otherwise, check that the transaction is found.
             if edition == 0 {
-                let candidate = deployment_store.find_latest_transaction_id_from_program_id(&program_id).unwrap();
-                assert_eq!(None, candidate);
+                test_find_methods(false, false);
             } else {
-                let candidate = deployment_store.find_latest_transaction_id_from_program_id(&program_id).unwrap();
-                assert!(candidate.is_some());
+                test_find_methods(true, false);
             }
 
             // Insert the deployment.
             deployment_store.insert(&transaction).unwrap();
 
+            // Get the transaction again.
+            let candidate = deployment_store.get_transaction(&transaction_id).unwrap();
+            assert_eq!(Some(transaction.clone()), candidate);
+
             // Find the transaction ID.
-            let candidate = deployment_store.find_latest_transaction_id_from_program_id(&program_id).unwrap();
-            assert_eq!(Some(transaction_id), candidate);
+            test_find_methods(true, true);
 
             // Remove the deployment.
             deployment_store.remove(&transaction_id).unwrap();
@@ -1014,11 +1103,9 @@ mod tests {
             // If the edition is zero, then check that a transaction is not found.
             // Otherwise, check that the transaction is found.
             if edition == 0 {
-                let candidate = deployment_store.find_latest_transaction_id_from_program_id(&program_id).unwrap();
-                assert_eq!(None, candidate);
+                test_find_methods(false, false);
             } else {
-                let candidate = deployment_store.find_latest_transaction_id_from_program_id(&program_id).unwrap();
-                assert!(candidate.is_some());
+                test_find_methods(true, false);
             }
 
             // Insert the deployment again.

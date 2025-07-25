@@ -75,21 +75,60 @@ mod tests {
     fn sample_transactions(index: u32, rng: &mut TestRng) -> Transactions<CurrentNetwork> {
         if index == 0 {
             [
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(0, true, rng),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(1, false, rng),
+                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
+                    Uniform::rand(rng),
+                    1,
+                    Uniform::rand(rng),
+                    true,
+                    rng,
+                ),
+                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
+                    Uniform::rand(rng),
+                    1,
+                    Uniform::rand(rng),
+                    false,
+                    rng,
+                ),
+                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
+                    Uniform::rand(rng),
+                    2,
+                    Uniform::rand(rng),
+                    true,
+                    rng,
+                ),
+                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
+                    Uniform::rand(rng),
+                    2,
+                    Uniform::rand(rng),
+                    false,
+                    rng,
+                ),
             ]
             .into_iter()
             .collect()
         } else if index == 1 {
             [
-                crate::transactions::confirmed::test_helpers::sample_accepted_execute(0, true, rng),
-                crate::transactions::confirmed::test_helpers::sample_accepted_execute(1, false, rng),
+                crate::transactions::confirmed::test_helpers::sample_accepted_execute(Uniform::rand(rng), true, rng),
+                crate::transactions::confirmed::test_helpers::sample_accepted_execute(Uniform::rand(rng), false, rng),
             ]
             .into_iter()
             .collect()
         } else if index == 2 {
             [
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(0, true, rng),
+                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
+                    Uniform::rand(rng),
+                    1,
+                    Uniform::rand(rng),
+                    true,
+                    rng,
+                ),
+                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
+                    Uniform::rand(rng),
+                    2,
+                    Uniform::rand(rng),
+                    true,
+                    rng,
+                ),
                 crate::transactions::confirmed::test_helpers::sample_accepted_execute(1, true, rng),
                 crate::transactions::confirmed::test_helpers::sample_accepted_execute(2, false, rng),
             ]
@@ -98,22 +137,87 @@ mod tests {
         } else if index == 3 {
             [
                 crate::transactions::confirmed::test_helpers::sample_accepted_execute(0, true, rng),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(1, true, rng),
+                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
+                    Uniform::rand(rng),
+                    1,
+                    Uniform::rand(rng),
+                    true,
+                    rng,
+                ),
+                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
+                    Uniform::rand(rng),
+                    2,
+                    Uniform::rand(rng),
+                    true,
+                    rng,
+                ),
                 crate::transactions::confirmed::test_helpers::sample_rejected_execute(2, false, rng),
-                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(3, 0, false, rng),
+                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
+                    Uniform::rand(rng),
+                    1,
+                    Uniform::rand(rng),
+                    false,
+                    rng,
+                ),
+                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
+                    Uniform::rand(rng),
+                    2,
+                    Uniform::rand(rng),
+                    false,
+                    rng,
+                ),
             ]
             .into_iter()
             .collect()
         } else {
             [
                 crate::transactions::confirmed::test_helpers::sample_accepted_execute(0, true, rng),
-                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(1, 0, true, rng),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(2, true, rng),
+                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
+                    Uniform::rand(rng),
+                    1,
+                    Uniform::rand(rng),
+                    true,
+                    rng,
+                ),
+                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
+                    Uniform::rand(rng),
+                    2,
+                    Uniform::rand(rng),
+                    true,
+                    rng,
+                ),
+                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
+                    Uniform::rand(rng),
+                    1,
+                    Uniform::rand(rng),
+                    true,
+                    rng,
+                ),
+                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
+                    Uniform::rand(rng),
+                    2,
+                    Uniform::rand(rng),
+                    true,
+                    rng,
+                ),
                 crate::transactions::confirmed::test_helpers::sample_rejected_execute(3, true, rng),
                 crate::transactions::confirmed::test_helpers::sample_accepted_execute(4, false, rng),
                 crate::transactions::confirmed::test_helpers::sample_rejected_execute(5, false, rng),
                 crate::transactions::confirmed::test_helpers::sample_accepted_execute(6, false, rng),
-                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(7, 0, false, rng),
+                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
+                    Uniform::rand(rng),
+                    1,
+                    Uniform::rand(rng),
+                    false,
+                    rng,
+                ),
+                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
+                    Uniform::rand(rng),
+                    2,
+                    Uniform::rand(rng),
+                    false,
+                    rng,
+                ),
             ]
             .into_iter()
             .collect()

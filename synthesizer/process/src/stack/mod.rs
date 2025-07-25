@@ -37,7 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace, cost_in_microcredits_v2};
+use crate::{CallMetrics, Process, Trace, constructor_cost_in_microcredits, cost_in_microcredits_v2};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -95,13 +95,20 @@ use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
 
+/// The `CallStack` is used to track the current state of the program execution.
 #[derive(Clone)]
 pub enum CallStack<N: Network> {
+    /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
+    /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
+    /// Validate a `Deploy` transaction's function circuit.
     CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>),
+    /// Evaluate a function.
     Evaluate(Authorization<N>),
+    /// Execute a function and produce a proof.
     Execute(Authorization<N>, Arc<RwLock<Trace<N>>>),
+    /// Execute a function and create the circuit assignment.
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
 }
 
@@ -203,10 +210,12 @@ pub struct Stack<N: Network> {
     program: Program<N>,
     /// A reference to the global stack map.
     stacks: Weak<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
+    /// The register types for the program constructor, if it exists.
+    constructor_types: Arc<RwLock<Option<FinalizeTypes<N>>>>,
     /// The mapping of closure and function names to their register types.
-    register_types: IndexMap<Identifier<N>, RegisterTypes<N>>,
+    register_types: Arc<RwLock<IndexMap<Identifier<N>, RegisterTypes<N>>>>,
     /// The mapping of finalize names to their register types.
-    finalize_types: IndexMap<Identifier<N>, FinalizeTypes<N>>,
+    finalize_types: Arc<RwLock<IndexMap<Identifier<N>, FinalizeTypes<N>>>>,
     /// The universal SRS.
     universal_srs: UniversalSRS<N>,
     /// The mapping of function name to proving key.
@@ -215,54 +224,175 @@ pub struct Stack<N: Network> {
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The program address.
     program_address: Address<N>,
+    /// The program checksum.
+    program_checksum: [U8<N>; 32],
     /// The program edition.
     program_edition: U16<N>,
+    /// The program owner.
+    program_owner: Option<Address<N>>,
 }
 
 impl<N: Network> Stack<N> {
-    /// Initializes a new stack, if it does not already exist, given the process and the program.
+    /// Initializes a new stack given the process and the program.
     pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
         // Retrieve the program ID.
         let program_id = program.id();
-        // Ensure the program contains functions.
-        ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{program_id}'");
-        // If the program exists in the process, check that the new program exactly matches the existing program.
+        // Check that the program is well-formed.
+        check_program_is_well_formed(program)?;
+
+        // If the program exists in the process, check that the new program is valid.
         if let Ok(existing_stack) = process.get_stack(program_id) {
             // Ensure the program is not `credits.aleo`.
             ensure!(program_id != &ProgramID::from_str("credits.aleo")?, "Cannot re-initialize the 'credits.aleo'.");
-            // Ensure that the new program matches the existing program.
-            ensure!(
-                existing_stack.program() == program,
-                "Program '{program_id}' already exists with different contents."
-            );
+            // Get the existing program.
+            let existing_program = existing_stack.program();
+            // If the existing program does not have a constructor, check that the new program matches the existing program.
+            // Otherwise, ensure that the upgrade is valid.
+            match existing_program.contains_constructor() {
+                false => ensure!(
+                    existing_stack.program() == program,
+                    "Program '{program_id}' already exists with different contents."
+                ),
+                true => Self::check_upgrade_is_valid(existing_program, program)?,
+            }
         }
-
-        // Serialize the program into bytes.
-        let program_bytes = program.to_bytes_le()?;
-        // Ensure the program deserializes from bytes correctly.
-        ensure!(program == &Program::from_bytes_le(&program_bytes)?, "Program byte serialization failed");
-
-        // Serialize the program into string.
-        let program_string = program.to_string();
-        // Ensure the program deserializes from a string correctly.
-        ensure!(program == &Program::from_str(&program_string)?, "Program string serialization failed");
 
         // Return the stack.
         Stack::initialize(process, program)
     }
 
+    /// Partially initializes a new stack, given the process and the program, without checking for validity.
+    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `Stack::new` instead.
+    pub fn new_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
+        // Check that the program is well-formed.
+        check_program_is_well_formed(program)?;
+        // Return the stack.
+        Stack::create_raw(process, program, edition)
+    }
+
+    /// Initializes and checks the register state and well-formedness of the stack, even if it has already been initialized.
+    pub fn initialize_and_check(&self, process: &Process<N>) -> Result<()> {
+        // Acquire the locks for the constructor, register, and finalize types.
+        let mut constructor_types = self.constructor_types.write();
+        let mut register_types = self.register_types.write();
+        let mut finalize_types = self.finalize_types.write();
+
+        // Clear the existing constructor, closure, and function types.
+        constructor_types.take();
+        register_types.clear();
+        finalize_types.clear();
+
+        // Add all the imports into the stack.
+        for import in self.program.imports().keys() {
+            // Ensure that the program does not import itself.
+            ensure!(import != self.program.id(), "Program cannot import itself");
+            // Ensure the program imports all exist in the process already.
+            if !process.contains_program(import) {
+                bail!("Cannot add program '{}' because its import '{import}' must be added first", self.program.id())
+            }
+        }
+
+        // Add the constructor to the stack if it exists.
+        if let Some(constructor) = self.program.constructor() {
+            // Compute the constructor types.
+            let types = FinalizeTypes::from_constructor(self, constructor)?;
+            // Add the constructor types to the stack.
+            constructor_types.replace(types);
+        }
+
+        // Add the program closures to the stack.
+        for closure in self.program.closures().values() {
+            // Retrieve the closure name.
+            let name = closure.name();
+            // Ensure the closure name is not already added.
+            ensure!(!register_types.contains_key(name), "Closure '{name}' already exists");
+            // Compute the register types.
+            let types = RegisterTypes::from_closure(self, closure)?;
+            // Add the closure name and register types to the stack.
+            register_types.insert(*name, types);
+        }
+
+        // Add the program functions to the stack.
+        for function in self.program.functions().values() {
+            // Retrieve the function name.
+            let name = function.name();
+            // Ensure the function name is not already added.
+            ensure!(!register_types.contains_key(name), "Function '{name}' already exists");
+            // Compute the register types.
+            let types = RegisterTypes::from_function(self, function)?;
+            // Add the function name and register types to the stack.
+            register_types.insert(*name, types);
+
+            // If the function contains a finalize, insert it.
+            if let Some(finalize) = function.finalize_logic() {
+                // Compute the finalize types.
+                let types = FinalizeTypes::from_finalize(self, finalize)?;
+                // Add the finalize name and finalize types to the stack.
+                finalize_types.insert(*name, types);
+            }
+        }
+
+        // Drop the locks since the types have been initialized.
+        drop(constructor_types);
+        drop(register_types);
+        drop(finalize_types);
+
+        // Get the constructor cost.
+        let constructor_cost = constructor_cost_in_microcredits(self)?;
+        // Check that the constructor cost does not exceed the maximum.
+        ensure!(
+            constructor_cost <= N::TRANSACTION_SPEND_LIMIT,
+            "Constructor has a cost '{constructor_cost}' which exceeds the transaction spend limit '{}'",
+            N::TRANSACTION_SPEND_LIMIT
+        );
+
+        // Check that the functions are valid.
+        for function in self.program.functions().values() {
+            // Determine the number of calls for the function.
+            // This includes a safety check for the maximum number of calls.
+            self.get_number_of_calls(function.name())?;
+
+            // Get the finalize cost.
+            let finalize_cost = cost_in_microcredits_v2(self, function.name())?;
+            // Check that the finalize cost does not exceed the maximum.
+            ensure!(
+                finalize_cost <= N::TRANSACTION_SPEND_LIMIT,
+                "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
+                function.name(),
+                N::TRANSACTION_SPEND_LIMIT
+            );
+        }
+        Ok(())
+    }
+
+    /// Returns the constructor types for the program.
+    #[inline]
+    pub fn get_constructor_types(&self) -> Result<FinalizeTypes<N>> {
+        // Retrieve the constructor types.
+        match self.constructor_types.read().as_ref() {
+            Some(constructor_types) => Ok(constructor_types.clone()),
+            None => bail!("Constructor types do not exist"),
+        }
+    }
+
     /// Returns the register types for the given closure or function name.
     #[inline]
-    pub fn get_register_types(&self, name: &Identifier<N>) -> Result<&RegisterTypes<N>> {
+    pub fn get_register_types(&self, name: &Identifier<N>) -> Result<RegisterTypes<N>> {
         // Retrieve the register types.
-        self.register_types.get(name).ok_or_else(|| anyhow!("Register types for '{name}' do not exist"))
+        match self.register_types.read().get(name) {
+            Some(register_types) => Ok(register_types.clone()),
+            None => bail!("Register types for '{name}' do not exist"),
+        }
     }
 
     /// Returns the register types for the given finalize name.
     #[inline]
-    pub fn get_finalize_types(&self, name: &Identifier<N>) -> Result<&FinalizeTypes<N>> {
+    pub fn get_finalize_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
         // Retrieve the finalize types.
-        self.finalize_types.get(name).ok_or_else(|| anyhow!("Finalize types for '{name}' do not exist"))
+        match self.finalize_types.read().get(name) {
+            Some(finalize_types) => Ok(finalize_types.clone()),
+            None => bail!("Finalize types for '{name}' do not exist"),
+        }
     }
 
     /// Inserts the proving key if the program ID is 'credits.aleo'.
@@ -283,8 +413,8 @@ impl<N: Network> Stack<N> {
 impl<N: Network> PartialEq for Stack<N> {
     fn eq(&self, other: &Self) -> bool {
         self.program == other.program
-            && self.register_types == other.register_types
-            && self.finalize_types == other.finalize_types
+            && *self.register_types.read() == *other.register_types.read()
+            && *self.finalize_types.read() == *other.finalize_types.read()
     }
 }
 
@@ -308,4 +438,22 @@ impl<N: Network> Deref for StackRef<'_, N> {
             StackRef::External(stack) => stack,
         }
     }
+}
+
+// A helper function to check that a program is well-formed.
+fn check_program_is_well_formed<N: Network>(program: &Program<N>) -> Result<()> {
+    // Ensure the program contains functions.
+    ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{}'", program.id());
+
+    // Serialize the program into bytes.
+    let program_bytes = program.to_bytes_le()?;
+    // Ensure the program deserializes from bytes correctly.
+    ensure!(program == &Program::from_bytes_le(&program_bytes)?, "Program byte serialization failed");
+
+    // Serialize the program into string.
+    let program_string = program.to_string();
+    // Ensure the program deserializes from a string correctly.
+    ensure!(program == &Program::from_str(&program_string)?, "Program string serialization failed");
+
+    Ok(())
 }

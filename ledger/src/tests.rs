@@ -17,7 +17,7 @@ use crate::{
     Ledger,
     RecordsFilter,
     advance::split_candidate_solutions,
-    test_helpers::{CurrentAleo, CurrentLedger, CurrentNetwork},
+    test_helpers::{CurrentAleo, CurrentConsensusStorage, CurrentLedger, CurrentNetwork},
 };
 use aleo_std::StorageMode;
 use console::{
@@ -31,7 +31,11 @@ use snarkvm_ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejec
 use snarkvm_ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use snarkvm_ledger_narwhal::{BatchCertificate, BatchHeader, Data, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_store::ConsensusStore;
-use snarkvm_synthesizer::{Stack, program::Program, vm::VM};
+use snarkvm_synthesizer::{
+    Stack,
+    program::{Program, StackTrait},
+    vm::VM,
+};
 use snarkvm_utilities::try_vm_runtime;
 
 use indexmap::{IndexMap, IndexSet};
@@ -295,6 +299,21 @@ impl TestChainBuilder {
 
         block
     }
+}
+
+// A helper function to create the cache key for a transaction in the partially-verified transactions cache.
+fn create_cache_key(
+    vm: &VM<CurrentNetwork, CurrentConsensusStorage>,
+    transaction: &Transaction<CurrentNetwork>,
+) -> (<CurrentNetwork as Network>::TransactionID, Vec<U16<CurrentNetwork>>) {
+    // Get the program editions.
+    let program_editions = transaction
+        .transitions()
+        .map(|transition| vm.process().read().get_stack(transition.program_id()).map(|stack| stack.program_edition()))
+        .collect::<Result<Vec<_>>>()
+        .unwrap();
+    // Return the cache key.
+    (transaction.id(), program_editions)
 }
 
 #[test]
@@ -1102,8 +1121,10 @@ fn test_execute_duplicate_input_ids() {
     let num_duplicate_deployments = 3;
     let mut executions = Vec::with_capacity(num_duplicate_deployments + 1);
     let mut execution_ids = Vec::with_capacity(num_duplicate_deployments + 1);
+    let mut execution_cache_keys = Vec::with_capacity(num_duplicate_deployments + 1);
     let mut deployments = Vec::with_capacity(num_duplicate_deployments);
     let mut deployment_ids = Vec::with_capacity(num_duplicate_deployments);
+    let mut deployment_cache_keys = Vec::with_capacity(num_duplicate_deployments);
 
     // Create Executions and Deployments, spending the same record.
     for i in 0..num_duplicate_deployments {
@@ -1113,6 +1134,7 @@ fn test_execute_duplicate_input_ids() {
             .execute(&private_key, ("credits.aleo", "transfer_private"), inputs.clone().iter(), None, 0, None, rng)
             .unwrap();
         execution_ids.push(execution.id());
+        execution_cache_keys.push(create_cache_key(ledger.vm(), &execution));
         executions.push(execution);
         // Deploy.
         let program_id = ProgramID::<CurrentNetwork>::from_str(&format!("dummy_program_{i}.aleo")).unwrap();
@@ -1131,6 +1153,7 @@ finalize foo:
         let deployment =
             ledger.vm.deploy(&private_key, &program, Some(record_deployment.clone()), 0, None, rng).unwrap();
         deployment_ids.push(deployment.id());
+        deployment_cache_keys.push(create_cache_key(ledger.vm(), &deployment));
         deployments.push(deployment);
     }
 
@@ -1149,6 +1172,7 @@ finalize foo:
         )
         .unwrap();
     execution_ids.push(execution.id());
+    execution_cache_keys.push(create_cache_key(ledger.vm(), &execution));
     executions.push(execution);
 
     // Select a transaction to mutate by a malicious validator.
@@ -1183,12 +1207,14 @@ finalize foo:
     // Create a mutated transaction.
     let mutated_transaction = Transaction::from_execution(mutated_execution, Some(fee)).unwrap();
     execution_ids.push(mutated_transaction.id());
+    execution_cache_keys.push(create_cache_key(ledger.vm(), &mutated_transaction));
     executions.push(mutated_transaction);
 
     // Create a mutated execution which just takes the fee transition, resulting in a different transaction id.
     // This simulates a malicious validator transforming a transaction to a fee transaction.
     let mutated_transaction = Transaction::from_fee(transaction_to_mutate.fee_transition().unwrap()).unwrap();
     execution_ids.push(mutated_transaction.id());
+    execution_cache_keys.push(create_cache_key(ledger.vm(), &mutated_transaction));
     executions.push(mutated_transaction);
 
     // Create a block.
@@ -1230,13 +1256,13 @@ finalize foo:
     // Ensure that verification was not run on aborted deployments.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
 
-    assert!(partially_verified_transaction.contains(&execution_ids[2]));
-    assert!(partially_verified_transaction.contains(&deployment_ids[2]));
-    assert!(!partially_verified_transaction.contains(&execution_ids[1]));
-    assert!(!partially_verified_transaction.contains(&deployment_ids[1]));
-    assert!(!partially_verified_transaction.contains(&execution_ids[3]));
-    assert!(!partially_verified_transaction.contains(&execution_ids[4])); // Verification was run, but the execution was invalid.
-    assert!(!partially_verified_transaction.contains(&execution_ids[5]));
+    assert!(partially_verified_transaction.contains(&execution_cache_keys[2]));
+    assert!(partially_verified_transaction.contains(&deployment_cache_keys[2]));
+    assert!(!partially_verified_transaction.contains(&execution_cache_keys[1]));
+    assert!(!partially_verified_transaction.contains(&deployment_cache_keys[1]));
+    assert!(!partially_verified_transaction.contains(&execution_cache_keys[3]));
+    assert!(!partially_verified_transaction.contains(&execution_cache_keys[4])); // Verification was run, but the execution was invalid.
+    assert!(!partially_verified_transaction.contains(&execution_cache_keys[5]));
 
     // Prepare a transfer that will succeed for the subsequent block.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -1245,6 +1271,7 @@ finalize foo:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_id = transfer.id();
+    let transfer_cache_key = create_cache_key(ledger.vm(), &transfer);
 
     // Create a block.
     let block = ledger
@@ -1270,9 +1297,9 @@ finalize foo:
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transfer_id));
-    assert!(!partially_verified_transaction.contains(&execution_ids[0]));
-    assert!(!partially_verified_transaction.contains(&deployment_ids[0]));
+    assert!(partially_verified_transaction.contains(&transfer_cache_key));
+    assert!(!partially_verified_transaction.contains(&execution_cache_keys[0]));
+    assert!(!partially_verified_transaction.contains(&deployment_cache_keys[0]));
 }
 
 #[test]
@@ -1417,14 +1444,17 @@ function create_duplicate_record:
     // Create the first transfer.
     let transfer_1 = create_execution_with_duplicate_output_id(1);
     let transfer_1_id = transfer_1.id();
+    let transfer_1_cache_key = create_cache_key(ledger.vm(), &transfer_1);
 
     // Create a second transfer with the same output id.
     let transfer_2 = create_execution_with_duplicate_output_id(2);
     let transfer_2_id = transfer_2.id();
+    let transfer_2_cache_key = create_cache_key(ledger.vm(), &transfer_2);
 
     // Create a third transfer with the same output id.
     let transfer_3 = create_execution_with_duplicate_output_id(3);
     let transfer_3_id = transfer_3.id();
+    let transfer_3_cache_key = create_cache_key(ledger.vm(), &transfer_3);
 
     // Ensure that each transaction has a duplicate output id.
     let tx_1_output_id = transfer_1.output_ids().next().unwrap();
@@ -1436,14 +1466,17 @@ function create_duplicate_record:
     // Create the first deployment.
     let deployment_1 = create_deployment_with_duplicate_output_id(1);
     let deployment_1_id = deployment_1.id();
+    let deployment_1_cache_key = create_cache_key(ledger.vm(), &deployment_1);
 
     // Create a second deployment with the same output id.
     let deployment_2 = create_deployment_with_duplicate_output_id(2);
     let deployment_2_id = deployment_2.id();
+    let deployment_2_cache_key = create_cache_key(ledger.vm(), &deployment_2);
 
     // Create a third deployment with the same output id.
     let deployment_3 = create_deployment_with_duplicate_output_id(3);
     let deployment_3_id = deployment_3.id();
+    let deployment_3_cache_key = create_cache_key(ledger.vm(), &deployment_3);
 
     // Ensure that each transaction has a duplicate output id.
     let deployment_1_output_id = deployment_1.output_ids().next().unwrap();
@@ -1476,10 +1509,10 @@ function create_duplicate_record:
 
     // Ensure that verification was not run on aborted deployments.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transfer_1_id));
-    assert!(partially_verified_transaction.contains(&deployment_1_id));
-    assert!(!partially_verified_transaction.contains(&transfer_2_id));
-    assert!(!partially_verified_transaction.contains(&deployment_2_id));
+    assert!(partially_verified_transaction.contains(&transfer_1_cache_key));
+    assert!(partially_verified_transaction.contains(&deployment_1_cache_key));
+    assert!(!partially_verified_transaction.contains(&transfer_2_cache_key));
+    assert!(!partially_verified_transaction.contains(&deployment_2_cache_key));
 
     // Prepare a transfer that will succeed for the subsequent block.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -1488,6 +1521,7 @@ function create_duplicate_record:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_4_id = transfer_4.id();
+    let transfer_4_cache_key = create_cache_key(ledger.vm(), &transfer_4);
 
     // Create a block.
     let block = ledger
@@ -1513,9 +1547,9 @@ function create_duplicate_record:
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transfer_4_id));
-    assert!(!partially_verified_transaction.contains(&transfer_3_id));
-    assert!(!partially_verified_transaction.contains(&deployment_3_id));
+    assert!(partially_verified_transaction.contains(&transfer_4_cache_key));
+    assert!(!partially_verified_transaction.contains(&transfer_3_cache_key));
+    assert!(!partially_verified_transaction.contains(&deployment_3_cache_key));
 }
 
 #[test]
@@ -1594,14 +1628,17 @@ function empty_function:
     // Create the first transaction.
     let transaction_1 = create_transaction_with_duplicate_transition_id();
     let transaction_1_id = transaction_1.id();
+    let transaction_1_cache_key = create_cache_key(ledger.vm(), &transaction_1);
 
     // Create a second transaction with the same transition id.
     let transaction_2 = create_transaction_with_duplicate_transition_id();
     let transaction_2_id = transaction_2.id();
+    let transaction_2_cache_key = create_cache_key(ledger.vm(), &transaction_2);
 
     // Create a third transaction with the same transition_id
     let transaction_3 = create_transaction_with_duplicate_transition_id();
     let transaction_3_id = transaction_3.id();
+    let transaction_3_cache_key = create_cache_key(ledger.vm(), &transaction_3);
 
     // Ensure that each transaction has a duplicate transition id.
     let tx_1_transition_id = transaction_1.transition_ids().next().unwrap();
@@ -1628,8 +1665,8 @@ function empty_function:
 
     // Ensure that verification was not run on aborted transactions.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transaction_1_id));
-    assert!(!partially_verified_transaction.contains(&transaction_2_id));
+    assert!(partially_verified_transaction.contains(&transaction_1_cache_key));
+    assert!(!partially_verified_transaction.contains(&transaction_2_cache_key));
 
     // Prepare a transfer that will succeed for the subsequent block.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -1638,6 +1675,7 @@ function empty_function:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_transaction_id = transfer_transaction.id();
+    let transfer_cache_key = create_cache_key(ledger.vm(), &transfer_transaction);
 
     // Create a block.
     let block = ledger
@@ -1663,8 +1701,8 @@ function empty_function:
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transfer_transaction_id));
-    assert!(!partially_verified_transaction.contains(&transaction_3_id));
+    assert!(partially_verified_transaction.contains(&transfer_cache_key));
+    assert!(!partially_verified_transaction.contains(&transaction_3_cache_key));
 }
 
 #[test]
@@ -1738,14 +1776,17 @@ function simple_output:
     // Create the first transaction.
     let transaction_1 = create_transaction_with_duplicate_tpk("empty_function");
     let transaction_1_id = transaction_1.id();
+    let transaction_1_cache_key = create_cache_key(ledger.vm(), &transaction_1);
 
     // Create a second transaction with the same tpk and tcm.
     let transaction_2 = create_transaction_with_duplicate_tpk("simple_output");
     let transaction_2_id = transaction_2.id();
+    let transaction_2_cache_key = create_cache_key(ledger.vm(), &transaction_2);
 
     // Create a third transaction with the same tpk and tcm.
     let transaction_3 = create_transaction_with_duplicate_tpk("simple_output");
     let transaction_3_id = transaction_3.id();
+    let transaction_3_cache_key = create_cache_key(ledger.vm(), &transaction_3);
 
     // Ensure that each transaction has a duplicate tcm and tpk.
     let tx_1_tpk = transaction_1.transitions().next().unwrap().tpk();
@@ -1778,8 +1819,8 @@ function simple_output:
 
     // Ensure that verification was not run on aborted transactions.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transaction_1_id));
-    assert!(!partially_verified_transaction.contains(&transaction_2_id));
+    assert!(partially_verified_transaction.contains(&transaction_1_cache_key));
+    assert!(!partially_verified_transaction.contains(&transaction_2_cache_key));
 
     // Prepare a transfer that will succeed for the subsequent block.
     let inputs = [Value::from_str(&format!("{address}")).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -1788,6 +1829,7 @@ function simple_output:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_transaction_id = transfer_transaction.id();
+    let transfer_transaction_cache_key = create_cache_key(ledger.vm(), &transfer_transaction);
 
     // Create a block.
     let block = ledger
@@ -1813,8 +1855,8 @@ function simple_output:
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&transfer_transaction_id));
-    assert!(!partially_verified_transaction.contains(&transaction_3_id));
+    assert!(partially_verified_transaction.contains(&transfer_transaction_cache_key));
+    assert!(!partially_verified_transaction.contains(&transaction_3_cache_key));
 }
 
 #[test]
@@ -1846,10 +1888,12 @@ function empty_function:
     // Create a deployment transaction for the first program with the same public payer.
     let deployment_1 = ledger.vm.deploy(&private_key, &program_1, None, 0, None, rng).unwrap();
     let deployment_1_id = deployment_1.id();
+    let deployment_1_cache_key = create_cache_key(ledger.vm(), &deployment_1);
 
     // Create a deployment transaction for the second program with the same public payer.
     let deployment_2 = ledger.vm.deploy(&private_key, &program_2, None, 0, None, rng).unwrap();
     let deployment_2_id = deployment_2.id();
+    let deployment_2_cache_key = create_cache_key(ledger.vm(), &deployment_2);
 
     // Create a block.
     let block = ledger
@@ -1873,8 +1917,8 @@ function empty_function:
 
     // Ensure that verification was not run on aborted transactions.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
-    assert!(partially_verified_transaction.contains(&deployment_1_id));
-    assert!(!partially_verified_transaction.contains(&deployment_2_id));
+    assert!(partially_verified_transaction.contains(&deployment_1_cache_key));
+    assert!(!partially_verified_transaction.contains(&deployment_2_cache_key));
 }
 
 #[test]
@@ -2058,6 +2102,7 @@ finalize foo2:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 1);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
 
     // Enforce that the first program was deployed and the second was rejected.
     assert_eq!(ledger.get_program(*program_1.id()).unwrap(), program_1);

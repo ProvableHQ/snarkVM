@@ -21,7 +21,7 @@ use console::{account::ViewKey, network::ConsensusVersion};
 use snarkvm_ledger_store::ConsensusStore;
 use snarkvm_synthesizer_program::{Program, StackTrait as _};
 
-use crate::vm::test_helpers::sample_vm_at_height;
+use crate::vm::test_helpers::{advance_vm_to_height, sample_vm_at_height};
 use aleo_std::StorageMode;
 use console::program::ProgramOwner;
 use snarkvm_ledger_block::{Deployment, Transaction};
@@ -29,9 +29,9 @@ use snarkvm_ledger_block::{Deployment, Transaction};
 // This test checks that:
 //  - an existing program cannot be redeployed before `ConsensusVersion::V8`
 //  - an existing program cannot be redeployed with different code after `ConsensusVersion::V8`
-//  - an existing program can be redeployed with the same code after `ConsensusVersion::V8`
-//  - an existing program can only be redeployed once after `ConsensusVersion::V8`
-//  - a program with a mapping can be redeployed after `ConsensusVersion::V8`
+//  - an existing program can be redeployed with the same code after `ConsensusVersion::V8` (even after `V9`)
+//  - an existing program can only be redeployed once after `ConsensusVersion::V8` (even after `V9`)
+//  - a program with a mapping can be redeployed after `ConsensusVersion::V8` (even after `V9`)
 //  - after `ConsensusVersion::V8`, existing programs cannot be executed until they are redeployed.
 //  - the VM can be loaded from a store at the very end.
 #[test]
@@ -45,7 +45,7 @@ fn test_redeployment() -> Result<()> {
     let store = ConsensusStore::<CurrentNetwork, LedgerType>::open(StorageMode::new_test(None)).unwrap();
 
     // Initialize the VM.
-    let vm = VM::<CurrentNetwork, LedgerType>::from(store.clone())?;
+    let mut vm = VM::<CurrentNetwork, LedgerType>::from(store.clone())?;
     let genesis = sample_genesis_block(rng);
     vm.add_next_block(&genesis)?;
 
@@ -53,11 +53,12 @@ fn test_redeployment() -> Result<()> {
     let genesis_private_key = sample_genesis_private_key(rng);
 
     // Advance the VM to 3 blocks before `ConsensusVersion::V8`.
-    let desired_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)? - 3;
-    for _ in 0..desired_height {
-        let block = sample_next_block(&vm, &genesis_private_key, &[], rng).unwrap();
-        vm.add_next_block(&block).unwrap();
-    }
+    advance_vm_to_height(
+        &mut vm,
+        genesis_private_key,
+        CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)? - 3,
+        rng,
+    );
 
     // Initialize the programs
     let program = Program::from_str(
@@ -162,7 +163,12 @@ function dummy2:
     vm.add_next_block(&block)?;
 
     // Attempt to redeploy the program again after `ConsensusVersion::V8`.
-    assert!(vm.deploy(&caller_private_key, &program, None, 0, None, rng).is_err());
+    let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    vm.add_next_block(&block)?;
 
     // Drop the VM.
     drop(vm);
@@ -172,7 +178,7 @@ function dummy2:
 
     // Check that the latest block.
     let latest_block = vm.store.block_store().current_block_height();
-    assert_eq!(latest_block, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)? + 3);
+    assert_eq!(latest_block, CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)? + 4);
 
     // Check that the program can still be executed.
     let execute = vm.execute(
@@ -337,7 +343,8 @@ finalize run:
 // This test verifies that:
 //   - a program cannot be redeployed in the same block as its deployment
 //   - an edition 0 program cannot be executed if it is deployed after `ConsensusVersion::V8`
-//   - a program can be redeployed using the exact same deployment, different fee, and in a different block, after `ConsensusVersion::V8`
+//   - a program can be redeployed using the exact same deployment, different fee, and in a different block, after `ConsensusVersion::V8` (even after `ConsensusVersion::V9`)
+// Note: It is important that this invariant holds, otherwise block rollbacks in the DB can be inconsistent.
 #[test]
 fn test_deploy_and_redeploy() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -350,7 +357,7 @@ fn test_deploy_and_redeploy() -> Result<()> {
     let address = Address::try_from(&other_private_key)?;
 
     // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)?, rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V8)? - 1, rng);
 
     // Send some credits to the second caller.
     let transfer = vm.execute(
@@ -385,6 +392,8 @@ function dummy:
         deployment_0.edition() + 1,
         deployment_0.program().clone(),
         deployment_0.verifying_keys().clone(),
+        deployment_0.program_checksum(),
+        deployment_0.program_owner(),
     )?;
     let fee_authorization = vm.authorize_fee_public(
         &other_private_key,
@@ -424,10 +433,18 @@ function dummy:
     vm.add_next_block(&block)?;
 
     // Redeploy the program with the other private key, using the original deployment.
-    let deployment = Deployment::new(1, program.clone(), deployment_0.verifying_keys().clone())?;
+    let deployment = Deployment::new(
+        1,
+        program.clone(),
+        deployment_0.verifying_keys().clone(),
+        Some(deployment_0.program().to_checksum()),
+        Some(address),
+    )?;
+    // Note: This needs to be recalculated since the new deployment contains a checksum and owner.
+    let (base_fee_amount, _) = deployment_cost(&vm.process.read(), &deployment)?;
     let fee_authorization = vm.authorize_fee_public(
         &other_private_key,
-        *transaction_0.base_fee_amount()?,
+        base_fee_amount,
         *transaction_0.priority_fee_amount()?,
         deployment.to_deployment_id()?,
         rng,
@@ -458,7 +475,11 @@ function dummy:
     vm.add_next_block(&block)?;
 
     // Verify that the program cannot be redeployed further.
-    assert!(vm.deploy(&other_private_key, &program, None, 0, None, rng).is_err());
+    let transaction = vm.deploy(&other_private_key, &program, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
 
     Ok(())
 }

@@ -82,7 +82,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Construct a new execution.
-        let expected = crate::transaction::execution::test_helpers::sample_execution(rng);
+        let expected = crate::transaction::execution::test_helpers::sample_execution(rng, 0);
 
         // Check the byte representation.
         let expected_bytes = expected.to_bytes_le()?;

@@ -45,6 +45,9 @@ finalize test_arrays:
     assert.eq r7[0u32][1u32] false;
     assert.eq r7[0u32][2u32] false;
     assert.eq r7[0u32][3u32] false;
+    
+constructor:
+    assert.eq edition 0u16;
 
 
 

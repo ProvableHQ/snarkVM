@@ -15,16 +15,17 @@
 
 use super::*;
 
-impl<N: Network, A: circuit::Aleo<Network = N>> RegistersCall<N> for Registers<N, A> {
-    /// Returns the current call stack.
-    #[inline]
-    fn call_stack(&self) -> CallStack<N> {
-        self.call_stack.clone()
-    }
+impl<N: Network> ProgramCore<N> {
+    /// Returns the checksum of the program.
+    ///
+    /// The checksum is a 32-byte hash of the program's source code in string format.
+    /// This ensures a strict definition of program equivalence, useful for program upgradability.
+    pub fn to_checksum(&self) -> [U8<N>; 32] {
+        let mut keccak = TinySha3::v256();
+        keccak.update(self.to_string().as_bytes());
 
-    /// Returns a reference to the current call stack.
-    #[inline]
-    fn call_stack_ref(&self) -> &CallStack<N> {
-        &self.call_stack
+        let mut hash = [0u8; 32];
+        keccak.finalize(&mut hash);
+        hash.map(U8::new)
     }
 }

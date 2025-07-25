@@ -32,16 +32,31 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         rng: &mut R,
     ) -> Result<Transaction<N>> {
         // Compute the deployment.
-        let deployment = self.deploy_raw(program, rng)?;
+        let mut deployment = self.deploy_raw(program, rng)?;
         // Ensure the transaction is not empty.
         ensure!(!deployment.program().functions().is_empty(), "Attempted to create an empty transaction deployment");
+        // Get a default query if one is not provided.
+        let query = match query {
+            Some(q) => q,
+            None => &Query::VM(self.block_store().clone()),
+        };
+        // If the `CONSENSUS_VERSION` is less than `V9`, unset the program checksum and the owner.
+        // Otherwise, swap the default owner with the address of the private key.
+        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+        if consensus_version < ConsensusVersion::V9 {
+            deployment.set_program_checksum_raw(None);
+            deployment.set_program_owner_raw(None)
+        } else {
+            deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+            deployment.set_program_owner_raw(Some(Address::try_from(private_key)?));
+        }
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id()?;
         // Construct the owner.
         let owner = ProgramOwner::new(private_key, deployment_id, rng)?;
 
         // Compute the minimum deployment cost.
-        let (minimum_deployment_cost, _) = deployment_cost(&deployment)?;
+        let (minimum_deployment_cost, _) = deployment_cost(&self.process().read(), &deployment)?;
         // Authorize the fee.
         let fee_authorization = match fee_record {
             Some(record) => self.authorize_fee_private(
@@ -61,7 +76,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             )?,
         };
         // Compute the fee.
-        let fee = self.execute_fee_authorization(fee_authorization, query, rng)?;
+        let fee = self.execute_fee_authorization(fee_authorization, Some(query), rng)?;
 
         // Return the deploy transaction.
         Transaction::from_deployment(owner, deployment, fee)

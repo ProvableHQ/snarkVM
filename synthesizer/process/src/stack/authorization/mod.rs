@@ -157,15 +157,17 @@ impl<N: Network> Authorization<N> {
         for program_id in program_ids {
             // There is only one credits.aleo edition, so we can safely skip this case.
             if program_id.to_string() != "credits.aleo" {
-                // Get the program's current edition.
-                let _program_edition = *process.get_stack(program_id)?.program_edition();
-                // If we're past ConsensusVersion::V8, ensure new stacks are not on edition 0.
-                // TODO: Once upgradability lands, this check will be different. We
-                // can't just check the program edition anymore, it will need to be
-                // programs that are edition 0 with no constructor that can't be
-                // called.
+                // Get the stack.
+                let stack = process.get_stack(program_id)?;
+                // Get the program edition.
+                let _program_edition = *stack.program_edition();
+                // If we're past `ConsensusVersion::V8` but before `ConsensusVersion::V9`, ensure new stacks are not on edition 0.
+                // Note. This check does not apply to programs with constructors.
                 #[cfg(not(any(test, feature = "test")))]
-                if _consensus_version >= ConsensusVersion::V8 && _program_edition == 0 {
+                if _consensus_version >= ConsensusVersion::V8
+                    && _program_edition == 0
+                    && !stack.program().contains_constructor()
+                {
                     bail!("Cannot execute {program_id} on edition {_program_edition}");
                 }
             }

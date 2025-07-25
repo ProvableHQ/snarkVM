@@ -64,6 +64,10 @@ features = [ "preserve_order" ]
 [dependencies.snarkvm-synthesizer-snark]
 workspace = true
 
+[dependencies.tiny-keccak]
+version = "2"
+features = [ "sha3" ]
+
 [dev-dependencies.bincode]
 workspace = true
 

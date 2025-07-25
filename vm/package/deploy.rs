@@ -123,28 +123,13 @@ impl<N: Network> Package<N> {
         #[cfg(feature = "aleo-cli")]
         println!("⏳ Deploying '{}'...\n", program_id.to_string().bold());
 
-        // Construct the process.
-        let mut process = Process::<N>::load()?;
-
-        // Add program imports to the process.
-        let imports_directory = self.imports_directory();
-        program.imports().keys().try_for_each(|program_id| {
-            // TODO (howardwu): Add the following checks:
-            //  1) the imported program ID exists *on-chain* (for the given network)
-            //  2) the AVM bytecode of the imported program matches the AVM bytecode of the program *on-chain*
-            //  3) consensus performs the exact same checks (in `verify_deployment`)
-
-            // Open the Aleo program file.
-            let import_program_file = AleoFile::open(&imports_directory, program_id, false)?;
-            // Add the import program.
-            process.add_program(import_program_file.program())?;
-            Ok::<_, Error>(())
-        })?;
+        // Get the process.
+        let process = self.get_process()?;
 
         // Initialize the RNG.
         let rng = &mut rand::thread_rng();
         // Compute the deployment.
-        let deployment = process.deploy::<A, _>(program, rng).unwrap();
+        let deployment = process.get_stack(program_id)?.deploy::<A, _>(rng).unwrap();
 
         match endpoint {
             Some(ref endpoint) => {
@@ -167,9 +152,6 @@ impl<N: Network> Package<N> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    type CurrentNetwork = snarkvm_console::network::MainnetV0;
     type CurrentAleo = snarkvm_circuit::network::AleoV0;
 
     #[test]
@@ -181,7 +163,7 @@ mod tests {
         let deployment = package.deploy::<CurrentAleo>(None).unwrap();
 
         // Ensure the deployment edition matches.
-        assert_eq!(<CurrentNetwork as Network>::EDITION, deployment.edition());
+        assert_eq!(0, deployment.edition());
         // Ensure the deployment program ID matches.
         assert_eq!(package.program().id(), deployment.program_id());
         // Ensure the deployment program matches.
@@ -200,7 +182,7 @@ mod tests {
         let deployment = package.deploy::<CurrentAleo>(None).unwrap();
 
         // Ensure the deployment edition matches.
-        assert_eq!(<CurrentNetwork as Network>::EDITION, deployment.edition());
+        assert_eq!(0, deployment.edition());
         // Ensure the deployment program ID matches.
         assert_eq!(package.program().id(), deployment.program_id());
         // Ensure the deployment program matches.

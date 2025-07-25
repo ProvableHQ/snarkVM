@@ -15,6 +15,9 @@ function foo:
     assert.neq self.caller self.signer;
     output self.caller as address.public;
     output self.signer as address.public;
+    
+constructor:
+    assert.eq edition 0u16;
 
 /////////////////////////////////////////////////
 
@@ -28,4 +31,7 @@ function foo:
     output r1 as address.public;
     output self.caller as address.public;
     output self.signer as address.public;
+    
+constructor:
+    assert.eq edition 0u16;
 

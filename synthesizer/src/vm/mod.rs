@@ -30,7 +30,7 @@ use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
     program::{Argument, Identifier, Literal, Locator, Plaintext, ProgramID, ProgramOwner, Record, Response, Value},
-    types::{Field, Group, U64},
+    types::{Field, Group, U16, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{
@@ -95,6 +95,11 @@ use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
+// The key for the partially-verified transactions cache.
+// The key is a tuple of the transaction ID and a list of program checksums for the transitions in the transaction.
+// Note: If a program is upgraded and its contents are changed, then the program checksums will change, invalidating the previously cached result.
+type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<U16<N>>);
+
 #[derive(Clone)]
 pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// The process.
@@ -104,7 +109,7 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// The VM store.
     store: ConsensusStore<N, C>,
     /// A cache containing the list of recent partially-verified transactions.
-    partially_verified_transactions: Arc<RwLock<LruCache<N::TransactionID, N::TransmissionChecksum>>>,
+    partially_verified_transactions: Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>>,
     /// The restrictions list.
     restrictions: Restrictions<N>,
     /// The lock to guarantee atomicity over calls to speculate and finalize.
@@ -233,7 +238,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Returns the partially-verified transactions.
     #[inline]
-    pub fn partially_verified_transactions(&self) -> Arc<RwLock<LruCache<N::TransactionID, N::TransmissionChecksum>>> {
+    pub fn partially_verified_transactions(
+        &self,
+    ) -> Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>> {
         self.partially_verified_transactions.clone()
     }
 
@@ -451,7 +458,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // If the block advances to a new consensus version, clear the partial verification cache.
                 // TODO: This may have performance implications if the version
                 // list grows large as it is in the hot path.
-                if N::CONSENSUS_VERSION_HEIGHTS.iter().any(|(_, height)| height == &block.height()) {
+                if N::CONSENSUS_VERSION_HEIGHTS().iter().any(|(_, height)| height == &block.height()) {
                     self.partially_verified_transactions().write().clear();
                 }
                 Ok(())
@@ -536,7 +543,7 @@ pub(crate) mod test_helpers {
     use std::sync::OnceLock;
 
     pub(crate) type CurrentNetwork = MainnetV0;
-    type CurrentAleo = AleoV0;
+    pub(crate) type CurrentAleo = AleoV0;
 
     #[cfg(not(feature = "rocks"))]
     pub(crate) type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
@@ -556,16 +563,27 @@ pub(crate) mod test_helpers {
     #[cfg(feature = "test")]
     pub(crate) fn sample_vm_at_height(height: u32, rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
         // Initialize the VM with a genesis block.
-        let vm = sample_vm_with_genesis_block(rng);
+        let mut vm = sample_vm_with_genesis_block(rng);
         // Get the genesis private key.
         let genesis_private_key = sample_genesis_private_key(rng);
         // Advance the VM to the given height.
-        for _ in 0..height {
-            let block = sample_next_block(&vm, &genesis_private_key, &[], rng).unwrap();
-            vm.add_next_block(&block).unwrap();
-        }
+        advance_vm_to_height(&mut vm, genesis_private_key, height, rng);
         // Return the VM.
         vm
+    }
+
+    #[cfg(feature = "test")]
+    pub(crate) fn advance_vm_to_height(
+        vm: &mut VM<CurrentNetwork, LedgerType>,
+        genesis_private_key: PrivateKey<CurrentNetwork>,
+        height: u32,
+        rng: &mut TestRng,
+    ) {
+        // Advance the VM to the given height.
+        for _ in vm.block_store().current_block_height()..height {
+            let block = sample_next_block(vm, &genesis_private_key, &[], rng).unwrap();
+            vm.add_next_block(&block).unwrap();
+        }
     }
 
     pub(crate) fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
@@ -861,7 +879,7 @@ function compute:
         // Construct the new block header.
         let time_since_last_block = MainnetV0::BLOCK_TIME as i64;
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
-            sample_finalize_state(1),
+            sample_finalize_state(vm.block_store().current_block_height() + 1),
             time_since_last_block,
             None,
             vec![],
@@ -1554,8 +1572,14 @@ function do:
         let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
 
         // Create a new deployment transaction with the overreported verifying keys.
-        let adjusted_deployment =
-            Deployment::new(deployment.edition(), deployment.program().clone(), vks_with_overreport).unwrap();
+        let adjusted_deployment = Deployment::new(
+            deployment.edition(),
+            deployment.program().clone(),
+            vks_with_overreport,
+            deployment.program_checksum(),
+            deployment.program_owner(),
+        )
+        .unwrap();
         let adjusted_transaction = Transaction::from_deployment(program_owner, adjusted_deployment, fee).unwrap();
 
         // Verify the deployment transaction. It should error when certificate checking for constraint count mismatch.
@@ -1609,8 +1633,14 @@ function do:
         }
 
         // Create a new deployment transaction with the underreported verifying keys.
-        let adjusted_deployment =
-            Deployment::new(deployment.edition(), deployment.program().clone(), vks_with_underreport).unwrap();
+        let adjusted_deployment = Deployment::new(
+            deployment.edition(),
+            deployment.program().clone(),
+            vks_with_underreport,
+            deployment.program_checksum(),
+            deployment.program_owner(),
+        )
+        .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
         let adjusted_transaction =
             Transaction::Deploy(txid, deployment_id, program_owner, Box::new(adjusted_deployment), fee);
@@ -1684,8 +1714,14 @@ function do:
         }
 
         // Create a new deployment transaction with the underreported verifying keys.
-        let adjusted_deployment =
-            Deployment::new(deployment.edition(), deployment.program().clone(), vks_with_underreport).unwrap();
+        let adjusted_deployment = Deployment::new(
+            deployment.edition(),
+            deployment.program().clone(),
+            vks_with_underreport,
+            deployment.program_checksum(),
+            deployment.program_owner(),
+        )
+        .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
         let adjusted_transaction =
             Transaction::Deploy(txid, deployment_id, program_owner, Box::new(adjusted_deployment), fee);
@@ -3185,6 +3221,7 @@ function check:
         vm.add_next_block(&genesis).unwrap();
 
         // Fund two accounts to pay for the deployment.
+        // This has to be done because only one deployment can be made per fee-paying address per block.
         let private_key_1 = PrivateKey::new(rng).unwrap();
         let private_key_2 = PrivateKey::new(rng).unwrap();
         let address_1 = Address::try_from(&private_key_1).unwrap();
@@ -3215,6 +3252,8 @@ function check:
 
         let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 2);
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
         vm.add_next_block(&block).unwrap();
 
         // Deploy two programs that depend on each other.
@@ -3265,6 +3304,8 @@ function adder:
 
         let block = sample_next_block(&vm, &caller_private_key, &[deployment_1, deployment_2], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 1);
         vm.add_next_block(&block).unwrap();
 
         // Check that only `child_program.aleo` is in the VM.

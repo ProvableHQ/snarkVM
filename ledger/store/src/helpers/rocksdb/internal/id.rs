@@ -111,6 +111,7 @@ pub enum DeploymentMap {
     ReverseID = DataID::DeploymentReverseIDMap as u16,
     Owner = DataID::DeploymentOwnerMap as u16,
     Program = DataID::DeploymentProgramMap as u16,
+    Checksum = DataID::DeploymentChecksumMap as u16,
     VerifyingKey = DataID::DeploymentVerifyingKeyMap as u16,
     Certificate = DataID::DeploymentCertificateMap as u16,
 }
@@ -300,6 +301,8 @@ enum DataID {
     OutputRecordSenderMap,
     // Track edition based on transaction ID
     IDEditionMap,
+    // Track deployments that contain an optional checksum
+    DeploymentChecksumMap,
 
     // Testing
     #[cfg(test)]

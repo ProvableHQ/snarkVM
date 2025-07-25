@@ -51,9 +51,9 @@ pub mod test_helpers {
     }
 
     /// Samples a rejected deploy.
-    pub(crate) fn sample_rejected_deploy(edition: u16, rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
+    pub(crate) fn sample_rejected_deploy(version: u8, rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Sample the rejected deployment.
-        let rejected = snarkvm_ledger_test_helpers::sample_rejected_deployment(edition, rng.r#gen(), rng);
+        let rejected = snarkvm_ledger_test_helpers::sample_rejected_deployment(version, rng.r#gen(), rng.r#gen(), rng);
         // Return the rejected deploy.
         ConfirmedTxType::RejectedDeploy(rng.r#gen(), rejected)
     }
@@ -73,7 +73,8 @@ pub mod test_helpers {
         vec![
             sample_accepted_deploy(rng),
             sample_accepted_execution(rng),
-            sample_rejected_deploy(0, rng),
+            sample_rejected_deploy(1, rng),
+            sample_rejected_deploy(2, rng),
             sample_rejected_execute(rng),
         ]
     }

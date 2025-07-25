@@ -20,13 +20,15 @@ impl<A: Aleo> Request<A> {
     /// and the signature is valid.
     ///
     /// Verifies (challenge == challenge') && (address == address') && (serial_numbers == serial_numbers') where:
-    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, input IDs\])
+    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs\])
+    /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.
     pub fn verify(
         &self,
         input_types: &[console::ValueType<A::Network>],
         tpk: &Group<A>,
         root_tvk: Option<Field<A>>,
         is_root: Boolean<A>,
+        program_checksum: Option<Field<A>>,
     ) -> Boolean<A> {
         // Compute the function ID.
         let function_id = compute_function_id(&self.network_id, &self.program_id, &self.function_name);
@@ -40,6 +42,10 @@ impl<A: Aleo> Request<A> {
         message.push(self.tcm.clone());
         message.push(function_id);
         message.push(is_root);
+        // Add the program checksum to the signature message if it was provided.
+        if let Some(program_checksum) = program_checksum {
+            message.push(program_checksum);
+        }
 
         // Check the input IDs and construct the rest of the signature message.
         let (input_checks, append_to_message) = Self::check_input_ids::<true>(
@@ -61,6 +67,7 @@ impl<A: Aleo> Request<A> {
             None => A::halt("Missing input elements in request verification"),
         }
 
+        // Determine the root transition view key.
         let root_tvk = root_tvk.unwrap_or(Field::<A>::new(Mode::Private, self.tvk.eject_value()));
 
         // Verify the transition public key and commitments are well-formed.
@@ -324,6 +331,7 @@ mod tests {
         num_public: u64,
         num_private: u64,
         num_constraints: u64,
+        set_program_checksum: bool,
     ) -> Result<()> {
         let rng = &mut TestRng::default();
 
@@ -367,9 +375,10 @@ mod tests {
 
             // Sample 'root_tvk'.
             let root_tvk = None;
-
             // Sample 'is_root'.
             let is_root = true;
+            // Sample 'program_checksum'.
+            let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
 
             // Compute the signed request.
             let request = console::Request::sign(
@@ -380,18 +389,20 @@ mod tests {
                 &input_types,
                 root_tvk,
                 is_root,
+                program_checksum,
                 rng,
             )?;
-            assert!(request.verify(&input_types, is_root));
+            assert!(request.verify(&input_types, is_root, program_checksum));
 
             // Inject the request into a circuit.
             let tpk = Group::<Circuit>::new(mode, request.to_tpk());
             let request = Request::<Circuit>::new(mode, request);
             let is_root = Boolean::new(mode, is_root);
+            let program_checksum = program_checksum.map(|hash| Field::<Circuit>::new(mode, hash));
 
             Circuit::scope(format!("Request {i}"), || {
                 let root_tvk = None;
-                let candidate = request.verify(&input_types, &tpk, root_tvk, is_root);
+                let candidate = request.verify(&input_types, &tpk, root_tvk, is_root, program_checksum);
                 assert!(candidate.eject_value());
                 match mode.is_constant() {
                     true => assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints),
@@ -425,16 +436,19 @@ mod tests {
         // Note: This is correct. At this (high) level of a program, we override the default mode in the `Record` case,
         // based on the user-defined visibility in the record type. Thus, we have nonzero private and constraint values.
         // These bounds are determined experimentally.
-        check_verify(Mode::Constant, 45000, 0, 22000, 22000)
+        check_verify(Mode::Constant, 43440, 0, 21629, 21656, false)?;
+        check_verify(Mode::Constant, 43440, 0, 21629, 21656, true)
     }
 
     #[test]
     fn test_sign_and_verify_public() -> Result<()> {
-        check_verify(Mode::Public, 40938, 0, 30031, 30062)
+        check_verify(Mode::Public, 40938, 0, 30031, 30062, false)?;
+        check_verify(Mode::Public, 40938, 0, 30546, 30577, true)
     }
 
     #[test]
     fn test_sign_and_verify_private() -> Result<()> {
-        check_verify(Mode::Private, 40938, 0, 30031, 30062)
+        check_verify(Mode::Private, 40938, 0, 30031, 30062, false)?;
+        check_verify(Mode::Private, 40938, 0, 30546, 30577, true)
     }
 }

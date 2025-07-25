@@ -28,13 +28,13 @@ impl<N: Network> FromBytes for ProgramCore<N> {
         let id = ProgramID::read_le(&mut reader)?;
 
         // Initialize the program.
-        let mut program = ProgramCore::new(id).map_err(|e| error(e.to_string()))?;
+        let mut program = ProgramCore::new(id).map_err(error)?;
 
         // Read the number of program imports.
         let imports_len = u8::read_le(&mut reader)?;
         // Read the program imports.
         for _ in 0..imports_len {
-            program.add_import(Import::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?;
+            program.add_import(Import::read_le(&mut reader)?).map_err(error)?;
         }
 
         // Read the number of components.
@@ -45,15 +45,17 @@ impl<N: Network> FromBytes for ProgramCore<N> {
             // Match the variant.
             match variant {
                 // Read the mapping.
-                0 => program.add_mapping(Mapping::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?,
+                0 => program.add_mapping(Mapping::read_le(&mut reader)?).map_err(error)?,
                 // Read the struct.
-                1 => program.add_struct(StructType::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?,
+                1 => program.add_struct(StructType::read_le(&mut reader)?).map_err(error)?,
                 // Read the record.
-                2 => program.add_record(RecordType::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?,
+                2 => program.add_record(RecordType::read_le(&mut reader)?).map_err(error)?,
                 // Read the closure.
-                3 => program.add_closure(ClosureCore::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?,
+                3 => program.add_closure(ClosureCore::read_le(&mut reader)?).map_err(error)?,
                 // Read the function.
-                4 => program.add_function(FunctionCore::read_le(&mut reader)?).map_err(|e| error(e.to_string()))?,
+                4 => program.add_function(FunctionCore::read_le(&mut reader)?).map_err(error)?,
+                // Read the constructor.
+                5 => program.add_constructor(ConstructorCore::read_le(&mut reader)?).map_err(error)?,
                 // Invalid variant.
                 _ => return Err(error(format!("Failed to parse program. Invalid component variant '{variant}'"))),
             }
@@ -72,65 +74,81 @@ impl<N: Network> ToBytes for ProgramCore<N> {
         self.id.write_le(&mut writer)?;
 
         // Write the number of program imports.
-        u8::try_from(self.imports.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        u8::try_from(self.imports.len()).map_err(error)?.write_le(&mut writer)?;
         // Write the program imports.
         for import in self.imports.values() {
             import.write_le(&mut writer)?;
         }
 
         // Write the number of components.
-        u16::try_from(self.components.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        u16::try_from(self.components.len()).map_err(error)?.write_le(&mut writer)?;
+
         // Write the components.
-        for (identifier, definition) in self.components.iter() {
-            match definition {
-                ProgramDefinition::Mapping => match self.mappings.get(identifier) {
-                    Some(mapping) => {
+        for (label, definition) in self.components.iter() {
+            match label {
+                ProgramLabel::Constructor => {
+                    // Write the constructor, if it exists.
+                    if let Some(constructor) = &self.constructor {
                         // Write the variant.
-                        0u8.write_le(&mut writer)?;
-                        // Write the mapping.
-                        mapping.write_le(&mut writer)?;
+                        5u8.write_le(&mut writer)?;
+                        // Write the constructor.
+                        constructor.write_le(&mut writer)?;
                     }
-                    None => return Err(error(format!("Mapping '{identifier}' is not defined"))),
-                },
-                ProgramDefinition::Struct => match self.structs.get(identifier) {
-                    Some(struct_) => {
-                        // Write the variant.
-                        1u8.write_le(&mut writer)?;
-                        // Write the struct.
-                        struct_.write_le(&mut writer)?;
+                }
+                ProgramLabel::Identifier(identifier) => {
+                    match definition {
+                        ProgramDefinition::Constructor => {
+                            return Err(error("A program constructor cannot have a named label"));
+                        }
+                        ProgramDefinition::Mapping => match self.mappings.get(identifier) {
+                            Some(mapping) => {
+                                // Write the variant.
+                                0u8.write_le(&mut writer)?;
+                                // Write the mapping.
+                                mapping.write_le(&mut writer)?;
+                            }
+                            None => return Err(error(format!("Mapping '{identifier}' is not defined"))),
+                        },
+                        ProgramDefinition::Struct => match self.structs.get(identifier) {
+                            Some(struct_) => {
+                                // Write the variant.
+                                1u8.write_le(&mut writer)?;
+                                // Write the struct.
+                                struct_.write_le(&mut writer)?;
+                            }
+                            None => return Err(error(format!("Struct '{identifier}' is not defined."))),
+                        },
+                        ProgramDefinition::Record => match self.records.get(identifier) {
+                            Some(record) => {
+                                // Write the variant.
+                                2u8.write_le(&mut writer)?;
+                                // Write the record.
+                                record.write_le(&mut writer)?;
+                            }
+                            None => return Err(error(format!("Record '{identifier}' is not defined."))),
+                        },
+                        ProgramDefinition::Closure => match self.closures.get(identifier) {
+                            Some(closure) => {
+                                // Write the variant.
+                                3u8.write_le(&mut writer)?;
+                                // Write the closure.
+                                closure.write_le(&mut writer)?;
+                            }
+                            None => return Err(error(format!("Closure '{identifier}' is not defined."))),
+                        },
+                        ProgramDefinition::Function => match self.functions.get(identifier) {
+                            Some(function) => {
+                                // Write the variant.
+                                4u8.write_le(&mut writer)?;
+                                // Write the function.
+                                function.write_le(&mut writer)?;
+                            }
+                            None => return Err(error(format!("Function '{identifier}' is not defined."))),
+                        },
                     }
-                    None => return Err(error(format!("Struct '{identifier}' is not defined."))),
-                },
-                ProgramDefinition::Record => match self.records.get(identifier) {
-                    Some(record) => {
-                        // Write the variant.
-                        2u8.write_le(&mut writer)?;
-                        // Write the record.
-                        record.write_le(&mut writer)?;
-                    }
-                    None => return Err(error(format!("Record '{identifier}' is not defined."))),
-                },
-                ProgramDefinition::Closure => match self.closures.get(identifier) {
-                    Some(closure) => {
-                        // Write the variant.
-                        3u8.write_le(&mut writer)?;
-                        // Write the closure.
-                        closure.write_le(&mut writer)?;
-                    }
-                    None => return Err(error(format!("Closure '{identifier}' is not defined."))),
-                },
-                ProgramDefinition::Function => match self.functions.get(identifier) {
-                    Some(function) => {
-                        // Write the variant.
-                        4u8.write_le(&mut writer)?;
-                        // Write the function.
-                        function.write_le(&mut writer)?;
-                    }
-                    None => return Err(error(format!("Function '{identifier}' is not defined."))),
-                },
+                }
             }
         }
-
         Ok(())
     }
 }

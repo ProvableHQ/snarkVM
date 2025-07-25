@@ -21,11 +21,11 @@ use snarkvm_synthesizer::program::Program;
 use anyhow::{Result, bail};
 use itertools::Itertools;
 use serde_yaml::{Mapping, Sequence, Value};
+use snarkvm_console::{network::ConsensusVersion, prelude::Network};
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
-
 // TODO: Handle tests where the execution panics or fails.
 //  One approach is to create an enum `ExpectedOutput` which can be `Ok(Vec<Value>)` or `Err(String)`.
 
@@ -46,6 +46,8 @@ pub struct ProgramTest {
     randomness: Option<u64>,
     /// Additional keys for the test.
     keys: Vec<PrivateKey<CurrentNetwork>>,
+    /// The start height for the test.
+    start_height: u32,
 }
 
 impl ProgramTest {
@@ -67,6 +69,11 @@ impl ProgramTest {
     /// Returns the additional keys for the test.
     pub fn keys(&self) -> &[PrivateKey<CurrentNetwork>] {
         &self.keys
+    }
+
+    /// Returns the start height for the test.
+    pub fn start_height(&self) -> u32 {
+        self.start_height
     }
 
     /// Returns the path to the expectation file.
@@ -96,6 +103,15 @@ impl ExpectedTest for ProgramTest {
 
         // If the `randomness` field is present in the config, parse it as a `u64`.
         let randomness = test_config.get("randomness").map(|value| value.as_u64().expect("`randomness` must be a u64"));
+
+        // If the `start_height` field is present in the config, parse it as a `u32`.
+        // Otherwise use the latest consensus height as the default.
+        let start_height = test_config
+            .get("start_height")
+            .map(|value| value.as_u64().expect("`start_height` must be a u32"))
+            .unwrap_or(
+                CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::latest()).expect("Expected consensus height") as u64
+            ) as u32;
 
         // If the `keys` field is present in the config, parse it as a sequence of `PrivateKey`s.
         let keys = match test_config.get("keys") {
@@ -136,7 +152,7 @@ impl ExpectedTest for ProgramTest {
             }
         };
 
-        Self { programs, cases, expected, path, rewrite, randomness, keys }
+        Self { programs, cases, expected, path, rewrite, randomness, keys, start_height }
     }
 
     fn check(&self, output: &Self::Output) -> Result<()> {

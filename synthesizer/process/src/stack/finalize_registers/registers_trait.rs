@@ -45,6 +45,36 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
             Operand::NetworkID => {
                 return Ok(Value::Plaintext(Plaintext::from(Literal::U16(U16::new(N::ID)))));
             }
+            // If the operand is the checksum, load the checksum.
+            Operand::Checksum(program_id) => {
+                let checksum = match program_id {
+                    Some(program_id) => *stack.get_external_stack(program_id)?.program_checksum(),
+                    None => *stack.program_checksum(),
+                };
+                return Ok(Value::Plaintext(Plaintext::from(checksum)));
+            }
+            // If the operand is the edition, load the edition.
+            Operand::Edition(program_id) => {
+                let edition = match program_id {
+                    Some(program_id) => stack.get_external_stack(program_id)?.program_edition(),
+                    None => stack.program_edition(),
+                };
+                return Ok(Value::Plaintext(Plaintext::from(Literal::U16(edition))));
+            }
+            // If the operand is the program owner, load the program address.
+            Operand::ProgramOwner(program_id) => {
+                // Get the program owner from the stack.
+                let program_owner = match program_id {
+                    Some(program_id) => *stack.get_external_stack(program_id)?.program_owner(),
+                    None => *stack.program_owner(),
+                };
+                // Get the address, if it exists.
+                let address = match program_owner {
+                    Some(address) => address,
+                    None => bail!("The program owner does not exist for the program '{}'.", stack.program_id()),
+                };
+                return Ok(Value::Plaintext(Plaintext::from(Literal::Address(address))));
+            }
         };
 
         // Retrieve the value.

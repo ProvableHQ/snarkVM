@@ -18,8 +18,9 @@ use super::*;
 impl<N: Network> Serialize for Transaction<N> {
     /// Serializes the transaction to a JSON-string or buffer.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Note: We purposefully do not write out the deployment or execution ID,
+        // and instead recompute it when reconstructing the transaction, to ensure there was no malleability.
         match serializer.is_human_readable() {
-            // We don't write the deployment or execution id, which are recomputed when creating the Transaction.
             true => match self {
                 Self::Deploy(id, _, owner, deployment, fee) => {
                     let mut transaction = serializer.serialize_struct("Transaction", 5)?;
@@ -119,10 +120,12 @@ mod tests {
         let rng = &mut TestRng::default();
 
         for expected in [
-            crate::transaction::test_helpers::sample_deployment_transaction(0, true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(0, false, rng),
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng),
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]
         .into_iter()
         {
@@ -142,10 +145,12 @@ mod tests {
         let rng = &mut TestRng::default();
 
         for expected in [
-            crate::transaction::test_helpers::sample_deployment_transaction(0, true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(0, false, rng),
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng),
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
+            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]
         .into_iter()
         {

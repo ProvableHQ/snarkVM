@@ -18,6 +18,8 @@ use crate::{
     synthesizer::Program,
 };
 
+use snarkvm_circuit::prelude::IndexMap;
+
 use anyhow::{Result, anyhow, ensure};
 use core::str::FromStr;
 use std::{
@@ -33,6 +35,8 @@ pub struct Manifest<N: Network> {
     path: PathBuf,
     /// The program ID.
     program_id: ProgramID<N>,
+    /// The program editions.
+    editions: IndexMap<ProgramID<N>, u16>,
 }
 
 impl<N: Network> Manifest<N> {
@@ -49,7 +53,8 @@ impl<N: Network> Manifest<N> {
     "program": "{id}",
     "version": "0.0.0",
     "description": "",
-    "license": "MIT"
+    "license": "MIT",
+    "editions": "{{}}"
 }}
 "#
         );
@@ -63,7 +68,7 @@ impl<N: Network> Manifest<N> {
         File::create(&path)?.write_all(manifest_string.as_bytes())?;
 
         // Return the manifest file.
-        Ok(Self { path, program_id: *id })
+        Ok(Self { path, program_id: *id, editions: IndexMap::new() })
     }
 
     /// Opens the manifest file for reading.
@@ -86,8 +91,20 @@ impl<N: Network> Manifest<N> {
         // Ensure the program name is valid.
         ensure!(!Program::is_reserved_keyword(id.name()), "Program name is invalid (reserved): {id}");
 
+        // Initialize storage for the program editions.
+        let mut editions = IndexMap::<ProgramID<N>, u16>::new();
+
+        // Retrieve the editions in the manifest, if they exist.
+        if let Some(editions_object) = json["editions"].as_object() {
+            for (id_string, value) in editions_object {
+                let id = ProgramID::from_str(id_string)?;
+                let value = u16::try_from(value.as_u64().ok_or_else(|| anyhow!("The edition must be a number."))?)?;
+                editions.insert(id, value);
+            }
+        }
+
         // Return the manifest file.
-        Ok(Self { path, program_id: id })
+        Ok(Self { path, program_id: id, editions })
     }
 
     /// Returns `true` if the manifest file exists at the given path.
@@ -111,5 +128,10 @@ impl<N: Network> Manifest<N> {
     /// Returns the program ID.
     pub const fn program_id(&self) -> &ProgramID<N> {
         &self.program_id
+    }
+
+    /// Returns the program editions.
+    pub const fn editions(&self) -> &IndexMap<ProgramID<N>, u16> {
+        &self.editions
     }
 }

@@ -42,6 +42,8 @@ impl<N: Network> Process<N> {
         }
 
         // Ensure the program is well-formed, by computing the stack.
+        // Note: The program owner is intentionally not set, since `program_owner` is an operand
+        //   that is only available in a finalize scope.
         let stack = Stack::new(self, deployment.program())?;
         lap!(timer, "Compute the stack");
 

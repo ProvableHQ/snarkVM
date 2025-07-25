@@ -653,8 +653,8 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample the transactions.
-        let transaction_0 = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng);
-        let transaction_1 = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng);
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0);
         let transactions = vec![transaction_0, transaction_1];
 
         for transaction in transactions {

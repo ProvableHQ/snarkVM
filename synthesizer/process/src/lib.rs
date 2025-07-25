@@ -62,6 +62,7 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
+use snarkvm_utilities::defer;
 
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
@@ -118,23 +119,9 @@ impl<N: Network> Process<N> {
         Ok(process)
     }
 
-    /// Adds a new program to the process.
-    /// If the program exists, then the existing program is replaced and discarded.
-    /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
-    #[inline]
-    pub fn add_program(&mut self, program: &Program<N>) -> Result<Option<Arc<Stack<N>>>> {
-        // Initialize the 'credits.aleo' program ID.
-        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
-        // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
-        if program.id() != &credits_program_id {
-            return Ok(self.add_stack(Stack::new(self, program)?));
-        }
-        Ok(None)
-    }
-
     /// Adds a new stack to the process.
-    /// If the program exists, then the existing stack is replaced and discarded
-    /// If you intend to `execute` the program, use `deploy` and `finalize_deployment` instead.
+    /// If the program already exists, then the existing stack is replaced and the original stack is returned.
+    /// Note. This method assumes that the provided stack is valid.
     #[inline]
     pub fn add_stack(&mut self, stack: Stack<N>) -> Option<Arc<Stack<N>>> {
         // Get the program ID.
@@ -291,6 +278,66 @@ impl<N: Network> Process<N> {
         Ok(process)
     }
 
+    /// Adds a new program to the process, verifying that it is a valid addition.
+    /// If the program exists, then the existing stack is replaced and discarded.
+    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
+    #[inline]
+    pub fn add_program(&mut self, program: &Program<N>) -> Result<()> {
+        // Initialize the 'credits.aleo' program ID.
+        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
+        // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
+        if program.id() != &credits_program_id {
+            self.add_stack(Stack::new(self, program)?);
+        }
+        Ok(())
+    }
+
+    /// Adds a new program with the given edition to the process, verifying that it is a valid addition.
+    /// If the program exists, then the existing stack is replaced and discarded.
+    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
+    #[inline]
+    pub fn add_program_with_edition(&mut self, program: &Program<N>, edition: u16) -> Result<()> {
+        // Initialize the 'credits.aleo' program ID.
+        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
+        // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
+        if program.id() != &credits_program_id {
+            let stack = Stack::new_raw(self, program, edition)?;
+            stack.initialize_and_check(self)?;
+            self.add_stack(stack);
+        }
+        Ok(())
+    }
+
+    /// Adds a set of programs and editions, in topological order, to the process, deferring validation of the programs until all programs are added.
+    /// If a program exists, then the existing stack is replaced and discarded.
+    /// Either all programs are added or none are.
+    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
+    #[inline]
+    pub fn add_programs_with_editions(&mut self, programs: &[(Program<N>, u16)]) -> Result<()> {
+        // Initialize the 'credits.aleo' program ID.
+        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
+        // Defer cleanup of the uncommitted stacks.
+        defer! {
+            self.revert_stacks()
+        }
+        // Initialize raw stacks for each of the programs, skipping `credits.aleo`.
+        for (program, edition) in programs {
+            if program.id() != &credits_program_id {
+                self.stage_stack(Stack::new_raw(self, program, *edition)?)
+            }
+        }
+        // For each stack, check and initialize it before adding it to the process.
+        for (program, _) in programs {
+            // Retrieve the stack.
+            let stack = self.get_stack(program.id())?;
+            // Initialize and check the stack for well-formedness.
+            stack.initialize_and_check(self)?;
+        }
+        // Commit the staged stacks.
+        self.commit_stacks();
+        Ok(())
+    }
+
     /// Returns the universal SRS.
     #[inline]
     pub const fn universal_srs(&self) -> &UniversalSRS<N> {
@@ -301,6 +348,12 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
         self.stacks.read().contains_key(program_id)
+    }
+
+    /// Returns the program IDs of all programs in the process.
+    #[inline]
+    pub fn program_ids(&self) -> Vec<ProgramID<N>> {
+        self.stacks.read().keys().copied().collect()
     }
 
     /// Returns the stack for the given program ID.

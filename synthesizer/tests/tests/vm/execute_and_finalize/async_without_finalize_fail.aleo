@@ -11,6 +11,9 @@ function foo:
     async foo self.caller into r2;
     add r0 r1 into r3;
     output r3 as field.private;
+    
+constructor:
+    assert.eq edition 0u16;
 
 
 

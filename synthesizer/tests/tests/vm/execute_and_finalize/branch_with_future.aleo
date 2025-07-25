@@ -33,6 +33,9 @@ finalize foo:
     input r0 as boolean.public;
     input r1 as boolean.public;
     assert.eq r0 r1;
+    
+constructor:
+    assert.eq edition 0u16;
 
 
 /////////////////////////////////////////////////
@@ -87,3 +90,6 @@ finalize qux:
     input r0 as child.aleo/foo.future;
     await r0;
     await r0;
+    
+constructor:
+    assert.eq edition 0u16;

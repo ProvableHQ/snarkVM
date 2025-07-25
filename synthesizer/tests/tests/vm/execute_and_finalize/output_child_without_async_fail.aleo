@@ -18,6 +18,9 @@ finalize foo:
     get.or_use count[r0] 0field into r1;
     add r1 1field into r2;
     set r2 into count[r0];
+    
+constructor:
+    assert.eq edition 0u16;
 
 /////////////////////////////////////////////////
 
@@ -28,5 +31,8 @@ program parent.aleo;
 function foo:
     call child.aleo/foo into r0;
     output r2 as child.aleo/foo.future;
+    
+constructor:
+    assert.eq edition 0u16;
 
 

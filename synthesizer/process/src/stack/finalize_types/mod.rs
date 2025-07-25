@@ -31,6 +31,7 @@ use console::{
         RegisterType,
         StructType,
     },
+    types::U32,
 };
 use snarkvm_synthesizer_program::{
     Await,
@@ -38,6 +39,7 @@ use snarkvm_synthesizer_program::{
     CallOperator,
     CastType,
     Command,
+    Constructor,
     Contains,
     Finalize,
     Get,
@@ -54,7 +56,7 @@ use snarkvm_synthesizer_program::{
 };
 
 use indexmap::IndexMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct FinalizeTypes<N: Network> {
@@ -67,11 +69,18 @@ pub struct FinalizeTypes<N: Network> {
 }
 
 impl<N: Network> FinalizeTypes<N> {
+    /// Initializes a new instance of `FinalizeTypes` for the given constructor.
+    /// Checks that the given constructor is well-formed for the given stack.
+    #[inline]
+    pub fn from_constructor(stack: &Stack<N>, constructor: &Constructor<N>) -> Result<Self> {
+        Self::initialize_finalize_types_from_constructor(stack, constructor)
+    }
+
     /// Initializes a new instance of `FinalizeTypes` for the given finalize.
     /// Checks that the given finalize is well-formed for the given stack.
     #[inline]
     pub fn from_finalize(stack: &Stack<N>, finalize: &Finalize<N>) -> Result<Self> {
-        Self::initialize_finalize_types(stack, finalize)
+        Self::initialize_finalize_types_from_finalize(stack, finalize)
     }
 
     /// Returns `true` if the given register exists.
@@ -98,6 +107,12 @@ impl<N: Network> FinalizeTypes<N> {
             Operand::Caller => bail!("'self.caller' is not a valid operand in a finalize context."),
             Operand::BlockHeight => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U32)),
             Operand::NetworkID => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U16)),
+            Operand::Checksum(_) => FinalizeType::Plaintext(PlaintextType::Array(ArrayType::new(
+                PlaintextType::Literal(LiteralType::U8),
+                vec![U32::new(32)],
+            )?)),
+            Operand::Edition(_) => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U16)),
+            Operand::ProgramOwner(_) => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Address)),
         })
     }
 

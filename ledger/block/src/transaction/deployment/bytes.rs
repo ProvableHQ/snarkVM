@@ -18,12 +18,12 @@ use super::*;
 impl<N: Network> FromBytes for Deployment<N> {
     /// Reads the deployment from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the version.
-        let version = u8::read_le(&mut reader)?;
-        // Ensure the version is valid.
-        if version != 1 {
-            return Err(error("Invalid deployment version"));
-        }
+        // Read the version and ensure the version is valid.
+        let version = match u8::read_le(&mut reader)? {
+            1 => DeploymentVersion::V1,
+            2 => DeploymentVersion::V2,
+            version => return Err(error(format!("Invalid deployment version: {version}"))),
+        };
 
         // Read the edition.
         let edition = u16::read_le(&mut reader)?;
@@ -45,16 +45,48 @@ impl<N: Network> FromBytes for Deployment<N> {
             verifying_keys.push((identifier, (verifying_key, certificate)));
         }
 
+        // If the deployment version is 2, read the program checksum and verify it.
+        let program_checksum = match version {
+            DeploymentVersion::V1 => None,
+            DeploymentVersion::V2 => {
+                // Read the program checksum.
+                let bytes: [u8; 32] = FromBytes::read_le(&mut reader)?;
+                let checksum = bytes.map(U8::new);
+                // Verify the checksum.
+                if checksum != program.to_checksum() {
+                    return Err(error(format!(
+                        "Invalid checksum in the deployment: expected [{}], got [{}]",
+                        program.to_checksum().iter().join(", "),
+                        checksum.iter().join(", ")
+                    )));
+                }
+                Some(checksum)
+            }
+        };
+        // If the deployment version is 2, read the program owner.
+        let program_owner = match version {
+            DeploymentVersion::V1 => None,
+            DeploymentVersion::V2 => {
+                // Read the program owner.
+                let owner = Address::<N>::read_le(&mut reader)?;
+                Some(owner)
+            }
+        };
+
         // Return the deployment.
-        Self::new(edition, program, verifying_keys).map_err(|err| error(format!("{err}")))
+        Self::new(edition, program, verifying_keys, program_checksum, program_owner)
+            .map_err(|err| error(format!("{err}")))
     }
 }
 
 impl<N: Network> ToBytes for Deployment<N> {
     /// Writes the deployment to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        // Determine the version.
+        // Note: This method checks that either both or neither of the program checksum and program owner are present.
+        let version = self.version().map_err(error)?;
         // Write the version.
-        1u8.write_le(&mut writer)?;
+        (version as u8).write_le(&mut writer)?;
         // Write the edition.
         self.edition.write_le(&mut writer)?;
         // Write the program.
@@ -70,6 +102,16 @@ impl<N: Network> ToBytes for Deployment<N> {
             // Write the certificate.
             certificate.write_le(&mut writer)?;
         }
+        // If the deployment version is 2, write the program checksum and program owner.
+        // Note: The unwraps are safe because `Deployment::version` only returns `V2` if both the checksum and owner is present.
+        if version == DeploymentVersion::V2 {
+            // Write the bytes of the checksum.
+            for byte in &self.program_checksum.unwrap() {
+                byte.write_le(&mut writer)?;
+            }
+            // Write the bytes of the owner.
+            self.program_owner.unwrap().write_le(&mut writer)?;
+        }
         Ok(())
     }
 }
@@ -82,12 +124,16 @@ mod tests {
     fn test_bytes() -> Result<()> {
         let rng = &mut TestRng::default();
 
-        // Construct a new deployment.
-        let expected = test_helpers::sample_deployment(0, rng);
+        // Construct the deployments.
+        for expected in [
+            test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
+        ] {
+            // Check the byte representation.
+            let expected_bytes = expected.to_bytes_le()?;
+            assert_eq!(expected, Deployment::read_le(&expected_bytes[..])?);
+        }
 
-        // Check the byte representation.
-        let expected_bytes = expected.to_bytes_le()?;
-        assert_eq!(expected, Deployment::read_le(&expected_bytes[..])?);
         Ok(())
     }
 }

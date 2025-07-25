@@ -32,6 +32,11 @@ impl<N: Network> Stack<N> {
         let program_id = self.program_id();
         // Retrieve the function input types.
         let input_types = self.get_function(function_name)?.input_types();
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match self.program().contains_constructor() {
+            true => Some(self.program_checksum_as_field()?),
+            false => None,
+        };
 
         // Initialize a burner private key.
         let burner_private_key = PrivateKey::new(rng)?;
@@ -50,13 +55,11 @@ impl<N: Network> Stack<N> {
                 _ => self.sample_value(&burner_address, input_type, rng),
             })
             .collect::<Result<Vec<_>>>()?;
-        // Sample 'is_root'.
+        // Sample a dummy 'is_root'.
         let is_root = true;
-
-        // The `root_tvk` is `None` when deploying an individual circuit.
+        // Sample a dummy `root_tvk` for circuit synthesis.
         let root_tvk = None;
-
-        // The caller is `None` when deploying an individual circuit.
+        // Sample a dummy `caller` for circuit synthesis.
         let caller = None;
 
         // Compute the request, with a burner private key.
@@ -68,6 +71,7 @@ impl<N: Network> Stack<N> {
             &input_types,
             root_tvk,
             is_root,
+            program_checksum,
             rng,
         )?;
         // Initialize the authorization.

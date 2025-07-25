@@ -52,6 +52,9 @@ function unregister:
 finalize unregister:
     input r0 as address.public;
     set false into users[r0];
+    
+constructor:
+    assert.eq edition 0u16;
 
 /////////////////////////////////////////////////
 
@@ -98,3 +101,6 @@ finalize send_without_check:
     input r0 as address.public;
     get.or_use registry.aleo/users[r0] true into r1;
     assert.eq r1 true;
+
+constructor:
+    assert.eq edition 0u16;

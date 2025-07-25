@@ -66,10 +66,30 @@ fn bhp1024(c: &mut Criterion) {
     c.bench_function(&format!("BHP1024 Hash - input size {}", input.len()), |b| b.iter(|| hash.hash(&input)));
 }
 
+fn bhp1024_large(c: &mut Criterion) {
+    const SIZE_IN_BYTES: [usize; 4] =
+        [1_000 /* 1 kB */, 10_000 /* 10 kB */, 100_000 /* 100 kB */, 1_000_000 /* 1 MB */];
+    let rng = &mut TestRng::default();
+
+    // Benchmark the BHP1024 hash function for different input sizes.
+    for size in SIZE_IN_BYTES.iter() {
+        let input = (0..size * 8).map(|_| bool::rand(rng)).collect::<Vec<_>>();
+        c.bench_function(&format!("BHP1024 Hash - input size {size} bytes"), |b| {
+            b.iter(|| BHP1024::<Console>::setup("BHP1024").unwrap().hash(&input))
+        });
+    }
+}
+
 criterion_group! {
     name = bhp;
     config = Criterion::default().sample_size(1000);
     targets = bhp256, bhp512, bhp768, bhp1024
 }
 
-criterion_main!(bhp);
+criterion_group! {
+    name = bhp_large;
+    config = Criterion::default().sample_size(100);
+    targets = bhp1024_large
+}
+
+criterion_main!(bhp, bhp_large);

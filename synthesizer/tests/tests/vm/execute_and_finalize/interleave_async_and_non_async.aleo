@@ -48,6 +48,9 @@ finalize save_inner_rand:
 
 function dummy:
 
+constructor:
+    assert.eq edition 0u16;
+
 /////////////////////////////////////////////////
 
 import inner.aleo;
@@ -86,6 +89,9 @@ finalize save_mid_rand_2:
     set r1 into rand_store[0u8];
 
 function dummy:
+
+constructor:
+    assert.eq edition 0u16;
 
 
 /////////////////////////////////////////////////
@@ -143,4 +149,7 @@ finalize call_mid_3:
     await r0;
 
 function dummy:
+
+constructor:
+    assert.eq edition 0u16;
 

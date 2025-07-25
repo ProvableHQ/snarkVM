@@ -40,7 +40,15 @@ pub use position::*;
 mod set;
 pub use set::*;
 
-use crate::{CastType, FinalizeOperation, FinalizeRegistersState, FinalizeStoreTrait, Instruction, StackTrait};
+use crate::{
+    CastType,
+    FinalizeOperation,
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Instruction,
+    Operand,
+    StackTrait,
+};
 use console::{
     network::prelude::*,
     program::{Identifier, Register},
@@ -74,21 +82,30 @@ pub enum Command<N: Network> {
 }
 
 impl<N: Network> Command<N> {
-    /// Returns the destination registers of the command.
-    pub fn destinations(&self) -> Vec<Register<N>> {
-        match self {
-            Command::Instruction(instruction) => instruction.destinations(),
-            Command::Contains(contains) => vec![contains.destination().clone()],
-            Command::Get(get) => vec![get.destination().clone()],
-            Command::GetOrUse(get_or_use) => vec![get_or_use.destination().clone()],
-            Command::RandChaCha(rand_chacha) => vec![rand_chacha.destination().clone()],
-            Command::Await(_)
-            | Command::BranchEq(_)
-            | Command::BranchNeq(_)
-            | Command::Position(_)
-            | Command::Remove(_)
-            | Command::Set(_) => vec![],
-        }
+    /// Returns `true` if the command is an async instruction.
+    pub fn is_async(&self) -> bool {
+        matches!(self, Command::Instruction(Instruction::Async(_)))
+    }
+
+    /// Returns `true` if the command is an await command.
+    #[inline]
+    pub fn is_await(&self) -> bool {
+        matches!(self, Command::Await(_))
+    }
+
+    /// Returns `true` if the command is a call instruction.
+    pub fn is_call(&self) -> bool {
+        matches!(self, Command::Instruction(Instruction::Call(_)))
+    }
+
+    /// Returns `true` if the command is a cast to record instruction.
+    pub fn is_cast_to_record(&self) -> bool {
+        matches!(self, Command::Instruction(Instruction::Cast(cast)) if matches!(cast.cast_type(), CastType::Record(_) | CastType::ExternalRecord(_)))
+    }
+
+    /// Returns `true` if the command is a write operation.
+    pub fn is_write(&self) -> bool {
+        matches!(self, Command::Set(_) | Command::Remove(_))
     }
 
     /// Returns the branch target, if the command is a branch command.
@@ -110,19 +127,39 @@ impl<N: Network> Command<N> {
         }
     }
 
-    /// Returns `true` if the command is a call instruction.
-    pub fn is_call(&self) -> bool {
-        matches!(self, Command::Instruction(Instruction::Call(_)))
+    /// Returns the destination registers of the command.
+    pub fn destinations(&self) -> Vec<Register<N>> {
+        match self {
+            Command::Instruction(instruction) => instruction.destinations(),
+            Command::Contains(contains) => vec![contains.destination().clone()],
+            Command::Get(get) => vec![get.destination().clone()],
+            Command::GetOrUse(get_or_use) => vec![get_or_use.destination().clone()],
+            Command::RandChaCha(rand_chacha) => vec![rand_chacha.destination().clone()],
+            Command::Await(_)
+            | Command::BranchEq(_)
+            | Command::BranchNeq(_)
+            | Command::Position(_)
+            | Command::Remove(_)
+            | Command::Set(_) => vec![],
+        }
     }
 
-    /// Returns `true` if the command is a cast to record instruction.
-    pub fn is_cast_to_record(&self) -> bool {
-        matches!(self, Command::Instruction(Instruction::Cast(cast)) if matches!(cast.cast_type(), CastType::Record(_) | CastType::ExternalRecord(_)))
-    }
-
-    /// Returns `true` if the command is a write operation.
-    pub fn is_write(&self) -> bool {
-        matches!(self, Command::Set(_) | Command::Remove(_))
+    /// Returns the operands of the command.
+    #[inline]
+    pub fn operands(&self) -> &[Operand<N>] {
+        match self {
+            Command::Instruction(c) => c.operands(),
+            Command::Await(c) => c.operands(),
+            Command::Contains(c) => c.operands(),
+            Command::Get(c) => c.operands(),
+            Command::GetOrUse(c) => c.operands(),
+            Command::RandChaCha(c) => c.operands(),
+            Command::Remove(c) => c.operands(),
+            Command::Set(c) => c.operands(),
+            Command::BranchEq(c) => c.operands(),
+            Command::BranchNeq(c) => c.operands(),
+            Command::Position(_) => Default::default(),
+        }
     }
 
     /// Finalizes the command.

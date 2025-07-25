@@ -15,6 +15,7 @@
 
 use super::*;
 
+mod check_upgrade;
 mod initialize;
 mod sample;
 mod stack_trait;

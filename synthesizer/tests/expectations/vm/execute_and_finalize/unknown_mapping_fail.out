@@ -1,3 +1,3 @@
 errors:
-- 'Failed to run `VM::deploy for program registry.aleo: Mapping ''foo'' in ''registry.aleo/register'' is not defined.'
+- 'Failed to run `VM::deploy for program registry.aleo: Mapping ''foo'' in ''registry.aleo'' is not defined.'
 outputs: []

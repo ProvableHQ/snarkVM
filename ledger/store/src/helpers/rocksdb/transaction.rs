@@ -38,6 +38,7 @@ use crate::{
 use console::{
     prelude::*,
     program::{Identifier, ProgramID, ProgramOwner},
+    types::U8,
 };
 use snarkvm_synthesizer_program::Program;
 use snarkvm_synthesizer_snark::{Certificate, Proof, VerifyingKey};
@@ -112,6 +113,8 @@ pub struct DeploymentDB<N: Network> {
     owner_map: DataMap<(ProgramID<N>, u16), ProgramOwner<N>>,
     /// The program map.
     program_map: DataMap<(ProgramID<N>, u16), Program<N>>,
+    /// The checksum map.
+    checksum_map: DataMap<(ProgramID<N>, u16), [U8<N>; 32]>,
     /// The verifying key map.
     verifying_key_map: DataMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>,
     /// The certificate map.
@@ -128,6 +131,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
     type ReverseIDMap = DataMap<(ProgramID<N>, u16), N::TransactionID>;
     type OwnerMap = DataMap<(ProgramID<N>, u16), ProgramOwner<N>>;
     type ProgramMap = DataMap<(ProgramID<N>, u16), Program<N>>;
+    type ChecksumMap = DataMap<(ProgramID<N>, u16), [U8<N>; 32]>;
     type VerifyingKeyMap = DataMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     type CertificateMap = DataMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     type FeeStorage = FeeDB<N>;
@@ -143,6 +147,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
             reverse_id_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::ReverseID))?,
             owner_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Owner))?,
             program_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Program))?,
+            checksum_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Checksum))?,
             verifying_key_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::VerifyingKey))?,
             certificate_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Certificate))?,
             fee_store,
@@ -177,6 +182,11 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
     /// Returns the program map.
     fn program_map(&self) -> &Self::ProgramMap {
         &self.program_map
+    }
+
+    /// Returns the checksum map.
+    fn checksum_map(&self) -> &Self::ChecksumMap {
+        &self.checksum_map
     }
 
     /// Returns the verifying key map.

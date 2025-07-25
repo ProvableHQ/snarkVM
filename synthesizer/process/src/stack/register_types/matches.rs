@@ -70,10 +70,14 @@ impl<N: Network> RegisterTypes<N> {
                         }
                     }
                 }
-                // Ensure the program ID, signer, and caller types (address) match the member type.
+                // Ensure the program ID, signer, and caller types match the member type.
                 Operand::ProgramID(..) | Operand::Signer | Operand::Caller => {
                     // Retrieve the operand type.
-                    let operand_type = PlaintextType::Literal(LiteralType::Address);
+                    let RegisterType::Plaintext(operand_type) = self.get_type_from_operand(stack, operand)? else {
+                        bail!(
+                            "Expected a plaintext type for the operand '{operand}' in struct member '{struct_name}.{member_name}'"
+                        )
+                    };
                     // Ensure the operand type matches the member type.
                     ensure!(
                         &operand_type == member_type,
@@ -88,6 +92,24 @@ impl<N: Network> RegisterTypes<N> {
                 Operand::NetworkID => bail!(
                     "Struct member '{struct_name}.{member_name}' cannot be from a network ID in a non-finalize scope"
                 ),
+                // If the operand is a checksum type, throw an error.
+                Operand::Checksum(_) => {
+                    bail!(
+                        "Struct member '{struct_name}.{member_name}' cannot be from a checksum in a non-finalize scope"
+                    )
+                }
+                // If the operand is an edition type, throw an error.
+                Operand::Edition(_) => {
+                    bail!(
+                        "Struct member '{struct_name}.{member_name}' cannot be from an edition in a non-finalize scope"
+                    )
+                }
+                // If the operand is a program owner type, throw an error.
+                Operand::ProgramOwner(_) => {
+                    bail!(
+                        "Struct member '{struct_name}.{member_name}' cannot be from a program owner in a non-finalize scope"
+                    )
+                }
             }
         }
         Ok(())
@@ -144,10 +166,12 @@ impl<N: Network> RegisterTypes<N> {
                         }
                     }
                 }
-                // Ensure the program ID type, signer type, and caller types (address) match the element type.
+                // Ensure the program ID, signer, and caller types match the element type.
                 Operand::ProgramID(..) | Operand::Signer | Operand::Caller => {
                     // Retrieve the operand type.
-                    let operand_type = PlaintextType::Literal(LiteralType::Address);
+                    let RegisterType::Plaintext(operand_type) = self.get_type_from_operand(stack, operand)? else {
+                        bail!("Expected a plaintext type for the operand '{operand}' in array element '{array_type}'")
+                    };
                     // Ensure the operand type matches the element type.
                     ensure!(
                         &operand_type == array_type.next_element_type(),
@@ -159,6 +183,18 @@ impl<N: Network> RegisterTypes<N> {
                 Operand::BlockHeight => bail!("Array element cannot be from a block height in a non-finalize scope"),
                 // If the operand is a network ID type, throw an error.
                 Operand::NetworkID => bail!("Array element cannot be from a network ID in a non-finalize scope"),
+                // If the operand is a checksum type, throw an error.
+                Operand::Checksum(_) => {
+                    bail!("Array element cannot be from a checksum in a non-finalize scope")
+                }
+                // If the operand is an edition type, throw an error.
+                Operand::Edition(_) => {
+                    bail!("Array element cannot be from an edition in a non-finalize scope")
+                }
+                // If the operand is a program owner type, throw an error.
+                Operand::ProgramOwner(_) => {
+                    bail!("Array element cannot be from a program owner in a non-finalize scope")
+                }
             }
         }
         Ok(())
@@ -219,6 +255,15 @@ impl<N: Network> RegisterTypes<N> {
             Operand::NetworkID => {
                 bail!("Forbidden operation: Cannot cast a network ID as a record owner")
             }
+            Operand::Checksum(_) => {
+                bail!("Forbidden operation: Cannot cast a checksum as a record owner")
+            }
+            Operand::Edition(_) => {
+                bail!("Forbidden operation: Cannot cast an edition as a record owner")
+            }
+            Operand::ProgramOwner(_) => {
+                bail!("Forbidden operation: Cannot cast a program owner as a record owner")
+            }
         }
 
         // Ensure the operand types match the record entry types.
@@ -258,13 +303,18 @@ impl<N: Network> RegisterTypes<N> {
                                 }
                             }
                         }
-                        // Ensure the program ID, signer, and caller types (address) match the entry type.
+                        // Ensure the program ID, signer, and caller types match the entry type.
                         Operand::ProgramID(..) | Operand::Signer | Operand::Caller => {
                             // Retrieve the operand type.
-                            let operand_type = &PlaintextType::Literal(LiteralType::Address);
+                            let RegisterType::Plaintext(operand_type) = self.get_type_from_operand(stack, operand)?
+                            else {
+                                bail!(
+                                    "Expected a plaintext type for the operand '{operand}' in record entry '{record_name}.{entry_name}'"
+                                )
+                            };
                             // Ensure the operand type matches the entry type.
                             ensure!(
-                                operand_type == plaintext_type,
+                                &operand_type == plaintext_type,
                                 "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found '{operand_type}' in the operand '{operand}'.",
                             )
                         }
@@ -278,6 +328,24 @@ impl<N: Network> RegisterTypes<N> {
                         Operand::NetworkID => {
                             bail!(
                                 "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found a network ID in the operand '{operand}'."
+                            )
+                        }
+                        // Fail if the operand is a checksum.
+                        Operand::Checksum(_) => {
+                            bail!(
+                                "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found a checksum in the operand '{operand}'."
+                            )
+                        }
+                        // Fail if the operand is an edition.
+                        Operand::Edition(_) => {
+                            bail!(
+                                "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found an edition in the operand '{operand}'."
+                            )
+                        }
+                        // Fail if the operand is a program owner.
+                        Operand::ProgramOwner(_) => {
+                            bail!(
+                                "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found a program owner in the operand '{operand}'."
                             )
                         }
                     }

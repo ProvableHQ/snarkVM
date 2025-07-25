@@ -96,7 +96,7 @@ commands:
           name: Install debian packages
           command: |
             DEBIAN_FRONTEND=noninteractive sudo apt-get update
-            DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends clang llvm-dev llvm pkg-config xz-utils make libssl-dev libssl-dev
+            DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev libssl-dev
       - restore_cache:
           keys:
             - << parameters.cache_key >>
@@ -128,13 +128,16 @@ commands:
       cache_key_suffix:
         type: string
         default: ""
+      timeout:
+        type: integer
+        default: 10
     steps:
       - checkout
       - setup_environment:
           cache_key: v4.0.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
       - run:
           name: "Run Tests"
-          no_output_timeout: 30m
+          timeout: << parameters.timeout >>
           command: RUST_MIN_STACK=67108864 cargo test --package=<< parameters.workspace_member >> << parameters.flags >>
       - clear_environment:
           cache_key: v4.0.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
@@ -150,9 +153,8 @@ jobs:
     resource_class: << pipeline.parameters.large >>
     steps:
       - checkout
-      - run:
-          no_output_timeout: 30m
-          command: RUST_MIN_STACK=67108864 cargo test
+      - run_test:
+          workspace_member: snarkvm
 
   algorithms:
     executor: rust-docker 
@@ -429,6 +431,7 @@ jobs:
       - run_test:
           workspace_member: snarkvm-ledger
           flags: --release --features=rocks -- --test-threads=2
+          timeout: 20
 
   ledger-with-valid-solutions:
     executor: rust-docker
@@ -579,6 +582,7 @@ jobs:
       - run_test:
           workspace_member: snarkvm-synthesizer
           flags: --lib --bins
+          timeout: 20
 
   synthesizer-test:
     executor: rust-docker
@@ -588,6 +592,7 @@ jobs:
           workspace_member: snarkvm-synthesizer
           flags: --lib --bins --features test
           cache_key_suffix: -test
+          timeout: 25
 
 #  synthesizer-mem-heavy:
 #    executor: rust-docker
@@ -638,7 +643,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: --test '*' -- --skip keccak --skip psd --skip sha --skip instruction::is --skip instruction::equal --skip instruction::commit
+          flags: -- --skip keccak --skip psd --skip sha --skip instruction::is --skip instruction::equal --skip instruction::commit
           cache_key_suffix: -integration
 
   synthesizer-program-integration-keccak:
@@ -647,7 +652,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: --test '*'
+          flags: keccak
           cache_key_suffix: -integration-keccak
 
   synthesizer-program-integration-psd:
@@ -656,7 +661,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: psd --test '*'
+          flags: psd
           cache_key_suffix: -integration-psd
 
   synthesizer-program-integration-sha:
@@ -665,7 +670,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: sha --test '*'
+          flags: sha
           cache_key_suffix: -integration-sha
 
   synthesizer-program-integration-instruction-is:
@@ -674,7 +679,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: instruction::is --test '*'
+          flags: instruction::is
           cache_key_suffix: -integration-is
 
   synthesizer-program-integration-instruction-equal:
@@ -683,7 +688,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: instruction::equal --test '*'
+          flags: instruction::equal
           cache_key_suffix: -integration-equal
 
   synthesizer-program-integration-instruction-commit:
@@ -692,7 +697,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: instruction::commit --test '*'
+          flags: instruction::commit
           cache_key_suffix: -integration-commit
 
   synthesizer-snark:

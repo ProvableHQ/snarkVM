@@ -4,7 +4,7 @@ outputs:
   execute:
     mint_and_split.aleo/mint:
       outputs:
-      - '{"type":"record","id":"6353253438190700833522968952968183605096976752373196500984430371134799540717field","checksum":"8184358533030769026978662540088424648495619580348308369892861662641012895541field","value":"record1qvqspkrp78s2s67slj4wz3waglqsf0vy3748m2jkl5ymtlaz46xelxsgqyxx66trwfhkxun9v35hguerqqpqzqqagf8tzjve9yyrty93x2pc3xw8daz85kc5llwdka0ffyyujz2ep78x68u6n3k3qfrztm5s8kwnjav3f0s7ste3t02c2mmwag5yplsq5an8azw","sender_ciphertext":"4851076334712297276225935856989676746235789679980218212844883843989508401256field"}'
+      - '{"type":"record","id":"1468168659655366907697532315005585604602235179414698571655118859545131768650field","checksum":"6807819896369708131926098368191156693073473487025184213539045224228545662094field","value":"record1qvqspslmundxglsjhl6l62aq70gkgms6r3qlmtl6resu922sszcpwvcdqyxx66trwfhkxun9v35hguerqqpqzq92jpk9s2ux4q9mw4uhjzc6ja57nkrdvhk4a507wxuezq644r93zq8d77h8639m7shha4fs8qc3n6nrf2eqjsd3plq8q62h9pnlgnfsk87aunl","sender_ciphertext":"1051635936696090036331309351829733592675048904485369308918572030834176000447field"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - execute: Commitment '1266307482263846358970326041806201638141701138269282465033372005968041137990field' does not exist
@@ -13,6 +13,6 @@ additional:
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"4554638218738710539225481029697366485173135447624464122854964508264596615139field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo19e6k5ferx3k8a9k79xtj4uuaztt2jl4eza7k43pygsu977yazypqqwdmw6,\n    1479u64\n  ]\n}"}'
+      - '{"type":"future","id":"2746364814549419434462217925821184839454131689242696526114638347923889598868field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo19e6k5ferx3k8a9k79xtj4uuaztt2jl4eza7k43pygsu977yazypqqwdmw6,\n    1479u64\n  ]\n}"}'
 - {}
 - {}

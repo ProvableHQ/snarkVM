@@ -146,34 +146,6 @@ impl Network for CanaryV0 {
     /// The transmission checksum type.
     type TransmissionChecksum = u128;
 
-    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
-    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
-    #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = [
-        (ConsensusVersion::V1, 0),
-        (ConsensusVersion::V2, 2_900_000),
-        (ConsensusVersion::V3, 4_560_000),
-        (ConsensusVersion::V4, 5_730_000),
-        (ConsensusVersion::V5, 5_780_000),
-        (ConsensusVersion::V6, 6_240_000),
-        (ConsensusVersion::V7, 6_880_000),
-        (ConsensusVersion::V8, 7_565_000),
-    ];
-    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
-    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
-    #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = [
-        (ConsensusVersion::V1, 0),
-        (ConsensusVersion::V2, 10),
-        (ConsensusVersion::V3, 11),
-        (ConsensusVersion::V4, 12),
-        (ConsensusVersion::V5, 13),
-        (ConsensusVersion::V6, 14),
-        (ConsensusVersion::V7, 15),
-        (ConsensusVersion::V8, 16),
-    ];
-    /// The network edition.
-    const EDITION: u16 = 0;
     /// The genesis block coinbase target.
     #[cfg(not(feature = "test_targets"))]
     const GENESIS_COINBASE_TARGET: u64 = (1u64 << 29).saturating_sub(1);
@@ -192,22 +164,29 @@ impl Network for CanaryV0 {
     const INCLUSION_FUNCTION_NAME: &'static str = snarkvm_parameters::canary::NETWORK_INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(not(any(test, feature = "test")))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4] = [
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 5] = [
         (ConsensusVersion::V1, 100),
         (ConsensusVersion::V3, 100),
         (ConsensusVersion::V5, 100),
         (ConsensusVersion::V6, 100),
+        (ConsensusVersion::V9, 100),
     ];
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(any(test, feature = "test"))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4] = [
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 5] = [
         (ConsensusVersion::V1, 25),
         (ConsensusVersion::V3, 25),
         (ConsensusVersion::V5, 25),
         (ConsensusVersion::V6, 25),
+        (ConsensusVersion::V9, 25),
     ];
     /// The network name.
     const NAME: &'static str = "Aleo Canary (v0)";
+    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
+    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
+    /// Do not read this directly outside of tests, use `N::CONSENSUS_VERSION_HEIGHTS()` instead.
+    const _CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] =
+        CANARY_V0_CONSENSUS_VERSION_HEIGHTS;
 
     /// Returns the block height where the the inclusion proof will be updated.
     #[allow(non_snake_case)]

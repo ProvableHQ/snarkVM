@@ -115,8 +115,16 @@ impl<N: Network> FinalizeCore<N> {
         // Ensure the maximum number of commands has not been exceeded.
         ensure!(self.commands.len() < N::MAX_COMMANDS, "Cannot add more than {} commands", N::MAX_COMMANDS);
         // Ensure the number of write commands has not been exceeded.
-        ensure!(self.num_writes < N::MAX_WRITES, "Cannot add more than {} 'set' & 'remove' commands", N::MAX_WRITES);
+        if command.is_write() {
+            ensure!(
+                self.num_writes < N::MAX_WRITES,
+                "Cannot add more than {} 'set' & 'remove' commands",
+                N::MAX_WRITES
+            );
+        }
 
+        // Ensure the command is not an async instruction.
+        ensure!(!command.is_async(), "Forbidden operation: Finalize cannot invoke an 'async' instruction");
         // Ensure the command is not a call instruction.
         ensure!(!command.is_call(), "Forbidden operation: Finalize cannot invoke a 'call'");
         // Ensure the command is not a cast to record instruction.
@@ -139,7 +147,7 @@ impl<N: Network> FinalizeCore<N> {
             // Ensure the position is not yet defined.
             ensure!(!self.positions.contains_key(position), "Cannot redefine position '{position}'");
             // Ensure that there are less than `u8::MAX` positions.
-            ensure!(self.positions.len() < u8::MAX as usize, "Cannot add more than {} positions", u8::MAX);
+            ensure!(self.positions.len() < N::MAX_POSITIONS, "Cannot add more than {} positions", N::MAX_POSITIONS);
             // Insert the position.
             self.positions.insert(*position, self.commands.len());
         }

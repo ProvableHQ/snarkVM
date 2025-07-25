@@ -50,8 +50,8 @@ impl<N: Network> RandChaCha<N> {
 
     /// Returns the operands in the operation.
     #[inline]
-    pub fn operands(&self) -> Vec<Operand<N>> {
-        self.operands.clone()
+    pub fn operands(&self) -> &[Operand<N>] {
+        &self.operands
     }
 
     /// Returns the destination register.

@@ -37,7 +37,7 @@ impl<N: Network> ProgramOwner<N> {
         // Sign the transaction ID.
         let signature = private_key.sign(&[deployment_id], rng)?;
         // Return the program owner.
-        Ok(Self { signature, address })
+        Ok(Self { address, signature })
     }
 
     /// Initializes a new program owner from an address and signature.

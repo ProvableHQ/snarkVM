@@ -151,12 +151,16 @@ pub mod test_helpers {
     type CurrentNetwork = console::network::MainnetV0;
 
     /// Samples a random execution.
-    pub(crate) fn sample_execution(rng: &mut TestRng) -> Execution<CurrentNetwork> {
+    pub(crate) fn sample_execution(rng: &mut TestRng, index: usize) -> Execution<CurrentNetwork> {
         // Sample the genesis block.
         let block = crate::test_helpers::sample_genesis_block(rng);
         // Retrieve a transaction.
-        let transaction = block.transactions().iter().next().unwrap().deref().clone();
+        let transaction = block.transactions().iter().nth(index).unwrap().deref().clone();
         // Retrieve the execution.
-        if let Transaction::Execute(_, _, execution, _) = transaction { *execution } else { unreachable!() }
+        if let Transaction::Execute(_, _, execution, _) = transaction {
+            *execution
+        } else {
+            panic!("Index {index} exceeded the number of executions in the genesis block")
+        }
     }
 }

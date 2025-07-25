@@ -291,8 +291,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut confirmed = Vec::with_capacity(num_transactions);
             // Initialize a list of the aborted transactions.
             let mut aborted = Vec::new();
-            // Initialize a list of the successful deployments.
-            let mut deployments = IndexSet::new();
             // Initialize a counter for the confirmed transaction index.
             let mut counter = 0u32;
             // Initialize a list of created transition IDs.
@@ -305,6 +303,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut tpks: IndexSet<Group<N>> = IndexSet::new();
             // Initialize the list of deployment payers.
             let mut deployment_payers: IndexSet<Address<N>> = IndexSet::new();
+            // Initialize a list of the successful deployments.
+            let mut deployments = IndexSet::new();
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
@@ -325,6 +325,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     &output_ids,
                     &tpks,
                     &deployment_payers,
+                    &deployments,
                 ) {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), reason));
@@ -376,8 +377,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 Ok((stack, finalize)) => {
                                     // Add the stack to the process with the option to be reverted.
                                     process.stage_stack(stack);
-                                    // Add the program id to the list of deployments.
-                                    deployments.insert(*deployment.program_id());
                                     ConfirmedTransaction::accepted_deploy(counter, transaction.clone(), finalize)
                                         .map_err(|e| e.to_string())
                                 }
@@ -470,9 +469,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         output_ids.extend(confirmed_transaction.transaction().output_ids());
                         // Add the transition public keys to the set of produced transition public keys.
                         tpks.extend(confirmed_transaction.transaction().transition_public_keys());
-                        // Add any public deployment payer to the set of deployment payers.
-                        if let Transaction::Deploy(_, _, _, _, fee) = confirmed_transaction.transaction() {
+                        // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
+                        if let Transaction::Deploy(_, _, _, deployment, fee) = confirmed_transaction.transaction() {
                             fee.payer().map(|payer| deployment_payers.insert(payer));
+                            deployments.insert(*deployment.program_id());
                         }
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
@@ -806,6 +806,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is producing a duplicate output
     /// - The transaction is producing a duplicate transition public key
     /// - The transaction is another deployment in the block from the same public fee payer.
+    /// - The transaction contains a transition that has been deployed or upgraded in this block.
+    ///
+    /// - Note: If a transaction is a deployment for a program following its deployment or redeployment in this block,
+    ///   it is not aborted. Instead, it will be rejected and its fee will be consumed.
+    #[allow(clippy::too_many_arguments)]
     fn should_abort_transaction(
         &self,
         transaction: &Transaction<N>,
@@ -814,14 +819,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         output_ids: &IndexSet<Field<N>>,
         tpks: &IndexSet<Group<N>>,
         deployment_payers: &IndexSet<Address<N>>,
+        deployments: &IndexSet<ProgramID<N>>,
     ) -> Option<String> {
-        // Ensure that the transaction is not producing a duplicate transition.
-        for transition_id in transaction.transition_ids() {
+        // Ensure that:
+        //  - the transaction is not producing a duplicate transition.
+        //  - the programs in the component transitions haven't been deployed or upgraded in this block.
+        for transition in transaction.transitions() {
+            // Get the transition ID.
+            let transition_id = transition.id();
             // If the transition ID is already produced in this block or previous blocks, abort the transaction.
             if transition_ids.contains(transition_id)
                 || self.transition_store().contains_transition_id(transition_id).unwrap_or(true)
             {
                 return Some(format!("Duplicate transition {transition_id}"));
+            }
+            // If the transition's program is being deployed or redeployed in this block, abort the transaction.
+            if deployments.contains(transition.program_id()) {
+                return Some(format!(
+                    "Program {} is being deployed or redeployed in this block",
+                    transition.program_id()
+                ));
             }
         }
 
@@ -890,6 +907,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut tpks: IndexSet<Group<N>> = Default::default();
         // Initialize the list of deployment payers.
         let mut deployment_payers: IndexSet<Address<N>> = Default::default();
+        // Initialize a list of the successful deployments.
+        let mut deployments = IndexSet::new();
 
         // Abort the transactions that are have duplicates or are invalid. This will prevent the VM from performing
         // verification on transactions that would have been aborted in `VM::atomic_speculate`.
@@ -908,6 +927,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 &output_ids,
                 &tpks,
                 &deployment_payers,
+                &deployments,
             ) {
                 // Store the aborted transaction.
                 Some(reason) => aborted_transactions.push((*transaction, reason.to_string())),
@@ -921,9 +941,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     output_ids.extend(transaction.output_ids());
                     // Add the transition public keys to the set of produced transition public keys.
                     tpks.extend(transaction.transition_public_keys());
-                    // Add any public deployment payer to the set of deployment payers.
-                    if let Transaction::Deploy(_, _, _, _, fee) = transaction {
+                    // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
+                    if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
                         fee.payer().map(|payer| deployment_payers.insert(payer));
+                        deployments.insert(*deployment.program_id());
                     }
 
                     // Add the transaction to the list of transactions to verify.

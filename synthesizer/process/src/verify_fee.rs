@@ -271,10 +271,12 @@ mod tests {
 
         // Fetch transactions.
         let transactions = [
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(0, false, rng),
-            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng),
-            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
+            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
             snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng),
             snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng),
         ];

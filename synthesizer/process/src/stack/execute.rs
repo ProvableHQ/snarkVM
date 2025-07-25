@@ -119,6 +119,14 @@ impl<N: Network> Stack<N> {
                     Operand::NetworkID => {
                         bail!("Illegal operation: cannot retrieve the network id in a closure scope")
                     }
+                    // If the operand is the checksum, throw an error.
+                    Operand::Checksum(_) => bail!("Illegal operation: cannot retrieve the checksum in a closure scope"),
+                    // If the operand is the edition, throw an error.
+                    Operand::Edition(_) => bail!("Illegal operation: cannot retrieve the edition in a closure scope"),
+                    // If the operand is the program owner, throw an error.
+                    Operand::ProgramOwner(_) => {
+                        bail!("Illegal operation: cannot retrieve the program owner in a closure scope")
+                    }
                 }
             })
             .collect();
@@ -138,7 +146,7 @@ impl<N: Network> Stack<N> {
         &self,
         mut call_stack: CallStack<N>,
         console_caller: Option<ProgramID<N>>,
-        root_tvk: Option<Field<N>>,
+        console_root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Response<N>> {
         let timer = timer!("Stack::execute_function");
@@ -167,7 +175,7 @@ impl<N: Network> Stack<N> {
         );
 
         // We can only have a root_tvk if this request was called by another request
-        ensure!(console_caller.is_some() == root_tvk.is_some());
+        ensure!(console_caller.is_some() == console_root_tvk.is_some());
         // Determine if this is the top-level caller.
         let console_is_root = console_caller.is_none();
 
@@ -202,24 +210,33 @@ impl<N: Network> Stack<N> {
         })?;
         lap!(timer, "Verify the input types");
 
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match self.program().contains_constructor() {
+            true => Some(self.program_checksum_as_field()?),
+            false => None,
+        };
+
         // Ensure the request is well-formed.
-        ensure!(console_request.verify(&input_types, console_is_root), "Request is invalid");
+        ensure!(
+            console_request.verify(&input_types, console_is_root, program_checksum),
+            "[Execute] Request is invalid"
+        );
         lap!(timer, "Verify the console request");
 
         // Initialize the registers.
         let mut registers = Registers::new(call_stack, self.get_register_types(function.name())?.clone());
 
         // Set the root tvk, from a parent request or the current request.
-        // inject the `root_tvk` as `Mode::Private`.
-        if let Some(root_tvk) = root_tvk {
-            registers.set_root_tvk(root_tvk);
-            registers.set_root_tvk_circuit(circuit::Field::<A>::new(circuit::Mode::Private, root_tvk));
-        } else {
-            registers.set_root_tvk(*console_request.tvk());
-            registers.set_root_tvk_circuit(circuit::Field::<A>::new(circuit::Mode::Private, *console_request.tvk()));
-        }
+        let console_root_tvk = console_root_tvk.unwrap_or(*console_request.tvk());
+        // Inject the `root_tvk` as `Mode::Private`.
+        let root_tvk = circuit::Field::<A>::new(circuit::Mode::Private, console_root_tvk);
+        // Set the root tvk.
+        registers.set_root_tvk(console_root_tvk);
+        // Set the root tvk, as a circuit.
+        registers.set_root_tvk_circuit(root_tvk.clone());
 
-        let root_tvk = Some(registers.root_tvk_circuit()?);
+        // If a program checksum was passed in, Inject it as `Mode::Public`.
+        let program_checksum = program_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
 
         use circuit::{Eject, Inject};
 
@@ -236,7 +253,7 @@ impl<N: Network> Stack<N> {
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
         // Ensure the request has a valid signature, inputs, and transition view key.
-        A::assert(request.verify(&input_types, &tpk, root_tvk, is_root));
+        A::assert(request.verify(&input_types, &tpk, Some(root_tvk), is_root, program_checksum));
         lap!(timer, "Verify the circuit request");
 
         // Set the transition signer.
@@ -351,6 +368,18 @@ impl<N: Network> Stack<N> {
                     // If the operand is the network id, throw an error.
                     Operand::NetworkID => {
                         bail!("Illegal operation: cannot retrieve the network id in a function scope")
+                    }
+                    // If the operand is the checksum, throw an error.
+                    Operand::Checksum(_) => {
+                        bail!("Illegal operation: cannot retrieve the checksum in a function scope")
+                    }
+                    // If the operand is the edition, throw an error.
+                    Operand::Edition(_) => {
+                        bail!("Illegal operation: cannot retrieve the edition in a function scope")
+                    }
+                    // If the operand is the program owner, throw an error.
+                    Operand::ProgramOwner(_) => {
+                        bail!("Illegal operation: cannot retrieve the program owner in a function scope")
                     }
                 }
             })

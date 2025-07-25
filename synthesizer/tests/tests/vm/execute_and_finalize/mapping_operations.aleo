@@ -47,5 +47,8 @@ function empty_remove:
 finalize empty_remove:
     input r0 as u8.public;
     remove data[r0];
+    
+constructor:
+    assert.eq edition 0u16;
 
 

@@ -39,6 +39,9 @@ finalize sub_and_count:
     get.or_use uses[r0] 0i64 into r1;
     add r1 1i64 into r2;
     set r2 into uses[r0];
+    
+constructor:
+    assert.eq edition 0u16;
 
 /////////////////////////////////////////////////
 
@@ -63,3 +66,6 @@ finalize add_and_subtract:
     assert.eq r0[0u32] r1[0u32];
     await r0;
     await r1;
+    
+constructor:
+    assert.eq edition 0u16;
