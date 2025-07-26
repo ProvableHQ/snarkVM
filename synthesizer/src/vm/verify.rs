@@ -34,9 +34,9 @@ macro_rules! ensure_is_unique {
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// The maximum number of deployments to verify in parallel.
-    pub(crate) const MAX_PARALLEL_DEPLOY_VERIFICATIONS: usize = 5;
+    pub const MAX_PARALLEL_DEPLOY_VERIFICATIONS: usize = 5;
     /// The maximum number of executions to verify in parallel.
-    pub(crate) const MAX_PARALLEL_EXECUTE_VERIFICATIONS: usize = 1000;
+    pub const MAX_PARALLEL_EXECUTE_VERIFICATIONS: usize = 1000;
 
     /// Verifies the list of transactions in the VM. On failure, returns an error.
     pub fn check_transactions<R: CryptoRng + Rng>(
