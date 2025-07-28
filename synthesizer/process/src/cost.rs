@@ -22,7 +22,9 @@ use console::{
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
 use snarkvm_synthesizer_program::{CastType, Command, Instruction, Operand};
 
-// Returns the *minimum* cost in microcredits to publish the given deployment using the reduced synthesis cost (total cost, (storage cost, synthesis cost, constructor cost, namespace cost)).
+const COST_FACTOR: u64 = 25;
+
+/// Returns the *minimum* cost in microcredits to publish the given deployment using the reduced synthesis cost (total cost, (storage cost, synthesis cost, constructor cost, namespace cost)).
 pub fn deployment_cost_v2<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
@@ -46,7 +48,7 @@ pub fn deployment_cost_v2<N: Network>(
     // Compute the synthesis cost in microcredits.
     let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints)
         * N::SYNTHESIS_FEE_MULTIPLIER
-        * (1 / COST_FACTOR);
+        / COST_FACTOR;
 
     // Compute the constructor cost in microcredits.
     let constructor_cost = constructor_cost_in_microcredits(&Stack::new(process, deployment.program())?)?;
@@ -108,6 +110,26 @@ pub fn deployment_cost<N: Network>(
         .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
 
     Ok((total_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
+}
+
+/// Returns the *minimum* cost in microcredits to publish the given execution using the reduced finalize cost(total cost, (storage cost, finalize cost)).
+pub fn execution_cost_v3<N: Network>(process: &Process<N>, execution: &Execution<N>) -> Result<(u64, (u64, u64))> {
+    // Compute the storage cost in microcredits.
+    let storage_cost = execution_storage_cost::<N>(execution.size_in_bytes()?);
+
+    // Get the root transition.
+    let transition = execution.peek()?;
+
+    // Get the finalize cost for the root transition.
+    let stack = process.get_stack(transition.program_id())?;
+    let finalize_cost = cost_in_microcredits_v2(&stack, transition.function_name())? / COST_FACTOR;
+
+    // Compute the total cost in microcredits.
+    let total_cost = storage_cost
+        .checked_add(finalize_cost)
+        .ok_or(anyhow!("The total cost computation overflowed for an execution"))?;
+
+    Ok((total_cost, (storage_cost, finalize_cost)))
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).
