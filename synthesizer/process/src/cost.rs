@@ -737,6 +737,30 @@ function dummy:",
                 deployment_cost(&process, &deployment_3).unwrap(),
                 (4186500, (943000, 603500, 1640000, 1000000))
             );
+
+            // Verify the deployment costs with deployment_cost_v2.
+            let mut deployment_0 = process.deploy::<A, _>(&program_0, rng).unwrap();
+            deployment_0.set_program_checksum_raw(Some(deployment_0.program().to_checksum()));
+            deployment_0.set_program_owner_raw(Some(Address::rand(rng)));
+            assert_eq!(deployment_cost_v2(&process, &deployment_0).unwrap(), (1053140, (879000, 24140, 50000, 1000000)));
+
+            let mut deployment_1 = process.deploy::<A, _>(&program_1, rng).unwrap();
+            deployment_1.set_program_checksum_raw(Some(deployment_1.program().to_checksum()));
+            deployment_1.set_program_owner_raw(Some(Address::rand(rng)));
+            assert_eq!(deployment_cost_v2(&process, &deployment_1).unwrap(), (1687660, (878000, 24140, 50000, 1000000)));
+
+            let mut deployment_2 = process.deploy::<A, _>(&program_2, rng).unwrap();
+            deployment_2.set_program_checksum_raw(Some(deployment_2.program().to_checksum()));
+            deployment_2.set_program_owner_raw(Some(Address::rand(rng)));
+            assert_eq!(deployment_cost_v2(&process, &deployment_2).unwrap(), (1217140, (911000, 24140, 182000, 1000000)));
+
+            let mut deployment_3 = process.deploy::<A, _>(&program_3, rng).unwrap();
+            deployment_3.set_program_checksum_raw(Some(deployment_3.program().to_checksum()));
+            deployment_3.set_program_owner_raw(Some(Address::rand(rng)));
+            assert_eq!(
+                deployment_cost_v2(&process, &deployment_3).unwrap(),
+                (2707140, (943000, 24140, 1640000, 1000000))
+            );
         }
 
         // Run the tests for all networks.
