@@ -22,6 +22,51 @@ use console::{
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
 use snarkvm_synthesizer_program::{CastType, Command, Instruction, Operand};
 
+// Returns the *minimum* cost in microcredits to publish the given deployment using the reduced synthesis cost (total cost, (storage cost, synthesis cost, constructor cost, namespace cost)).
+pub fn deployment_cost_v2<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+) -> Result<(u64, (u64, u64, u64, u64))> {
+    // Determine the number of bytes in the deployment.
+    let size_in_bytes = deployment.size_in_bytes()?;
+    // Retrieve the program ID.
+    let program_id = deployment.program_id();
+    // Determine the number of characters in the program ID.
+    let num_characters = u32::try_from(program_id.name().to_string().len())?;
+    // Compute the number of combined variables in the program.
+    let num_combined_variables = deployment.num_combined_variables()?;
+    // Compute the number of combined constraints in the program.
+    let num_combined_constraints = deployment.num_combined_constraints()?;
+
+    // Compute the storage cost in microcredits.
+    let storage_cost = size_in_bytes
+        .checked_mul(N::DEPLOYMENT_FEE_MULTIPLIER)
+        .ok_or(anyhow!("The storage cost computation overflowed for a deployment"))?;
+
+    // Compute the synthesis cost in microcredits.
+    let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints)
+        * N::SYNTHESIS_FEE_MULTIPLIER
+        * (1 / COST_FACTOR);
+
+    // Compute the constructor cost in microcredits.
+    let constructor_cost = constructor_cost_in_microcredits(&Stack::new(process, deployment.program())?)?;
+
+    // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
+    let namespace_cost = 10u64
+        .checked_pow(10u32.saturating_sub(num_characters))
+        .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
+        .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
+
+    // Compute the total cost in microcredits.
+    let total_cost = storage_cost
+        .checked_add(synthesis_cost)
+        .and_then(|x| x.checked_add(constructor_cost))
+        .and_then(|x| x.checked_add(namespace_cost))
+        .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
+
+    Ok((total_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
+}
+
 /// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, constructor cost, namespace cost)).
 pub fn deployment_cost<N: Network>(
     process: &Process<N>,
