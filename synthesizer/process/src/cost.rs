@@ -632,10 +632,10 @@ function over_five_thousand:
         // Get execution and cost data.
         let execution_under_5000 = get_execution(&mut process, &program, &under_5000, ["2group"].into_iter());
         let execution_size_under_5000 = execution_under_5000.size_in_bytes().unwrap();
-        let (_, (storage_cost_under_5000, _)) = execution_cost_v2(&process, &execution_under_5000).unwrap();
+        let (_, (storage_cost_under_5000, _)) = execution_cost_v3(&process, &execution_under_5000).unwrap();
         let execution_over_5000 = get_execution(&mut process, &program, &over_5000, ["2group"].into_iter());
         let execution_size_over_5000 = execution_over_5000.size_in_bytes().unwrap();
-        let (_, (storage_cost_over_5000, _)) = execution_cost_v2(&process, &execution_over_5000).unwrap();
+        let (_, (storage_cost_over_5000, _)) = execution_cost_v3(&process, &execution_over_5000).unwrap();
 
         // Ensure the sizes are below and above the threshold respectively.
         assert!(execution_size_under_5000 < threshold);
