@@ -46,9 +46,8 @@ pub fn deployment_cost_v2<N: Network>(
         .ok_or(anyhow!("The storage cost computation overflowed for a deployment"))?;
 
     // Compute the synthesis cost in microcredits.
-    let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints)
-        * N::SYNTHESIS_FEE_MULTIPLIER
-        / COST_FACTOR;
+    let synthesis_cost =
+        num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER / COST_FACTOR;
 
     // Compute the constructor cost in microcredits.
     let constructor_cost = constructor_cost_in_microcredits(&Stack::new(process, deployment.program())?)?;
@@ -742,24 +741,33 @@ function dummy:",
             let mut deployment_0 = process.deploy::<A, _>(&program_0, rng).unwrap();
             deployment_0.set_program_checksum_raw(Some(deployment_0.program().to_checksum()));
             deployment_0.set_program_owner_raw(Some(Address::rand(rng)));
-            assert_eq!(deployment_cost_v2(&process, &deployment_0).unwrap(), (1053140, (879000, 24140, 50000, 1000000)));
+            assert_eq!(
+                deployment_cost_v2(&process, &deployment_0).unwrap(),
+                (1953140, (879000, 24140, 50000, 1000000))
+            );
 
             let mut deployment_1 = process.deploy::<A, _>(&program_1, rng).unwrap();
             deployment_1.set_program_checksum_raw(Some(deployment_1.program().to_checksum()));
             deployment_1.set_program_owner_raw(Some(Address::rand(rng)));
-            assert_eq!(deployment_cost_v2(&process, &deployment_1).unwrap(), (1687660, (878000, 24140, 50000, 1000000)));
+            assert_eq!(
+                deployment_cost_v2(&process, &deployment_1).unwrap(),
+                (1952140, (878000, 24140, 50000, 1000000))
+            );
 
             let mut deployment_2 = process.deploy::<A, _>(&program_2, rng).unwrap();
             deployment_2.set_program_checksum_raw(Some(deployment_2.program().to_checksum()));
             deployment_2.set_program_owner_raw(Some(Address::rand(rng)));
-            assert_eq!(deployment_cost_v2(&process, &deployment_2).unwrap(), (1217140, (911000, 24140, 182000, 1000000)));
+            assert_eq!(
+                deployment_cost_v2(&process, &deployment_2).unwrap(),
+                (2117140, (911000, 24140, 182000, 1000000))
+            );
 
             let mut deployment_3 = process.deploy::<A, _>(&program_3, rng).unwrap();
             deployment_3.set_program_checksum_raw(Some(deployment_3.program().to_checksum()));
             deployment_3.set_program_owner_raw(Some(Address::rand(rng)));
             assert_eq!(
                 deployment_cost_v2(&process, &deployment_3).unwrap(),
-                (2707140, (943000, 24140, 1640000, 1000000))
+                (3607140, (943000, 24140, 1640000, 1000000))
             );
         }
 
