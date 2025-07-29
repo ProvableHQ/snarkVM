@@ -67,9 +67,11 @@ use snarkvm_synthesizer_process::{
     InclusionVersion,
     Process,
     Trace,
-    deployment_cost,
+    deployment_cost_v1,
+    deployment_cost_v2,
     execution_cost_v1,
     execution_cost_v2,
+    execution_cost_v3,
 };
 use snarkvm_synthesizer_program::{
     FinalizeGlobalState,
