@@ -47,8 +47,18 @@ optional = true
 workspace = true
 optional = true
 
+[dependencies.anyhow]
+workspace = true
+
 [dependencies.async-trait]
 version = "0.1"
+
+[dependencies.serde]
+version = "1"
+
+[dependencies.serde_json]
+version = "1"
+features = [ "preserve_order" ]
 
 [dependencies.reqwest]
 version = "0.12"

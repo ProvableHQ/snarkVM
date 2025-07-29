@@ -3097,3 +3097,476 @@ constructor:
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block).unwrap();
 }
+
+// This test verifies that:
+//  - child programs can be added beyond `MAX_TRANSITION` depth.
+//  - child programs can be upgraded beyond `MAX_TRANSITION` depth.
+//  - parent programs that exceed the depth exist, but fail to execute.
+//  - the VM can be loaded from the store.
+#[test]
+fn test_upgrade_beyond_max_transition_depth() {
+    let rng = &mut TestRng::default();
+
+    // Initialize the storage.
+    let store = ConsensusStore::<CurrentNetwork, LedgerType>::open(StorageMode::new_test(None)).unwrap();
+
+    // Initialize the VM.
+    let mut vm = VM::<CurrentNetwork, LedgerType>::from(store.clone()).unwrap();
+    let genesis = sample_genesis_block(rng);
+    vm.add_next_block(&genesis).unwrap();
+
+    // Get the genesis private key.
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Advance the VM to `ConsensusVersion::V9`.
+    advance_vm_to_height(
+        &mut vm,
+        caller_private_key,
+        CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap(),
+        rng,
+    );
+
+    // Define root program.
+    let root_program = Program::from_str(
+        r"
+program parent_program_0.aleo;
+function foo:
+    assert.eq true true;
+
+constructor:
+    assert.eq true true;
+    ",
+    )
+    .unwrap();
+
+    // Define a function to generate a program with a given depth.
+    fn generate_program(depth: usize) -> Program<CurrentNetwork> {
+        let mut imports = String::new();
+        for i in 0..depth {
+            imports.push_str(&format!("import parent_program_{i}.aleo;\n"));
+        }
+        let program_str = format!(
+            r"
+{imports}
+program parent_program_{depth}.aleo;
+function foo:
+    call parent_program_{}.aleo/foo;
+
+constructor:
+    assert.eq true true;
+    ",
+            depth - 1
+        );
+        Program::from_str(&program_str).unwrap()
+    }
+
+    // Deploy the root program.
+    let deployment = vm.deploy(&caller_private_key, &root_program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Deploy child programs up to the maximum transition depth.
+    for i in 1..(Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1) {
+        let program = generate_program(i);
+        let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+        let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 1);
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+    }
+
+    // Verify that the uppermost program can be executed.
+    let execution = vm
+        .execute(
+            &caller_private_key,
+            (format!("parent_program_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 2), "foo"),
+            Vec::<Value<_>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Deploy a program lower than the lowest program.
+    let lower_program = Program::from_str(
+        r"
+program parent_program_negative.aleo;
+function foo:
+    assert.eq true true;
+
+constructor:
+    assert.eq true true;
+    ",
+    )
+    .unwrap();
+
+    let deployment = vm.deploy(&caller_private_key, &lower_program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Upgrade the zero program to call the lower program.
+    let upgrade_program = Program::from_str(
+        r"
+import parent_program_negative.aleo;
+program parent_program_0.aleo;
+function foo:
+    call parent_program_negative.aleo/foo;
+
+constructor:
+    assert.eq true true;
+    ",
+    )
+    .unwrap();
+
+    // Attempt to upgrade the zero program.
+    let deployment = vm.deploy(&caller_private_key, &upgrade_program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Verify that the zero program can be executed.
+    let execution = vm
+        .execute(
+            &caller_private_key,
+            ("parent_program_0.aleo", "foo"),
+            Vec::<Value<_>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Verify the uppermost parent cannot be executed.
+    let execution = vm.execute(
+        &caller_private_key,
+        (format!("parent_program_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 2), "foo"),
+        Vec::<Value<_>>::new().into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+    assert!(execution.is_err(), "Expected an error when executing the uppermost parent program after upgrade.");
+
+    // Verify that the second-to-last parent can still be executed.
+    let execution = vm
+        .execute(
+            &caller_private_key,
+            (format!("parent_program_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 3), "foo"),
+            Vec::<Value<_>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Drop the VM.
+    drop(vm);
+
+    // Verify that the VM can still be loaded from the store.
+    let vm = VM::<CurrentNetwork, LedgerType>::from(store).unwrap();
+
+    // Check that all programs are present in the process.
+    for i in 0..(Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1) {
+        let program_id = ProgramID::from_str(&format!("parent_program_{i}.aleo")).unwrap();
+        assert!(vm.process().read().get_stack(program_id).is_ok(), "Program parent_program_{i}.aleo should exist.");
+    }
+    assert!(
+        vm.process().read().get_stack(ProgramID::from_str("parent_program_negative.aleo").unwrap()).is_ok(),
+        "Program parent_program_negative.aleo should exist."
+    );
+
+    // Verify that the uppermost parent program cannot be executed.
+    let execution = vm.execute(
+        &caller_private_key,
+        (format!("parent_program_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 2), "foo"),
+        Vec::<Value<_>>::new().into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+    assert!(execution.is_err(), "Expected an error when executing the uppermost parent program after upgrade.");
+
+    // Verify that the second-to-last parent can still be executed.
+    let execution = vm
+        .execute(
+            &caller_private_key,
+            (format!("parent_program_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 3), "foo"),
+            Vec::<Value<_>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+}
+
+// This test verifies that:
+//   - a child program can be upgraded beyond the transaction spend limit.
+//   - the parent program exists, but cannot be executed.
+//   - the VM can be loaded from the store.
+#[test]
+fn test_upgrade_child_program_beyond_transaction_spend_limit() {
+    let rng = &mut TestRng::default();
+
+    // Initialize the storage.
+    let store = ConsensusStore::<CurrentNetwork, LedgerType>::open(StorageMode::new_test(None)).unwrap();
+
+    // Initialize the VM.
+    let mut vm = VM::<CurrentNetwork, LedgerType>::from(store.clone()).unwrap();
+    let genesis = sample_genesis_block(rng);
+    vm.add_next_block(&genesis).unwrap();
+
+    // Get the genesis private key.
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Advance the VM to `ConsensusVersion::V9`.
+    advance_vm_to_height(
+        &mut vm,
+        caller_private_key,
+        CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap(),
+        rng,
+    );
+
+    // A helper to construct a finalize body with `n` expensive hash operations.
+    fn construct_finalize_body(n: usize, register_offset: usize) -> String {
+        let mut finalize_body = format!(
+            r"
+    cast  0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 0u8 into r{one} as [u8; 16u32];
+    cast  r{one} r{one} r{one} r{one} r{one} r{one} r{one} r{one} r{one} r{one} r{one} r{one} r{one} r{one} r{one} r{one} into r{two} as [[u8; 16u32]; 16u32];
+    cast  r{two} r{two} r{two} r{two} r{two} r{two} r{two} r{two} r{two} r{two} r{two} r{two} r{two} r{two} r{two} r{two} into r{three} as [[[u8; 16u32]; 16u32]; 16u32];",
+            one = register_offset,
+            two = register_offset + 1,
+            three = register_offset + 2
+        );
+        (3..(3 + n)).for_each(|i| {
+            finalize_body.push_str(&format!(
+                "hash.bhp256 r{} into r{} as field;\n",
+                register_offset + 2,
+                i + register_offset
+            ));
+        });
+        finalize_body
+    }
+
+    // Define the child program.
+    let child_program = Program::from_str(&format!(
+        r"
+program child_program.aleo;
+
+function foo:
+    async foo into r0;
+    output r0 as child_program.aleo/foo.future;
+
+finalize foo:
+    {}
+
+constructor:
+    assert.eq true true;
+    ",
+        construct_finalize_body(50, 0)
+    ))
+    .unwrap();
+
+    // Define the parent program that calls the child program.
+    let parent_program = Program::from_str(&format!(
+        r"
+import child_program.aleo;
+
+program parent_program.aleo;
+function foo:
+    call child_program.aleo/foo into r0;
+    async foo r0 into r1;
+    output r1 as parent_program.aleo/foo.future;
+
+finalize foo:
+    input r0 as child_program.aleo/foo.future;
+    await r0;
+    {}
+
+constructor:
+    assert.eq true true;
+    ",
+        construct_finalize_body(25, 1)
+    ))
+    .unwrap();
+
+    // Deploy the child program.
+    let child_deployment = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[child_deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Deploy the parent program.
+    let parent_deployment = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[parent_deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Execute the parent program.
+    let execution = vm
+        .execute(
+            &caller_private_key,
+            ("parent_program.aleo", "foo"),
+            Vec::<Value<_>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Upgrade the child program with a more expensive finalize body.
+    let upgraded_child_program = Program::from_str(&format!(
+        r"
+program child_program.aleo;
+function foo:
+    async foo into r0;
+    output r0 as child_program.aleo/foo.future;
+finalize foo:
+    {}
+
+constructor:
+    assert.eq true true;
+    ",
+        construct_finalize_body(75, 0)
+    ))
+    .unwrap();
+
+    // Attempt to upgrade the child program.
+    let upgraded_child_deployment =
+        vm.deploy(&caller_private_key, &upgraded_child_program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[upgraded_child_deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Execute the child program.
+    let execution = vm
+        .execute(
+            &caller_private_key,
+            ("child_program.aleo", "foo"),
+            Vec::<Value<_>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Verify that the parent program cannot be executed after the upgrade.
+    let execution = vm
+        .execute(
+            &caller_private_key,
+            ("parent_program.aleo", "foo"),
+            Vec::<Value<_>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // Drop the VM.
+    drop(vm);
+
+    // Verify that the VM can still be loaded from the store.
+    let vm = VM::<CurrentNetwork, LedgerType>::from(store).unwrap();
+
+    // Check that the parent program exists in the process.
+    let parent_program_id = ProgramID::from_str("parent_program.aleo").unwrap();
+    assert!(vm.process().read().get_stack(parent_program_id).is_ok(), "Program parent_program.aleo should exist.");
+
+    // Check that the child program exists in the process.
+    let child_program_id = ProgramID::from_str("child_program.aleo").unwrap();
+    assert!(vm.process().read().get_stack(child_program_id).is_ok(), "Program child_program.aleo should exist.");
+
+    // Execute the child program to verify it still works.
+    let execution = vm
+        .execute(
+            &caller_private_key,
+            ("child_program.aleo", "foo"),
+            Vec::<Value<_>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Verify that the parent program still cannot be executed.
+    let execution = vm
+        .execute(
+            &caller_private_key,
+            ("parent_program.aleo", "foo"),
+            Vec::<Value<_>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    vm.add_next_block(&block).unwrap();
+}

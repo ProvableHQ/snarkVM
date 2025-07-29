@@ -83,6 +83,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 (Cow::Owned(commitment), record) => (commitment, record),
             };
 
+            // Check ownership before determining whether to decrypt the record.
+            if !record.is_owner_with_address_x_coordinate(view_key, &address_x_coordinate) {
+                return None;
+            }
+
             // Determine whether to decrypt this record (or not), based on the filter.
             let commitment = match filter {
                 RecordsFilter::All => Ok(Some(commitment)),
@@ -121,12 +126,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             };
 
             match commitment {
-                Ok(Some(commitment)) => {
-                    match record.is_owner_with_address_x_coordinate(view_key, &address_x_coordinate) {
-                        true => Some((commitment, record)),
-                        false => None,
-                    }
-                }
+                Ok(Some(commitment)) => Some((commitment, record)),
                 Ok(None) => None,
                 Err(e) => {
                     warn!("Failed to process 'find_record_ciphertexts({:?})': {e}", filter);

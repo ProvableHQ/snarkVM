@@ -26,5 +26,10 @@ mod query;
 #[cfg(feature = "query")]
 pub use query::*;
 
+#[cfg(feature = "query")]
+mod static_query;
+#[cfg(feature = "query")]
+pub use static_query::*;
+
 mod traits;
 pub use traits::*;

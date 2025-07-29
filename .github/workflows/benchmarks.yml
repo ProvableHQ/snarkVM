@@ -23,6 +23,9 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Install required Debian pacakges
+        run: sudo apt install -y lld
+
       - uses: actions/cache@v4
         with:
           path: |

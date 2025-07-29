@@ -4041,3 +4041,30 @@ function create_and_consume:
     assert_eq!(num_slow_unspent_records, initial_slow_unspent_records + 1);
     assert_eq!(num_records, initial_records + 4);
 }
+
+// Ensure that `find_records` only returns records owned by the given view key.
+#[test]
+fn test_find_records_filters_by_ownership() {
+    let rng = &mut TestRng::default();
+
+    // Sample the test environment.
+    let crate::test_helpers::TestEnv { ledger, private_key, view_key, .. } = crate::test_helpers::sample_test_env(rng);
+
+    // Fetch all unspent records for the primary view key.
+    let owned_records =
+        ledger.find_records(&view_key, RecordsFilter::SlowUnspent(private_key)).unwrap().collect::<Vec<_>>();
+
+    // Ensure that we successfully fetched at least one record that is owned by the view key.
+    assert!(!owned_records.is_empty(), "Expected at least one record owned by the view key");
+
+    // Generate a new test environment to simulate an unrelated view key.
+    let other_env = crate::test_helpers::sample_test_env(rng);
+    let unrelated_view_key = other_env.view_key;
+
+    // Attempt to fetch records using the unrelated view key.
+    let unrelated_records = ledger.find_records(&unrelated_view_key, RecordsFilter::All).unwrap().collect::<Vec<_>>();
+
+    // Ensure that no records were returned for the unrelated view key.
+    // This validates that ownership filtering is enforced before decrypting or filtering records.
+    assert!(unrelated_records.is_empty(), "Expected no records for unrelated view key");
+}
