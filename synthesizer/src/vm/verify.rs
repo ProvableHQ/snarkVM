@@ -389,20 +389,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Transaction::Deploy(id, deployment_id, _, deployment, fee) => {
                 // Ensure the rejected ID is not present.
                 ensure!(rejected_id.is_none(), "Transaction '{id}' should not have a rejected ID (deployment)");
-                // Get the consensus version.
-                let consensus_version = N::CONSENSUS_VERSION(self.block_store().current_block_height())?;
                 // Compute the minimum deployment cost.
-                let (cost, _) = match consensus_version {
-                    ConsensusVersion::V1
-                    | ConsensusVersion::V2
-                    | ConsensusVersion::V3
-                    | ConsensusVersion::V4
-                    | ConsensusVersion::V5
-                    | ConsensusVersion::V6
-                    | ConsensusVersion::V7
-                    | ConsensusVersion::V8 => deployment_cost_v1(&self.process().read(), deployment)?,
-                    _ => deployment_cost_v2(&self.process().read(), deployment)?,
-                };
+                let (cost, _) = deployment_cost_v2(&self.process().read(), deployment)?;
                 // Ensure the fee is sufficient to cover the cost.
                 if *fee.base_amount()? < cost {
                     bail!("Transaction '{id}' has an insufficient base fee (deployment) - requires {cost} microcredits")
@@ -420,23 +408,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 if let Some(fee) = fee {
                     // If the fee is required, then check that the base fee amount is satisfied.
                     if is_fee_required {
-                        // Compute the execution cost based on the block height
-                        let block_height = self
-                            .block_store()
-                            .find_block_height_from_state_root(execution.global_state_root())?
-                            .unwrap_or_default();
-                        let consensus_version = N::CONSENSUS_VERSION(block_height)?;
-                        let (cost, (_, _)) = match consensus_version {
-                            ConsensusVersion::V1 => execution_cost_v1(&self.process().read(), execution)?,
-                            ConsensusVersion::V2
-                            | ConsensusVersion::V3
-                            | ConsensusVersion::V4
-                            | ConsensusVersion::V5
-                            | ConsensusVersion::V6
-                            | ConsensusVersion::V7
-                            | ConsensusVersion::V8 => execution_cost_v2(&self.process().read(), execution)?,
-                            _ => execution_cost_v3(&self.process().read(), execution)?,
-                        };
+                        // Compute the execution cost.
+                        let (cost, (_, _)) = execution_cost_v3(&self.process().read(), execution)?;
                         // Ensure the cost does not exceed the transaction spend limit.
                         ensure!(
                             cost <= N::TRANSACTION_SPEND_LIMIT,

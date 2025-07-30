@@ -79,18 +79,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let fee = match is_fee_required || is_priority_fee_declared {
             true => {
                 // Compute the minimum execution cost.
-                let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-                let (minimum_execution_cost, (_, _)) = match consensus_version {
-                    ConsensusVersion::V1 => execution_cost_v1(&self.process().read(), &execution)?,
-                    ConsensusVersion::V2
-                    | ConsensusVersion::V3
-                    | ConsensusVersion::V4
-                    | ConsensusVersion::V5
-                    | ConsensusVersion::V6
-                    | ConsensusVersion::V7
-                    | ConsensusVersion::V8 => execution_cost_v2(&self.process().read(), &execution)?,
-                    _ => execution_cost_v3(&self.process().read(), &execution)?,
-                };
+                let (minimum_execution_cost, (_, _)) = execution_cost_v3(&self.process().read(), &execution)?;
                 // Compute the execution ID.
                 let execution_id = execution.to_execution_id()?;
                 // Authorize the fee.
@@ -294,7 +283,13 @@ mod tests {
         types::Field,
     };
     use snarkvm_ledger_block::Transition;
-    use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command, execution_cost_v2};
+    use snarkvm_synthesizer_process::{
+        ConsensusFeeVersion,
+        cost_per_command,
+        execution_cost_v1,
+        execution_cost_v2,
+        execution_cost_v3,
+    };
     use snarkvm_synthesizer_program::StackTrait;
 
     use indexmap::IndexMap;
@@ -954,7 +949,7 @@ finalize test:
         assert_eq!(execution.transitions().len(), <CurrentNetwork as Network>::MAX_INPUTS + 1);
 
         // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
+        let (_, (_, finalize_cost)) = execution_cost_v3(&vm.process().read(), &execution).unwrap();
 
         // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
         let mut expected_cost = 0;
@@ -979,6 +974,7 @@ finalize test:
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })
                         .unwrap()
+                        / 25 // Divide by 25 to account for the 25x multiplier in the finalize cost.
                 }
             };
             // Add the cost to the total cost.
@@ -1092,7 +1088,7 @@ finalize test:
         assert_eq!(execution.transitions().len(), Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1);
 
         // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
+        let (_, (_, finalize_cost)) = execution_cost_v3(&vm.process().read(), &execution).unwrap();
 
         // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
         let mut expected_cost = 0;
@@ -1117,6 +1113,7 @@ finalize test:
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })
                         .unwrap()
+                        / 25 // Divide by 25 to account for the 25x multiplier in the finalize cost.
                 }
             };
             // Add the cost to the total cost.

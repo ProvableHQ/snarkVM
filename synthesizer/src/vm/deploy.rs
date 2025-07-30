@@ -56,17 +56,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let owner = ProgramOwner::new(private_key, deployment_id, rng)?;
 
         // Compute the minimum deployment cost.
-        let (minimum_deployment_cost, _) = match N::CONSENSUS_VERSION(query.current_block_height()?)? {
-            ConsensusVersion::V1
-            | ConsensusVersion::V2
-            | ConsensusVersion::V3
-            | ConsensusVersion::V4
-            | ConsensusVersion::V5
-            | ConsensusVersion::V6
-            | ConsensusVersion::V7
-            | ConsensusVersion::V8 => deployment_cost_v1(&self.process().read(), &deployment)?,
-            _ => deployment_cost_v2(&self.process().read(), &deployment)?,
-        };
+        let (minimum_deployment_cost, _) = deployment_cost_v2(&self.process().read(), &deployment)?;
         // Authorize the fee.
         let fee_authorization = match fee_record {
             Some(record) => self.authorize_fee_private(
