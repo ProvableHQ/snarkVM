@@ -33,7 +33,7 @@ macro_rules! ensure_is_unique {
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
-    /// The maximum number of deployments to verify in parallel.
+    /// The maximum number of deployments that the VM can verify in parallel.
     pub const MAX_PARALLEL_DEPLOY_VERIFICATIONS: usize = 5;
     /// The maximum number of executions to verify in parallel.
     pub const MAX_PARALLEL_EXECUTE_VERIFICATIONS: usize = 1000;
