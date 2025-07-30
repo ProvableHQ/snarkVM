@@ -22,6 +22,7 @@ use console::{
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
 use snarkvm_synthesizer_program::{CastType, Command, Instruction, Operand};
 
+// The cost factor for the reduced synthesis cost as specified by ARC-5.
 const COST_FACTOR: u64 = 25;
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment using the reduced synthesis cost (total cost, (storage cost, synthesis cost, constructor cost, namespace cost)).
