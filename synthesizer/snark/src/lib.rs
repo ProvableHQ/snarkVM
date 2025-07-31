@@ -21,6 +21,9 @@
 extern crate snarkvm_circuit as circuit;
 extern crate snarkvm_console as console;
 
+#[macro_use]
+extern crate tracing;
+
 use console::network::{FiatShamir, prelude::*};
 use snarkvm_algorithms::{snark::varuna, traits::SNARK};
 

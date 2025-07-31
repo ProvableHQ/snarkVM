@@ -102,13 +102,6 @@ impl<N: Network> Stack<N> {
             "The number of functions in the program does not match the number of verifying keys"
         );
 
-        #[cfg(not(any(test, feature = "test")))]
-        // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
-        if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&_consensus_version) {
-            finish!(timer);
-            return Ok(());
-        }
-
         // Create a seeded rng to use for input value and sub-stack generation.
         // This is needed to ensure that the verification results of deployments are consistent across all parties,
         // because currently there is a possible flakiness due to overflows in Field to Scalar casting.
@@ -189,6 +182,13 @@ impl<N: Network> Stack<N> {
                 if let Err(err) = self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng) {
                     bail!("Failed to synthesize the circuit for '{function_name}': {err}")
                 }
+                #[cfg(not(any(test, feature = "test")))]
+                // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
+                // Circuit synthesis was changed in a backwards incompatible way in ConsensusVersion::V8.
+                if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&_consensus_version) {
+                    finish!(timer);
+                    return Ok(());
+                }        
                 // Check the certificate.
                 match assignments.read().last() {
                     None => bail!("The assignment for function '{function_name}' is missing in '{program_id}'"),

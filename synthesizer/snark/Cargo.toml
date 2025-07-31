@@ -52,6 +52,9 @@ optional = true
 workspace = true
 features = [ "preserve_order" ]
 
+[dependencies.tracing]
+workspace = true
+
 [dev-dependencies.snarkvm-console]
 workspace = true
 default-features = false

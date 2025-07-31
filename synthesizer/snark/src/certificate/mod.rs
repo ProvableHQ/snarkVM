@@ -60,7 +60,6 @@ impl<N: Network> Certificate<N> {
         assignment: &circuit::Assignment<N::Field>,
         verifying_key: &VerifyingKey<N>,
     ) -> bool {
-        #[cfg(feature = "aleo-cli")]
         let timer = std::time::Instant::now();
 
         // Retrieve the verification parameters.
@@ -71,17 +70,12 @@ impl<N: Network> Certificate<N> {
         #[allow(clippy::manual_unwrap_or_default)]
         match Varuna::<N>::verify_vk(universal_verifier, fiat_shamir, assignment, verifying_key, self) {
             Ok(is_valid) => {
-                #[cfg(feature = "aleo-cli")]
-                {
-                    let elapsed = timer.elapsed().as_millis();
-                    println!("{}", format!(" • Verified certificate for '{function_name}': {elapsed} ms").dimmed());
-                }
-
+                let elapsed = timer.elapsed().as_millis();
+                debug!("{}", format!(" • Verified certificate for '{function_name}': {elapsed} ms"));
                 is_valid
             }
             Err(error) => {
-                #[cfg(feature = "aleo-cli")]
-                println!("{}", format!(" • Certificate verification failed: {error}").dimmed());
+                debug!("{}", format!(" • Certificate verification failed: {error}"));
                 false
             }
         }
