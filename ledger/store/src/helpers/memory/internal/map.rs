@@ -100,7 +100,16 @@ impl<
             }
             // Otherwise, insert the key-value pair directly into the map.
             false => {
-                self.map.write().insert(bincode::serialize(&key)?, value);
+                let serialized_key = bincode::serialize(&key)?;
+                let start = std::time::Instant::now();
+                self.map.write().insert(serialized_key, value);
+                let duration = start.elapsed().as_secs_f64();
+                snarkvm_metrics::histogram_label(
+                    snarkvm_metrics::database::WRITE_DURATION,
+                    "map_type",
+                    "memory".to_string(),
+                    duration,
+                );
             }
         }
 
@@ -119,7 +128,16 @@ impl<
             }
             // Otherwise, remove the key-value pair directly from the map.
             false => {
-                self.map.write().remove(&bincode::serialize(&key)?);
+                let serialized_key = bincode::serialize(&key)?;
+                let start = std::time::Instant::now();
+                self.map.write().remove(&serialized_key);
+                let duration = start.elapsed().as_secs_f64();
+                snarkvm_metrics::histogram_label(
+                    snarkvm_metrics::database::DELETE_DURATION,
+                    "map_type",
+                    "memory".to_string(),
+                    duration,
+                );
             }
         }
 
@@ -217,12 +235,24 @@ impl<
                 .collect::<Result<Vec<_>>>()?;
 
             // Perform all the queued operations.
+            let start = std::time::Instant::now();
             for (key, value) in prepared_operations {
                 match value {
-                    Some(value) => locked_map.insert(key, value),
-                    None => locked_map.remove(&key),
+                    Some(value) => {
+                        locked_map.insert(key, value);
+                    }
+                    None => {
+                        locked_map.remove(&key);
+                    }
                 };
             }
+            let duration = start.elapsed().as_secs_f64();
+            snarkvm_metrics::histogram_label(
+                snarkvm_metrics::database::WRITE_DURATION,
+                "map_type",
+                "memory_batch".to_string(),
+                duration,
+            );
         }
 
         // Clear the checkpoint stack.
@@ -315,7 +345,17 @@ impl<
         K: Borrow<Q>,
         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
     {
-        Ok(self.map.read().get(&bincode::serialize(key)?).cloned().map(Cow::Owned))
+        let serialized_key = bincode::serialize(key)?;
+        let start = std::time::Instant::now();
+        let result = self.map.read().get(&serialized_key).cloned();
+        let duration = start.elapsed().as_secs_f64();
+        snarkvm_metrics::histogram_label(
+            snarkvm_metrics::database::READ_DURATION,
+            "map_type",
+            "memory".to_string(),
+            duration,
+        );
+        Ok(result.map(Cow::Owned))
     }
 
     ///

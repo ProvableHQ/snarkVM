@@ -53,6 +53,33 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
         let checkpoint = rocksdb::checkpoint::Checkpoint::new(&self.database)?;
         checkpoint.create_checkpoint(path).map_err(|e| e.into_string())
     }
+
+    /// Returns a human-readable map type label for metrics based on the context.
+    fn map_type_label(&self) -> &'static str {
+        // Extract the map_id from context (bytes 2-4 contain the u16 map_id)
+        if self.context.len() >= 4 {
+            let map_id_bytes = [self.context[2], self.context[3]];
+            let map_id = u16::from_le_bytes(map_id_bytes);
+
+            // Map the ID ranges to categories based on DataID enum ordering
+            match map_id {
+                0..=1 => "bft",
+                2..=18 => "block",
+                19..=21 => "committee",
+                22..=29 => "deployment",
+                30..=32 => "execution",
+                33..=34 => "fee",
+                35..=42 => "input",
+                43..=51 => "output",
+                52 => "transaction",
+                53..=57 => "transition",
+                58..=59 => "program",
+                _ => "unknown",
+            }
+        } else {
+            "unknown"
+        }
+    }
 }
 
 impl<
@@ -76,7 +103,16 @@ impl<
                 // Prepare the prefixed key and serialized value.
                 let raw_key = self.create_prefixed_key(&key)?;
                 let raw_value = bincode::serialize(&value)?;
+                let map_type = self.map_type_label();
+                let start = std::time::Instant::now();
                 self.database.put(raw_key, raw_value)?;
+                let duration = start.elapsed().as_secs_f64();
+                snarkvm_metrics::histogram_label(
+                    snarkvm_metrics::database::WRITE_DURATION,
+                    "map_type",
+                    map_type.to_string(),
+                    duration,
+                );
             }
         }
 
@@ -97,7 +133,16 @@ impl<
             false => {
                 // Prepare the prefixed key.
                 let raw_key = self.create_prefixed_key(key)?;
+                let map_type = self.map_type_label();
+                let start = std::time::Instant::now();
                 self.database.delete(raw_key)?;
+                let duration = start.elapsed().as_secs_f64();
+                snarkvm_metrics::histogram_label(
+                    snarkvm_metrics::database::DELETE_DURATION,
+                    "map_type",
+                    map_type.to_string(),
+                    duration,
+                );
             }
         }
 
@@ -236,7 +281,15 @@ impl<
             // Empty the collection of pending operations.
             let batch = mem::take(&mut *self.database.atomic_batch.lock());
             // Execute all the operations atomically.
+            let start = std::time::Instant::now();
             self.database.rocksdb.write(batch)?;
+            let duration = start.elapsed().as_secs_f64();
+            snarkvm_metrics::histogram_label(
+                snarkvm_metrics::database::WRITE_DURATION,
+                "map_type",
+                "batch".to_string(),
+                duration,
+            );
             // Ensure that the database atomic batch is empty.
             assert!(self.database.atomic_batch.lock().is_empty());
         }
@@ -543,10 +596,17 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
         Q: Serialize + ?Sized,
     {
         let raw_key = self.create_prefixed_key(key)?;
-        match self.database.get_pinned_opt(&raw_key, &self.database.default_readopts)? {
-            Some(data) => Ok(Some(data)),
-            None => Ok(None),
-        }
+        let map_type = self.map_type_label();
+        let start = std::time::Instant::now();
+        let result = self.database.get_pinned_opt(&raw_key, &self.database.default_readopts)?;
+        let duration = start.elapsed().as_secs_f64();
+        snarkvm_metrics::histogram_label(
+            snarkvm_metrics::database::READ_DURATION,
+            "map_type",
+            map_type.to_string(),
+            duration,
+        );
+        Ok(result)
     }
 }
 
@@ -560,9 +620,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> fmt::Debu
 mod tests {
     use super::*;
     use crate::{
-        FinalizeMode,
-        atomic_batch_scope,
-        atomic_finalize,
+        FinalizeMode, atomic_batch_scope, atomic_finalize,
         helpers::rocksdb::{MapID, TestMap},
     };
     use console::{
