@@ -351,6 +351,9 @@ impl Environment for Circuit {
             assert_eq!(0, circuit.borrow().num_private());
             assert_eq!(1, circuit.borrow().num_variables());
             assert_eq!(0, circuit.borrow().num_constraints());
+            // Optionally save a hash of the R1CS.
+            #[cfg(feature = "save_r1cs_hashes")]
+            r1cs.save_hash();
             // Convert the R1CS instance to an assignment.
             Assignment::from(r1cs)
         })
