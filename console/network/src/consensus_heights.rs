@@ -37,7 +37,7 @@ pub enum ConsensusVersion {
     V8 = 8,
     /// V9: Support for program upgradability.
     V9 = 9,
-    /// V10: Support for external records.
+    /// V10: Support for external structs.
     V10 = 10,
 }
 
