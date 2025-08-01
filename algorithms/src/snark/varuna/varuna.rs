@@ -297,10 +297,10 @@ where
         let circuit_id = &verifying_key.id;
         let state = AHPForR1CS::<E::Fr, SM>::index_helper(circuit)?;
         if state.index_info != verifying_key.circuit_info {
-            bail!(SNARKError::CircuitNotFound);
+            bail!("Circuit info mismatch, expected {:?}, got {:?}", verifying_key.circuit_info, state.index_info);
         }
-        if state.id != *circuit_id {
-            bail!(SNARKError::CircuitNotFound);
+        if state.id != *circuit_id { // TODO: how can state.id be different when state.index_info is the same? Are some R1CS rows different due to sorting? Did we actually subtly change our arithmetization?
+            bail!("Circuit ID mismatch, expected {:?}, got {:?}", circuit_id, state.id);
         }
 
         // Make sure certificate is not hiding
@@ -376,10 +376,10 @@ where
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
         for pk in keys_to_constraints.keys() {
-            let batch_size = prover_state.batch_size(&pk.circuit).ok_or(SNARKError::CircuitNotFound)?;
-            let public_input = prover_state.public_inputs(&pk.circuit).ok_or(SNARKError::CircuitNotFound)?;
+            let batch_size = prover_state.batch_size(&pk.circuit).ok_or(anyhow!("Batch size not found."))?;
+            let public_input = prover_state.public_inputs(&pk.circuit).ok_or(anyhow!("Public input not found."))?;
             let padded_public_input =
-                prover_state.padded_public_inputs(&pk.circuit).ok_or(SNARKError::CircuitNotFound)?;
+                prover_state.padded_public_inputs(&pk.circuit).ok_or(anyhow!("Padded public input not found."))?;
             let circuit_id = pk.circuit.id;
             batch_sizes.insert(circuit_id, batch_size);
             circuit_infos.insert(circuit_id, &pk.circuit_verifying_key.circuit_info);
