@@ -22,9 +22,6 @@ impl<E: Environment> FromBits for Scalar<E> {
     ///   - If `bits_le` is longer than `E::ScalarField::size_in_bits()`, the excess bits are enforced to be `0`s.
     ///   - If `bits_le` is shorter than `E::ScalarField::size_in_bits()`, it is padded with `0`s up to scalar field size.
     fn from_bits_le(bits_le: &[Self::Boolean]) -> Self {
-        // Note: We are reconstituting the scalar field into a base field.
-        // This is safe as the scalar field modulus is less than the base field modulus,
-        // and thus will always fit within a single base field element.
         debug_assert!(console::Scalar::<E::Network>::size_in_bits() < console::Field::<E::Network>::size_in_bits());
 
         // Retrieve the data and scalar field size.

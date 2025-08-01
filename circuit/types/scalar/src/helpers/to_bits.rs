@@ -36,9 +36,6 @@ impl<E: Environment> ToBits for &Scalar<E> {
     fn write_bits_le(&self, vec: &mut Vec<Self::Boolean>) {
         // Compute the bits of the scalar.
         let bits = self.bits_le.get_or_init(|| {
-            // Note: We are reconstituting the scalar field into a base field.
-            // This is safe as the scalar field modulus is less than the base field modulus,
-            // and thus will always fit within a single base field element.
             debug_assert!(console::Scalar::<E::Network>::size_in_bits() < console::Field::<E::Network>::size_in_bits());
 
             // Construct a vector of `Boolean`s comprising the bits of the scalar value.

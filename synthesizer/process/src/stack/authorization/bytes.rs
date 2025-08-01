@@ -27,18 +27,32 @@ impl<N: Network> FromBytes for Authorization<N> {
 
         // Read the number of requests.
         let num_requests = u8::read_le(&mut reader)?;
-        // Ensure the number of requests is nonzero.
+        // Ensure the number of requests is nonzero and within bounds.
         if num_requests == 0 {
             return Err(error("Authorization (from 'read_le') has no requests"));
+        }
+        if num_requests as usize > Transaction::<N>::MAX_TRANSITIONS {
+            return Err(error(format!(
+                "Authorization (from 'read_le') has too many requests ({} > {})",
+                num_requests,
+                Transaction::<N>::MAX_TRANSITIONS
+            )));
         }
         // Read the requests.
         let requests = (0..num_requests).map(|_| Request::read_le(&mut reader)).collect::<IoResult<Vec<_>>>()?;
 
         // Read the number of transitions.
         let num_transitions = u8::read_le(&mut reader)?;
-        // Ensure the number of transitions is nonzero.
+        // Ensure the number of transitions is nonzero and within bounds.
         if num_transitions == 0 {
             return Err(error("Authorization (from 'read_le') has no transitions"));
+        }
+        if num_transitions as usize > Transaction::<N>::MAX_TRANSITIONS {
+            return Err(error(format!(
+                "Authorization (from 'read_le') has too many transitions ({} > {})",
+                num_transitions,
+                Transaction::<N>::MAX_TRANSITIONS
+            )));
         }
         // Read the transitions.
         let transitions =

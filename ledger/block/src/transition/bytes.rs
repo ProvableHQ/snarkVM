@@ -34,6 +34,14 @@ impl<N: Network> FromBytes for Transition<N> {
 
         // Read the number of inputs.
         let num_inputs: u8 = FromBytes::read_le(&mut reader)?;
+        // Ensure the number of inputs is within bounds.
+        if num_inputs as usize > N::MAX_INPUTS {
+            return Err(error(format!(
+                "Transition (from 'read_le') has too many inputs ({} > {})",
+                num_inputs,
+                N::MAX_INPUTS
+            )));
+        }
         // Read the inputs.
         let mut inputs = Vec::with_capacity(num_inputs as usize);
         for _ in 0..num_inputs {
@@ -43,6 +51,14 @@ impl<N: Network> FromBytes for Transition<N> {
 
         // Read the number of outputs.
         let num_outputs: u8 = FromBytes::read_le(&mut reader)?;
+        // Ensure the number of outputs is within bounds.
+        if num_outputs as usize > N::MAX_OUTPUTS {
+            return Err(error(format!(
+                "Transition (from 'read_le') has too many outputs ({} > {})",
+                num_outputs,
+                N::MAX_OUTPUTS
+            )));
+        }
         // Read the outputs.
         let mut outputs = Vec::with_capacity(num_outputs as usize);
         for _ in 0..num_outputs {

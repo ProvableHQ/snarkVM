@@ -27,6 +27,14 @@ impl<N: Network> FromBytes for ConfirmedTransaction<N> {
                 let transaction = Transaction::<N>::read_le(&mut reader)?;
                 // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
+                // Ensure the number of finalize operations is within bounds.
+                if num_finalize as usize > N::MAX_COMMANDS {
+                    return Err(error(format!(
+                        "ConfirmedTransaction (from 'read_le') has too many finalize operations ({} > {})",
+                        num_finalize,
+                        N::MAX_COMMANDS
+                    )));
+                }
                 // Read the finalize operations.
                 let finalize =
                     (0..num_finalize).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
@@ -40,6 +48,14 @@ impl<N: Network> FromBytes for ConfirmedTransaction<N> {
                 let transaction = Transaction::<N>::read_le(&mut reader)?;
                 // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
+                // Ensure the number of finalize operations is within bounds.
+                if num_finalize as usize > N::MAX_COMMANDS {
+                    return Err(error(format!(
+                        "ConfirmedTransaction (from 'read_le') has too many finalize operations ({} > {})",
+                        num_finalize,
+                        N::MAX_COMMANDS
+                    )));
+                }
                 // Read the finalize operations.
                 let finalize =
                     (0..num_finalize).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
@@ -55,6 +71,14 @@ impl<N: Network> FromBytes for ConfirmedTransaction<N> {
                 let rejected = Rejected::<N>::read_le(&mut reader)?;
                 // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
+                // Ensure the number of finalize operations is within bounds.
+                if num_finalize as usize > N::MAX_COMMANDS {
+                    return Err(error(format!(
+                        "ConfirmedTransaction (from 'read_le') has too many finalize operations ({} > {})",
+                        num_finalize,
+                        N::MAX_COMMANDS
+                    )));
+                }
                 // Read the finalize operations.
                 let finalize =
                     (0..num_finalize).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
@@ -70,6 +94,14 @@ impl<N: Network> FromBytes for ConfirmedTransaction<N> {
                 let rejected = Rejected::<N>::read_le(&mut reader)?;
                 // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
+                // Ensure the number of finalize operations is within bounds.
+                if num_finalize as usize > N::MAX_COMMANDS {
+                    return Err(error(format!(
+                        "ConfirmedTransaction (from 'read_le') has too many finalize operations ({} > {})",
+                        num_finalize,
+                        N::MAX_COMMANDS
+                    )));
+                }
                 // Read the finalize operations.
                 let finalize =
                     (0..num_finalize).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;

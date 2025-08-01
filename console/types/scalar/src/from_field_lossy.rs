@@ -18,18 +18,15 @@ use super::*;
 impl<E: Environment> Scalar<E> {
     /// Casts a scalar from a base field, with lossy truncation.
     ///
-    /// This method is commonly-used by hash-to-scalar algorithms,
+    /// This method is commonly used by hash-to-scalar algorithms,
     /// where the hash output does not need to preserve the full base field.
     pub fn from_field_lossy(field: &Field<E>) -> Self {
-        // Note: We are reconstituting the base field into a scalar field.
-        // This is safe as the scalar field modulus is less than the base field modulus,
-        // and thus will always fit within a single base field element.
         debug_assert!(Scalar::<E>::size_in_bits() < Field::<E>::size_in_bits());
 
         // Truncate the field to the size in data bits (1 bit less than the MODULUS) of the scalar.
         // Slicing here is safe as the base field is larger than the scalar field.
         let result = Self::from_bits_le(&field.to_bits_le()[..Scalar::<E>::size_in_data_bits()]);
-        debug_assert!(result.is_ok(), "A lossy integer should always be able to be constructed from scalar bits");
+        debug_assert!(result.is_ok(), "A lossy scalar should always be able to be constructed from field bits");
         result.unwrap()
     }
 }

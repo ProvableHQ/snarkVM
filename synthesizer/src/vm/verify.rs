@@ -366,16 +366,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 if let Some(fee) = fee {
                     // If the fee is required, then check that the base fee amount is satisfied.
                     if is_fee_required {
-                        // Compute the execution cost based on the block height
-                        let block_height = self
-                            .block_store()
-                            .find_block_height_from_state_root(execution.global_state_root())?
-                            .unwrap_or_default();
-                        let consensus_version = N::CONSENSUS_VERSION(block_height)?;
-                        let (cost, (_, _)) = match consensus_version == ConsensusVersion::V1 {
-                            true => execution_cost_v1(&self.process().read(), execution)?,
-                            false => execution_cost_v2(&self.process().read(), execution)?,
-                        };
+                        // We are using execution_cost_v2 to compute the execution cost.
+                        // Using `execution_cost_v2` is fine as a default because it is strictly cheaper than or equivalent to `execution_cost_v1`.
+                        let (cost, (_, _)) = execution_cost_v2(&self.process().read(), execution)?;
                         // Ensure the cost does not exceed the transaction spend limit.
                         ensure!(
                             cost <= N::TRANSACTION_SPEND_LIMIT,
@@ -1061,104 +1054,6 @@ function compute:
         assert!(vm.check_transaction(&mutated_transaction, None, rng).is_err());
         // Ensure the partially_verified_transactions cache is not updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_none());
-    }
-
-    #[cfg(feature = "test")]
-    #[test]
-    fn test_fee_migration() {
-        let minimum_credits_transfer_public_fee = 34_060;
-        let old_minimum_credits_transfer_public_fee = 51_060;
-
-        let rng = &mut TestRng::default();
-
-        // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Create the base transaction
-        let transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
-        let cache_key = create_cache_key(&vm, &transaction);
-
-        // Try to submit a tx with the new fee before the migration block height
-        let fee_too_low_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
-            rng,
-            transaction.clone(),
-            minimum_credits_transfer_public_fee,
-        );
-        assert!(vm.check_transaction(&fee_too_low_transaction, None, rng).is_err());
-        // Ensure the partially_verified_transactions cache is not updated.
-        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_none());
-
-        // Try to submit a tx with the old fee before the migration block height
-        let old_valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
-            rng,
-            transaction.clone(),
-            old_minimum_credits_transfer_public_fee,
-        );
-        let cache_key = create_cache_key(&vm, &old_valid_transaction);
-        assert!(vm.check_transaction(&old_valid_transaction, None, rng).is_ok());
-        // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
-
-        // Update the VM to the migration block height
-        let private_key = test_helpers::sample_genesis_private_key(rng);
-        let transactions: [Transaction<CurrentNetwork>; 0] = [];
-        for _ in 0..CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap() {
-            // Call the function
-            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
-            vm.add_next_block(&next_block).unwrap();
-        }
-
-        // Create a new transaction with the new stateroot post migration block height
-        let transaction = {
-            let address = Address::try_from(&private_key).unwrap();
-            let inputs = [
-                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
-            ]
-            .into_iter();
-
-            // Execute.
-            let transaction_without_fee =
-                vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs, None, 0, None, rng).unwrap();
-            let execution = transaction_without_fee.execution().unwrap().clone();
-
-            // Authorize the fee.
-            let authorization = vm
-                .authorize_fee_public(&private_key, 10_000_000, 100, execution.to_execution_id().unwrap(), rng)
-                .unwrap();
-            // Compute the fee.
-            let fee = vm.execute_fee_authorization(authorization, None, rng).unwrap();
-
-            // Construct the transaction.
-            Transaction::from_execution(execution, Some(fee)).unwrap()
-        };
-
-        // Try to submit a tx with the old fee after the migration block height
-        // Should work as now the fee is just too high
-        let fee_too_high_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
-            rng,
-            transaction.clone(),
-            old_minimum_credits_transfer_public_fee,
-        );
-        let cache_key = create_cache_key(&vm, &fee_too_high_transaction);
-        assert!(vm.check_transaction(&fee_too_high_transaction, None, rng).is_ok());
-        // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
-
-        // Try to submit a tx with the new fee after the migration block height
-        let valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
-            rng,
-            transaction.clone(),
-            minimum_credits_transfer_public_fee,
-        );
-        let cache_key = create_cache_key(&vm, &valid_transaction);
-        assert!(vm.check_transaction(&valid_transaction, None, rng).is_ok());
-        // Ensure the partially_verified_transactions cache is updated.
-        assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
     }
 
     #[cfg(feature = "test")]

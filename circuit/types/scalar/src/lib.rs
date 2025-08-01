@@ -53,9 +53,6 @@ impl<E: Environment> Inject for Scalar<E> {
 
     /// Initializes a scalar circuit from a console scalar.
     fn new(mode: Mode, scalar: Self::Primitive) -> Self {
-        // Note: We are reconstituting the scalar field into a base field.
-        // This is safe as the scalar field modulus is less than the base field modulus,
-        // and thus will always fit within a single base field element.
         debug_assert!(console::Scalar::<E::Network>::size_in_bits() < console::Field::<E::Network>::size_in_bits());
 
         // Initialize the scalar as a field element.

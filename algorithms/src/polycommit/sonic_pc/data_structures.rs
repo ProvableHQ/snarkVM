@@ -17,6 +17,7 @@ use super::{LabeledPolynomial, PolynomialInfo};
 use crate::{crypto_hash::sha256::sha256, fft::EvaluationDomain, polycommit::kzg10};
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{ConstraintFieldError, Field, PrimeField, ToConstraintField};
+use snarkvm_parameters::mainnet::MAX_NUM_POWERS;
 use snarkvm_utilities::{FromBytes, ToBytes, error, serialize::*};
 
 use hashbrown::HashMap;
@@ -68,6 +69,12 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
     fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
         // Deserialize `powers`.
         let powers_len: u32 = FromBytes::read_le(&mut reader)?;
+        // Ensure the number of powers is within bounds.
+        if powers_len as usize > MAX_NUM_POWERS {
+            return Err(error(format!(
+                "CommitterKey (from 'read_le') has too many points ({powers_len} > {MAX_NUM_POWERS})"
+            )));
+        }
         let mut powers_of_beta_g = Vec::with_capacity(powers_len as usize);
         for _ in 0..powers_len {
             let power: E::G1Affine = FromBytes::read_le(&mut reader)?;

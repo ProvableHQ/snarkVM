@@ -4,11 +4,11 @@ outputs:
   execute:
     good_constructor.aleo/check:
       outputs:
-      - '{"type":"future","id":"7193918481944815281366135374398693434460015709838433843365738057926267099778field","value":"{\n  program_id: good_constructor.aleo,\n  function_name: check,\n  arguments: []\n}"}'
+      - '{"type":"future","id":"7086913739686543661745625595436283538683627173984223197305480672714328309523field","value":"{\n  program_id: good_constructor.aleo,\n  function_name: check,\n  arguments: []\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"341861574175661095501351520594605156279706665066223111854585628429923358450field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    3224u64\n  ]\n}"}'
+      - '{"type":"future","id":"4715256307260807634644231927848294119757509292373387389747070413102739499442field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    3224u64\n  ]\n}"}'

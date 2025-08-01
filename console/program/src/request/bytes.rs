@@ -36,6 +36,14 @@ impl<N: Network> FromBytes for Request<N> {
 
         // Read the number of inputs.
         let inputs_len = u16::read_le(&mut reader)?;
+        // Ensure the number of inputs is within bounds.
+        if inputs_len as usize > N::MAX_INPUTS {
+            return Err(error(format!(
+                "Request (from 'read_le') has too many inputs ({} > {})",
+                inputs_len,
+                N::MAX_INPUTS
+            )));
+        }
         // Read the input IDs.
         let input_ids = (0..inputs_len).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
         // Read the inputs.

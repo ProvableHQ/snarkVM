@@ -32,6 +32,14 @@ impl<N: Network> FromBytes for Deployment<N> {
 
         // Read the number of entries in the bundle.
         let num_entries = u16::read_le(&mut reader)?;
+        // Ensure the number of entries is within bounds.
+        if num_entries as usize > N::MAX_FUNCTIONS {
+            return Err(error(format!(
+                "Deployment (from 'read_le') has too many entries ({} > {})",
+                num_entries,
+                N::MAX_FUNCTIONS
+            )));
+        }
         // Read the verifying keys.
         let mut verifying_keys = Vec::with_capacity(num_entries as usize);
         for _ in 0..num_entries {
