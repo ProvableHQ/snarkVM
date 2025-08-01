@@ -455,7 +455,7 @@ fn ensure_deployment_valid_for_consensus_version<N: Network>(
         );
         ensure!(deployment.program_owner().is_some(), "Invalid deployment transaction '{id}' - missing program owner");
     }
-    if consensus_version <= ConsensusVersion::V9 {
+    if consensus_version < ConsensusVersion::V10 {
         ensure!(
             !deployment.program().contains_external_struct(),
             "Invalid deployment transaction '{id}' - external structs may only be used beginning with Consensus version 10"
