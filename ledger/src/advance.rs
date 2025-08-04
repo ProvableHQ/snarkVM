@@ -92,7 +92,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Acquire the write lock on the current block.
         let mut current_block = self.current_block.write();
         // Check again for any possible race conditions.
-        if current_block.is_genesis() {
+        if current_block.is_genesis()? {
             // current block is initialized as the genesis block, but the ledger will
             // also advance to it on startup.
             ensure!(

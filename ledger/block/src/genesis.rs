@@ -19,26 +19,46 @@ impl<N: Network> Block<N> {
     /// Specifies the number of genesis transactions.
     pub const NUM_GENESIS_TRANSACTIONS: usize = 4;
 
-    /// Returns `true` if the block is a genesis block.
-    pub fn is_genesis(&self) -> bool {
+    /// Returns `Ok(true)` if the block is a genesis block.
+    pub fn is_genesis(&self) -> Result<bool> {
         // Ensure the previous block hash is zero.
-        self.previous_hash == N::BlockHash::default()
-            // Ensure the header is a genesis block header.
-            && self.header.is_genesis()
-            // Ensure the genesis authority is a beacon.
-            && self.authority.is_beacon()
-            // Ensure there is the correct number of ratification operations in the genesis block.
-            && self.ratifications.len() == 1
-            // Ensure there are no solutions in the genesis block.
-            && self.solutions.is_empty()
-            // Ensure there is the correct number of accepted transaction in the genesis block.
-            && self.transactions.num_accepted() == Self::NUM_GENESIS_TRANSACTIONS
-            // Ensure there is the correct number of rejected transaction in the genesis block.
-            && self.transactions.num_rejected() == 0
-            // Ensure there is the correct number of finalize operations in the genesis block.
-            && self.transactions.num_finalize() == 2 * Self::NUM_GENESIS_TRANSACTIONS
-            // Ensure there are no aborted transaction IDs in the genesis block.
-            && self.aborted_transaction_ids.is_empty()
+        if self.previous_hash != N::BlockHash::default()
+            || !self.header.is_genesis()
+            || !self.authority.is_beacon()
+            || !self.ratifications.len() == 1
+        {
+            return Ok(false);
+        }
+
+        if !self.solutions.is_empty() {
+            return Err(error("Genesis block must have no solutions").into());
+        }
+
+        if !self.transactions.num_accepted() == Self::NUM_GENESIS_TRANSACTIONS {
+            return Err(error(format!(
+                "Genesis block must have {} accepted transactions",
+                Self::NUM_GENESIS_TRANSACTIONS
+            ))
+            .into());
+        }
+
+        if !self.transactions.num_rejected() == 0 {
+            return Err(error("Genesis block must have no rejected transactions").into());
+        }
+
+        if !self.transactions.num_finalize() == 2 * Self::NUM_GENESIS_TRANSACTIONS {
+            return Err(error(format!(
+                "Genesis block must have {} finalize operations",
+                2 * Self::NUM_GENESIS_TRANSACTIONS
+            ))
+            .into());
+        }
+
+        if !self.aborted_transaction_ids.is_empty() {
+            return Err(error("Genesis block must have no aborted transaction IDs").into());
+        }
+
+        Ok(true)
     }
 }
 
@@ -53,6 +73,6 @@ mod tests {
     fn test_genesis() {
         // Load the genesis block.
         let genesis_block = Block::<CurrentNetwork>::read_le(CurrentNetwork::genesis_bytes()).unwrap();
-        assert!(genesis_block.is_genesis());
+        assert!(genesis_block.is_genesis().unwrap());
     }
 }
