@@ -898,4 +898,13 @@ mod tests {
         let deserialized_metadata: Metadata<CurrentNetwork> = serde_json::from_str(&json_metadata).unwrap();
         assert_eq!(metadata, deserialized_metadata);
     }
+
+    #[test]
+    fn test_is_genesis_fallible() {
+        let (mut block, transaction) =
+            crate::test_helpers::sample_genesis_block_and_transaction(&mut TestRng::default());
+
+        block.aborted_transaction_ids.push(transaction.id());
+        assert!(block.is_genesis().is_err());
+    }
 }
