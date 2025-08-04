@@ -17,7 +17,6 @@ use super::Certificate;
 use crate::{
     AlgebraicSponge,
     SNARK,
-    SNARKError,
     fft::EvaluationDomain,
     polycommit::sonic_pc::{
         Commitment,
@@ -28,7 +27,7 @@ use crate::{
         Randomness,
         SonicKZG10,
     },
-    r1cs::{ConstraintSynthesizer, SynthesisError},
+    r1cs::ConstraintSynthesizer,
     snark::varuna::{
         CircuitProvingKey,
         CircuitVerifyingKey,
@@ -36,7 +35,7 @@ use crate::{
         SNARKMode,
         UniversalSRS,
         VarunaVersion,
-        ahp::{AHPError, AHPForR1CS, CircuitId, EvaluationsProvider},
+        ahp::{AHPForR1CS, CircuitId, EvaluationsProvider},
         proof,
         prover,
         witness_label,
@@ -357,7 +356,7 @@ where
     ) -> Result<Self::Proof> {
         let prover_time = start_timer!(|| "Varuna::Prover");
         if keys_to_constraints.is_empty() {
-            bail!(SNARKError::EmptyBatch);
+            bail!("No circuits to prove.");
         }
 
         let mut circuits_to_constraints = BTreeMap::new();
@@ -659,7 +658,9 @@ where
         let mut evaluations = std::collections::BTreeMap::new();
         for (label, (_, point)) in query_set.to_set() {
             if !AHPForR1CS::<E::Fr, SM>::LC_WITH_ZERO_EVAL.contains(&label.as_str()) {
-                let lc = lc_s.get(&label).ok_or_else(|| AHPError::MissingEval(label.to_string()))?;
+                let lc = lc_s.get(&label).ok_or_else(|| {
+                    anyhow::anyhow!("During verification, a required evaluation is missing: {}", label)
+                })?;
                 let evaluation = polynomials.get_lc_eval(lc, point)?;
                 evaluations.insert(label, evaluation);
             }
@@ -706,7 +707,7 @@ where
         proof: &Self::Proof,
     ) -> Result<bool> {
         if keys_to_inputs.is_empty() {
-            bail!(SNARKError::EmptyBatch);
+            bail!("No circuits to verify.");
         }
 
         proof.check_batch_sizes()?;
@@ -716,12 +717,15 @@ where
             batch_sizes.insert(vk.id, batch_sizes_vec[i]);
 
             if public_inputs_i.is_empty() {
-                bail!(SNARKError::EmptyBatch);
+                bail!("Public input is empty.");
             }
 
-            if public_inputs_i.len() != batch_sizes_vec[i] {
-                bail!(SNARKError::BatchSizeMismatch);
-            }
+            ensure!(
+                public_inputs_i.len() == batch_sizes_vec[i],
+                "Public input size {} was different from the circuit size {}",
+                public_inputs_i.len(),
+                batch_sizes_vec[i]
+            );
         }
 
         // collect values into structures for our calculations
@@ -752,7 +756,7 @@ where
                     ensure!(input.len() > 0);
                     ensure!(input[0] == E::Fr::one());
                     if input.len() > input_domain.size() {
-                        bail!(SNARKError::PublicInputSizeMismatch);
+                        bail!(anyhow!("Public input size mismatch: {} > {}", input.len(), input_domain.size()));
                     }
                     Ok(input)
                 })
@@ -783,11 +787,12 @@ where
         for (i, (vk, &batch_size)) in keys_to_inputs.keys().zip(batch_sizes.values()).enumerate() {
             inputs_and_batch_sizes.insert(vk.id, (batch_size, padded_public_vec[i].as_slice()));
         }
-        let max_constraint_domain =
-            EvaluationDomain::<E::Fr>::new(max_num_constraints).ok_or(SynthesisError::PolyTooLarge)?;
-        let max_variable_domain =
-            EvaluationDomain::<E::Fr>::new(max_num_variables).ok_or(SynthesisError::PolyTooLarge)?;
-        let max_non_zero_domain = max_non_zero_domain.ok_or(SynthesisError::PolyTooLarge)?;
+        let max_constraint_domain = EvaluationDomain::<E::Fr>::new(max_num_constraints)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let max_variable_domain = EvaluationDomain::<E::Fr>::new(max_num_variables)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let max_non_zero_domain =
+            max_non_zero_domain.ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
 
         let comms = &proof.commitments;
         let proof_has_correct_zk_mode = if SM::ZK {
@@ -984,10 +989,9 @@ where
                         current_circuit_id = circuit_id;
                     }
                 }
-                let eval = proof
-                    .evaluations
-                    .get(circuit_index as usize, &label)
-                    .ok_or_else(|| AHPError::MissingEval(label.clone()))?;
+                let eval = proof.evaluations.get(circuit_index as usize, &label).ok_or_else(|| {
+                    anyhow::anyhow!("During verification, a required evaluation is missing: {}", label)
+                })?;
                 evaluations.insert((label, q), eval);
             }
         }

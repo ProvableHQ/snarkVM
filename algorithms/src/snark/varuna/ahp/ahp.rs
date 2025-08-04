@@ -19,11 +19,10 @@ use crate::{
         domain::{FFTPrecomputation, IFFTPrecomputation},
     },
     polycommit::sonic_pc::{LCTerm, LabeledPolynomial, LinearCombination},
-    r1cs::SynthesisError,
     snark::varuna::{
         SNARKMode,
         VarunaVersion,
-        ahp::{AHPError, CircuitId, CircuitInfo, verifier},
+        ahp::{CircuitId, CircuitInfo, verifier},
         prover,
         selectors::precompute_selectors,
         verifier::{QueryPoints, select_third_round_challenges},
@@ -69,16 +68,16 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
     /// Check that the (formatted) public input is of the form 2^n for some
     /// integer n.
-    pub fn num_formatted_public_inputs_is_admissible(num_inputs: usize) -> Result<(), AHPError> {
+    pub fn num_formatted_public_inputs_is_admissible(num_inputs: usize) -> Result<()> {
         match num_inputs.count_ones() == 1 {
             true => Ok(()),
-            false => Err(AHPError::InvalidPublicInputLength),
+            false => anyhow::bail!("The number of public inputs is incorrect"),
         }
     }
 
     /// Check that the (formatted) public input is of the form 2^n for some
     /// integer n.
-    pub fn formatted_public_input_is_admissible(input: &[F]) -> Result<(), AHPError> {
+    pub fn formatted_public_input_is_admissible(input: &[F]) -> Result<()> {
         Self::num_formatted_public_inputs_is_admissible(input.len())
     }
 
@@ -88,12 +87,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     /// must be with respect to the number of formatted public inputs.
     pub fn max_degree(num_constraints: usize, num_variables: usize, num_non_zero: usize) -> Result<usize> {
         let zk_bound = Self::zk_bound().unwrap_or(0);
-        let constraint_domain_size =
-            EvaluationDomain::<F>::compute_size_of_domain(num_constraints).ok_or(AHPError::PolyTooLarge)?;
-        let variable_domain_size =
-            EvaluationDomain::<F>::compute_size_of_domain(num_variables).ok_or(AHPError::PolyTooLarge)?;
-        let non_zero_domain_size =
-            EvaluationDomain::<F>::compute_size_of_domain(num_non_zero).ok_or(AHPError::PolyTooLarge)?;
+        let constraint_domain_size = EvaluationDomain::<F>::compute_size_of_domain(num_constraints)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let variable_domain_size = EvaluationDomain::<F>::compute_size_of_domain(num_variables)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let non_zero_domain_size = EvaluationDomain::<F>::compute_size_of_domain(num_non_zero)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
 
         // these should correspond with the bounds set in the <round>.rs files
         [
@@ -117,10 +116,18 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let num_non_zero_b = info.num_non_zero_b;
         let num_non_zero_c = info.num_non_zero_c;
         Ok([
-            EvaluationDomain::<F>::compute_size_of_domain(num_variables).ok_or(SynthesisError::PolyTooLarge)? - 2,
-            EvaluationDomain::<F>::compute_size_of_domain(num_non_zero_a).ok_or(SynthesisError::PolyTooLarge)? - 2,
-            EvaluationDomain::<F>::compute_size_of_domain(num_non_zero_b).ok_or(SynthesisError::PolyTooLarge)? - 2,
-            EvaluationDomain::<F>::compute_size_of_domain(num_non_zero_c).ok_or(SynthesisError::PolyTooLarge)? - 2,
+            EvaluationDomain::<F>::compute_size_of_domain(num_variables)
+                .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?
+                - 2,
+            EvaluationDomain::<F>::compute_size_of_domain(num_non_zero_a)
+                .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?
+                - 2,
+            EvaluationDomain::<F>::compute_size_of_domain(num_non_zero_b)
+                .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?
+                - 2,
+            EvaluationDomain::<F>::compute_size_of_domain(num_non_zero_c)
+                .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?
+                - 2,
         ])
     }
 
@@ -128,9 +135,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         info: &CircuitInfo,
         max_candidate: Option<EvaluationDomain<F>>,
     ) -> Result<NonZeroDomains<F>> {
-        let domain_a = EvaluationDomain::new(info.num_non_zero_a).ok_or(SynthesisError::PolyTooLarge)?;
-        let domain_b = EvaluationDomain::new(info.num_non_zero_b).ok_or(SynthesisError::PolyTooLarge)?;
-        let domain_c = EvaluationDomain::new(info.num_non_zero_c).ok_or(SynthesisError::PolyTooLarge)?;
+        let domain_a = EvaluationDomain::new(info.num_non_zero_a)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let domain_b = EvaluationDomain::new(info.num_non_zero_b)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let domain_c = EvaluationDomain::new(info.num_non_zero_c)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
         let new_candidate = [domain_a, domain_b, domain_c]
             .into_iter()
             .max_by_key(|d| d.size())
@@ -196,7 +206,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 .map(|p| {
                     let public_input = prover::ConstraintSystem::format_public_input(p);
                     Self::formatted_public_input_is_admissible(&public_input)?;
-                    Ok::<_, AHPError>(public_input)
+                    Ok::<_, anyhow::Error>(public_input)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             ensure!(public_inputs_i[0].len() == input_domain.size());
@@ -212,8 +222,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             state.second_round_message.as_ref().unwrap(),
             state.prepare_third_round_message.as_ref(),
             varuna_version,
-        )
-        .map_err(AHPError::AnyhowError)?;
+        )?;
 
         let batch_lineval_sum =
             prover_third_message.sum(&third_round_batch_combiners, eta_b, eta_c) * state.max_variable_domain.size_inv;
@@ -478,7 +487,9 @@ pub trait EvaluationsProvider<F: PrimeField>: core::fmt::Debug {
 impl<F: PrimeField> EvaluationsProvider<F> for crate::polycommit::sonic_pc::Evaluations<F> {
     fn get_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> Result<F> {
         let key = (lc.label.clone(), point);
-        self.get(&key).copied().ok_or_else(|| AHPError::MissingEval(lc.label.clone())).map_err(Into::into)
+        self.get(&key)
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("During verification, a required evaluation is missing: {}", lc.label))
     }
 }
 
@@ -494,7 +505,13 @@ where
             let value = if let LCTerm::PolyLabel(label) = term {
                 self.iter()
                     .find(|p| (*p).borrow().label() == label)
-                    .ok_or_else(|| AHPError::MissingEval(format!("Missing {} for {}", label, lc.label)))?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "During verification, a required evaluation is missing: Missing {} for {}",
+                            label,
+                            lc.label
+                        )
+                    })?
                     .borrow()
                     .evaluate(point)
             } else {

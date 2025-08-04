@@ -13,7 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::r1cs::{Index, LinearCombination, Namespace, Variable, errors::SynthesisError};
+use anyhow::Result;
+
+use crate::r1cs::{Index, LinearCombination, Namespace, Variable};
 use snarkvm_fields::Field;
 
 use std::marker::PhantomData;
@@ -23,7 +25,7 @@ use std::marker::PhantomData;
 /// both CRS generation and for proving.
 pub trait ConstraintSynthesizer<F: Field>: Sync {
     /// Drives generation of new constraints inside `CS`.
-    fn generate_constraints<CS: ConstraintSystem<F>>(&self, cs: &mut CS) -> Result<(), SynthesisError>;
+    fn generate_constraints<CS: ConstraintSystem<F>>(&self, cs: &mut CS) -> Result<()>;
 }
 
 /// Represents a constraint system which can have new variables
@@ -42,17 +44,17 @@ pub trait ConstraintSystem<F: Field>: Sized {
     /// function is used to determine the assignment of the variable. The
     /// given `annotation` function is invoked in testing contexts in order
     /// to derive a unique name for this variable in the current namespace.
-    fn alloc<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable, SynthesisError>
+    fn alloc<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable>
     where
-        FN: FnOnce() -> Result<F, SynthesisError>,
+        FN: FnOnce() -> Result<F>,
         A: FnOnce() -> AR,
         AR: AsRef<str>;
 
     /// Allocate a public variable in the constraint system. The provided
     /// function is used to determine the assignment of the variable.
-    fn alloc_input<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable, SynthesisError>
+    fn alloc_input<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable>
     where
-        FN: FnOnce() -> Result<F, SynthesisError>,
+        FN: FnOnce() -> Result<F>,
         A: FnOnce() -> AR,
         AR: AsRef<str>;
 
@@ -117,9 +119,9 @@ impl<F: Field, CS: ConstraintSystem<F>> ConstraintSystem<F> for &mut CS {
     }
 
     #[inline]
-    fn alloc<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable, SynthesisError>
+    fn alloc<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable>
     where
-        FN: FnOnce() -> Result<F, SynthesisError>,
+        FN: FnOnce() -> Result<F>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {
@@ -127,9 +129,9 @@ impl<F: Field, CS: ConstraintSystem<F>> ConstraintSystem<F> for &mut CS {
     }
 
     #[inline]
-    fn alloc_input<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable, SynthesisError>
+    fn alloc_input<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable>
     where
-        FN: FnOnce() -> Result<F, SynthesisError>,
+        FN: FnOnce() -> Result<F>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {

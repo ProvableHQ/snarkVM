@@ -22,7 +22,6 @@ use crate::{
         SNARKMode,
         VarunaVersion,
         ahp::{
-            AHPError,
             AHPForR1CS,
             indexer::{CircuitId, CircuitInfo},
             verifier::{
@@ -93,29 +92,33 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
         // Compute the domains and batch sizes.
         for (batch_size, (circuit_id, circuit_info)) in batch_sizes.values().zip(circuit_infos) {
             let constraint_domain_time = start_timer!(|| format!("Constructing constraint domain for {circuit_id}"));
-            let constraint_domain =
-                EvaluationDomain::new(circuit_info.num_constraints).ok_or(AHPError::PolyTooLarge)?;
+            let constraint_domain = EvaluationDomain::new(circuit_info.num_constraints)
+                .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
             end_timer!(constraint_domain_time);
 
             let variable_domain_time = start_timer!(|| format!("Constructing constraint domain for {circuit_id}"));
-            let variable_domain =
-                EvaluationDomain::new(circuit_info.num_public_and_private_variables).ok_or(AHPError::PolyTooLarge)?;
+            let variable_domain = EvaluationDomain::new(circuit_info.num_public_and_private_variables)
+                .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
             end_timer!(variable_domain_time);
 
             let non_zero_a_time = start_timer!(|| format!("Constructing non-zero-a domain for {circuit_id}"));
-            let non_zero_a_domain = EvaluationDomain::new(circuit_info.num_non_zero_a).ok_or(AHPError::PolyTooLarge)?;
+            let non_zero_a_domain = EvaluationDomain::new(circuit_info.num_non_zero_a)
+                .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
             end_timer!(non_zero_a_time);
 
             let non_zero_b_time = start_timer!(|| format!("Constructing non-zero-b domain {circuit_id}"));
-            let non_zero_b_domain = EvaluationDomain::new(circuit_info.num_non_zero_b).ok_or(AHPError::PolyTooLarge)?;
+            let non_zero_b_domain = EvaluationDomain::new(circuit_info.num_non_zero_b)
+                .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
             end_timer!(non_zero_b_time);
 
             let non_zero_c_time = start_timer!(|| format!("Constructing non-zero-c domain for {circuit_id}"));
-            let non_zero_c_domain = EvaluationDomain::new(circuit_info.num_non_zero_c).ok_or(AHPError::PolyTooLarge)?;
+            let non_zero_c_domain = EvaluationDomain::new(circuit_info.num_non_zero_c)
+                .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
             end_timer!(non_zero_c_time);
 
             let input_domain_time = start_timer!(|| format!("Constructing input domain {circuit_id}"));
-            let input_domain = EvaluationDomain::new(circuit_info.num_public_inputs).ok_or(AHPError::PolyTooLarge)?;
+            let input_domain = EvaluationDomain::new(circuit_info.num_public_inputs)
+                .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
             end_timer!(input_domain_time);
 
             let circuit_specific_state = CircuitSpecificState {

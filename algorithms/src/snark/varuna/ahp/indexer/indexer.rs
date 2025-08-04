@@ -16,7 +16,7 @@
 use crate::{
     fft::EvaluationDomain,
     polycommit::sonic_pc::{LinearCombination, PolynomialInfo, PolynomialLabel},
-    r1cs::{ConstraintSynthesizer, errors::SynthesisError},
+    r1cs::ConstraintSynthesizer,
     snark::varuna::{
         SNARKMode,
         ahp::{
@@ -173,13 +173,19 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             num_non_zero_c,
         };
 
-        let constraint_domain = EvaluationDomain::new(num_constraints).ok_or(SynthesisError::PolyTooLarge)?;
-        let variable_domain = EvaluationDomain::new(num_variables).ok_or(SynthesisError::PolyTooLarge)?;
-        let input_domain = EvaluationDomain::new(num_padded_public_variables).ok_or(SynthesisError::PolyTooLarge)?;
+        let constraint_domain =
+            EvaluationDomain::new(num_constraints).ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let variable_domain =
+            EvaluationDomain::new(num_variables).ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let input_domain = EvaluationDomain::new(num_padded_public_variables)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
 
-        let non_zero_a_domain = EvaluationDomain::new(num_non_zero_a).ok_or(SynthesisError::PolyTooLarge)?;
-        let non_zero_b_domain = EvaluationDomain::new(num_non_zero_b).ok_or(SynthesisError::PolyTooLarge)?;
-        let non_zero_c_domain = EvaluationDomain::new(num_non_zero_c).ok_or(SynthesisError::PolyTooLarge)?;
+        let non_zero_a_domain =
+            EvaluationDomain::new(num_non_zero_a).ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let non_zero_b_domain =
+            EvaluationDomain::new(num_non_zero_b).ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let non_zero_c_domain =
+            EvaluationDomain::new(num_non_zero_c).ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
 
         let constraint_domain_elements = constraint_domain.elements().collect::<Vec<_>>();
         let variable_domain_elements = variable_domain.elements().collect::<Vec<_>>();

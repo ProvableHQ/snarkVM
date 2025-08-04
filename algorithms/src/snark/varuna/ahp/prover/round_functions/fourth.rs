@@ -24,7 +24,7 @@ use crate::{
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
         SNARKMode,
-        ahp::{AHPError, AHPForR1CS, CircuitId, indexer::CircuitInfo, verifier},
+        ahp::{AHPForR1CS, CircuitId, indexer::CircuitInfo, verifier},
         matrices::MatrixEvals,
         prover,
         selectors::apply_randomized_selector,
@@ -81,7 +81,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         third_message: &verifier::ThirdMessage<F>,
         mut state: prover::State<'a, F, SM>,
         _r: &mut R,
-    ) -> Result<(prover::FourthMessage<F>, prover::FourthOracles<F>, prover::State<'a, F, SM>), AHPError> {
+    ) -> Result<(prover::FourthMessage<F>, prover::FourthOracles<F>, prover::State<'a, F, SM>), anyhow::Error> {
         let round_time = start_timer!(|| "AHP::Prover::FourthRound");
 
         let verifier::SecondMessage { alpha, .. } = second_message;

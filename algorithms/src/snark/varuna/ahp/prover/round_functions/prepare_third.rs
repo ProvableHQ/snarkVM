@@ -16,7 +16,6 @@
 use crate::{
     fft::DensePolynomial,
     snark::varuna::{
-        AHPError,
         Matrix,
         SNARKMode,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
@@ -43,16 +42,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         verifier_second_message: &verifier::SecondMessage<F>,
         mut state: prover::State<'a, F, SM>,
         _r: &mut R,
-    ) -> Result<(prover::ThirdMessage<F>, prover::State<'a, F, SM>), AHPError> {
+    ) -> Result<(prover::ThirdMessage<F>, prover::State<'a, F, SM>), anyhow::Error> {
         let round_time = start_timer!(|| "AHP::Prover::ThirdRound");
 
         let verifier::FirstMessage { first_round_batch_combiners } = verifier_message;
         let verifier::SecondMessage { alpha, eta_b, eta_c } = verifier_second_message;
 
         if eta_b.is_some() || eta_c.is_some() {
-            return Err(AHPError::AnyhowError(anyhow::anyhow!(
-                "Did not expect eta_b,c in SecondMessage in VarunaVersion::V2"
-            )));
+            anyhow::bail!("Did not expect eta_b,c in SecondMessage in VarunaVersion::V2");
         }
 
         let assignments = Self::calculate_assignments(&mut state)?;

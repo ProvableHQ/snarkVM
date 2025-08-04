@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CanaryCircuit, Circuit, LinearCombination, R1CS, TestnetCircuit, Variable};
+use crate::{CanaryCircuit, Circuit, LinearCombination, R1CS, TestnetCircuit, Variable, prelude::Result};
 use snarkvm_curves::edwards_bls12::Fq;
 use snarkvm_fields::PrimeField;
 
@@ -27,40 +27,28 @@ struct Converter {
 
 impl snarkvm_algorithms::r1cs::ConstraintSynthesizer<Fq> for Circuit {
     /// Synthesizes the constraints from the environment into a `snarkvm_algorithms::r1cs`-compliant constraint system.
-    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<Fq>>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<(), snarkvm_algorithms::r1cs::SynthesisError> {
+    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<Fq>>(&self, cs: &mut CS) -> Result<()> {
         crate::circuit::CIRCUIT.with(|circuit| circuit.borrow().generate_constraints(cs))
     }
 }
 
 impl snarkvm_algorithms::r1cs::ConstraintSynthesizer<Fq> for TestnetCircuit {
     /// Synthesizes the constraints from the environment into a `snarkvm_algorithms::r1cs`-compliant constraint system.
-    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<Fq>>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<(), snarkvm_algorithms::r1cs::SynthesisError> {
+    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<Fq>>(&self, cs: &mut CS) -> Result<()> {
         crate::testnet_circuit::TESTNET_CIRCUIT.with(|circuit| circuit.borrow().generate_constraints(cs))
     }
 }
 
 impl snarkvm_algorithms::r1cs::ConstraintSynthesizer<Fq> for CanaryCircuit {
     /// Synthesizes the constraints from the environment into a `snarkvm_algorithms::r1cs`-compliant constraint system.
-    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<Fq>>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<(), snarkvm_algorithms::r1cs::SynthesisError> {
+    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<Fq>>(&self, cs: &mut CS) -> Result<()> {
         crate::canary_circuit::CANARY_CIRCUIT.with(|circuit| circuit.borrow().generate_constraints(cs))
     }
 }
 
 impl<F: PrimeField> R1CS<F> {
     /// Synthesizes the constraints from the environment into a `snarkvm_algorithms::r1cs`-compliant constraint system.
-    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<F>>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<(), snarkvm_algorithms::r1cs::SynthesisError> {
+    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<F>>(&self, cs: &mut CS) -> Result<()> {
         let mut converter = Converter { public: Default::default(), private: Default::default() };
 
         // Ensure the given `cs` is starting off clean.

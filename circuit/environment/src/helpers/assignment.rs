@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Constraint, LinearCombination, Variable};
+use crate::{Constraint, LinearCombination, Variable, prelude::Result};
 use snarkvm_fields::PrimeField;
 
 use indexmap::IndexMap;
@@ -97,10 +97,7 @@ impl<F: PrimeField> Assignment<F> {
 
 impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assignment<F> {
     /// Synthesizes the constraints from the environment into a `snarkvm_algorithms::r1cs`-compliant constraint system.
-    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<F>>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<(), snarkvm_algorithms::r1cs::SynthesisError> {
+    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<F>>(&self, cs: &mut CS) -> Result<()> {
         /// A struct for tracking the mapping of variables from the virtual machine (first) to the gadget constraint system (second).
         struct Converter {
             public: IndexMap<u64, snarkvm_algorithms::r1cs::Variable>,

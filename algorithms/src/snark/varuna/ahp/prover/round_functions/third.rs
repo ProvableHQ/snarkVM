@@ -23,7 +23,6 @@ use crate::{
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        AHPError,
         Matrix,
         SNARKMode,
         VarunaVersion,
@@ -76,7 +75,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         mut state: prover::State<'a, F, SM>,
         _r: &mut R,
         varuna_version: VarunaVersion,
-    ) -> Result<(Option<prover::ThirdMessage<F>>, prover::ThirdOracles<F>, prover::State<'a, F, SM>), AHPError> {
+    ) -> Result<(Option<prover::ThirdMessage<F>>, prover::ThirdOracles<F>, prover::State<'a, F, SM>), anyhow::Error>
+    {
         let round_time = start_timer!(|| "AHP::Prover::ThirdRound");
 
         let zk_bound = Self::zk_bound();
@@ -89,8 +89,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             verifier_second_message,
             verifier_prepare_third_message.as_ref(),
             varuna_version,
-        )
-        .map_err(AHPError::AnyhowError)?;
+        )?;
 
         let assignments = Self::calculate_assignments(&mut state)?;
         let matrix_transposes = Self::calculate_matrix_transpose(&mut state)?;

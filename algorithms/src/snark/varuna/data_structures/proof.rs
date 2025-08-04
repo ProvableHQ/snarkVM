@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use crate::{
-    SNARKError,
     polycommit::sonic_pc,
     snark::varuna::{CircuitId, ahp},
 };
@@ -25,6 +24,7 @@ use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{FromBytes, ToBytes, error, serialize::*};
 use std::io::{self, Read, Write};
 
+use anyhow::{Result, anyhow};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
@@ -246,7 +246,7 @@ impl<E: PairingEngine> Proof<E> {
         third_msg: ThirdMessage<E::Fr>,
         fourth_msg: FourthMessage<E::Fr>,
         pc_proof: sonic_pc::BatchLCProof<E>,
-    ) -> Result<Self, SNARKError> {
+    ) -> Result<Self> {
         let batch_sizes: Vec<usize> = batch_sizes.into_values().collect();
         Ok(Self { batch_sizes, commitments, evaluations, third_msg, fourth_msg, pc_proof })
     }
@@ -260,38 +260,50 @@ impl<E: PairingEngine> Proof<E> {
     }
 
     /// Check that the number of messages is consistent with our batch size
-    pub fn check_batch_sizes(&self) -> Result<(), SNARKError> {
+    pub fn check_batch_sizes(&self) -> Result<()> {
         let total_instances = self
             .batch_sizes
             .iter()
             .try_fold(0usize, |acc, &size| acc.checked_add(size))
-            .ok_or(SNARKError::BatchSizeMismatch)?;
+            .ok_or(anyhow!("Batch size too large."))?;
         if self.commitments.witness_commitments.len() != total_instances {
-            return Err(SNARKError::BatchSizeMismatch);
+            return Err(anyhow!(
+                "Witness commitment size mismatch: {} != {}",
+                self.commitments.witness_commitments.len(),
+                total_instances
+            ));
         }
         let g_comms =
             [&self.commitments.g_a_commitments, &self.commitments.g_b_commitments, &self.commitments.g_c_commitments];
         for comms in g_comms {
             if comms.len() != self.batch_sizes.len() {
-                return Err(SNARKError::BatchSizeMismatch);
+                return Err(anyhow!("G commitment size mismatch: {} != {}", comms.len(), self.batch_sizes.len()));
             }
         }
         let g_evals = [&self.evaluations.g_a_evals, &self.evaluations.g_b_evals, &self.evaluations.g_c_evals];
         for evals in g_evals {
             if evals.len() != self.batch_sizes.len() {
-                return Err(SNARKError::BatchSizeMismatch);
+                return Err(anyhow!("G evaluation size mismatch: {} != {}", evals.len(), self.batch_sizes.len()));
             }
         }
         if self.third_msg.sums.len() != self.batch_sizes.len() {
-            return Err(SNARKError::BatchSizeMismatch);
+            return Err(anyhow!(
+                "Third message batch size mismatch: {} != {}",
+                self.third_msg.sums.len(),
+                self.batch_sizes.len()
+            ));
         }
         for (msg, &batch_size) in self.third_msg.sums.iter().zip(self.batch_sizes.iter()) {
             if msg.len() != batch_size {
-                return Err(SNARKError::BatchSizeMismatch);
+                return Err(anyhow!("Third message size mismatch: {} != {}", msg.len(), batch_size));
             }
         }
         if self.fourth_msg.sums.len() != self.batch_sizes.len() {
-            return Err(SNARKError::BatchSizeMismatch);
+            return Err(anyhow!(
+                "Fourth message batch size mismatch: {} != {}",
+                self.fourth_msg.sums.len(),
+                self.batch_sizes.len()
+            ));
         }
         Ok(())
     }

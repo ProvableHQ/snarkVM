@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::r1cs::{ConstraintSystem, Index, LinearCombination, Variable, errors::SynthesisError};
+use crate::r1cs::{ConstraintSystem, Index, LinearCombination, Variable};
+use anyhow::Result;
 use snarkvm_fields::Field;
 
 /// Constraint counter for testing purposes.
@@ -27,9 +28,9 @@ pub struct ConstraintCounter {
 impl<ConstraintF: Field> ConstraintSystem<ConstraintF> for ConstraintCounter {
     type Root = Self;
 
-    fn alloc<F, A, AR>(&mut self, _: A, _: F) -> Result<Variable, SynthesisError>
+    fn alloc<F, A, AR>(&mut self, _: A, _: F) -> Result<Variable>
     where
-        F: FnOnce() -> Result<ConstraintF, SynthesisError>,
+        F: FnOnce() -> Result<ConstraintF>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {
@@ -38,9 +39,9 @@ impl<ConstraintF: Field> ConstraintSystem<ConstraintF> for ConstraintCounter {
         Ok(var)
     }
 
-    fn alloc_input<F, A, AR>(&mut self, _: A, _: F) -> Result<Variable, SynthesisError>
+    fn alloc_input<F, A, AR>(&mut self, _: A, _: F) -> Result<Variable>
     where
-        F: FnOnce() -> Result<ConstraintF, SynthesisError>,
+        F: FnOnce() -> Result<ConstraintF>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {

@@ -20,7 +20,7 @@ use crate::{
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
         SNARKMode,
-        ahp::{AHPError, AHPForR1CS, verifier},
+        ahp::{AHPForR1CS, verifier},
         prover,
     },
 };
@@ -44,7 +44,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         verifier_message: verifier::FourthMessage<F>,
         state: prover::State<'_, F, SM>,
         _r: &mut R,
-    ) -> Result<prover::FifthOracles<F>, AHPError> {
+    ) -> Result<prover::FifthOracles<F>, anyhow::Error> {
         let round_time = start_timer!(|| "AHP::Prover::FifthRound");
 
         let lhs_sum: DensePolynomial<F> = cfg_reduce!(

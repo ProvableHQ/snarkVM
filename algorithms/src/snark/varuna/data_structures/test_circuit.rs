@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::r1cs::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
+use crate::r1cs::{ConstraintSynthesizer, ConstraintSystem};
+use anyhow::Result;
 use snarkvm_fields::Field;
 
 use rand::{CryptoRng, Rng};
@@ -40,22 +41,24 @@ impl<F: Field> core::fmt::Debug for TestCircuit<F> {
 }
 
 impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for TestCircuit<ConstraintF> {
-    fn generate_constraints<CS: ConstraintSystem<ConstraintF>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+    fn generate_constraints<CS: ConstraintSystem<ConstraintF>>(&self, cs: &mut CS) -> Result<(), anyhow::Error> {
         // Ensure the given `cs` is starting off clean.
         assert_eq!(1, cs.num_public_variables());
         assert_eq!(0, cs.num_private_variables());
         assert_eq!(0, cs.num_constraints());
 
-        let a = cs.alloc(|| "a", || self.a.ok_or(SynthesisError::AssignmentMissing))?;
-        let b = cs.alloc(|| "b", || self.b.ok_or(SynthesisError::AssignmentMissing))?;
+        let a =
+            cs.alloc(|| "a", || self.a.ok_or(anyhow::anyhow!("An assignment for a variable could not be computed")))?;
+        let b =
+            cs.alloc(|| "b", || self.b.ok_or(anyhow::anyhow!("An assignment for a variable could not be computed")))?;
 
         let mut mul_vars = Vec::with_capacity(self.mul_depth);
         for i in 0..self.mul_depth {
             let mul_var = cs.alloc_input(
                 || format!("mul_var {i}"),
                 || {
-                    let mut a = self.a.ok_or(SynthesisError::AssignmentMissing)?;
-                    let b = self.b.ok_or(SynthesisError::AssignmentMissing)?;
+                    let mut a = self.a.ok_or(anyhow::anyhow!("An assignment for a variable could not be computed"))?;
+                    let b = self.b.ok_or(anyhow::anyhow!("An assignment for a variable could not be computed"))?;
 
                     for _ in 0..(1 + i) {
                         a.mul_assign(&b);
@@ -71,7 +74,10 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for TestCircuit<Cons
         // default
         let dummy_variables = self.num_variables - 3 - self.mul_depth;
         for i in 0..dummy_variables {
-            let _ = cs.alloc(|| format!("var {i}"), || self.a.ok_or(SynthesisError::AssignmentMissing))?;
+            let _ = cs.alloc(
+                || format!("var {i}"),
+                || self.a.ok_or(anyhow::anyhow!("An assignment for a variable could not be computed")),
+            )?;
         }
 
         let mul_constraints = self.mul_depth - 1;

@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::r1cs::{ConstraintSystem as CS, Index as VarIndex, LinearCombination, Variable, errors::SynthesisError};
+use crate::r1cs::{ConstraintSystem as CS, Index as VarIndex, LinearCombination, Variable};
+use anyhow::Result;
 use snarkvm_fields::Field;
 
 pub(crate) struct ConstraintSystem<F: Field> {
@@ -55,9 +56,9 @@ impl<F: Field> CS<F> for ConstraintSystem<F> {
     type Root = Self;
 
     #[inline]
-    fn alloc<Fn, A, AR>(&mut self, _: A, f: Fn) -> Result<Variable, SynthesisError>
+    fn alloc<Fn, A, AR>(&mut self, _: A, f: Fn) -> Result<Variable>
     where
-        Fn: FnOnce() -> Result<F, SynthesisError>,
+        Fn: FnOnce() -> Result<F>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {
@@ -69,9 +70,9 @@ impl<F: Field> CS<F> for ConstraintSystem<F> {
     }
 
     #[inline]
-    fn alloc_input<Fn, A, AR>(&mut self, _: A, f: Fn) -> Result<Variable, SynthesisError>
+    fn alloc_input<Fn, A, AR>(&mut self, _: A, f: Fn) -> Result<Variable>
     where
-        Fn: FnOnce() -> Result<F, SynthesisError>,
+        Fn: FnOnce() -> Result<F>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {

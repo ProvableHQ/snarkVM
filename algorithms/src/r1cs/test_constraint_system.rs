@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::r1cs::{ConstraintSystem, Index, LinearCombination, OptionalVec, Variable, errors::SynthesisError};
+use crate::r1cs::{ConstraintSystem, Index, LinearCombination, OptionalVec, Variable};
+use anyhow::Result;
 use snarkvm_fields::Field;
 
 use cfg_if::cfg_if;
@@ -373,9 +374,9 @@ impl<F: Field> TestConstraintSystem<F> {
 impl<F: Field> ConstraintSystem<F> for TestConstraintSystem<F> {
     type Root = Self;
 
-    fn alloc<Fn, A, AR>(&mut self, annotation: A, f: Fn) -> Result<Variable, SynthesisError>
+    fn alloc<Fn, A, AR>(&mut self, annotation: A, f: Fn) -> Result<Variable>
     where
-        Fn: FnOnce() -> Result<F, SynthesisError>,
+        Fn: FnOnce() -> Result<F>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {
@@ -390,9 +391,9 @@ impl<F: Field> ConstraintSystem<F> for TestConstraintSystem<F> {
         Ok(var)
     }
 
-    fn alloc_input<Fn, A, AR>(&mut self, annotation: A, f: Fn) -> Result<Variable, SynthesisError>
+    fn alloc_input<Fn, A, AR>(&mut self, annotation: A, f: Fn) -> Result<Variable>
     where
-        Fn: FnOnce() -> Result<F, SynthesisError>,
+        Fn: FnOnce() -> Result<F>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {

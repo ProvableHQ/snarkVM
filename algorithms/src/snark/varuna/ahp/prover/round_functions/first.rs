@@ -16,14 +16,7 @@
 use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, SparsePolynomial},
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
-    snark::varuna::{
-        Circuit,
-        CircuitId,
-        SNARKMode,
-        ahp::{AHPError, AHPForR1CS},
-        prover,
-        witness_label,
-    },
+    snark::varuna::{Circuit, CircuitId, SNARKMode, ahp::AHPForR1CS, prover, witness_label},
 };
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::cfg_into_iter;
@@ -61,7 +54,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     pub fn prover_first_round<'a, R: RngCore>(
         mut state: prover::State<'a, F, SM>,
         rng: &mut R,
-    ) -> Result<prover::State<'a, F, SM>, AHPError> {
+    ) -> Result<prover::State<'a, F, SM>, anyhow::Error> {
         let round_time = start_timer!(|| "AHP::Prover::FirstRound");
         let mut job_pool = snarkvm_utilities::ExecutionPool::with_capacity(state.total_instances);
         for (circuit, circuit_state) in state.circuit_specific_states.iter_mut() {

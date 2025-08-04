@@ -22,14 +22,14 @@ pub use constraint_counter::*;
 mod constraint_system;
 pub use constraint_system::{ConstraintSynthesizer, ConstraintSystem};
 
-pub mod errors;
-pub use errors::*;
-
 mod linear_combination;
 pub use linear_combination::*;
 
 mod namespace;
 pub use namespace::*;
+
+// Type alias for synthesis results using anyhow::Error
+pub type SynthesisResult<T> = Result<T, anyhow::Error>;
 
 #[cfg(feature = "test")]
 mod optional_vec;

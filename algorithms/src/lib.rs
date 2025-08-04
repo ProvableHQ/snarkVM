@@ -35,14 +35,9 @@ pub mod snark;
 
 pub mod srs;
 
-pub mod errors;
-pub use errors::*;
-
 pub mod traits;
 pub use traits::*;
 
 pub mod prelude {
-    pub use crate::{errors::*, traits::*};
-
-    pub use crate::{polycommit::error::*, r1cs::errors::*};
+    pub use crate::{polycommit::error::*, traits::*};
 }

@@ -18,10 +18,10 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain},
     polycommit::sonic_pc::LabeledPolynomial,
-    r1cs::{SynthesisError, SynthesisResult},
-    snark::varuna::{AHPError, AHPForR1CS, Circuit, SNARKMode},
+    r1cs::SynthesisResult,
+    snark::varuna::{AHPForR1CS, Circuit, SNARKMode},
 };
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use snarkvm_fields::PrimeField;
 
 /// Circuit Specific State of the Prover
@@ -112,7 +112,7 @@ pub(super) struct Assignments<F>(
 impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
     pub(super) fn initialize(
         indices_and_assignments: BTreeMap<&'a Circuit<F, SM>, Vec<Assignments<F>>>,
-    ) -> Result<Self, AHPError> {
+    ) -> Result<Self> {
         let mut max_non_zero_domain: Option<EvaluationDomain<F>> = None;
         let mut max_num_constraints = 0;
         let mut max_num_variables = 0;
@@ -122,12 +122,12 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
             .map(|(circuit, variable_assignments)| {
                 let index_info = &circuit.index_info;
 
-                let constraint_domain =
-                    EvaluationDomain::new(index_info.num_constraints).ok_or(SynthesisError::PolyTooLarge)?;
+                let constraint_domain = EvaluationDomain::new(index_info.num_constraints)
+                    .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
                 max_num_constraints = max_num_constraints.max(index_info.num_constraints);
 
                 let variable_domain = EvaluationDomain::new(index_info.num_public_and_private_variables)
-                    .ok_or(SynthesisError::PolyTooLarge)?;
+                    .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
                 max_num_variables = max_num_variables.max(index_info.num_public_and_private_variables);
 
                 let non_zero_domains = AHPForR1CS::<_, SM>::cmp_non_zero_domains(index_info, max_non_zero_domain)?;
@@ -180,9 +180,12 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
             })
             .collect::<SynthesisResult<BTreeMap<_, _>>>()?;
 
-        let max_non_zero_domain = max_non_zero_domain.ok_or(AHPError::BatchSizeIsZero)?;
-        let max_constraint_domain = EvaluationDomain::new(max_num_constraints).ok_or(SynthesisError::PolyTooLarge)?;
-        let max_variable_domain = EvaluationDomain::new(max_num_variables).ok_or(SynthesisError::PolyTooLarge)?;
+        let max_non_zero_domain =
+            max_non_zero_domain.ok_or_else(|| anyhow::anyhow!("Batch size was zero; must be at least 1"))?;
+        let max_constraint_domain = EvaluationDomain::new(max_num_constraints)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
+        let max_variable_domain = EvaluationDomain::new(max_num_variables)
+            .ok_or_else(|| anyhow::anyhow!("Polynomial degree is too large"))?;
 
         Ok(Self {
             max_constraint_domain,

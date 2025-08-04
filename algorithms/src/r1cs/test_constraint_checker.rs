@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::r1cs::{ConstraintSystem, Index, LinearCombination, Variable, errors::SynthesisError};
+use crate::r1cs::{ConstraintSystem, Index, LinearCombination, Variable};
 use snarkvm_fields::Field;
 
 /// Constraint system for testing purposes.
@@ -73,9 +73,9 @@ impl<F: Field> TestConstraintChecker<F> {
 impl<F: Field> ConstraintSystem<F> for TestConstraintChecker<F> {
     type Root = Self;
 
-    fn alloc<Fn, A, AR>(&mut self, _annotation: A, f: Fn) -> Result<Variable, SynthesisError>
+    fn alloc<Fn, A, AR>(&mut self, _annotation: A, f: Fn) -> Result<Variable, anyhow::Error>
     where
-        Fn: FnOnce() -> Result<F, SynthesisError>,
+        Fn: FnOnce() -> Result<F, anyhow::Error>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {
@@ -86,9 +86,9 @@ impl<F: Field> ConstraintSystem<F> for TestConstraintChecker<F> {
         Ok(var)
     }
 
-    fn alloc_input<Fn, A, AR>(&mut self, _annotation: A, f: Fn) -> Result<Variable, SynthesisError>
+    fn alloc_input<Fn, A, AR>(&mut self, _annotation: A, f: Fn) -> Result<Variable, anyhow::Error>
     where
-        Fn: FnOnce() -> Result<F, SynthesisError>,
+        Fn: FnOnce() -> Result<F, anyhow::Error>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {

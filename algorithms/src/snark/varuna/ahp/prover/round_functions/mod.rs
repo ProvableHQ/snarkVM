@@ -17,7 +17,7 @@ use crate::{
     r1cs::ConstraintSynthesizer,
     snark::varuna::{
         SNARKMode,
-        ahp::{AHPError, AHPForR1CS, indexer::Circuit},
+        ahp::{AHPForR1CS, indexer::Circuit},
         prover,
     },
 };
@@ -45,7 +45,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     pub fn init_prover<'a, C: ConstraintSynthesizer<F>, R: Rng + CryptoRng>(
         circuits_to_constraints: &BTreeMap<&'a Circuit<F, SM>, &[C]>,
         rng: &mut R,
-    ) -> Result<prover::State<'a, F, SM>, AHPError> {
+    ) -> Result<prover::State<'a, F, SM>, anyhow::Error> {
         let init_time = start_timer!(|| "AHP::Prover::Init");
 
         let mut randomizing_assignments = Vec::with_capacity(circuits_to_constraints.len());
@@ -117,7 +117,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                             || circuit.index_info.num_public_and_private_variables
                                 != (num_public_variables + num_private_variables)
                         {
-                            return Err(AHPError::InstanceDoesNotMatchIndex);
+                            anyhow::bail!("The instance generated during proving does not match that in the index");
                         }
 
                         Self::formatted_public_input_is_admissible(&padded_public_variables)?;
@@ -148,10 +148,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
                         Ok(prover::Assignments::<F>(padded_public_variables, private_variables, z_a, z_b, z_c))
                     })
-                    .collect::<Result<Vec<prover::Assignments<F>>, AHPError>>()?;
+                    .collect::<Result<Vec<prover::Assignments<F>>, anyhow::Error>>()?;
                 Ok((*circuit, assignments))
             })
-            .collect::<Result<BTreeMap<&'a Circuit<F, SM>, Vec<prover::Assignments<F>>>, AHPError>>()?;
+            .collect::<Result<BTreeMap<&'a Circuit<F, SM>, Vec<prover::Assignments<F>>>, anyhow::Error>>()?;
 
         let state = prover::State::initialize(indices_and_assignments)?;
         end_timer!(init_time);

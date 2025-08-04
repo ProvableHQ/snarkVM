@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::r1cs::{ConstraintSystem, LinearCombination, Variable, errors::SynthesisError};
+use crate::r1cs::{ConstraintSystem, LinearCombination, Variable};
+use anyhow::Result;
 use snarkvm_fields::Field;
 
 use std::marker::PhantomData;
@@ -32,9 +33,9 @@ impl<F: Field, CS: ConstraintSystem<F>> ConstraintSystem<F> for Namespace<'_, F,
     }
 
     #[inline]
-    fn alloc<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable, SynthesisError>
+    fn alloc<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable>
     where
-        FN: FnOnce() -> Result<F, SynthesisError>,
+        FN: FnOnce() -> Result<F>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {
@@ -42,9 +43,9 @@ impl<F: Field, CS: ConstraintSystem<F>> ConstraintSystem<F> for Namespace<'_, F,
     }
 
     #[inline]
-    fn alloc_input<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable, SynthesisError>
+    fn alloc_input<FN, A, AR>(&mut self, annotation: A, f: FN) -> Result<Variable>
     where
-        FN: FnOnce() -> Result<F, SynthesisError>,
+        FN: FnOnce() -> Result<F>,
         A: FnOnce() -> AR,
         AR: AsRef<str>,
     {
