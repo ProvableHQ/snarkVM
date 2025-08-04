@@ -138,10 +138,18 @@ package = [
   "dep:ureq",
   "dep:dotenvy"
 ]
-aleo-cli = [ "snarkvm-synthesizer/aleo-cli" ]
 async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
+dev-print = [ 
+  "snarkvm-utilities/dev-print",
+  "snarkvm-algorithms/dev-print",
+  "snarkvm-circuit/dev-print",
+  "snarkvm-curves/dev-print",
+  "snarkvm-fields/dev-print",
+  "snarkvm-parameters/dev-print",
+  "snarkvm-synthesizer/dev-print",
+  "snarkvm-wasm/dev-print",
+]
 save_r1cs_hashes = [ "snarkvm-circuit/save_r1cs_hashes" ]
 history = [ "snarkvm-synthesizer/history" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]

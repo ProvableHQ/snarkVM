@@ -36,8 +36,7 @@ impl<N: Network> Package<N> {
         // Prepare the locator (even if logging is disabled, to sanity check the locator is well-formed).
         let _locator = Locator::<N>::from_str(&format!("{program_id}/{function_name}"))?;
 
-        #[cfg(feature = "aleo-cli")]
-        println!("🚀 Running '{}'...\n", _locator.to_string().bold());
+        dev_println!("🚀 Running '{}'...\n", _locator.to_string());
 
         // Construct the process.
         let process = self.get_process()?;

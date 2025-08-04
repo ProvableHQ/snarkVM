@@ -31,7 +31,6 @@ locktick = [
   "snarkvm-ledger-store/locktick",
   "snarkvm-synthesizer-process/locktick"
 ]
-aleo-cli = [ ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "serde" ]

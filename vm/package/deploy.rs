@@ -120,8 +120,7 @@ impl<N: Network> Package<N> {
         // Retrieve the main program ID.
         let program_id = program.id();
 
-        #[cfg(feature = "aleo-cli")]
-        println!("⏳ Deploying '{}'...\n", program_id.to_string().bold());
+        dev_println!("⏳ Deploying '{}'...\n", program_id.to_string());
 
         // Get the process.
         let process = self.get_process()?;

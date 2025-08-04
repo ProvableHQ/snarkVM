@@ -24,8 +24,7 @@ impl<N: Network> Process<N> {
         // Retrieve the top-level request (without popping it).
         let request = authorization.peek_next()?;
 
-        #[cfg(feature = "aleo-cli")]
-        println!("{}", format!(" • Evaluating '{}/{}'...", request.program_id(), request.function_name()).dimmed());
+        dev_println!("{}", format!(" • Evaluating '{}/{}'...", request.program_id(), request.function_name()));
 
         // Retrieve the stack.
         let stack = self.get_stack(request.program_id())?;

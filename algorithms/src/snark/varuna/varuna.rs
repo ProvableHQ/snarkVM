@@ -299,8 +299,8 @@ where
         if state.index_info != verifying_key.circuit_info {
             bail!("Circuit info mismatch, expected {:?}, got {:?}", verifying_key.circuit_info, state.index_info);
         }
-        if state.id != *circuit_id { // TODO: how can state.id be different when state.index_info is the same? Are some R1CS rows different due to sorting? Did we actually subtly change our arithmetization?
-            bail!("Circuit ID mismatch, expected {:?}, got {:?}", circuit_id, state.id);
+        if state.id != *circuit_id {
+            bail!("Circuit ID mismatch, expected {:?}, got {:?}.", circuit_id, state.id);
         }
 
         // Make sure certificate is not hiding

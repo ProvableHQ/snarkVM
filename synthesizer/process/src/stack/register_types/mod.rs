@@ -47,6 +47,7 @@ use snarkvm_synthesizer_program::{
     Program,
     StackTrait,
 };
+use snarkvm_utilities::dev_eprintln;
 
 use indexmap::{IndexMap, IndexSet};
 

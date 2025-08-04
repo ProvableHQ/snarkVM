@@ -25,7 +25,6 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon", "rayon" ]
-aleo-cli = [ ]
 async = [ "snarkvm-ledger-query/async" ]
 locktick = [ "dep:locktick", "snarkvm-ledger-store/locktick" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]

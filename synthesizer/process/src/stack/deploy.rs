@@ -188,7 +188,7 @@ impl<N: Network> Stack<N> {
                 if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&_consensus_version) {
                     finish!(timer);
                     return Ok(());
-                }        
+                }
                 // Check the certificate.
                 match assignments.read().last() {
                     None => bail!("The assignment for function '{function_name}' is missing in '{program_id}'"),

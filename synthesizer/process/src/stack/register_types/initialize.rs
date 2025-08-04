@@ -287,15 +287,17 @@ impl<N: Network> RegisterTypes<N> {
     /// Ensure the given output register is well-formed.
     #[inline]
     fn check_output(&self, stack: &Stack<N>, operand: &Operand<N>, register_type: &RegisterType<N>) -> Result<()> {
-        #[cfg(feature = "aleo-cli")]
         match operand {
             // Inform the user the output operand is an input register, to ensure this is intended behavior.
             Operand::Register(register) if self.is_input(register) => {
-                eprintln!("Output {operand} in '{}' is an input register, ensure this is intended", stack.program_id())
+                dev_eprintln!(
+                    "Output {operand} in '{}' is an input register, ensure this is intended",
+                    stack.program_id()
+                );
             }
             // Inform the user the output operand is a literal, to ensure this is intended behavior.
             Operand::Literal(..) => {
-                eprintln!("Output {operand} in '{}' is a literal, ensure this is intended", stack.program_id())
+                dev_eprintln!("Output {operand} in '{}' is a literal, ensure this is intended", stack.program_id());
             }
             // Otherwise, do nothing.
             _ => (),

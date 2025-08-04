@@ -250,7 +250,7 @@ impl<F: PrimeField> R1CS<F> {
     /// it to the R1CS_HASHES collection.
     #[cfg(feature = "save_r1cs_hashes")]
     pub(crate) fn save_hash(&self) {
-        println!("Saving hash of R1CS");
+        snarkvm_utilities::dev_println!("Saving hash of R1CS");
         let r1cs_hash = hash_to_sha256(self);
         R1CS_HASHES.lock().unwrap().push(r1cs_hash);
     }

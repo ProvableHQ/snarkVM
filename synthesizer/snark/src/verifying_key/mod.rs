@@ -44,12 +44,11 @@ impl<N: Network> VerifyingKey<N> {
     /// Returns `true` if the proof is valid for the given public inputs.
     pub fn verify(
         &self,
-        function_name: &str,
+        _function_name: &str,
         varuna_version: varuna::VarunaVersion,
         inputs: &[N::Field],
         proof: &Proof<N>,
     ) -> bool {
-        #[cfg(feature = "aleo-cli")]
         let timer = std::time::Instant::now();
 
         // Retrieve the verification parameters.
@@ -60,16 +59,12 @@ impl<N: Network> VerifyingKey<N> {
         #[allow(clippy::manual_unwrap_or_default)]
         match Varuna::<N>::verify(universal_verifier, fiat_shamir, self, varuna_version, inputs, proof) {
             Ok(is_valid) => {
-                #[cfg(feature = "aleo-cli")]
-                println!(
-                    "{}",
-                    format!(" • Verified '{function_name}' (in {} ms)", timer.elapsed().as_millis()).dimmed()
-                );
+                let _elapsed = timer.elapsed().as_millis();
+                dev_println!(" • Verified '{_function_name}' (in {_elapsed} ms)");
                 is_valid
             }
-            Err(error) => {
-                #[cfg(feature = "aleo-cli")]
-                println!("{}", format!(" • Verifier failed: {error}").dimmed());
+            Err(_error) => {
+                dev_println!(" • Verifier failed on network {}: {_error}", N::NAME);
                 false
             }
         }
@@ -78,12 +73,11 @@ impl<N: Network> VerifyingKey<N> {
     /// Returns `true` if the batch proof is valid for the given public inputs.
     #[allow(clippy::type_complexity)]
     pub fn verify_batch(
-        locator: &str,
+        _locator: &str,
         varuna_version: VarunaVersion,
         inputs: Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>,
         proof: &Proof<N>,
     ) -> Result<()> {
-        #[cfg(feature = "aleo-cli")]
         let timer = std::time::Instant::now();
 
         // Convert the instances.
@@ -99,16 +93,12 @@ impl<N: Network> VerifyingKey<N> {
         // Verify the batch proof.
         match Varuna::<N>::verify_batch(universal_verifier, fiat_shamir, varuna_version, &keys_to_inputs, proof) {
             Ok(is_valid) => {
-                #[cfg(feature = "aleo-cli")]
-                println!(
-                    "{}",
-                    format!(" • Verified '{locator}': {is_valid} (in {} ms)", timer.elapsed().as_millis()).dimmed()
-                );
+                let _elapsed = timer.elapsed().as_millis();
+                dev_println!(" • Verified '{_locator}': {is_valid} (in {_elapsed} ms)");
                 if is_valid { Ok(()) } else { bail!("'verify_batch' failed") }
             }
             Err(error) => {
-                #[cfg(feature = "aleo-cli")]
-                println!("{}", format!(" • Verifier failed: {error}").dimmed());
+                dev_println!(" • Verifier failed on network {}: {error}", N::NAME);
                 bail!(error)
             }
         }

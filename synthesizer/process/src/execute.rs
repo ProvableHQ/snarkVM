@@ -30,8 +30,7 @@ impl<N: Network> Process<N> {
         // Construct the locator.
         let locator = Locator::new(*request.program_id(), *request.function_name());
 
-        #[cfg(feature = "aleo-cli")]
-        println!("{}", format!(" • Executing '{locator}'...",).dimmed());
+        dev_println!("{}", format!(" • Executing '{locator}'...",));
 
         // The root request does not have a caller.
         let caller = None;
