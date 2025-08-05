@@ -20,7 +20,11 @@ impl<N: Network> Serialize for Block<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let mut block = serializer.serialize_struct("Block", 11)?;
+                let mut block = serializer.serialize_struct("Block", 12)?;
+                let current_consensus_version = N::CONSENSUS_VERSION(self.height()).unwrap();
+                if current_consensus_version >= ConsensusVersion::V10 {
+                    block.serialize_field("version", &2u8)?;
+                }
                 block.serialize_field("block_hash", &self.block_hash)?;
                 block.serialize_field("previous_hash", &self.previous_hash)?;
                 block.serialize_field("header", &self.header)?;
@@ -45,6 +49,8 @@ impl<'de, N: Network> Deserialize<'de> for Block<N> {
         match deserializer.is_human_readable() {
             true => {
                 let mut block = serde_json::Value::deserialize(deserializer)?;
+                // Retrieve the version and hash.
+                let version: u8 = DeserializeExt::take_from_value::<D>(&mut block, "version").unwrap_or(1);
                 let block_hash: N::BlockHash = DeserializeExt::take_from_value::<D>(&mut block, "block_hash")?;
 
                 // Recover the block.
@@ -54,11 +60,19 @@ impl<'de, N: Network> Deserialize<'de> for Block<N> {
                     DeserializeExt::take_from_value::<D>(&mut block, "authority")?,
                     DeserializeExt::take_from_value::<D>(&mut block, "ratifications")?,
                     DeserializeExt::take_from_value::<D>(&mut block, "solutions")?,
+                    if version >= 2 {
+                        DeserializeExt::take_from_value::<D>(&mut block, "prior_solution_ids")?
+                    } else {
+                        vec![]
+                    },
                     DeserializeExt::take_from_value::<D>(&mut block, "aborted_solution_ids")?,
                     DeserializeExt::take_from_value::<D>(&mut block, "transactions")?,
+                    if version >= 2 {
+                        DeserializeExt::take_from_value::<D>(&mut block, "prior_transaction_ids")?
+                    } else {
+                        vec![]
+                    },
                     DeserializeExt::take_from_value::<D>(&mut block, "aborted_transaction_ids")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "prior_solution_ids")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "prior_transaction_ids")?,
                 )
                 .map_err(de::Error::custom)?;
 

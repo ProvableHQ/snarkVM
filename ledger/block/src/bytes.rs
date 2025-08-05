@@ -22,7 +22,7 @@ impl<N: Network> FromBytes for Block<N> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
-        if version != 1 {
+        if ![1, 2].contains(&version) {
             return Err(error("Invalid block version"));
         }
 
@@ -54,28 +54,38 @@ impl<N: Network> FromBytes for Block<N> {
             aborted_solution_ids.push(FromBytes::read_le(&mut reader)?);
         }
 
-        // Read the number of prior solution IDs.
-        let num_prior_solutions = u16::read_le(&mut reader)?;
-        // Read the aborted transaction IDs.
-        let mut prior_solution_ids = Vec::with_capacity(num_prior_solutions as usize);
-        for _ in 0..num_prior_solutions {
-            prior_solution_ids.push(FromBytes::read_le(&mut reader)?);
-        }
+        let prior_solution_ids = if version >= 2 {
+            // Read the number of prior solution IDs.
+            let num_prior_solutions = u16::read_le(&mut reader)?;
+            // Read the aborted transaction IDs.
+            let mut prior_solution_ids = Vec::with_capacity(num_prior_solutions as usize);
+            for _ in 0..num_prior_solutions {
+                prior_solution_ids.push(FromBytes::read_le(&mut reader)?);
+            }
+            prior_solution_ids
+        } else {
+            vec![]
+        };
 
         // Read the transactions.
         let transactions = FromBytes::read_le(&mut reader)?;
 
-        // Read the number of prior transaction IDs.
-        let num_prior_transactions = u32::read_le(&mut reader)?;
-        // Ensure the number of prior transaction IDs is within bounds (this is an early safety check).
-        if num_prior_transactions as usize > Transactions::<N>::MAX_TRANSACTIONS {
-            return Err(error("Invalid number of aborted transaction IDs in the block"));
-        }
-        // Read the aborted transaction IDs.
-        let mut prior_transaction_ids = Vec::with_capacity(num_prior_transactions as usize);
-        for _ in 0..num_prior_transactions {
-            prior_transaction_ids.push(FromBytes::read_le(&mut reader)?);
-        }
+        let prior_transaction_ids = if version >= 2 {
+            // Read the number of prior transaction IDs.
+            let num_prior_transactions = u32::read_le(&mut reader)?;
+            // Ensure the number of prior transaction IDs is within bounds (this is an early safety check).
+            if num_prior_transactions as usize > Transactions::<N>::MAX_TRANSACTIONS {
+                return Err(error("Invalid number of aborted transaction IDs in the block"));
+            }
+            // Read the aborted transaction IDs.
+            let mut prior_transaction_ids = Vec::with_capacity(num_prior_transactions as usize);
+            for _ in 0..num_prior_transactions {
+                prior_transaction_ids.push(FromBytes::read_le(&mut reader)?);
+            }
+            prior_transaction_ids
+        } else {
+            vec![]
+        };
 
         // Read the number of aborted transaction IDs.
         let num_aborted_transactions = u32::read_le(&mut reader)?;
@@ -117,7 +127,11 @@ impl<N: Network> ToBytes for Block<N> {
     #[inline]
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        1u8.write_le(&mut writer)?;
+        if N::CONSENSUS_VERSION(self.height()).unwrap() >= ConsensusVersion::V10 {
+            2u8.write_le(&mut writer)?;
+        } else {
+            1u8.write_le(&mut writer)?;
+        };
 
         // Write the block hash.
         self.block_hash.write_le(&mut writer)?;
