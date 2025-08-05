@@ -42,6 +42,20 @@ impl<N: Network> FromBytes for Block<N> {
         // Read the solutions.
         let solutions: Solutions<N> = FromBytes::read_le(&mut reader)?;
 
+        let prior_solution_ids = if version >= 2 {
+            // Read the number of prior solution IDs.
+            let num_prior_solutions = u32::read_le(&mut reader)?;
+            // TODO: we might want to restrict this value
+            // Read the aborted transaction IDs.
+            let mut prior_solution_ids = Vec::with_capacity(num_prior_solutions as usize);
+            for _ in 0..num_prior_solutions {
+                prior_solution_ids.push(FromBytes::read_le(&mut reader)?);
+            }
+            prior_solution_ids
+        } else {
+            vec![]
+        };
+
         // Read the number of aborted solution IDs.
         let num_aborted_solutions = u32::read_le(&mut reader)?;
         // Ensure the number of aborted solutions IDs is within bounds (this is an early safety check).
@@ -53,19 +67,6 @@ impl<N: Network> FromBytes for Block<N> {
         for _ in 0..num_aborted_solutions {
             aborted_solution_ids.push(FromBytes::read_le(&mut reader)?);
         }
-
-        let prior_solution_ids = if version >= 2 {
-            // Read the number of prior solution IDs.
-            let num_prior_solutions = u16::read_le(&mut reader)?;
-            // Read the aborted transaction IDs.
-            let mut prior_solution_ids = Vec::with_capacity(num_prior_solutions as usize);
-            for _ in 0..num_prior_solutions {
-                prior_solution_ids.push(FromBytes::read_le(&mut reader)?);
-            }
-            prior_solution_ids
-        } else {
-            vec![]
-        };
 
         // Read the transactions.
         let transactions = FromBytes::read_le(&mut reader)?;
@@ -127,11 +128,8 @@ impl<N: Network> ToBytes for Block<N> {
     #[inline]
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        if N::CONSENSUS_VERSION(self.height()).unwrap() >= ConsensusVersion::V10 {
-            2u8.write_le(&mut writer)?;
-        } else {
-            1u8.write_le(&mut writer)?;
-        };
+        let version = if N::CONSENSUS_VERSION(self.height()).unwrap() >= ConsensusVersion::V10 { 2u8 } else { 1 };
+        version.write_le(&mut writer)?;
 
         // Write the block hash.
         self.block_hash.write_le(&mut writer)?;
@@ -150,23 +148,23 @@ impl<N: Network> ToBytes for Block<N> {
         self.solutions.write_le(&mut writer)?;
 
         // Write the prior solution ids.
-        (u16::try_from(self.prior_solution_ids.len()).map_err(error))?.write_le(&mut writer)?;
-        self.prior_solution_ids.write_le(&mut writer)?;
+        if version >= 2 {
+            (u32::try_from(self.prior_solution_ids.len()).map_err(error))?.write_le(&mut writer)?;
+            self.prior_solution_ids.write_le(&mut writer)?;
+        }
 
         // Write the aborted solution IDs.
         (u32::try_from(self.aborted_solution_ids.len()).map_err(error))?.write_le(&mut writer)?;
         self.aborted_solution_ids.write_le(&mut writer)?;
 
-        // Write the prior solution ids.
-        (u16::try_from(self.prior_solution_ids.len()).map_err(error))?.write_le(&mut writer)?;
-        self.prior_solution_ids.write_le(&mut writer)?;
-
         // Write the transactions.
         self.transactions.write_le(&mut writer)?;
 
         // Write the prior transaction ids.
-        (u32::try_from(self.prior_transaction_ids.len()).map_err(error))?.write_le(&mut writer)?;
-        self.prior_transaction_ids.write_le(&mut writer)?;
+        if version >= 2 {
+            (u32::try_from(self.prior_transaction_ids.len()).map_err(error))?.write_le(&mut writer)?;
+            self.prior_transaction_ids.write_le(&mut writer)?;
+        }
 
         // Write the aborted transaction IDs.
         (u32::try_from(self.aborted_transaction_ids.len()).map_err(error))?.write_le(&mut writer)?;
