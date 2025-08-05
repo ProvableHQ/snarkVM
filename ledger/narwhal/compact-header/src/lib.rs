@@ -282,7 +282,6 @@ impl<N: Network> CompactHeader<N> {
             self.committee_id,
             transmission_ids,
             self.previous_certificate_ids,
-            // self.last_election_certificate_ids,
             self.signature,
         )
     }

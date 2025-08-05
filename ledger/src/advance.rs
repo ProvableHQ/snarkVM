@@ -36,7 +36,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let (prior_ratifications, prior_solution_ids, prior_transaction_ids) =
             decouple_transmission_ids(prior_included_transmissions)?;
         // Decouple the aborted_transmissions into ratifications, solutions, and transactions.
-        // TODO: add support for aborted solution ids
         let (aborted_ratifications, _aborted_solution_ids, aborted_transaction_ids) =
             decouple_transmission_ids(aborted_transmissions)?;
         // Currently, we do not support ratifications from the memory pool.

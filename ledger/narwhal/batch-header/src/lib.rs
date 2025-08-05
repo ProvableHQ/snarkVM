@@ -24,8 +24,6 @@ mod serialize;
 mod string;
 mod to_id;
 
-use std::collections::BTreeSet;
-
 use console::{
     account::{Address, PrivateKey, Signature},
     prelude::*,
@@ -34,6 +32,7 @@ use console::{
 use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 
 use indexmap::IndexSet;
+use std::collections::BTreeSet;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;

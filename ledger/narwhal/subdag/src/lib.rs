@@ -243,13 +243,6 @@ impl<N: Network> Subdag<N> {
         Ok(Self::Compact { subdag })
     }
 
-    // pub fn get_and_iter(&self, round: &u64) -> Option<Vec<LeaderCertificate<N>>> {
-    //     match self {
-    //         Self::Full { subdag } => subdag.get(round).map(|certs| certs.iter().map(LeaderCertificate::<N>::from).collect()),
-    //         Self::Compact { subdag } => subdag.get(round).map(|certs| certs.iter().map(LeaderCertificate::<N>::from).collect()),
-    //     }
-    // }
-
     pub fn check_committee_id_coherence(&self) -> Result<()> {
         macro_rules! checker {
             ($round:expr, $certificates:expr) => {{
@@ -529,50 +522,6 @@ impl<N: Network> Subdag<N> {
 
         // Return the compact certificates.
         Ok(Self::Compact { subdag: compact_subdag })
-    }
-
-    /// Returns the subdag with full batch certificates.
-    pub fn into_full(
-        self,
-        ratifications: Vec<N::RatificationID>,
-        solutions: Option<PuzzleSolutions<N>>,
-        prior_solutions: Vec<SolutionID<N>>,
-        transaction_ids: Vec<N::TransactionID>,
-        prior_transactions: Vec<N::TransactionID>,
-        aborted_transaction_ids: Vec<N::TransactionID>,
-    ) -> Result<Subdag<N>> {
-        let Self::Compact { subdag } = self else { bail!("Can only turn a Compact subdag into a Full one.") };
-        // Initialize the new subdag.
-        let mut batch_subdag = BTreeMap::new();
-
-        // Iterate over the subdag.
-        for (round, compact_certificates) in subdag.into_iter() {
-            let mut batch_certificates = IndexSet::with_capacity(compact_certificates.len());
-            for certificate in compact_certificates.into_iter() {
-                // Create iters.
-                let ratifications_iter = ratifications.iter();
-                let solutions_iter = solutions.as_ref().map(|s| s.solution_ids());
-                let prior_solutions_iter = prior_solutions.iter();
-                let transactions_iter = transaction_ids.iter();
-                let prior_transactions_iter = prior_transactions.iter();
-                let aborted_tx_iter = aborted_transaction_ids.iter();
-
-                // Convert compact certificate to batch certificate.
-                let batch_certificate = certificate.into_batch_certificate(
-                    ratifications_iter,
-                    solutions_iter,
-                    prior_solutions_iter,
-                    transactions_iter,
-                    prior_transactions_iter,
-                    aborted_tx_iter,
-                )?;
-                batch_certificates.insert(batch_certificate);
-            }
-            batch_subdag.insert(round, batch_certificates);
-        }
-
-        // Return the batch certificates.
-        Ok(Self::Full { subdag: batch_subdag })
     }
 }
 

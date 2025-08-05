@@ -89,7 +89,7 @@ impl<N: Network> CompactCertificate<N> {
             prior_transactions,
             aborted_transactions,
         )?;
-        let signatures = batch_certificate.signatures().cloned().collect();
+        let BatchCertificate { signatures, .. } = batch_certificate;
         // Return the compact certificate.
         Self::from_unchecked(compact_header, signatures)
     }

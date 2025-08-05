@@ -77,13 +77,13 @@ pub struct Block<N: Network> {
     ratifications: Ratifications<N>,
     /// The solutions in the block.
     solutions: Solutions<N>,
-    /// The prior solution ids in the block.
+    /// The IDs of both accepted and aborted solutions in the previous block.
     prior_solution_ids: Vec<SolutionID<N>>,
     /// The aborted solution IDs in this block.
     aborted_solution_ids: Vec<SolutionID<N>>,
     /// The transactions in this block.
     transactions: Transactions<N>,
-    /// The prior transaction ids in the block.
+    /// The IDs of both accepted and aborted transactions in the previous block.
     prior_transaction_ids: Vec<N::TransactionID>,
     /// The aborted transaction IDs in this block.
     aborted_transaction_ids: Vec<N::TransactionID>,
@@ -285,74 +285,6 @@ impl<N: Network> Block<N> {
             prior_transaction_ids,
             aborted_transaction_ids,
         })
-    }
-
-    /// Consume the Block and return a Subdag with full batch certificates.
-    pub fn into_full_subdag(self) -> Result<Subdag<N>> {
-        let Block {
-            ratifications,
-            solutions,
-            prior_solution_ids,
-            transactions,
-            prior_transaction_ids,
-            aborted_transaction_ids,
-            authority,
-            ..
-        } = self;
-
-        // Check if Authority is a Quorum
-        let Authority::Quorum(subdag) = authority else {
-            bail!("Can only convert block with Quorum Authority to full subdag");
-        };
-
-        // Collect ratification IDs.
-        let ratification_ids = ratifications.ratification_ids().copied().collect_vec();
-        // Collect transaction IDs.
-        let transaction_ids = transactions.transaction_ids().copied().collect_vec();
-
-        // Convert Quorum authority to subdag with full batch certificates.
-        subdag.into_full(
-            ratification_ids,
-            solutions.as_puzzle_solutions().cloned(),
-            prior_solution_ids,
-            transaction_ids,
-            prior_transaction_ids,
-            aborted_transaction_ids,
-        )
-    }
-
-    /// Borrow the Block and return a Subdag with full batch certificates.
-    pub fn to_full_subdag(&self) -> Result<Subdag<N>> {
-        let Block {
-            ratifications,
-            solutions,
-            prior_solution_ids,
-            transactions,
-            prior_transaction_ids,
-            aborted_transaction_ids,
-            authority,
-            ..
-        } = self;
-
-        // Check if Authority is a Quorum
-        let Authority::Quorum(subdag) = authority else {
-            bail!("Can only convert block with Quorum Authority to full subdag");
-        };
-
-        // Collect ratification IDs.
-        let ratification_ids = ratifications.ratification_ids().copied().collect_vec();
-        // Collect transaction IDs.
-        let transaction_ids = transactions.transaction_ids().copied().collect_vec();
-
-        // Convert Quorum authority to subdag with full batch certificates.
-        subdag.clone().into_full(
-            ratification_ids,
-            solutions.as_puzzle_solutions().cloned(),
-            prior_solution_ids.clone(),
-            transaction_ids,
-            prior_transaction_ids.clone(),
-            aborted_transaction_ids.clone(),
-        )
     }
 }
 

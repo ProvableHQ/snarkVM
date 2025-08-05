@@ -20,18 +20,18 @@ impl<N: Network> Serialize for Block<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let mut block = serializer.serialize_struct("Block", 9)?;
+                let mut block = serializer.serialize_struct("Block", 11)?;
                 block.serialize_field("block_hash", &self.block_hash)?;
                 block.serialize_field("previous_hash", &self.previous_hash)?;
                 block.serialize_field("header", &self.header)?;
                 block.serialize_field("authority", &self.authority)?;
                 block.serialize_field("ratifications", &self.ratifications)?;
                 block.serialize_field("solutions", &self.solutions)?;
-                block.serialize_field("prior_solution_ids", &self.prior_solution_ids)?;
                 block.serialize_field("aborted_solution_ids", &self.aborted_solution_ids)?;
                 block.serialize_field("transactions", &self.transactions)?;
-                block.serialize_field("prior_transaction_ids", &self.prior_transaction_ids)?;
                 block.serialize_field("aborted_transaction_ids", &self.aborted_transaction_ids)?;
+                block.serialize_field("prior_solution_ids", &self.prior_solution_ids)?;
+                block.serialize_field("prior_transaction_ids", &self.prior_transaction_ids)?;
                 block.end()
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
@@ -54,11 +54,11 @@ impl<'de, N: Network> Deserialize<'de> for Block<N> {
                     DeserializeExt::take_from_value::<D>(&mut block, "authority")?,
                     DeserializeExt::take_from_value::<D>(&mut block, "ratifications")?,
                     DeserializeExt::take_from_value::<D>(&mut block, "solutions")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "prior_solution_ids")?,
                     DeserializeExt::take_from_value::<D>(&mut block, "aborted_solution_ids")?,
                     DeserializeExt::take_from_value::<D>(&mut block, "transactions")?,
-                    DeserializeExt::take_from_value::<D>(&mut block, "prior_transaction_ids")?,
                     DeserializeExt::take_from_value::<D>(&mut block, "aborted_transaction_ids")?,
+                    DeserializeExt::take_from_value::<D>(&mut block, "prior_solution_ids")?,
+                    DeserializeExt::take_from_value::<D>(&mut block, "prior_transaction_ids")?,
                 )
                 .map_err(de::Error::custom)?;
 

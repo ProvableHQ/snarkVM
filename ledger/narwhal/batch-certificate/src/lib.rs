@@ -43,7 +43,7 @@ pub struct BatchCertificate<N: Network> {
     /// The batch header.
     batch_header: BatchHeader<N>,
     /// The signatures for the batch ID from the committee.
-    signatures: IndexSet<Signature<N>>,
+    pub signatures: IndexSet<Signature<N>>,
 }
 
 impl<N: Network> BatchCertificate<N> {

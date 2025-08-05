@@ -51,8 +51,10 @@ impl<'de, N: Network> Deserialize<'de> for Subdag<N> {
                 match subdag_is_full {
                     true => Ok(Self::from_full(DeserializeExt::take_from_value::<D>(&mut value, "full_subdag")?)
                         .map_err(de::Error::custom)?),
-                    false => Ok(Self::from_full(DeserializeExt::take_from_value::<D>(&mut value, "compact_subdag")?)
-                        .map_err(de::Error::custom)?),
+                    false => {
+                        Ok(Self::from_compact(DeserializeExt::take_from_value::<D>(&mut value, "compact_subdag")?)
+                            .map_err(de::Error::custom)?)
+                    }
                 }
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "subdag"),

@@ -56,7 +56,7 @@ workspace = true
 workspace = true
 
 [dependencies.bit-set]
-version = "0.5.3"
+version = "0.8"
 
 [dependencies.indexmap]
 workspace = true
