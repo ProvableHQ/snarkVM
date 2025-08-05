@@ -27,8 +27,8 @@ impl<N: Network> FromBytes for Subdag<N> {
 
         // Read the subdag type.
         let subdag_type = match version {
-            2 => u8::read_le(&mut reader)?,
-            _ => 1u8,
+            1 => 1u8,
+            _ => u8::read_le(&mut reader)?,
         };
 
         // Read the number of rounds.
@@ -89,14 +89,17 @@ impl<N: Network> ToBytes for Subdag<N> {
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
         // TODO: select the Subdag version based on the consensus version.
-        1u8.write_le(&mut writer)?;
+        let version = 1u8;
+        version.write_le(&mut writer)?;
         // Get the subdag type
         let (subdag_type, subdag_len) = match self {
             Self::Full { subdag, .. } => (1u8, subdag.len()),
             Self::Compact { subdag, .. } => (2u8, subdag.len()),
         };
         // Write the subdag type
-        subdag_type.write_le(&mut writer)?;
+        if version >= 2 {
+            subdag_type.write_le(&mut writer)?;
+        }
         // Write the number of rounds.
         u32::try_from(subdag_len).map_err(error)?.write_le(&mut writer)?;
         // Write the round certificates.
@@ -106,7 +109,7 @@ impl<N: Network> ToBytes for Subdag<N> {
                     // Write the round.
                     round.write_le(&mut writer)?;
                     // Write the number of certificates.
-                    u32::try_from(certificates.len()).map_err(error)?.write_le(&mut writer)?;
+                    u16::try_from(certificates.len()).map_err(error)?.write_le(&mut writer)?;
                     // Write the certificates.
                     for certificate in certificates {
                         // Write the certificate.
@@ -119,7 +122,7 @@ impl<N: Network> ToBytes for Subdag<N> {
                     // Write the round.
                     round.write_le(&mut writer)?;
                     // Write the number of certificates.
-                    u32::try_from(certificates.len()).map_err(error)?.write_le(&mut writer)?;
+                    u16::try_from(certificates.len()).map_err(error)?.write_le(&mut writer)?;
                     // Write the certificates.
                     for certificate in certificates {
                         // Write the certificate.
