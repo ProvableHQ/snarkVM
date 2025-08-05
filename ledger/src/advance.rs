@@ -52,7 +52,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let transaction_ids = transactions.unconfirmed_transaction_ids()?;
         // Construct the aborted Transaction IDs.
         let aborted_transaction_ids =
-            aborted_transaction_ids.into_iter().chain(aborted_transaction_ids_2.into_iter()).collect_vec();
+            aborted_transaction_ids.into_iter().chain(aborted_transaction_ids_2).collect_vec();
 
         // Construct the compact Subdag
         let subdag = subdag.into_compact(
@@ -80,6 +80,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns a candidate for the next block in the ledger.
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_advance_to_next_beacon_block<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
