@@ -81,6 +81,11 @@ serial = [
   "snarkvm-ledger-store/serial",
   "snarkvm-synthesizer/serial"
 ]
+instrumentation = [
+  "snarkvm-synthesizer/instrumentation",
+  "snarkvm-ledger-block/instrumentation",
+  "snarkvm-ledger-store/instrumentation"
+]
 test = [
   "snarkvm-console/test",
   "snarkvm-ledger-block/test",

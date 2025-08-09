@@ -50,6 +50,7 @@ impl FinalizeGlobalState {
 
     /// Initializes a new global state from the given inputs.
     #[inline]
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip_all))]
     pub fn new<N: Network>(
         block_round: u64,
         block_height: u32,

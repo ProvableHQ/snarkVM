@@ -726,6 +726,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the previous block hash of the given `block height`.
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip(self)))]
     fn get_previous_block_hash(&self, height: u32) -> Result<Option<N::BlockHash>> {
         if height.is_zero() {
             Ok(Some(N::BlockHash::default()))
@@ -735,11 +736,13 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the block hash for the given `block height`.
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip(self)))]
     fn get_block_hash(&self, height: u32) -> Result<Option<N::BlockHash>> {
         Ok(self.id_map().get_confirmed(&height)?.map(|x| *x))
     }
 
     /// Returns the block height for the given `block hash`.
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip(self)))]
     fn get_block_height(&self, block_hash: &N::BlockHash) -> Result<Option<u32>> {
         Ok(self.reverse_id_map().get_confirmed(block_hash)?.map(|x| *x))
     }
@@ -760,6 +763,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the batch certificate for the given `certificate ID`.
+    ///
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip(self)))]
     fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
         // Retrieve the height and round for the given certificate ID.
         let Some((block_height, round)) = self.certificate_map().get_confirmed(certificate_id)?.map(|x| *x) else {
@@ -853,6 +858,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the transaction for the given `TransactionID`.
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip(self)))]
     fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         // Check if the transaction was rejected or aborted.
         // Note: We can only retrieve accepted or rejected transactions. We cannot retrieve aborted transactions.
@@ -932,7 +938,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         }
     }
 
-    /// Returns the block for the given `block hash`.
+    /// Returns the block for the given `block_hash`.
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip(self)))]
     fn get_block(&self, block_hash: &N::BlockHash) -> Result<Option<Block<N>>> {
         // Retrieve the block height.
         let Some(height) = self.get_block_height(block_hash)? else { return Ok(None) };

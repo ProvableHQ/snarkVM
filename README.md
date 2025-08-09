@@ -13,9 +13,10 @@
 ## Table of Contents
 
 * [1. Overview](#1-overview)
-* [2. Build Guide](#2-build-guide)
-* [3. Contributors](#3-contributors)
-* [4. License](#4-license)
+* [2. Usage Guide](#2-usage-guide)
+* [3. Build Guide](#3-build-guide)
+* [4. Contributors](#4-contributors)
+* [5. License](#5-license)
 
 ## 1. Overview
 
@@ -35,9 +36,51 @@
   
 For more information, visit [Welcome to Aleo](https://github.com/AleoNet/welcome) to get started.
 
-## 2. Build Guide
+## 2. Usage Guide
 
-### 2.1 Install Rust
+snarkVM is primarily designed to be used as a library in Rust projects. Add it to your `Cargo.toml` with your favourite published version:
+
+```toml
+[dependencies]
+snarkvm = "<major>.<minor>.<patch>"
+```
+
+### 2.1 Feature Flags
+
+The following is an (incomplete) list of features flags in the snarkVM crate.
+
+* **cuda** -
+  Allows some operations to run on the (NVidia) GPU, instead of on the CPU.
+* **cli** -
+  Enables the command-line interface. Needed when installing the `snarkvm` binary.
+* **locktick** -
+  This feature turns on code for detecting deadlocks.
+* **test_targets** -
+  This feature allows the lowering of coinbase and proof targets for testing.
+* **instrumentation** -
+  Adds `tracing::instrument` statements to (some) functions. This is useful for profiling, but should not be used in production.
+* **serial** -
+  *Disables* paralle processing using `rayon`.
+* **algorithms** -
+  Adds the `algorithms` crate to `snarkvm` (as `snarkvm::algorithms`)
+* **circuit** -
+  Adds the `circuit` crate to `snarkvm` (as `snarkvm::circuit`)
+* **fields** -
+  Adds the `fields` crate to `snarkvm` (as `snarkvm::fields`)
+* **ledger** -
+  Adds the `ledger` crate to `snarkvm` (as `snarkvm::ledger`)
+* **synthesizer** -
+  Adds the `synthesizer` crate to `snarkvm` (as `snarkvm::synthesizer`)
+* **parameters** -
+  Adds the `parameters` crate to `snarkvm` (as `snarkvm::parameters`)
+* **wasm** -
+  Enables behavior specific for WebAssembly. This feature should only be enabled when compiling to the `wasm32` architecture.
+
+### 3. Building Guide
+
+You can also build snarkVM from source. Because snarkVM is a library, this follwing guide is only useful if you plan to make modifications to its source code.
+
+### 3.1 Install Rust
 
 We recommend installing Rust using [rustup](https://www.rustup.rs/). You can install `rustup` as follows:
 
@@ -55,30 +98,34 @@ We recommend installing Rust using [rustup](https://www.rustup.rs/). You can ins
 - Windows (64-bit):
 
   Download the [Windows 64-bit executable](https://win.rustup.rs/x86_64) or
-  [Windows 32-bit executable](https://win.rustup.rs/i686) and follow the on-screen instructions.
+  [Windows 32-bit executable](https://win.rustup.rs/i686) and follow the on-screen instructions.i
 
-### 2.2 Using snarkVM as a Library
+### 3.2 Additional Dependencies
 
-snarkVM is primarily designed to be used as a library in Rust projects. Add it to your `Cargo.toml` with your favourite published version:
+On Linux, you also need the `lld` linker. For example, on a Debian system you would run the following to install it.
 
-```toml
-[dependencies]
-snarkvm = "<major>.<minor>.<patch>"
+```
+sudo apt install lld
 ```
 
-### 2.3 Build from Source Code
+### 3.3 Fetch Source Code
 
-You can also build snarkVM from source:
+The following snippet clones the `staging` branch of snarkVM. 
 
 ```bash
-# Fetch the repository's development (staging) branch
 git clone --branch staging --single-branch https://github.com/ProvableHQ/snarkVM.git 
 cd snarkVM
-# Build the library
+```
+
+### 3.4 Compiling snarkVM
+
+The following compiles the snarkVM crate.
+
+```
 cargo build --release
 ```
 
-## 3. Contributors
+## 4. Contributors
 
 Thank you for helping make snarkVM better!  
 [🧐 What do the emojis mean?](https://allcontributors.org/docs/en/emoji-key)
@@ -160,6 +207,6 @@ Thank you for helping make snarkVM better!
 
 This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
 
-## 4. License
+## 5. License
 
 [![License: GPL v3](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE.md)
