@@ -25,6 +25,7 @@ edition = "2024"
 
 [features]
 default = [ ]
+tracing = [ "dep:tracing" ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 
@@ -55,6 +56,10 @@ workspace = true
 
 [dependencies.rayon]
 version = "1"
+
+[dependencies.tracing]
+workspace = true
+optional = true
 
 [dependencies.serde_json]
 workspace = true

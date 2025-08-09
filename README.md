@@ -49,9 +49,17 @@ We recommend installing Rust using [rustup](https://www.rustup.rs/). You can ins
 - Windows (64-bit):
 
   Download the [Windows 64-bit executable](https://win.rustup.rs/x86_64) or
-  [Windows 32-bit executable](https://win.rustup.rs/i686) and follow the on-screen instructions.
+  [Windows 32-bit executable](https://win.rustup.rs/i686) and follow the on-screen instructions.i
 
-### 2.2.1 Build from Crates.io
+### 2.2 Additional Dependencies
+
+On Linux, you also need the `lld` linker. For example, on a Debian system you would run the following to install it.
+
+```
+sudo apt install lld
+```
+
+### 2.3.1 Build from Crates.io
 
 We recommend installing `snarkvm` this way. In your terminal, run:
 
@@ -64,7 +72,7 @@ Now to use `snarkvm`, in your terminal, run:
 snarkvm
 ```
 
-### 2.2.2 Build from Source Code
+### 2.3.2 Build from Source Code
 
 Alternatively, you can install `snarkvm` by building from the source code as follows:
 
@@ -83,9 +91,40 @@ Now to use `snarkvm`, in your terminal, run:
 snarkvm
 ```
 
+### 2.4 Feature Flags
+
+The following is an (incomplete) list of features flags in the snarkVM crate.
+
+* **cuda** -
+  Allows some operations to run on the (NVidia) GPU, instead of on the CPU.
+* **cli** -
+  Enables the command-line interface. Needed when installing the `snarkvm` binary.
+* **locktick** -
+  This feature turns on code for detecting deadlocks.
+* **test_targets** -
+  This feature allows the lowering of coinbase and proof targets for testing.
+* **tracing** -
+  Adds additional tracing statements to the code. This is useful for profiling, but can clutter the logs.
+* **serial** -
+  *Disables* paralle processing using `rayon`.
+* **algorithms** -
+  Adds the `algorithms` crate to `snarkvm` (as `snarkvm::algorithms`)
+* **circuit** -
+  Adds the `circuit` crate to `snarkvm` (as `snarkvm::circuit`)
+* **fields** -
+  Adds the `fields` crate to `snarkvm` (as `snarkvm::fields`)
+* **ledger** -
+  Adds the `ledger` crate to `snarkvm` (as `snarkvm::ledger`)
+* **synthesizer** -
+  Adds the `synthesizer` crate to `snarkvm` (as `snarkvm::synthesizer`)
+* **parameters** -
+  Adds the `parameters` crate to `snarkvm` (as `snarkvm::parameters`)
+* **wasm** -
+  Enables behavior specific for WebAssembly. This feature should only be enabled when compiling to the `wasm32` architecture.
+
 ## 3. Contributors
 
-Thank you for helping make snarkVM better!  
+Thank you for helping make snarkVM betkter!  
 [🧐 What do the emojis mean?](https://allcontributors.org/docs/en/emoji-key)
 
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->

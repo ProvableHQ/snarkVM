@@ -40,9 +40,9 @@ dependencies = [
 
 [[package]]
 name = "aleo-std"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3613097585d199019a1763cef1603dfa3085e466f146f779a9aca32a353ad36d"
+checksum = "869be259eeb00852087ad36e9a68c67959c2811dc8fc6c680fcac98948c4f172"
 dependencies = [
  "aleo-std-cpu",
  "aleo-std-profiler",
@@ -55,24 +55,24 @@ dependencies = [
 
 [[package]]
 name = "aleo-std-cpu"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ebccf09400a9de756e6f74c45517f70e60fa153c2449649dd252d3350908518"
+checksum = "9881417111e9266cf47bb2fec0e7ef32454fa2ac05763a48f25c1d50f260e1b9"
 
 [[package]]
 name = "aleo-std-profiler"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95b765a0088926de9ed4aa9cda9d1b64be23c24ef667fc82a560f3af6882e2fb"
+checksum = "0d53500befe6ecd23f8fc11ccf510b680516b3a6aff08d60f12e1dda00b77787"
 dependencies = [
  "colored 2.2.0",
 ]
 
 [[package]]
 name = "aleo-std-storage"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "018e9dd79cdb9519bc3d864de4d9cc574d39ec39001ac26f379c60137c0d681d"
+checksum = "46f6571ae16ee20c1e9a95b6ba685ca7156d519400f597c5e59f53b641637225"
 dependencies = [
  "dirs",
  "tempfile",
@@ -80,9 +80,9 @@ dependencies = [
 
 [[package]]
 name = "aleo-std-time"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "946c191f593a98e0d2da69a4043e170bab911ae41307dbd474c84a8bab2e3e72"
+checksum = "a9ebd144c81671193ed85aa2db9bb5e183421843e0485de8fffc07e5cf50e18a"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -91,9 +91,9 @@ dependencies = [
 
 [[package]]
 name = "aleo-std-timed"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20127189c51f76007a76aad804b7ed8deb6d50e8ee902072221d72b7bf9ef3a9"
+checksum = "68f6ff9e4c36858fa2c29e5284b77527b5a7466743976e1ba1f5824e16683545"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -102,9 +102,9 @@ dependencies = [
 
 [[package]]
 name = "aleo-std-timer"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57d654c40525557c2e72d1e16a089d2ee254358e47f9cb1db139dbd6f06cc424"
+checksum = "12aca1021aef2c476bad30d2f681e891b2be4f07dbc230a96df09cb693bfb3cb"
 dependencies = [
  "colored 2.2.0",
 ]
@@ -385,9 +385,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.35"
+version = "1.2.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "590f9024a68a8c40351881787f1934dc11afd69090f5edb6831464694d836ea3"
+checksum = "5252b3d2648e5eedbc1a6f501e3c795e07025c1e93bbf8bbdd6eef7f447a6d54"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -970,9 +970,9 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e178e4fba8a2726903f6ba98a6d221e76f9c12c650d5dc0e6afdc50677b49650"
+checksum = "7fd99930f64d146689264c637b5af2f0233a933bef0d8570e2526bf9e083192d"
 
 [[package]]
 name = "flate2"
@@ -1154,7 +1154,7 @@ dependencies = [
  "js-sys",
  "libc",
  "r-efi",
- "wasi 0.14.3+wasi-0.2.4",
+ "wasi 0.14.4+wasi-0.2.4",
  "wasm-bindgen",
 ]
 
@@ -3409,6 +3409,7 @@ dependencies = [
  "snarkvm-synthesizer-program",
  "snarkvm-synthesizer-snark",
  "snarkvm-utilities",
+ "tracing",
 ]
 
 [[package]]
@@ -3755,6 +3756,7 @@ dependencies = [
  "snarkvm-synthesizer-snark",
  "snarkvm-utilities",
  "tiny-keccak",
+ "tracing",
 ]
 
 [[package]]
@@ -3827,9 +3829,9 @@ dependencies = [
 
 [[package]]
 name = "sppark"
-version = "0.1.12"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bdc4f02f557e3037bbe2a379cac8be6e014a67beb7bf0996b536979392f6361"
+checksum = "d9c900139f3f6fdc8db217881a946adf00e935102fdd82b0e1bc19bacbffa311"
 dependencies = [
  "cc",
  "which 4.4.2",
@@ -4473,9 +4475,9 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasi"
-version = "0.14.3+wasi-0.2.4"
+version = "0.14.4+wasi-0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a51ae83037bdd272a9e28ce236db8c07016dd0d50c27038b3f407533c030c95"
+checksum = "88a5f4a424faf49c3c2c344f166f0662341d470ea185e939657aaff130f0ec4a"
 dependencies = [
  "wit-bindgen",
 ]
@@ -4858,9 +4860,9 @@ checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
 
 [[package]]
 name = "wit-bindgen"
-version = "0.45.0"
+version = "0.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "052283831dbae3d879dc7f51f3d92703a316ca49f91540417d38591826127814"
+checksum = "5c573471f125075647d03df72e026074b7203790d41351cd6edc96f46bcccd36"
 
 [[package]]
 name = "writeable"

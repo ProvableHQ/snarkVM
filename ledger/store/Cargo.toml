@@ -19,7 +19,7 @@ edition = "2024"
 [features]
 default = [ "indexmap/rayon" ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
-rocks = [ "rocksdb", "smallvec", "tracing" ]
+rocks = [ "dep:rocksdb", "dep:smallvec", "dep:tracing" ]
 serial = [
   "snarkvm-console/serial",
   "snarkvm-ledger-block/serial",
@@ -39,6 +39,7 @@ wasm = [
   "snarkvm-synthesizer-snark/wasm"
 ]
 test = [ ]
+tracing = [ "dep:tracing" ]
 
 [dependencies.snarkvm-console]
 workspace = true

@@ -92,6 +92,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Adds the given block as the next block in the ledger.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
     pub fn advance_to_next_block(&self, block: &Block<N>) -> Result<()> {
         // Acquire the write lock on the current block.
         let mut current_block = self.current_block.write();

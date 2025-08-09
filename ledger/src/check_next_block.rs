@@ -47,6 +47,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// * This will reject any blocks with a height <= the current height and any blocks with a height >= the current height + GC.
     ///   For the former, a valid block already exists and,
     ///   for the latter, the comittte is still unknown.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, block, pending_blocks)))]
     pub fn check_block_subdag(&self, block: Block<N>, pending_blocks: &[PendingBlock<N>]) -> Result<PendingBlock<N>> {
         self.check_block_subdag_inner(&block, pending_blocks)?;
         Ok(PendingBlock(block))
@@ -91,6 +92,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Checks the given block is a valid next block with regard to the current state/height of the Ledger.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, block, rng)))]
     pub fn check_next_block<R: CryptoRng + Rng>(&self, block: &Block<N>, rng: &mut R) -> Result<()> {
         self.check_block_subdag_inner(block, &[])?;
         self.check_block_content_inner(block, rng)?;
@@ -226,6 +228,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     ///
     /// This does not verify that the batches are signed correctly or that the edges are valid
     /// (only point to the previous round), as those checks already happened when the node received the batch.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, block, previous_blocks)))]
     fn check_block_subdag_leaves(&self, block: &Block<N>, previous_blocks: &[PendingBlock<N>]) -> Result<()> {
         // Check if the block has a subdag.
         let Authority::Quorum(subdag) = block.authority() else {
@@ -276,6 +279,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Check that the certificates in the block subdag have met quorum requirements.
     ///
     /// Called by [`Self::check_block_subdag`]
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, block)))]
     fn check_block_subdag_quorum(&self, block: &Block<N>) -> Result<()> {
         // Check if the block has a subdag.
         let subdag = match block.authority() {
