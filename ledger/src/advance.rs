@@ -44,7 +44,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             "Ratifications are currently unsupported from the memory pool"
         );
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids_2) =
+        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids_from_finalization) =
             self.construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)?;
         // Construct Ratification IDs.
         let ratification_ids = ratifications.ratification_ids().copied().collect_vec();
@@ -52,7 +52,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let transaction_ids = transactions.unconfirmed_transaction_ids()?;
         // Construct the aborted Transaction IDs.
         let aborted_transaction_ids =
-            aborted_transaction_ids.into_iter().chain(aborted_transaction_ids_2).collect_vec();
+            aborted_transaction_ids.into_iter().chain(aborted_transaction_ids_from_finalization).collect_vec();
 
         // Construct the compact Subdag
         if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {

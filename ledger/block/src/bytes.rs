@@ -45,7 +45,9 @@ impl<N: Network> FromBytes for Block<N> {
         let prior_solution_ids = if version >= 2 {
             // Read the number of prior solution IDs.
             let num_prior_solutions = u32::read_le(&mut reader)?;
-            // TODO: we might want to restrict this value
+            if num_prior_solutions as usize > Solutions::<N>::max_aborted_solutions().map_err(error)? {
+                return Err(error("Invalid number of prior solutions IDs in the block"));
+            }
             // Read the aborted transaction IDs.
             let mut prior_solution_ids = Vec::with_capacity(num_prior_solutions as usize);
             for _ in 0..num_prior_solutions {

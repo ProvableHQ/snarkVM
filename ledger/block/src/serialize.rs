@@ -20,8 +20,12 @@ impl<N: Network> Serialize for Block<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let mut block = serializer.serialize_struct("Block", 12)?;
                 let current_consensus_version = N::CONSENSUS_VERSION(self.height()).unwrap();
+                let mut block = if current_consensus_version >= ConsensusVersion::V10 {
+                    serializer.serialize_struct("Block", 12)?
+                } else {
+                    serializer.serialize_struct("Block", 9)?
+                };
                 if current_consensus_version >= ConsensusVersion::V10 {
                     block.serialize_field("version", &2u8)?;
                 }
@@ -31,11 +35,15 @@ impl<N: Network> Serialize for Block<N> {
                 block.serialize_field("authority", &self.authority)?;
                 block.serialize_field("ratifications", &self.ratifications)?;
                 block.serialize_field("solutions", &self.solutions)?;
+                if current_consensus_version >= ConsensusVersion::V10 {
+                    block.serialize_field("prior_solution_ids", &self.prior_solution_ids)?;
+                }
                 block.serialize_field("aborted_solution_ids", &self.aborted_solution_ids)?;
                 block.serialize_field("transactions", &self.transactions)?;
+                if current_consensus_version >= ConsensusVersion::V10 {
+                    block.serialize_field("prior_transaction_ids", &self.prior_transaction_ids)?;
+                }
                 block.serialize_field("aborted_transaction_ids", &self.aborted_transaction_ids)?;
-                block.serialize_field("prior_solution_ids", &self.prior_solution_ids)?;
-                block.serialize_field("prior_transaction_ids", &self.prior_transaction_ids)?;
                 block.end()
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
