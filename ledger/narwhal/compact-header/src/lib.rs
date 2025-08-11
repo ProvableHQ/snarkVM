@@ -277,6 +277,36 @@ impl<N: Network> CompactHeader<N> {
 
         Ok(transmission_ids)
     }
+
+    /// Convert compact header to batch header
+    pub fn into_batch_header<'a>(
+        self,
+        _ratifications: impl ExactSizeIterator<Item = &'a N::RatificationID>,
+        solutions: Option<impl Iterator<Item = &'a SolutionID<N>>>,
+        prior_solutions: impl ExactSizeIterator<Item = &'a SolutionID<N>>,
+        transactions: impl Iterator<Item = &'a N::TransactionID>,
+        prior_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
+        rejected_transactions: impl Iterator<Item = &'a N::TransactionID>,
+    ) -> Result<BatchHeader<N>> {
+        let transmission_ids = self.to_transmission_ids(
+            _ratifications,
+            solutions,
+            prior_solutions,
+            transactions,
+            prior_transactions,
+            rejected_transactions,
+        )?;
+
+        BatchHeader::from(
+            self.author,
+            self.round,
+            self.timestamp,
+            self.committee_id,
+            transmission_ids,
+            self.previous_certificate_ids,
+            self.signature,
+        )
+    }
 }
 
 #[cfg(any(test, feature = "test-helpers"))]
@@ -344,7 +374,7 @@ pub mod test_helpers {
         }
 
         // Return the compact header.
-        let compact_header = CompactHeader::new(
+        CompactHeader::new(
             &batch_header,
             std::iter::empty(),
             Some(solutions.iter()),
@@ -353,9 +383,7 @@ pub mod test_helpers {
             prior_tx_ids.iter(),
             rejected_tx_ids.iter(),
         )
-        .unwrap();
-
-        compact_header
+        .unwrap()
     }
 
     /// Returns a list of sample compact headers, sampled at random.

@@ -286,6 +286,40 @@ impl<N: Network> Block<N> {
             aborted_transaction_ids,
         })
     }
+
+    /// Borrow the Block and return a Subdag with full batch certificates.
+    pub fn to_full_subdag(&self) -> Result<Subdag<N>> {
+        let Block {
+            ratifications,
+            solutions,
+            prior_solution_ids,
+            transactions,
+            prior_transaction_ids,
+            aborted_transaction_ids,
+            authority,
+            ..
+        } = self;
+
+        // Check if Authority is a Quorum
+        let Authority::Quorum(subdag) = authority else {
+            bail!("Can only convert block with Quorum Authority to full subdag");
+        };
+
+        // Collect ratification IDs.
+        let ratification_ids = ratifications.ratification_ids().copied().collect_vec();
+        // Collect transaction IDs.
+        let transaction_ids = transactions.transaction_ids().copied().collect_vec();
+
+        // Convert Quorum authority to subdag with full batch certificates.
+        subdag.clone().into_full(
+            ratification_ids,
+            solutions.as_puzzle_solutions().cloned(),
+            prior_solution_ids.clone(),
+            transaction_ids,
+            prior_transaction_ids.clone(),
+            aborted_transaction_ids.clone(),
+        )
+    }
 }
 
 impl<N: Network> Block<N> {
