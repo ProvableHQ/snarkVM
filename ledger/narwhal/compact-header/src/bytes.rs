@@ -72,16 +72,6 @@ impl<N: Network> FromBytes for CompactHeader<N> {
             previous_certificate_ids.insert(Field::read_le(&mut reader)?);
         }
 
-        // Read the number of last election certificate IDs.
-        let num_last_election_certificate_ids = u16::read_le(&mut reader)?;
-        // Ensure the number of last election certificate IDs is within bounds.
-        if num_last_election_certificate_ids > N::LATEST_MAX_CERTIFICATES().unwrap() {
-            return Err(error(format!(
-                "Number of last election certificate IDs ({num_last_election_certificate_ids}) exceeds the maximum ({})",
-                N::LATEST_MAX_CERTIFICATES().unwrap()
-            )));
-        }
-
         // Read the signature.
         let signature = Signature::read_le(&mut reader)?;
 

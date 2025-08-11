@@ -40,7 +40,6 @@ use snarkvm_ledger_block::{
     Transaction,
     Transactions,
 };
-use snarkvm_ledger_narwhal_batch_certificate::BatchCertificate;
 use snarkvm_ledger_puzzle::{Solution, SolutionID};
 use snarkvm_synthesizer_program::{FinalizeOperation, Program};
 
@@ -770,70 +769,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         self.certificate_map().contains_key_confirmed(certificate_id)
     }
 
-    /// Returns the batch certificate for the given `certificate ID`.
-    fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
-        // Retrieve the height and round for the given certificate ID.
-        let Some((block_height, round)) = self.certificate_map().get_confirmed(certificate_id)?.map(|x| *x) else {
-            return Ok(None);
-        };
-        // Retrieve the block hash.
-        let Some(block_hash) = self.get_block_hash(block_height)? else {
-            bail!("The block hash for block '{block_height}' is missing in block storage")
-        };
-        // Retrieve the authority for the given block hash.
-        let Some(authority) = self.authority_map().get_confirmed(&block_hash)? else {
-            bail!("The authority for '{block_hash}' is missing in block storage")
-        };
-        // Retrieve the certificate for the given certificate ID.
-        let compact_certificate = match &authority {
-            Cow::Owned(Authority::Quorum(subdag)) | Cow::Borrowed(Authority::Quorum(subdag)) => {
-                match subdag.get_certificate_for_round(round, certificate_id) {
-                    Some(compact_certificate) => Ok::<_, anyhow::Error>(compact_certificate.clone()),
-                    None => bail!("The certificate '{certificate_id}' is missing in block storage"),
-                }
-            }
-            _ => bail!(
-                "Cannot fetch batch certificate '{certificate_id}' - The authority for block '{block_height}' is not a subdag"
-            ),
-        }?;
-        // Retrieve this block's ratifications.
-        let Some(ratifications) = self.ratifications_map().get_confirmed(&block_hash)? else {
-            bail!("The ratifications for '{block_hash}' are missing in block storage")
-        };
-        // Retrieve this block's solutions.
-        let Some(solutions) = self.solutions_map().get_confirmed(&block_hash)? else {
-            bail!("The solutions for block '{block_hash}' are missing in block storage")
-        };
-        // Retrieve this block's prior solutions.
-        let Some(prior_solutions) = self.prior_solution_ids_map().get_confirmed(&block_hash)? else {
-            bail!("The prior solution ids for block '{block_hash}' are missing in block storage")
-        };
-        // Retrieve this block's transactions.
-        let Some(transactions) = self.transactions_map().get_confirmed(&block_hash)? else {
-            bail!("The transactions for '{block_hash}' are missing in block storage")
-        };
-        // Retrieve this block's prior transactions.
-        let Some(prior_transactions) = self.prior_transaction_ids_map().get_confirmed(&block_hash)? else {
-            bail!("The transactions for '{block_hash}' are missing in block storage")
-        };
-        // Retrieve this block's aborted transactions.
-        let Some(aborted_transaction_ids) = self.aborted_transaction_ids_map().get_confirmed(&block_hash)? else {
-            bail!("The aborted_transactions for '{block_hash}' are missing in block storage")
-        };
-        // Map solutions to an iterator of commitments.
-        let solutions = solutions.as_puzzle_solutions();
-        // Convert compact certificate to batch certificate.
-        let batch_certificate = compact_certificate.into_batch_certificate(
-            ratifications.ratification_ids(),
-            solutions.map(|s| s.solution_ids()),
-            prior_solutions.iter(),
-            transactions.iter(),
-            prior_transactions.iter(),
-            aborted_transaction_ids.iter(),
-        )?;
-        Ok(Some(batch_certificate))
-    }
-
     /// Returns the block ratifications for the given `block hash`.
     fn get_block_ratifications(&self, block_hash: &N::BlockHash) -> Result<Option<Ratifications<N>>> {
         Ok(self.ratifications_map().get_confirmed(block_hash)?.map(|x| x.into_owned()))
@@ -1372,11 +1307,6 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Returns true if there is a block for the given certificate.
     pub fn contains_block_for_certificate(&self, certificate_id: &Field<N>) -> Result<bool> {
         self.storage.contains_block_for_certificate(certificate_id)
-    }
-
-    /// Returns the batch certificate for the given `certificate ID`.
-    pub fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
-        self.storage.get_batch_certificate(certificate_id)
     }
 }
 

@@ -293,11 +293,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         }
     }
 
-    /// Returns the batch certificate for the given `certificate ID`.
-    pub fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
-        self.vm.block_store().get_batch_certificate(certificate_id)
-    }
-
     /// Returns the delegators for the given validator.
     pub fn get_delegators_for_validator(&self, validator: &Address<N>) -> Result<Vec<Address<N>>> {
         // Construct the credits.aleo program ID.

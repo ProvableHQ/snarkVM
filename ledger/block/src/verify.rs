@@ -583,7 +583,7 @@ impl<N: Network> Block<N> {
             Subdag::Compact { subdag } => {
                 let mut ids = Vec::new();
                 for compact_header in subdag.values().flatten().map(|cert| cert.compact_header()) {
-                    let batch_header = compact_header.clone().into_batch_header(
+                    let transmission_ids = compact_header.to_transmission_ids(
                         [].iter(),
                         solutions.as_ref().map(|s| s.solution_ids()),
                         prior_solution_ids.iter(),
@@ -591,7 +591,7 @@ impl<N: Network> Block<N> {
                         prior_transaction_ids.iter(),
                         aborted_transaction_ids.iter(),
                     )?;
-                    ids.extend(batch_header.transmission_ids().iter().cloned().map(Cow::Owned));
+                    ids.extend(transmission_ids.into_iter().map(Cow::Owned));
                 }
 
                 ids

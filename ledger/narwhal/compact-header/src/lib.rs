@@ -231,16 +231,15 @@ impl<N: Network> CompactHeader<N> {
         &self.signature
     }
 
-    /// Convert compact header to batch header
-    pub fn into_batch_header<'a>(
-        self,
+    pub fn to_transmission_ids<'a>(
+        &self,
         _ratifications: impl ExactSizeIterator<Item = &'a N::RatificationID>,
         solutions: Option<impl Iterator<Item = &'a SolutionID<N>>>,
         prior_solutions: impl ExactSizeIterator<Item = &'a SolutionID<N>>,
         transactions: impl Iterator<Item = &'a N::TransactionID>,
         prior_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
         rejected_transactions: impl Iterator<Item = &'a N::TransactionID>,
-    ) -> Result<BatchHeader<N>> {
+    ) -> Result<BTreeSet<TransmissionID<N>>> {
         // Insert the transactions into the transmission_ids.
         let mut transmission_ids = BTreeSet::new();
         transactions.chain(rejected_transactions).chain(prior_transactions).enumerate().for_each(
@@ -275,15 +274,8 @@ impl<N: Network> CompactHeader<N> {
             transmission_ids.len() == self.transaction_indices.len() + self.solution_indices.len(),
             "Could not find all transmission_ids"
         );
-        BatchHeader::from(
-            self.author,
-            self.round,
-            self.timestamp,
-            self.committee_id,
-            transmission_ids,
-            self.previous_certificate_ids,
-            self.signature,
-        )
+
+        Ok(transmission_ids)
     }
 }
 
@@ -363,18 +355,6 @@ pub mod test_helpers {
         )
         .unwrap();
 
-        let candidate_batch_header = compact_header
-            .clone()
-            .into_batch_header(
-                std::iter::empty(),
-                Some(solutions.iter()),
-                prior_solutions.iter(),
-                tx_ids.iter(),
-                prior_tx_ids.iter(),
-                rejected_tx_ids.iter(),
-            )
-            .unwrap();
-        assert_eq!(batch_header, candidate_batch_header);
         compact_header
     }
 

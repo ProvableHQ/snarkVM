@@ -129,28 +129,6 @@ impl<N: Network> CompactCertificate<N> {
     pub const fn signature(&self) -> &Signature<N> {
         self.compact_header.signature()
     }
-
-    /// Convert compact certificate to batch certificate
-    pub fn into_batch_certificate<'a>(
-        self,
-        ratifications: impl ExactSizeIterator<Item = &'a N::RatificationID>,
-        solutions: Option<impl Iterator<Item = &'a SolutionID<N>>>,
-        prior_solutions: impl ExactSizeIterator<Item = &'a SolutionID<N>>,
-        transactions: impl Iterator<Item = &'a N::TransactionID>,
-        prior_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
-        rejected_transactions: impl Iterator<Item = &'a N::TransactionID>,
-    ) -> Result<BatchCertificate<N>> {
-        let CompactCertificate { compact_header, signatures } = self;
-        let batch_header = compact_header.into_batch_header(
-            ratifications,
-            solutions,
-            prior_solutions,
-            transactions,
-            prior_transactions,
-            rejected_transactions,
-        )?;
-        BatchCertificate::from(batch_header, signatures)
-    }
 }
 
 impl<N: Network> NarwhalCertificate<N> for CompactCertificate<N> {

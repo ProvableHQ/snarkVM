@@ -44,7 +44,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             "Ratifications are currently unsupported from the memory pool"
         );
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids_from_finalization) =
+        let (
+            header,
+            ratifications,
+            solutions,
+            aborted_solution_ids,
+            transactions,
+            aborted_transaction_ids_from_finalization,
+        ) =
             self.construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)?;
         // Construct Ratification IDs.
         let ratification_ids = ratifications.ratification_ids().copied().collect_vec();

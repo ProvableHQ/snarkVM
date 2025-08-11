@@ -103,7 +103,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V7, 15),
     (ConsensusVersion::V8, 16),
     (ConsensusVersion::V9, 17),
-    (ConsensusVersion::V10, 18),
+    (ConsensusVersion::V10, 51),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
