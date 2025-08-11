@@ -136,7 +136,7 @@ impl<N: Network> FromBytes for CastType<N> {
 }
 
 impl<N: Network> CastType<N> {
-    /// Does this type refer to an external struct explicitly?
+    /// Returns whether this type refers to an external struct.
     pub fn contains_external_struct(&self) -> bool {
         matches!(self, CastType::Plaintext(plaintext_type) if plaintext_type.contains_external_struct())
     }

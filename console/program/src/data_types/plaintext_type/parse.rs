@@ -21,6 +21,7 @@ impl<N: Network> Parser for PlaintextType<N> {
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse to determine the plaintext type (order matters).
         alt((
+            // Order matters - we shouldn't try to parse Identifier before Locator.
             map(ArrayType::parse, |type_| Self::Array(type_)),
             map(Locator::parse, |locator| Self::ExternalStruct(locator)),
             map(Identifier::parse, |identifier| Self::Struct(identifier)),

@@ -51,7 +51,7 @@ impl<N: Network> ConstructorCore<N> {
         &self.positions
     }
 
-    /// Does this constructor refer to an external struct explicitly?
+    /// Returns whether this constructor refers to an external struct.
     pub fn contains_external_struct(&self) -> bool {
         self.commands.iter().any(|command| {
             matches!(

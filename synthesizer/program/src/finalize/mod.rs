@@ -79,6 +79,12 @@ impl<N: Network> FinalizeCore<N> {
     pub const fn positions(&self) -> &HashMap<Identifier<N>, usize> {
         &self.positions
     }
+
+    pub fn contains_external_struct(&self) -> bool {
+        self.commands
+            .iter()
+            .any(|command| matches!(command, Command::Instruction(inst) if inst.contains_external_struct()))
+    }
 }
 
 impl<N: Network> FinalizeCore<N> {

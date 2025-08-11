@@ -53,7 +53,7 @@ impl<N: Network> ValueType<N> {
         }
     }
 
-    /// Does this type refer to an external struct explicitly?
+    /// Returns whether this type references an external struct.
     pub fn contains_external_struct(&self) -> bool {
         use ValueType::*;
         matches!(

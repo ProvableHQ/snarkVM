@@ -953,7 +953,7 @@ impl<N: Network> ProgramCore<N> {
         false
     }
 
-    /// Does this program explicitly reference an external struct, like `other_program.aleo/StructType`?
+    /// Returns whether this program explicitly refers to an external struct, like `other_program.aleo/StructType`?
     ///
     /// This function exists to check if programs to be deployed use external structs so they can be gated
     /// by consensus version.

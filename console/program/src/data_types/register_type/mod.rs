@@ -56,7 +56,7 @@ impl<N: Network> RegisterType<N> {
         }
     }
 
-    /// Does this type refer to an external struct explicitly?
+    /// Returns whether this type refers to an external struct.
     pub fn contains_external_struct(&self) -> bool {
         matches!(self, RegisterType::Plaintext(t) if t.contains_external_struct())
     }

@@ -22,6 +22,7 @@ impl<N: Network> Parser for ArrayType<N> {
     fn parse(string: &str) -> ParserResult<Self> {
         // A helper function to parse the innermost element type.
         fn parse_inner_element_type<N: Network>(string: &str) -> ParserResult<PlaintextType<N>> {
+            // Order matters - we shouldn't try to parse Identifier before Locator.
             alt((
                 map(Locator::parse, PlaintextType::from),
                 map(LiteralType::parse, PlaintextType::from),

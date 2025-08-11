@@ -29,12 +29,12 @@ pub enum PlaintextType<N: Network> {
     /// A struct type contains its identifier.
     /// The format of the type is `<identifier>`.
     Struct(Identifier<N>),
-    /// An external struct type contains its locator.
-    /// The format of the type is `<program_id>/<identifier>`.
-    ExternalStruct(Locator<N>),
     /// An array type contains its element type and length.
     /// The format of the type is `[<element_type>; <length>]`.
     Array(ArrayType<N>),
+    /// An external struct type contains its locator.
+    /// The format of the type is `<program_id>/<identifier>`.
+    ExternalStruct(Locator<N>),
 }
 
 impl<N: Network> PlaintextType<N> {
@@ -56,7 +56,7 @@ impl<N: Network> PlaintextType<N> {
         }
     }
 
-    /// Does this type refer to an external struct explicitly?
+    /// Returns whether this type refers to an external struct.
     pub fn contains_external_struct(&self) -> bool {
         use PlaintextType::*;
 

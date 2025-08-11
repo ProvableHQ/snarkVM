@@ -1,0 +1,17 @@
+errors: []
+outputs:
+- verified: true
+  execute:
+    child.aleo/call_make_array:
+      outputs:
+      - '{"type":"public","id":"2027171917915276592063090567731717467068016169769609299932930674142258586381field","value":"[\n  {\n    x: 4field\n  },\n  {\n    x: 4field\n  }\n]"}'
+  speculate: the execution was accepted
+  add_next_block: succeeded.
+additional:
+- child_outputs:
+    parent.aleo/make_array:
+      outputs:
+      - '{"type":"public","id":"3120892635297290312904018321451954322326669610907028614644850213160964762734field","value":"[\n  {\n    x: 4field\n  },\n  {\n    x: 4field\n  }\n]"}'
+    credits.aleo/fee_public:
+      outputs:
+      - '{"type":"future","id":"3913779327809909308925001883109788018061342119177215232615598733432422627140field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2111u64\n  ]\n}"}'

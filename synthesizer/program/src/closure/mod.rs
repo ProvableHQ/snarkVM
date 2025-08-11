@@ -75,7 +75,7 @@ impl<N: Network> ClosureCore<N> {
         self.outputs.iter().map(|output| output.register_type()).cloned().collect()
     }
 
-    /// Does this closure refer to an external struct explicitly?
+    /// Returns whether the closure refers to an external struct.
     pub fn contains_external_struct(&self) -> bool {
         self.inputs.iter().any(|input| input.register_type().contains_external_struct())
             || self.outputs.iter().any(|output| output.register_type().contains_external_struct())

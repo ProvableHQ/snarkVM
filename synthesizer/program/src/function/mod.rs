@@ -96,11 +96,12 @@ impl<N: Network> FunctionCore<N> {
         self.finalize_logic.as_ref()
     }
 
-    /// Does this function refer to an external struct explicitly?
+    /// Returns whether this function refers to an external struct.
     pub fn contains_external_struct(&self) -> bool {
         self.inputs.iter().any(|input| input.value_type().contains_external_struct())
             || self.outputs.iter().any(|output| output.value_type().contains_external_struct())
             || self.instructions.iter().any(|instruction| instruction.contains_external_struct())
+            || self.finalize_logic.iter().any(|finalize| finalize.contains_external_struct())
     }
 }
 
