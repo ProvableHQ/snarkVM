@@ -35,10 +35,6 @@ pub mod kzg10;
 /// [al]: https://eprint.iacr.org/2019/601
 pub mod sonic_pc;
 
-/// Errors pertaining to query sets.
-pub mod error;
-pub use error::*;
-
 /// A random number generator that bypasses some limitations of the Rust borrow
 /// checker.
 pub mod optional_rng;

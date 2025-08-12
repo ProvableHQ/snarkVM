@@ -21,7 +21,6 @@
 #[allow(unused_imports)]
 #[macro_use]
 extern crate aleo_std;
-#[macro_use]
 extern crate thiserror;
 
 pub use snarkvm_utilities::{cfg_chunks, cfg_chunks_mut, cfg_into_iter, cfg_iter, cfg_iter_mut, cfg_reduce};
@@ -39,5 +38,5 @@ pub mod traits;
 pub use traits::*;
 
 pub mod prelude {
-    pub use crate::{polycommit::error::*, traits::*};
+    pub use crate::traits::*;
 }

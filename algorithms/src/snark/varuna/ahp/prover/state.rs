@@ -18,7 +18,6 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain},
     polycommit::sonic_pc::LabeledPolynomial,
-    r1cs::SynthesisResult,
     snark::varuna::{AHPForR1CS, Circuit, SNARKMode},
 };
 use anyhow::{Result, anyhow};
@@ -178,7 +177,7 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
                 };
                 Ok((circuit, state))
             })
-            .collect::<SynthesisResult<BTreeMap<_, _>>>()?;
+            .collect::<Result<BTreeMap<_, _>>>()?;
 
         let max_non_zero_domain =
             max_non_zero_domain.ok_or_else(|| anyhow::anyhow!("Batch size was zero; must be at least 1"))?;

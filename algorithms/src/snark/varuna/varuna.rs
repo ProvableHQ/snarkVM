@@ -220,9 +220,9 @@ where
 
     fn universal_setup(max_degree: usize) -> Result<Self::UniversalSRS> {
         let setup_time = start_timer!(|| { format!("Varuna::UniversalSetup with max_degree {max_degree}",) });
-        let srs = SonicKZG10::<E, FS>::load_srs(max_degree).map_err(Into::into);
+        let srs = SonicKZG10::<E, FS>::load_srs(max_degree)?;
         end_timer!(setup_time);
-        srs
+        Ok(srs)
     }
 
     /// Generates the circuit proving and verifying keys.

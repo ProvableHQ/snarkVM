@@ -28,8 +28,7 @@ pub use linear_combination::*;
 mod namespace;
 pub use namespace::*;
 
-// Type alias for synthesis results using anyhow::Error
-pub type SynthesisResult<T> = Result<T, anyhow::Error>;
+// SynthesisResult has been replaced with anyhow::Result for consistency
 
 #[cfg(feature = "test")]
 mod optional_vec;

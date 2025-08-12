@@ -24,16 +24,14 @@
 use crate::{
     fft::{DensePolynomial, Polynomial},
     msm::VariableBase,
-    polycommit::PCError,
 };
-use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
-use snarkvm_fields::{One, PrimeField, Zero};
-use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, rand::Uniform};
-
 use anyhow::{Result, anyhow, ensure};
 use core::{marker::PhantomData, ops::Mul};
 use itertools::Itertools;
 use rand::RngCore;
+use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
+use snarkvm_fields::{One, PrimeField, Zero};
+use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, rand::Uniform};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -89,7 +87,7 @@ pub struct KZG10<E: PairingEngine>(PhantomData<E>);
 impl<E: PairingEngine> KZG10<E> {
     /// Constructs public parameters when given as input the maximum degree
     /// `degree` for the polynomial commitment scheme.
-    pub fn load_srs(max_degree: usize) -> Result<UniversalParams<E>, PCError> {
+    pub fn load_srs(max_degree: usize) -> Result<UniversalParams<E>, anyhow::Error> {
         let params = UniversalParams::load()?;
         params.download_powers_for(0..(max_degree + 1))?;
         Ok(params)
@@ -101,7 +99,7 @@ impl<E: PairingEngine> KZG10<E> {
         polynomial: &Polynomial<'_, E::Fr>,
         hiding_bound: Option<usize>,
         rng: Option<&mut dyn RngCore>,
-    ) -> Result<(KZGCommitment<E>, KZGRandomness<E>), PCError> {
+    ) -> Result<(KZGCommitment<E>, KZGRandomness<E>)> {
         Self::check_degree_is_too_large(polynomial.degree(), powers.size())?;
 
         let commit_time = start_timer!(|| format!(
@@ -132,7 +130,8 @@ impl<E: PairingEngine> KZG10<E> {
 
         let mut randomness = KZGRandomness::empty();
         if let Some(hiding_degree) = hiding_bound {
-            let mut rng = rng.ok_or(PCError::MissingRng)?;
+            let mut rng =
+                rng.ok_or(anyhow::anyhow!("The provided polynomial was meant to be hiding, but `rng` was `None`"))?;
             let sample_random_poly_time =
                 start_timer!(|| format!("Sampling a random polynomial of degree {hiding_degree}"));
 
@@ -162,10 +161,13 @@ impl<E: PairingEngine> KZG10<E> {
         evaluations: &[E::Fr],
         hiding_bound: Option<usize>,
         rng: Option<&mut dyn RngCore>,
-    ) -> Result<(KZGCommitment<E>, KZGRandomness<E>), PCError> {
+    ) -> Result<(KZGCommitment<E>, KZGRandomness<E>)> {
         Self::check_degree_is_too_large(evaluations.len() - 1, lagrange_basis.size())?;
         assert_eq!(
-            evaluations.len().checked_next_power_of_two().ok_or(PCError::LagrangeBasisSizeIsTooLarge)?,
+            evaluations
+                .len()
+                .checked_next_power_of_two()
+                .ok_or_else(|| anyhow::anyhow!("The lagrange basis is larger than the supported degree"))?,
             lagrange_basis.size()
         );
 
@@ -182,7 +184,8 @@ impl<E: PairingEngine> KZG10<E> {
 
         let mut randomness = KZGRandomness::empty();
         if let Some(hiding_degree) = hiding_bound {
-            let mut rng = rng.ok_or(PCError::MissingRng)?;
+            let mut rng =
+                rng.ok_or(anyhow::anyhow!("The provided polynomial was meant to be hiding, but `rng` was `None`"))?;
             let sample_random_poly_time =
                 start_timer!(|| format!("Sampling a random polynomial of degree {hiding_degree}"));
 
@@ -216,7 +219,7 @@ impl<E: PairingEngine> KZG10<E> {
         polynomial: &DensePolynomial<E::Fr>,
         point: E::Fr,
         randomness: &KZGRandomness<E>,
-    ) -> Result<(DensePolynomial<E::Fr>, Option<DensePolynomial<E::Fr>>), PCError> {
+    ) -> Result<(DensePolynomial<E::Fr>, Option<DensePolynomial<E::Fr>>), anyhow::Error> {
         let divisor = DensePolynomial::from_coefficients_vec(vec![-point, E::Fr::one()]);
 
         let witness_time = start_timer!(|| "Computing witness polynomial");
@@ -243,7 +246,7 @@ impl<E: PairingEngine> KZG10<E> {
         randomness: &KZGRandomness<E>,
         witness_polynomial: &DensePolynomial<E::Fr>,
         hiding_witness_polynomial: Option<&DensePolynomial<E::Fr>>,
-    ) -> Result<KZGProof<E>, PCError> {
+    ) -> Result<KZGProof<E>, anyhow::Error> {
         Self::check_degree_is_too_large(witness_polynomial.degree(), powers.size())?;
         let (num_leading_zeros, witness_coeffs) = skip_leading_zeros_and_convert_to_bigints(witness_polynomial);
 
@@ -309,7 +312,7 @@ impl<E: PairingEngine> KZG10<E> {
         polynomial: &DensePolynomial<E::Fr>,
         point: E::Fr,
         rand: &KZGRandomness<E>,
-    ) -> Result<KZGProof<E>, PCError> {
+    ) -> Result<KZGProof<E>, anyhow::Error> {
         Self::check_degree_is_too_large(polynomial.degree(), powers.size())?;
         let open_time = start_timer!(|| format!("Opening polynomial of degree {}", polynomial.degree()));
 
@@ -332,7 +335,7 @@ impl<E: PairingEngine> KZG10<E> {
         point: E::Fr,
         value: E::Fr,
         proof: &KZGProof<E>,
-    ) -> Result<bool, PCError> {
+    ) -> Result<bool, anyhow::Error> {
         let check_time = start_timer!(|| "Checking evaluation");
         let mut inner = commitment.0.to_projective() - vk.g.to_projective().mul(value);
         if let Some(random_v) = proof.random_v {
@@ -407,22 +410,30 @@ impl<E: PairingEngine> KZG10<E> {
         Ok(result)
     }
 
-    pub(crate) fn check_degree_is_too_large(degree: usize, num_powers: usize) -> Result<(), PCError> {
+    pub(crate) fn check_degree_is_too_large(degree: usize, num_powers: usize) -> Result<()> {
         let num_coefficients = degree + 1;
         if num_coefficients > num_powers {
-            Err(PCError::TooManyCoefficients { num_coefficients, num_powers })
+            anyhow::bail!(
+                "The number of coefficients in the polynomial ({}) is greater than the maximum number of powers in `Powers` ({})",
+                num_coefficients,
+                num_powers
+            )
         } else {
             Ok(())
         }
     }
 
-    pub(crate) fn check_hiding_bound(hiding_poly_degree: usize, num_powers: usize) -> Result<(), PCError> {
+    pub(crate) fn check_hiding_bound(hiding_poly_degree: usize, num_powers: usize) -> Result<()> {
         if hiding_poly_degree == 0 {
-            Err(PCError::HidingBoundIsZero)
+            anyhow::bail!("The hiding bound was not `None`, but the hiding bound was zero")
         } else if hiding_poly_degree >= num_powers {
             // The above check uses `>=` because committing to a hiding poly with
             // degree `hiding_poly_degree` requires `hiding_poly_degree + 1` powers.
-            Err(PCError::HidingBoundToolarge { hiding_poly_degree, num_powers })
+            anyhow::bail!(
+                "The degree of the hiding poly ({}) is not less than the maximum number of powers in `Powers` ({})",
+                hiding_poly_degree,
+                num_powers
+            )
         } else {
             Ok(())
         }
@@ -432,20 +443,22 @@ impl<E: PairingEngine> KZG10<E> {
         max_degree: usize,
         enforced_degree_bounds: Option<&[usize]>,
         p: impl Into<LabeledPolynomialWithBasis<'a, E::Fr>>,
-    ) -> Result<(), PCError> {
+    ) -> Result<()> {
         let p = p.into();
         if let Some(bound) = p.degree_bound() {
-            let enforced_degree_bounds = enforced_degree_bounds.ok_or(PCError::UnsupportedDegreeBound(bound))?;
+            let enforced_degree_bounds = enforced_degree_bounds
+                .ok_or_else(|| anyhow::anyhow!("The degree bound ({}) is not supported by the parameters", bound))?;
 
             if enforced_degree_bounds.binary_search(&bound).is_err() {
-                Err(PCError::UnsupportedDegreeBound(bound))
+                anyhow::bail!("The degree bound ({}) is not supported by the parameters", bound)
             } else if bound < p.degree() || bound > max_degree {
-                return Err(PCError::IncorrectDegreeBound {
-                    poly_degree: p.degree(),
-                    degree_bound: p.degree_bound().unwrap(),
-                    max_degree,
-                    label: p.label().to_string(),
-                });
+                anyhow::bail!(
+                    "The degree bound ({}) for the polynomial {} (having degree {}) is greater than the maximum degree ({})",
+                    p.degree_bound().unwrap(),
+                    p.label(),
+                    p.degree(),
+                    max_degree
+                );
             } else {
                 Ok(())
             }
@@ -535,7 +548,7 @@ mod tests {
         assert_eq!(&pp_bytes, &pp_recovered_bytes);
     }
 
-    fn end_to_end_test_template<E: PairingEngine>() -> Result<(), PCError> {
+    fn end_to_end_test_template<E: PairingEngine>() -> Result<()> {
         let rng = &mut TestRng::default();
         for _ in 0..100 {
             let mut degree = 0;
@@ -561,7 +574,7 @@ mod tests {
         Ok(())
     }
 
-    fn linear_polynomial_test_template<E: PairingEngine>() -> Result<(), PCError> {
+    fn linear_polynomial_test_template<E: PairingEngine>() -> Result<()> {
         let rng = &mut TestRng::default();
         for _ in 0..100 {
             let degree = 50;
@@ -584,7 +597,7 @@ mod tests {
         Ok(())
     }
 
-    fn batch_check_test_template<E: PairingEngine>() -> Result<(), PCError> {
+    fn batch_check_test_template<E: PairingEngine>() -> Result<()> {
         let rng = &mut TestRng::default();
         for _ in 0..10 {
             let hiding_bound = Some(1);

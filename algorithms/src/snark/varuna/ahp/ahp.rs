@@ -71,7 +71,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     pub fn num_formatted_public_inputs_is_admissible(num_inputs: usize) -> Result<()> {
         match num_inputs.count_ones() == 1 {
             true => Ok(()),
-            false => anyhow::bail!("The number of public inputs is incorrect"),
+            false => anyhow::bail!("The number of public inputs must be a power of 2, found: {num_inputs}."),
         }
     }
 

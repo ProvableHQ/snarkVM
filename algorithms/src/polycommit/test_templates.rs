@@ -27,12 +27,10 @@ use super::sonic_pc::{
 use crate::{
     AlgebraicSponge,
     fft::DensePolynomial,
-    polycommit::{
-        PCError,
-        sonic_pc::{LabeledPolynomial, LabeledPolynomialWithBasis, LinearCombination},
-    },
+    polycommit::sonic_pc::{LabeledPolynomial, LabeledPolynomialWithBasis, LinearCombination},
     srs::UniversalVerifier,
 };
+use anyhow::Result;
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, Zero};
 use snarkvm_utilities::rand::{TestRng, Uniform};
@@ -66,7 +64,7 @@ pub struct TestComponents<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> {
     _sponge: PhantomData<S>,
 }
 
-pub fn bad_degree_bound_test<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>() -> Result<(), PCError> {
+pub fn bad_degree_bound_test<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>() -> Result<()> {
     let rng = &mut TestRng::default();
     let max_degree = 100;
     let pp = SonicKZG10::<E, S>::load_srs(max_degree)?;
@@ -129,8 +127,7 @@ pub fn bad_degree_bound_test<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>() -
     Ok(())
 }
 
-pub fn lagrange_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>()
--> Result<Vec<TestComponents<E, S>>, PCError> {
+pub fn lagrange_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>() -> Result<Vec<TestComponents<E, S>>> {
     let num_iters = 10usize;
     let max_degree = 256usize;
     let supported_degree = 127usize;
@@ -243,7 +240,7 @@ pub fn lagrange_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>()
     Ok(test_components)
 }
 
-fn test_template<E, S>(info: TestInfo) -> Result<Vec<TestComponents<E, S>>, PCError>
+fn test_template<E, S>(info: TestInfo) -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -375,7 +372,7 @@ where
 
 fn equation_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>(
     info: TestInfo,
-) -> Result<Vec<TestComponents<E, S>>, PCError> {
+) -> Result<Vec<TestComponents<E, S>>> {
     let TestInfo {
         num_iters,
         max_degree,
@@ -540,7 +537,7 @@ fn equation_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>(
     Ok(test_components)
 }
 
-pub fn single_poly_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn single_poly_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -557,7 +554,7 @@ where
     test_template::<E, S>(info)
 }
 
-pub fn linear_poly_degree_bound_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn linear_poly_degree_bound_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -574,7 +571,7 @@ where
     test_template::<E, S>(info)
 }
 
-pub fn single_poly_degree_bound_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn single_poly_degree_bound_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -591,7 +588,7 @@ where
     test_template::<E, S>(info)
 }
 
-pub fn quadratic_poly_degree_bound_multiple_queries_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn quadratic_poly_degree_bound_multiple_queries_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -608,7 +605,7 @@ where
     test_template::<E, S>(info)
 }
 
-pub fn single_poly_degree_bound_multiple_queries_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn single_poly_degree_bound_multiple_queries_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -625,7 +622,7 @@ where
     test_template::<E, S>(info)
 }
 
-pub fn two_polys_degree_bound_single_query_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn two_polys_degree_bound_single_query_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -642,7 +639,7 @@ where
     test_template::<E, S>(info)
 }
 
-pub fn full_end_to_end_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn full_end_to_end_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -659,7 +656,7 @@ where
     test_template::<E, S>(info)
 }
 
-pub fn full_end_to_end_equation_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn full_end_to_end_equation_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -676,7 +673,7 @@ where
     equation_test_template::<E, S>(info)
 }
 
-pub fn single_equation_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn single_equation_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -693,7 +690,7 @@ where
     equation_test_template::<E, S>(info)
 }
 
-pub fn two_equation_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn two_equation_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,
@@ -710,7 +707,7 @@ where
     equation_test_template::<E, S>(info)
 }
 
-pub fn two_equation_degree_bound_test<E, S>() -> Result<Vec<TestComponents<E, S>>, PCError>
+pub fn two_equation_degree_bound_test<E, S>() -> Result<Vec<TestComponents<E, S>>>
 where
     E: PairingEngine,
     S: AlgebraicSponge<E::Fq, 2>,

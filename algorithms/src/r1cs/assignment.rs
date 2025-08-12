@@ -32,7 +32,7 @@ impl<T> Assignment<T> for Option<T> {
     fn get_ref(&self) -> Result<&T> {
         match *self {
             Some(ref v) => Ok(v),
-            None => bail!("Assignment missing"),
+            None => bail!("Assignment ref missing"),
         }
     }
 }

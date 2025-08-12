@@ -17,7 +17,7 @@ use crate::{
     AlgebraicSponge,
     fft::DensePolynomial,
     msm::variable_base::VariableBase,
-    polycommit::{PCError, kzg10, optional_rng::OptionalRng},
+    polycommit::{kzg10, optional_rng::OptionalRng},
     srs::{UniversalProver, UniversalVerifier},
 };
 use hashbrown::HashMap;
@@ -57,7 +57,7 @@ pub struct SonicKZG10<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> {
 }
 
 impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
-    pub fn load_srs(max_degree: usize) -> Result<UniversalParams<E>, PCError> {
+    pub fn load_srs(max_degree: usize) -> Result<UniversalParams<E>> {
         kzg10::KZG10::load_srs(max_degree)
     }
 
@@ -128,9 +128,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             .map(|(_k, v)| *v)
             .collect::<Vec<_>>();
         if powers_of_beta_times_gamma_g.len() != supported_hiding_bound + 2 {
-            return Err(
-                PCError::HidingBoundToolarge { hiding_poly_degree: supported_hiding_bound, num_powers: 0 }.into()
-            );
+            return Err(anyhow::anyhow!(
+                "The degree of the hiding poly ({}) is not less than the maximum number of powers in `Powers` ({})",
+                supported_hiding_bound,
+                0
+            ));
         }
 
         let mut lagrange_bases_at_beta_g = BTreeMap::new();
@@ -183,7 +185,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         ck: &CommitterUnionKey<E>,
         polynomials: impl IntoIterator<Item = LabeledPolynomialWithBasis<'b, E::Fr>>,
         rng: Option<&mut dyn RngCore>,
-    ) -> Result<(Vec<LabeledCommitment<Commitment<E>>>, Vec<Randomness<E>>), PCError> {
+    ) -> Result<(Vec<LabeledCommitment<Commitment<E>>>, Vec<Randomness<E>>)> {
         let rng = &mut OptionalRng(rng);
         let commit_time = start_timer!(|| "Committing to polynomials");
 
@@ -219,9 +221,12 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                     match p.polynomial {
                         PolynomialWithBasis::Lagrange { evaluations } => {
                             let domain = crate::fft::EvaluationDomain::new(evaluations.evaluations.len()).unwrap();
-                            let lagrange_basis = ck
-                                .lagrange_basis(domain)
-                                .ok_or(PCError::UnsupportedLagrangeBasisSize(domain.size()))?;
+                            let lagrange_basis = ck.lagrange_basis(domain).ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "The Lagrange basis size ({}) is not supported by the parameters",
+                                    domain.size()
+                                )
+                            })?;
                             assert!(domain.size().is_power_of_two());
                             assert!(lagrange_basis.size().is_power_of_two());
                             kzg10::KZG10::commit_lagrange(
@@ -246,7 +251,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                 Ok((LabeledCommitment::new(label.to_string(), comm, degree_bound), rand))
             });
         }
-        let results: Vec<Result<_, PCError>> = pool.execute_all();
+        let results: Vec<Result<_, anyhow::Error>> = pool.execute_all();
 
         let mut labeled_comms = Vec::with_capacity(results.len());
         let mut randomness = Vec::with_capacity(results.len());
@@ -323,8 +328,9 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             let mut query_rands = Vec::with_capacity(labels.len());
 
             for label in labels {
-                let (polynomial, rand) =
-                    poly_rand.get(label as &str).ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
+                let (polynomial, rand) = poly_rand.get(label as &str).ok_or_else(|| {
+                    anyhow::anyhow!("QuerySet refers to polynomial \"{}\", but it was not provided", label)
+                })?;
 
                 query_polys.push(*polynomial);
                 query_rands.push(*rand);
@@ -340,10 +346,10 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                 proof
             });
         }
-        let batch_proof = pool.execute_all().into_iter().collect::<Result<_, _>>().map(BatchProof).map_err(Into::into);
+        let batch_proof = pool.execute_all().into_iter().collect::<Result<_, _>>().map(BatchProof)?;
         end_timer!(open_time);
 
-        batch_proof
+        Ok(batch_proof)
     }
 
     pub fn batch_check<'a>(
@@ -383,12 +389,16 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             let mut comms_to_combine: Vec<&'_ LabeledCommitment<_>> = Vec::new();
             let mut values_to_combine = Vec::new();
             for label in labels.into_iter() {
-                let commitment =
-                    commitments.get(label).ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
+                let commitment = commitments.get(label).ok_or_else(|| {
+                    anyhow::anyhow!("QuerySet refers to polynomial \"{}\", but it was not provided", label)
+                })?;
 
-                let v_i = values
-                    .get(&(label.clone(), *query))
-                    .ok_or(PCError::MissingEvaluation { label: label.to_string() })?;
+                let v_i = values.get(&(label.clone(), *query)).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "QuerySet refers to polynomial \"{}\", but `Evaluations` does not contain an evaluation for it",
+                        label
+                    )
+                })?;
 
                 comms_to_combine.push(commitment);
                 values_to_combine.push(*v_i);
@@ -447,11 +457,12 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             // and used directly by the verifier.
             for (coeff, label) in lc.iter().filter(|(_, l)| !l.is_one()) {
                 let label: &String = label.try_into().expect("cannot be one!");
-                let (cur_poly, cur_rand) =
-                    label_map.get(label as &str).ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
+                let (cur_poly, cur_rand) = label_map.get(label as &str).ok_or_else(|| {
+                    anyhow::anyhow!("QuerySet refers to polynomial \"{}\", but it was not provided", label)
+                })?;
                 if let Some(cur_degree_bound) = cur_poly.degree_bound() {
                     if num_polys != 1 {
-                        bail!(PCError::EquationHasDegreeBounds(lc_label));
+                        anyhow::bail!("The equation \"{}\" contained degree-bounded polynomials", lc_label);
                     }
                     assert!(coeff.is_one(), "Coefficient must be one for degree-bounded equations");
                     if let Some(old_degree_bound) = degree_bound {
@@ -516,13 +527,13 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                     }
                 } else {
                     let label: &String = label.try_into().unwrap();
-                    let &cur_comm = label_comm_map
-                        .get(label as &str)
-                        .ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
+                    let &cur_comm = label_comm_map.get(label as &str).ok_or_else(|| {
+                        anyhow::anyhow!("QuerySet refers to polynomial \"{}\", but it was not provided", label)
+                    })?;
 
                     if cur_comm.degree_bound().is_some() {
                         if num_polys != 1 || !coeff.is_one() {
-                            bail!(PCError::EquationHasDegreeBounds(lc_label));
+                            anyhow::bail!("The equation \"{}\" contained degree-bounded polynomials", lc_label);
                         }
                         degree_bound = cur_comm.degree_bound();
                     }
@@ -655,10 +666,9 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         for (degree_bound, comm) in combined_comms.into_iter() {
             let shift_power = if let Some(degree_bound) = degree_bound {
                 // Find the appropriate prepared shift for the degree bound.
-                vk.prepared_negative_powers_of_beta_h
-                    .get(&degree_bound)
-                    .cloned()
-                    .ok_or(PCError::UnsupportedDegreeBound(degree_bound))?
+                vk.prepared_negative_powers_of_beta_h.get(&degree_bound).cloned().ok_or_else(|| {
+                    anyhow::anyhow!("The degree bound ({}) is not supported by the parameters", degree_bound)
+                })?
             } else {
                 vk.vk.prepared_h.clone()
             };
