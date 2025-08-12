@@ -36,7 +36,7 @@ features = [ ]
 version = "0.1.5"
 
 [build-dependencies.cc]
-version = "^1.0.83"
+version = "^1.2.32"
 
 [build-dependencies.which]
 version = "^8.0"
