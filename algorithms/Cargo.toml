@@ -106,9 +106,6 @@ workspace = true
 workspace = true
 features = [ "const_generics", "const_new" ]
 
-[dependencies.thiserror]
-workspace = true
-
 [dependencies.num-traits]
 workspace = true
 
