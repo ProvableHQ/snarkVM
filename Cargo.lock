@@ -2892,7 +2892,6 @@ dependencies = [
  "snarkvm-fields",
  "snarkvm-parameters",
  "snarkvm-utilities",
- "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -3761,13 +3760,11 @@ name = "snarkvm-synthesizer-snark"
 version = "4.0.0"
 dependencies = [
  "bincode",
- "colored 3.0.0",
  "serde_json",
  "snarkvm-algorithms",
  "snarkvm-circuit",
  "snarkvm-console",
  "snarkvm-utilities",
- "tracing",
 ]
 
 [[package]]
