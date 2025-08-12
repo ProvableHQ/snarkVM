@@ -278,7 +278,10 @@ impl<N: Network> Subdag<N> {
         prior_transactions: Vec<N::TransactionID>,
         aborted_transaction_ids: Vec<N::TransactionID>,
     ) -> Result<Subdag<N>> {
-        let Self::Compact { subdag } = self else { bail!("Can only turn a Compact subdag into a Full one.") };
+        let subdag = match self {
+            Self::Compact { subdag } => subdag,
+            subdag @ Self::Full { .. } => return Ok(subdag),
+        };
         // Initialize the new subdag.
         let mut batch_subdag = BTreeMap::new();
 
