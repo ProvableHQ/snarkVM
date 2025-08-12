@@ -107,6 +107,7 @@ pub enum RecordsFilter<N: Network> {
 }
 
 /// Helper struct to wrap transmissions in the Subdag.
+#[derive(Clone)]
 pub struct SubdagTransmissions<N: Network> {
     /// The transmissions in a subdag ready to be included in the next block.
     pub transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
