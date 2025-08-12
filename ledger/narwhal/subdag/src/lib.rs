@@ -346,6 +346,15 @@ impl<N: Network> Subdag<N> {
         Ok(subdag.into_values().flatten())
     }
 
+    /// Returns the certificates of the subdag (from earliest round to latest round).
+    #[cfg(not(feature = "serial"))]
+    pub fn into_par_iter_batch_certificates(self) -> Result<impl ParallelIterator<Item = BatchCertificate<N>>> {
+        let Self::Full { subdag } = self else {
+            bail!("Can only iter over certificates of Full Subdag.");
+        };
+        Ok(subdag.into_par_iter().map(|(_k, v)| v).flatten())
+    }
+
     /// Returns the certificate IDs and rounds of the subdag (from earliest round to latest round).
     pub fn certificate_ids_rounds(&self) -> Vec<(Field<N>, u64)> {
         match self {
