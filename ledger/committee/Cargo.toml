@@ -75,7 +75,7 @@ workspace = true
 optional = true
 
 [dependencies.test-strategy]
-version = "0.3.1"
+version = "0.4.3"
 optional = true
 
 [dev-dependencies.bincode]
