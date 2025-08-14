@@ -50,7 +50,7 @@ impl<N: Network> PlaintextType<N> {
             (Literal(lit0), Literal(lit1)) => lit0 == lit1,
             (Array(array0), Array(array1)) => {
                 array0.length() == array1.length()
-                    && array0.base_element_type().equal_or_structs(array1.base_element_type())
+                    && array0.next_element_type().equal_or_structs(array1.next_element_type())
             }
             _ => false,
         }
