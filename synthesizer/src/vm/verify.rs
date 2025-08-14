@@ -422,7 +422,7 @@ fn ensure_deployment_valid_for_consensus_version<N: Network>(
     // If the `CONSENSUS_VERSION` is greater than or equal to `V9`, then verify that:
     //   - the program checksum is present in the deployment
     //   - the program owner is present in the deployment
-    // If the `CONSENSUS_VERSION` is less than or equal to `V9`, then verify that:
+    // If the `CONSENSUS_VERSION` is less than `V10`, then verify that:
     //   - the program does not use the external struct syntax `some_program.aleo/StructT`
     if consensus_version < ConsensusVersion::V8 {
         ensure!(

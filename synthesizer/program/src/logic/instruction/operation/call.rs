@@ -186,6 +186,7 @@ impl<N: Network> Call<N> {
         stack: &impl StackTrait<N>,
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
+        // Retrieve the program (external if necessary) and the name of the function or closure.
         let stack_value;
         let (is_external, program, name) = match &self.operator {
             CallOperator::Locator(locator) => {
@@ -222,7 +223,7 @@ impl<N: Network> Call<N> {
             Ok(closure
                 .output_types()
                 .into_iter()
-                // If the function is an external program, we need to qualify its structs or records with
+                // If the function is an external program, we need to qualify its structs with
                 // the appropriate ProgramID.
                 .map(|output_type| if is_external { output_type.qualify(*program.id()) } else { output_type })
                 .collect::<Vec<_>>())
