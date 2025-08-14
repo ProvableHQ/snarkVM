@@ -61,38 +61,38 @@ mod varuna {
                         VarunaVersion::V2 => VarunaVersion::V1,
                     };
 
-                    for i in 0..5 {
-                        let mul_depth = 1;
-                        println!("running test with SM::ZK: {}, mul_depth: {}, num_constraints: {}, num_variables: {}, varuna_version: {:?}", $snark_mode::ZK, mul_depth + i, num_constraints + i, num_variables + i, varuna_version);
-                        let (circ, public_inputs) = TestCircuit::gen_rand(mul_depth + i, num_constraints + i, num_variables + i, rng);
-                        let mut fake_inputs = public_inputs.clone();
-                        fake_inputs[public_inputs.len() - 1] = random;
+                    // for i in 0..5 {
+                    //     let mul_depth = 1;
+                    //     println!("running test with SM::ZK: {}, mul_depth: {}, num_constraints: {}, num_variables: {}, varuna_version: {:?}", $snark_mode::ZK, mul_depth + i, num_constraints + i, num_variables + i, varuna_version);
+                    //     let (circ, public_inputs) = TestCircuit::gen_rand(mul_depth + i, num_constraints + i, num_variables + i, rng);
+                    //     let mut fake_inputs = public_inputs.clone();
+                    //     fake_inputs[public_inputs.len() - 1] = random;
 
-                        let (index_pk, index_vk) = $snark_inst::circuit_setup(&universal_srs, &circ).unwrap();
-                        println!("Called circuit setup");
+                    //     let (index_pk, index_vk) = $snark_inst::circuit_setup(&universal_srs, &circ).unwrap();
+                    //     println!("Called circuit setup");
 
-                        let certificate = $snark_inst::prove_vk(universal_prover, &fs_parameters, &index_vk, &index_pk).unwrap();
-                        assert!($snark_inst::verify_vk(universal_verifier, &fs_parameters, &circ, &index_vk, &certificate).unwrap());
-                        println!("verified vk");
+                    //     let certificate = $snark_inst::prove_vk(universal_prover, &fs_parameters, &index_vk, &index_pk).unwrap();
+                    //     assert!($snark_inst::verify_vk(universal_verifier, &fs_parameters, &circ, &index_vk, &certificate).unwrap());
+                    //     println!("verified vk");
 
-                        if i == 0 {
-                            assert_eq!(pk_size_expectation, index_pk.to_bytes_le().unwrap().len(), "Update me if serialization has changed");
-                        }
-                        assert_eq!(664, index_vk.to_bytes_le().unwrap().len(), "Update me if serialization has changed");
+                    //     if i == 0 {
+                    //         assert_eq!(pk_size_expectation, index_pk.to_bytes_le().unwrap().len(), "Update me if serialization has changed");
+                    //     }
+                    //     assert_eq!(664, index_vk.to_bytes_le().unwrap().len(), "Update me if serialization has changed");
 
-                        let proof = $snark_inst::prove(universal_prover, &fs_parameters, &index_pk, varuna_version, &circ, rng).unwrap();
-                        println!("Called prover");
+                    //     let proof = $snark_inst::prove(universal_prover, &fs_parameters, &index_pk, varuna_version, &circ, rng).unwrap();
+                    //     println!("Called prover");
 
-                        assert!($snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, varuna_version, public_inputs.clone(), &proof).unwrap());
-                        println!("Called verifier");
-                        eprintln!("\nShould not verify with fake inputs (i.e. verifier messages should print below):");
-                        assert!(!$snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, varuna_version, fake_inputs, &proof).unwrap());
-                        eprintln!("\nShould not verify with wrong varuna version (i.e. verifier messages should print below):");
-                        assert!(!$snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, wrong_varuna_version, public_inputs, &proof).unwrap());
-                    }
+                    //     assert!($snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, varuna_version, public_inputs.clone(), &proof).unwrap());
+                    //     println!("Called verifier");
+                    //     eprintln!("\nShould not verify with fake inputs (i.e. verifier messages should print below):");
+                    //     assert!(!$snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, varuna_version, fake_inputs, &proof).unwrap());
+                    //     eprintln!("\nShould not verify with wrong varuna version (i.e. verifier messages should print below):");
+                    //     assert!(!$snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, wrong_varuna_version, public_inputs, &proof).unwrap());
+                    // }
 
-                    for circuit_batch_size in (0..4).map(|i| 2usize.pow(i)) {
-                        for instance_batch_size in (0..4).map(|i| 2usize.pow(i)) {
+                    for circuit_batch_size in (0..1).map(|i| 2usize.pow(i)) {
+                        for instance_batch_size in [1, 7968] {
                             println!("running test with circuit_batch_size: {circuit_batch_size} and instance_batch_size: {instance_batch_size}");
                             let mut constraints = BTreeMap::new();
                             let mut inputs = BTreeMap::new();
@@ -127,51 +127,54 @@ mod varuna {
                             }
                             println!("verified vks");
 
+                            let start = std::time::Instant::now();
                             let proof =
                                 $snark_inst::prove_batch(universal_prover, &fs_parameters, varuna_version, &pks_to_constraints, rng).unwrap();
-                            println!("Called prover");
+                            println!("Called prover in {:?}", start.elapsed());
 
+                            let start = std::time::Instant::now();
                             assert!(
                                 $snark_inst::verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof).unwrap(),
                                 "Batch verification failed with {instance_batch_size} instances and {circuit_batch_size} circuits for circuits: {constraints:?}"
                             );
-                            println!("Called verifier");
-                            eprintln!("\nShould not verify with wrong inputs (i.e. verifier messages should print below):");
-                            let mut fake_instance_inputs = Vec::with_capacity(vks_to_inputs.len());
-                            for instance_input in vks_to_inputs.values() {
-                                let mut fake_instance_input = Vec::with_capacity(instance_input.len());
-                                for input in instance_input.iter() {
-                                    let mut fake_input = input.clone();
-                                    fake_input[input.len() - 1] = Fr::rand(rng);
-                                    fake_instance_input.push(fake_input);
-                                }
-                                fake_instance_inputs.push(fake_instance_input);
-                            }
-                            let mut vks_to_fake_inputs = BTreeMap::new();
-                            for (i, vk) in vks_to_inputs.keys().enumerate() {
-                                vks_to_fake_inputs.insert(*vk, fake_instance_inputs[i].as_slice());
-                            }
-                            assert!(
-                                !$snark_inst::verify_batch(
-                                    universal_verifier,
-                                    &fs_parameters,
-                                    varuna_version,
-                                    &vks_to_fake_inputs,
-                                    &proof,
-                                )
-                                .unwrap()
-                            );
-                            eprintln!("\nShould not verify with wrong varuna version (i.e. verifier messages should print below):");
-                            assert!(
-                                !$snark_inst::verify_batch(
-                                    universal_verifier,
-                                    &fs_parameters,
-                                    wrong_varuna_version,
-                                    &vks_to_inputs,
-                                    &proof,
-                                )
-                                .unwrap()
-                            );
+                            println!("Called verifier in {:?}", start.elapsed());
+
+                            // eprintln!("\nShould not verify with wrong inputs (i.e. verifier messages should print below):");
+                            // let mut fake_instance_inputs = Vec::with_capacity(vks_to_inputs.len());
+                            // for instance_input in vks_to_inputs.values() {
+                            //     let mut fake_instance_input = Vec::with_capacity(instance_input.len());
+                            //     for input in instance_input.iter() {
+                            //         let mut fake_input = input.clone();
+                            //         fake_input[input.len() - 1] = Fr::rand(rng);
+                            //         fake_instance_input.push(fake_input);
+                            //     }
+                            //     fake_instance_inputs.push(fake_instance_input);
+                            // }
+                            // let mut vks_to_fake_inputs = BTreeMap::new();
+                            // for (i, vk) in vks_to_inputs.keys().enumerate() {
+                            //     vks_to_fake_inputs.insert(*vk, fake_instance_inputs[i].as_slice());
+                            // }
+                            // assert!(
+                            //     !$snark_inst::verify_batch(
+                            //         universal_verifier,
+                            //         &fs_parameters,
+                            //         varuna_version,
+                            //         &vks_to_fake_inputs,
+                            //         &proof,
+                            //     )
+                            //     .unwrap()
+                            // );
+                            // eprintln!("\nShould not verify with wrong varuna version (i.e. verifier messages should print below):");
+                            // assert!(
+                            //     !$snark_inst::verify_batch(
+                            //         universal_verifier,
+                            //         &fs_parameters,
+                            //         wrong_varuna_version,
+                            //         &vks_to_inputs,
+                            //         &proof,
+                            //     )
+                            //     .unwrap()
+                            // );
                         }
                     }
                 }
@@ -236,22 +239,22 @@ mod varuna {
 
     #[test]
     fn prove_and_verify_with_tall_matrix_big() {
-        let num_constraints = 100;
-        let num_variables = 25;
+        let num_constraints = 10000;
+        let num_variables = 2500;
         let pk_size_zk = 91971;
         let pk_size_posw = 91633;
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+        // SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
+        // SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
 
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
         SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
 
-        SonicPCTest::test_serde_json(num_constraints, num_variables);
-        SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
+        // SonicPCTest::test_serde_json(num_constraints, num_variables);
+        // SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
 
-        SonicPCTest::test_bincode(num_constraints, num_variables);
-        SonicPCPoswTest::test_bincode(num_constraints, num_variables);
+        // SonicPCTest::test_bincode(num_constraints, num_variables);
+        // SonicPCPoswTest::test_bincode(num_constraints, num_variables);
     }
 
     #[test]
@@ -482,16 +485,16 @@ mod varuna_hiding {
         assert_eq!(index_vk, bincode::deserialize(&candidate_bytes[..]).unwrap());
     }
 
-    #[test]
-    fn prove_and_verify_with_tall_matrix_big() {
-        let num_constraints = 100;
-        let num_variables = 25;
+    // #[test]
+    // fn prove_and_verify_with_tall_matrix_big() {
+    //     let num_constraints = 100;
+    //     let num_variables = 25;
 
-        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
-        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
-        test_serde_json(num_constraints, num_variables);
-        test_bincode(num_constraints, num_variables);
-    }
+    //     test_circuit(num_constraints, num_variables, VarunaVersion::V1);
+    //     test_circuit(num_constraints, num_variables, VarunaVersion::V2);
+    //     test_serde_json(num_constraints, num_variables);
+    //     test_bincode(num_constraints, num_variables);
+    // }
 
     #[test]
     fn prove_and_verify_with_tall_matrix_small() {

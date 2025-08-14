@@ -766,9 +766,6 @@ where
                         let mut new_input = Vec::with_capacity(input_len);
                         new_input.extend_from_slice(input);
                         new_input.resize(input_len, E::Fr::zero());
-                        if cfg!(debug_assertions) {
-                            println!("Number of padded public variables: {}", new_input.len());
-                        }
                         let unformatted = prover::ConstraintSystem::unformat_public_input(&new_input);
                         (new_input, unformatted)
                     })
