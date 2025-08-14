@@ -283,8 +283,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                         if self.is_solution_limit_reached(&prover_address, num_accepted_solutions) {
                             return false;
                         }
+                        // From ConsensusVersion::V10 onwards, use `check_solution` instead of `check_solution_mut`.
+                        let res = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {
+                            self.puzzle().check_solution(solution, latest_epoch_hash, latest_proof_target)
+                        } else {
+                            self.puzzle().check_solution_mut(solution, latest_epoch_hash, latest_proof_target)
+                        };
                         // Check if the solution is valid and update the number of accepted solutions.
-                        match self.puzzle().check_solution_mut(solution, latest_epoch_hash, latest_proof_target) {
+                        match res {
                             // Increment the number of accepted solutions for the prover.
                             Ok(()) => {
                                 *accepted_solutions.entry(prover_address).or_insert(0) += 1;

@@ -627,7 +627,9 @@ impl<N: Network> Block<N> {
                 TransmissionID::Solution(solution_id, _checksum) => {
                     match solutions.peek() {
                         // Check the next solution matches the expected solution ID.
-                        // We don't check against the checksum, because check_solution_mut might mutate the solution.
+                        // We don't check against the checksum, because
+                        // `check_solution_mut` might have mutated the solution
+                        // before ConsensusVersion::V10.
                         Some((_, solution)) if solution.id() == solution_id => {
                             // Increment the solution iterator.
                             solutions.next();
