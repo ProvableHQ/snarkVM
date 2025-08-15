@@ -5,29 +5,30 @@ cases:
   - program: child.aleo
     function: call_make_array
     inputs: []
+  - program: child.aleo
+    function: make_s
+    inputs: []
+  - program: child.aleo
+    function: make_t
+    inputs: []
+  - program: child.aleo
+    function: call_make_outer
+    inputs: []
+  - program: child.aleo
+    function: pass_s
+    inputs: []
+  - program: child.aleo
+    function: pass_t
+    inputs: []
+  - program: child.aleo
+    function: cast_s
+    inputs: []
+  - program: child2.aleo
+    function: call_make_outer2
+    inputs: []
 */
 
-//  - program: child.aleo
-//    function: make_s
-//    inputs: []
-//  - program: child.aleo
-//    function: make_t
-//    inputs: []
-//  - program: child.aleo
-//    function: call_make_outer
-//    inputs: []
-//  - program: child.aleo
-//    function: pass_s
-//    inputs: []
-//  - program: child.aleo
-//    function: pass_t
-//    inputs: []
-//  - program: child.aleo
-//    function: cast_s
-//    inputs: []
-//  - program: child2.aleo
-//    function: call_make_outer2
-//    inputs: []
+
 program parent.aleo;
 
 struct S:
