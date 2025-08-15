@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use bit_vec::BitVec;
-
 use super::*;
 
 impl<N: Network> FromBytes for CompactHeader<N> {
@@ -40,21 +38,19 @@ impl<N: Network> FromBytes for CompactHeader<N> {
 
         // Read the number of transaction indices.
         let num_transaction_indices = u16::read_le(&mut reader)?;
-        let mut transaction_indices = Vec::with_capacity(num_transaction_indices as usize);
+        let mut transaction_indices = IndexSet::with_capacity(num_transaction_indices as usize);
         // Read the transaction indices.
         for _ in 0..num_transaction_indices {
-            transaction_indices.push(u8::read_le(&mut reader)?);
+            transaction_indices.insert(u32::read_le(&mut reader)?);
         }
-        let transaction_indices = BitSet::from_bit_vec(BitVec::from_bytes(&transaction_indices));
 
         // Read the number of solution indices.
         let num_solution_indices = u16::read_le(&mut reader)?;
-        let mut solution_indices = Vec::with_capacity(num_solution_indices as usize);
+        let mut solution_indices = IndexSet::with_capacity(num_solution_indices as usize);
         // Read the transaction indices.
         for _ in 0..num_solution_indices {
-            solution_indices.push(u8::read_le(&mut reader)?);
+            solution_indices.insert(u32::read_le(&mut reader)?);
         }
-        let solution_indices = BitSet::from_bit_vec(BitVec::from_bytes(&solution_indices));
 
         // Read the number of previous certificate IDs.
         let num_previous_certificate_ids = u16::read_le(&mut reader)?;
@@ -112,18 +108,14 @@ impl<N: Network> ToBytes for CompactHeader<N> {
         self.timestamp.write_le(&mut writer)?;
         // Write the committee ID.
         self.committee_id.write_le(&mut writer)?;
-        // Get transaction indices vector.
-        let transaction_indices = self.transaction_indices.get_ref().to_bytes();
         // Write the number of transaction indices.
-        u16::try_from(transaction_indices.len()).map_err(error)?.write_le(&mut writer)?;
+        u16::try_from(self.transaction_indices.len()).map_err(error)?.write_le(&mut writer)?;
         // Write the transaction indices.
-        transaction_indices.into_iter().try_for_each(|b| b.write_le(&mut writer))?;
-        // Get solution indices vector.
-        let solution_indices = self.solution_indices.get_ref().to_bytes();
+        self.transaction_indices.iter().try_for_each(|b| b.write_le(&mut writer))?;
         // Write the number of solution indices.
-        u16::try_from(solution_indices.len()).map_err(error)?.write_le(&mut writer)?;
+        u16::try_from(self.solution_indices.len()).map_err(error)?.write_le(&mut writer)?;
         // Write the solution indices.
-        solution_indices.into_iter().try_for_each(|b| b.write_le(&mut writer))?;
+        self.solution_indices.iter().try_for_each(|b| b.write_le(&mut writer))?;
         // Write the number of previous certificate IDs.
         u16::try_from(self.previous_certificate_ids.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
         // Write the previous certificate IDs.

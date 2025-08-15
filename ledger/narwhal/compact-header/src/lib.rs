@@ -21,9 +21,6 @@ mod bytes;
 mod serialize;
 mod string;
 
-use std::collections::BTreeSet;
-
-use bit_set::BitSet;
 use indexmap::IndexSet;
 use snarkvm_console::{
     account::{Address, Signature},
@@ -48,9 +45,9 @@ pub struct CompactHeader<N: Network> {
     /// The committee ID.
     committee_id: Field<N>,
     /// The set of transaction indices in a block.
-    transaction_indices: BitSet,
+    transaction_indices: IndexSet<u32>,
     /// The set of solution indices in a block.
-    solution_indices: BitSet,
+    solution_indices: IndexSet<u32>,
     /// The batch certificate IDs of the previous round.
     previous_certificate_ids: IndexSet<Field<N>>,
     /// The signature of the batch ID from the creator.
@@ -82,20 +79,20 @@ impl<N: Network> CompactHeader<N> {
         }
 
         // Check which transaction_indices the certificate contains.
-        let mut transaction_indices = BitSet::with_capacity(num_transactions);
+        let mut transaction_indices = IndexSet::with_capacity(num_transactions);
         for (i, transaction_id) in transactions.chain(aborted_transactions).chain(prior_transactions).enumerate() {
-            let transmission_id = TransmissionID::Transaction(*transaction_id, Default::default());
+            let transmission_id = TransmissionID::Transaction(*transaction_id, Default::default()); // TODO: don't use default checksum...
             if transmission_ids.contains(&transmission_id) {
-                transaction_indices.insert(i);
+                transaction_indices.insert(u32::try_from(i)?);
             }
         }
 
         // Check which solution_indices the certificate contains.
         let solution_indices = match solutions {
             Some(solutions) => {
-                Self::create_solution_indices(solutions.chain(prior_solutions), transmission_ids, num_solutions)
+                Self::create_solution_indices(solutions.chain(prior_solutions), transmission_ids, num_solutions)?
             }
-            None => Self::create_solution_indices(prior_solutions, transmission_ids, num_solutions),
+            None => Self::create_solution_indices(prior_solutions, transmission_ids, num_solutions)?,
         };
 
         // Check if we found all Transmission IDs.
@@ -121,16 +118,16 @@ impl<N: Network> CompactHeader<N> {
     /// Creates solution_indices from transmission_ids.
     fn create_solution_indices<'a>(
         block_solutions: impl Iterator<Item = &'a SolutionID<N>>,
-        transmission_ids: &BTreeSet<TransmissionID<N>>,
+        transmission_ids: &IndexSet<TransmissionID<N>>,
         num_solutions_in_batch: usize,
-    ) -> BitSet {
-        let mut solution_indices = BitSet::with_capacity(num_solutions_in_batch);
+    ) -> Result<IndexSet<u32>> {
+        let mut solution_indices = IndexSet::with_capacity(num_solutions_in_batch);
         for (i, solution_id) in block_solutions.enumerate() {
             if transmission_ids.contains(&TransmissionID::Solution(*solution_id, Default::default())) {
-                solution_indices.insert(i);
+                solution_indices.insert(u32::try_from(i)?);
             }
         }
-        solution_indices
+        Ok(solution_indices)
     }
 
     /// Initializes a new compact header.
@@ -141,8 +138,8 @@ impl<N: Network> CompactHeader<N> {
         round: u64,
         timestamp: i64,
         committee_id: Field<N>,
-        transaction_indices: BitSet,
-        solution_indices: BitSet,
+        transaction_indices: IndexSet<u32>,
+        solution_indices: IndexSet<u32>,
         previous_certificate_ids: IndexSet<Field<N>>,
         signature: Signature<N>,
     ) -> Result<Self> {
@@ -212,12 +209,12 @@ impl<N: Network> CompactHeader<N> {
     }
 
     /// Returns the transaction indices.
-    pub const fn transaction_indices(&self) -> &BitSet {
+    pub const fn transaction_indices(&self) -> &IndexSet<u32> {
         &self.transaction_indices
     }
 
     /// Returns the solution indices.
-    pub const fn solution_indices(&self) -> &BitSet {
+    pub const fn solution_indices(&self) -> &IndexSet<u32> {
         &self.solution_indices
     }
 
@@ -239,21 +236,23 @@ impl<N: Network> CompactHeader<N> {
         transactions: impl Iterator<Item = &'a N::TransactionID>,
         prior_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
         rejected_transactions: impl Iterator<Item = &'a N::TransactionID>,
-    ) -> Result<BTreeSet<TransmissionID<N>>> {
+    ) -> Result<IndexSet<TransmissionID<N>>> {
         // Insert the transactions into the transmission_ids.
-        let mut transmission_ids = BTreeSet::new();
-        transactions.chain(rejected_transactions).chain(prior_transactions).enumerate().for_each(
+        let mut transmission_ids = IndexSet::new();
+        transactions.chain(rejected_transactions).chain(prior_transactions).enumerate().try_for_each(
             |(index, transaction_id)| {
-                if self.transaction_indices.contains(index) {
+                if self.transaction_indices.contains(&u32::try_from(index)?) {
                     transmission_ids.insert(TransmissionID::Transaction(*transaction_id, Default::default()));
                 }
+                Ok::<(), Error>(())
             },
-        );
+        )?;
         // Define a closure to insert a solution into the transmission_ids.
         let mut insert_solution = |(index, puzzle_commitment): (usize, &SolutionID<N>)| {
-            if self.solution_indices.contains(index) {
+            if self.solution_indices.contains(&u32::try_from(index)?) {
                 transmission_ids.insert(TransmissionID::Solution(*puzzle_commitment, Default::default()));
             }
+            Ok::<(), Error>(())
         };
         // Insert the solutions into the transmission_ids.
         match solutions {
@@ -261,12 +260,12 @@ impl<N: Network> CompactHeader<N> {
                 solutions
                     .chain(prior_solutions)
                     .enumerate()
-                    .for_each(|(index, puzzle_commitment)| insert_solution((index, puzzle_commitment)));
+                    .try_for_each(|(index, puzzle_commitment)| insert_solution((index, puzzle_commitment)))?;
             }
             None => {
                 prior_solutions
                     .enumerate()
-                    .for_each(|(index, puzzle_commitment)| insert_solution((index, puzzle_commitment)));
+                    .try_for_each(|(index, puzzle_commitment)| insert_solution((index, puzzle_commitment)))?;
             }
         };
 

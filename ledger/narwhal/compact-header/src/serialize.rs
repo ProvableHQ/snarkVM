@@ -48,14 +48,14 @@ impl<'de, N: Network> Deserialize<'de> for CompactHeader<N> {
                 // Parse the transaction indices.
                 let transaction_indices_vec: Vec<_> =
                     DeserializeExt::take_from_value::<D>(&mut header, "transaction_indices")?;
-                let mut transaction_indices = BitSet::with_capacity(transaction_indices_vec.len());
+                let mut transaction_indices = IndexSet::with_capacity(transaction_indices_vec.len());
                 for index in transaction_indices_vec {
                     transaction_indices.insert(index);
                 }
                 // Parse the solution indices.
                 let solution_indices_vec: Vec<_> =
                     DeserializeExt::take_from_value::<D>(&mut header, "solution_indices")?;
-                let mut solution_indices = BitSet::with_capacity(solution_indices_vec.len());
+                let mut solution_indices = IndexSet::with_capacity(solution_indices_vec.len());
                 for index in solution_indices_vec {
                     solution_indices.insert(index);
                 }

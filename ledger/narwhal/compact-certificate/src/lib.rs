@@ -20,7 +20,6 @@ mod bytes;
 mod serialize;
 mod string;
 
-use bit_set::BitSet;
 use snarkvm_console::{
     account::{Address, Signature},
     prelude::*,
@@ -138,12 +137,12 @@ impl<N: Network> CompactCertificate<N> {
     }
 
     /// Returns the transaction indices.
-    pub const fn transaction_indices(&self) -> &BitSet {
+    pub const fn transaction_indices(&self) -> &IndexSet<u32> {
         self.compact_header().transaction_indices()
     }
 
     /// Returns the solution indices.
-    pub const fn solution_indices(&self) -> &BitSet {
+    pub const fn solution_indices(&self) -> &IndexSet<u32> {
         self.compact_header().solution_indices()
     }
 

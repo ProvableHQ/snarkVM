@@ -30,7 +30,6 @@ use snarkvm_ledger_narwhal_compact_certificate::CompactCertificate;
 use snarkvm_ledger_narwhal_traits::NarwhalCertificate;
 use snarkvm_ledger_puzzle::{PuzzleSolutions, SolutionID};
 
-use bit_set::BitSet;
 use indexmap::IndexSet;
 use std::collections::BTreeMap;
 
@@ -464,34 +463,6 @@ impl<N: Network> Subdag<N> {
             LeaderCertificate::Full(cert) => cert.author(),
             LeaderCertificate::Compact(cert) => cert.author(),
         }
-    }
-
-    /// Returns unique transaction indices of the subdag (from earliest round to latest round).
-    pub fn transaction_indices(&self, expected_len: usize) -> Result<BitSet> {
-        let Self::Compact { subdag } = self else {
-            bail!("A Full Subdag does not have transaction indices.");
-        };
-        Ok(subdag.values().flatten().map(CompactCertificate::transaction_indices).fold(
-            BitSet::with_capacity(expected_len),
-            |mut acc, x| {
-                acc.union_with(x);
-                acc
-            },
-        ))
-    }
-
-    /// Returns unique solution indices of the subdag (from earliest round to latest round).
-    pub fn solution_indices(&self, expected_len: usize) -> Result<BitSet> {
-        let Self::Compact { subdag } = self else {
-            bail!("A Full Subdag does not have solution indices.");
-        };
-        Ok(subdag.values().flatten().map(CompactCertificate::solution_indices).fold(
-            BitSet::with_capacity(expected_len),
-            |mut acc, x| {
-                acc.union_with(x);
-                acc
-            },
-        ))
     }
 
     /// Returns the timestamp of the anchor round, defined as the weighted median timestamp of the subdag.

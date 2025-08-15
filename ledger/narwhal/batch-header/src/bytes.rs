@@ -46,7 +46,7 @@ impl<N: Network> FromBytes for BatchHeader<N> {
             )));
         }
         // Read the transmission IDs.
-        let mut transmission_ids = BTreeSet::new();
+        let mut transmission_ids = IndexSet::new();
         for _ in 0..num_transmission_ids {
             // Insert the transmission ID.
             transmission_ids.insert(TransmissionID::read_le(&mut reader)?);

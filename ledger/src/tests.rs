@@ -49,7 +49,7 @@ use snarkvm_utilities::try_vm_runtime;
 
 use indexmap::{IndexMap, IndexSet};
 use rand::seq::SliceRandom;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use time::OffsetDateTime;
 
 #[cfg(not(feature = "rocks"))]
@@ -183,7 +183,7 @@ impl TestChainBuilder {
             self.last_block_round - BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS as u64 + 2
         };
 
-        let transmission_ids = transmissions.keys().cloned().collect::<BTreeSet<_>>();
+        let transmission_ids = transmissions.keys().cloned().collect::<IndexSet<_>>();
 
         // Create certificates for each round.
         loop {

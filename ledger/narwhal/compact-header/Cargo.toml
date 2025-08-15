@@ -41,12 +41,6 @@ workspace = true
 [dependencies.snarkvm-ledger-puzzle]
 workspace = true
 
-[dependencies.bit-set]
-version = "0.8"
-
-[dependencies.bit-vec]
-version = "0.8"
-
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]

@@ -36,7 +36,7 @@ impl<N: Network> BatchHeader<N> {
         round: u64,
         timestamp: i64,
         committee_id: Field<N>,
-        transmission_ids: &BTreeSet<TransmissionID<N>>,
+        transmission_ids: &IndexSet<TransmissionID<N>>,
         previous_certificate_ids: &IndexSet<Field<N>>,
     ) -> Result<Field<N>> {
         let mut preimage = Vec::new();

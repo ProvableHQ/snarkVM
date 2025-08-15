@@ -32,7 +32,6 @@ use console::{
 use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 
 use indexmap::IndexSet;
-use std::collections::BTreeSet;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -51,7 +50,7 @@ pub struct BatchHeader<N: Network> {
     /// The committee ID.
     committee_id: Field<N>,
     /// The set of `transmission IDs`.
-    transmission_ids: BTreeSet<TransmissionID<N>>,
+    transmission_ids: IndexSet<TransmissionID<N>>,
     /// The batch certificate IDs of the previous round.
     previous_certificate_ids: IndexSet<Field<N>>,
     /// The signature of the batch ID from the creator.
@@ -79,7 +78,7 @@ impl<N: Network> BatchHeader<N> {
         round: u64,
         timestamp: i64,
         committee_id: Field<N>,
-        transmission_ids: BTreeSet<TransmissionID<N>>,
+        transmission_ids: IndexSet<TransmissionID<N>>,
         previous_certificate_ids: IndexSet<Field<N>>,
         rng: &mut R,
     ) -> Result<Self> {
@@ -137,7 +136,7 @@ impl<N: Network> BatchHeader<N> {
         round: u64,
         timestamp: i64,
         committee_id: Field<N>,
-        transmission_ids: BTreeSet<TransmissionID<N>>,
+        transmission_ids: IndexSet<TransmissionID<N>>,
         previous_certificate_ids: IndexSet<Field<N>>,
         signature: Signature<N>,
     ) -> Result<Self> {
@@ -217,7 +216,7 @@ impl<N: Network> BatchHeader<N> {
     }
 
     /// Returns the transmission IDs.
-    pub const fn transmission_ids(&self) -> &BTreeSet<TransmissionID<N>> {
+    pub const fn transmission_ids(&self) -> &IndexSet<TransmissionID<N>> {
         &self.transmission_ids
     }
 
@@ -300,7 +299,7 @@ pub mod test_helpers {
         // Sample transmission IDs.
         let transmission_ids = snarkvm_ledger_narwhal_transmission_id::test_helpers::sample_transmission_ids(rng)
             .into_iter()
-            .collect::<BTreeSet<_>>();
+            .collect::<IndexSet<_>>();
         // Checkpoint the timestamp for the batch.
         let timestamp = OffsetDateTime::now_utc().unix_timestamp();
         // Return the batch header.
