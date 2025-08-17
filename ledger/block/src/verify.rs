@@ -721,6 +721,7 @@ impl<N: Network> Block<N> {
                 Ok(TransmissionID::Transaction(tx.id(), checksum))
             })
             .collect::<Result<Vec<_>>>()?;
+
         // Compute the solution transmission IDs.
         let solution_transmission_ids = match solutions {
             Some(solutions) => {
@@ -735,20 +736,21 @@ impl<N: Network> Block<N> {
         };
 
         // Prepare a bitset to track the seen transmission indices.
-        let num_expected_transmissions = solutions.as_ref().map(|s| s.len()).unwrap_or(0)
+        let max_expected_index = solutions.as_ref().map(|s| s.len()).unwrap_or(0)
             + prior_solution_transmission_ids.len()
             + aborted_solution_transmission_ids.len()
             + transactions.len()
             + prior_transaction_transmission_ids.len()
             + aborted_transaction_transmission_ids.len();
-        let mut seen_transmission_indices = BitSet::with_capacity(num_expected_transmissions);
+        let mut seen_indices = BitSet::with_capacity(max_expected_index);
 
+        // For each compact header, check the batch ID and insert the transmission indices into the bitset.
         for compact_header in subdag.values().flatten().map(|cert| cert.compact_header()) {
             for index in compact_header.transaction_indices() {
-                seen_transmission_indices.insert(*index as usize);
+                seen_indices.insert(*index as usize);
             }
             for index in compact_header.solution_indices() {
-                seen_transmission_indices.insert(*index as usize);
+                seen_indices.insert(*index as usize);
             }
             compact_header.check_batch_id(
                 solution_transmission_ids.iter(),
@@ -760,20 +762,13 @@ impl<N: Network> Block<N> {
             )?;
         }
 
+        // Ensure that all transmission indices were seen.
         ensure!(
-            seen_transmission_indices.len() == num_expected_transmissions,
+            (0..max_expected_index).all(|i| seen_indices.contains(i)),
             "Found unused transmission ID in the subdag."
         );
-        ensure!(
-            seen_transmission_indices.contains(0),
-            "Invalid transmission indexing in the subdag: expected index 0 to exist."
-        );
-        ensure!(
-            seen_transmission_indices.contains(num_expected_transmissions - 1),
-            "Invalid transmission indexing in the subdag: expected index {} to exist.",
-            num_expected_transmissions - 1
-        );
 
+        // Collect the prior solution and transaction IDs.
         let prior_solution_ids = prior_solution_transmission_ids
             .iter()
             .map(|id| match id {
