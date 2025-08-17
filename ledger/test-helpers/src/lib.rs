@@ -665,9 +665,7 @@ fn sample_genesis_block_and_components_raw(
         ratifications,
         None.into(),
         vec![],
-        vec![],
         transactions.clone(),
-        vec![],
         vec![],
         rng,
     )

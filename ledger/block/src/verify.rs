@@ -20,7 +20,12 @@ use super::*;
 use snarkvm_ledger_puzzle::Puzzle;
 use snarkvm_synthesizer_program::FinalizeOperation;
 
-use std::{borrow::Cow, collections::HashSet};
+use snarkvm_ledger_narwhal_batch_certificate::BatchCertificate;
+use snarkvm_ledger_narwhal_compact_certificate::CompactCertificate;
+
+use bit_set::BitSet;
+use indexmap::IndexSet;
+use std::collections::{BTreeMap, HashSet};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -228,18 +233,24 @@ impl<N: Network> Block<N> {
                     subdag.leader_address()
                 );
                 // Ensure the transmission IDs from the subdag correspond to the block.
-                // This is redundant if the block has been created via `Block::from()`;
-                // however, we need to obtain the solution and transaction IDs here,
-                // so may want to remove the redundant check in `Block::from()` and leave it here.
-                Self::check_subdag_transmissions(
-                    subdag,
-                    &self.solutions,
-                    &self.prior_solution_ids,
-                    &self.aborted_solution_ids,
-                    &self.transactions,
-                    &self.prior_transaction_ids,
-                    &self.aborted_transaction_ids,
-                )?
+                match subdag {
+                    Subdag::Full { subdag } => Self::check_full_subdag_transmissions(
+                        subdag,
+                        &self.solutions,
+                        &self.aborted_solution_ids,
+                        &self.transactions,
+                        &self.aborted_transaction_ids,
+                    )?,
+                    Subdag::Compact { subdag } => Self::check_compact_subdag_transmissions(
+                        subdag,
+                        &self.solutions,
+                        &self.prior_solution_transmission_ids,
+                        &self.aborted_solution_transmission_ids,
+                        &self.transactions,
+                        &self.prior_transaction_transmission_ids,
+                        &self.aborted_transaction_transmission_ids,
+                    )?,
+                }
             }
         };
 
@@ -552,13 +563,11 @@ impl<N: Network> Block<N> {
 
     /// Checks that the transmission IDs in the given subdag matches the solutions and transactions in the block.
     /// Returns the IDs of the transactions and solutions that should already exist in the ledger.
-    pub(super) fn check_subdag_transmissions(
-        subdag: &Subdag<N>,
+    pub(super) fn check_full_subdag_transmissions(
+        subdag: &BTreeMap<u64, IndexSet<BatchCertificate<N>>>,
         solutions: &Option<PuzzleSolutions<N>>,
-        prior_solution_ids: &[SolutionID<N>],
         aborted_solution_ids: &[SolutionID<N>],
         transactions: &Transactions<N>,
-        prior_transaction_ids: &[N::TransactionID],
         aborted_transaction_ids: &[N::TransactionID],
     ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
         // Prepare an iterator over the unconfirmed transactions.
@@ -576,27 +585,12 @@ impl<N: Network> Block<N> {
         // Initialize a set of aborted or already-existing transaction IDs.
         let mut aborted_or_existing_transaction_ids: HashSet<N::TransactionID> = HashSet::new();
 
-        let transmission_ids: Vec<Cow<'_, TransmissionID<N>>> = match subdag {
-            Subdag::Full { subdag } => {
-                subdag.values().flatten().flat_map(|cert| cert.transmission_ids()).map(Cow::Borrowed).collect()
-            }
-            Subdag::Compact { subdag } => {
-                let mut ids = Vec::new();
-                for compact_header in subdag.values().flatten().map(|cert| cert.compact_header()) {
-                    let transmission_ids = compact_header.to_transmission_ids(
-                        [].iter(),
-                        solutions.as_ref().map(|s| s.solution_ids()),
-                        prior_solution_ids.iter(),
-                        transactions.transaction_ids(),
-                        prior_transaction_ids.iter(),
-                        aborted_transaction_ids.iter(),
-                    )?;
-                    ids.extend(transmission_ids.into_iter().map(Cow::Owned));
-                }
-
-                ids
-            }
-        };
+        let transmission_ids = subdag
+            .values()
+            .flatten()
+            .flat_map(|cert| cert.transmission_ids())
+            .copied()
+            .collect::<Vec<TransmissionID<N>>>();
 
         // Prepare an iterator over the solution IDs.
         let mut solutions = solutions.as_ref().map(|s| s.deref()).into_iter().flatten().peekable();
@@ -607,7 +601,7 @@ impl<N: Network> Block<N> {
             // Note: This is done instead of checking `TransmissionID` directly, because we need to
             // ensure that each transaction or solution ID is unique. The `TransmissionID` is guaranteed
             // to be unique, however the transaction/solution ID may not be due to malleability concerns.
-            match *transmission_id {
+            match transmission_id {
                 TransmissionID::Ratification => {}
                 TransmissionID::Solution(solution_id, _) => {
                     if !seen_solution_ids.insert(solution_id) {
@@ -622,7 +616,7 @@ impl<N: Network> Block<N> {
             }
 
             // Process the transmission ID.
-            match *transmission_id {
+            match transmission_id {
                 TransmissionID::Ratification => {}
                 TransmissionID::Solution(solution_id, _checksum) => {
                     match solutions.peek() {
@@ -701,5 +695,100 @@ impl<N: Network> Block<N> {
             .collect();
 
         Ok((existing_solution_ids, existing_transaction_ids))
+    }
+
+    /// Checks that the transmission IDs in the given subdag matches the solutions and transactions in the block.
+    /// Returns the IDs of the transactions and solutions that should already exist in the ledger.
+    pub(super) fn check_compact_subdag_transmissions(
+        subdag: &BTreeMap<u64, IndexSet<CompactCertificate<N>>>,
+        solutions: &Option<PuzzleSolutions<N>>,
+        prior_solution_transmission_ids: &[TransmissionID<N>],
+        aborted_solution_transmission_ids: &[TransmissionID<N>],
+        transactions: &Transactions<N>,
+        prior_transaction_transmission_ids: &[TransmissionID<N>],
+        aborted_transaction_transmission_ids: &[TransmissionID<N>],
+    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
+        // Prepare an iterator over the unconfirmed transactions.
+        let unconfirmed_transactions = cfg_iter!(transactions)
+            .map(|confirmed| confirmed.to_unconfirmed_transaction())
+            .collect::<Result<Vec<_>>>()?;
+
+        // Compute the transaction transmission IDs.
+        let transaction_transmission_ids = unconfirmed_transactions
+            .iter()
+            .map(|tx| {
+                let checksum = Data::<Transaction<N>>::Buffer(tx.to_bytes_le()?.into()).to_checksum::<N>()?;
+                Ok(TransmissionID::Transaction(tx.id(), checksum))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        // Compute the solution transmission IDs.
+        let solution_transmission_ids = match solutions {
+            Some(solutions) => {
+                let mut transmission_ids = IndexSet::new(); // with_capacity(solutions.solution_ids().len());
+                for (id, solution) in solutions.iter() {
+                    let checksum = Data::<Solution<N>>::Buffer(solution.to_bytes_le()?.into()).to_checksum::<N>()?;
+                    transmission_ids.insert(TransmissionID::Solution(*id, checksum));
+                }
+                transmission_ids
+            }
+            None => IndexSet::new(),
+        };
+
+        // Prepare a bitset to track the seen transmission indices.
+        let num_expected_transmissions = solutions.as_ref().map(|s| s.len()).unwrap_or(0)
+            + prior_solution_transmission_ids.len()
+            + aborted_solution_transmission_ids.len()
+            + transactions.len()
+            + prior_transaction_transmission_ids.len()
+            + aborted_transaction_transmission_ids.len();
+        let mut seen_transmission_indices = BitSet::with_capacity(num_expected_transmissions);
+
+        for compact_header in subdag.values().flatten().map(|cert| cert.compact_header()) {
+            for index in compact_header.transaction_indices() {
+                seen_transmission_indices.insert(*index as usize);
+            }
+            for index in compact_header.solution_indices() {
+                seen_transmission_indices.insert(*index as usize);
+            }
+            compact_header.check_batch_id(
+                solution_transmission_ids.iter(),
+                prior_solution_transmission_ids.iter(),
+                aborted_solution_transmission_ids.iter(),
+                transaction_transmission_ids.iter(),
+                prior_transaction_transmission_ids.iter(),
+                aborted_transaction_transmission_ids.iter(),
+            )?;
+        }
+
+        ensure!(
+            seen_transmission_indices.len() == num_expected_transmissions,
+            "Found unused transmission ID in the subdag."
+        );
+        ensure!(
+            seen_transmission_indices.contains(0),
+            "Invalid transmission indexing in the subdag: expected index 0 to exist."
+        );
+        ensure!(
+            seen_transmission_indices.contains(num_expected_transmissions - 1),
+            "Invalid transmission indexing in the subdag: expected index {} to exist.",
+            num_expected_transmissions - 1
+        );
+
+        let prior_solution_ids = prior_solution_transmission_ids
+            .iter()
+            .map(|id| match id {
+                TransmissionID::Solution(id, _) => Ok(*id),
+                _ => bail!("Expected a solution transmission ID."),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let prior_transaction_ids = prior_transaction_transmission_ids
+            .iter()
+            .map(|id| match id {
+                TransmissionID::Transaction(id, _) => Ok(*id),
+                _ => bail!("Expected a transaction transmission ID."),
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok((prior_solution_ids, prior_transaction_ids))
     }
 }

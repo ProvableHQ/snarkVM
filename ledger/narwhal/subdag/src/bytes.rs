@@ -88,7 +88,6 @@ impl<N: Network> ToBytes for Subdag<N> {
     /// Writes the subdag to the buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        // TODO: select the Subdag version based on the consensus version.
         let version = 1u8;
         version.write_le(&mut writer)?;
         // Get the subdag type

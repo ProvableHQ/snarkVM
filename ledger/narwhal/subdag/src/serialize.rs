@@ -21,14 +21,14 @@ impl<N: Network> Serialize for Subdag<N> {
         match serializer.is_human_readable() {
             true => match self {
                 Self::Full { subdag } => {
-                    let mut certificate = serializer.serialize_struct("Subdag", 1)?;
-                    certificate.serialize_field("full_subdag", subdag)?;
-                    certificate.end()
+                    let mut full_subdag = serializer.serialize_struct("Subdag", 1)?;
+                    full_subdag.serialize_field("subdag", subdag)?;
+                    full_subdag.end()
                 }
                 Self::Compact { subdag } => {
-                    let mut certificate = serializer.serialize_struct("Subdag", 1)?;
-                    certificate.serialize_field("compact_subdag", subdag)?;
-                    certificate.end()
+                    let mut compact_subdag = serializer.serialize_struct("Subdag", 1)?;
+                    compact_subdag.serialize_field("compact_subdag", subdag)?;
+                    compact_subdag.end()
                 }
             },
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
@@ -44,12 +44,12 @@ impl<'de, N: Network> Deserialize<'de> for Subdag<N> {
                 let mut value = serde_json::Value::deserialize(deserializer)?;
 
                 // Check if a full Subdag field is present.
-                let subdag_is_full = match value.get("full_subdag") {
+                let subdag_is_full = match value.get("subdag") {
                     Some(..) => true,
                     None => false,
                 };
                 match subdag_is_full {
-                    true => Ok(Self::from_full(DeserializeExt::take_from_value::<D>(&mut value, "full_subdag")?)
+                    true => Ok(Self::from_full(DeserializeExt::take_from_value::<D>(&mut value, "subdag")?)
                         .map_err(de::Error::custom)?),
                     false => {
                         Ok(Self::from_compact(DeserializeExt::take_from_value::<D>(&mut value, "compact_subdag")?)

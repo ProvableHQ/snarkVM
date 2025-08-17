@@ -31,13 +31,17 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             subdag_transmissions;
 
         // Decouple the transmissions into ratifications, solutions, and transactions.
-        let (ratifications, solutions, transactions) = decouple_transmissions(transmissions.into_iter())?;
+        let (ratifications, solutions, solutions_with_id, transactions, transactions_with_id) =
+            decouple_transmissions(transmissions.into_iter())?;
         // Decouple the prior_transmissions into ratifications, solutions, and transactions.
-        let (prior_ratifications, prior_solution_ids, prior_transaction_ids) =
+        let (prior_ratifications, prior_solution_transmission_ids, prior_transaction_transmission_ids) =
             decouple_transmission_ids(prior_included_transmissions)?;
         // Decouple the aborted_transmissions into ratifications, solutions, and transactions.
-        let (aborted_ratifications, _aborted_solution_ids, aborted_transaction_ids) =
-            decouple_transmission_ids(aborted_transmissions)?;
+        let (
+            aborted_ratifications,
+            early_aborted_solution_transmission_ids,
+            early_aborted_transaction_transmission_ids,
+        ) = decouple_transmission_ids(aborted_transmissions)?;
         // Currently, we do not support ratifications from the memory pool.
         ensure!(
             ratifications.is_empty() && prior_ratifications.is_empty() && aborted_ratifications.is_empty(),
@@ -48,28 +52,110 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             header,
             ratifications,
             solutions,
-            aborted_solution_ids,
+            aborted_solution_ids_from_finalization,
             transactions,
             aborted_transaction_ids_from_finalization,
         ) =
             self.construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)?;
-        // Construct Ratification IDs.
-        let ratification_ids = ratifications.ratification_ids().copied().collect_vec();
-        // Construct Transaction IDs.
-        let transaction_ids = transactions.unconfirmed_transaction_ids()?;
-        // Construct the aborted Transaction IDs.
-        let aborted_transaction_ids =
-            aborted_transaction_ids.into_iter().chain(aborted_transaction_ids_from_finalization).collect_vec();
+
+        // --- Solutions ---
+        // Construct the solution transmission IDs.
+        let solution_transmission_ids = solutions
+            .solution_ids()
+            .filter_map(|target_id| {
+                solutions_with_id
+                    .iter()
+                    .find(|(id, _)| match id {
+                        TransmissionID::Solution(id, _) => *id == *target_id,
+                        _ => false,
+                    })
+                    .map(|(id, _)| *id)
+            })
+            .collect_vec();
+        ensure!(solution_transmission_ids.len() == solutions.len(), "Mismatching number of solution IDs");
+        // Construct the aborted solution transmission IDs.
+        let mut aborted_solution_transmission_ids = aborted_solution_ids_from_finalization
+            .iter()
+            .filter_map(|target_id| {
+                solutions_with_id
+                    .iter()
+                    .find(|(id, _)| match id {
+                        TransmissionID::Solution(id, _) => id == target_id,
+                        _ => false,
+                    })
+                    .map(|(id, _)| *id)
+            })
+            .collect_vec();
+        ensure!(
+            aborted_solution_transmission_ids.len() == aborted_solution_ids_from_finalization.len(),
+            "Mismatching number of aborted solution IDs"
+        );
+        aborted_solution_transmission_ids.extend(early_aborted_solution_transmission_ids);
+        // Construct the aborted solution IDs.
+        let aborted_solution_ids = aborted_solution_transmission_ids
+            .iter()
+            .filter_map(|id| match id {
+                TransmissionID::Solution(id, _) => Some(*id),
+                _ => None,
+            })
+            .collect_vec();
+
+        // --- Transactions ---
+        // Construct the transaction transmission IDs.
+        let unconfirmed_transaction_ids = transactions.unconfirmed_transaction_ids()?;
+        let unconfirmed_transactions_len = unconfirmed_transaction_ids.len();
+        let transaction_transmission_ids = unconfirmed_transaction_ids
+            .into_iter()
+            .filter_map(|target_id| {
+                transactions_with_id
+                    .iter()
+                    .find(|(id, _)| match id {
+                        TransmissionID::Transaction(id, _) => *id == target_id,
+                        _ => false,
+                    })
+                    .map(|(id, _)| *id)
+            })
+            .collect_vec();
+        ensure!(
+            transaction_transmission_ids.len() == unconfirmed_transactions_len,
+            "Mismatching number of transaction IDs"
+        );
+        // Construct the aborted Transaction transmission IDs.
+        let mut aborted_transaction_transmission_ids = aborted_transaction_ids_from_finalization
+            .iter()
+            .filter_map(|target_id| {
+                transactions_with_id
+                    .iter()
+                    .find(|(id, _)| match id {
+                        TransmissionID::Transaction(id, _) => id == target_id,
+                        _ => false,
+                    })
+                    .map(|(id, _)| *id)
+            })
+            .collect_vec();
+        ensure!(
+            aborted_transaction_transmission_ids.len() == aborted_transaction_ids_from_finalization.len(),
+            "Mismatching number of aborted transaction IDs"
+        );
+        aborted_transaction_transmission_ids.extend(early_aborted_transaction_transmission_ids);
+        // Construct the aborted transaction IDs.
+        let aborted_transaction_ids = aborted_transaction_transmission_ids
+            .iter()
+            .filter_map(|id| match id {
+                TransmissionID::Transaction(id, _) => Some(*id),
+                _ => None,
+            })
+            .collect_vec();
 
         // Construct the compact Subdag
         if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {
             subdag = subdag.into_compact(
-                ratification_ids,
-                solutions.as_ref(),
-                prior_solution_ids.clone(),
-                transaction_ids,
-                prior_transaction_ids.clone(),
-                aborted_transaction_ids.clone(),
+                solution_transmission_ids,
+                prior_solution_transmission_ids.clone(),
+                aborted_solution_transmission_ids.clone(),
+                transaction_transmission_ids,
+                prior_transaction_transmission_ids.clone(),
+                aborted_transaction_transmission_ids.clone(),
             )?;
         }
 
@@ -80,10 +166,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             subdag,
             ratifications,
             solutions,
-            prior_solution_ids,
+            prior_solution_transmission_ids,
+            aborted_solution_transmission_ids,
             aborted_solution_ids,
             transactions,
-            prior_transaction_ids,
+            prior_transaction_transmission_ids,
+            aborted_transaction_transmission_ids,
             aborted_transaction_ids,
         )
     }
@@ -96,8 +184,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         candidate_ratifications: Vec<Ratify<N>>,
         candidate_solutions: Vec<Solution<N>>,
         candidate_transactions: Vec<Transaction<N>>,
-        prior_solution_ids: Vec<SolutionID<N>>,
-        prior_transaction_ids: Vec<N::TransactionID>,
         rng: &mut R,
     ) -> Result<Block<N>> {
         // Currently, we do not support ratifications from the memory pool.
@@ -124,10 +210,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             header,
             ratifications,
             solutions,
-            prior_solution_ids,
             aborted_solution_ids,
             transactions,
-            prior_transaction_ids,
             aborted_transaction_ids,
             rng,
         )

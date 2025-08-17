@@ -901,9 +901,7 @@ mod tests {
             ratifications,
             None.into(),
             vec![],
-            vec![],
             transactions,
-            vec![],
             aborted_transaction_ids,
             rng,
         )

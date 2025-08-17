@@ -437,7 +437,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             self.solutions_map().insert(block.hash(), block.solutions().clone())?;
 
             // Store the prior solution IDs.
-            self.prior_solution_ids_map().insert(block.hash(), block.prior_solution_ids().clone())?;
+            // self.prior_solution_transmission_ids_map().insert(block.hash(), block.prior_solution_transmission_ids().clone())?;
 
             // Store the block solution IDs.
             for solution_id in block.solutions().solution_ids() {
@@ -446,6 +446,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
 
             // Store the aborted solution IDs.
             self.aborted_solution_ids_map().insert(block.hash(), block.aborted_solution_ids().clone())?;
+
+            // TODO: store the aborted solution transmission ids.
 
             // Store the block aborted solution heights.
             for solution_id in block.aborted_solution_ids() {
@@ -456,7 +458,9 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             self.transactions_map().insert(block.hash(), block.transaction_ids().copied().collect())?;
 
             // Store the prior transaction IDs.
-            self.prior_transaction_ids_map().insert(block.hash(), block.prior_transaction_ids().clone())?;
+            // self.prior_transaction_transmission_ids_map().insert(block.hash(), block.prior_transaction_transmission_ids().clone())?;
+
+            // TODO: store the aborted transaction transmission ids.
 
             // Store the aborted transaction IDs.
             self.aborted_transaction_ids_map().insert(block.hash(), block.aborted_transaction_ids().clone())?;
@@ -975,17 +979,19 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             bail!("Missing aborted transaction IDs for block {height} ('{block_hash}')");
         };
 
-        // Return the block.
+        // Return the block. TODO: instantiate properly
         Ok(Some(Block::from(
             previous_hash,
             header,
             authority,
             ratifications,
             solutions,
-            prior_solution_ids,
+            vec![],
+            vec![],
             aborted_solution_ids,
             transactions,
-            prior_transaction_ids,
+            vec![],
+            vec![],
             aborted_transaction_ids,
         )?))
     }
@@ -1566,9 +1572,7 @@ mod tests {
             ratifications,
             None.into(),
             vec![],
-            vec![],
             transactions,
-            vec![],
             vec![unconfirmed_id],
             rng,
         )

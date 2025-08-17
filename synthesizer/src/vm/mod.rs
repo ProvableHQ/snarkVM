@@ -399,10 +399,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             header,
             ratifications,
             solutions,
-            vec![],
             aborted_solution_ids,
             transactions,
-            vec![],
             aborted_transaction_ids,
             rng,
         )?;
@@ -896,9 +894,7 @@ function compute:
             ratifications,
             None.into(),
             vec![],
-            vec![],
             transactions,
-            vec![],
             aborted_transaction_ids,
             rng,
         )

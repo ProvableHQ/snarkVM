@@ -28,7 +28,7 @@ use snarkvm_ledger_narwhal_batch_certificate::BatchCertificate;
 use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 use snarkvm_ledger_narwhal_compact_certificate::CompactCertificate;
 use snarkvm_ledger_narwhal_traits::NarwhalCertificate;
-use snarkvm_ledger_puzzle::{PuzzleSolutions, SolutionID};
+use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 
 use indexmap::IndexSet;
 use std::collections::BTreeMap;
@@ -270,12 +270,12 @@ impl<N: Network> Subdag<N> {
     /// Returns the subdag with full batch certificates.
     pub fn into_full(
         self,
-        ratifications: Vec<N::RatificationID>,
-        solutions: Option<PuzzleSolutions<N>>,
-        prior_solutions: Vec<SolutionID<N>>,
-        transaction_ids: Vec<N::TransactionID>,
-        prior_transactions: Vec<N::TransactionID>,
-        aborted_transaction_ids: Vec<N::TransactionID>,
+        solutions: Vec<TransmissionID<N>>,
+        prior_solutions: Vec<TransmissionID<N>>,
+        aborted_solutions: Vec<TransmissionID<N>>,
+        transaction_ids: Vec<TransmissionID<N>>,
+        prior_transactions: Vec<TransmissionID<N>>,
+        aborted_transaction_ids: Vec<TransmissionID<N>>,
     ) -> Result<Subdag<N>> {
         let subdag = match self {
             Self::Compact { subdag } => subdag,
@@ -288,22 +288,14 @@ impl<N: Network> Subdag<N> {
         for (round, compact_certificates) in subdag.into_iter() {
             let mut batch_certificates = IndexSet::with_capacity(compact_certificates.len());
             for certificate in compact_certificates.into_iter() {
-                // Create iters.
-                let ratifications_iter = ratifications.iter();
-                let solutions_iter = solutions.as_ref().map(|s| s.solution_ids());
-                let prior_solutions_iter = prior_solutions.iter();
-                let transactions_iter = transaction_ids.iter();
-                let prior_transactions_iter = prior_transactions.iter();
-                let aborted_tx_iter = aborted_transaction_ids.iter();
-
                 // Convert compact certificate to batch certificate.
                 let batch_certificate = certificate.into_batch_certificate(
-                    ratifications_iter,
-                    solutions_iter,
-                    prior_solutions_iter,
-                    transactions_iter,
-                    prior_transactions_iter,
-                    aborted_tx_iter,
+                    solutions.iter(),
+                    prior_solutions.iter(),
+                    aborted_solutions.iter(),
+                    transaction_ids.iter(),
+                    prior_transactions.iter(),
+                    aborted_transaction_ids.iter(),
                 )?;
                 batch_certificates.insert(batch_certificate);
             }
@@ -511,12 +503,12 @@ impl<N: Network> Subdag<N> {
     /// Returns the subdag with compact certificates
     pub fn into_compact(
         self,
-        ratifications: Vec<N::RatificationID>,
-        solutions: Option<&PuzzleSolutions<N>>,
-        prior_solutions: Vec<SolutionID<N>>,
-        transaction_ids: Vec<N::TransactionID>,
-        prior_transaction_ids: Vec<N::TransactionID>,
-        aborted_transaction_ids: Vec<N::TransactionID>,
+        solutions: Vec<TransmissionID<N>>,
+        prior_solutions: Vec<TransmissionID<N>>,
+        aborted_solutions: Vec<TransmissionID<N>>,
+        transaction_ids: Vec<TransmissionID<N>>,
+        prior_transactions: Vec<TransmissionID<N>>,
+        aborted_transactions: Vec<TransmissionID<N>>,
     ) -> Result<Subdag<N>> {
         let Self::Full { subdag } = self else { bail!("Can only turn a Full subdag into a Compact one.") };
 
@@ -527,20 +519,14 @@ impl<N: Network> Subdag<N> {
         for (round, batch_certificates) in subdag.into_iter() {
             let certificates = cfg_into_iter!(batch_certificates)
                 .map(|batch_certificate| {
-                    let ratifications_iter = ratifications.iter();
-                    let solutions_iter = solutions.map(|s| s.solution_ids());
-                    let prior_solutions_iter = prior_solutions.iter();
-                    let transactions_iter = transaction_ids.iter();
-                    let prior_transactions_iter = prior_transaction_ids.iter();
-                    let aborted_tx_iter = aborted_transaction_ids.iter();
                     CompactCertificate::from_batch_certificate(
                         batch_certificate,
-                        ratifications_iter,
-                        solutions_iter,
-                        prior_solutions_iter,
-                        transactions_iter,
-                        prior_transactions_iter,
-                        aborted_tx_iter,
+                        solutions.iter(),
+                        prior_solutions.iter(),
+                        aborted_solutions.iter(),
+                        transaction_ids.iter(),
+                        prior_transactions.iter(),
+                        aborted_transactions.iter(),
                     )
                 })
                 .collect::<Result<_>>()?;

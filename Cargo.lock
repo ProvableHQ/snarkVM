@@ -3393,6 +3393,7 @@ version = "4.0.0"
 dependencies = [
  "aleo-std",
  "bincode",
+ "bit-set",
  "indexmap 2.10.0",
  "rayon",
  "serde_json",
@@ -3401,7 +3402,9 @@ dependencies = [
  "snarkvm-console",
  "snarkvm-ledger-authority",
  "snarkvm-ledger-committee",
+ "snarkvm-ledger-narwhal-batch-certificate",
  "snarkvm-ledger-narwhal-batch-header",
+ "snarkvm-ledger-narwhal-compact-certificate",
  "snarkvm-ledger-narwhal-data",
  "snarkvm-ledger-narwhal-subdag",
  "snarkvm-ledger-narwhal-transmission-id",
@@ -3492,6 +3495,7 @@ dependencies = [
  "snarkvm-ledger-narwhal-compact-certificate",
  "snarkvm-ledger-narwhal-compact-header",
  "snarkvm-ledger-narwhal-traits",
+ "snarkvm-ledger-narwhal-transmission-id",
  "snarkvm-ledger-puzzle",
 ]
 
@@ -3536,6 +3540,7 @@ dependencies = [
  "snarkvm-ledger-narwhal-compact-certificate",
  "snarkvm-ledger-narwhal-subdag",
  "snarkvm-ledger-narwhal-traits",
+ "snarkvm-ledger-narwhal-transmission-id",
  "snarkvm-ledger-puzzle",
  "tracing",
 ]

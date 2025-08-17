@@ -19,7 +19,7 @@ use console::network::Network;
 use indexmap::IndexSet;
 use snarkvm_ledger_block::{Ratify, Transaction};
 use snarkvm_ledger_narwhal::{Transmission, TransmissionID};
-use snarkvm_ledger_puzzle::{Solution, SolutionID};
+use snarkvm_ledger_puzzle::Solution;
 
 use anyhow::{Result, bail, ensure};
 use std::collections::HashSet;
@@ -30,13 +30,19 @@ use std::collections::HashSet;
 /// This method guarantees that the output is 1) order-preserving, and 2) unique.
 pub fn decouple_transmissions<N: Network>(
     transmissions: impl Iterator<Item = (TransmissionID<N>, Transmission<N>)>,
-) -> Result<(Vec<Ratify<N>>, Vec<Solution<N>>, Vec<Transaction<N>>)> {
-    // Initialize a list for the ratifications.
+) -> Result<(
+    Vec<Ratify<N>>,
+    Vec<Solution<N>>,
+    Vec<(TransmissionID<N>, Solution<N>)>,
+    Vec<Transaction<N>>,
+    Vec<(TransmissionID<N>, Transaction<N>)>,
+)> {
+    // Initialize a list for the objects to return.
     let ratifications = Vec::new();
-    // Initialize a list for the solutions.
     let mut solutions = Vec::new();
-    // Initialize a list for the transactions.
+    let mut solutions_with_id = Vec::new();
     let mut transactions = Vec::new();
+    let mut transactions_with_id = Vec::new();
 
     // Initialize a set to ensure the transmissions are unique.
     let mut unique = HashSet::new();
@@ -48,31 +54,33 @@ pub fn decouple_transmissions<N: Network>(
         // Deserialize and store the transmission.
         match (transmission_id, transmission) {
             (TransmissionID::Ratification, Transmission::Ratification) => (),
-            (TransmissionID::Solution(commitment, checksum), Transmission::Solution(solution)) => {
+            (id @ TransmissionID::Solution(commitment, checksum), Transmission::Solution(solution)) => {
                 // Ensure the transmission checksum corresponds to the solution.
                 ensure!(checksum == solution.to_checksum::<N>()?, "Mismatching transmission checksum (solution)");
                 // Deserialize the solution.
                 let solution = solution.deserialize_blocking()?;
                 // Ensure the transmission ID corresponds to the solution.
                 ensure!(commitment == solution.id(), "Mismatching transmission ID (solution)");
-                // Insert the solution into the list.
+                // Insert the solution into the lists.
                 solutions.push(solution);
+                solutions_with_id.push((id, solution));
             }
-            (TransmissionID::Transaction(transaction_id, checksum), Transmission::Transaction(transaction)) => {
+            (id @ TransmissionID::Transaction(transaction_id, checksum), Transmission::Transaction(transaction)) => {
                 // Ensure the transmission checksum corresponds to the transaction.
                 ensure!(checksum == transaction.to_checksum::<N>()?, "Mismatching transmission checksum (transaction)");
                 // Deserialize the transaction.
                 let transaction = transaction.deserialize_blocking()?;
                 // Ensure the transmission ID corresponds to the transaction.
                 ensure!(transaction_id == transaction.id(), "Mismatching transmission ID (transaction)");
-                // Insert the transaction into the list.
-                transactions.push(transaction);
+                // Insert the transaction into the lists.
+                transactions.push(transaction.clone());
+                transactions_with_id.push((id, transaction));
             }
             _ => bail!("Mismatching (transmission ID, transmission) entry"),
         }
     }
     // Return the ratifications, solutions, and transactions.
-    Ok((ratifications, solutions, transactions))
+    Ok((ratifications, solutions, solutions_with_id, transactions, transactions_with_id))
 }
 
 /// Takes in an iterator of transmission IDs and returns a tuple of ratifications, solutions, and transactions.
@@ -80,7 +88,7 @@ pub fn decouple_transmissions<N: Network>(
 /// This method guarantees that the output is 1) order-preserving, and 2) unique.
 pub fn decouple_transmission_ids<N: Network>(
     transmission_ids: IndexSet<TransmissionID<N>>,
-) -> Result<(Vec<Ratify<N>>, Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
+) -> Result<(Vec<TransmissionID<N>>, Vec<TransmissionID<N>>, Vec<TransmissionID<N>>)> {
     // Initialize a list for the ratifications.
     let ratifications = Vec::new();
     // Initialize a list for the solutions.
@@ -93,13 +101,13 @@ pub fn decouple_transmission_ids<N: Network>(
         // Deserialize and store the transmission.
         match transmission_id {
             TransmissionID::Ratification => (),
-            TransmissionID::Solution(commitment, _) => {
+            TransmissionID::Solution(..) => {
                 // Insert the solution into the list.
-                solution_ids.push(commitment);
+                solution_ids.push(transmission_id);
             }
-            TransmissionID::Transaction(transaction_id, _) => {
+            TransmissionID::Transaction(..) => {
                 // Insert the transaction into the list.
-                transaction_ids.push(transaction_id);
+                transaction_ids.push(transmission_id);
             }
         }
     }

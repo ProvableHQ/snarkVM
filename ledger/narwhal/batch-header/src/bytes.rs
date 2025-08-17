@@ -81,7 +81,7 @@ impl<N: Network> FromBytes for BatchHeader<N> {
         // Return the batch.
         match batch.batch_id == batch_id {
             true => Ok(batch),
-            false => Err(error("Invalid batch ID")),
+            false => Err(error("Invalid batch ID for batch header.")),
         }
     }
 }

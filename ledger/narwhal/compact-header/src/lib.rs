@@ -29,7 +29,6 @@ use snarkvm_console::{
 };
 use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
-use snarkvm_ledger_puzzle::SolutionID;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct CompactHeader<N: Network> {
@@ -55,15 +54,16 @@ pub struct CompactHeader<N: Network> {
 }
 
 impl<N: Network> CompactHeader<N> {
-    /// Initializes a new batch header.
+    /// Initializes a new compact header.
+    /// This does not recompute the batch_id nor verify the signature.
     pub fn new<'a>(
         batch_header: &BatchHeader<N>,
-        _ratifications: impl ExactSizeIterator<Item = &'a N::RatificationID>,
-        solutions: Option<impl Iterator<Item = &'a SolutionID<N>>>,
-        prior_solutions: impl ExactSizeIterator<Item = &'a SolutionID<N>>,
-        transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
-        prior_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
-        aborted_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
+        solutions: impl Iterator<Item = &'a TransmissionID<N>>,
+        aborted_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        prior_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        prior_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
     ) -> Result<Self> {
         let transmission_ids = batch_header.transmission_ids();
 
@@ -80,20 +80,18 @@ impl<N: Network> CompactHeader<N> {
 
         // Check which transaction_indices the certificate contains.
         let mut transaction_indices = IndexSet::with_capacity(num_transactions);
-        for (i, transaction_id) in transactions.chain(aborted_transactions).chain(prior_transactions).enumerate() {
-            let transmission_id = TransmissionID::Transaction(*transaction_id, Default::default()); // TODO: don't use default checksum...
-            if transmission_ids.contains(&transmission_id) {
+        for (i, transmission_id) in transactions.chain(aborted_transactions).chain(prior_transactions).enumerate() {
+            if transmission_ids.contains(transmission_id) {
                 transaction_indices.insert(u32::try_from(i)?);
             }
         }
 
         // Check which solution_indices the certificate contains.
-        let solution_indices = match solutions {
-            Some(solutions) => {
-                Self::create_solution_indices(solutions.chain(prior_solutions), transmission_ids, num_solutions)?
-            }
-            None => Self::create_solution_indices(prior_solutions, transmission_ids, num_solutions)?,
-        };
+        let solution_indices = Self::create_solution_indices(
+            solutions.chain(prior_solutions).chain(aborted_solutions),
+            transmission_ids,
+            num_solutions,
+        )?;
 
         // Check if we found all Transmission IDs.
         ensure!(
@@ -117,13 +115,13 @@ impl<N: Network> CompactHeader<N> {
 
     /// Creates solution_indices from transmission_ids.
     fn create_solution_indices<'a>(
-        block_solutions: impl Iterator<Item = &'a SolutionID<N>>,
+        block_solutions: impl Iterator<Item = &'a TransmissionID<N>>,
         transmission_ids: &IndexSet<TransmissionID<N>>,
         num_solutions_in_batch: usize,
     ) -> Result<IndexSet<u32>> {
         let mut solution_indices = IndexSet::with_capacity(num_solutions_in_batch);
-        for (i, solution_id) in block_solutions.enumerate() {
-            if transmission_ids.contains(&TransmissionID::Solution(*solution_id, Default::default())) {
+        for (i, transmission_id) in block_solutions.enumerate() {
+            if transmission_ids.contains(transmission_id) {
                 solution_indices.insert(u32::try_from(i)?);
             }
         }
@@ -230,70 +228,63 @@ impl<N: Network> CompactHeader<N> {
 
     pub fn to_transmission_ids<'a>(
         &self,
-        _ratifications: impl ExactSizeIterator<Item = &'a N::RatificationID>,
-        solutions: Option<impl Iterator<Item = &'a SolutionID<N>>>,
-        prior_solutions: impl ExactSizeIterator<Item = &'a SolutionID<N>>,
-        transactions: impl Iterator<Item = &'a N::TransactionID>,
-        prior_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
-        rejected_transactions: impl Iterator<Item = &'a N::TransactionID>,
+        solutions: impl Iterator<Item = &'a TransmissionID<N>>,
+        prior_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        transactions: impl Iterator<Item = &'a TransmissionID<N>>,
+        prior_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_transactions: impl Iterator<Item = &'a TransmissionID<N>>,
     ) -> Result<IndexSet<TransmissionID<N>>> {
         // Insert the transactions into the transmission_ids.
         let mut transmission_ids = IndexSet::new();
-        transactions.chain(rejected_transactions).chain(prior_transactions).enumerate().try_for_each(
-            |(index, transaction_id)| {
+        transactions.chain(aborted_transactions).chain(prior_transactions).enumerate().try_for_each(
+            |(index, transmission_id)| {
                 if self.transaction_indices.contains(&u32::try_from(index)?) {
-                    transmission_ids.insert(TransmissionID::Transaction(*transaction_id, Default::default()));
+                    transmission_ids.insert(*transmission_id);
                 }
                 Ok::<(), Error>(())
             },
         )?;
         // Define a closure to insert a solution into the transmission_ids.
-        let mut insert_solution = |(index, puzzle_commitment): (usize, &SolutionID<N>)| {
+        let mut insert_solution = |(index, transmission_id): (usize, &TransmissionID<N>)| {
             if self.solution_indices.contains(&u32::try_from(index)?) {
-                transmission_ids.insert(TransmissionID::Solution(*puzzle_commitment, Default::default()));
+                transmission_ids.insert(*transmission_id);
             }
             Ok::<(), Error>(())
         };
         // Insert the solutions into the transmission_ids.
-        match solutions {
-            Some(solutions) => {
-                solutions
-                    .chain(prior_solutions)
-                    .enumerate()
-                    .try_for_each(|(index, puzzle_commitment)| insert_solution((index, puzzle_commitment)))?;
-            }
-            None => {
-                prior_solutions
-                    .enumerate()
-                    .try_for_each(|(index, puzzle_commitment)| insert_solution((index, puzzle_commitment)))?;
-            }
-        };
+        solutions
+            .chain(prior_solutions)
+            .chain(aborted_solutions)
+            .enumerate()
+            .try_for_each(|(index, puzzle_commitment)| insert_solution((index, puzzle_commitment)))?;
 
         ensure!(
             transmission_ids.len() == self.transaction_indices.len() + self.solution_indices.len(),
-            "Could not find all transmission_ids"
+            "Internal logic error: could not find all transmission_ids."
         );
 
         Ok(transmission_ids)
     }
 
     /// Convert compact header to batch header
+    /// NOTE: this also recomputes the batch_id and verifies the signature.
     pub fn into_batch_header<'a>(
         self,
-        _ratifications: impl ExactSizeIterator<Item = &'a N::RatificationID>,
-        solutions: Option<impl Iterator<Item = &'a SolutionID<N>>>,
-        prior_solutions: impl ExactSizeIterator<Item = &'a SolutionID<N>>,
-        transactions: impl Iterator<Item = &'a N::TransactionID>,
-        prior_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
-        rejected_transactions: impl Iterator<Item = &'a N::TransactionID>,
+        solutions: impl Iterator<Item = &'a TransmissionID<N>>,
+        prior_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        transactions: impl Iterator<Item = &'a TransmissionID<N>>,
+        prior_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_transactions: impl Iterator<Item = &'a TransmissionID<N>>,
     ) -> Result<BatchHeader<N>> {
         let transmission_ids = self.to_transmission_ids(
-            _ratifications,
             solutions,
             prior_solutions,
+            aborted_solutions,
             transactions,
             prior_transactions,
-            rejected_transactions,
+            aborted_transactions,
         )?;
 
         BatchHeader::from(
@@ -305,6 +296,46 @@ impl<N: Network> CompactHeader<N> {
             self.previous_certificate_ids,
             self.signature,
         )
+    }
+
+    /// Check the batch ID.
+    /// NOTE: to verify the batch ID, and thereby confirm the validity of batch
+    /// signatures, the full transmission ID set is required. Because this is an
+    /// expensive operation, this should only be called once, during block
+    /// verification.
+    pub fn check_batch_id<'a>(
+        &self,
+        solutions: impl Iterator<Item = &'a TransmissionID<N>>,
+        prior_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        transactions: impl Iterator<Item = &'a TransmissionID<N>>,
+        prior_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_transactions: impl Iterator<Item = &'a TransmissionID<N>>,
+    ) -> Result<()> {
+        let transmission_ids = self.to_transmission_ids(
+            solutions,
+            prior_solutions,
+            aborted_solutions,
+            transactions,
+            prior_transactions,
+            aborted_transactions,
+        )?;
+
+        let batch_id = BatchHeader::compute_batch_id(
+            self.author,
+            self.round,
+            self.timestamp,
+            self.committee_id,
+            &transmission_ids,
+            &self.previous_certificate_ids,
+        )?;
+
+        // Compare the batch_id.
+        if batch_id != self.batch_id {
+            bail!("Invalid batch_id for compact header.");
+        }
+
+        Ok(())
     }
 }
 
@@ -342,29 +373,33 @@ pub mod test_helpers {
         // Construct appropriate sets to collect transmission IDs.
         let mut solutions = IndexSet::new();
         let mut prior_solutions = IndexSet::new();
+        let mut aborted_solutions = IndexSet::new();
         let mut tx_ids = IndexSet::new();
         let mut prior_tx_ids = IndexSet::new();
-        let mut rejected_tx_ids = IndexSet::new();
+        let mut aborted_tx_ids = IndexSet::new();
         for (i, transmission_id) in batch_header.transmission_ids().iter().enumerate() {
             match transmission_id {
-                TransmissionID::Solution(solution, _) => match i % 2 {
+                TransmissionID::Solution(..) => match i % 3 {
                     0 => {
-                        solutions.insert(*solution);
+                        solutions.insert(transmission_id);
                     }
                     1 => {
-                        prior_solutions.insert(*solution);
+                        prior_solutions.insert(transmission_id);
+                    }
+                    2 => {
+                        aborted_solutions.insert(transmission_id);
                     }
                     _ => panic!("Invalid solution index"),
                 },
-                TransmissionID::Transaction(transaction_id, _) => match i % 3 {
+                TransmissionID::Transaction(..) => match i % 3 {
                     0 => {
-                        tx_ids.insert(*transaction_id);
+                        tx_ids.insert(transmission_id);
                     }
                     1 => {
-                        prior_tx_ids.insert(*transaction_id);
+                        prior_tx_ids.insert(transmission_id);
                     }
                     2 => {
-                        rejected_tx_ids.insert(*transaction_id);
+                        aborted_tx_ids.insert(transmission_id);
                     }
                     _ => panic!("Invalid solution index"),
                 },
@@ -375,12 +410,12 @@ pub mod test_helpers {
         // Return the compact header.
         CompactHeader::new(
             &batch_header,
-            std::iter::empty(),
-            Some(solutions.iter()),
-            prior_solutions.iter(),
-            tx_ids.iter(),
-            prior_tx_ids.iter(),
-            rejected_tx_ids.iter(),
+            solutions.into_iter(),
+            prior_solutions.into_iter(),
+            aborted_solutions.into_iter(),
+            tx_ids.into_iter(),
+            prior_tx_ids.into_iter(),
+            aborted_tx_ids.into_iter(),
         )
         .unwrap()
     }

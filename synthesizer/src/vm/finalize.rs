@@ -1572,9 +1572,7 @@ finalize transfer_public:
             ratifications,
             None.into(),
             vec![],
-            vec![],
             transactions,
-            vec![],
             aborted_transaction_ids,
             rng,
         )?;

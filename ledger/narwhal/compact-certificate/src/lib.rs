@@ -28,7 +28,7 @@ use snarkvm_console::{
 use snarkvm_ledger_narwhal_batch_certificate::BatchCertificate;
 use snarkvm_ledger_narwhal_compact_header::CompactHeader;
 use snarkvm_ledger_narwhal_traits::NarwhalCertificate;
-use snarkvm_ledger_puzzle::SolutionID;
+use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 
 use core::hash::{Hash, Hasher};
 use indexmap::IndexSet;
@@ -72,17 +72,17 @@ impl<N: Network> CompactCertificate<N> {
     /// Initializes a new compact certificate from a batch certificate.
     pub fn from_batch_certificate<'a>(
         batch_certificate: BatchCertificate<N>,
-        ratifications: impl ExactSizeIterator<Item = &'a N::RatificationID>,
-        solutions: Option<impl Iterator<Item = &'a SolutionID<N>>>,
-        prior_solutions: impl ExactSizeIterator<Item = &'a SolutionID<N>>,
-        transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
-        prior_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
-        aborted_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
+        solutions: impl Iterator<Item = &'a TransmissionID<N>>,
+        prior_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        prior_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
     ) -> Result<Self> {
         let compact_header = CompactHeader::new(
             batch_certificate.batch_header(),
-            ratifications,
             solutions,
+            aborted_solutions,
             prior_solutions,
             transactions,
             prior_transactions,
@@ -96,21 +96,21 @@ impl<N: Network> CompactCertificate<N> {
     /// Convert compact certificate to batch certificate
     pub fn into_batch_certificate<'a>(
         self,
-        ratifications: impl ExactSizeIterator<Item = &'a N::RatificationID>,
-        solutions: Option<impl Iterator<Item = &'a SolutionID<N>>>,
-        prior_solutions: impl ExactSizeIterator<Item = &'a SolutionID<N>>,
-        transactions: impl Iterator<Item = &'a N::TransactionID>,
-        prior_transactions: impl ExactSizeIterator<Item = &'a N::TransactionID>,
-        rejected_transactions: impl Iterator<Item = &'a N::TransactionID>,
+        solutions: impl Iterator<Item = &'a TransmissionID<N>>,
+        prior_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_solutions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        prior_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
+        aborted_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
     ) -> Result<BatchCertificate<N>> {
         let CompactCertificate { compact_header, signatures } = self;
         let batch_header = compact_header.into_batch_header(
-            ratifications,
             solutions,
             prior_solutions,
+            aborted_solutions,
             transactions,
             prior_transactions,
-            rejected_transactions,
+            aborted_transactions,
         )?;
         BatchCertificate::from(batch_header, signatures)
     }
