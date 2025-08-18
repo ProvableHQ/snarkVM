@@ -53,6 +53,7 @@ use snarkvm_synthesizer_program::{
     Remove,
     Set,
     StackTrait,
+    types_structurally_equivalent,
 };
 
 use indexmap::IndexMap;

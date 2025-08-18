@@ -27,7 +27,7 @@ cases:
     inputs: []
 */
 
-program parent.aleo;
+program external_struct_parent.aleo;
 
 struct S:
     x as field;
@@ -58,7 +58,7 @@ function accept_s:
 
 /////////////////////////////////////////////////
 
-import parent.aleo;
+import external_struct_parent.aleo;
 
 program child.aleo;
 
@@ -70,42 +70,42 @@ struct OuterT:
     s as T;
 
 struct Outer2:
-    s as parent.aleo/S;
+    s as external_struct_parent.aleo/S;
 
 function make_s:
-    call parent.aleo/make_s into r0;
-    output r0 as parent.aleo/S.public;
+    call external_struct_parent.aleo/make_s into r0;
+    output r0 as external_struct_parent.aleo/S.public;
 
 function make_t:
-    call parent.aleo/make_s into r0;
+    call external_struct_parent.aleo/make_s into r0;
     output r0 as T.public;
 
 function call_make_outer:
-    call parent.aleo/make_outer 3field into r0;
+    call external_struct_parent.aleo/make_outer 3field into r0;
     output r0 as OuterT.public;
 
 function call_make_array:
-    call parent.aleo/make_array 4field into r0;
+    call external_struct_parent.aleo/make_array 4field into r0;
     output r0 as [T; 2u32].public;
 
 function pass_s:
-    cast 1field into r0 as parent.aleo/S;
-    call parent.aleo/accept_s r0 into r1;
+    cast 1field into r0 as external_struct_parent.aleo/S;
+    call external_struct_parent.aleo/accept_s r0 into r1;
     output r1 as field.public;
 
 function pass_t:
     cast 2field into r0 as T;
-    call parent.aleo/accept_s r0 into r1;
+    call external_struct_parent.aleo/accept_s r0 into r1;
     output r1 as field.public;
 
 function make_outer2:
-    cast 100field into r0 as parent.aleo/S;
+    cast 100field into r0 as external_struct_parent.aleo/S;
     cast r0 into r1 as Outer2;
     output r1 as Outer2.public;
 
 function cast_s:
-    cast 101field into r0 as parent.aleo/S;
-    output r0 as parent.aleo/S.public;
+    cast 101field into r0 as external_struct_parent.aleo/S;
+    output r0 as external_struct_parent.aleo/S.public;
 
 /////////////////////////////////////////////////
 

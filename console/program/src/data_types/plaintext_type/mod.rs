@@ -38,24 +38,6 @@ pub enum PlaintextType<N: Network> {
 }
 
 impl<N: Network> PlaintextType<N> {
-    /// Are the two types equivalent for the purposes of static checking?
-    ///
-    /// Since struct types are compared by structure, we can't determine equality
-    /// by only looking at their names.
-    pub fn equal_or_structs(&self, rhs: &Self) -> bool {
-        use PlaintextType::*;
-
-        match (self, rhs) {
-            (ExternalStruct(..) | Struct(..), ExternalStruct(..) | Struct(..)) => true,
-            (Literal(lit0), Literal(lit1)) => lit0 == lit1,
-            (Array(array0), Array(array1)) => {
-                array0.length() == array1.length()
-                    && array0.next_element_type().equal_or_structs(array1.next_element_type())
-            }
-            _ => false,
-        }
-    }
-
     /// Returns whether this type refers to an external struct.
     pub fn contains_external_struct(&self) -> bool {
         use PlaintextType::*;

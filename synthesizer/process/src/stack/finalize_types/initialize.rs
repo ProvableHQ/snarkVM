@@ -324,7 +324,7 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `contains` command"),
         };
         // Check that the key type in the mapping matches the key type in the instruction.
-        if *mapping_key_type != key_type {
+        if !types_structurally_equivalent(stack, mapping_key_type, stack, &key_type)? {
             bail!(
                 "Key type in `contains` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'."
             )
@@ -389,7 +389,7 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `get` command"),
         };
         // Check that the key type in the mapping matches the key type in the instruction.
-        if *mapping_key_type != key_type {
+        if !types_structurally_equivalent(stack, mapping_key_type, stack, &key_type)? {
             bail!("Key type in `get` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'.")
         }
         // Get the destination register.
@@ -452,7 +452,7 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `get.or_use` command"),
         };
         // Check that the key type in the mapping matches the key type.
-        if *mapping_key_type != key_type {
+        if !types_structurally_equivalent(stack, mapping_key_type, stack, &key_type)? {
             bail!(
                 "Key type in `get.or_use` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'."
             )
@@ -527,7 +527,7 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `set` command"),
         };
         // Check that the key type in the mapping matches the key type.
-        if *mapping_key_type != key_type {
+        if !types_structurally_equivalent(stack, mapping_key_type, stack, &key_type)? {
             bail!("Key type in `set` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'.")
         }
         // Retrieve the type of the value.
@@ -566,7 +566,7 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `remove` command"),
         };
         // Check that the key type in the mapping matches the key type.
-        if *mapping_key_type != key_type {
+        if !types_structurally_equivalent(stack, mapping_key_type, stack, &key_type)? {
             bail!("Key type in `remove` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'.")
         }
         Ok(())

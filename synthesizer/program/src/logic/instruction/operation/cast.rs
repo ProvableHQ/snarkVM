@@ -13,7 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
+use crate::{
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersSigner,
+    RegistersTrait,
+    StackTrait,
+    types_structurally_equivalent,
+};
 use console::{
     network::prelude::*,
     program::{
@@ -660,7 +668,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                     // Ensure the plaintext type matches the member type.
                     RegisterType::Plaintext(plaintext_type) => {
                         ensure!(
-                            member_type.equal_or_structs(plaintext_type),
+                            types_structurally_equivalent(stack, member_type, stack, plaintext_type,)?,
                             "Struct '{struct_name}' member type mismatch: expected '{member_type}', found '{plaintext_type}'"
                         )
                     }
@@ -731,7 +739,12 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         // Ensure the plaintext type matches the member type.
                         RegisterType::Plaintext(plaintext_type) => {
                             ensure!(
-                                plaintext_type.equal_or_structs(array_type.next_element_type()),
+                                types_structurally_equivalent(
+                                    stack,
+                                    plaintext_type,
+                                    stack,
+                                    array_type.next_element_type()
+                                )?,
                                 "Array element type mismatch: expected '{}', found '{plaintext_type}'",
                                 array_type.next_element_type()
                             )

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait, register_types_structurally_equivalent};
 use console::{
     network::prelude::*,
     program::{Register, RegisterType},
@@ -134,7 +134,7 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
     /// Returns the output type from the given program and input types.
     pub fn output_types(
         &self,
-        _stack: &impl StackTrait<N>,
+        stack: &impl StackTrait<N>,
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
         // Ensure the number of input types is correct.
@@ -142,7 +142,7 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
             bail!("Instruction '{}' expects 2 inputs, found {} inputs", Self::opcode(), input_types.len())
         }
         // Ensure the operands are of the same type.
-        if input_types[0] != input_types[1] {
+        if !register_types_structurally_equivalent(stack, &input_types[0], stack, &input_types[1])? {
             bail!(
                 "Instruction '{}' expects inputs of the same type. Found inputs of type '{}' and '{}'",
                 Self::opcode(),

@@ -35,18 +35,6 @@ pub enum RegisterType<N: Network> {
 }
 
 impl<N: Network> RegisterType<N> {
-    /// Are the two types equivalent for the purposes of static checking?
-    ///
-    /// Since struct types are compared by structure, we can't determine equality
-    /// by only looking at their names.
-    pub fn equal_or_structs(&self, rhs: &Self) -> bool {
-        use RegisterType::*;
-        match (self, rhs) {
-            (Plaintext(a), Plaintext(b)) => a.equal_or_structs(b),
-            _ => self == rhs,
-        }
-    }
-
     // Make unqualified structs or records into external ones with the given `id`.
     pub fn qualify(self, id: ProgramID<N>) -> Self {
         match self {

@@ -12,6 +12,9 @@ cases:
     function: store_s_as_t
     inputs: []
   - program: parent.aleo
+    function: baz_keys
+    inputs: []
+  - program: parent.aleo
     function: compare
     inputs: []
 */
@@ -45,6 +48,10 @@ mapping bar:
     key as field.public;
     value as child.aleo/S.public;
 
+mapping baz:
+    key as T.public;
+    value as field.public;
+
 closure make_t:
     input r0 as field;
     cast r0 into r1 as T;
@@ -74,6 +81,14 @@ finalize store_s_as_t:
     input r0 as child.aleo/S.public;
     cast r0.x into r1 as T;
     set r1 into foo[2field];
+
+function baz_keys:
+    call child.aleo/make_s into r0;
+    async baz_keys r0 into r1;
+    output r1 as parent.aleo/baz_keys.future;
+finalize baz_keys:
+    input r0 as child.aleo/S.public;
+    set 1field into baz[r0];
 
 function compare:
     async compare into r0;
