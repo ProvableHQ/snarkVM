@@ -59,6 +59,7 @@ mod varuna {
                     let wrong_varuna_version = match varuna_version {
                         VarunaVersion::V1 => VarunaVersion::V2,
                         VarunaVersion::V2 => VarunaVersion::V1,
+                        VarunaVersion::V3 => panic!("V3 is not supported for testing"),
                     };
 
                     for i in 0..5 {
@@ -378,6 +379,7 @@ mod varuna_hiding {
         let wrong_varuna_version = match varuna_version {
             VarunaVersion::V1 => VarunaVersion::V2,
             VarunaVersion::V2 => VarunaVersion::V1,
+            VarunaVersion::V3 => panic!("V3 is not supported for testing"),
         };
 
         for _ in 0..num_times {
@@ -563,6 +565,7 @@ mod varuna_hiding {
             let wrong_varuna_version = match varuna_version {
                 VarunaVersion::V1 => VarunaVersion::V2,
                 VarunaVersion::V2 => VarunaVersion::V1,
+                VarunaVersion::V3 => panic!("V3 is not supported for testing"),
             };
             let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
             println!("Called circuit setup");

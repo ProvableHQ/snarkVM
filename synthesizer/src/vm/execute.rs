@@ -17,6 +17,9 @@
 
 use super::*;
 
+// Initialize a global static boolean
+pub static mut VARUNA_V3_ENABLED: bool = false;
+
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns a new execute transaction.
     ///
@@ -194,10 +197,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization.check_valid_edition(&self.process.read(), consensus_version)?;
         // Check whether the authorization is creating valid records.
         authorization.check_valid_records(consensus_version)?;
+        let varuna_v3_enabled = unsafe { VARUNA_V3_ENABLED };
         // Determine which Varuna version to use.
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
+        let varuna_version = match (varuna_v3_enabled, (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version)) {
+            (true, _) => VarunaVersion::V3,
+            (_, true) => VarunaVersion::V1,
+            (_, false) => VarunaVersion::V2,
         };
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{

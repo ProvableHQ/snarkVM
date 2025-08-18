@@ -539,7 +539,7 @@ impl<N: Network> Stack<N> {
     /// Prints the current state of the circuit.
     #[allow(unused_variables)]
     pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display) {
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         {
             use snarkvm_utilities::dev_println;
 

@@ -431,7 +431,7 @@ where
         // Second round
 
         let (second_oracles, prover_state) =
-            AHPForR1CS::<_, SM>::prover_second_round(&verifier_first_message, prover_state, zk_rng)?;
+            AHPForR1CS::<_, SM>::prover_second_round(&verifier_first_message, prover_state, varuna_version, zk_rng)?;
 
         let second_round_comm_time = start_timer!(|| "Committing to second round polys");
         let (second_commitments, second_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
@@ -454,7 +454,7 @@ where
         let (prover_prepare_third_message, prover_state, verifier_prepare_third_msg, verifier_state) = {
             match varuna_version {
                 VarunaVersion::V1 => (None, prover_state, None, verifier_state),
-                VarunaVersion::V2 => {
+                VarunaVersion::V2 | VarunaVersion::V3 => {
                     let (prover_prepare_third_message, prover_state) = AHPForR1CS::<_, SM>::prover_prepare_third_round(
                         &verifier_first_message,
                         &verifier_second_msg,
@@ -516,7 +516,7 @@ where
                     &mut sponge,
                 );
             }
-            VarunaVersion::V2 => {
+            VarunaVersion::V2 | VarunaVersion::V3 => {
                 if prover_third_message.is_some() {
                     return Err(anyhow!("Expected prover to not contribute sums in the third round."))?;
                 }
@@ -527,7 +527,7 @@ where
         // Extract the prover's third message to be used in the verifier's third round.
         let prover_third_message = match varuna_version {
             VarunaVersion::V1 => prover_third_message,
-            VarunaVersion::V2 => prover_prepare_third_message,
+            VarunaVersion::V2 | VarunaVersion::V3 => prover_prepare_third_message,
         }
         .ok_or_else(|| anyhow!("Prover did not contribute sums in the expected round."))?;
 
@@ -893,7 +893,7 @@ where
         let verifier_state = {
             match varuna_version {
                 VarunaVersion::V1 => verifier_state,
-                VarunaVersion::V2 => {
+                VarunaVersion::V2 | VarunaVersion::V3 => {
                     let prepare_third_round_time = start_timer!(|| "Prep third round");
                     Self::absorb_sums(&proof.third_msg.sums.clone().into_iter().flatten().collect_vec(), &mut sponge);
                     let (_, verifier_state) = AHPForR1CS::<_, SM>::verifier_prepare_third_round(
@@ -920,7 +920,7 @@ where
                     &mut sponge,
                 );
             }
-            VarunaVersion::V2 => {
+            VarunaVersion::V2 | VarunaVersion::V3 => {
                 Self::absorb_labeled(&third_commitments, &mut sponge);
             }
         }

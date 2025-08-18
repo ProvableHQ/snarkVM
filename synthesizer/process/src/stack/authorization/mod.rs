@@ -34,7 +34,7 @@ use std::{
 #[derive(Clone)]
 pub struct Authorization<N: Network> {
     /// The authorized requests.
-    requests: Arc<RwLock<VecDeque<Request<N>>>>,
+    pub requests: Arc<RwLock<VecDeque<Request<N>>>>,
     /// The authorized transitions.
     transitions: Arc<RwLock<IndexMap<N::TransitionID, Transition<N>>>>,
 }

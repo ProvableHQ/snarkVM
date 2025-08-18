@@ -26,6 +26,7 @@ use crate::{
         prover,
         selectors::apply_randomized_selector,
         witness_label,
+        VarunaVersion,
     },
 };
 use anyhow::Result;
@@ -51,6 +52,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     pub fn prover_second_round<'a, R: RngCore>(
         verifier_message: &verifier::FirstMessage<F>,
         mut state: prover::State<'a, F, SM>,
+        varuna_version: VarunaVersion,
         _r: &mut R,
     ) -> Result<(prover::SecondOracles<F>, prover::State<'a, F, SM>)> {
         let round_time = start_timer!(|| "AHP::Prover::SecondRound");
@@ -61,7 +63,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let verifier::FirstMessage { first_round_batch_combiners, .. } = verifier_message;
 
-        let h_0 = Self::calculate_rowcheck_witness(&mut state, first_round_batch_combiners)?;
+        let h_0 = Self::calculate_rowcheck_witness(&mut state, first_round_batch_combiners, varuna_version)?;
 
         assert!(h_0.degree() <= 2 * max_constraint_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 
@@ -76,6 +78,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     fn calculate_rowcheck_witness(
         state: &mut prover::State<F, SM>,
         batch_combiners: &BTreeMap<CircuitId, verifier::BatchCombiners<F>>,
+        varuna_version: VarunaVersion,
     ) -> Result<DensePolynomial<F>> {
         let mut job_pool = ExecutionPool::with_capacity(state.circuit_specific_states.len());
         let max_constraint_domain = state.max_constraint_domain;
@@ -87,7 +90,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
             let circuit_combiner = batch_combiners[&circuit.id].circuit_combiner;
             let instance_combiners = batch_combiners[&circuit.id].instance_combiners.clone();
-            let constraint_domain = circuit_specific_state.constraint_domain;
+            let mut constraint_domain = circuit_specific_state.constraint_domain;
             let fft_precomputation = &circuit.fft_precomputation;
             let ifft_precomputation = &circuit.ifft_precomputation;
 
@@ -101,6 +104,33 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let za_label = witness_label(circuit.id, "z_a", j);
                     let zb_label = witness_label(circuit.id, "z_b", j);
                     let zc_label = witness_label(circuit.id, "z_c", j);
+                    if varuna_version == VarunaVersion::V3 {
+                        let log_2_size = constraint_domain.size().ilog2();
+                        for i in 2..=log_2_size {
+                            println!("i: {}", i);
+                            constraint_domain = EvaluationDomain::new(2 << i).unwrap();
+                            let z_a = Self::calculate_z_m(za_label.clone(), z_a.clone(), constraint_domain, circuit);
+                            let z_b = Self::calculate_z_m(zb_label.clone(), z_b.clone(), constraint_domain, circuit);
+                            let z_c = Self::calculate_z_m(zc_label.clone(), z_c.clone(), constraint_domain, circuit);
+                            let mut multiplier_2 = PolyMultiplier::new();
+                            multiplier_2.add_precomputation(fft_precomputation, ifft_precomputation);
+                            multiplier_2.add_polynomial(z_a, "z_a");
+                            multiplier_2.add_polynomial(z_b, "z_b");
+                            let mut rowcheck = multiplier_2.multiply().unwrap();
+                            cfg_iter_mut!(rowcheck.coeffs).zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
+        
+                            instance_lhs += &(&rowcheck * instance_combiner);
+        
+                            let (h_0_i, remainder) = apply_randomized_selector(
+                                &mut instance_lhs,
+                                circuit_combiner,
+                                &max_constraint_domain,
+                                &constraint_domain,
+                                false,
+                            )?;
+                            assert!(remainder.is_none());
+                        }
+                    }
                     let z_a = Self::calculate_z_m(za_label, z_a, constraint_domain, circuit);
                     let z_b = Self::calculate_z_m(zb_label, z_b, constraint_domain, circuit);
                     let z_c = Self::calculate_z_m(zc_label, z_c, constraint_domain, circuit);
@@ -150,7 +180,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let label = label.to_string();
         let poly_time = start_timer!(|| format!("Computing {label}"));
 
-        let evals = EvaluationsOnDomain::from_vec_and_domain(evaluations, constraint_domain);
+        let evals = EvaluationsOnDomain::from_vec_and_domain(evaluations.clone(), constraint_domain);
         let poly = evals.interpolate_with_pc_by_ref(&circuit.ifft_precomputation);
 
         debug_assert!(
