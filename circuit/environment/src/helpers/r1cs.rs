@@ -138,16 +138,21 @@ impl<F: PrimeField> R1CS<F> {
     /// In addition, when in debug mode, this function also checks that
     /// all constraints use variables corresponding to the declared variables.
     pub fn is_satisfied(&self) -> bool {
+        let mut constraints_satisfied = true;
         // Ensure all constraints are satisfied.
-        let constraints_satisfied = self.constraints.iter().all(|constraint| constraint.is_satisfied());
-        if !constraints_satisfied {
-            return false;
+        for (i, constraint) in self.constraints.iter().enumerate() {
+            if i == 28818 {
+                println!("constraint {i}: {:?}", constraint);
+            }
+            if !constraint.is_satisfied() {
+                constraints_satisfied = false;
+            }
         }
 
         // In debug mode, ensure all constraints use variables corresponding to the declared variables.
-        #[cfg(not(debug_assertions))]
-        return true;
-        #[cfg(debug_assertions)]
+        // #[cfg(not(debug_assertions))]
+        // return true;
+        // #[cfg(debug_assertions)]
         self.constraints.iter().all(|constraint| {
             let (a, b, c) = constraint.to_terms();
             [a, b, c].into_iter().all(|lc| {

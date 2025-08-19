@@ -123,25 +123,30 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         Self::formatted_public_input_is_admissible(&padded_public_variables)?;
 
                         let eval_z_a_time = start_timer!(|| format!("For {:?}, evaluating z_A_{_i}", circuit.id));
-                        let z_a = cfg_iter!(circuit.a)
-                            .map(|row| {
-                                inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
+                        assert!(circuit.a.len() == circuit.b.len(), "A and B have different lengths, {} != {}", circuit.a.len(), circuit.b.len());
+                        assert!(circuit.a.len() == circuit.c.len(), "A and C have different lengths, {} != {}", circuit.a.len(), circuit.c.len());
+                        println!("computing z_a of {:?}", circuit.id);
+                        let z_a = circuit.a.iter().enumerate()
+                            .map(|(j, row)| {
+                                inner_product(&padded_public_variables, &private_variables, row, num_public_variables, j)
                             })
                             .collect();
                         end_timer!(eval_z_a_time);
 
                         let eval_z_b_time = start_timer!(|| format!("For {:?}, evaluating z_B_{_i}", circuit.id));
-                        let z_b = cfg_iter!(circuit.b)
-                            .map(|row| {
-                                inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
+                        println!("computing z_b of {:?}", circuit.id);
+                        let z_b = circuit.b.iter().enumerate()
+                            .map(|(j, row)| {
+                                inner_product(&padded_public_variables, &private_variables, row, num_public_variables, j)
                             })
                             .collect();
                         end_timer!(eval_z_b_time);
 
                         let eval_z_c_time = start_timer!(|| format!("For {:?}, evaluating z_C_{_i}", circuit.id));
-                        let z_c = cfg_iter!(circuit.c)
-                            .map(|row| {
-                                inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
+                        println!("computing z_c of {:?}", circuit.id);
+                        let z_c = circuit.c.iter().enumerate()
+                            .map(|(j, row)| {
+                                inner_product(&padded_public_variables, &private_variables, row, num_public_variables, j)
                             })
                             .collect();
                         end_timer!(eval_z_c_time);
@@ -165,6 +170,7 @@ fn inner_product<F: PrimeField>(
     private_variables: &[F],
     row: &[(F, usize)],
     num_public_variables: usize,
+    j: usize,
 ) -> F {
     let mut result = F::zero();
 
@@ -174,6 +180,10 @@ fn inner_product<F: PrimeField>(
             true => public_variables[i],
             false => private_variables[i - num_public_variables],
         };
+
+        if j == 28818 {
+            println!("{j}: Adding {variable}*{coefficient}");
+        }
 
         result += if coefficient.is_one() { variable } else { variable * coefficient };
     }

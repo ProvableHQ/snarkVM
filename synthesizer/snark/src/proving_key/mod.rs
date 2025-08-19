@@ -21,6 +21,8 @@ mod serialize;
 
 use std::collections::BTreeMap;
 
+pub static mut VARUNA_V3_ENABLED_PROVER: bool = false;
+
 #[derive(Clone)]
 pub struct ProvingKey<N: Network> {
     /// The proving key for the function.
@@ -67,6 +69,36 @@ impl<N: Network> ProvingKey<N> {
     ) -> Result<Proof<N>> {
         #[cfg(feature = "aleo-cli")]
         let timer = std::time::Instant::now();
+
+        for (i, assignment) in assignments.into_iter().enumerate() {
+            let varuna_v3_enabled = unsafe { VARUNA_V3_ENABLED_PROVER };
+            if !varuna_v3_enabled {
+                break;
+            }
+            println!("Proving assignment: {i}");
+            let assignments = vec![assignment.clone()];
+
+            // Prepare the instances.
+            let num_expected_instances = assignments.len();
+            let instances: BTreeMap<_, _> = assignments
+                .iter()
+                .map(|(proving_key, assignments)| (proving_key.deref(), assignments.as_slice()))
+                .collect();
+            ensure!(instances.len() == num_expected_instances, "Incorrect number of proving keys for batch proof");
+
+            // Retrieve the proving parameters.
+            let universal_prover = N::varuna_universal_prover();
+            let fiat_shamir = N::varuna_fs_parameters();
+
+            // Compute the proof.
+            let _ = Proof::<N>::new(Varuna::<N>::prove_batch(
+                universal_prover,
+                fiat_shamir,
+                varuna_version,
+                &instances,
+                rng,
+            )?);
+        }
 
         // Prepare the instances.
         let num_expected_instances = assignments.len();

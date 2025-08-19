@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![forbid(unsafe_code)]
+// #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
 #![warn(clippy::cast_possible_truncation)]
 #![cfg_attr(not(feature = "aleo-cli"), allow(unused_variables))]
@@ -37,7 +37,7 @@ pub use certificate::Certificate;
 mod proof;
 pub use proof::Proof;
 
-mod proving_key;
+pub mod proving_key;
 pub use proving_key::ProvingKey;
 
 mod universal_srs;

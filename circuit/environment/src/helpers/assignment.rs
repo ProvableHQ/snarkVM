@@ -21,6 +21,8 @@ use std::sync::Arc;
 
 use super::R1CS;
 
+pub static mut VARUNA_V3_ENABLED_ASSIGNMENT: bool = false;
+
 /// A struct that contains public variable assignments, private variable assignments,
 /// and constraint assignments.
 #[derive(Clone, Debug)]
@@ -207,6 +209,16 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
                     // Return the linear combination of the second system.
                     linear_combination
                 };
+
+            
+            let varuna_v3_enabled = unsafe { VARUNA_V3_ENABLED_ASSIGNMENT };
+            if varuna_v3_enabled {
+                if i == 28818 {
+                    println!("Constraint a {i}: {:?}", convert_linear_combination(a));
+                    println!("Constraint b {i}: {:?}", convert_linear_combination(b));
+                    println!("Constraint c {i}: {:?}", convert_linear_combination(c));
+                }
+            }
 
             cs.enforce(
                 || format!("Constraint {i}"),

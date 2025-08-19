@@ -106,7 +106,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let zc_label = witness_label(circuit.id, "z_c", j);
                     if varuna_version == VarunaVersion::V3 {
                         let log_2_size = constraint_domain.size().ilog2();
-                        for i in 2..=log_2_size {
+                        for i in 0..z_a.len() {
+                            let res = z_a[i] * z_b[i] - z_c[i];
+                            println!("{za_label}, {zb_label}, {zc_label}, assigned R1CS {i}: {res}");
+                            println!("is_zero: {}", res.is_zero());
+                        }
+                        for i in log_2_size..=log_2_size {
                             println!("i: {}", i);
                             constraint_domain = EvaluationDomain::new(2 << i).unwrap();
                             let z_a = Self::calculate_z_m(za_label.clone(), z_a.clone(), constraint_domain, circuit);

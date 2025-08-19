@@ -36,8 +36,9 @@ impl<'a, T> ExecutionPool<'a, T> {
     {
         #[cfg(not(feature = "serial"))]
         {
-            use rayon::prelude::*;
-            execute_with_max_available_threads(|| self.jobs.into_par_iter().map(|f| f()).collect())
+            self.jobs.into_iter().map(|f| f()).collect()
+            // use rayon::prelude::*;
+            // execute_with_max_available_threads(|| self.jobs.into_par_iter().map(|f| f()).collect())
         }
         #[cfg(feature = "serial")]
         {

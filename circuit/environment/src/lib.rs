@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![forbid(unsafe_code)]
+// #![forbid(unsafe_code)]
 #![allow(clippy::type_complexity)]
 
 extern crate snarkvm_console_network as console;

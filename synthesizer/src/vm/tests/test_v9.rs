@@ -3881,6 +3881,8 @@ function cannot_be_called_from_test_one:
 
     unsafe {
         crate::vm::execute::VARUNA_V3_ENABLED = true;
+        crate::snark::proving_key::VARUNA_V3_ENABLED_PROVER = true;
+        crate::circuit::environment::VARUNA_V3_ENABLED_ASSIGNMENT = true;
     }
 
     // Call `test_one.aleo/third` again, which should now succeed.
