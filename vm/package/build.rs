@@ -28,8 +28,7 @@ impl<N: Network> Package<N> {
         // Retrieve the program ID.
         let program_id = program.id();
 
-        #[cfg(feature = "aleo-cli")]
-        println!("⏳ Compiling '{}'...\n", program_id.to_string().bold());
+        dev_println!("⏳ Compiling '{}'...\n", program_id.to_string());
 
         // Prepare the build directory.
         let build_directory = self.build_directory();
@@ -111,9 +110,6 @@ impl<N: Network> Package<N> {
         if !self.build_directory().exists() {
             bail!("Build directory does not exist: {}", self.build_directory().display());
         }
-
-        #[cfg(feature = "aleo-cli")]
-        println!();
 
         Ok(())
     }

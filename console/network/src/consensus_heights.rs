@@ -107,7 +107,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
-pub(crate) fn load_test_consensus_heights<N: crate::Network>() -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
+pub fn load_test_consensus_heights() -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
     // Define a closure to verify the consensus heights.
     let verify_consensus_heights = |heights: &[(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS]| {
         // Assert that the genesis height is 0.
@@ -121,7 +121,7 @@ pub(crate) fn load_test_consensus_heights<N: crate::Network>() -> [(ConsensusVer
     };
 
     // Define consensus version heights container used for testing.
-    let mut test_consensus_heights = N::TEST_CONSENSUS_VERSION_HEIGHTS;
+    let mut test_consensus_heights = TEST_CONSENSUS_VERSION_HEIGHTS;
 
     // Check if we can read the heights from an environment variable.
     match std::env::var("CONSENSUS_VERSION_HEIGHTS") {
@@ -137,7 +137,7 @@ pub(crate) fn load_test_consensus_heights<N: crate::Network>() -> [(ConsensusVer
                 .expect(&parsing_error);
             // Set the parsed heights in the test consensus heights.
             for (i, height) in parsed_test_consensus_heights.into_iter().enumerate() {
-                test_consensus_heights[i] = (N::TEST_CONSENSUS_VERSION_HEIGHTS[i].0, height);
+                test_consensus_heights[i] = (TEST_CONSENSUS_VERSION_HEIGHTS[i].0, height);
             }
             // Verify and return the parsed test consensus heights.
             verify_consensus_heights(&test_consensus_heights);

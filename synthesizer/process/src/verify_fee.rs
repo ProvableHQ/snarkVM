@@ -34,9 +34,10 @@ impl<N: Network> Process<N> {
         // Retrieve the function from the stack.
         let function = stack.get_function(fee.function_name())?;
 
+        dev_println!("Verifying fee from {}/{}...", fee.program_id(), fee.function_name());
+
         #[cfg(debug_assertions)]
         {
-            println!("Verifying fee from {}/{}...", fee.program_id(), fee.function_name());
             // Ensure the number of function calls in this function is 1.
             if stack.get_number_of_calls(function.name())? != 1 {
                 bail!("The number of function calls in '{}/{}' should be 1", stack.program_id(), function.name())
@@ -168,8 +169,7 @@ impl<N: Network> Process<N> {
         inputs.extend(fee.outputs().iter().flat_map(|output| output.verifier_inputs()));
         lap!(timer, "Construct the verifier inputs");
 
-        #[cfg(debug_assertions)]
-        println!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
+        dev_println!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
 
         // Retrieve the verifying key.
         let verifying_key = stack.get_verifying_key(fee.function_name())?;
@@ -246,8 +246,7 @@ impl<N: Network> Process<N> {
         inputs.extend(fee.outputs().iter().flat_map(|output| output.verifier_inputs()));
         lap!(timer, "Construct the verifier inputs");
 
-        #[cfg(debug_assertions)]
-        println!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
+        dev_println!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
 
         // Retrieve the verifying key.
         let verifying_key = stack.get_verifying_key(fee.function_name())?;

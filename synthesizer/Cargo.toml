@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer"
-version = "4.0.0"
+version = "4.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Synthesizer for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -31,7 +31,6 @@ locktick = [
   "snarkvm-ledger-store/locktick",
   "snarkvm-synthesizer-process/locktick"
 ]
-aleo-cli = [ ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "serde" ]
@@ -175,7 +174,7 @@ workspace = true
 features = [ "test" ]
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
-workspace = true
+path = "../ledger/test-helpers"
 
 [dev-dependencies.rayon]
 workspace = true

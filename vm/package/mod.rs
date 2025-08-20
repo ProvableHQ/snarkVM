@@ -40,15 +40,13 @@ use crate::{
         process::{Assignments, CallMetrics, CallStack, Process},
         program::{CallOperator, Instruction, Program, StackTrait},
     },
+    utilities::dev_println,
 };
 
 use anyhow::{Result, bail, ensure};
 use core::str::FromStr;
 use rand::{CryptoRng, Rng};
 use std::path::{Path, PathBuf};
-
-#[cfg(feature = "aleo-cli")]
-use colored::Colorize;
 
 pub struct Package<N: Network> {
     /// The program ID.
@@ -185,10 +183,9 @@ impl<N: Network> Package<N> {
                 if let Some(edition) = self.manifest_file.editions().get(program_id) {
                     (program, *edition)
                 } else {
-                    #[cfg(feature = "aleo-cli")]
-                    println!(
-                        " Could not find an edition for '{}' in the manifest, using edition 0...\n",
-                        program_id.to_string().bold()
+                    dev_println!(
+                        " Could not find an edition for '{}' in the manifest, using edition 0...",
+                        program_id.to_string()
                     );
                     (program, 0)
                 }

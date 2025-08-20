@@ -68,7 +68,7 @@ macro_rules! impl_store_and_remote_fetch {
             Ok(())
         }
 
-        #[cfg(not(feature = "wasm"))]
+        #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
             let mut easy = curl::easy::Easy::new();
             easy.follow_location(true)?;
@@ -166,80 +166,86 @@ macro_rules! impl_load_bytes_logic_local {
 
 macro_rules! impl_load_bytes_logic_remote {
     ($remote_url: expr, $local_dir: expr, $filename: expr, $metadata: expr, $expected_checksum: expr, $expected_size: expr) => {
-        // Compose the correct file path for the parameter file.
-        let mut file_path = aleo_std::aleo_dir();
-        file_path.push($local_dir);
-        file_path.push($filename);
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "filesystem")] {
+                // Compose the correct file path for the parameter file.
+                let mut file_path = aleo_std::aleo_dir();
+                file_path.push($local_dir);
+                file_path.push($filename);
 
-        let buffer = if file_path.exists() {
-            // Attempts to load the parameter file locally with an absolute path.
-            std::fs::read(&file_path)?
-        } else {
-            // Downloads the missing parameters and stores it in the local directory for use.
-             #[cfg(not(feature = "no_std_out"))]
-            {
-                use colored::*;
-                let path = format!("(in {:?})", file_path);
-                eprintln!(
-                    "\n⚠️  \"{}\" does not exist. Downloading and storing it {}.\n",
-                    $filename, path.dimmed()
-                );
-            }
-
-            // Construct the URL.
-            let url = format!("{}/{}", $remote_url, $filename);
-
-            // Load remote file
-            cfg_if::cfg_if! {
-                if #[cfg(not(feature = "wasm"))] {
-                    let mut buffer = vec![];
-                    Self::remote_fetch(&mut buffer, &url)?;
-
-                    // Ensure the checksum matches.
-                    let candidate_checksum = checksum!(&buffer);
-                    if $expected_checksum != candidate_checksum {
-                        return checksum_error!($expected_checksum, candidate_checksum)
+                let buffer = if file_path.exists() {
+                    // Attempts to load the parameter file locally with an absolute path.
+                    std::fs::read(&file_path)?
+                } else {
+                    // Downloads the missing parameters and stores it in the local directory for use.
+                    #[cfg(not(feature = "no_std_out"))]
+                    {
+                        use colored::*;
+                        let path = format!("(in {:?})", file_path);
+                        eprintln!(
+                            "\n⚠️  \"{}\" does not exist. Downloading and storing it {}.\n",
+                            $filename, path.dimmed()
+                        );
                     }
 
-                    match Self::store_bytes(&buffer, &file_path) {
-                        Ok(()) => buffer,
-                        Err(_) => {
-                            eprintln!(
-                                "\n❗ Error - Failed to store \"{}\" locally. Please download this file manually and ensure it is stored in {:?}.\n",
-                                $filename, file_path
-                            );
+                    // Construct the URL.
+                    let url = format!("{}/{}", $remote_url, $filename);
+
+                    // Load remote file
+                    cfg_if::cfg_if!{
+                        if #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))] {
+                            let mut buffer = vec![];
+                            Self::remote_fetch(&mut buffer, &url)?;
+
+                            // Ensure the checksum matches.
+                            let candidate_checksum = checksum!(&buffer);
+                            if $expected_checksum != candidate_checksum {
+                                return checksum_error!($expected_checksum, candidate_checksum)
+                            }
+
+                            match Self::store_bytes(&buffer, &file_path) {
+                                Ok(()) => buffer,
+                                Err(_) => {
+                                    eprintln!(
+                                        "\n❗ Error - Failed to store \"{}\" locally. Please download this file manually and ensure it is stored in {:?}.\n",
+                                        $filename, file_path
+                                    );
+                                    buffer
+                                }
+                            }
+                        } else if #[cfg(feature = "wasm")] {
+                            let buffer = Self::remote_fetch(&url)?;
+
+                            // Ensure the checksum matches.
+                            let candidate_checksum = checksum!(&buffer);
+                            if $expected_checksum != candidate_checksum {
+                                return checksum_error!($expected_checksum, candidate_checksum)
+                            }
+
                             buffer
+                        } else {
+                            return Err($crate::errors::ParameterError::RemoteFetchDisabled);
                         }
                     }
-                } else if #[cfg(feature = "wasm")] {
-                    let buffer = Self::remote_fetch(&url)?;
+                };
 
-                    // Ensure the checksum matches.
-                    let candidate_checksum = checksum!(&buffer);
-                    if $expected_checksum != candidate_checksum {
-                        return checksum_error!($expected_checksum, candidate_checksum)
-                    }
-
-                    buffer
-                } else {
-                    return Err($crate::errors::ParameterError::RemoteFetchDisabled);
+                // Ensure the size matches.
+                if $expected_size != buffer.len() {
+                    remove_file!(file_path);
+                    return Err($crate::errors::ParameterError::SizeMismatch($expected_size, buffer.len()));
                 }
+
+                // Ensure the checksum matches.
+                let candidate_checksum = checksum!(buffer.as_slice());
+                if $expected_checksum != candidate_checksum {
+                    return checksum_error!($expected_checksum, candidate_checksum)
+                }
+                return Ok(buffer);
             }
-        };
-
-        // Ensure the size matches.
-        if $expected_size != buffer.len() {
-            remove_file!(file_path);
-            return Err($crate::errors::ParameterError::SizeMismatch($expected_size, buffer.len()));
+            else {
+                return Err($crate::errors::ParameterError::FilesystemDisabled);
+            }
         }
-
-        // Ensure the checksum matches.
-        let candidate_checksum = checksum!(buffer.as_slice());
-        if $expected_checksum != candidate_checksum {
-            return checksum_error!($expected_checksum, candidate_checksum)
-        }
-
-        return Ok(buffer)
     }
 }
 

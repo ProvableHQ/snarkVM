@@ -46,7 +46,18 @@ mod tests;
 use console::{
     account::PrivateKey,
     network::prelude::*,
-    program::{Identifier, Literal, Locator, Plaintext, ProgramID, Record, Response, Value, compute_function_id},
+    program::{
+        Identifier,
+        Literal,
+        Locator,
+        Plaintext,
+        ProgramID,
+        Record,
+        Request,
+        Response,
+        Value,
+        compute_function_id,
+    },
     types::{Field, U16, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -62,7 +73,7 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
-use snarkvm_utilities::defer;
+use snarkvm_utilities::{defer, dev_println};
 
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
@@ -71,9 +82,6 @@ use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::{collections::HashMap, sync::Arc};
-
-#[cfg(feature = "aleo-cli")]
-use colored::Colorize;
 
 #[derive(Clone)]
 pub struct Process<N: Network> {

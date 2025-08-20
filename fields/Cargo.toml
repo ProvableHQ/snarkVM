@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-fields"
-version = "4.0.0"
+version = "4.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Fields for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -64,7 +64,8 @@ features = [ "derive" ]
 workspace = true
 
 [dev-dependencies.snarkvm-curves]
-workspace = true
+path = "../curves"
+default-features = false
 
 [features]
 profiler = [ "aleo-std/profiler" ]

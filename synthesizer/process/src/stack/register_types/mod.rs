@@ -49,6 +49,7 @@ use snarkvm_synthesizer_program::{
     register_types_structurally_equivalent,
     types_structurally_equivalent,
 };
+use snarkvm_utilities::dev_eprintln;
 
 use indexmap::{IndexMap, IndexSet};
 

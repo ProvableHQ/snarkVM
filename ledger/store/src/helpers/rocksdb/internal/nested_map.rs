@@ -873,6 +873,11 @@ mod tests {
             self.extra_maps.finish_atomic()
         }
 
+        fn abort_atomic(&self) {
+            self.own_map.abort_atomic();
+            self.extra_maps.abort_atomic();
+        }
+
         // While the methods above mimic the typical snarkVM ones, this method is purely for testing.
         fn is_atomic_in_progress_everywhere(&self) -> bool {
             self.own_map.is_atomic_in_progress()
@@ -932,6 +937,12 @@ mod tests {
             self.own_map2.finish_atomic()?;
             self.extra_maps.finish_atomic()
         }
+
+        fn abort_atomic(&self) {
+            self.own_map1.abort_atomic();
+            self.own_map2.abort_atomic();
+            self.extra_maps.abort_atomic();
+        }
     }
 
     struct TestStorage3 {
@@ -974,6 +985,11 @@ mod tests {
         fn finish_atomic(&self) -> Result<()> {
             self.own_nested_map.finish_atomic()?;
             self.own_map.finish_atomic()
+        }
+
+        fn abort_atomic(&self) {
+            self.own_nested_map.abort_atomic();
+            self.own_map.abort_atomic();
         }
     }
 

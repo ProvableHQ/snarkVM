@@ -61,7 +61,11 @@ macro_rules! atomic_batch_scope {
             },
             // Rewind this atomic batch scope.
             Err(err) => {
-                $self.atomic_rewind();
+                if is_atomic_in_progress {
+                    $self.atomic_rewind();
+                } else {
+                    $self.abort_atomic();
+                }
                 Err(err)
             }
         }

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-circuit-environment"
-version = "4.0.0"
+version = "4.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Circuit environment for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -56,7 +56,7 @@ workspace = true
 features = [ "test" ]
 
 [dev-dependencies.snarkvm-circuit]
-workspace = true
+path = "../../circuit"
 
 [dev-dependencies.snarkvm-console-types]
 workspace = true

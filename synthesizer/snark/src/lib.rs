@@ -16,18 +16,15 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
 #![warn(clippy::cast_possible_truncation)]
-#![cfg_attr(not(feature = "aleo-cli"), allow(unused_variables))]
 
 extern crate snarkvm_circuit as circuit;
 extern crate snarkvm_console as console;
 
 use console::network::{FiatShamir, prelude::*};
 use snarkvm_algorithms::{snark::varuna, traits::SNARK};
+use snarkvm_utilities::dev_println;
 
 use std::sync::{Arc, OnceLock};
-
-#[cfg(feature = "aleo-cli")]
-use colored::Colorize;
 
 type Varuna<N> = varuna::VarunaSNARK<<N as Environment>::PairingCurve, FiatShamir<N>, varuna::VarunaHidingMode>;
 

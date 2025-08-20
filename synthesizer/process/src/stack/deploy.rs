@@ -104,6 +104,7 @@ impl<N: Network> Stack<N> {
 
         #[cfg(not(any(test, feature = "test")))]
         // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
+        // Circuit synthesis was changed in a backwards incompatible way in ConsensusVersion::V8.
         if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&_consensus_version) {
             finish!(timer);
             return Ok(());

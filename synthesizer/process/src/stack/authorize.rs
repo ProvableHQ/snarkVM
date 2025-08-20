@@ -62,7 +62,7 @@ impl<N: Network> Stack<N> {
         // Initialize the authorization.
         let authorization = Authorization::new(request.clone());
         // Construct the call stack.
-        let call_stack = CallStack::Authorize(vec![request], *private_key, authorization.clone());
+        let call_stack = CallStack::Authorize(vec![request], Some(*private_key), authorization.clone());
         // Construct the authorization from the function.
         let _response = self.execute_function::<A, R>(call_stack, caller, root_tvk, rng)?;
         finish!(timer, "Construct the authorization from the function");
@@ -118,7 +118,37 @@ impl<N: Network> Stack<N> {
         // Initialize the authorization.
         let authorization = Authorization::new(request.clone());
         // Construct the call stack.
-        let call_stack = CallStack::Authorize(vec![request], *private_key, authorization.clone());
+        let call_stack = CallStack::Authorize(vec![request], Some(*private_key), authorization.clone());
+        // Construct the authorization from the function.
+        let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
+        finish!(timer, "Construct the authorization from the function");
+
+        // Return the authorization.
+        Ok(authorization)
+    }
+
+    /// Authorizes a call to a public function for the given request.
+    /// Compared to `authorize`, no private key is needed, but this only works for single public requests.
+    #[inline]
+    pub fn authorize_request<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        request: Request<N>,
+        rng: &mut R,
+    ) -> Result<Authorization<N>> {
+        let timer = timer!("Stack::authorize_request");
+
+        // Get the program ID.
+        let program_id = *self.program.id();
+        // Ensure the program ID is credits.aleo.
+        ensure!(program_id.to_string() == "credits.aleo", "Program ID must be credits.aleo");
+        // Initialize the authorization.
+        let authorization = Authorization::new(request.clone());
+        // Construct the call stack.
+        let call_stack = CallStack::Authorize(vec![request], None, authorization.clone());
+        // This is the root request and does not have a caller.
+        let caller = None;
+        // This is the root request and we do not have a root_tvk to pass on.
+        let root_tvk = None;
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
         finish!(timer, "Construct the authorization from the function");

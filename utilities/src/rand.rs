@@ -38,7 +38,11 @@ where
 }
 
 /// A fast RNG used **solely** for testing and benchmarking, **not** for any real world purposes.
-pub struct TestRng(XorShiftRng);
+pub struct TestRng {
+    seed: u64,
+    rng: XorShiftRng,
+    calls: usize,
+}
 
 impl Default for TestRng {
     fn default() -> Self {
@@ -63,7 +67,7 @@ impl TestRng {
     // been initialized in a test or benchmark and an auxiliary one is desired without
     // spamming the stdout.
     pub fn from_seed(seed: u64) -> Self {
-        Self(XorShiftRng::seed_from_u64(seed))
+        Self { seed, rng: XorShiftRng::seed_from_u64(seed), calls: 0 }
     }
 
     /// Returns a randomly-sampled `String`, given the maximum size in bytes and an RNG.
@@ -131,20 +135,30 @@ impl TestRng {
 
 impl rand::RngCore for TestRng {
     fn next_u32(&mut self) -> u32 {
-        self.0.next_u32()
+        self.calls += 1;
+        self.rng.next_u32()
     }
 
     fn next_u64(&mut self) -> u64 {
-        self.0.next_u64()
+        self.calls += 1;
+        self.rng.next_u64()
     }
 
     fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.0.fill_bytes(dest)
+        self.calls += 1;
+        self.rng.fill_bytes(dest)
     }
 
     fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
-        self.0.try_fill_bytes(dest)
+        self.calls += 1;
+        self.rng.try_fill_bytes(dest)
     }
 }
 
 impl rand::CryptoRng for TestRng {}
+
+impl Drop for TestRng {
+    fn drop(&mut self) {
+        println!("Called TestRng with seed {} {} times", self.seed, self.calls);
+    }
+}

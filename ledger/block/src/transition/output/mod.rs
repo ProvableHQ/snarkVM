@@ -37,7 +37,7 @@ pub enum Output<N: Network> {
     Private(Field<N>, Option<Ciphertext<N>>),
     /// The commitment, checksum, (optional) record ciphertext, and (optional) sender ciphertext.
     Record(Field<N>, Field<N>, Option<Record<N, Ciphertext<N>>>, Option<Field<N>>),
-    /// The output commitment of the external record. Note: This is **not** the record commitment.
+    /// The hash of the external record's (function_id, record, tvk, output index).
     ExternalRecord(Field<N>),
     /// The future hash and (optional) future.
     Future(Field<N>, Option<Future<N>>),

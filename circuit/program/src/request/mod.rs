@@ -33,7 +33,7 @@ pub enum InputID<A: Aleo> {
     Private(Field<A>),
     /// The `(commitment, gamma, record_view_key, serial_number, tag)` tuple of the record input.
     Record(Field<A>, Box<Group<A>>, Field<A>, Field<A>, Field<A>),
-    /// The hash of the external record input.
+    /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<A>),
 }
 

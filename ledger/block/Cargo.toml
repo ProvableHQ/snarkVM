@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-block"
-version = "4.0.0"
+version = "4.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A block for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -100,11 +100,11 @@ features = [ "test-helpers" ]
 workspace = true
 
 [dev-dependencies.snarkvm-ledger-query]
-workspace = true
+path = "../query"
 features = [ "query" ]
 
 [dev-dependencies.snarkvm-ledger-store]
-workspace = true
+path = "../store"
 
 [dev-dependencies.snarkvm-synthesizer-process]
-workspace = true
+path = "../../synthesizer/process"

@@ -27,7 +27,7 @@ pub enum OutputID<N: Network> {
     Private(Field<N>),
     /// The `(commitment, checksum, sender_ciphertext)` tuple of the record output.
     Record(Field<N>, Field<N>, Field<N>),
-    /// The hash of the external record output.
+    /// The hash of the external record's (function_id, record, tvk, output index).
     ExternalRecord(Field<N>),
     /// The hash of the future output.
     Future(Field<N>),

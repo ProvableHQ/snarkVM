@@ -224,8 +224,7 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
 ) -> Result<Vec<FinalizeOperation<N>>> {
     // Retrieve the program ID.
     let program_id = stack.program_id();
-    #[cfg(debug_assertions)]
-    println!("Finalizing constructor for {}...", stack.program_id());
+    dev_println!("Finalizing constructor for {}...", stack.program_id());
 
     // Initialize a list for finalize operations.
     let mut finalize_operations = Vec::new();
@@ -286,8 +285,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     // Retrieve the function name.
     let function_name = transition.function_name();
 
-    #[cfg(debug_assertions)]
-    println!("Finalizing transition for {}/{function_name}...", transition.program_id());
+    dev_println!("Finalizing transition for {}/{function_name}...", transition.program_id());
     debug_assert_eq!(stack.program_id(), transition.program_id());
 
     // If the last output of the transition is a future, retrieve and finalize it. Otherwise, there are no operations to finalize.

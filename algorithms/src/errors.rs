@@ -44,9 +44,6 @@ pub enum SNARKError {
 
     #[error("Public input size was different from the circuit")]
     PublicInputSizeMismatch,
-
-    #[error("Circuit not found")]
-    CircuitNotFound,
 }
 
 impl From<AHPError> for SNARKError {

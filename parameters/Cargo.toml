@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-parameters"
-version = "4.0.0"
+version = "4.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Parameters for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -24,6 +24,7 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
+filesystem = [ "aleo-std/storage" ]
 large_params = [ ]
 locktick = [ "dep:locktick" ]
 no_std_out = [ ]
@@ -39,7 +40,6 @@ workspace = true
 
 [dependencies.aleo-std]
 workspace = true
-features = [ "storage" ]
 
 [dependencies.anyhow]
 workspace = true
@@ -93,27 +93,27 @@ version = "0.3.64"
 features = [ "XmlHttpRequest" ]
 optional = true
 
-[target."cfg(not(target_family = \"wasm\"))".dependencies.curl]
+[target.'cfg(all(not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.curl]
 version = "0.4.43"
 
 [dev-dependencies.snarkvm-algorithms]
-workspace = true
+path = "../algorithms"
+default-features = false
 
 [dev-dependencies.snarkvm-circuit]
-workspace = true
+path = "../circuit"
 
 [dev-dependencies.snarkvm-console]
-workspace = true
-features = [ "default" ]
+path = "../console"
 
 [dev-dependencies.snarkvm-ledger-block]
-workspace = true
+path = "../ledger/block"
 
 [dev-dependencies.snarkvm-ledger-store]
-workspace = true
+path = "../ledger/store"
 
 [dev-dependencies.snarkvm-synthesizer]
-workspace = true
+path = "../synthesizer"
 
 [dev-dependencies.wasm-bindgen-test]
 version = "0.3.37"

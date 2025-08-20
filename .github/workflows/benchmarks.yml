@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - 'staging'
+      - 'bench/rust-toolchain'
+  workflow_dispatch:
 
 jobs:
   # Run benchmarks and stores the output to a file
@@ -14,14 +16,10 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install required Debian pacakges
         run: sudo apt install -y lld

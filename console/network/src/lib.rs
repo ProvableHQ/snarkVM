@@ -245,7 +245,7 @@ pub trait Network:
     #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
     fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
         // NOTE: this function may panic, as it is only called during startup.
-        CONSENSUS_VERSION_HEIGHTS.get_or_init(|| load_test_consensus_heights::<Self>())
+        CONSENSUS_VERSION_HEIGHTS.get_or_init(load_test_consensus_heights)
     }
 
     /// A set of incrementing consensus version heights used for tests.

@@ -32,7 +32,7 @@ pub enum OutputID<A: Aleo> {
     Private(Field<A>),
     /// The `(commitment, checksum, sender_ciphertext)` tuple of the record output.
     Record(Field<A>, Field<A>, Field<A>),
-    /// The hash of the external record output.
+    /// The hash of the external record's (function_id, record, tvk, output index).
     ExternalRecord(Field<A>),
     /// The hash of the future output.
     Future(Field<A>),

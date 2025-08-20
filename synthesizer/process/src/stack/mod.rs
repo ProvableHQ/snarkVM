@@ -99,7 +99,7 @@ pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>
 #[derive(Clone)]
 pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
-    Authorize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
+    Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
     /// Validate a `Deploy` transaction's function circuit.

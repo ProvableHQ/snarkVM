@@ -36,7 +36,7 @@ pub enum Input<N: Network> {
     Private(Field<N>, Option<Ciphertext<N>>),
     /// The serial number and tag of the record.
     Record(Field<N>, Field<N>),
-    /// The input commitment to the external record. Note: This is **not** the record commitment.
+    /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<N>),
 }
 

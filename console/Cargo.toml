@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console"
-version = "4.0.0"
+version = "4.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console environment for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -37,6 +37,7 @@ default = [
   "account",
   "algorithms",
   "collections",
+  "filesystem",
   "network",
   "program",
   "types"
@@ -50,6 +51,7 @@ test = [
 account = [ "network", "snarkvm-console-account" ]
 algorithms = [ "snarkvm-console-algorithms" ]
 collections = [ "algorithms", "snarkvm-console-collections" ]
+filesystem = [ "snarkvm-console-network/filesystem" ]
 network = [ "collections", "snarkvm-console-network" ]
 program = [ "network", "snarkvm-console-program" ]
 serial = [ "snarkvm-console-collections/serial" ]

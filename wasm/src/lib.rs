@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "console")]
 pub use snarkvm_console as console;
 #[cfg(feature = "curves")]
 pub use snarkvm_curves as curves;

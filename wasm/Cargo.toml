@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-wasm"
-version = "4.0.0"
+version = "4.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "WASM for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -30,7 +30,6 @@ crate-type = [ "cdylib", "rlib" ]
 default = [ "full" ]
 full = [
   "circuit",
-  "console",
   "curves",
   "fields",
   "ledger",
@@ -38,7 +37,6 @@ full = [
   "utilities"
 ]
 circuit = [ ]
-console = [ "snarkvm-console" ]
 curves = [ "snarkvm-curves" ]
 fields = [ "snarkvm-fields" ]
 ledger = [
@@ -53,7 +51,6 @@ dev-print = [ "snarkvm-utilities/dev-print" ]
 [dependencies.snarkvm-console]
 workspace = true
 features = [ "wasm" ]
-optional = true
 
 [dependencies.snarkvm-curves]
 workspace = true
@@ -94,6 +91,10 @@ features = [ "js" ]
 
 [dev-dependencies.wasm-bindgen-test]
 version = "0.3.37"
+
+[dev-dependencies.snarkvm-utilities]
+workspace = true
+features = [ "wasm" ]
 
 [package.metadata.cargo-machete]
 ignored = [

@@ -41,8 +41,7 @@ impl<N: Network> Package<N> {
         // Prepare the locator (even if logging is disabled, to sanity check the locator is well-formed).
         let locator = Locator::<N>::from_str(&format!("{program_id}/{function_name}"))?;
 
-        #[cfg(feature = "aleo-cli")]
-        println!("🚀 Executing '{}'...\n", locator.to_string().bold());
+        dev_println!("🚀 Executing '{}'...\n", locator.to_string());
 
         // Prepare the query.
         let query = Query::<_, BlockMemory<_>>::from(endpoint);

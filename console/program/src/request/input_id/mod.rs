@@ -30,7 +30,7 @@ pub enum InputID<N: Network> {
     Private(Field<N>),
     /// The commitment, gamma, record view key, serial number, and tag of the record input.
     Record(Field<N>, Group<N>, Field<N>, Field<N>, Field<N>),
-    /// The hash of the external record input.
+    /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<N>),
 }
 
