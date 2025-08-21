@@ -1571,9 +1571,9 @@ finalize transfer_public:
             header,
             ratifications,
             None.into(),
-            vec![],
+            Some(vec![]),
             transactions,
-            aborted_transaction_ids,
+            Some(aborted_transaction_ids),
             rng,
         )?;
 
@@ -2608,7 +2608,7 @@ finalize compute:
                 .unwrap();
 
         // Ensure that the excess transactions were aborted.
-        assert_eq!(next_block.aborted_transaction_ids(), &excess_transaction_ids);
+        assert_eq!(next_block.aborted_transaction_ids().unwrap(), &excess_transaction_ids);
         assert_eq!(next_block.transactions().len(), VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS);
     }
 

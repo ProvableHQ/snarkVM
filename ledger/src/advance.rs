@@ -92,13 +92,19 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         );
         aborted_solution_transmission_ids.extend(early_aborted_solution_transmission_ids);
         // Construct the aborted solution IDs.
-        let aborted_solution_ids = aborted_solution_transmission_ids
-            .iter()
-            .filter_map(|id| match id {
-                TransmissionID::Solution(id, _) => Some(*id),
-                _ => None,
-            })
-            .collect_vec();
+        let aborted_solution_ids = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() < ConsensusVersion::V10 {
+            Some(
+                aborted_solution_transmission_ids
+                    .iter()
+                    .filter_map(|id| match id {
+                        TransmissionID::Solution(id, _) => Some(*id),
+                        _ => None,
+                    })
+                    .collect_vec(),
+            )
+        } else {
+            None
+        };
 
         // --- Transactions ---
         // Construct the transaction transmission IDs.
@@ -139,13 +145,19 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         );
         aborted_transaction_transmission_ids.extend(early_aborted_transaction_transmission_ids);
         // Construct the aborted transaction IDs.
-        let aborted_transaction_ids = aborted_transaction_transmission_ids
-            .iter()
-            .filter_map(|id| match id {
-                TransmissionID::Transaction(id, _) => Some(*id),
-                _ => None,
-            })
-            .collect_vec();
+        let aborted_transaction_ids = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() < ConsensusVersion::V10 {
+            Some(
+                aborted_transaction_transmission_ids
+                    .iter()
+                    .filter_map(|id| match id {
+                        TransmissionID::Transaction(id, _) => Some(*id),
+                        _ => None,
+                    })
+                    .collect_vec(),
+            )
+        } else {
+            None
+        };
 
         // Construct the compact Subdag
         if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {
@@ -226,9 +238,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             header,
             ratifications,
             solutions,
-            aborted_solution_ids,
+            Some(aborted_solution_ids),
             transactions,
-            aborted_transaction_ids,
+            Some(aborted_transaction_ids),
             rng,
         )
     }

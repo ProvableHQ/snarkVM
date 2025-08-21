@@ -191,7 +191,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     pub fn get_aborted_transaction_ids(&self, height: u32) -> Result<Vec<N::TransactionID>> {
         // If the height is 0, return the genesis block aborted transaction IDs.
         if height == 0 {
-            return Ok(self.genesis_block.aborted_transaction_ids().clone());
+            return Ok(self.genesis_block.aborted_transaction_ids().cloned().unwrap_or_default());
         }
         // Retrieve the block hash.
         let Some(block_hash) = self.vm.block_store().get_block_hash(height)? else {

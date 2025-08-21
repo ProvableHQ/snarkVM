@@ -86,7 +86,7 @@ function dummy2:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Execute the program.
@@ -102,7 +102,7 @@ function dummy2:
     let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Attempt to redeploy the program before `ConsensusVersion::V8`.
@@ -110,7 +110,7 @@ function dummy2:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Check that the consensus version is `V8`.
@@ -131,7 +131,7 @@ function dummy2:
     let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Attempt to redeploy the program with different code after `ConsensusVersion::V8`.
@@ -143,7 +143,7 @@ function dummy2:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Verify that the program can be executed after redeployment.
@@ -159,7 +159,7 @@ function dummy2:
     let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Attempt to redeploy the program again after `ConsensusVersion::V8`.
@@ -167,7 +167,7 @@ function dummy2:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Drop the VM.
@@ -193,7 +193,7 @@ function dummy2:
     let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     Ok(())
@@ -262,7 +262,7 @@ finalize run:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Extract a record from the genesis block and `split` it into two smaller records.
@@ -287,7 +287,7 @@ finalize run:
     let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Extract the split record.
@@ -306,7 +306,7 @@ finalize run:
     let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Check that the consensus version is `V8`.
@@ -319,7 +319,7 @@ finalize run:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Execute the `upgrade` function directly.
@@ -335,7 +335,7 @@ finalize run:
     let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
 
     Ok(())
 }
@@ -372,7 +372,7 @@ fn test_deploy_and_redeploy() -> Result<()> {
     let block = sample_next_block(&vm, &caller_private_key, &[transfer], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Initialize the program.
@@ -409,7 +409,7 @@ function dummy:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction_0.clone(), transaction_1], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Check the edition of the deployed program.
@@ -429,7 +429,7 @@ function dummy:
     let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Redeploy the program with the other private key, using the original deployment.
@@ -455,7 +455,7 @@ function dummy:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Check that the program can now be executed.
@@ -471,7 +471,7 @@ function dummy:
     let block = sample_next_block(&vm, &caller_private_key, &[execute], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Verify that the program cannot be redeployed further.
@@ -479,7 +479,7 @@ function dummy:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
 
     Ok(())
 }

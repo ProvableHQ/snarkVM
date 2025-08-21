@@ -45,7 +45,10 @@ impl<N: Network> FromBytes for Block<N> {
         let (prior_solution_transmission_ids, aborted_solution_transmission_ids, aborted_solution_ids) = if version >= 2
         {
             // Read the number of prior solution transmission IDs.
-            let num_prior_solutions = u32::read_le(&mut reader)?; // TODO: what is a sane bound on this value?
+            let num_prior_solutions = u32::read_le(&mut reader)?;
+            if num_prior_solutions as usize > Solutions::<N>::max_aborted_solutions().map_err(error)? {
+                return Err(error("Invalid number of prior solutions IDs in the block"));
+            }
             // Read the prior solution transmission IDs.
             let mut prior_solution_transmission_ids = Vec::with_capacity(num_prior_solutions as usize);
             for _ in 0..num_prior_solutions {
@@ -61,7 +64,7 @@ impl<N: Network> FromBytes for Block<N> {
             for _ in 0..num_aborted_solutions {
                 aborted_solution_transmission_ids.push(FromBytes::read_le(&mut reader)?);
             }
-            (Some(prior_solution_transmission_ids), Some(aborted_solution_transmission_ids), vec![])
+            (Some(prior_solution_transmission_ids), Some(aborted_solution_transmission_ids), None)
         } else {
             // Read the number of aborted solution IDs.
             let num_aborted_solutions = u32::read_le(&mut reader)?;
@@ -74,7 +77,7 @@ impl<N: Network> FromBytes for Block<N> {
             for _ in 0..num_aborted_solutions {
                 aborted_solution_ids.push(FromBytes::read_le(&mut reader)?);
             }
-            (None, None, aborted_solution_ids)
+            (None, None, Some(aborted_solution_ids))
         };
 
         // Read the transactions.
@@ -99,7 +102,7 @@ impl<N: Network> FromBytes for Block<N> {
                 for _ in 0..num_aborted_transactions {
                     aborted_transaction_transmission_ids.push(FromBytes::read_le(&mut reader)?);
                 }
-                (Some(prior_transaction_transmission_ids), Some(aborted_transaction_transmission_ids), vec![])
+                (Some(prior_transaction_transmission_ids), Some(aborted_transaction_transmission_ids), None)
             } else {
                 // Read the number of aborted transaction IDs.
                 let num_aborted_transactions = u32::read_le(&mut reader)?;
@@ -112,7 +115,7 @@ impl<N: Network> FromBytes for Block<N> {
                 for _ in 0..num_aborted_transactions {
                     aborted_transaction_ids.push(FromBytes::read_le(&mut reader)?);
                 }
-                (None, None, aborted_transaction_ids)
+                (None, None, Some(aborted_transaction_ids))
             };
 
         // Construct the block.
@@ -168,8 +171,10 @@ impl<N: Network> ToBytes for Block<N> {
         match version {
             1 => {
                 // Write the aborted solution IDs.
-                (u32::try_from(self.aborted_solution_ids.len()).map_err(error))?.write_le(&mut writer)?;
-                self.aborted_solution_ids.write_le(&mut writer)?;
+                let aborted_solution_ids =
+                    self.aborted_solution_ids.as_ref().ok_or(error("missing aborted_solution_ids"))?;
+                (u32::try_from(aborted_solution_ids.len()).map_err(error))?.write_le(&mut writer)?;
+                aborted_solution_ids.write_le(&mut writer)?;
             }
             _ => {
                 // Write the prior solution transmission ids.
@@ -195,8 +200,10 @@ impl<N: Network> ToBytes for Block<N> {
         match version {
             1 => {
                 // Write the aborted transaction ids.
-                (u32::try_from(self.aborted_transaction_ids.len()).map_err(error))?.write_le(&mut writer)?;
-                self.aborted_transaction_ids.write_le(&mut writer)?;
+                let aborted_transaction_ids =
+                    self.aborted_transaction_ids.as_ref().ok_or(error("missing aborted_transaction_ids"))?;
+                (u32::try_from(aborted_transaction_ids.len()).map_err(error))?.write_le(&mut writer)?;
+                aborted_transaction_ids.write_le(&mut writer)?;
             }
             _ => {
                 // Write the prior transaction transmission ids.

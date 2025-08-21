@@ -86,7 +86,7 @@ pub struct Block<N: Network> {
     /// The aborted solution transmission IDs in this block.
     aborted_solution_transmission_ids: Option<Vec<TransmissionID<N>>>,
     /// The aborted solution IDs in this block.
-    aborted_solution_ids: Vec<SolutionID<N>>,
+    aborted_solution_ids: Option<Vec<SolutionID<N>>>,
     /// The transactions in this block.
     transactions: Transactions<N>,
     /// The transmission IDs of both accepted and aborted transactions in the previous block.
@@ -95,7 +95,7 @@ pub struct Block<N: Network> {
     /// The aborted transaction transmission IDs in this block.
     aborted_transaction_transmission_ids: Option<Vec<TransmissionID<N>>>,
     /// The aborted transaction IDs in this block.
-    aborted_transaction_ids: Vec<N::TransactionID>,
+    aborted_transaction_ids: Option<Vec<N::TransactionID>>,
 }
 
 impl<N: Network> Block<N> {
@@ -107,9 +107,9 @@ impl<N: Network> Block<N> {
         header: Header<N>,
         ratifications: Ratifications<N>,
         solutions: Solutions<N>,
-        aborted_solution_ids: Vec<SolutionID<N>>,
+        aborted_solution_ids: Option<Vec<SolutionID<N>>>,
         transactions: Transactions<N>,
-        aborted_transaction_ids: Vec<N::TransactionID>,
+        aborted_transaction_ids: Option<Vec<N::TransactionID>>,
         rng: &mut R,
     ) -> Result<Self> {
         // Compute the block hash.
@@ -143,11 +143,11 @@ impl<N: Network> Block<N> {
         solutions: Solutions<N>,
         prior_solution_transmission_ids: Option<Vec<TransmissionID<N>>>,
         aborted_solution_transmission_ids: Option<Vec<TransmissionID<N>>>,
-        aborted_solution_ids: Vec<SolutionID<N>>,
+        aborted_solution_ids: Option<Vec<SolutionID<N>>>,
         transactions: Transactions<N>,
         prior_transaction_transmission_ids: Option<Vec<TransmissionID<N>>>,
         aborted_transaction_transmission_ids: Option<Vec<TransmissionID<N>>>,
-        aborted_transaction_ids: Vec<N::TransactionID>,
+        aborted_transaction_ids: Option<Vec<N::TransactionID>>,
     ) -> Result<Self> {
         // Construct the beacon authority.
         let authority = Authority::new_quorum(subdag);
@@ -178,19 +178,21 @@ impl<N: Network> Block<N> {
         solutions: Solutions<N>,
         prior_solution_transmission_ids: Option<Vec<TransmissionID<N>>>,
         aborted_solution_transmission_ids: Option<Vec<TransmissionID<N>>>,
-        aborted_solution_ids: Vec<SolutionID<N>>,
+        aborted_solution_ids: Option<Vec<SolutionID<N>>>,
         transactions: Transactions<N>,
         prior_transaction_transmission_ids: Option<Vec<TransmissionID<N>>>,
         aborted_transaction_transmission_ids: Option<Vec<TransmissionID<N>>>,
-        aborted_transaction_ids: Vec<N::TransactionID>,
+        aborted_transaction_ids: Option<Vec<N::TransactionID>>,
     ) -> Result<Self> {
         // Ensure the number of aborted solutions IDs is within the allowed range.
-        if aborted_solution_ids.len() > Solutions::<N>::max_aborted_solutions()? {
-            bail!(
-                "Cannot initialize a block with {} aborted solutions IDs which exceed the maximum {}",
-                aborted_solution_ids.len(),
-                Solutions::<N>::max_aborted_solutions()?
-            );
+        if let Some(aborted_solution_ids) = aborted_solution_ids.as_ref() {
+            if aborted_solution_ids.len() > Solutions::<N>::max_aborted_solutions()? {
+                bail!(
+                    "Cannot initialize a block with {} aborted solutions IDs which exceed the maximum {}",
+                    aborted_solution_ids.len(),
+                    Solutions::<N>::max_aborted_solutions()?
+                );
+            }
         }
 
         // Ensure the number of transactions is within the allowed range.
@@ -207,12 +209,14 @@ impl<N: Network> Block<N> {
         // specifically in [`PuzzleSolutions::new()`].
 
         // Ensure the number of aborted transaction IDs is within the allowed range.
-        if aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
-            bail!(
-                "Cannot initialize a block with {} aborted transaction IDs which exceed the maximum {}",
-                aborted_transaction_ids.len(),
-                Transactions::<N>::max_aborted_transactions()?
-            );
+        if let Some(aborted_transaction_ids) = aborted_transaction_ids.as_ref() {
+            if aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
+                bail!(
+                    "Cannot initialize a block with {} aborted transaction IDs which exceed the maximum {}",
+                    aborted_transaction_ids.len(),
+                    Transactions::<N>::max_aborted_transactions()?
+                );
+            }
         }
 
         // Compute the block hash.
@@ -275,11 +279,11 @@ impl<N: Network> Block<N> {
         solutions: Solutions<N>,
         prior_solution_transmission_ids: Option<Vec<TransmissionID<N>>>,
         aborted_solution_transmission_ids: Option<Vec<TransmissionID<N>>>,
-        aborted_solution_ids: Vec<SolutionID<N>>,
+        aborted_solution_ids: Option<Vec<SolutionID<N>>>,
         transactions: Transactions<N>,
         prior_transaction_transmission_ids: Option<Vec<TransmissionID<N>>>,
         aborted_transaction_transmission_ids: Option<Vec<TransmissionID<N>>>,
-        aborted_transaction_ids: Vec<N::TransactionID>,
+        aborted_transaction_ids: Option<Vec<N::TransactionID>>,
     ) -> Result<Self> {
         // Return the block.
         Ok(Self {
@@ -336,7 +340,7 @@ impl<N: Network> Block<N> {
         // Compute the solution transmission IDs.
         let solution_transmission_ids = match solutions.as_puzzle_solutions() {
             Some(solutions) => {
-                let mut transmission_ids = Vec::new(); //with_capacity(solutions.solution_ids().len());
+                let mut transmission_ids = Vec::with_capacity(solutions.solution_ids().count());
                 for (id, solution) in solutions.iter() {
                     let checksum = Data::<Solution<N>>::Buffer(solution.to_bytes_le()?.into()).to_checksum::<N>()?;
                     transmission_ids.push(TransmissionID::Solution(*id, checksum));
@@ -395,8 +399,8 @@ impl<N: Network> Block<N> {
     }
 
     /// Returns the aborted solution IDs in this block.
-    pub const fn aborted_solution_ids(&self) -> &Vec<SolutionID<N>> {
-        &self.aborted_solution_ids
+    pub const fn aborted_solution_ids(&self) -> Option<&Vec<SolutionID<N>>> {
+        self.aborted_solution_ids.as_ref()
     }
 
     /// Returns the transactions in this block.
@@ -415,8 +419,8 @@ impl<N: Network> Block<N> {
     }
 
     /// Returns the aborted transaction IDs in this block.
-    pub const fn aborted_transaction_ids(&self) -> &Vec<N::TransactionID> {
-        &self.aborted_transaction_ids
+    pub const fn aborted_transaction_ids(&self) -> Option<&Vec<N::TransactionID>> {
+        self.aborted_transaction_ids.as_ref()
     }
 }
 
@@ -820,9 +824,9 @@ pub mod test_helpers {
             header,
             ratifications,
             None.into(),
-            vec![],
+            Some(vec![]),
             transactions,
-            vec![],
+            Some(vec![]),
             rng,
         )
         .unwrap();

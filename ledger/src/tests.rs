@@ -1045,7 +1045,7 @@ fn test_aborted_transaction_indexing() {
         .unwrap();
 
     // Check that the block contains the aborted transaction.
-    assert_eq!(block.aborted_transaction_ids(), &[aborted_transaction_id]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &[aborted_transaction_id]);
 
     // Check that the next block is valid.
     ledger.check_next_block(&block, rng).unwrap();
@@ -1098,7 +1098,7 @@ fn test_aborted_solution_ids() {
 
     // Enforce that the block solution was aborted properly.
     assert!(block.solutions().is_empty());
-    assert_eq!(block.aborted_solution_ids(), &vec![invalid_solution.id()]);
+    assert_eq!(block.aborted_solution_ids().unwrap(), &vec![invalid_solution.id()]);
 }
 
 #[test]
@@ -1261,7 +1261,7 @@ finalize foo:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&execution_ids[2], &deployment_ids[2]]);
-    assert_eq!(block.aborted_transaction_ids(), &vec![
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![
         execution_ids[5],
         execution_ids[4],
         execution_ids[3],
@@ -1309,7 +1309,7 @@ finalize foo:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transfer_id]);
-    assert_eq!(block.aborted_transaction_ids(), &vec![execution_ids[0], deployment_ids[0]]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![execution_ids[0], deployment_ids[0]]);
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1521,7 +1521,7 @@ function create_duplicate_record:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transfer_1_id, &deployment_1_id]);
-    assert_eq!(block.aborted_transaction_ids(), &vec![transfer_2_id, deployment_2_id]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transfer_2_id, deployment_2_id]);
 
     // Ensure that verification was not run on aborted deployments.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1559,7 +1559,7 @@ function create_duplicate_record:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transfer_4_id]);
-    assert_eq!(block.aborted_transaction_ids(), &vec![transfer_3_id, deployment_3_id]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transfer_3_id, deployment_3_id]);
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1677,7 +1677,7 @@ function empty_function:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transaction_1_id]);
-    assert_eq!(block.aborted_transaction_ids(), &vec![transaction_2_id]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transaction_2_id]);
 
     // Ensure that verification was not run on aborted transactions.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1713,7 +1713,7 @@ function empty_function:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transfer_transaction_id]);
-    assert_eq!(block.aborted_transaction_ids(), &vec![transaction_3_id]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transaction_3_id]);
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1831,7 +1831,7 @@ function simple_output:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transaction_1_id]);
-    assert_eq!(block.aborted_transaction_ids(), &vec![transaction_2_id]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transaction_2_id]);
 
     // Ensure that verification was not run on aborted transactions.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1867,7 +1867,7 @@ function simple_output:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transfer_transaction_id]);
-    assert_eq!(block.aborted_transaction_ids(), &vec![transaction_3_id]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transaction_3_id]);
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1924,7 +1924,7 @@ function empty_function:
 
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
-    assert_eq!(block.aborted_transaction_ids(), &vec![deployment_2_id]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![deployment_2_id]);
 
     // Enforce that the first program was deployed and the second was aborted.
     assert_eq!(ledger.get_program(*program_1.id()).unwrap(), program_1);
@@ -1966,7 +1966,7 @@ fn test_abort_fee_transaction() {
         .unwrap();
 
     // Check that the block aborts the invalid transaction.
-    assert_eq!(block.aborted_transaction_ids(), &vec![fee_transaction_id]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![fee_transaction_id]);
     assert_eq!(block.transaction_ids().collect::<Vec<_>>(), vec![&transaction_id]);
 
     // Check that the next block is valid.
@@ -2026,7 +2026,7 @@ fn test_abort_invalid_transaction() {
         .unwrap();
 
     // Check that the block aborts the invalid transaction.
-    assert_eq!(block.aborted_transaction_ids(), &vec![invalid_transaction_id]);
+    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![invalid_transaction_id]);
     assert_eq!(block.transaction_ids().collect::<Vec<_>>(), vec![&valid_transaction_id_1, &valid_transaction_id_2]);
 
     // Check that the next block is valid.
@@ -2118,7 +2118,7 @@ finalize foo2:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
 
     // Enforce that the first program was deployed and the second was rejected.
     assert_eq!(ledger.get_program(*program_1.id()).unwrap(), program_1);
@@ -2631,7 +2631,7 @@ finalize foo:
         assert_eq!(block_confirmed_transactions_ids, confirmed_transaction_ids);
 
         // Enforce that the aborted transactions is correct.
-        assert_eq!(block.aborted_transaction_ids(), &aborted_transaction_ids);
+        assert_eq!(block.aborted_transaction_ids().unwrap(), &aborted_transaction_ids);
     }
 }
 
@@ -2934,7 +2934,7 @@ mod valid_solutions {
 
         // Enforce that the block solution was accepted properly.
         assert_eq!(block.solutions().len(), 1);
-        assert_eq!(block.aborted_solution_ids().len(), 0)
+        assert_eq!(block.aborted_solution_ids().unwrap().len(), 0)
     }
 
     #[test]
@@ -3156,7 +3156,7 @@ mod valid_solutions {
         );
         // Check that the solution is aborted.
         assert!(next_block.solutions().is_empty());
-        assert_eq!(next_block.aborted_solution_ids().len(), 1);
+        assert_eq!(next_block.aborted_solution_ids().unwrap().len(), 1);
         // Advance to the next block.
         ledger.advance_to_next_block(&next_block).unwrap();
 
@@ -3206,7 +3206,7 @@ mod valid_solutions {
 
         // Check that the first solution is accepted and the second is aborted.
         assert!(next_block.solutions().solution_ids().contains(&valid_solution_1.id()));
-        assert_eq!(next_block.aborted_solution_ids(), &vec![valid_solution_2.id()]);
+        assert_eq!(next_block.aborted_solution_ids().unwrap(), &vec![valid_solution_2.id()]);
 
         // Advance to the next block.
         ledger.advance_to_next_block(&next_block).unwrap();
@@ -3295,14 +3295,14 @@ mod valid_solutions {
         ledger.advance_to_next_block(&block).unwrap();
 
         // Check that the block's solutions are well-formed.
-        assert_eq!(block.aborted_solution_ids().len(), NUM_INVALID_SOLUTIONS);
+        assert_eq!(block.aborted_solution_ids().unwrap().len(), NUM_INVALID_SOLUTIONS);
         assert_eq!(block.solutions().len(), NUM_VALID_SOLUTIONS);
 
         let block_solutions = block.solutions().solution_ids().cloned().collect::<HashSet<_>>();
         let valid_solutions = valid_solutions.iter().map(|s| s.id()).collect::<HashSet<_>>();
         assert_eq!(block_solutions, valid_solutions, "Valid solutions do not match");
 
-        let block_aborted_solution_ids = block.aborted_solution_ids().iter().cloned().collect::<HashSet<_>>();
+        let block_aborted_solution_ids = block.aborted_solution_ids().unwrap().iter().cloned().collect::<HashSet<_>>();
         let invalid_solutions = invalid_solutions.iter().map(|s| s.id()).collect::<HashSet<_>>();
         assert_eq!(block_aborted_solution_ids, invalid_solutions, "Invalid solutions do not match");
     }
@@ -3373,14 +3373,14 @@ mod valid_solutions {
 
         // Check that the block's solutions are well-formed.
         assert_eq!(block.solutions().len(), CurrentNetwork::MAX_SOLUTIONS);
-        assert_eq!(block.aborted_solution_ids().len(), NUM_VALID_SOLUTIONS - CurrentNetwork::MAX_SOLUTIONS);
+        assert_eq!(block.aborted_solution_ids().unwrap().len(), NUM_VALID_SOLUTIONS - CurrentNetwork::MAX_SOLUTIONS);
 
         let block_solutions = block.solutions().solution_ids().cloned().collect::<HashSet<_>>();
         let expected_accepted_solutions =
             candidate_solutions.iter().take(CurrentNetwork::MAX_SOLUTIONS).map(|s| s.id()).collect::<HashSet<_>>();
         assert_eq!(block_solutions, expected_accepted_solutions, "Accepted solutions do not match");
 
-        let block_aborted_solution_ids = block.aborted_solution_ids().iter().cloned().collect::<HashSet<_>>();
+        let block_aborted_solution_ids = block.aborted_solution_ids().unwrap().iter().cloned().collect::<HashSet<_>>();
         let expected_aborted_solutions =
             candidate_solutions.iter().skip(CurrentNetwork::MAX_SOLUTIONS).map(|s| s.id()).collect::<HashSet<_>>();
         assert_eq!(block_aborted_solution_ids, expected_aborted_solutions, "Aborted solutions do not match");
@@ -3457,7 +3457,7 @@ mod valid_solutions {
 
             // Check that the block's solutions are well-formed.
             assert_eq!(block.solutions().len(), 1);
-            assert_eq!(block.aborted_solution_ids().len(), 0);
+            assert_eq!(block.aborted_solution_ids().unwrap().len(), 0);
 
             // Fetch the solution from the block.
             let (solution_id, solution) = block.solutions().as_ref().unwrap().first().unwrap();
@@ -3529,10 +3529,10 @@ mod valid_solutions {
 
         // Check that the block's solutions are well-formed.
         assert_eq!(block.solutions().len(), 0);
-        assert_eq!(block.aborted_solution_ids().len(), 1);
+        assert_eq!(block.aborted_solution_ids().unwrap().len(), 1);
 
         // Check that the aborted solution is correct.
-        let block_aborted_solution_id = block.aborted_solution_ids().first().unwrap();
+        let block_aborted_solution_id = block.aborted_solution_ids().unwrap().first().unwrap();
         assert_eq!(*block_aborted_solution_id, invalid_solution.id(), "Aborted solutions do not match");
     }
 }

@@ -85,10 +85,10 @@ impl<'de, N: Network> Deserialize<'de> for Block<N> {
                                 &mut block,
                                 "aborted_solution_transmission_ids",
                             )?),
-                            vec![],
+                            None,
                         )
                     } else {
-                        (None, None, DeserializeExt::take_from_value::<D>(&mut block, "aborted_solution_ids")?)
+                        (None, None, Some(DeserializeExt::take_from_value::<D>(&mut block, "aborted_solution_ids")?))
                     };
                 let (prior_transaction_transmission_ids, aborted_transaction_transmission_ids, aborted_transaction_ids) =
                     if version >= 2 {
@@ -101,10 +101,10 @@ impl<'de, N: Network> Deserialize<'de> for Block<N> {
                                 &mut block,
                                 "aborted_transaction_transmission_ids",
                             )?),
-                            vec![],
+                            None,
                         )
                     } else {
-                        (None, None, DeserializeExt::take_from_value::<D>(&mut block, "aborted_transaction_ids")?)
+                        (None, None, Some(DeserializeExt::take_from_value::<D>(&mut block, "aborted_transaction_ids")?))
                     };
 
                 // Recover the block.

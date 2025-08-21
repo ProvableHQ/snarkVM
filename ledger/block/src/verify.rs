@@ -237,18 +237,28 @@ impl<N: Network> Block<N> {
                     Subdag::Full { subdag } => Self::check_full_subdag_transmissions(
                         subdag,
                         &self.solutions,
-                        &self.aborted_solution_ids,
+                        self.aborted_solution_ids.as_ref().ok_or_else(|| error("Missing aborted_solution_ids"))?,
                         &self.transactions,
-                        &self.aborted_transaction_ids,
+                        self.aborted_transaction_ids
+                            .as_ref()
+                            .ok_or_else(|| error("Missing aborted_transaction_ids"))?,
                     )?,
                     Subdag::Compact { subdag } => Self::check_compact_subdag_transmissions(
                         subdag,
                         &self.solutions,
-                        self.prior_solution_transmission_ids.as_ref().unwrap(),
-                        self.aborted_solution_transmission_ids.as_ref().unwrap(),
+                        self.prior_solution_transmission_ids
+                            .as_ref()
+                            .ok_or_else(|| error("Missing prior_solution_transmission_ids"))?,
+                        self.aborted_solution_transmission_ids
+                            .as_ref()
+                            .ok_or_else(|| error("Missing aborted_solution_transmission_ids"))?,
                         &self.transactions,
-                        self.prior_transaction_transmission_ids.as_ref().unwrap(),
-                        self.aborted_transaction_transmission_ids.as_ref().unwrap(),
+                        self.prior_transaction_transmission_ids
+                            .as_ref()
+                            .ok_or_else(|| error("Missing prior_transaction_transmission_ids"))?,
+                        self.aborted_transaction_transmission_ids
+                            .as_ref()
+                            .ok_or_else(|| error("Missing aborted_transaction_transmission_ids"))?,
                     )?,
                 }
             }
@@ -339,11 +349,13 @@ impl<N: Network> Block<N> {
 
         // Ensure the number of aborted solution IDs is within the allowed range.
         // This check is redundant if the block has been created via `Block::from()`.
-        ensure!(
-            self.aborted_solution_ids.len() <= Solutions::<N>::max_aborted_solutions()?,
-            "Block {height} contains too many aborted solution IDs (found '{}')",
-            self.aborted_solution_ids.len(),
-        );
+        if let Some(aborted_solution_ids) = self.aborted_solution_ids.as_ref() {
+            ensure!(
+                aborted_solution_ids.len() <= Solutions::<N>::max_aborted_solutions()?,
+                "Block {height} contains too many aborted solution IDs (found '{}')",
+                aborted_solution_ids.len(),
+            );
+        }
 
         // Ensure there are no duplicate solution IDs.
         if has_duplicates(
@@ -352,7 +364,7 @@ impl<N: Network> Block<N> {
                 .map(PuzzleSolutions::solution_ids)
                 .into_iter()
                 .flatten()
-                .chain(self.aborted_solution_ids()),
+                .chain(self.aborted_solution_ids().into_iter().flatten()),
         ) {
             bail!("Found a duplicate solution in block {height}");
         }
@@ -456,15 +468,17 @@ impl<N: Network> Block<N> {
 
         // Ensure the number of aborted transaction IDs is within the allowed range.
         // This check is redundant if the block has been created via `Block::from()`.
-        if self.aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
-            bail!(
-                "Cannot validate a block with more than {} aborted transaction IDs",
-                Transactions::<N>::max_aborted_transactions()?
-            );
+        if let Some(aborted_transaction_ids) = self.aborted_transaction_ids.as_ref() {
+            if aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
+                bail!(
+                    "Cannot validate a block with more than {} aborted transaction IDs",
+                    Transactions::<N>::max_aborted_transactions()?
+                );
+            }
         }
 
         // Ensure there are no duplicate transaction IDs.
-        if has_duplicates(self.transaction_ids().chain(self.aborted_transaction_ids.iter())) {
+        if has_duplicates(self.transaction_ids().chain(self.aborted_transaction_ids.iter().flatten())) {
             bail!("Found a duplicate transaction in block {height}");
         }
 
@@ -570,6 +584,8 @@ impl<N: Network> Block<N> {
         transactions: &Transactions<N>,
         aborted_transaction_ids: &[N::TransactionID],
     ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
+        // Prepare an iterator over the solution IDs.
+        let mut solutions = solutions.as_ref().map(|s| s.deref()).into_iter().flatten().peekable();
         // Prepare an iterator over the unconfirmed transactions.
         let unconfirmed_transactions = cfg_iter!(transactions)
             .map(|confirmed| confirmed.to_unconfirmed_transaction())
@@ -585,15 +601,7 @@ impl<N: Network> Block<N> {
         // Initialize a set of aborted or already-existing transaction IDs.
         let mut aborted_or_existing_transaction_ids: HashSet<N::TransactionID> = HashSet::new();
 
-        let transmission_ids = subdag
-            .values()
-            .flatten()
-            .flat_map(|cert| cert.transmission_ids())
-            .copied()
-            .collect::<Vec<TransmissionID<N>>>();
-
-        // Prepare an iterator over the solution IDs.
-        let mut solutions = solutions.as_ref().map(|s| s.deref()).into_iter().flatten().peekable();
+        let transmission_ids = subdag.values().flatten().flat_map(|cert| cert.transmission_ids()).copied();
 
         // Iterate over the transmission IDs.
         for transmission_id in transmission_ids {

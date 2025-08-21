@@ -472,12 +472,14 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
                 // Store the aborted solution transmission ids.
                 self.aborted_solution_transmission_ids_map()
                     .insert(block.hash(), block.aborted_solution_transmission_ids().clone().unwrap_or_default())?;
-            }
-            // Store the aborted solution IDs.
-            self.aborted_solution_ids_map().insert(block.hash(), block.aborted_solution_ids().clone())?;
-            // Store the block aborted solution heights.
-            for solution_id in block.aborted_solution_ids() {
-                self.aborted_solution_heights_map().insert(*solution_id, block.height())?;
+            } else {
+                // Store the aborted solution IDs.
+                self.aborted_solution_ids_map()
+                    .insert(block.hash(), block.aborted_solution_ids().cloned().unwrap_or_default())?;
+                // Store the block aborted solution heights.
+                for solution_id in block.aborted_solution_ids().into_iter().flatten() {
+                    self.aborted_solution_heights_map().insert(*solution_id, block.height())?;
+                }
             }
 
             // Store the transaction IDs.
@@ -491,11 +493,13 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
                 // Store the aborted transaction transmission ids.
                 self.aborted_transaction_transmission_ids_map()
                     .insert(block.hash(), block.aborted_transaction_transmission_ids().clone().unwrap_or_default())?;
-            }
-            // Store the aborted transaction IDs.
-            self.aborted_transaction_ids_map().insert(block.hash(), block.aborted_transaction_ids().clone())?;
-            for aborted_transaction_id in block.aborted_transaction_ids() {
-                self.rejected_or_aborted_transaction_id_map().insert(*aborted_transaction_id, block.hash())?;
+            } else {
+                // Store the aborted transaction IDs.
+                self.aborted_transaction_ids_map()
+                    .insert(block.hash(), block.aborted_transaction_ids().cloned().unwrap_or_default())?;
+                for aborted_transaction_id in block.aborted_transaction_ids().into_iter().flatten() {
+                    self.rejected_or_aborted_transaction_id_map().insert(*aborted_transaction_id, block.hash())?;
+                }
             }
 
             // Store the rejected transactions IDs.
@@ -1025,7 +1029,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             bail!("Missing aborted solution transmission IDs for block {height} ('{block_hash}')");
         };
         // Retrieve the block aborted solution IDs.
-        let Some(aborted_solution_ids) = self.get_block_aborted_solution_ids(block_hash)? else {
+        let Ok(aborted_solution_ids) = self.get_block_aborted_solution_ids(block_hash) else {
             bail!("Missing aborted solutions IDs for block {height} ('{block_hash}')");
         };
         // Retrieve the block transactions.
@@ -1043,7 +1047,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             bail!("Missing aborted transaction transmission IDs for block {height} ('{block_hash}')");
         };
         // Retrieve the block aborted transaction IDs.
-        let Some(aborted_transaction_ids) = self.get_block_aborted_transaction_ids(block_hash)? else {
+        let Ok(aborted_transaction_ids) = self.get_block_aborted_transaction_ids(block_hash) else {
             bail!("Missing aborted transaction IDs for block {height} ('{block_hash}')");
         };
 
@@ -1638,9 +1642,9 @@ mod tests {
             header,
             ratifications,
             None.into(),
-            vec![],
+            Some(vec![]),
             transactions,
-            vec![unconfirmed_id],
+            Some(vec![unconfirmed_id]),
             rng,
         )
         .unwrap();
