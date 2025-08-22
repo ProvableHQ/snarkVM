@@ -43,7 +43,7 @@ pub struct BatchCertificate<N: Network> {
     /// The batch header.
     batch_header: BatchHeader<N>,
     /// The signatures for the batch ID from the committee.
-    pub signatures: IndexSet<Signature<N>>,
+    signatures: IndexSet<Signature<N>>,
 }
 
 impl<N: Network> BatchCertificate<N> {
@@ -84,6 +84,11 @@ impl<N: Network> BatchCertificate<N> {
         ensure!(!signatures.is_empty(), "Batch certificate must contain signatures");
         // Return the batch certificate.
         Ok(Self { batch_header, signatures })
+    }
+
+    pub fn into_components(self) -> (BatchHeader<N>, IndexSet<Signature<N>>) {
+        let Self { batch_header, signatures } = self;
+        (batch_header, signatures)
     }
 }
 

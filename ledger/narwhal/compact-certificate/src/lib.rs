@@ -79,8 +79,9 @@ impl<N: Network> CompactCertificate<N> {
         prior_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
         aborted_transactions: impl ExactSizeIterator<Item = &'a TransmissionID<N>>,
     ) -> Result<Self> {
+        let (batch_header, signatures) = batch_certificate.into_components();
         let compact_header = CompactHeader::new(
-            batch_certificate.batch_header(),
+            &batch_header,
             solutions,
             prior_solutions,
             aborted_solutions,
@@ -88,7 +89,6 @@ impl<N: Network> CompactCertificate<N> {
             prior_transactions,
             aborted_transactions,
         )?;
-        let BatchCertificate { signatures, .. } = batch_certificate;
         // Return the compact certificate.
         Self::from_unchecked(compact_header, signatures)
     }

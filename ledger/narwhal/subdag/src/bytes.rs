@@ -25,12 +25,6 @@ impl<N: Network> FromBytes for Subdag<N> {
             return Err(error(format!("Invalid subdag version ({version})")));
         }
 
-        // Read the subdag type.
-        let subdag_type = match version {
-            1 => 1u8,
-            _ => u8::read_le(&mut reader)?,
-        };
-
         // Read the number of rounds.
         let num_rounds = u32::read_le(&mut reader)?;
         // Ensure the number of rounds is within bounds.
@@ -50,7 +44,7 @@ impl<N: Network> FromBytes for Subdag<N> {
                 return Err(error(format!("Number of certificates ({num_certificates}) exceeds the maximum.",)));
             }
             // Read the certificates.
-            match subdag_type {
+            match version {
                 1 => {
                     let mut certificates = IndexSet::new();
                     for _ in 0..num_certificates {
@@ -70,16 +64,16 @@ impl<N: Network> FromBytes for Subdag<N> {
                     compact_subdag.insert(round, certificates);
                 }
                 _ => {
-                    return Err(error(format!("Found unexpected subdag type ({subdag_type})")));
+                    return Err(error(format!("Found unexpected subdag version ({version})")));
                 }
             }
         }
 
         // Return the subdag.
-        match subdag_type {
+        match version {
             1 => Self::from_full(batch_subdag).map_err(error),
             2 => Self::from_compact(compact_subdag).map_err(error),
-            _ => Err(error(format!("Found unexpected subdag type ({subdag_type})"))),
+            _ => Err(error(format!("Found unexpected subdag version ({version})"))),
         }
     }
 }
@@ -87,18 +81,13 @@ impl<N: Network> FromBytes for Subdag<N> {
 impl<N: Network> ToBytes for Subdag<N> {
     /// Writes the subdag to the buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        // Write the version.
-        let version = 1u8;
-        version.write_le(&mut writer)?;
-        // Get the subdag type
-        let (subdag_type, subdag_len) = match self {
+        // Get the subdag version and length
+        let (version, subdag_len) = match self {
             Self::Full { subdag, .. } => (1u8, subdag.len()),
             Self::Compact { subdag, .. } => (2u8, subdag.len()),
         };
-        // Write the subdag type
-        if version >= 2 {
-            subdag_type.write_le(&mut writer)?;
-        }
+        // Write the version.
+        version.write_le(&mut writer)?;
         // Write the number of rounds.
         u32::try_from(subdag_len).map_err(error)?.write_le(&mut writer)?;
         // Write the round certificates.

@@ -187,6 +187,38 @@ impl<N: Network> BatchHeader<N> {
             signature,
         })
     }
+
+    /// Initializes a new batch header without performing checks.
+    pub fn from_unchecked(
+        author: Address<N>,
+        round: u64,
+        timestamp: i64,
+        committee_id: Field<N>,
+        transmission_ids: IndexSet<TransmissionID<N>>,
+        previous_certificate_ids: IndexSet<Field<N>>,
+        signature: Signature<N>,
+    ) -> Result<Self> {
+        // Compute the batch ID.
+        let batch_id = Self::compute_batch_id(
+            author,
+            round,
+            timestamp,
+            committee_id,
+            &transmission_ids,
+            &previous_certificate_ids,
+        )?;
+        // Return the batch header.
+        Ok(Self {
+            author,
+            batch_id,
+            round,
+            timestamp,
+            committee_id,
+            transmission_ids,
+            previous_certificate_ids,
+            signature,
+        })
+    }
 }
 
 impl<N: Network> BatchHeader<N> {

@@ -19,7 +19,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns a candidate for the next block in the ledger, using a committed subdag and its transmissions.
     pub fn prepare_advance_to_next_quorum_block<R: Rng + CryptoRng>(
         &self,
-        mut subdag: Subdag<N>,
+        subdag: Subdag<N>,
         subdag_transmissions: SubdagTransmissions<N>,
         rng: &mut R,
     ) -> Result<Block<N>> {
@@ -160,16 +160,18 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         };
 
         // Construct the compact Subdag
-        if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {
-            subdag = subdag.into_compact(
+        let subdag = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {
+            subdag.into_compact(
                 solution_transmission_ids,
                 prior_solution_transmission_ids.clone(),
                 aborted_solution_transmission_ids.clone(),
                 transaction_transmission_ids,
                 prior_transaction_transmission_ids.clone(),
                 aborted_transaction_transmission_ids.clone(),
-            )?;
-        }
+            )?
+        } else {
+            subdag
+        };
 
         let (
             prior_solution_transmission_ids,

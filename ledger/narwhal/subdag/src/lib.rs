@@ -372,11 +372,6 @@ impl<N: Network> Subdag<N> {
         }
     }
 
-    // /// Returns certificates in this subdag (from earliest round to latest round).
-    // pub fn certificates(&self) -> impl Iterator<Item = &BatchCertificate<N>> {
-    //     self.values().flatten()
-    // }
-
     /// Returns the leader certificate.
     pub fn leader_certificate(&self) -> LeaderCertificate<N> {
         match self {
@@ -442,10 +437,7 @@ impl<N: Network> Subdag<N> {
                 match subdag.get(&round) {
                     Some(certificates) => {
                         // Retrieve the certificate for the given certificate ID.
-                        match certificates.iter().find(|certificate| certificate.id() == *certificate_id) {
-                            Some(certificate) => Some(Cow::Borrowed(certificate)),
-                            None => None,
-                        }
+                        certificates.iter().find(|certificate| certificate.id() == *certificate_id).map(Cow::Borrowed)
                     }
                     None => None,
                 }

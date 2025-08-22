@@ -226,6 +226,7 @@ impl<N: Network> CompactHeader<N> {
         &self.signature
     }
 
+    /// Returns the transmission IDs associated with the header.
     pub fn to_transmission_ids<'a>(
         &self,
         solutions: impl Iterator<Item = &'a TransmissionID<N>>,
@@ -268,7 +269,6 @@ impl<N: Network> CompactHeader<N> {
     }
 
     /// Convert compact header to batch header
-    /// NOTE: this also recomputes the batch_id and verifies the signature.
     pub fn into_batch_header<'a>(
         self,
         solutions: impl Iterator<Item = &'a TransmissionID<N>>,
@@ -287,7 +287,7 @@ impl<N: Network> CompactHeader<N> {
             aborted_transactions,
         )?;
 
-        BatchHeader::from(
+        BatchHeader::from_unchecked(
             self.author,
             self.round,
             self.timestamp,
