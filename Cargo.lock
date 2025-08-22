@@ -3490,7 +3490,7 @@ dependencies = [
 
 [[package]]
 name = "snarkvm-ledger-narwhal-compact-certificate"
-version = "4.0.0"
+version = "4.1.0"
 dependencies = [
  "bincode",
  "indexmap 2.10.0",
@@ -3502,12 +3502,11 @@ dependencies = [
  "snarkvm-ledger-narwhal-compact-header",
  "snarkvm-ledger-narwhal-traits",
  "snarkvm-ledger-narwhal-transmission-id",
- "snarkvm-ledger-puzzle",
 ]
 
 [[package]]
 name = "snarkvm-ledger-narwhal-compact-header"
-version = "4.0.0"
+version = "4.1.0"
 dependencies = [
  "bincode",
  "indexmap 2.10.0",
@@ -3516,7 +3515,6 @@ dependencies = [
  "snarkvm-ledger-narwhal-batch-header",
  "snarkvm-ledger-narwhal-compact-header",
  "snarkvm-ledger-narwhal-transmission-id",
- "snarkvm-ledger-puzzle",
 ]
 
 [[package]]
@@ -3547,13 +3545,12 @@ dependencies = [
  "snarkvm-ledger-narwhal-subdag",
  "snarkvm-ledger-narwhal-traits",
  "snarkvm-ledger-narwhal-transmission-id",
- "snarkvm-ledger-puzzle",
  "tracing",
 ]
 
 [[package]]
 name = "snarkvm-ledger-narwhal-traits"
-version = "4.0.0"
+version = "4.1.0"
 dependencies = [
  "indexmap 2.10.0",
  "snarkvm-console",
@@ -3661,6 +3658,7 @@ dependencies = [
  "snarkvm-ledger-authority",
  "snarkvm-ledger-block",
  "snarkvm-ledger-committee",
+ "snarkvm-ledger-narwhal-transmission-id",
  "snarkvm-ledger-puzzle",
  "snarkvm-ledger-test-helpers",
  "snarkvm-synthesizer-program",
