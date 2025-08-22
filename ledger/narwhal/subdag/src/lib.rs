@@ -560,8 +560,61 @@ pub mod test_helpers {
 
     type CurrentNetwork = MainnetV0;
 
-    /// Returns a sample subdag, sampled at random.
-    pub fn sample_subdag(rng: &mut TestRng) -> Subdag<CurrentNetwork> {
+    /// Returns a sample compact subdag, sampled at random.
+    pub fn sample_compact_subdag(rng: &mut TestRng) -> Subdag<CurrentNetwork> {
+        const F: usize = 1;
+        const AVAILABILITY_THRESHOLD: usize = F + 1;
+        const QUORUM_THRESHOLD: usize = 2 * F + 1;
+
+        // Initialize the map for the subdag.
+        let mut subdag = BTreeMap::<u64, IndexSet<_>>::new();
+
+        // Initialize the starting round.
+        let starting_round = {
+            loop {
+                let round = rng.gen_range(2..u64::MAX);
+                if round % 2 == 0 {
+                    break round;
+                }
+            }
+        };
+
+        // Process the earliest round.
+        let mut previous_certificate_ids = IndexSet::new();
+        for _ in 0..AVAILABILITY_THRESHOLD {
+            let certificate =
+                snarkvm_ledger_narwhal_compact_certificate::test_helpers::sample_compact_certificate_for_round(
+                    starting_round,
+                    rng,
+                );
+            previous_certificate_ids.insert(certificate.id());
+            subdag.entry(starting_round).or_default().insert(certificate);
+        }
+
+        // Process the middle round.
+        let mut previous_certificate_ids_2 = IndexSet::new();
+        for _ in 0..QUORUM_THRESHOLD {
+            let certificate =
+                snarkvm_ledger_narwhal_compact_certificate::test_helpers::sample_compact_certificate_for_round_with_previous_certificate_ids(starting_round + 1, previous_certificate_ids.clone(), rng);
+            previous_certificate_ids_2.insert(certificate.id());
+            subdag.entry(starting_round + 1).or_default().insert(certificate);
+        }
+
+        // Process the latest round.
+        let certificate =
+            snarkvm_ledger_narwhal_compact_certificate::test_helpers::sample_compact_certificate_for_round_with_previous_certificate_ids(
+                starting_round + 2,
+                previous_certificate_ids_2,
+                rng,
+            );
+        subdag.insert(starting_round + 2, indexset![certificate]);
+
+        // Return the subdag.
+        Subdag::from_compact(subdag).unwrap()
+    }
+
+    /// Returns a sample full subdag, sampled at random.
+    pub fn sample_full_subdag(rng: &mut TestRng) -> Subdag<CurrentNetwork> {
         const F: usize = 1;
         const AVAILABILITY_THRESHOLD: usize = F + 1;
         const QUORUM_THRESHOLD: usize = 2 * F + 1;
@@ -613,13 +666,30 @@ pub mod test_helpers {
         Subdag::from_full(subdag).unwrap()
     }
 
-    /// Returns a list of sample subdags, sampled at random.
-    pub fn sample_subdags(rng: &mut TestRng) -> Vec<Subdag<CurrentNetwork>> {
+    /// Returns a list of sample full subdags, sampled at random.
+    pub fn sample_full_subdags(rng: &mut TestRng) -> Vec<Subdag<CurrentNetwork>> {
         // Initialize a sample vector.
         let mut sample = Vec::with_capacity(10);
         // Append sample subdags.
         for _ in 0..10 {
-            sample.push(sample_subdag(rng));
+            sample.push(sample_full_subdag(rng));
+        }
+        // Return the sample vector.
+        sample
+    }
+
+    /// Returns a list of sample subdags, both full and compact, sampled at random.
+    pub fn sample_any_subdags(rng: &mut TestRng) -> Vec<Subdag<CurrentNetwork>> {
+        // Initialize a sample vector.
+        let mut sample = Vec::with_capacity(10);
+        // Append sample subdags.
+        for _ in 0..10 {
+            // Flip a coin to decide if the subdag is going to be compact.
+            if rng.r#gen::<bool>() {
+                sample.push(sample_compact_subdag(rng));
+            } else {
+                sample.push(sample_full_subdag(rng));
+            }
         }
         // Return the sample vector.
         sample

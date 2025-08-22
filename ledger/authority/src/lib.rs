@@ -132,7 +132,7 @@ pub mod test_helpers {
     /// Returns a sample quorum authority.
     pub fn sample_quorum_authority(rng: &mut TestRng) -> Authority<CurrentNetwork> {
         // Return the quorum authority.
-        Authority::new_quorum(snarkvm_ledger_narwhal_subdag::test_helpers::sample_subdag(rng))
+        Authority::new_quorum(snarkvm_ledger_narwhal_subdag::test_helpers::sample_full_subdag(rng))
     }
 
     /// Returns a list of sample authorities.
