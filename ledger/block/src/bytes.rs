@@ -86,7 +86,10 @@ impl<N: Network> FromBytes for Block<N> {
         let (prior_transaction_transmission_ids, aborted_transaction_transmission_ids, aborted_transaction_ids) =
             if version >= 2 {
                 // Read the number of prior transaction transmission IDs.
-                let num_prior_transactions = u32::read_le(&mut reader)?; // TODO: what is a sane bound on this value?
+                let num_prior_transactions = u32::read_le(&mut reader)?;
+                if num_prior_transactions as usize > Transactions::<N>::max_aborted_transactions().map_err(error)? {
+                    return Err(error("Invalid number of prior transaction IDs in the block"));
+                }
                 // Read the prior transaction transmission IDs.
                 let mut prior_transaction_transmission_ids = Vec::with_capacity(num_prior_transactions as usize);
                 for _ in 0..num_prior_transactions {
@@ -238,7 +241,6 @@ mod tests {
         let rng = &mut TestRng::default();
 
         for expected in [crate::test_helpers::sample_genesis_block(rng)].into_iter() {
-            // todo: sample compact too for the Block tests
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, Block::read_le(&expected_bytes[..])?);
