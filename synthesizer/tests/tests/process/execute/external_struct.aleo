@@ -25,6 +25,9 @@ cases:
   - program: child2.aleo
     function: call_make_outer2
     inputs: []
+  - program: child2.aleo
+    function: call_make_outer2_access
+    inputs: []
 */
 
 program external_struct_parent.aleo;
@@ -110,9 +113,14 @@ function cast_s:
 /////////////////////////////////////////////////
 
 import child.aleo;
+import external_struct_parent.aleo;
 
 program child2.aleo;
 
 function call_make_outer2:
     call child.aleo/make_outer2 into r0;
     output r0 as child.aleo/Outer2.public;
+
+function call_make_outer2_access:
+    call child.aleo/make_outer2 into r0;
+    output r0.s as external_struct_parent.aleo/S.public;

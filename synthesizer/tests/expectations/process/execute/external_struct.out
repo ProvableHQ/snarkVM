@@ -36,3 +36,7 @@ outputs:
         x: 100field
       }
     }
+- - |-
+    {
+      x: 100field
+    }
