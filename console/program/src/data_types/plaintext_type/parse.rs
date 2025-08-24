@@ -62,6 +62,7 @@ impl<N: Network> Display for PlaintextType<N> {
             Self::Literal(literal) => Display::fmt(literal, f),
             // Prints the struct, i.e. signature
             Self::Struct(struct_) => Display::fmt(struct_, f),
+            // Prints the external struct, i.e. foo.aleo/bar
             Self::ExternalStruct(locator) => Display::fmt(locator, f),
             // Prints the array type, i.e. [field; 2u32]
             Self::Array(array) => Display::fmt(array, f),

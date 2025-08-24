@@ -23,7 +23,7 @@ impl<N: Network> FromBytes for ArrayType<N> {
         let element_type = match variant {
             0 => PlaintextType::Literal(LiteralType::read_le(&mut reader)?),
             1 => PlaintextType::Struct(Identifier::read_le(&mut reader)?),
-            3 => PlaintextType::ExternalStruct(Locator::read_le(&mut reader)?),
+            2 => PlaintextType::ExternalStruct(Locator::read_le(&mut reader)?),
             _ => return Err(error(format!("Failed to deserialize element type {variant}"))),
         };
 
@@ -82,14 +82,14 @@ impl<N: Network> ToBytes for ArrayType<N> {
                 1u8.write_le(&mut writer)?;
                 identifier.write_le(&mut writer)?;
             }
+            PlaintextType::ExternalStruct(locator) => {
+                2u8.write_le(&mut writer)?;
+                locator.write_le(&mut writer)?;
+            }
             PlaintextType::Array(_) => {
                 // This is technically unreachable by definition, however we return an error
                 // out of an abundance of caution.
                 return Err(error(format!("Array type exceeds the maximum depth of {}.", N::MAX_DATA_DEPTH)));
-            }
-            PlaintextType::ExternalStruct(locator) => {
-                3u8.write_le(&mut writer)?;
-                locator.write_le(&mut writer)?;
             }
         }
 

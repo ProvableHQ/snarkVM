@@ -3767,7 +3767,6 @@ name = "snarkvm-synthesizer-snark"
 version = "4.1.0"
 dependencies = [
  "bincode",
- "colored 3.0.0",
  "serde_json",
  "snarkvm-algorithms",
  "snarkvm-circuit",

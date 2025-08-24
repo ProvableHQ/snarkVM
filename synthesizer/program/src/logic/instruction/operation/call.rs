@@ -224,7 +224,7 @@ impl<N: Network> Call<N> {
                 .output_types()
                 .into_iter()
                 // If the function is an external program, we need to qualify its structs with
-                // the appropriate ProgramID.
+                // the appropriate `ProgramID`.
                 .map(|output_type| if is_external { output_type.qualify(*program.id()) } else { output_type })
                 .collect::<Vec<_>>())
         }
@@ -248,7 +248,7 @@ impl<N: Network> Call<N> {
                 .into_iter()
                 .map(RegisterType::from)
                 // If the function is an external program, we need to qualify its structs or records with
-                // the appropriate ProgramID.
+                // the appropriate `ProgramID`.
                 .map(|register_type| if is_external { register_type.qualify(*program.id()) } else { register_type })
                 .collect::<Vec<_>>())
         }
