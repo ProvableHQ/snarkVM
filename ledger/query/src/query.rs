@@ -129,8 +129,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     fn current_state_root(&self) -> Result<N::StateRoot> {
         match self {
             Self::VM(block_store) => Ok(block_store.current_state_root()),
-            Self::REST(url) => Self::get_request(&format!("{url}{}/stateRoot/latest", N::SHORT_NAME)),
-
+            Self::REST(base_url) => Self::get_request(base_url, "stateRoot/latest"),
             Self::STATIC(query) => query.current_state_root(),
         }
     }
@@ -140,7 +139,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     async fn current_state_root_async(&self) -> Result<N::StateRoot> {
         match self {
             Self::VM(block_store) => Ok(block_store.current_state_root()),
-            Self::REST(url) => Self::get_request_async(&format!("{url}{}/stateRoot/latest", N::SHORT_NAME)).await,
+            Self::REST(base_url) => Self::get_request_async(base_url, "stateRoot/latest").await,
             Self::STATIC(_query) => bail!("Async calls are not supported by StaticQuery"),
         }
     }
@@ -149,7 +148,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     fn get_state_path_for_commitment(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
         match self {
             Self::VM(block_store) => block_store.get_state_path_for_commitment(commitment),
-            Self::REST(url) => Self::get_request(&format!("{url}{}/statePath/{commitment}", N::SHORT_NAME)),
+            Self::REST(base_url) => Self::get_request(base_url, &format!("statePath/{commitment}")),
             Self::STATIC(query) => query.get_state_path_for_commitment(commitment),
         }
     }
@@ -159,7 +158,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     async fn get_state_path_for_commitment_async(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
         match self {
             Self::VM(block_store) => block_store.get_state_path_for_commitment(commitment),
-            Self::REST(url) => Self::get_request_async(&format!("{url}{}/statePath/{commitment}", N::SHORT_NAME)).await,
+            Self::REST(base_url) => Self::get_request_async(base_url, &format!("statePath/{commitment}")).await,
             Self::STATIC(_query) => bail!("Async calls are not supported by StaticQuery"),
         }
     }
@@ -173,10 +172,10 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
 
         match self {
             Self::VM(block_store) => block_store.get_state_paths_for_commitments(commitments),
-            Self::REST(url) => {
+            Self::REST(base_url) => {
                 // Construct the comma separated string of commitments.
                 let commitments_string = commitments.iter().map(|cm| cm.to_string()).collect::<Vec<_>>().join(",");
-                Self::get_request(&format!("{url}{}/statePaths?commitments={commitments_string}", N::SHORT_NAME))
+                Self::get_request(base_url, &format!("statePaths?commitments={commitments_string}"))
             }
             Self::STATIC(query) => query.get_state_paths_for_commitments(commitments),
         }
@@ -187,11 +186,10 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     async fn get_state_paths_for_commitments_async(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
         match self {
             Self::VM(block_store) => block_store.get_state_paths_for_commitments(commitments),
-            Self::REST(url) => {
+            Self::REST(base_url) => {
                 // Construct the comma separated string of commitments.
                 let commitments_string = commitments.iter().map(|cm| cm.to_string()).collect::<Vec<_>>().join(",");
-                Self::get_request_async(&format!("{url}{}/statePaths?commitments={commitments_string}", N::SHORT_NAME))
-                    .await
+                Self::get_request_async(base_url, &format!("statePaths?commitments={commitments_string}")).await
             }
             Self::STATIC(query) => query.get_state_paths_for_commitments(commitments),
         }
@@ -201,7 +199,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     fn current_block_height(&self) -> Result<u32> {
         match self {
             Self::VM(block_store) => Ok(block_store.max_height().unwrap_or_default()),
-            Self::REST(url) => Self::get_request(&format!("{url}{}/block/height/latest", N::SHORT_NAME)),
+            Self::REST(base_url) => Self::get_request(base_url, "block/height/latest"),
             Self::STATIC(query) => query.current_block_height(),
         }
     }
@@ -211,7 +209,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
     async fn current_block_height_async(&self) -> Result<u32> {
         match self {
             Self::VM(block_store) => Ok(block_store.max_height().unwrap_or_default()),
-            Self::REST(url) => Self::get_request_async(&format!("{url}{}/block/height/latest", N::SHORT_NAME)).await,
+            Self::REST(base_url) => Self::get_request_async(base_url, "block/height/latest").await,
             Self::STATIC(_query) => bail!("Async calls are not supported by StaticQuery"),
         }
     }
@@ -225,7 +223,7 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
                 let txn = block_store.get_transaction(transaction_id)?;
                 txn.ok_or_else(|| anyhow!("Transaction {transaction_id} not in local storage"))
             }
-            Self::REST(url) => Self::get_request(&format!("{url}{}/transaction/{transaction_id}", N::SHORT_NAME)),
+            Self::REST(base_url) => Self::get_request(base_url, &format!("transaction/{transaction_id}")),
             Self::STATIC(_query) => bail!("get_transaction is not supported by StaticQuery"),
         }
     }
@@ -238,9 +236,7 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
                 let txn = block_store.get_transaction(transaction_id)?;
                 txn.ok_or_else(|| anyhow!("Transaction {transaction_id} not in local storage"))
             }
-            Self::REST(url) => {
-                Self::get_request_async(&format!("{url}{}/transaction/{transaction_id}", N::SHORT_NAME)).await
-            }
+            Self::REST(base_url) => Self::get_request_async(base_url, &format!("transaction/{transaction_id}")).await,
             Self::STATIC(_query) => bail!("get_transaction is not supported by StaticQuery"),
         }
     }
@@ -251,7 +247,7 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
             Self::VM(block_store) => block_store
                 .get_latest_program(program_id)?
                 .ok_or_else(|| anyhow!("Program {program_id} not found in storage")),
-            Self::REST(url) => Self::get_request(&format!("{url}{}/program/{program_id}", N::SHORT_NAME)),
+            Self::REST(base_url) => Self::get_request(base_url, &format!("program/{program_id}")),
             Self::STATIC(_query) => bail!("get_program is not supported by StaticQuery"),
         }
     }
@@ -263,17 +259,39 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
             Self::VM(block_store) => block_store
                 .get_latest_program(program_id)?
                 .with_context(|| format!("Program {program_id} not found in storage")),
-            Self::REST(url) => Self::get_request_async(&format!("{url}{}/program/{program_id}", N::SHORT_NAME)).await,
+            Self::REST(base_url) => Self::get_request_async(base_url, &format!("program/{program_id}")).await,
             Self::STATIC(_query) => bail!("get_program_async is not supported by StaticQuery"),
         }
     }
 
+    /// Builds the full endpoint Uri from the base and path. Used internally
+    /// for all REST API calls.
+    ///
+    /// # Arguments
+    ///  - `base_url`: the hostname (and path prefix) of the node to query. this must exclude the network name.
+    ///  - `route`: the route to the endpoint (e.g., `stateRoot/latest`). This cannot start with a slash.
+    fn build_endpoint(base_url: &http::Uri, route: &str) -> Result<String> {
+        // This function is only called internally but check for additional sanity.
+        ensure!(!route.starts_with('/'), "path cannot start with a slash");
+
+        // Work around a bug in the `http` crate where empty paths will be set to '/' but other paths are not appended with a slash.
+        // See [this issue](https://github.com/hyperium/http/issues/507).
+        let path = if base_url.path().ends_with('/') {
+            format!("{base_url}{network}/{route}", network = N::SHORT_NAME)
+        } else {
+            format!("{base_url}/{network}/{route}", network = N::SHORT_NAME)
+        };
+
+        Ok(path)
+    }
+
     /// Performs a GET request to the given URL and deserializes returned JSON.
-    fn get_request<T: DeserializeOwned>(url: &str) -> Result<T> {
-        let mut response = ureq::get(url).call().with_context(|| format!("Failed to fetch from {url}"))?;
+    fn get_request<T: DeserializeOwned>(base_url: &http::Uri, path: &str) -> Result<T> {
+        let endpoint = Self::build_endpoint(base_url, path)?;
+        let mut response = ureq::get(&endpoint).call().with_context(|| format!("Failed to fetch from {endpoint}"))?;
         if response.status() != http::StatusCode::OK {
             // NOTE: ureq will return an error in this case, but we are keeping the check just in case.
-            bail!("Failed to fetch from {url}: Server returned status {}", response.status());
+            bail!("Failed to fetch from {endpoint}: Server returned status {}", response.status());
         }
 
         response.body_mut().read_json().with_context(|| "Failed to parse JSON response")
@@ -281,10 +299,11 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
 
     /// Performs a GET request to the given URL and deserializes returned JSON (async version).
     #[cfg(feature = "async")]
-    async fn get_request_async<T: DeserializeOwned>(url: &str) -> Result<T> {
-        let response = reqwest::get(url).await.with_context(|| format!("Failed to fetch from {url}"))?;
+    async fn get_request_async<T: DeserializeOwned>(base_url: &http::Uri, path: &str) -> Result<T> {
+        let endpoint = Self::build_endpoint(base_url, path)?;
+        let response = reqwest::get(&endpoint).await.with_context(|| format!("Failed to fetch from {endpoint}"))?;
         if response.status() != http::StatusCode::OK {
-            bail!("Failed to fetch from {url}: Server returned status {}", response.status());
+            bail!("Failed to fetch from {endpoint}: Server returned status {}", response.status());
         }
 
         response.json().await.with_context(|| "Failed to parse JSON response")
@@ -324,7 +343,27 @@ mod tests {
         let str = "http://localhost:3030";
         let query = str.parse::<CurrentQuery>().unwrap();
 
-        assert!(matches!(query, Query::REST(_)));
+        let Query::REST(base_uri) = query else { panic!() };
+
+        assert_eq!(base_uri.to_string(), format!("{str}/"));
+    }
+
+    #[test]
+    fn test_rest_url_parse_with_suffix() -> Result<()> {
+        let base = "http://localhost:3030/a/prefix";
+        let route = "a/route";
+        let query = base.parse::<CurrentQuery>().unwrap();
+
+        // Test without trailing slash.
+        let Query::REST(base_uri) = query else { panic!() };
+        assert_eq!(CurrentQuery::build_endpoint(&base_uri, route)?, format!("{base}/testnet/{route}"));
+
+        // Set again with trailing slash.
+        let query = format!("{base}/").parse::<CurrentQuery>().unwrap();
+        let Query::REST(base_uri) = query else { panic!() };
+        assert_eq!(CurrentQuery::build_endpoint(&base_uri, route)?, format!("{base}/testnet/{route}"));
+
+        Ok(())
     }
 
     #[test]
