@@ -338,14 +338,36 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// Tests HTTP's behavior of printing an empty path `/`
+    ///
+    /// `generate_endpoint` can handle base_urls with and without a trailing slash.
+    /// However, this test is still useful to see if the behavior changes in the future and a second slash is not
+    /// appended to a URL with an existing trailing slash.
     #[test]
     fn test_rest_url_parse() {
-        let str = "http://localhost:3030";
+        let noslash = "http://localhost:3030";
+        let withslash = format!("{noslash}/");
+
+        let query = noslash.parse::<CurrentQuery>().unwrap();
+        let Query::REST(base_uri) = query else { panic!() };
+        assert_eq!(base_uri.path_and_query().unwrap().to_string(), "/");
+        assert_eq!(base_uri.to_string(), withslash);
+
+        let query = withslash.parse::<CurrentQuery>().unwrap();
+        let Query::REST(base_uri) = query else { panic!() };
+        assert_eq!(base_uri.path_and_query().unwrap().to_string(), "/");
+        assert_eq!(base_uri.to_string(), withslash);
+    }
+
+    #[test]
+    fn test_rest_url_with_colon_parse() {
+        let str = "http://myendpoint.addr/:var/foo/bar";
         let query = str.parse::<CurrentQuery>().unwrap();
 
         let Query::REST(base_uri) = query else { panic!() };
 
-        assert_eq!(base_uri.to_string(), format!("{str}/"));
+        assert_eq!(base_uri.to_string(), format!("{str}"));
+        assert_eq!(base_uri.path_and_query().unwrap().to_string(), "/:var/foo/bar");
     }
 
     #[test]
