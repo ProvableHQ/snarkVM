@@ -15,35 +15,13 @@
 
 use crate::Aleo;
 use snarkvm_circuit_algorithms::{
-    BHP256,
-    BHP512,
-    BHP768,
-    BHP1024,
-    Commit,
-    CommitUncompressed,
-    Hash,
-    HashMany,
-    HashToGroup,
-    HashToScalar,
-    HashUncompressed,
-    Keccak256,
-    Keccak384,
-    Keccak512,
-    Pedersen64,
-    Pedersen128,
-    Poseidon2,
-    Poseidon4,
-    Poseidon8,
-    Sha3_256,
-    Sha3_384,
-    Sha3_512,
+    BHP256, BHP512, BHP768, BHP1024, Commit, CommitUncompressed, Hash, HashMany, HashToGroup, HashToScalar,
+    HashUncompressed, Keccak256, Keccak384, Keccak512, Pedersen64, Pedersen128, Poseidon2, Poseidon4, Poseidon8,
+    Sha3_256, Sha3_384, Sha3_512,
 };
 use snarkvm_circuit_collections::merkle_tree::MerklePath;
 use snarkvm_circuit_types::{
-    Boolean,
-    Field,
-    Group,
-    Scalar,
+    Boolean, Field, Group, Scalar,
     environment::{Assignment, CanaryCircuit, R1CS, prelude::*},
 };
 

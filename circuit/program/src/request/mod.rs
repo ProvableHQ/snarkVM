@@ -72,14 +72,10 @@ impl<A: Aleo> Eject for InputID<A> {
             Self::Constant(field) => field.eject_mode(),
             Self::Public(field) => field.eject_mode(),
             Self::Private(field) => field.eject_mode(),
-            Self::Record(commitment, gamma, record_view_key, serial_number, tag) => {
-                Mode::combine(commitment.eject_mode(), [
-                    gamma.eject_mode(),
-                    record_view_key.eject_mode(),
-                    serial_number.eject_mode(),
-                    tag.eject_mode(),
-                ])
-            }
+            Self::Record(commitment, gamma, record_view_key, serial_number, tag) => Mode::combine(
+                commitment.eject_mode(),
+                [gamma.eject_mode(), record_view_key.eject_mode(), serial_number.eject_mode(), tag.eject_mode()],
+            ),
             Self::ExternalRecord(field) => field.eject_mode(),
         }
     }
@@ -299,18 +295,21 @@ impl<A: Aleo> Eject for Request<A> {
 
     /// Ejects the mode of the request.
     fn eject_mode(&self) -> Mode {
-        Mode::combine(self.signer.eject_mode(), [
-            self.network_id.eject_mode(),
-            self.program_id.eject_mode(),
-            self.function_name.eject_mode(),
-            self.input_ids.eject_mode(),
-            self.inputs.eject_mode(),
-            self.signature.eject_mode(),
-            self.sk_tag.eject_mode(),
-            self.tvk.eject_mode(),
-            self.tcm.eject_mode(),
-            self.scm.eject_mode(),
-        ])
+        Mode::combine(
+            self.signer.eject_mode(),
+            [
+                self.network_id.eject_mode(),
+                self.program_id.eject_mode(),
+                self.function_name.eject_mode(),
+                self.input_ids.eject_mode(),
+                self.inputs.eject_mode(),
+                self.signature.eject_mode(),
+                self.sk_tag.eject_mode(),
+                self.tvk.eject_mode(),
+                self.tcm.eject_mode(),
+                self.scm.eject_mode(),
+            ],
+        )
     }
 
     /// Ejects the request as a primitive.

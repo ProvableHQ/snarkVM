@@ -14,8 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    Ledger,
-    RecordsFilter,
+    Ledger, RecordsFilter,
     advance::split_candidate_solutions,
     test_helpers::{CurrentAleo, CurrentConsensusStorage, CurrentLedger, CurrentNetwork},
 };
@@ -1260,13 +1259,10 @@ finalize foo:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&execution_ids[2], &deployment_ids[2]]);
-    assert_eq!(block.aborted_transaction_ids(), &vec![
-        execution_ids[5],
-        execution_ids[4],
-        execution_ids[3],
-        execution_ids[1],
-        deployment_ids[1]
-    ]);
+    assert_eq!(
+        block.aborted_transaction_ids(),
+        &vec![execution_ids[5], execution_ids[4], execution_ids[3], execution_ids[1], deployment_ids[1]]
+    );
 
     // Ensure that verification was not run on aborted deployments.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();

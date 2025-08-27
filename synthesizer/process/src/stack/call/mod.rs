@@ -21,13 +21,7 @@ use console::{
     program::{Register, Request, Value, ValueType},
 };
 use snarkvm_synthesizer_program::{
-    Call,
-    CallOperator,
-    Operand,
-    RegistersCircuit as _,
-    RegistersSigner as _,
-    RegistersTrait as _,
-    StackTrait,
+    Call, CallOperator, Operand, RegistersCircuit as _, RegistersSigner as _, RegistersTrait as _, StackTrait,
 };
 use snarkvm_utilities::dev_eprintln;
 

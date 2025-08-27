@@ -41,13 +41,7 @@ mod set;
 pub use set::*;
 
 use crate::{
-    CastType,
-    FinalizeOperation,
-    FinalizeRegistersState,
-    FinalizeStoreTrait,
-    Instruction,
-    Operand,
-    StackTrait,
+    CastType, FinalizeOperation, FinalizeRegistersState, FinalizeStoreTrait, Instruction, Operand, StackTrait,
 };
 use console::{
     network::prelude::*,

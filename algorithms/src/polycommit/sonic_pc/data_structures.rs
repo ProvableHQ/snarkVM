@@ -24,8 +24,7 @@ use hashbrown::HashMap;
 use std::{
     borrow::{Borrow, Cow},
     collections::{BTreeMap, BTreeSet},
-    fmt,
-    io,
+    fmt, io,
     ops::{AddAssign, MulAssign, SubAssign},
 };
 

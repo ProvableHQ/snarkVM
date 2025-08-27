@@ -21,8 +21,7 @@ use std::{
 };
 
 use serde::{
-    Deserializer,
-    Serializer,
+    Deserializer, Serializer,
     de::{self, Error, SeqAccess, Visitor},
     ser::{self, SerializeTuple},
 };
@@ -552,10 +551,13 @@ mod test {
 
     #[test]
     fn test_bits_from_bytes_le() {
-        assert_eq!(bits_from_bytes_le(&[204, 76]).collect::<Vec<bool>>(), [
-            false, false, true, true, false, false, true, true, // 204
-            false, false, true, true, false, false, true, false, // 76
-        ]);
+        assert_eq!(
+            bits_from_bytes_le(&[204, 76]).collect::<Vec<bool>>(),
+            [
+                false, false, true, true, false, false, true, true, // 204
+                false, false, true, true, false, false, true, false, // 76
+            ]
+        );
     }
 
     #[test]

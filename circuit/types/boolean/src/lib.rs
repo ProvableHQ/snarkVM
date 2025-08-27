@@ -59,10 +59,13 @@ impl<E: Environment> Inject for Boolean<E> {
 
     /// Initializes a new instance of a boolean from a primitive boolean value.
     fn new(mode: Mode, value: Self::Primitive) -> Self {
-        let variable = E::new_variable(mode, match value {
-            true => E::BaseField::one(),
-            false => E::BaseField::zero(),
-        });
+        let variable = E::new_variable(
+            mode,
+            match value {
+                true => E::BaseField::one(),
+                false => E::BaseField::zero(),
+            },
+        );
 
         // Ensure (1 - a) * a = 0
         // `a` must be either 0 or 1.

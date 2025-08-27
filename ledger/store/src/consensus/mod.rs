@@ -14,13 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    BlockStorage,
-    BlockStore,
-    FinalizeStorage,
-    FinalizeStore,
-    TransactionStorage,
-    TransactionStore,
-    TransitionStorage,
+    BlockStorage, BlockStore, FinalizeStorage, FinalizeStore, TransactionStorage, TransactionStore, TransitionStorage,
     TransitionStore,
 };
 use console::network::prelude::*;

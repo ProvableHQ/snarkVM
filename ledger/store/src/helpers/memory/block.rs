@@ -14,10 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    BlockStorage,
-    ConfirmedTxType,
-    TransactionStore,
-    TransitionStore,
+    BlockStorage, ConfirmedTxType, TransactionStore, TransitionStore,
     helpers::memory::{MemoryMap, TransactionMemory, TransitionMemory},
 };
 use console::{prelude::*, types::Field};

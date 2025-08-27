@@ -17,8 +17,7 @@
 extern crate criterion;
 
 use snarkvm_algorithms::{
-    AlgebraicSponge,
-    SNARK,
+    AlgebraicSponge, SNARK,
     crypto_hash::PoseidonSponge,
     snark::varuna::{CircuitVerifyingKey, TestCircuit, VarunaHidingMode, VarunaSNARK, VarunaVersion, ahp::AHPForR1CS},
 };

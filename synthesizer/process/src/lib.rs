@@ -47,16 +47,7 @@ use console::{
     account::PrivateKey,
     network::prelude::*,
     program::{
-        Identifier,
-        Literal,
-        Locator,
-        Plaintext,
-        ProgramID,
-        Record,
-        Request,
-        Response,
-        Value,
-        compute_function_id,
+        Identifier, Literal, Locator, Plaintext, ProgramID, Record, Request, Response, Value, compute_function_id,
     },
     types::{Field, U16, U64},
 };
@@ -64,13 +55,7 @@ use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Fee, Input, Output, Transaction, Transition};
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use snarkvm_synthesizer_program::{
-    Branch,
-    Command,
-    FinalizeGlobalState,
-    FinalizeOperation,
-    Instruction,
-    Program,
-    StackTrait,
+    Branch, Command, FinalizeGlobalState, FinalizeOperation, Instruction, Program, StackTrait,
 };
 use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 use snarkvm_utilities::{defer, dev_println};

@@ -21,38 +21,13 @@ use crate::{RegisterTypes, Stack};
 use console::{
     network::prelude::*,
     program::{
-        Access,
-        ArrayType,
-        FinalizeType,
-        Identifier,
-        LiteralType,
-        PlaintextType,
-        Register,
-        RegisterType,
-        StructType,
+        Access, ArrayType, FinalizeType, Identifier, LiteralType, PlaintextType, Register, RegisterType, StructType,
     },
     types::U32,
 };
 use snarkvm_synthesizer_program::{
-    Await,
-    Branch,
-    CallOperator,
-    CastType,
-    Command,
-    Constructor,
-    Contains,
-    Finalize,
-    Get,
-    GetOrUse,
-    Instruction,
-    MAX_ADDITIONAL_SEEDS,
-    Opcode,
-    Operand,
-    Program,
-    RandChaCha,
-    Remove,
-    Set,
-    StackTrait,
+    Await, Branch, CallOperator, CastType, Command, Constructor, Contains, Finalize, Get, GetOrUse, Instruction,
+    MAX_ADDITIONAL_SEEDS, Opcode, Operand, Program, RandChaCha, Remove, Set, StackTrait,
 };
 
 use indexmap::IndexMap;

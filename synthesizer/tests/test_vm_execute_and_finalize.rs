@@ -23,14 +23,7 @@ use snarkvm_console::{
     types::{Boolean, Field},
 };
 use snarkvm_ledger_block::{
-    Block,
-    ConfirmedTransaction,
-    Header,
-    Metadata,
-    Ratifications,
-    Transaction,
-    Transactions,
-    Transition,
+    Block, ConfirmedTransaction, Header, Metadata, Ratifications, Transaction, Transactions, Transition,
 };
 use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
 use snarkvm_synthesizer::{VM, program::FinalizeOperation};

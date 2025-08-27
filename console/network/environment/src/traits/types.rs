@@ -314,19 +314,8 @@ pub mod integer_type {
         str::FromStr,
     };
     use num_traits::{
-        CheckedNeg,
-        CheckedRem,
-        CheckedShr,
-        One as NumOne,
-        PrimInt,
-        ToPrimitive,
-        WrappingAdd,
-        WrappingMul,
-        WrappingNeg,
-        WrappingShl,
-        WrappingShr,
-        WrappingSub,
-        Zero as NumZero,
+        CheckedNeg, CheckedRem, CheckedShr, One as NumOne, PrimInt, ToPrimitive, WrappingAdd, WrappingMul, WrappingNeg,
+        WrappingShl, WrappingShr, WrappingSub, Zero as NumZero,
     };
 
     /// Trait bound for integer values. Common to both signed and unsigned integers.

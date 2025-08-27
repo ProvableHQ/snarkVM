@@ -17,10 +17,7 @@ use crate::{
     edwards_bls12::*,
     templates::twisted_edwards_extended::tests::{edwards_test, montgomery_conversion_test},
     traits::{
-        AffineCurve,
-        MontgomeryParameters,
-        ProjectiveCurve,
-        TwistedEdwardsParameters,
+        AffineCurve, MontgomeryParameters, ProjectiveCurve, TwistedEdwardsParameters,
         tests_field::{field_serialization_test, field_test, primefield_test},
         tests_group::*,
         tests_projective::curve_tests,

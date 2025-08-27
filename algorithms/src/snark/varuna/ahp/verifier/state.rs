@@ -18,8 +18,7 @@ use core::marker::PhantomData;
 use crate::{
     fft::EvaluationDomain,
     snark::varuna::{
-        CircuitId,
-        SNARKMode,
+        CircuitId, SNARKMode,
         ahp::verifier::{FirstMessage, FourthMessage, PrepareThirdMessage, SecondMessage, ThirdMessage},
     },
 };

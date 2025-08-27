@@ -26,10 +26,7 @@
 //! by performing an O(n log n) FFT over such a domain.
 
 use crate::{
-    cfg_chunks_mut,
-    cfg_into_iter,
-    cfg_iter,
-    cfg_iter_mut,
+    cfg_chunks_mut, cfg_into_iter, cfg_iter, cfg_iter_mut,
     fft::{DomainCoeff, SparsePolynomial},
 };
 use snarkvm_fields::{FftField, FftParameters, Field, batch_inversion};

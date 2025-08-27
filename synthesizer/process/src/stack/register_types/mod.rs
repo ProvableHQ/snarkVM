@@ -21,31 +21,12 @@ use crate::Stack;
 use console::{
     network::prelude::*,
     program::{
-        Access,
-        ArrayType,
-        EntryType,
-        FinalizeType,
-        Identifier,
-        LiteralType,
-        Locator,
-        PlaintextType,
-        RecordType,
-        Register,
-        RegisterType,
-        StructType,
-        ValueType,
+        Access, ArrayType, EntryType, FinalizeType, Identifier, LiteralType, Locator, PlaintextType, RecordType,
+        Register, RegisterType, StructType, ValueType,
     },
 };
 use snarkvm_synthesizer_program::{
-    CallOperator,
-    CastType,
-    Closure,
-    Function,
-    Instruction,
-    Opcode,
-    Operand,
-    Program,
-    StackTrait,
+    CallOperator, CastType, Closure, Function, Instruction, Opcode, Operand, Program, StackTrait,
 };
 use snarkvm_utilities::dev_eprintln;
 

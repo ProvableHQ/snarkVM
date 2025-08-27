@@ -14,15 +14,9 @@
 // limitations under the License.
 
 use crate::{
-    BlockStorage,
-    ConfirmedTxType,
-    TransactionStore,
-    TransitionStore,
+    BlockStorage, ConfirmedTxType, TransactionStore, TransitionStore,
     helpers::rocksdb::{
-        BlockMap,
-        MapID,
-        TransactionDB,
-        TransitionDB,
+        BlockMap, MapID, TransactionDB, TransitionDB,
         internal::{self, DataMap, Database},
     },
 };

@@ -18,10 +18,7 @@ use std::io::Cursor;
 use super::{Affine, Projective};
 
 use snarkvm_utilities::{
-    Compress,
-    TestRng,
-    ToBytes,
-    Validate,
+    Compress, TestRng, ToBytes, Validate,
     rand::Uniform,
     serialize::{CanonicalDeserialize, CanonicalSerialize},
     to_bytes_le,

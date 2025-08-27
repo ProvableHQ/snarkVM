@@ -19,10 +19,7 @@ use std::{
 };
 
 use crate::{
-    FromBits,
-    FromBytes,
-    ToBits,
-    ToBytes,
+    FromBits, FromBytes, ToBits, ToBytes,
     biginteger::BigInteger,
     bititerator::{BitIteratorBE, BitIteratorLE},
 };

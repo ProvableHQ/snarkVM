@@ -23,27 +23,8 @@ use console::LiteralType;
 use snarkvm_circuit_algorithms::Elligator2;
 use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::prelude::{
-    Address,
-    Boolean,
-    Environment,
-    Field,
-    FromBits,
-    FromBoolean,
-    FromGroup,
-    Group,
-    Inject,
-    IntegerType,
-    MSB,
-    One,
-    Result,
-    Scalar,
-    Ternary,
-    ToBits,
-    ToField,
-    ToGroup,
-    Zero,
-    bail,
-    integers::Integer,
+    Address, Boolean, Environment, Field, FromBits, FromBoolean, FromGroup, Group, Inject, IntegerType, MSB, One,
+    Result, Scalar, Ternary, ToBits, ToField, ToGroup, Zero, bail, integers::Integer,
 };
 
 #[cfg(test)]

@@ -78,18 +78,27 @@ impl<'de, N: Network> Deserialize<'de> for Input<N> {
 
                 // Recover the input.
                 let input = match input.get("type").and_then(|t| t.as_str()) {
-                    Some("constant") => Input::Constant(id, match input.get("value").and_then(|v| v.as_str()) {
-                        Some(value) => Some(Plaintext::<N>::from_str(value).map_err(de::Error::custom)?),
-                        None => None,
-                    }),
-                    Some("public") => Input::Public(id, match input.get("value").and_then(|v| v.as_str()) {
-                        Some(value) => Some(Plaintext::<N>::from_str(value).map_err(de::Error::custom)?),
-                        None => None,
-                    }),
-                    Some("private") => Input::Private(id, match input.get("value").and_then(|v| v.as_str()) {
-                        Some(value) => Some(Ciphertext::<N>::from_str(value).map_err(de::Error::custom)?),
-                        None => None,
-                    }),
+                    Some("constant") => Input::Constant(
+                        id,
+                        match input.get("value").and_then(|v| v.as_str()) {
+                            Some(value) => Some(Plaintext::<N>::from_str(value).map_err(de::Error::custom)?),
+                            None => None,
+                        },
+                    ),
+                    Some("public") => Input::Public(
+                        id,
+                        match input.get("value").and_then(|v| v.as_str()) {
+                            Some(value) => Some(Plaintext::<N>::from_str(value).map_err(de::Error::custom)?),
+                            None => None,
+                        },
+                    ),
+                    Some("private") => Input::Private(
+                        id,
+                        match input.get("value").and_then(|v| v.as_str()) {
+                            Some(value) => Some(Ciphertext::<N>::from_str(value).map_err(de::Error::custom)?),
+                            None => None,
+                        },
+                    ),
                     Some("record") => Input::Record(id, DeserializeExt::take_from_value::<D>(&mut input, "tag")?),
                     Some("external_record") => Input::ExternalRecord(id),
                     _ => return Err(de::Error::custom("Invalid transition input type")),

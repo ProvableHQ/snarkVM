@@ -22,12 +22,7 @@ use crate::{
     },
     polycommit::sonic_pc::LabeledPolynomial,
     snark::varuna::{
-        AHPForR1CS,
-        CircuitInfo,
-        Matrix,
-        SNARKMode,
-        ahp::matrices::MatrixEvals,
-        matrices::MatrixArithmetization,
+        AHPForR1CS, CircuitInfo, Matrix, SNARKMode, ahp::matrices::MatrixEvals, matrices::MatrixArithmetization,
     },
 };
 use anyhow::{Result, anyhow};

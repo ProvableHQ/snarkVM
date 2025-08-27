@@ -24,11 +24,7 @@ use snarkvm_ledger_committee::{MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE, MI
 use snarkvm_ledger_store::{FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize};
 #[cfg(not(feature = "rocks"))]
 use snarkvm_ledger_store::{
-    FinalizeMode,
-    FinalizeStorage,
-    FinalizeStore,
-    atomic_finalize,
-    helpers::memory::FinalizeMemory,
+    FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize, helpers::memory::FinalizeMemory,
 };
 
 use indexmap::{IndexMap, IndexSet};

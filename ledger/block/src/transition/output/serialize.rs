@@ -96,18 +96,27 @@ impl<'de, N: Network> Deserialize<'de> for Output<N> {
 
                 // Recover the output.
                 let output = match output.get("type").and_then(|t| t.as_str()) {
-                    Some("constant") => Output::Constant(id, match output.get("value").and_then(|v| v.as_str()) {
-                        Some(value) => Some(Plaintext::<N>::from_str(value).map_err(de::Error::custom)?),
-                        None => None,
-                    }),
-                    Some("public") => Output::Public(id, match output.get("value").and_then(|v| v.as_str()) {
-                        Some(value) => Some(Plaintext::<N>::from_str(value).map_err(de::Error::custom)?),
-                        None => None,
-                    }),
-                    Some("private") => Output::Private(id, match output.get("value").and_then(|v| v.as_str()) {
-                        Some(value) => Some(Ciphertext::<N>::from_str(value).map_err(de::Error::custom)?),
-                        None => None,
-                    }),
+                    Some("constant") => Output::Constant(
+                        id,
+                        match output.get("value").and_then(|v| v.as_str()) {
+                            Some(value) => Some(Plaintext::<N>::from_str(value).map_err(de::Error::custom)?),
+                            None => None,
+                        },
+                    ),
+                    Some("public") => Output::Public(
+                        id,
+                        match output.get("value").and_then(|v| v.as_str()) {
+                            Some(value) => Some(Plaintext::<N>::from_str(value).map_err(de::Error::custom)?),
+                            None => None,
+                        },
+                    ),
+                    Some("private") => Output::Private(
+                        id,
+                        match output.get("value").and_then(|v| v.as_str()) {
+                            Some(value) => Some(Ciphertext::<N>::from_str(value).map_err(de::Error::custom)?),
+                            None => None,
+                        },
+                    ),
                     Some("record") => {
                         // Retrieve the checksum.
                         let checksum: Field<N> = DeserializeExt::take_from_value::<D>(&mut output, "checksum")?;
@@ -128,10 +137,13 @@ impl<'de, N: Network> Deserialize<'de> for Output<N> {
                         )
                     }
                     Some("external_record") => Output::ExternalRecord(id),
-                    Some("future") => Output::Future(id, match output.get("value").and_then(|v| v.as_str()) {
-                        Some(value) => Some(Future::<N>::from_str(value).map_err(de::Error::custom)?),
-                        None => None,
-                    }),
+                    Some("future") => Output::Future(
+                        id,
+                        match output.get("value").and_then(|v| v.as_str()) {
+                            Some(value) => Some(Future::<N>::from_str(value).map_err(de::Error::custom)?),
+                            None => None,
+                        },
+                    ),
                     _ => return Err(de::Error::custom("Invalid output type")),
                 };
 

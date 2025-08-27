@@ -40,8 +40,7 @@ use std::{
     ops::Deref,
     path::PathBuf,
     sync::{
-        Arc,
-        LazyLock,
+        Arc, LazyLock,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };

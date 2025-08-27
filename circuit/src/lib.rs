@@ -29,14 +29,7 @@ pub mod modules {
 
     pub use snarkvm_circuit_environment as environment;
     pub use snarkvm_circuit_environment::{
-        Assignment,
-        CanaryCircuit,
-        Circuit,
-        Eject,
-        Environment,
-        Inject,
-        Mode,
-        TestnetCircuit,
+        Assignment, CanaryCircuit, Circuit, Eject, Environment, Inject, Mode, TestnetCircuit,
     };
 
     pub use snarkvm_circuit_network as network;

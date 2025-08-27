@@ -36,17 +36,7 @@ use console::{
     algorithms::Sha3_256,
     collections::kary_merkle_tree::KaryMerkleTree,
     prelude::{
-        FromBits,
-        Network,
-        Result,
-        anyhow,
-        bail,
-        cfg_into_iter,
-        cfg_iter,
-        cfg_keys,
-        cfg_values,
-        ensure,
-        has_duplicates,
+        FromBits, Network, Result, anyhow, bail, cfg_into_iter, cfg_iter, cfg_keys, cfg_values, ensure, has_duplicates,
     },
     types::U64,
 };

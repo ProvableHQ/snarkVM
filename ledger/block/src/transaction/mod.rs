@@ -31,15 +31,8 @@ use crate::Transition;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext,
-        DeploymentTree,
-        ExecutionTree,
-        ProgramOwner,
-        Record,
-        TRANSACTION_DEPTH,
-        TransactionLeaf,
-        TransactionPath,
-        TransactionTree,
+        Ciphertext, DeploymentTree, ExecutionTree, ProgramOwner, Record, TRANSACTION_DEPTH, TransactionLeaf,
+        TransactionPath, TransactionTree,
     },
     types::{Field, Group, U64},
 };

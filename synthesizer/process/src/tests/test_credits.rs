@@ -25,11 +25,7 @@ use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_committee::{MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE, MIN_VALIDATOR_STAKE};
 use snarkvm_ledger_query::Query;
 use snarkvm_ledger_store::{
-    BlockStore,
-    FinalizeMode,
-    FinalizeStorage,
-    FinalizeStore,
-    atomic_finalize,
+    BlockStore, FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize,
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program};

@@ -15,9 +15,7 @@
 
 use crate::{Field, Fp2, Fp2Parameters, One, Zero};
 use snarkvm_utilities::{
-    FromBytes,
-    ToBits,
-    ToBytes,
+    FromBytes, ToBits, ToBytes,
     rand::Uniform,
     serialize::{SerializationError, *},
 };

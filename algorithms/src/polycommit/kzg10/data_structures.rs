@@ -21,9 +21,7 @@ use snarkvm_curves::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{ConstraintFieldError, ToConstraintField, Zero};
 use snarkvm_parameters::mainnet::PowersOfG;
 use snarkvm_utilities::{
-    FromBytes,
-    ToBytes,
-    error,
+    FromBytes, ToBytes, error,
     serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Valid, Validate},
 };
 

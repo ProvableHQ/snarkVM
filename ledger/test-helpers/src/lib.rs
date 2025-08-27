@@ -24,19 +24,8 @@ use console::{
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{
-    Block,
-    ConfirmedTransaction,
-    Deployment,
-    Execution,
-    Fee,
-    Header,
-    Input,
-    Output,
-    Ratifications,
-    Rejected,
-    Transaction,
-    Transactions,
-    Transition,
+    Block, ConfirmedTransaction, Deployment, Execution, Fee, Header, Input, Output, Ratifications, Rejected,
+    Transaction, Transactions, Transition,
 };
 use snarkvm_ledger_query::Query;
 use snarkvm_ledger_store::{BlockStore, helpers::memory::BlockMemory};

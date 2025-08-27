@@ -275,17 +275,21 @@ impl<F: PrimeField> Sub<&LinearCombination<F>> for &Variable<F> {
 
 impl<F: PrimeField> fmt::Debug for Variable<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            Self::Constant(value) => format!("Constant({value})"),
-            Self::Public(index_value) => {
-                let (index, value) = index_value.as_ref();
-                format!("Public({index}, {value})")
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Constant(value) => format!("Constant({value})"),
+                Self::Public(index_value) => {
+                    let (index, value) = index_value.as_ref();
+                    format!("Public({index}, {value})")
+                }
+                Self::Private(index_value) => {
+                    let (index, value) = index_value.as_ref();
+                    format!("Private({index}, {value})")
+                }
             }
-            Self::Private(index_value) => {
-                let (index, value) = index_value.as_ref();
-                format!("Private({index}, {value})")
-            }
-        })
+        )
     }
 }
 

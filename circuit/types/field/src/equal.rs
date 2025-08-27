@@ -98,10 +98,13 @@ impl<E: Environment> Equal<Self> for Field<E> {
                 // Observe that in both of the honest cases, `is_neq` is always 0 or 1.
 
                 // Witness a boolean that is `true` if `this` and `that` are not equivalent.
-                let is_neq = Boolean::from_variable(E::new_variable(Mode::Private, match is_neq_ejected {
-                    true => E::BaseField::one(),
-                    false => E::BaseField::zero(),
-                }));
+                let is_neq = Boolean::from_variable(E::new_variable(
+                    Mode::Private,
+                    match is_neq_ejected {
+                        true => E::BaseField::one(),
+                        false => E::BaseField::zero(),
+                    },
+                ));
 
                 // Compute `self` - `other`.
                 let delta = self - other;

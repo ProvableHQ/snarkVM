@@ -16,11 +16,7 @@
 use std::io::Cursor;
 
 use snarkvm_fields::{
-    FftField,
-    Field,
-    LegendreSymbol,
-    PrimeField,
-    SquareRootField,
+    FftField, Field, LegendreSymbol, PrimeField, SquareRootField,
     traits::{FftParameters, FieldParameters},
 };
 use snarkvm_utilities::{

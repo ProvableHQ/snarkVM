@@ -112,11 +112,14 @@ mod tests {
 
         if let Command::Run(run) = cli.command {
             assert_eq!(run.function, Identifier::try_from(arg_vec[2]).unwrap());
-            assert_eq!(run.inputs, vec![
-                Value::try_from(arg_vec[3]).unwrap(),
-                Value::try_from(arg_vec[4]).unwrap(),
-                Value::try_from(arg_vec[5]).unwrap()
-            ]);
+            assert_eq!(
+                run.inputs,
+                vec![
+                    Value::try_from(arg_vec[3]).unwrap(),
+                    Value::try_from(arg_vec[4]).unwrap(),
+                    Value::try_from(arg_vec[5]).unwrap()
+                ]
+            );
         } else {
             panic!("Unexpected result of clap parsing!");
         }

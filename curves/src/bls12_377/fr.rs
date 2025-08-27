@@ -14,12 +14,7 @@
 // limitations under the License.
 
 use snarkvm_fields::{
-    FftParameters,
-    FieldParameters,
-    Fp256,
-    Fp256Parameters,
-    PoseidonDefaultParameters,
-    PoseidonDefaultParametersEntry,
+    FftParameters, FieldParameters, Fp256, Fp256Parameters, PoseidonDefaultParameters, PoseidonDefaultParametersEntry,
 };
 use snarkvm_utilities::biginteger::BigInteger256 as BigInteger;
 

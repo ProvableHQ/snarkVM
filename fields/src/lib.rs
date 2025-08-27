@@ -50,8 +50,7 @@ pub mod traits;
 pub use traits::*;
 
 use snarkvm_utilities::{
-    FromBytes,
-    ToBytes,
+    FromBytes, ToBytes,
     biginteger::*,
     serialize::{CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags},
 };

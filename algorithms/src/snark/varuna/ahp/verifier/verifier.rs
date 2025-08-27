@@ -19,20 +19,12 @@ use crate::{
     AlgebraicSponge,
     fft::EvaluationDomain,
     snark::varuna::{
-        SNARKMode,
-        VarunaVersion,
+        SNARKMode, VarunaVersion,
         ahp::{
-            AHPError,
-            AHPForR1CS,
+            AHPError, AHPForR1CS,
             indexer::{CircuitId, CircuitInfo},
             verifier::{
-                BatchCombiners,
-                FirstMessage,
-                FourthMessage,
-                PrepareThirdMessage,
-                QuerySet,
-                SecondMessage,
-                State,
+                BatchCombiners, FirstMessage, FourthMessage, PrepareThirdMessage, QuerySet, SecondMessage, State,
                 ThirdMessage,
             },
         },

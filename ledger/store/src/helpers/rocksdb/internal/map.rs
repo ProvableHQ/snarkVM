@@ -560,9 +560,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> fmt::Debu
 mod tests {
     use super::*;
     use crate::{
-        FinalizeMode,
-        atomic_batch_scope,
-        atomic_finalize,
+        FinalizeMode, atomic_batch_scope, atomic_finalize,
         helpers::rocksdb::{MapID, TestMap},
     };
     use console::{

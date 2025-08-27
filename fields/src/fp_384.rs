@@ -14,24 +14,11 @@
 // limitations under the License.
 
 use crate::{
-    FftField,
-    Field,
-    FieldError,
-    FieldParameters,
-    LegendreSymbol,
-    One,
-    PoseidonDefaultField,
-    PoseidonDefaultParameters,
-    PrimeField,
-    SquareRootField,
-    Zero,
-    impl_add_sub_from_field_ref,
-    impl_mul_div_from_field_ref,
+    FftField, Field, FieldError, FieldParameters, LegendreSymbol, One, PoseidonDefaultField, PoseidonDefaultParameters,
+    PrimeField, SquareRootField, Zero, impl_add_sub_from_field_ref, impl_mul_div_from_field_ref,
 };
 use snarkvm_utilities::{
-    FromBytes,
-    ToBits,
-    ToBytes,
+    FromBytes, ToBits, ToBytes,
     biginteger::{BigInteger as _BigInteger, BigInteger384 as BigInteger, arithmetic as fa},
     serialize::CanonicalDeserialize,
 };

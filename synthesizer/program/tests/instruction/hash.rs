@@ -25,27 +25,9 @@ use console::{
 };
 use snarkvm_synthesizer_process::{Process, Stack};
 use snarkvm_synthesizer_program::{
-    HashBHP256,
-    HashBHP512,
-    HashBHP768,
-    HashBHP1024,
-    HashInstruction,
-    HashKeccak256,
-    HashKeccak384,
-    HashKeccak512,
-    HashPED64,
-    HashPED128,
-    HashPSD2,
-    HashPSD4,
-    HashPSD8,
-    HashSha3_256,
-    HashSha3_384,
-    HashSha3_512,
-    Opcode,
-    Operand,
-    Program,
-    RegistersCircuit as _,
-    RegistersTrait as _,
+    HashBHP256, HashBHP512, HashBHP768, HashBHP1024, HashInstruction, HashKeccak256, HashKeccak384, HashKeccak512,
+    HashPED64, HashPED128, HashPSD2, HashPSD4, HashPSD8, HashSha3_256, HashSha3_384, HashSha3_512, Opcode, Operand,
+    Program, RegistersCircuit as _, RegistersTrait as _,
 };
 
 type CurrentNetwork = MainnetV0;

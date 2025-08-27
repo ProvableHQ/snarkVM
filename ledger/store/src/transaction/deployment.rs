@@ -14,9 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    FeeStorage,
-    FeeStore,
-    atomic_batch_scope,
+    FeeStorage, FeeStore, atomic_batch_scope,
     helpers::{Map, MapRead},
 };
 use console::{

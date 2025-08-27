@@ -40,10 +40,13 @@ impl<E: Environment> Nor<Self> for Boolean<E> {
             // Note: The constraint below will ensure `output` is either 0 or 1,
             // assuming `self` and `other` are well-formed (they are either 0 or 1).
             let output = Boolean(
-                E::new_variable(Mode::Private, match !self.eject_value() & !other.eject_value() {
-                    true => E::BaseField::one(),
-                    false => E::BaseField::zero(),
-                })
+                E::new_variable(
+                    Mode::Private,
+                    match !self.eject_value() & !other.eject_value() {
+                        true => E::BaseField::one(),
+                        false => E::BaseField::zero(),
+                    },
+                )
                 .into(),
             );
 

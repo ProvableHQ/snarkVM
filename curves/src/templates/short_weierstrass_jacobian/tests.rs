@@ -19,9 +19,7 @@ use super::{Affine, Projective};
 use crate::{AffineCurve, ProjectiveCurve, ShortWeierstrassParameters};
 use snarkvm_fields::Zero;
 use snarkvm_utilities::{
-    Compress,
-    TestRng,
-    Validate,
+    Compress, TestRng, Validate,
     rand::Uniform,
     serialize::{CanonicalDeserialize, CanonicalSerialize},
 };

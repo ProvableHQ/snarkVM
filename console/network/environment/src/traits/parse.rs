@@ -14,8 +14,7 @@
 // limitations under the License.
 
 use nom::{
-    Err as NomErr,
-    IResult,
+    Err as NomErr, IResult,
     error::{VerboseError, convert_error},
 };
 

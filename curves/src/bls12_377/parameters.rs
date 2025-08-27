@@ -15,24 +15,11 @@
 
 use crate::{
     bls12_377::{
-        Fq,
-        Fq2Parameters,
-        Fq6Parameters,
-        Fq12,
-        Fq12Parameters,
-        g1::Bls12_377G1Parameters,
-        g2::Bls12_377G2Parameters,
+        Fq, Fq2Parameters, Fq6Parameters, Fq12, Fq12Parameters, g1::Bls12_377G1Parameters, g2::Bls12_377G2Parameters,
     },
     templates::bls12::{
-        Bls12,
-        Bls12Parameters,
-        G1Affine as Bls12G1Affine,
-        G1Prepared,
-        G1Projective as Bls12G1Projective,
-        G2Affine as Bls12G2Affine,
-        G2Prepared,
-        G2Projective as Bls12G2Projective,
-        TwistType,
+        Bls12, Bls12Parameters, G1Affine as Bls12G1Affine, G1Prepared, G1Projective as Bls12G1Projective,
+        G2Affine as Bls12G2Affine, G2Prepared, G2Projective as Bls12G2Projective, TwistType,
     },
     traits::{PairingCurve, PairingEngine},
 };

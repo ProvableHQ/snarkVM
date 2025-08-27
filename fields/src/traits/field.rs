@@ -15,18 +15,12 @@
 
 use crate::{One, PrimeField, Zero};
 use snarkvm_utilities::{
-    FromBytes,
-    ToBits,
-    ToBytes,
+    FromBytes, ToBits, ToBytes,
     bititerator::BitIteratorBE,
     rand::Uniform,
     serialize::{
-        CanonicalDeserialize,
-        CanonicalDeserializeWithFlags,
-        CanonicalSerialize,
-        CanonicalSerializeWithFlags,
-        EmptyFlags,
-        Flags,
+        CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize, CanonicalSerializeWithFlags,
+        EmptyFlags, Flags,
     },
 };
 

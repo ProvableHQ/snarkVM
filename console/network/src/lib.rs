@@ -41,13 +41,8 @@ pub use testnet_v0::*;
 
 pub mod prelude {
     pub use crate::{
-        CANARY_V0_CONSENSUS_VERSION_HEIGHTS,
-        ConsensusVersion,
-        MAINNET_V0_CONSENSUS_VERSION_HEIGHTS,
-        Network,
-        TEST_CONSENSUS_VERSION_HEIGHTS,
-        TESTNET_V0_CONSENSUS_VERSION_HEIGHTS,
-        consensus_config_value,
+        CANARY_V0_CONSENSUS_VERSION_HEIGHTS, ConsensusVersion, MAINNET_V0_CONSENSUS_VERSION_HEIGHTS, Network,
+        TEST_CONSENSUS_VERSION_HEIGHTS, TESTNET_V0_CONSENSUS_VERSION_HEIGHTS, consensus_config_value,
         environment::prelude::*,
     };
 }

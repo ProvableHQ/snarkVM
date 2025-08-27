@@ -25,14 +25,7 @@ use console::{
 };
 use snarkvm_synthesizer_process::{Process, Stack};
 use snarkvm_synthesizer_program::{
-    IsEq,
-    IsInstruction,
-    IsNeq,
-    Opcode,
-    Operand,
-    Program,
-    RegistersCircuit as _,
-    RegistersTrait as _,
+    IsEq, IsInstruction, IsNeq, Opcode, Operand, Program, RegistersCircuit as _, RegistersTrait as _,
 };
 
 type CurrentNetwork = MainnetV0;

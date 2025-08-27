@@ -14,15 +14,8 @@
 // limitations under the License.
 
 use crate::{
-    DeploymentStorage,
-    DeploymentStore,
-    ExecutionStorage,
-    ExecutionStore,
-    FeeStorage,
-    FeeStore,
-    TransactionStorage,
-    TransactionType,
-    TransitionStore,
+    DeploymentStorage, DeploymentStore, ExecutionStorage, ExecutionStore, FeeStorage, FeeStore, TransactionStorage,
+    TransactionType, TransitionStore,
     helpers::memory::{MemoryMap, TransitionMemory},
 };
 use console::{

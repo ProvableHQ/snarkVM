@@ -14,8 +14,7 @@
 // limitations under the License.
 
 use rand::{
-    Rng,
-    SeedableRng,
+    Rng, SeedableRng,
     distributions::{Distribution, Standard},
     rngs::StdRng,
 };

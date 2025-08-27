@@ -118,22 +118,25 @@ impl<A: Aleo> Eject for StatePath<A> {
 
     /// Ejects the mode of the state path.
     fn eject_mode(&self) -> Mode {
-        Mode::combine(self.global_state_root.eject_mode(), [
-            self.block_path.eject_mode(),
-            self.block_hash.eject_mode(),
-            self.previous_block_hash.eject_mode(),
-            self.header_root.eject_mode(),
-            self.header_path.eject_mode(),
-            self.header_leaf.eject_mode(),
-            self.transactions_path.eject_mode(),
-            self.transaction_id.eject_mode(),
-            self.transaction_path.eject_mode(),
-            self.transaction_leaf.eject_mode(),
-            self.transition_root.eject_mode(),
-            self.tcm.eject_mode(),
-            self.transition_path.eject_mode(),
-            self.transition_leaf.eject_mode(),
-        ])
+        Mode::combine(
+            self.global_state_root.eject_mode(),
+            [
+                self.block_path.eject_mode(),
+                self.block_hash.eject_mode(),
+                self.previous_block_hash.eject_mode(),
+                self.header_root.eject_mode(),
+                self.header_path.eject_mode(),
+                self.header_leaf.eject_mode(),
+                self.transactions_path.eject_mode(),
+                self.transaction_id.eject_mode(),
+                self.transaction_path.eject_mode(),
+                self.transaction_leaf.eject_mode(),
+                self.transition_root.eject_mode(),
+                self.tcm.eject_mode(),
+                self.transition_path.eject_mode(),
+                self.transition_leaf.eject_mode(),
+            ],
+        )
     }
 
     /// Ejects the state path.

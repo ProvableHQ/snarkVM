@@ -30,57 +30,26 @@ use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
     program::{
-        Argument,
-        Identifier,
-        Literal,
-        Locator,
-        Plaintext,
-        ProgramID,
-        ProgramOwner,
-        Record,
-        Response,
-        Value,
-        ValueType,
+        Argument, Identifier, Literal, Locator, Plaintext, ProgramID, ProgramOwner, Record, Response, Value, ValueType,
     },
     types::{Field, Group, U16, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{
-    Block,
-    ConfirmedTransaction,
-    Deployment,
-    Execution,
-    Fee,
-    Header,
-    Output,
-    Ratifications,
-    Ratify,
-    Rejected,
-    Solutions,
-    Transaction,
-    Transactions,
+    Block, ConfirmedTransaction, Deployment, Execution, Fee, Header, Output, Ratifications, Ratify, Rejected,
+    Solutions, Transaction, Transactions,
 };
 use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal_data::Data;
 use snarkvm_ledger_puzzle::Puzzle;
 use snarkvm_ledger_query::{Query, QueryTrait};
 use snarkvm_ledger_store::{
-    BlockStore,
-    ConsensusStorage,
-    ConsensusStore,
-    FinalizeMode,
-    FinalizeStore,
-    TransactionStore,
-    TransitionStore,
+    BlockStore, ConsensusStorage, ConsensusStore, FinalizeMode, FinalizeStore, TransactionStore, TransitionStore,
     atomic_finalize,
 };
 use snarkvm_synthesizer_process::{Authorization, InclusionVersion, Process, Trace, deployment_cost, execution_cost};
 use snarkvm_synthesizer_program::{
-    FinalizeGlobalState,
-    FinalizeOperation,
-    FinalizeStoreTrait,
-    Program,
-    StackTrait as _,
+    FinalizeGlobalState, FinalizeOperation, FinalizeStoreTrait, Program, StackTrait as _,
 };
 use snarkvm_synthesizer_snark::VerifyingKey;
 use snarkvm_utilities::try_vm_runtime;

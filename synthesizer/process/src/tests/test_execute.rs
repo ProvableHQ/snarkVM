@@ -25,10 +25,7 @@ use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Fee, Output, Transaction, Transition};
 use snarkvm_ledger_query::Query;
 use snarkvm_ledger_store::{
-    BlockStorage,
-    BlockStore,
-    FinalizeStorage,
-    FinalizeStore,
+    BlockStorage, BlockStore, FinalizeStorage, FinalizeStore,
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackTrait};

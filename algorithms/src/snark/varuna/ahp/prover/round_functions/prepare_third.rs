@@ -16,9 +16,7 @@
 use crate::{
     fft::DensePolynomial,
     snark::varuna::{
-        AHPError,
-        Matrix,
-        SNARKMode,
+        AHPError, Matrix, SNARKMode,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
         prover::{self, MatrixSums, ThirdMessage},
     },

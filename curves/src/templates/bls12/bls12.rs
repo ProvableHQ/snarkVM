@@ -25,16 +25,7 @@ use crate::{
     traits::{ModelParameters, PairingCurve, PairingEngine, ShortWeierstrassParameters},
 };
 use snarkvm_fields::{
-    Field,
-    Fp2,
-    Fp2Parameters,
-    Fp12,
-    Fp12Parameters,
-    One,
-    PrimeField,
-    SquareRootField,
-    Zero,
-    fp6_3over2::Fp6Parameters,
+    Field, Fp2, Fp2Parameters, Fp12, Fp12Parameters, One, PrimeField, SquareRootField, Zero, fp6_3over2::Fp6Parameters,
 };
 use snarkvm_utilities::bititerator::BitIteratorBE;
 

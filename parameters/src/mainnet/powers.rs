@@ -16,16 +16,7 @@
 use super::*;
 use snarkvm_curves::traits::{PairingCurve, PairingEngine};
 use snarkvm_utilities::{
-    CanonicalDeserialize,
-    CanonicalSerialize,
-    Compress,
-    FromBytes,
-    Read,
-    SerializationError,
-    ToBytes,
-    Valid,
-    Validate,
-    Write,
+    CanonicalDeserialize, CanonicalSerialize, Compress, FromBytes, Read, SerializationError, ToBytes, Valid, Validate, Write,
     dev_println,
 };
 

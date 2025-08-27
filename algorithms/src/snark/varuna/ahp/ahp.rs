@@ -21,8 +21,7 @@ use crate::{
     polycommit::sonic_pc::{LCTerm, LabeledPolynomial, LinearCombination},
     r1cs::SynthesisError,
     snark::varuna::{
-        SNARKMode,
-        VarunaVersion,
+        SNARKMode, VarunaVersion,
         ahp::{AHPError, CircuitId, CircuitInfo, verifier},
         prover,
         selectors::precompute_selectors,
@@ -452,12 +451,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // recall that row_col_val(X) is M_{i,j}*rowcol(X)
         let label_row_col_val = format!("circuit_{id}_row_col_val_{matrix}");
         let a = LinearCombination::new(label_a_poly, [(v_rc_at_alpha_beta, label_row_col_val)]);
-        let mut b = LinearCombination::new(label_b_poly, [
-            (alpha * beta, LCTerm::One),
-            (-alpha, (label_col).into()),
-            (-beta, (label_row).into()),
-            (F::one(), (label_row_col).into()),
-        ]);
+        let mut b = LinearCombination::new(
+            label_b_poly,
+            [
+                (alpha * beta, LCTerm::One),
+                (-alpha, (label_col).into()),
+                (-beta, (label_row).into()),
+                (F::one(), (label_row_col).into()),
+            ],
+        );
         b *= rc_size;
         Ok((a, b))
     }

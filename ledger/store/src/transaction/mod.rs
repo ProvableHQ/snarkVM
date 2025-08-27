@@ -23,9 +23,7 @@ mod fee;
 pub use fee::*;
 
 use crate::{
-    TransitionStorage,
-    TransitionStore,
-    atomic_batch_scope,
+    TransitionStorage, TransitionStore, atomic_batch_scope,
     helpers::{Map, MapRead},
 };
 use console::{

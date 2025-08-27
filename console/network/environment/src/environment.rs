@@ -15,11 +15,7 @@
 
 use crate::prelude::{Deserialize, DeserializeOwned, Serialize};
 use snarkvm_curves::{
-    AffineCurve,
-    MontgomeryParameters,
-    PairingEngine,
-    ProjectiveCurve,
-    TwistedEdwardsParameters,
+    AffineCurve, MontgomeryParameters, PairingEngine, ProjectiveCurve, TwistedEdwardsParameters,
     bls12_377::Bls12_377,
     edwards_bls12::{EdwardsAffine, EdwardsParameters},
 };

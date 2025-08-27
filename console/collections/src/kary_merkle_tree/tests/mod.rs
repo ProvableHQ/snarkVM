@@ -207,40 +207,34 @@ fn check_merkle_tree_depth_3_arity_3_padded<LH: LeafHash<Hash = PH::Hash>, PH: P
     assert_eq!(expected_middle0, merkle_tree.tree[5]);
     assert_eq!(expected_right0, merkle_tree.tree[6]);
 
-    let expected_left1 = PathHash::hash_children(path_hasher, &[
-        expected_leaf9,
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-    ])?;
-    let expected_middle1 = PathHash::hash_children(path_hasher, &[
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-    ])?;
-    let expected_right1 = PathHash::hash_children(path_hasher, &[
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-    ])?;
+    let expected_left1 = PathHash::hash_children(
+        path_hasher,
+        &[expected_leaf9, path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?],
+    )?;
+    let expected_middle1 = PathHash::hash_children(
+        path_hasher,
+        &[path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?],
+    )?;
+    let expected_right1 = PathHash::hash_children(
+        path_hasher,
+        &[path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?],
+    )?;
     assert_eq!(expected_left1, merkle_tree.tree[7]);
     assert_eq!(expected_middle1, merkle_tree.tree[8]);
     assert_eq!(expected_right1, merkle_tree.tree[9]);
 
-    let expected_left2 = PathHash::hash_children(path_hasher, &[
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-    ])?;
-    let expected_middle2 = PathHash::hash_children(path_hasher, &[
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-    ])?;
-    let expected_right2 = PathHash::hash_children(path_hasher, &[
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-        path_hasher.hash_empty::<ARITY>()?,
-    ])?;
+    let expected_left2 = PathHash::hash_children(
+        path_hasher,
+        &[path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?],
+    )?;
+    let expected_middle2 = PathHash::hash_children(
+        path_hasher,
+        &[path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?],
+    )?;
+    let expected_right2 = PathHash::hash_children(
+        path_hasher,
+        &[path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?, path_hasher.hash_empty::<ARITY>()?],
+    )?;
     assert_eq!(expected_left2, merkle_tree.tree[10]);
     assert_eq!(expected_middle2, merkle_tree.tree[11]);
     assert_eq!(expected_right2, merkle_tree.tree[12]);

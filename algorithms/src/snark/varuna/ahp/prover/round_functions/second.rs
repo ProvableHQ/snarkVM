@@ -19,9 +19,7 @@ use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, polynomial::PolyMultiplier},
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        Circuit,
-        CircuitId,
-        SNARKMode,
+        Circuit, CircuitId, SNARKMode,
         ahp::{AHPForR1CS, verifier},
         prover,
         selectors::apply_randomized_selector,

@@ -14,9 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    BlockStore,
-    ConsensusStorage,
-    FinalizeStore,
+    BlockStore, ConsensusStorage, FinalizeStore,
     helpers::memory::{BlockMemory, FinalizeMemory, TransactionMemory, TransitionMemory},
 };
 use console::prelude::*;

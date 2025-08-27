@@ -1284,12 +1284,10 @@ function compute:
             rng,
         )
         .unwrap();
-        assert_eq!(next_block.aborted_transaction_ids(), &vec![
-            deploy_1_tx_id,
-            deploy_2_tx_id,
-            deploy_3_tx_id,
-            deploy_4_tx_id
-        ]);
+        assert_eq!(
+            next_block.aborted_transaction_ids(),
+            &vec![deploy_1_tx_id, deploy_2_tx_id, deploy_3_tx_id, deploy_4_tx_id]
+        );
     }
 }
 

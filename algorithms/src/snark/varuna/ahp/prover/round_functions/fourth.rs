@@ -15,9 +15,7 @@
 
 use crate::{
     fft::{
-        DensePolynomial,
-        EvaluationDomain,
-        Evaluations as EvaluationsOnDomain,
+        DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain,
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },

@@ -14,14 +14,7 @@
 // limitations under the License.
 
 use super::sonic_pc::{
-    BatchLCProof,
-    BatchProof,
-    Commitment,
-    CommitterUnionKey,
-    Evaluations,
-    LabeledCommitment,
-    QuerySet,
-    Randomness,
+    BatchLCProof, BatchProof, Commitment, CommitterUnionKey, Evaluations, LabeledCommitment, QuerySet, Randomness,
     SonicKZG10,
 };
 use crate::{

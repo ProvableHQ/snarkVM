@@ -35,10 +35,13 @@ impl<N: Network> Parser for Register<N> {
             }
         })(string)?;
         // Return the register.
-        Ok((string, match accesses.len() {
-            0 => Self::Locator(locator),
-            _ => Self::Access(locator, accesses),
-        }))
+        Ok((
+            string,
+            match accesses.len() {
+                0 => Self::Locator(locator),
+                _ => Self::Access(locator, accesses),
+            },
+        ))
     }
 }
 
@@ -132,84 +135,101 @@ mod tests {
         );
         assert_eq!(
             "r2[0u32][1u32][2u32]",
-            Register::<CurrentNetwork>::Access(2, vec![
-                Access::Index(U32::new(0)),
-                Access::Index(U32::new(1)),
-                Access::Index(U32::new(2))
-            ])
+            Register::<CurrentNetwork>::Access(
+                2,
+                vec![Access::Index(U32::new(0)), Access::Index(U32::new(1)), Access::Index(U32::new(2))]
+            )
             .to_string()
         );
         assert_eq!(
             "r3[0u32][1u32][2u32][3u32]",
-            Register::<CurrentNetwork>::Access(3, vec![
-                Access::Index(U32::new(0)),
-                Access::Index(U32::new(1)),
-                Access::Index(U32::new(2)),
-                Access::Index(U32::new(3))
-            ])
+            Register::<CurrentNetwork>::Access(
+                3,
+                vec![
+                    Access::Index(U32::new(0)),
+                    Access::Index(U32::new(1)),
+                    Access::Index(U32::new(2)),
+                    Access::Index(U32::new(3))
+                ]
+            )
             .to_string()
         );
         assert_eq!(
             "r4[0u32][1u32][2u32][3u32][4u32]",
-            Register::<CurrentNetwork>::Access(4, vec![
-                Access::Index(U32::new(0)),
-                Access::Index(U32::new(1)),
-                Access::Index(U32::new(2)),
-                Access::Index(U32::new(3)),
-                Access::Index(U32::new(4))
-            ])
+            Register::<CurrentNetwork>::Access(
+                4,
+                vec![
+                    Access::Index(U32::new(0)),
+                    Access::Index(U32::new(1)),
+                    Access::Index(U32::new(2)),
+                    Access::Index(U32::new(3)),
+                    Access::Index(U32::new(4))
+                ]
+            )
             .to_string()
         );
 
         // Register::Access with Access::Member and Access::Index
         assert_eq!(
             "r0.owner[0u32]",
-            Register::<CurrentNetwork>::Access(0, vec![
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(0))
-            ])
+            Register::<CurrentNetwork>::Access(
+                0,
+                vec![Access::Member(Identifier::from_str("owner")?), Access::Index(U32::new(0))]
+            )
             .to_string()
         );
         assert_eq!(
             "r1.owner[0u32].owner",
-            Register::<CurrentNetwork>::Access(1, vec![
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(0)),
-                Access::Member(Identifier::from_str("owner")?)
-            ])
+            Register::<CurrentNetwork>::Access(
+                1,
+                vec![
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(0)),
+                    Access::Member(Identifier::from_str("owner")?)
+                ]
+            )
             .to_string()
         );
         assert_eq!(
             "r2.owner[0u32].owner[1u32]",
-            Register::<CurrentNetwork>::Access(2, vec![
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(0)),
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(1))
-            ])
+            Register::<CurrentNetwork>::Access(
+                2,
+                vec![
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(0)),
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(1))
+                ]
+            )
             .to_string()
         );
         assert_eq!(
             "r3.owner[0u32].owner[1u32].owner",
-            Register::<CurrentNetwork>::Access(3, vec![
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(0)),
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(1)),
-                Access::Member(Identifier::from_str("owner")?)
-            ])
+            Register::<CurrentNetwork>::Access(
+                3,
+                vec![
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(0)),
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(1)),
+                    Access::Member(Identifier::from_str("owner")?)
+                ]
+            )
             .to_string()
         );
         assert_eq!(
             "r4.owner[0u32].owner[1u32].owner[2u32]",
-            Register::<CurrentNetwork>::Access(4, vec![
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(0)),
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(1)),
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(2))
-            ])
+            Register::<CurrentNetwork>::Access(
+                4,
+                vec![
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(0)),
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(1)),
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(2))
+                ]
+            )
             .to_string()
         );
 
@@ -258,84 +278,101 @@ mod tests {
             "r1[0u32][1u32]".to_string()
         );
         assert_eq!(
-            Register::<CurrentNetwork>::Access(2, vec![
-                Access::Index(U32::new(0)),
-                Access::Index(U32::new(1)),
-                Access::Index(U32::new(2))
-            ])
+            Register::<CurrentNetwork>::Access(
+                2,
+                vec![Access::Index(U32::new(0)), Access::Index(U32::new(1)), Access::Index(U32::new(2))]
+            )
             .to_string(),
             "r2[0u32][1u32][2u32]".to_string()
         );
         assert_eq!(
-            Register::<CurrentNetwork>::Access(3, vec![
-                Access::Index(U32::new(0)),
-                Access::Index(U32::new(1)),
-                Access::Index(U32::new(2)),
-                Access::Index(U32::new(3))
-            ])
+            Register::<CurrentNetwork>::Access(
+                3,
+                vec![
+                    Access::Index(U32::new(0)),
+                    Access::Index(U32::new(1)),
+                    Access::Index(U32::new(2)),
+                    Access::Index(U32::new(3))
+                ]
+            )
             .to_string(),
             "r3[0u32][1u32][2u32][3u32]".to_string()
         );
         assert_eq!(
-            Register::<CurrentNetwork>::Access(4, vec![
-                Access::Index(U32::new(0)),
-                Access::Index(U32::new(1)),
-                Access::Index(U32::new(2)),
-                Access::Index(U32::new(3)),
-                Access::Index(U32::new(4))
-            ])
+            Register::<CurrentNetwork>::Access(
+                4,
+                vec![
+                    Access::Index(U32::new(0)),
+                    Access::Index(U32::new(1)),
+                    Access::Index(U32::new(2)),
+                    Access::Index(U32::new(3)),
+                    Access::Index(U32::new(4))
+                ]
+            )
             .to_string(),
             "r4[0u32][1u32][2u32][3u32][4u32]".to_string()
         );
 
         // Register::Access with Access::Member and Access::Index
         assert_eq!(
-            Register::<CurrentNetwork>::Access(0, vec![
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(0))
-            ])
+            Register::<CurrentNetwork>::Access(
+                0,
+                vec![Access::Member(Identifier::from_str("owner")?), Access::Index(U32::new(0))]
+            )
             .to_string(),
             "r0.owner[0u32]".to_string()
         );
         assert_eq!(
-            Register::<CurrentNetwork>::Access(1, vec![
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(0)),
-                Access::Member(Identifier::from_str("owner")?)
-            ])
+            Register::<CurrentNetwork>::Access(
+                1,
+                vec![
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(0)),
+                    Access::Member(Identifier::from_str("owner")?)
+                ]
+            )
             .to_string(),
             "r1.owner[0u32].owner".to_string()
         );
         assert_eq!(
-            Register::<CurrentNetwork>::Access(2, vec![
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(0)),
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(1))
-            ])
+            Register::<CurrentNetwork>::Access(
+                2,
+                vec![
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(0)),
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(1))
+                ]
+            )
             .to_string(),
             "r2.owner[0u32].owner[1u32]".to_string()
         );
         assert_eq!(
-            Register::<CurrentNetwork>::Access(3, vec![
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(0)),
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(1)),
-                Access::Member(Identifier::from_str("owner")?)
-            ])
+            Register::<CurrentNetwork>::Access(
+                3,
+                vec![
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(0)),
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(1)),
+                    Access::Member(Identifier::from_str("owner")?)
+                ]
+            )
             .to_string(),
             "r3.owner[0u32].owner[1u32].owner".to_string()
         );
         assert_eq!(
-            Register::<CurrentNetwork>::Access(4, vec![
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(0)),
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(1)),
-                Access::Member(Identifier::from_str("owner")?),
-                Access::Index(U32::new(2))
-            ])
+            Register::<CurrentNetwork>::Access(
+                4,
+                vec![
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(0)),
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(1)),
+                    Access::Member(Identifier::from_str("owner")?),
+                    Access::Index(U32::new(2))
+                ]
+            )
             .to_string(),
             "r4.owner[0u32].owner[1u32].owner[2u32]".to_string()
         );
@@ -424,60 +461,72 @@ mod tests {
         assert_eq!(
             (
                 "",
-                Register::<CurrentNetwork>::Access(0, vec![
-                    Access::Member(Identifier::from_str("owner")?),
-                    Access::Index(U32::new(0))
-                ])
+                Register::<CurrentNetwork>::Access(
+                    0,
+                    vec![Access::Member(Identifier::from_str("owner")?), Access::Index(U32::new(0))]
+                )
             ),
             Register::parse("r0.owner[0u32]").unwrap()
         );
         assert_eq!(
             (
                 "",
-                Register::<CurrentNetwork>::Access(1, vec![
-                    Access::Member(Identifier::from_str("owner")?),
-                    Access::Index(U32::new(0)),
-                    Access::Member(Identifier::from_str("owner")?)
-                ])
+                Register::<CurrentNetwork>::Access(
+                    1,
+                    vec![
+                        Access::Member(Identifier::from_str("owner")?),
+                        Access::Index(U32::new(0)),
+                        Access::Member(Identifier::from_str("owner")?)
+                    ]
+                )
             ),
             Register::parse("r1.owner[0u32].owner").unwrap()
         );
         assert_eq!(
             (
                 "",
-                Register::<CurrentNetwork>::Access(2, vec![
-                    Access::Member(Identifier::from_str("owner")?),
-                    Access::Index(U32::new(0)),
-                    Access::Member(Identifier::from_str("owner")?),
-                    Access::Index(U32::new(0))
-                ])
+                Register::<CurrentNetwork>::Access(
+                    2,
+                    vec![
+                        Access::Member(Identifier::from_str("owner")?),
+                        Access::Index(U32::new(0)),
+                        Access::Member(Identifier::from_str("owner")?),
+                        Access::Index(U32::new(0))
+                    ]
+                )
             ),
             Register::parse("r2.owner[0u32].owner[0u32]").unwrap()
         );
         assert_eq!(
             (
                 "",
-                Register::<CurrentNetwork>::Access(3, vec![
-                    Access::Member(Identifier::from_str("owner")?),
-                    Access::Index(U32::new(0)),
-                    Access::Member(Identifier::from_str("owner")?),
-                    Access::Index(U32::new(0)),
-                    Access::Member(Identifier::from_str("owner")?)
-                ])
+                Register::<CurrentNetwork>::Access(
+                    3,
+                    vec![
+                        Access::Member(Identifier::from_str("owner")?),
+                        Access::Index(U32::new(0)),
+                        Access::Member(Identifier::from_str("owner")?),
+                        Access::Index(U32::new(0)),
+                        Access::Member(Identifier::from_str("owner")?)
+                    ]
+                )
             ),
             Register::parse("r3.owner[0u32].owner[0u32].owner").unwrap()
         );
         assert_eq!(
             (
                 "",
-                Register::<CurrentNetwork>::Access(4, vec![
-                    Access::Member(Identifier::from_str("owner")?),
-                    Access::Index(U32::new(0)),
-                    Access::Member(Identifier::from_str("owner")?),
-                    Access::Index(U32::new(0)),
-                    Access::Member(Identifier::from_str("owner")?),
-                    Access::Index(U32::new(0))
-                ])
+                Register::<CurrentNetwork>::Access(
+                    4,
+                    vec![
+                        Access::Member(Identifier::from_str("owner")?),
+                        Access::Index(U32::new(0)),
+                        Access::Member(Identifier::from_str("owner")?),
+                        Access::Index(U32::new(0)),
+                        Access::Member(Identifier::from_str("owner")?),
+                        Access::Index(U32::new(0))
+                    ]
+                )
             ),
             Register::parse("r4.owner[0u32].owner[0u32].owner[0u32]").unwrap()
         );

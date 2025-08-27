@@ -22,26 +22,8 @@ use crate::data::{CastLossy, Literal};
 use console::LiteralType;
 use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::prelude::{
-    Address,
-    BitOr,
-    Boolean,
-    Environment,
-    Field,
-    FromBits,
-    FromField,
-    FromGroup,
-    Group,
-    IntegerType,
-    MSB,
-    One,
-    Result,
-    Scalar,
-    ToBits,
-    ToField,
-    ToGroup,
-    Zero,
-    bail,
-    integers::Integer,
+    Address, BitOr, Boolean, Environment, Field, FromBits, FromField, FromGroup, Group, IntegerType, MSB, One, Result,
+    Scalar, ToBits, ToField, ToGroup, Zero, bail, integers::Integer,
 };
 
 #[cfg(test)]

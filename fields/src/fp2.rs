@@ -15,9 +15,7 @@
 
 use crate::{Field, LegendreSymbol, One, PrimeField, SquareRootField, Zero};
 use snarkvm_utilities::{
-    FromBytes,
-    ToBits,
-    ToBytes,
+    FromBytes, ToBits, ToBytes,
     rand::Uniform,
     serialize::{SerializationError, *},
 };

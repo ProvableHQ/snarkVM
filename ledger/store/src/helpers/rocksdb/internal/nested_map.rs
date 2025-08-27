@@ -762,9 +762,7 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for NestedValues
 mod tests {
     use super::*;
     use crate::{
-        FinalizeMode,
-        atomic_batch_scope,
-        atomic_finalize,
+        FinalizeMode, atomic_batch_scope, atomic_finalize,
         helpers::{
             rocksdb::{MapID, TestMap},
             traits::Map,

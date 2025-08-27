@@ -15,18 +15,13 @@
 
 use crate::{
     fft::{
-        DensePolynomial,
-        EvaluationDomain,
-        Evaluations,
+        DensePolynomial, EvaluationDomain, Evaluations,
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        AHPError,
-        Matrix,
-        SNARKMode,
-        VarunaVersion,
+        AHPError, Matrix, SNARKMode, VarunaVersion,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
         matrices::transpose,
         prover::{self, MatrixSums, ThirdMessage},

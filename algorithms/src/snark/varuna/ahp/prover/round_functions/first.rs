@@ -17,12 +17,9 @@ use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, SparsePolynomial},
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        Circuit,
-        CircuitId,
-        SNARKMode,
+        Circuit, CircuitId, SNARKMode,
         ahp::{AHPError, AHPForR1CS},
-        prover,
-        witness_label,
+        prover, witness_label,
     },
 };
 use snarkvm_fields::PrimeField;

@@ -15,14 +15,12 @@
 
 use snarkvm_fields::{Field, One, PrimeField, Zero, field};
 use snarkvm_utilities::{
-    BigInteger,
-    BitIteratorBE,
+    BigInteger, BitIteratorBE,
     biginteger::{BigInteger256, BigInteger384},
 };
 
 use crate::{
-    AffineCurve,
-    ProjectiveCurve,
+    AffineCurve, ProjectiveCurve,
     bls12_377::{Fq, Fr},
     templates::bls12::Bls12Parameters,
     traits::{ModelParameters, ShortWeierstrassParameters},

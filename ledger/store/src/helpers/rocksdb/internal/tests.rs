@@ -14,8 +14,7 @@
 // limitations under the License.
 
 use crate::helpers::{
-    Map,
-    MapRead,
+    Map, MapRead,
     rocksdb::{Database, MapID, RocksDB, TestMap as TestMapID},
 };
 use console::{
