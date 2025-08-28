@@ -186,6 +186,9 @@ serial = [
   "snarkvm-ledger?/serial"
 ]
 
+[dependencies]
+encoding_rs = "0.8.35"
+
 [workspace.dependencies.snarkvm-algorithms]
 path = "algorithms"
 version = "=4.1.0"
