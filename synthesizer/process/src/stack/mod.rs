@@ -332,6 +332,12 @@ impl<N: Network> Stack<N> {
             }
         }
 
+        for mapping in self.program.mappings().values() {
+            // These calls make sure structs exist.
+            RegisterTypes::check_plaintext_type(self, mapping.key().plaintext_type())?;
+            RegisterTypes::check_plaintext_type(self, mapping.value().plaintext_type())?;
+        }
+
         // Drop the locks since the types have been initialized.
         drop(constructor_types);
         drop(register_types);
