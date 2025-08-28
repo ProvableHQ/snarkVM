@@ -4,7 +4,7 @@ version = "4.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A batch certificate for a Narwhal-style memory pool in a decentralized virtual machine"
 homepage = "https://aleo.org"
-repository = "https://github.com/AleoHQ/snarkVM"
+repository = "https://github.com/ProvableHQ/snarkVM"
 keywords = [
   "aleo",
   "cryptography",
@@ -27,4 +27,4 @@ edition = "2024"
 workspace = true
 
 [dependencies.indexmap]
-version = "2.0"
+workspace = true

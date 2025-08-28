@@ -270,12 +270,12 @@ impl<N: Network> Subdag<N> {
     /// Returns the subdag with full batch certificates.
     pub fn into_full(
         self,
-        solutions: Vec<TransmissionID<N>>,
-        prior_solutions: Vec<TransmissionID<N>>,
-        aborted_solutions: Vec<TransmissionID<N>>,
-        transaction_ids: Vec<TransmissionID<N>>,
-        prior_transactions: Vec<TransmissionID<N>>,
-        aborted_transaction_ids: Vec<TransmissionID<N>>,
+        solutions: &[TransmissionID<N>],
+        prior_solutions: &[TransmissionID<N>],
+        aborted_solutions: &[TransmissionID<N>],
+        transaction_ids: &[TransmissionID<N>],
+        prior_transactions: &[TransmissionID<N>],
+        aborted_transaction_ids: &[TransmissionID<N>],
     ) -> Result<Subdag<N>> {
         let subdag = match self {
             Self::Compact { subdag } => subdag,

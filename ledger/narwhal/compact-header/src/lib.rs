@@ -43,9 +43,11 @@ pub struct CompactHeader<N: Network> {
     timestamp: i64,
     /// The committee ID.
     committee_id: Field<N>,
-    /// The set of transaction indices in a block.
+    /// The transactions included in this batch, stored compactly as indices in the set of all
+    /// transactions of the associated block.
     transaction_indices: IndexSet<u32>,
-    /// The set of solution indices in a block.
+    /// The solutions included in this batch, stored compactly as indices in the set of all
+    /// solutions of the associated block.
     solution_indices: IndexSet<u32>,
     /// The batch certificate IDs of the previous round.
     previous_certificate_ids: IndexSet<Field<N>>,

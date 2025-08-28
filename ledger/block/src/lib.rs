@@ -85,7 +85,8 @@ pub struct Block<N: Network> {
     prior_solution_transmission_ids: Option<Vec<TransmissionID<N>>>,
     /// The aborted solution transmission IDs in this block.
     aborted_solution_transmission_ids: Option<Vec<TransmissionID<N>>>,
-    /// The aborted solution IDs in this block.
+    /// The aborted solution IDs in this block, which are present in the absence of both
+    /// `prior_solution_transmission_ids` and `aborted_solution_transmission_ids`.
     aborted_solution_ids: Option<Vec<SolutionID<N>>>,
     /// The transactions in this block.
     transactions: Transactions<N>,
@@ -94,7 +95,8 @@ pub struct Block<N: Network> {
     prior_transaction_transmission_ids: Option<Vec<TransmissionID<N>>>,
     /// The aborted transaction transmission IDs in this block.
     aborted_transaction_transmission_ids: Option<Vec<TransmissionID<N>>>,
-    /// The aborted transaction IDs in this block.
+    /// The aborted transaction IDs in this block, which are present in the absence of both
+    /// `prior_transaction_transmission_ids` and `aborted_transaction_transmission_ids`.
     aborted_transaction_ids: Option<Vec<N::TransactionID>>,
 }
 
@@ -352,12 +354,12 @@ impl<N: Network> Block<N> {
 
         // Convert Quorum authority to subdag with full batch certificates.
         subdag.clone().into_full(
-            solution_transmission_ids,
-            prior_solution_transmission_ids.clone().unwrap(),
-            aborted_solution_transmission_ids.clone().unwrap(),
-            transaction_transmission_ids,
-            prior_transaction_transmission_ids.clone().unwrap(),
-            aborted_transaction_transmission_ids.clone().unwrap(),
+            &solution_transmission_ids,
+            prior_solution_transmission_ids.as_ref().unwrap(),
+            aborted_solution_transmission_ids.as_ref().unwrap(),
+            &transaction_transmission_ids,
+            prior_transaction_transmission_ids.as_ref().unwrap(),
+            aborted_transaction_transmission_ids.as_ref().unwrap(),
         )
     }
 }

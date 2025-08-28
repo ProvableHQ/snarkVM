@@ -19,6 +19,8 @@ use snarkvm_console::{
     types::{Address, Field},
 };
 
+/// A trait exposing functionalities shared by both full and compact
+/// Narwhal certificates.
 pub trait NarwhalCertificate<N: Network>: Send + Sync {
     /// Returns the certificate ID.
     fn id(&self) -> Field<N>;
