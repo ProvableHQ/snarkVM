@@ -2696,6 +2696,7 @@ fn test_program_exceeding_transaction_spend_limit() {
       function foo:
       async foo into r0;
       output r0 as test_max_spend_limit.aleo/foo.future;
+      
       finalize foo:{finalize_body}",
     ))
     .unwrap();

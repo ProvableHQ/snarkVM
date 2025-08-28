@@ -101,8 +101,10 @@ pub trait Network:
 {
     /// The network ID.
     const ID: u16;
-    /// The network name.
+    /// The (long) network name.
     const NAME: &'static str;
+    /// The short network name (used, for example, in query URLs).
+    const SHORT_NAME: &'static str;
 
     /// The function name for the inclusion circuit.
     const INCLUSION_FUNCTION_NAME: &'static str;
@@ -136,8 +138,12 @@ pub trait Network:
     const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
-    /// The maximum number of microcredits that can be spent on a constructor or finalize scope.
-    const TRANSACTION_SPEND_LIMIT: u64 = 100_000_000;
+    /// A list of consensus versions and their corresponding transaction spend limits in microcredits.
+    //  Note: This value must **not** decrease without considering the impact on transaction validity.
+    const TRANSACTION_SPEND_LIMIT: [(ConsensusVersion, u64); 2] =
+        [(ConsensusVersion::V1, 100_000_000), (ConsensusVersion::V10, 4_000_000)];
+    /// The compute discount approved by ARC 0005.
+    const ARC_0005_COMPUTE_DISCOUNT: u64 = 25;
 
     /// The anchor height, defined as the expected number of blocks to reach the coinbase target.
     const ANCHOR_HEIGHT: u32 = Self::ANCHOR_TIME as u32 / Self::BLOCK_TIME as u32;

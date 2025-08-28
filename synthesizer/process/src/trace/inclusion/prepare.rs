@@ -16,7 +16,7 @@
 use super::*;
 
 macro_rules! prepare_impl {
-    ($self:ident, $transitions:ident, $query:ident, $current_state_root:ident, $current_block_height:ident, $get_state_path_for_commitment:ident $(, $await:ident)?) => {{
+    ($self:ident, $transitions:ident, $query:ident, $current_state_root:ident, $current_block_height:ident, $get_state_paths_for_commitments:ident $(, $await:ident)?) => {{
         // Ensure the number of leaves is within the Merkle tree size.
         Transaction::<N>::check_execution_size($transitions.len())?;
 
@@ -24,12 +24,6 @@ macro_rules! prepare_impl {
         let mut transaction_tree = N::merkle_tree_bhp::<TRANSACTION_DEPTH>(&[])?;
         // Initialize a vector for the assignments.
         let mut assignments = vec![];
-
-        // Retrieve the global state root.
-        let global_state_root = {
-            $query.$current_state_root()
-            $(.$await)?
-        }?;
 
         // Retrieve the current block height.
         let current_block_height = {
@@ -39,6 +33,26 @@ macro_rules! prepare_impl {
 
         // Determine which consensus version is being used.
         let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
+
+        // Fetch all the record commitments for the transitions.
+        let commitments: Vec<_> = $transitions
+            .iter()
+            .flat_map(|t| $self.input_tasks.get(t.id()).into_iter().flatten())
+            .filter_map(|task| task.local.is_none().then_some(task.commitment))
+            .collect();
+
+        // Fetch all the state paths for the commitments.
+        let mut state_paths: VecDeque<_> = $query.$get_state_paths_for_commitments(&commitments)
+                                $(.$await)??.into();
+
+        // Retrieve the global state root.
+        let global_state_root = match state_paths.front() {
+            Some(path) => path.global_state_root(),
+            None => {
+                $query.$current_state_root()
+                $(.$await)?
+            }?
+        };
 
         // Ensure the global state root is not zero.
         if *global_state_root == Field::zero() {
@@ -75,9 +89,10 @@ macro_rules! prepare_impl {
                                 )?
                             }
                             None => {
-                                $query.$get_state_path_for_commitment(&task.commitment)
-                                $(.$await)?
-                            }?
+                                // Use the next state path from the batched state paths.
+                                state_paths.pop_front()
+                                    .ok_or(anyhow!("Missing state path for commitment {}", task.commitment))?
+                            }
                         };
 
                         // Ensure the global state root is the same across iterations.
@@ -150,7 +165,14 @@ impl<N: Network> Inclusion<N> {
         transitions: &[Transition<N>],
         query: &dyn QueryTrait<N>,
     ) -> Result<(Vec<InclusionAssignmentWrapper<N>>, N::StateRoot)> {
-        prepare_impl!(self, transitions, query, current_state_root, current_block_height, get_state_path_for_commitment)
+        prepare_impl!(
+            self,
+            transitions,
+            query,
+            current_state_root,
+            current_block_height,
+            get_state_paths_for_commitments
+        )
     }
 
     /// Returns the inclusion assignments for the given transitions.
@@ -166,7 +188,7 @@ impl<N: Network> Inclusion<N> {
             query,
             current_state_root_async,
             current_block_height_async,
-            get_state_path_for_commitment_async,
+            get_state_paths_for_commitments_async,
             await
         )
     }

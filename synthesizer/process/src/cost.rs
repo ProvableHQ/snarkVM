@@ -22,8 +22,80 @@ use console::{
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
 use snarkvm_synthesizer_program::{CastType, Command, Instruction, Operand};
 
-/// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, constructor cost, namespace cost)).
+/// Returns the deployment cost in microcredits for a given deployment.
 pub fn deployment_cost<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+    consensus_version: ConsensusVersion,
+) -> Result<(u64, (u64, u64, u64, u64))> {
+    if consensus_version >= ConsensusVersion::V10 {
+        deployment_cost_v2(process, deployment)
+    } else {
+        deployment_cost_v1(process, deployment)
+    }
+}
+
+/// Returns the execution cost in microcredits for a given execution.
+pub fn execution_cost<N: Network>(
+    process: &Process<N>,
+    execution: &Execution<N>,
+    consensus_version: ConsensusVersion,
+) -> Result<(u64, (u64, u64))> {
+    if consensus_version >= ConsensusVersion::V10 {
+        execution_cost_v3(process, execution)
+    } else if consensus_version >= ConsensusVersion::V2 {
+        execution_cost_v2(process, execution)
+    } else {
+        execution_cost_v1(process, execution)
+    }
+}
+
+/// Returns the *minimum* cost in microcredits to publish the given deployment using the reduced synthesis cost (total cost, (storage cost, synthesis cost, constructor cost, namespace cost)).
+pub fn deployment_cost_v2<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+) -> Result<(u64, (u64, u64, u64, u64))> {
+    // Determine the number of bytes in the deployment.
+    let size_in_bytes = deployment.size_in_bytes()?;
+    // Retrieve the program ID.
+    let program_id = deployment.program_id();
+    // Determine the number of characters in the program ID.
+    let num_characters = u32::try_from(program_id.name().to_string().len())?;
+    // Compute the number of combined variables in the program.
+    let num_combined_variables = deployment.num_combined_variables()?;
+    // Compute the number of combined constraints in the program.
+    let num_combined_constraints = deployment.num_combined_constraints()?;
+
+    // Compute the storage cost in microcredits.
+    let storage_cost = size_in_bytes
+        .checked_mul(N::DEPLOYMENT_FEE_MULTIPLIER)
+        .ok_or(anyhow!("The storage cost computation overflowed for a deployment"))?;
+
+    // Compute the synthesis cost in microcredits.
+    let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER
+        / N::ARC_0005_COMPUTE_DISCOUNT;
+
+    // Compute the constructor cost in microcredits.
+    let constructor_cost = constructor_cost_in_microcredits_v2(&Stack::new(process, deployment.program())?)?;
+
+    // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
+    let namespace_cost = 10u64
+        .checked_pow(10u32.saturating_sub(num_characters))
+        .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
+        .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
+
+    // Compute the total cost in microcredits.
+    let total_cost = storage_cost
+        .checked_add(synthesis_cost)
+        .and_then(|x| x.checked_add(constructor_cost))
+        .and_then(|x| x.checked_add(namespace_cost))
+        .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
+
+    Ok((total_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
+}
+
+/// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, constructor cost, namespace cost)).
+pub fn deployment_cost_v1<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
 ) -> Result<(u64, (u64, u64, u64, u64))> {
@@ -47,7 +119,7 @@ pub fn deployment_cost<N: Network>(
     let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER;
 
     // Compute the constructor cost in microcredits.
-    let constructor_cost = constructor_cost_in_microcredits(&Stack::new(process, deployment.program())?)?;
+    let constructor_cost = constructor_cost_in_microcredits_v1(&Stack::new(process, deployment.program())?)?;
 
     // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
     let namespace_cost = 10u64
@@ -63,6 +135,27 @@ pub fn deployment_cost<N: Network>(
         .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
 
     Ok((total_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
+}
+
+/// Returns the *minimum* cost in microcredits to publish the given execution using the reduced finalize cost(total cost, (storage cost, finalize cost)).
+/// The latest execution cost version is imported into /stack/mod.rs.
+pub fn execution_cost_v3<N: Network>(process: &Process<N>, execution: &Execution<N>) -> Result<(u64, (u64, u64))> {
+    // Compute the storage cost in microcredits.
+    let storage_cost = execution_storage_cost::<N>(execution.size_in_bytes()?);
+
+    // Get the root transition.
+    let transition = execution.peek()?;
+
+    // Get the finalize cost for the root transition.
+    let stack = process.get_stack(transition.program_id())?;
+    let finalize_cost = cost_in_microcredits_v3(&stack, transition.function_name())?;
+
+    // Compute the total cost in microcredits.
+    let total_cost = storage_cost
+        .checked_add(finalize_cost)
+        .ok_or(anyhow!("The total cost computation overflowed for an execution"))?;
+
+    Ok((total_cost, (storage_cost, finalize_cost)))
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).
@@ -133,6 +226,7 @@ const HASH_PSD_PER_BYTE_COST: u64 = 75;
 pub enum ConsensusFeeVersion {
     V1,
     V2,
+    V3,
 }
 
 const MAPPING_BASE_COST_V1: u64 = 10_000;
@@ -212,7 +306,7 @@ pub fn cost_per_command<N: Network>(
 ) -> Result<u64> {
     let mapping_base_cost = match consensus_fee_version {
         ConsensusFeeVersion::V1 => MAPPING_BASE_COST_V1,
-        ConsensusFeeVersion::V2 => MAPPING_BASE_COST_V2,
+        ConsensusFeeVersion::V2 | ConsensusFeeVersion::V3 => MAPPING_BASE_COST_V2,
     };
 
     match command {
@@ -414,7 +508,7 @@ pub fn cost_per_command<N: Network>(
 
 /// Returns the minimum number of microcredits required to run the constructor in the given stack.
 /// If a constructor does not exist, no cost is incurred.
-pub fn constructor_cost_in_microcredits<N: Network>(stack: &Stack<N>) -> Result<u64> {
+pub fn constructor_cost_in_microcredits_v2<N: Network>(stack: &Stack<N>) -> Result<u64> {
     match stack.program().constructor() {
         Some(constructor) => {
             // Get the constructor types.
@@ -427,11 +521,41 @@ pub fn constructor_cost_in_microcredits<N: Network>(stack: &Stack<N>) -> Result<
                 .try_fold(0u64, |acc, res| {
                     res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Constructor cost overflowed")))
                 })?;
-            // Scale by the multiplier.
+            // Scale by the multiplier and divide by the ARC-0005 cost reduction factor.
+            base_cost
+                .checked_mul(N::CONSTRUCTOR_FEE_MULTIPLIER)
+                .map(|result| result / N::ARC_0005_COMPUTE_DISCOUNT)
+                .ok_or(anyhow!("Constructor cost overflowed"))
+        }
+        None => Ok(0),
+    }
+}
+
+/// Returns the minimum number of microcredits required to run the constructor in the given stack.
+/// If a constructor does not exist, no cost is incurred.
+pub fn constructor_cost_in_microcredits_v1<N: Network>(stack: &Stack<N>) -> Result<u64> {
+    match stack.program().constructor() {
+        Some(constructor) => {
+            // Get the constructor types.
+            let constructor_types = stack.get_constructor_types()?;
+            // Get the base cost of the constructor.
+            let base_cost = constructor
+                .commands()
+                .iter()
+                .map(|command| cost_per_command(stack, &constructor_types, command, ConsensusFeeVersion::V2))
+                .try_fold(0u64, |acc, res| {
+                    res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Constructor cost overflowed")))
+                })?;
+            // Scale by the multiplier and divide by the ARC-0005 cost reduction factor.
             base_cost.checked_mul(N::CONSTRUCTOR_FEE_MULTIPLIER).ok_or(anyhow!("Constructor cost overflowed"))
         }
         None => Ok(0),
     }
+}
+
+/// Returns the minimum number of microcredits required to run the finalize using the ARC-0005 cost reduction factor.
+pub fn cost_in_microcredits_v3<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
+    cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V3)
 }
 
 /// Returns the minimum number of microcredits required to run the finalize.
@@ -456,6 +580,11 @@ fn cost_in_microcredits<N: Network>(
     let mut finalizes = vec![(StackRef::Internal(stack), *function_name)];
     // Initialize a counter for the number of finalize blocks seen.
     let mut num_finalizes = 1;
+    // Get the quotient for the cost reduction factor.
+    let quotient = match consensus_fee_version {
+        ConsensusFeeVersion::V1 | ConsensusFeeVersion::V2 => 1,
+        ConsensusFeeVersion::V3 => N::ARC_0005_COMPUTE_DISCOUNT,
+    };
     // Iterate over the finalize blocks.
     while let Some((stack_ref, function_name)) = finalizes.pop() {
         // Ensure that the number of finalize blocks does not exceed the maximum.
@@ -494,7 +623,7 @@ fn cost_in_microcredits<N: Network>(
             }
         }
     }
-    Ok(finalize_cost)
+    Ok(finalize_cost / quotient)
 }
 
 #[cfg(test)]
@@ -575,10 +704,10 @@ function over_five_thousand:
         // Get execution and cost data.
         let execution_under_5000 = get_execution(&mut process, &program, &under_5000, ["2group"].into_iter());
         let execution_size_under_5000 = execution_under_5000.size_in_bytes().unwrap();
-        let (_, (storage_cost_under_5000, _)) = execution_cost_v2(&process, &execution_under_5000).unwrap();
+        let (_, (storage_cost_under_5000, _)) = execution_cost_v3(&process, &execution_under_5000).unwrap();
         let execution_over_5000 = get_execution(&mut process, &program, &over_5000, ["2group"].into_iter());
         let execution_size_over_5000 = execution_over_5000.size_in_bytes().unwrap();
-        let (_, (storage_cost_over_5000, _)) = execution_cost_v2(&process, &execution_over_5000).unwrap();
+        let (_, (storage_cost_over_5000, _)) = execution_cost_v3(&process, &execution_over_5000).unwrap();
 
         // Ensure the sizes are below and above the threshold respectively.
         assert!(execution_size_under_5000 < threshold);
@@ -661,24 +790,153 @@ function dummy:",
             let mut deployment_0 = process.deploy::<A, _>(&program_0, rng).unwrap();
             deployment_0.set_program_checksum_raw(Some(deployment_0.program().to_checksum()));
             deployment_0.set_program_owner_raw(Some(Address::rand(rng)));
-            assert_eq!(deployment_cost(&process, &deployment_0).unwrap(), (2532500, (879000, 603500, 50000, 1000000)));
+            let expected_storage_cost = 879000;
+            let expected_synthesis_cost = 603500;
+            let expected_constructor_cost = 50000;
+            let expected_namespace_cost = 1000000;
+            let expected_total_cost =
+                expected_storage_cost + expected_synthesis_cost + expected_constructor_cost + expected_namespace_cost;
+            assert_eq!(
+                deployment_cost_v1(&process, &deployment_0).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
+            let expected_synthesis_cost = expected_synthesis_cost / N::ARC_0005_COMPUTE_DISCOUNT;
+            let expected_constructor_cost = expected_constructor_cost / N::ARC_0005_COMPUTE_DISCOUNT;
+            let expected_total_cost =
+                expected_storage_cost + expected_synthesis_cost + expected_constructor_cost + expected_namespace_cost;
+            assert_eq!(
+                deployment_cost_v2(&process, &deployment_0).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
 
             let mut deployment_1 = process.deploy::<A, _>(&program_1, rng).unwrap();
             deployment_1.set_program_checksum_raw(Some(deployment_1.program().to_checksum()));
             deployment_1.set_program_owner_raw(Some(Address::rand(rng)));
-            assert_eq!(deployment_cost(&process, &deployment_1).unwrap(), (2531500, (878000, 603500, 50000, 1000000)));
+            let expected_storage_cost = 878000;
+            let expected_synthesis_cost = 603500;
+            let expected_constructor_cost = 50000;
+            let expected_namespace_cost = 1000000;
+            let expected_total_cost =
+                expected_storage_cost + expected_synthesis_cost + expected_constructor_cost + expected_namespace_cost;
+            assert_eq!(
+                deployment_cost_v1(&process, &deployment_1).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
+            let expected_synthesis_cost = expected_synthesis_cost / N::ARC_0005_COMPUTE_DISCOUNT;
+            let expected_constructor_cost = expected_constructor_cost / N::ARC_0005_COMPUTE_DISCOUNT;
+            let expected_total_cost =
+                expected_storage_cost + expected_synthesis_cost + expected_constructor_cost + expected_namespace_cost;
+            assert_eq!(
+                deployment_cost_v2(&process, &deployment_1).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
 
             let mut deployment_2 = process.deploy::<A, _>(&program_2, rng).unwrap();
             deployment_2.set_program_checksum_raw(Some(deployment_2.program().to_checksum()));
             deployment_2.set_program_owner_raw(Some(Address::rand(rng)));
-            assert_eq!(deployment_cost(&process, &deployment_2).unwrap(), (2696500, (911000, 603500, 182000, 1000000)));
+            let expected_storage_cost = 911000;
+            let expected_synthesis_cost = 603500;
+            let expected_constructor_cost = 182000;
+            let expected_namespace_cost = 1000000;
+            let expected_total_cost =
+                expected_storage_cost + expected_synthesis_cost + expected_constructor_cost + expected_namespace_cost;
+            assert_eq!(
+                deployment_cost_v1(&process, &deployment_2).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
+            let expected_synthesis_cost = expected_synthesis_cost / N::ARC_0005_COMPUTE_DISCOUNT;
+            let expected_constructor_cost = expected_constructor_cost / N::ARC_0005_COMPUTE_DISCOUNT;
+            let expected_total_cost =
+                expected_storage_cost + expected_synthesis_cost + expected_constructor_cost + expected_namespace_cost;
+            assert_eq!(
+                deployment_cost_v2(&process, &deployment_2).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
 
             let mut deployment_3 = process.deploy::<A, _>(&program_3, rng).unwrap();
             deployment_3.set_program_checksum_raw(Some(deployment_3.program().to_checksum()));
             deployment_3.set_program_owner_raw(Some(Address::rand(rng)));
+            let expected_storage_cost = 943000;
+            let expected_synthesis_cost = 603500;
+            let expected_constructor_cost = 1640000;
+            let expected_namespace_cost = 1000000;
+            let expected_total_cost =
+                expected_storage_cost + expected_synthesis_cost + expected_constructor_cost + expected_namespace_cost;
             assert_eq!(
-                deployment_cost(&process, &deployment_3).unwrap(),
-                (4186500, (943000, 603500, 1640000, 1000000))
+                deployment_cost_v1(&process, &deployment_3).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
+            let expected_synthesis_cost = expected_synthesis_cost / N::ARC_0005_COMPUTE_DISCOUNT;
+            let expected_constructor_cost = expected_constructor_cost / N::ARC_0005_COMPUTE_DISCOUNT;
+            let expected_total_cost =
+                expected_storage_cost + expected_synthesis_cost + expected_constructor_cost + expected_namespace_cost;
+            assert_eq!(
+                deployment_cost_v2(&process, &deployment_3).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
             );
         }
 

@@ -15,16 +15,14 @@
 
 use super::*;
 
-use crate::vm::test_helpers::*;
+use crate::{prelude::deployment_cost_v1, vm::test_helpers::*};
 
-use console::{account::ViewKey, network::ConsensusVersion};
+use console::{account::ViewKey, network::ConsensusVersion, program::ProgramOwner};
+use snarkvm_ledger_block::{Deployment, Transaction};
 use snarkvm_ledger_store::ConsensusStore;
 use snarkvm_synthesizer_program::{Program, StackTrait as _};
 
-use crate::vm::test_helpers::{advance_vm_to_height, sample_vm_at_height};
 use aleo_std::StorageMode;
-use console::program::ProgramOwner;
-use snarkvm_ledger_block::{Deployment, Transaction};
 
 // This test checks that:
 //  - an existing program cannot be redeployed before `ConsensusVersion::V8`
@@ -441,7 +439,7 @@ function dummy:
         Some(address),
     )?;
     // Note: This needs to be recalculated since the new deployment contains a checksum and owner.
-    let (base_fee_amount, _) = deployment_cost(&vm.process.read(), &deployment)?;
+    let (base_fee_amount, _) = deployment_cost_v1(&vm.process.read(), &deployment)?;
     let fee_authorization = vm.authorize_fee_public(
         &other_private_key,
         base_fee_amount,

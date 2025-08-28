@@ -69,7 +69,7 @@ additional:
       - '{"type":"future","id":"3987091141093809820962934800916752355234237857159910145893947017700806284279field","value":"{\n  program_id: inner.aleo,\n  function_name: save_inner_rand,\n  arguments: [\n    0field\n  ]\n}"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"6587888489020181813301949732888387685528046612769206514617535242875844177516field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    76697u64\n  ]\n}"}'
+      - '{"type":"future","id":"6070133222592017746030608628229971368204813895029688064522697081666684305072field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    5753u64\n  ]\n}"}'
 - child_outputs:
     inner.aleo/save_inner_rand:
       outputs:
@@ -81,7 +81,7 @@ additional:
       outputs: []
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"6721274460550608501424316865101676464150846160039481700841421419744009574624field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    153515u64\n  ]\n}"}'
+      - '{"type":"future","id":"1062613337377697521797176409196065176351191792029868741802599310781481021571field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    10667u64\n  ]\n}"}'
 - child_outputs:
     mid.aleo/dummy:
       outputs: []
@@ -93,7 +93,7 @@ additional:
       - '{"type":"future","id":"1855440188685819836712812719778566137254135084348052026158937996334190518607field","value":"{\n  program_id: mid.aleo,\n  function_name: save_mid_rand,\n  arguments: [\n    {\n      program_id: inner.aleo,\n      function_name: save_inner_rand,\n      arguments: [\n        0field\n      ]\n    }\n  \n  ]\n}"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"5973963628722296517339643647130583230687246783671311000970680429240690582054field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    78340u64\n  ]\n}"}'
+      - '{"type":"future","id":"3970179545844885708401018004752813519523633798299761260032855459851122040333field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    6916u64\n  ]\n}"}'
 - child_outputs:
     inner.aleo/save_inner_rand:
       outputs:
@@ -105,7 +105,7 @@ additional:
       outputs: []
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"1791213727932007470683389104665730190489688315127341303730590678311399437850field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    153515u64\n  ]\n}"}'
+      - '{"type":"future","id":"4787865919791230240635598385955918142339948597792768622135943805987857999918field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    10667u64\n  ]\n}"}'
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
@@ -129,7 +129,7 @@ additional:
       - '{"type":"future","id":"869005991377796902815461827828314939459893969448045031415737384056492248244field","value":"{\n  program_id: mid.aleo,\n  function_name: save_mid_rand,\n  arguments: [\n    {\n      program_id: inner.aleo,\n      function_name: save_inner_rand,\n      arguments: [\n        0field\n      ]\n    }\n  \n  ]\n}"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"7426283926370379323988532482644313300090841563092884275341564689822458456921field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    78340u64\n  ]\n}"}'
+      - '{"type":"future","id":"768807999243832972742518818762212420489911455534271509421729429445536496167field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    6916u64\n  ]\n}"}'
 - child_outputs:
     inner.aleo/save_inner_rand:
       outputs:
@@ -141,4 +141,4 @@ additional:
       outputs: []
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"4733849908780512251771463103162759685481094857546495475091670684240535586531field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    153515u64\n  ]\n}"}'
+      - '{"type":"future","id":"5564637190918723365505945319716779684584064722447182431535338784896026755099field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    10667u64\n  ]\n}"}'

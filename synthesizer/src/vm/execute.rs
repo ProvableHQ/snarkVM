@@ -80,10 +80,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             true => {
                 // Compute the minimum execution cost.
                 let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-                let (minimum_execution_cost, (_, _)) = match consensus_version == ConsensusVersion::V1 {
-                    true => execution_cost_v1(&self.process().read(), &execution)?,
-                    false => execution_cost_v2(&self.process().read(), &execution)?,
-                };
+                let (minimum_execution_cost, (_, _)) =
+                    execution_cost(&self.process().read(), &execution, consensus_version)?;
                 // Compute the execution ID.
                 let execution_id = execution.to_execution_id()?;
                 // Authorize the fee.
@@ -287,7 +285,7 @@ mod tests {
         types::Field,
     };
     use snarkvm_ledger_block::Transition;
-    use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command, execution_cost_v2};
+    use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command, execution_cost_v1, execution_cost_v2};
     use snarkvm_synthesizer_program::StackTrait;
 
     use indexmap::IndexMap;
@@ -733,6 +731,9 @@ finalize test:
         // Execute.
         let transaction =
             vm.execute(&caller_private_key, ("credits.aleo", "join"), inputs, None, 0, None, rng).unwrap();
+
+        // Verify the transaction.
+        vm.check_transaction(&transaction, None, rng).unwrap();
 
         // Assert the size of the transaction.
         let transaction_size_in_bytes = transaction.to_bytes_le().unwrap().len();

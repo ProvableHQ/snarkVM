@@ -16,7 +16,7 @@
 use crate::QueryTrait;
 use console::{network::prelude::*, program::StatePath, types::Field};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use std::{collections::HashMap, str::FromStr};
 
@@ -43,12 +43,9 @@ impl<N: Network> FromStr for StaticQuery<N> {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        if !s.trim().starts_with('{') {
-            return Err(anyhow!("Not a static query"));
-        }
+        ensure!(s.trim().starts_with('{'), "Not a static query");
 
-        let input: StaticQueryInput =
-            serde_json::from_str(s).map_err(|e| anyhow!("Invalid JSON format in static query: {e}"))?;
+        let input: StaticQueryInput = serde_json::from_str(s).with_context(|| "Invalid JSON format in static query")?;
         let state_root = N::StateRoot::from_str(&input.state_root).map_err(|_| anyhow!("Invalid state root format"))?;
 
         Ok(Self { state_root, block_height: input.height, state_paths: HashMap::new() })
@@ -65,21 +62,35 @@ impl<N: Network> QueryTrait<N> for StaticQuery<N> {
     /// Returns the current state root.
     #[cfg(feature = "async")]
     async fn current_state_root_async(&self) -> Result<N::StateRoot> {
-        unimplemented!("Async calls are not supported by StaticQuery");
+        self.current_state_root()
     }
 
     /// Returns a state path for the given `commitment`.
     fn get_state_path_for_commitment(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
         match self.state_paths.get(commitment) {
             Some(state_path) => Ok(state_path.clone()),
-            None => bail!("could not find state path for commitment '{commitment}'"),
+            None => bail!("Could not find state path for commitment '{commitment}'"),
         }
     }
 
     /// Returns a state path for the given `commitment`.
     #[cfg(feature = "async")]
-    async fn get_state_path_for_commitment_async(&self, _commitment: &Field<N>) -> Result<StatePath<N>> {
-        unimplemented!("Async calls are not supported by StaticQuery");
+    async fn get_state_path_for_commitment_async(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
+        self.get_state_path_for_commitment(commitment)
+    }
+
+    /// Returns a list of state paths for the given list of `commitment`s.
+    fn get_state_paths_for_commitments(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
+        commitments
+            .iter()
+            .map(|commitment| self.get_state_path_for_commitment(commitment))
+            .collect::<Result<Vec<StatePath<N>>>>()
+    }
+
+    /// Returns a list of state paths for the given list of `commitment`s.
+    #[cfg(feature = "async")]
+    async fn get_state_paths_for_commitments_async(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
+        self.get_state_paths_for_commitments(commitments)
     }
 
     /// Returns the current block height
@@ -90,7 +101,7 @@ impl<N: Network> QueryTrait<N> for StaticQuery<N> {
     /// Returns the current block height
     #[cfg(feature = "async")]
     async fn current_block_height_async(&self) -> Result<u32> {
-        unimplemented!("Async calls are not supported by StaticQuery");
+        self.current_block_height()
     }
 }
 
@@ -105,5 +116,13 @@ mod tests {
             .to_string();
         let query: Result<StaticQuery<TestnetV0>> = json.parse();
         assert!(query.is_ok());
+    }
+
+    #[test]
+    fn test_static_query_parse_invalid() {
+        let json = r#"{"invalid_key": "sr1dz06ur5spdgzkguh4pr42mvft6u3nwsg5drh9rdja9v8jpcz3czsls9geg", "height": 14}"#
+            .to_string();
+        let query: Result<StaticQuery<TestnetV0>> = json.parse();
+        assert!(query.is_err());
     }
 }

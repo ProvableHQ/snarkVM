@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - 'staging'
-      - 'bench/rust-toolchain'
   workflow_dispatch:
 
 jobs:
@@ -35,59 +34,59 @@ jobs:
       - name: Benchmark algorithms
         run: |
           cd algorithms
-          cargo bench --bench variable_base -- --output-format bencher | tee -a ../output.txt
-          cargo bench --bench poseidon_sponge -- --output-format bencher | tee -a ../output.txt
+          cargo bench --locked --bench variable_base -- --output-format bencher | tee -a ../output.txt
+          cargo bench --locked --bench poseidon_sponge -- --output-format bencher | tee -a ../output.txt
           cargo bench --bench varuna -- --output-format bencher | tee -a ../output.txt
           cd ..
 
       - name: Benchmark circuit/environment
         run: |
           cd circuit/environment
-          cargo bench --bench linear_combination -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench linear_combination -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark console/account
         run: |
           cd console/account
-          cargo bench --bench account -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench account -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark console/algorithms
         run: |
           cd console/algorithms
-          cargo bench --bench poseidon -- --output-format bencher | tee -a ../../output.txt
-          cargo bench --bench elligator2 -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench poseidon -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench elligator2 -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark console/collections
         run: |
           cd console/collections
-          cargo bench --bench merkle_tree -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench merkle_tree -- --output-format bencher | tee -a ../../output.txt
           cd ../..
           
       - name: Benchmark console/types
         run: |
           cd console/types
-          cargo bench --bench group -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench group -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       - name: Benchmark curves
         run: |
           cd curves
-          cargo bench --bench curves -- --output-format bencher | tee -a ../output.txt
+          cargo bench --locked --bench curves -- --output-format bencher | tee -a ../output.txt
           cd ..
 
       - name: Benchmark ledger
         run: |
           cd ledger
-          cargo bench --bench block -- --output-format bencher | tee -a ../output.txt
-          cargo bench --bench transaction -- --output-format bencher | tee -a ../output.txt
+          cargo bench --locked --bench block -- --output-format bencher | tee -a ../output.txt
+          cargo bench --locked --bench transaction -- --output-format bencher | tee -a ../output.txt
           cd ..
 
       - name: Benchmark ledger/puzzle
         run: |
           cd ledger/puzzle
-          cargo bench --bench puzzle --features "setup" -- --output-format bencher | tee -a ../../output.txt
+          cargo bench --locked --bench puzzle --features "setup" -- --output-format bencher | tee -a ../../output.txt
           cd ../..
 
       # Clean benchmark output to remove unnecessary lines

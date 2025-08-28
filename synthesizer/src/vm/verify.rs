@@ -214,7 +214,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //      - the edition is exactly one.
                 //  - Otherwise, if the new program contains a constructor.
                 //      - the existing program has a constructor.
-                //        Note. Constructor validity is checked at a later point.
+                //      - if the consensus version is V10 or greater, then check that each function's **record** output registers match the existing program.
+                //      - Note. Constructor validity is checked at a later point.
+                //      - Note. The remaining syntactic checks on upgrades are done in `Stack::check_upgrade_is_valid`.
                 let is_program_in_storage = self.transaction_store().contains_program_id(deployment.program_id())?;
                 let is_program_in_process = self.contains_program(deployment.program_id());
                 match deployment.edition() {
@@ -282,6 +284,28 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     existing_program.contains_constructor(),
                                     "Invalid deployment transaction '{id}' - the existing program does not have a constructor, but the deployment program does"
                                 );
+                                // If the consensus version is V10 or greater, then check that each function's **record** output registers match the existing program.
+                                if consensus_version >= ConsensusVersion::V10 {
+                                    for (id, function) in existing_program.functions() {
+                                        // Get the corresponding function in the new program.
+                                        let Ok(new_function) = deployment.program().get_function(id) else {
+                                            bail!("Invalid deployment transaction '{id}' - missing function '{id}'")
+                                        };
+                                        // Ensure the record output registers match.
+                                        let existing_output_registers = function
+                                            .outputs()
+                                            .iter()
+                                            .filter(|output| matches!(output.value_type(), ValueType::Record(_)));
+                                        let new_output_registers = new_function
+                                            .outputs()
+                                            .iter()
+                                            .filter(|output| matches!(output.value_type(), ValueType::Record(_)));
+                                        ensure!(
+                                            existing_output_registers.eq(new_output_registers),
+                                            "Invalid deployment transaction '{id}' - function '{id}' has mismatched record output registers"
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
@@ -343,12 +367,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         rejected_id: Option<Field<N>>,
         is_partially_verified: bool,
     ) -> Result<()> {
+        let current_height = self.block_store().current_block_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_height)?;
         match transaction {
             Transaction::Deploy(id, deployment_id, _, deployment, fee) => {
                 // Ensure the rejected ID is not present.
                 ensure!(rejected_id.is_none(), "Transaction '{id}' should not have a rejected ID (deployment)");
                 // Compute the minimum deployment cost.
-                let (cost, _) = deployment_cost(&self.process().read(), deployment)?;
+                let (cost, _) = deployment_cost(&self.process().read(), deployment, consensus_version)?;
                 // Ensure the fee is sufficient to cover the cost.
                 if *fee.base_amount()? < cost {
                     bail!("Transaction '{id}' has an insufficient base fee (deployment) - requires {cost} microcredits")
@@ -366,14 +392,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 if let Some(fee) = fee {
                     // If the fee is required, then check that the base fee amount is satisfied.
                     if is_fee_required {
-                        // We are using execution_cost_v2 to compute the execution cost.
-                        // Using `execution_cost_v2` is fine as a default because it is strictly cheaper than or equivalent to `execution_cost_v1`.
-                        let (cost, (_, _)) = execution_cost_v2(&self.process().read(), execution)?;
-                        // Ensure the cost does not exceed the transaction spend limit.
+                        // Determine the execution cost .
+                        let (cost, (_, finalize_cost)) =
+                            execution_cost(&self.process().read(), execution, consensus_version)?;
+                        // Get the transaction spend limit.
+                        let transaction_spend_limit =
+                            consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, current_height).unwrap();
+                        // Determine the transaction spend to prevent DoS attacks. From V10 onwards, we only compare the finalize (compute) cost.
+                        let transaction_spend =
+                            if consensus_version >= ConsensusVersion::V10 { finalize_cost } else { cost };
+                        // Ensure the transaction spend does not exceed the transaction spend limit.
                         ensure!(
-                            cost <= N::TRANSACTION_SPEND_LIMIT,
+                            transaction_spend <= transaction_spend_limit,
                             "Transaction '{id}' exceeds the transaction spend limit '{}'",
-                            N::TRANSACTION_SPEND_LIMIT
+                            transaction_spend_limit
                         );
                         // Ensure the fee is sufficient to cover the cost.
                         if *fee.base_amount()? < cost {

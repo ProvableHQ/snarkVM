@@ -20,4 +20,4 @@ additional:
       - '{"type":"future","id":"7122641423905167294621281667571156080981196550145662425043615289686030457355field","value":"{\n  program_id: basic_math.aleo,\n  function_name: sub_and_count,\n  arguments: [\n    aleo1mrughg5ssadd9fc2uwve7l6u24xn76kyz24zsjtzta03vgkq4vpqggl6fg\n  ]\n}"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"4579779074442983777666172405716625108059682059885801816890825845153553791389field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1kw4knandael9qcpxs6g36rr6h7dwvjz6q25ueah6zz9v57zjlvxsx5llq8,\n    37628u64\n  ]\n}"}'
+      - '{"type":"future","id":"3590484406688783411870918714161033374372061264046676118343663613301223003027field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1kw4knandael9qcpxs6g36rr6h7dwvjz6q25ueah6zz9v57zjlvxsx5llq8,\n    4853u64\n  ]\n}"}'

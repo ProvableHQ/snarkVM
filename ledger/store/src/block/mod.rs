@@ -708,6 +708,19 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         ))
     }
 
+    /// Returns a list of state paths for the given list of `commitment`s.
+    fn get_state_paths_for_commitments(
+        &self,
+        commitments: &[Field<N>],
+        block_tree: &BlockTree<N>,
+    ) -> Result<Vec<StatePath<N>>> {
+        // Restrict the number of commitments requested to the maximum number of inputs in a transition.
+        if commitments.len() > N::MAX_INPUTS {
+            bail!("Too many commitments provided: expected at most {}, got {}", N::MAX_INPUTS, commitments.len());
+        }
+        commitments.iter().map(|commitment| self.get_state_path_for_commitment(commitment, block_tree)).collect()
+    }
+
     /// Returns the previous block hash of the given `block height`.
     fn get_previous_block_hash(&self, height: u32) -> Result<Option<N::BlockHash>> {
         if height.is_zero() {
@@ -1188,6 +1201,11 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Returns a state path for the given `commitment`.
     pub fn get_state_path_for_commitment(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
         self.storage.get_state_path_for_commitment(commitment, &self.tree.read())
+    }
+
+    /// Returns a list of state paths for the given list of `commitment`s.
+    pub fn get_state_paths_for_commitments(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
+        self.storage.get_state_paths_for_commitments(commitments, &self.tree.read())
     }
 
     /// Returns the previous block hash of the given `block height`.

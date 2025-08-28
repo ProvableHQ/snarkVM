@@ -15,15 +15,8 @@
 
 use super::*;
 
-/// The stake required to land one solution per epoch at various points in time.
-///
-/// Each entry represents a threshold where, starting from the given timestamp,
-/// a prover must have at least the specified amount of stake (in microcredits) to land one solution.
-///
-/// A prover with `n * stake` may land up to `n` solutions per epoch.
-///
-/// Format: `(timestamp, stake_required_per_solution)`
-pub const STAKE_REQUIREMENTS_PER_SOLUTION: [(i64, u64); 9] = [
+/// The stake required to land one solution per epoch at various points in time for mainnet.
+pub(super) const MAINNET_STAKE_REQUIREMENTS_PER_SOLUTION: [(i64, u64); 9] = [
     (1754006399i64, 100_000_000_000u64),   /* 2025-07-31 23:59:59 UTC */
     (1761955199i64, 250_000_000_000u64),   /* 2025-10-31 23:59:59 UTC */
     (1769903999i64, 500_000_000_000u64),   /* 2026-01-31 23:59:59 UTC */
@@ -35,21 +28,54 @@ pub const STAKE_REQUIREMENTS_PER_SOLUTION: [(i64, u64); 9] = [
     (1817078399i64, 2_500_000_000_000u64), /* 2027-07-31 23:59:59 UTC */
 ];
 
+/// The stake required to land one solution per epoch at various points in time for canary and testnet.
+pub(super) const CANARY_AND_TESTNET_STAKE_REQUIREMENTS_PER_SOLUTION: [(i64, u64); 9] = [
+    (1754006399i64, 1_000_000_000u64),  /* 2025-07-31 23:59:59 UTC */
+    (1761955199i64, 2_500_000_000u64),  /* 2025-10-31 23:59:59 UTC */
+    (1769903999i64, 5_000_000_000u64),  /* 2026-01-31 23:59:59 UTC */
+    (1777593599i64, 7_500_000_000u64),  /* 2026-04-30 23:59:59 UTC */
+    (1785542399i64, 10_000_000_000u64), /* 2026-07-31 23:59:59 UTC */
+    (1793491199i64, 12_500_000_000u64), /* 2026-10-31 23:59:59 UTC */
+    (1801439999i64, 15_000_000_000u64), /* 2027-01-31 23:59:59 UTC */
+    (1809129599i64, 20_000_000_000u64), /* 2027-04-30 23:59:59 UTC */
+    (1817078399i64, 25_000_000_000u64), /* 2027-07-31 23:59:59 UTC */
+];
+
+/// The stake required to land one solution per epoch at various points in time.
+///
+/// Each entry represents a threshold where, starting from the given timestamp,
+/// a prover must have at least the specified amount of stake (in microcredits) to land one solution.
+///
+/// A prover with `n * stake` may land up to `n` solutions per epoch.
+///
+/// Format: `(timestamp, stake_required_per_solution)`
+pub fn stake_requirements_per_solution<N: Network>() -> &'static [(i64, u64)] {
+    match N::ID {
+        console::network::MainnetV0::ID => &MAINNET_STAKE_REQUIREMENTS_PER_SOLUTION,
+        console::network::TestnetV0::ID | console::network::CanaryV0::ID => {
+            &CANARY_AND_TESTNET_STAKE_REQUIREMENTS_PER_SOLUTION
+        }
+        _ => &MAINNET_STAKE_REQUIREMENTS_PER_SOLUTION,
+    }
+}
+
 /// Returns the maximum number of allowed solutions per epoch based on the provided stake and timestamp.
-pub fn maximum_allowed_solutions_per_epoch(prover_stake: u64, current_time: i64) -> u64 {
+pub fn maximum_allowed_solutions_per_epoch<N: Network>(prover_stake: u64, current_time: i64) -> u64 {
+    let stake_requirements = stake_requirements_per_solution::<N>();
+
     // If the block height is earlier than the starting enforcement, do not restrict the maximum number of solutions per epoch.
-    if current_time < STAKE_REQUIREMENTS_PER_SOLUTION.first().map(|(t, _)| *t).unwrap_or(i64::MAX) {
+    if current_time < stake_requirements.first().map(|(t, _)| *t).unwrap_or(i64::MAX) {
         return u64::MAX;
     }
 
     // Find the minimum stake required for one solution per epoch.
-    let minimum_stake_per_solution_per_epoch =
-        match STAKE_REQUIREMENTS_PER_SOLUTION.binary_search_by_key(&current_time, |(t, _)| *t) {
-            // If a stake limit was found at this height, return it.
-            Ok(index) => STAKE_REQUIREMENTS_PER_SOLUTION[index].1,
-            // If the specified height was not found, determine which limit to return.
-            Err(index) => STAKE_REQUIREMENTS_PER_SOLUTION[index.saturating_sub(1)].1,
-        };
+    let minimum_stake_per_solution_per_epoch = match stake_requirements.binary_search_by_key(&current_time, |(t, _)| *t)
+    {
+        // If a stake limit was found at this height, return it.
+        Ok(index) => stake_requirements[index].1,
+        // If the specified height was not found, determine which limit to return.
+        Err(index) => stake_requirements[index.saturating_sub(1)].1,
+    };
 
     // Return the number of allowed solutions per epoch.
     prover_stake.saturating_div(minimum_stake_per_solution_per_epoch)
@@ -62,7 +88,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let prover_stake = self.get_bonded_amount(prover_address).unwrap_or(0);
 
         // Determine the maximum number of solutions allowed based on this prover's stake.
-        let maximum_allowed_solutions = maximum_allowed_solutions_per_epoch(prover_stake, self.latest_timestamp());
+        let maximum_allowed_solutions = maximum_allowed_solutions_per_epoch::<N>(prover_stake, self.latest_timestamp());
 
         // Fetch the number of solutions the prover has earned rewards for in the current epoch.
         let prover_num_solutions_in_epoch = *self.epoch_provers_cache.read().get(prover_address).unwrap_or(&0);
@@ -88,14 +114,17 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 mod tests {
     use super::*;
 
+    type CurrentNetwork = console::network::MainnetV0;
+
     const ITERATIONS: u64 = 100;
 
     #[test]
     fn test_solution_limit_per_epoch() {
         let mut rng = TestRng::default();
+        let stake_requirements = stake_requirements_per_solution::<CurrentNetwork>();
 
         for _ in 0..ITERATIONS {
-            for window in STAKE_REQUIREMENTS_PER_SOLUTION.windows(2) {
+            for window in stake_requirements.windows(2) {
                 let (prev_time, stake_per_solution) = window[0];
                 let (next_time, _) = window[1];
 
@@ -105,7 +134,10 @@ mod tests {
                 let prover_stake: u64 = rng.r#gen();
                 let expected_num_solutions = prover_stake / stake_per_solution;
 
-                assert_eq!(maximum_allowed_solutions_per_epoch(prover_stake, timestamp), expected_num_solutions,);
+                assert_eq!(
+                    maximum_allowed_solutions_per_epoch::<CurrentNetwork>(prover_stake, timestamp),
+                    expected_num_solutions,
+                );
             }
         }
     }
@@ -113,25 +145,30 @@ mod tests {
     #[test]
     fn test_solution_limit_before_enforcement() {
         let mut rng = TestRng::default();
+        let stake_requirements = stake_requirements_per_solution::<CurrentNetwork>();
 
         // Fetch the first timestamp from the table.
-        let first_timestamp = STAKE_REQUIREMENTS_PER_SOLUTION.first().unwrap().0;
+        let first_timestamp = stake_requirements.first().unwrap().0;
         let time_before_first = first_timestamp - 1;
 
         // Check that before enforcement, the number of solutions is unrestricted even without prover stake.
         let prover_stake = 0;
-        assert_eq!(maximum_allowed_solutions_per_epoch(prover_stake, time_before_first), u64::MAX);
+        assert_eq!(maximum_allowed_solutions_per_epoch::<CurrentNetwork>(prover_stake, time_before_first), u64::MAX);
 
         // Check that before enforcement, the number of solutions is unrestricted for any prover stake.
         for _ in 0..ITERATIONS {
-            assert_eq!(maximum_allowed_solutions_per_epoch(rng.r#gen(), rng.gen_range(0..time_before_first)), u64::MAX);
+            assert_eq!(
+                maximum_allowed_solutions_per_epoch::<CurrentNetwork>(rng.r#gen(), rng.gen_range(0..time_before_first)),
+                u64::MAX
+            );
         }
     }
 
     #[test]
     fn test_solution_limit_after_final_timestamp() {
         let mut rng = TestRng::default();
-        let (last_timestamp, stake_per_solution) = *STAKE_REQUIREMENTS_PER_SOLUTION.last().unwrap();
+        let stake_requirements = stake_requirements_per_solution::<CurrentNetwork>();
+        let (last_timestamp, stake_per_solution) = *stake_requirements.last().unwrap();
 
         // Check that all timestamps after the last one are treated as the last one.
         for _ in 0..ITERATIONS {
@@ -139,19 +176,26 @@ mod tests {
             let time_after_last = rng.gen_range(last_timestamp..i64::MAX);
             let expected_num_solutions = prover_stake / stake_per_solution;
 
-            assert_eq!(maximum_allowed_solutions_per_epoch(prover_stake, time_after_last), expected_num_solutions);
+            assert_eq!(
+                maximum_allowed_solutions_per_epoch::<CurrentNetwork>(prover_stake, time_after_last),
+                expected_num_solutions
+            );
         }
     }
 
     #[test]
     fn test_solution_limit_exact_timestamps() {
         let mut rng = TestRng::default();
+        let stake_requirements = stake_requirements_per_solution::<CurrentNetwork>();
         // Check that the maximum allowed solutions per epoch is correct for each timestamp in the table.
-        for &(timestamp, stake_per_solution) in STAKE_REQUIREMENTS_PER_SOLUTION.iter() {
+        for &(timestamp, stake_per_solution) in stake_requirements.iter() {
             let expected_num_solutions = rng.gen_range(1..=100);
             let prover_stake = expected_num_solutions * stake_per_solution;
 
-            assert_eq!(maximum_allowed_solutions_per_epoch(prover_stake, timestamp), expected_num_solutions,);
+            assert_eq!(
+                maximum_allowed_solutions_per_epoch::<CurrentNetwork>(prover_stake, timestamp),
+                expected_num_solutions,
+            );
         }
     }
 }

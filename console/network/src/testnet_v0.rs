@@ -180,8 +180,10 @@ impl Network for TestnetV0 {
         (ConsensusVersion::V6, 25),
         (ConsensusVersion::V9, 25),
     ];
-    /// The network name.
+    /// The (long) network name.
     const NAME: &'static str = "Aleo Testnet (v0)";
+    /// The short network name.
+    const SHORT_NAME: &'static str = "testnet";
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
     /// Do not read this directly outside of tests, use `N::CONSENSUS_VERSION_HEIGHTS()` instead.

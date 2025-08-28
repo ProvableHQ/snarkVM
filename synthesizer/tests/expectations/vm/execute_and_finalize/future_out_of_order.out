@@ -17,4 +17,4 @@ additional:
       - '{"type":"future","id":"5806982923642172688017959057000917992502963839856001396602806545688864915382field","value":"{\n  program_id: child.aleo,\n  function_name: boo,\n  arguments: [\n    aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n  ]\n}"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"8047078705186100306656835748176365767041298947580086224756588202240941628297field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    119808u64\n  ]\n}"}'
+      - '{"type":"future","id":"5814888206705744494009025176610798452755293545868252252449967609449221517267field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    9100u64\n  ]\n}"}'

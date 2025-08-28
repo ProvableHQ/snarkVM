@@ -35,7 +35,7 @@ use console::{
 use snarkvm_ledger_block::{Input, Output, Transaction, Transition};
 use snarkvm_ledger_query::QueryTrait;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Clone, Copy, Debug)]
 pub enum InclusionVersion {

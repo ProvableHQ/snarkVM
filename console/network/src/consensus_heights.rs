@@ -212,6 +212,11 @@ mod tests {
             assert!(*version > previous_version);
             previous_version = *version;
         }
+        let mut previous_version = N::TRANSACTION_SPEND_LIMIT.first().unwrap().0;
+        for (version, _) in N::TRANSACTION_SPEND_LIMIT.iter().skip(1) {
+            assert!(*version > previous_version);
+            previous_version = *version;
+        }
     }
 
     /// Ensure that consensus *heights* are unique and incrementing.
@@ -235,6 +240,20 @@ mod tests {
             // Double-check that consensus_config_value returns the correct value.
             assert_eq!(consensus_config_value!(N, MAX_CERTIFICATES, height).unwrap(), *value);
         }
+        for (version, value) in N::TRANSACTION_SPEND_LIMIT.iter() {
+            // Ensure that the height at which an update occurs are present in CONSENSUS_VERSION_HEIGHTS.
+            let height = N::CONSENSUS_VERSION_HEIGHTS().iter().find(|(c_version, _)| *c_version == *version).unwrap().1;
+            // Double-check that consensus_config_value returns the correct value.
+            assert_eq!(consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap(), *value);
+        }
+    }
+
+    /// Ensure that consensus_config_value returns a valid value for all consensus versions.
+    fn consensus_config_returns_some<N: Network>() {
+        for (_, height) in N::CONSENSUS_VERSION_HEIGHTS().iter() {
+            assert!(consensus_config_value!(N, MAX_CERTIFICATES, *height).is_some());
+            assert!(consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, *height).is_some());
+        }
     }
 
     /// Ensure that `MAX_CERTIFICATES` increases and is correctly defined.
@@ -252,6 +271,7 @@ mod tests {
         // If we can construct an array, that means the underlying types must be the same.
         let _ = [N1::CONSENSUS_VERSION_HEIGHTS, N2::CONSENSUS_VERSION_HEIGHTS, N3::CONSENSUS_VERSION_HEIGHTS];
         let _ = [N1::MAX_CERTIFICATES, N2::MAX_CERTIFICATES, N3::MAX_CERTIFICATES];
+        let _ = [N1::TRANSACTION_SPEND_LIMIT, N2::TRANSACTION_SPEND_LIMIT, N3::TRANSACTION_SPEND_LIMIT];
     }
 
     #[test]
@@ -272,6 +292,10 @@ mod tests {
         consensus_constants_valid_heights::<MainnetV0>();
         consensus_constants_valid_heights::<TestnetV0>();
         consensus_constants_valid_heights::<CanaryV0>();
+
+        consensus_config_returns_some::<MainnetV0>();
+        consensus_config_returns_some::<TestnetV0>();
+        consensus_config_returns_some::<CanaryV0>();
 
         max_certificates_increasing::<MainnetV0>();
         max_certificates_increasing::<TestnetV0>();

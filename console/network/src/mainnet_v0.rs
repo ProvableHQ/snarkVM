@@ -185,8 +185,10 @@ impl Network for MainnetV0 {
         (ConsensusVersion::V6, 103),
         (ConsensusVersion::V9, 104),
     ];
-    /// The network name.
+    /// The (long) network name.
     const NAME: &'static str = "Aleo Mainnet (v0)";
+    /// The short network name.
+    const SHORT_NAME: &'static str = "mainnet";
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
     /// Do not read this directly outside of tests, use `N::CONSENSUS_VERSION_HEIGHTS()` instead.

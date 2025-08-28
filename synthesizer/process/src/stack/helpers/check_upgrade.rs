@@ -102,11 +102,11 @@ impl<N: Network> Stack<N> {
             let new_function = new_program.get_function_ref(old_function_name)?;
             ensure!(
                 old_function.input_types() == new_function.input_types(),
-                "Cannot upgrade '{program_id}' because the inputs to the function '{old_function_name}' do not match"
+                "Cannot upgrade '{program_id}' because the input types to the function '{old_function_name}' do not match"
             );
             ensure!(
                 old_function.output_types() == new_function.output_types(),
-                "Cannot upgrade '{program_id}' because the outputs of the function '{old_function_name}' do not match"
+                "Cannot upgrade '{program_id}' because the output types of the function '{old_function_name}' do not match"
             );
             match (old_function.finalize_logic(), new_function.finalize_logic()) {
                 (None, None) => {} // Do nothing

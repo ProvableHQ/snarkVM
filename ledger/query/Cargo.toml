@@ -30,6 +30,7 @@ wasm = [
   "snarkvm-synthesizer-program/wasm"
 ]
 query = [
+  "dep:snarkvm-ledger-block",
   "dep:snarkvm-ledger-store",
   "dep:snarkvm-synthesizer-program",
   "dep:ureq",
@@ -38,6 +39,10 @@ query = [
 [dependencies.snarkvm-console]
 workspace = true
 features = [ "default" ]
+
+[dependencies.snarkvm-ledger-block]
+workspace = true
+optional = true
 
 [dependencies.snarkvm-ledger-store]
 workspace = true
@@ -54,10 +59,10 @@ workspace = true
 version = "0.1"
 
 [dependencies.serde]
-version = "1"
+workspace = true
 
 [dependencies.serde_json]
-version = "1"
+workspace = true
 features = [ "preserve_order" ]
 
 [dependencies.reqwest]
@@ -65,7 +70,12 @@ version = "0.12"
 features = [ "json" ]
 optional = true
 
-[dependencies.ureq]
+[target.'cfg(target_arch="wasm32")'.dependencies.ureq]
 workspace = true
-features = [ "json" ]
+features = [ "json", "gzip" ]
+optional = true
+
+[target.'cfg(not(target_arch="wasm32"))'.dependencies.ureq]
+workspace = true
+features = [ "json", "gzip", "rustls" ]
 optional = true
