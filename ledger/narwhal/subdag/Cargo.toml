@@ -31,7 +31,6 @@ test-helpers = [ "snarkvm-ledger-narwhal-batch-certificate/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-narwhal-batch-certificate]
 workspace = true
@@ -41,7 +40,6 @@ workspace = true
 
 [dependencies.snarkvm-ledger-committee]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-narwhal-transmission-id]
 workspace = true

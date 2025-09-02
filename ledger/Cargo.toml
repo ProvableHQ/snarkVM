@@ -67,7 +67,6 @@ timer = [ "aleo-std/timer" ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-authority]
 workspace = true
@@ -77,7 +76,6 @@ workspace = true
 
 [dependencies.snarkvm-ledger-committee]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-narwhal]
 workspace = true
@@ -101,6 +99,7 @@ workspace = true
 
 [dependencies.aleo-std]
 workspace = true
+features = [ "storage" ]
 
 [dependencies.anyhow]
 workspace = true
@@ -137,6 +136,10 @@ workspace = true
 
 [dev-dependencies.criterion]
 workspace = true
+
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "filesystem" ]
 
 [dev-dependencies.snarkvm-ledger-block]
 workspace = true

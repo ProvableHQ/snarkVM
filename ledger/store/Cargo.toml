@@ -42,7 +42,6 @@ test = [ ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-authority]
 workspace = true
@@ -52,7 +51,6 @@ workspace = true
 
 [dependencies.snarkvm-ledger-committee]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-narwhal-batch-certificate]
 workspace = true
@@ -67,8 +65,7 @@ workspace = true
 workspace = true
 
 [dependencies.aleo-std-storage]
-version = "1.0.1"
-default-features = false
+workspace = true
 
 [dependencies.anyhow]
 workspace = true

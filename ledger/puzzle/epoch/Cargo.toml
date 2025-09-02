@@ -50,7 +50,6 @@ optional = true
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-puzzle]
 workspace = true
@@ -105,4 +104,4 @@ optional = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "test", "default" ]
+features = [ "test" ]

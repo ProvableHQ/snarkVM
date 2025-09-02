@@ -31,7 +31,6 @@ test-helpers = [ "snarkvm-ledger-narwhal-batch-header/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true

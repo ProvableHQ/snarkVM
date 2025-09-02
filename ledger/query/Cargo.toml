@@ -38,7 +38,6 @@ query = [
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-block]
 workspace = true

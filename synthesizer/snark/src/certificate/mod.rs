@@ -37,6 +37,7 @@ impl<N: Network> Certificate<N> {
         proving_key: &ProvingKey<N>,
         verifying_key: &VerifyingKey<N>,
     ) -> Result<Certificate<N>> {
+        #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
 
         // Retrieve the proving parameters.
@@ -46,8 +47,11 @@ impl<N: Network> Certificate<N> {
         // Compute the certificate.
         let certificate = Varuna::<N>::prove_vk(universal_prover, fiat_shamir, verifying_key, proving_key)?;
 
-        let _elapsed = timer.elapsed().as_millis();
-        dev_println!(" • Certified '{_function_name}' (in {_elapsed} ms)");
+        #[cfg(feature = "dev-print")]
+        {
+            let _elapsed = timer.elapsed().as_millis();
+            dev_println!(" • Certified '{_function_name}' (in {_elapsed} ms)");
+        }
 
         Ok(Self::new(certificate))
     }
@@ -59,6 +63,7 @@ impl<N: Network> Certificate<N> {
         assignment: &circuit::Assignment<N::Field>,
         verifying_key: &VerifyingKey<N>,
     ) -> bool {
+        #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
 
         // Retrieve the verification parameters.
@@ -69,8 +74,11 @@ impl<N: Network> Certificate<N> {
         #[allow(clippy::manual_unwrap_or_default)]
         match Varuna::<N>::verify_vk(universal_verifier, fiat_shamir, assignment, verifying_key, self) {
             Ok(is_valid) => {
-                let _elapsed = timer.elapsed().as_millis();
-                dev_println!(" • Verified certificate for '{_function_name}' (in {_elapsed} ms)");
+                #[cfg(feature = "dev-print")]
+                {
+                    let _elapsed = timer.elapsed().as_millis();
+                    dev_println!(" • Verified certificate for '{_function_name}' (in {_elapsed} ms)");
+                }
                 is_valid
             }
             Err(_error) => {

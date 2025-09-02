@@ -170,7 +170,7 @@ jobs:
       - run_test: # This runs a single test with profiler enabled
           workspace_member: snarkvm-algorithms
           flags: varuna::prove_and_verify_with_square_matrix --features profiler
-          cache_key_suffix: -profiler
+          cache_key_suffix: -profiler-test
   
   circuit:
     executor: rust-docker
@@ -843,11 +843,16 @@ jobs:
 workflows:
   version: 2
 
-  main-workflow:
+  cargo-workflow:
     jobs:
-      - snarkvm
-      - algorithms
-      - algorithms-profiler
+      - check-fmt
+      - check-clippy
+      - check-unused-dependencies
+      - check-cargo-audit
+      - check-all-targets
+
+  circuit-workflow:
+    jobs:
       - circuit
       - circuit-account
       - circuit-account-noconsole
@@ -865,6 +870,9 @@ workflows:
       - circuit-types-integers
       - circuit-types-scalar
       - circuit-types-string
+
+  console-workflow:
+    jobs:
       - console
       - console-account
       - console-algorithms
@@ -880,8 +888,9 @@ workflows:
       - console-types-integers
       - console-types-scalar
       - console-types-string
-      - curves
-      - fields
+
+  ledger-workflow:
+    jobs:
       - ledger
       - ledger-with-rocksdb
       - ledger-with-valid-solutions
@@ -900,9 +909,9 @@ workflows:
       - ledger-query
       - ledger-store
       - ledger-test-helpers
-      - parameters
-      - parameters-large
-      - parameters-uncached
+
+  synthesizer-workflow:
+    jobs:
       - synthesizer
       - synthesizer-test
       # - synthesizer-mem-heavy
@@ -918,14 +927,20 @@ workflows:
       - synthesizer-program-integration-instruction-equal
       - synthesizer-program-integration-instruction-commit
       - synthesizer-snark
+
+  snarkvm-workflow:
+    jobs:
+      - snarkvm
+      - algorithms
+      - algorithms-profiler
+      - curves
+      - fields
+      - parameters
+      - parameters-large
+      - parameters-uncached
       - utilities
       - utilities-derives
       - wasm
-      - check-fmt
-      - check-clippy
-      - check-unused-dependencies
-      - check-cargo-audit
-      - check-all-targets
 
   windows-workflow:
     jobs:

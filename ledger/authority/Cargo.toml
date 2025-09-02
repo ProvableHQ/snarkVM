@@ -31,7 +31,6 @@ test-helpers = [ "snarkvm-ledger-narwhal-subdag/test-helpers" ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-narwhal-subdag]
 workspace = true

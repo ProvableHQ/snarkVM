@@ -41,6 +41,7 @@ impl<N: Network> ProvingKey<N> {
         assignment: &circuit::Assignment<N::Field>,
         rng: &mut R,
     ) -> Result<Proof<N>> {
+        #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
 
         // Retrieve the proving parameters.
@@ -51,8 +52,12 @@ impl<N: Network> ProvingKey<N> {
         let proof =
             Proof::new(Varuna::<N>::prove(universal_prover, fiat_shamir, self, varuna_version, assignment, rng)?);
 
-        let _elapsed = timer.elapsed().as_millis();
-        dev_println!(" • Executed '{_function_name}' (in {_elapsed} ms)");
+        #[cfg(feature = "dev-print")]
+        {
+            let _elapsed = timer.elapsed().as_millis();
+            dev_println!(" • Executed '{_function_name}' (in {_elapsed} ms)");
+        }
+
         Ok(proof)
     }
 
@@ -64,6 +69,7 @@ impl<N: Network> ProvingKey<N> {
         assignments: &[(ProvingKey<N>, Vec<circuit::Assignment<N::Field>>)],
         rng: &mut R,
     ) -> Result<Proof<N>> {
+        #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
 
         // Prepare the instances.
@@ -82,8 +88,11 @@ impl<N: Network> ProvingKey<N> {
         let batch_proof =
             Proof::new(Varuna::<N>::prove_batch(universal_prover, fiat_shamir, varuna_version, &instances, rng)?);
 
-        let _elapsed = timer.elapsed().as_millis();
-        dev_println!(" • Executed '{_locator}' (in {_elapsed} ms)");
+        #[cfg(feature = "dev-print")]
+        {
+            let _elapsed = timer.elapsed().as_millis();
+            dev_println!(" • Executed '{_locator}' (in {_elapsed} ms)");
+        }
 
         Ok(batch_proof)
     }

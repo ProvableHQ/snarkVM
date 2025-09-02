@@ -49,6 +49,7 @@ impl<N: Network> VerifyingKey<N> {
         inputs: &[N::Field],
         proof: &Proof<N>,
     ) -> bool {
+        #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
 
         // Retrieve the verification parameters.
@@ -59,8 +60,11 @@ impl<N: Network> VerifyingKey<N> {
         #[allow(clippy::manual_unwrap_or_default)]
         match Varuna::<N>::verify(universal_verifier, fiat_shamir, self, varuna_version, inputs, proof) {
             Ok(is_valid) => {
-                let _elapsed = timer.elapsed().as_millis();
-                dev_println!(" • Verified '{_function_name}' (in {_elapsed} ms)");
+                #[cfg(feature = "dev-print")]
+                {
+                    let _elapsed = timer.elapsed().as_millis();
+                    dev_println!(" • Verified '{_function_name}' (in {_elapsed} ms)");
+                }
                 is_valid
             }
             Err(_error) => {
@@ -78,6 +82,7 @@ impl<N: Network> VerifyingKey<N> {
         inputs: Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>,
         proof: &Proof<N>,
     ) -> Result<()> {
+        #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
 
         // Convert the instances.
@@ -93,8 +98,11 @@ impl<N: Network> VerifyingKey<N> {
         // Verify the batch proof.
         match Varuna::<N>::verify_batch(universal_verifier, fiat_shamir, varuna_version, &keys_to_inputs, proof) {
             Ok(is_valid) => {
-                let _elapsed = timer.elapsed().as_millis();
-                dev_println!(" • Verified '{_locator}': {is_valid} (in {_elapsed} ms)");
+                #[cfg(feature = "dev-print")]
+                {
+                    let _elapsed = timer.elapsed().as_millis();
+                    dev_println!(" • Verified '{_locator}': {is_valid} (in {_elapsed} ms)");
+                }
                 if is_valid { Ok(()) } else { bail!("'verify_batch' failed") }
             }
             Err(error) => {

@@ -443,7 +443,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     ) -> Result<Transaction<N>> {
         // Fetch the unspent records.
         let records = self.find_unspent_credits_records(&ViewKey::try_from(private_key)?)?;
-        ensure!(!records.len().is_zero(), "The Aleo account has no records to spend.");
+        ensure!(records.len() >= 2, "The Aleo account does not have enough records to spend.");
         let mut records = records.values();
 
         // Prepare the inputs.

@@ -31,7 +31,6 @@ test-helpers = [ ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-puzzle]
 workspace = true

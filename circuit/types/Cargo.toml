@@ -34,4 +34,3 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]

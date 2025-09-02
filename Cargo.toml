@@ -135,6 +135,7 @@ package = [
   "circuit",
   "file",
   "ledger",
+  "snarkvm-console/filesystem",
   "dep:ureq",
   "dep:dotenvy"
 ]
@@ -435,6 +436,10 @@ path = "wasm"
 version = "=4.1.0"
 
 [workspace.dependencies.aleo-std]
+version = "1.0.1"
+
+[workspace.dependencies.aleo-std-storage]
+default-features=false
 version = "1.0.1"
 
 [workspace.dependencies.anyhow]

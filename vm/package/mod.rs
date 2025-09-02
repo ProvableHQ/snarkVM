@@ -165,7 +165,8 @@ impl<N: Network> Package<N> {
                 //  2) the AVM bytecode of the imported program matches the AVM bytecode of the program *on-chain*
                 //  3) consensus performs the exact same checks (in `verify_deployment`)
                 // Open the Aleo program file.
-                let import_program_file = AleoFile::open(&imports_directory, program_id, false)?;
+                let is_main = false;
+                let import_program_file = AleoFile::open(&imports_directory, program_id, is_main)?;
                 // Get the program.
                 Ok(import_program_file.program().clone())
             })

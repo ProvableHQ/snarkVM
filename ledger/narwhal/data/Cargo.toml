@@ -28,7 +28,6 @@ async = [ "tokio" ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.bytes]
 workspace = true

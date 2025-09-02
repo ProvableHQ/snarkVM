@@ -40,7 +40,7 @@ wasm = [ "snarkvm-console/wasm" ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
+features = [ "account", "network", "types" ]
 
 [dependencies.snarkvm-algorithms]
 workspace = true

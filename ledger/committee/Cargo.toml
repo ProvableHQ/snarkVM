@@ -24,7 +24,7 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
-default = [ "rayon" ]
+default = [ ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 metrics = [ "dep:snarkvm-metrics" ]
@@ -33,7 +33,7 @@ test-helpers = [ "prop-tests", "rand_distr" ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
+features = [ "program" ]
 
 [dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
@@ -72,7 +72,6 @@ optional = true
 
 [dependencies.rayon]
 workspace = true
-optional = true
 
 [dependencies.test-strategy]
 version = "0.3.1"

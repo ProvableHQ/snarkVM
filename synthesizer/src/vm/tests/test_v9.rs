@@ -1917,7 +1917,7 @@ fn test_verification_cache() {
     let caller_private_key = sample_genesis_private_key(rng);
 
     // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::latest()).unwrap(), rng);
 
     // Define the programs.
     let program_v0 = Program::from_str(

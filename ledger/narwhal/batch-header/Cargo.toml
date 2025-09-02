@@ -31,7 +31,6 @@ test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers", "time" ]
 
 [dependencies.snarkvm-console]
 workspace = true
-features = [ "default" ]
 
 [dependencies.snarkvm-ledger-narwhal-transmission-id]
 workspace = true

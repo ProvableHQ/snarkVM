@@ -113,6 +113,7 @@ impl<'de, N: Network> Deserialize<'de> for DeployResponse<N> {
 impl<N: Network> Package<N> {
     pub fn deploy<A: crate::circuit::Aleo<Network = N, BaseField = N::Field>>(
         &self,
+        process: &Process<N>,
         endpoint: Option<String>,
     ) -> Result<Deployment<N>> {
         // Retrieve the main program.
@@ -121,9 +122,6 @@ impl<N: Network> Package<N> {
         let program_id = program.id();
 
         dev_println!("⏳ Deploying '{}'...\n", program_id.to_string());
-
-        // Get the process.
-        let process = self.get_process()?;
 
         // Initialize the RNG.
         let rng = &mut rand::thread_rng();
@@ -158,8 +156,11 @@ mod tests {
         // Samples a new package at a temporary directory.
         let (directory, package) = crate::package::test_helpers::sample_token_package();
 
+        // Generate the process with the appropriate imports.
+        let process = package.get_process().unwrap();
+
         // Deploy the package.
-        let deployment = package.deploy::<CurrentAleo>(None).unwrap();
+        let deployment = package.deploy::<CurrentAleo>(&process, None).unwrap();
 
         // Ensure the deployment edition matches.
         assert_eq!(0, deployment.edition());
@@ -177,8 +178,11 @@ mod tests {
         // Samples a new package at a temporary directory.
         let (directory, package) = crate::package::test_helpers::sample_wallet_package();
 
+        // Generate the process with the appropriate imports.
+        let process = package.get_process().unwrap();
+
         // Deploy the package.
-        let deployment = package.deploy::<CurrentAleo>(None).unwrap();
+        let deployment = package.deploy::<CurrentAleo>(&process, None).unwrap();
 
         // Ensure the deployment edition matches.
         assert_eq!(0, deployment.edition());

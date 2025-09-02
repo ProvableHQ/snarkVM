@@ -167,7 +167,7 @@ macro_rules! impl_load_bytes_logic_local {
 macro_rules! impl_load_bytes_logic_remote {
     ($remote_url: expr, $local_dir: expr, $filename: expr, $metadata: expr, $expected_checksum: expr, $expected_size: expr) => {
         cfg_if::cfg_if! {
-            if #[cfg(feature = "filesystem")] {
+            if #[cfg(all(feature = "filesystem", not(feature="wasm")))] {
                 // Compose the correct file path for the parameter file.
                 let mut file_path = aleo_std::aleo_dir();
                 file_path.push($local_dir);
@@ -188,12 +188,10 @@ macro_rules! impl_load_bytes_logic_remote {
                         );
                     }
 
-                    // Construct the URL.
-                    let url = format!("{}/{}", $remote_url, $filename);
-
                     // Load remote file
                     cfg_if::cfg_if!{
                         if #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))] {
+                            let url = format!("{}/{}", $remote_url, $filename);
                             let mut buffer = vec![];
                             Self::remote_fetch(&mut buffer, &url)?;
 
@@ -213,16 +211,6 @@ macro_rules! impl_load_bytes_logic_remote {
                                     buffer
                                 }
                             }
-                        } else if #[cfg(feature = "wasm")] {
-                            let buffer = Self::remote_fetch(&url)?;
-
-                            // Ensure the checksum matches.
-                            let candidate_checksum = checksum!(&buffer);
-                            if $expected_checksum != candidate_checksum {
-                                return checksum_error!($expected_checksum, candidate_checksum)
-                            }
-
-                            buffer
                         } else {
                             return Err($crate::errors::ParameterError::RemoteFetchDisabled);
                         }
@@ -241,9 +229,29 @@ macro_rules! impl_load_bytes_logic_remote {
                     return checksum_error!($expected_checksum, candidate_checksum)
                 }
                 return Ok(buffer);
-            }
-            else {
-                return Err($crate::errors::ParameterError::FilesystemDisabled);
+            } else {
+                cfg_if::cfg_if! {
+                    if #[cfg(feature = "wasm")] {
+                        let url = format!("{}/{}", $remote_url, $filename);
+                        let buffer = Self::remote_fetch(&url)?;
+
+                        // Ensure the size matches.
+                        if $expected_size != buffer.len() {
+                            remove_file!(file_path);
+                            return Err($crate::errors::ParameterError::SizeMismatch($expected_size, buffer.len()));
+                        }
+
+                        // Ensure the checksum matches.
+                        let candidate_checksum = checksum!(&buffer);
+                        if $expected_checksum != candidate_checksum {
+                            return checksum_error!($expected_checksum, candidate_checksum)
+                        }
+
+                        return Ok(buffer)
+                    } else {
+                        return Err($crate::errors::ParameterError::FilesystemDisabled);
+                    }
+                }
             }
         }
     }
