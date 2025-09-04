@@ -460,9 +460,6 @@ version = "0.6"
 [workspace.dependencies.colored]
 version = "3"
 
-[workspace.dependencies.encoding_rs]
-version = "0.8.35"
-
 [workspace.dependencies.expect-test]
 version = "1.4.1"
 
