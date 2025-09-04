@@ -135,10 +135,14 @@ macro_rules! impl_store_and_remote_fetch {
                     ))?;
 
                 // Re-encode the text back into bytes using the chosen encoding.
-                use encoding::Encoding;
-                encoding::all::ISO_8859_5
-                    .encode(&rust_text, encoding::EncoderTrap::Strict)
-                    .map_err(|_| $crate::errors::ParameterError::Wasm("Parameter decoding failed".to_string()))
+                let (encoded, _encoding, had_errors) = encoding_rs::ISO_8859_5.encode(&rust_text);
+                match had_errors {
+                    true => Err($crate::errors::ParameterError::Wasm("Parameter decoding failed".to_string())),
+                    false => Ok(match encoded {
+                        std::borrow::Cow::Borrowed(b) => b.to_vec(),
+                        std::borrow::Cow::Owned(b) => b,
+                    }),
+                }
             } else {
                 Err($crate::errors::ParameterError::Wasm("Download failed - XMLHttpRequest failed".to_string()))
             }
