@@ -470,5 +470,5 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 }
 
 pub mod prelude {
-    pub use crate::{authority, block, block::*, committee, helpers::*, narwhal, puzzle, query};
+    pub use crate::{Ledger, authority, block, block::*, committee, helpers::*, narwhal, puzzle, query, store};
 }
