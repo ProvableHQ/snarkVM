@@ -68,8 +68,8 @@ macro_rules! impl_store_and_remote_fetch {
             Ok(())
         }
 
-        /// remote_fetch has 2 versions, one that works in a wasm environment in a browser, and this one. This version makes a simple api call via the `curl` crate and mutates this output `buffer` parameter to return the parameters as a bytes response. 
-        /// The wasm version uses the browser's XmlHttpRequest object to download the file and then returns the parameters as a bytes response as a function output.  
+        /// remote_fetch has 2 versions, one that works in a wasm environment in a browser, and this one. This version makes a simple api call via the `curl` crate and mutates this output `buffer` parameter to return the parameters as a bytes response.
+        /// The wasm version uses the browser's XmlHttpRequest object to download the file and then returns the parameters as a bytes response as a function output.
         #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
             let mut easy = curl::easy::Easy::new();
@@ -102,8 +102,8 @@ macro_rules! impl_store_and_remote_fetch {
             Ok(transfer.perform()?)
         }
 
-        /// remote_fetch has 2 versions, this one which works in a wasm environment in a browser, and the other one. This version uses the browser's XmlHttpRequest object to download the file and then returns the parameters as a bytes response as a function output. 
-        /// The non-wasm version makes a simple api call via the `curl` crate and mutates the output `buffer` parameter to return the parameters as a bytes response. 
+        /// remote_fetch has 2 versions, this one which works in a wasm environment in a browser, and the other one. This version uses the browser's XmlHttpRequest object to download the file and then returns the parameters as a bytes response as a function output.
+        /// The non-wasm version makes a simple api call via the `curl` crate and mutates the output `buffer` parameter to return the parameters as a bytes response.
         #[cfg(feature = "wasm")]
         fn remote_fetch(url: &str) -> Result<Vec<u8>, $crate::errors::ParameterError> {
             // Use the browser's XmlHttpRequest object to download the parameter file synchronously.
