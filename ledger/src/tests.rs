@@ -2857,19 +2857,15 @@ mod valid_solutions {
         let prover_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
         let prover_address = Address::try_from(&prover_private_key).unwrap();
 
-        let mut valid_solutions = Vec::with_capacity(2);
         // Create solutions that are greater than the minimum proof target.
-        while valid_solutions.len() < 2 {
+        let valid_solution = loop {
             let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
-                valid_solutions.push(solution);
+                break solution;
             }
-        }
-        let valid_solution_1 = valid_solutions.remove(0);
-        let valid_solution_2 = valid_solutions.remove(0);
+        };
 
         // 1. Advance to the latest timestamp.
-
         assert!(!ledger.is_solution_limit_reached(&prover_address, 0));
 
         // Transfer a public balance to the prover address.
@@ -2904,7 +2900,7 @@ mod valid_solutions {
             .generate_block_with_opts(
                 GenerateBlockOptions {
                     timestamp: timestamp_1,
-                    solutions: vec![valid_solution_1],
+                    solutions: vec![valid_solution],
                     skip_votes: true,
                     ..Default::default()
                 },
@@ -2952,6 +2948,19 @@ mod valid_solutions {
         assert!(!ledger.is_solution_limit_reached(&prover_address, 0));
 
         // 5. Check that the next block will accept the solution and abort any excess.
+
+        // Generate new solutions to valid_solution_1 will not get rejected due to duplication.
+        let mut valid_solutions = Vec::with_capacity(2);
+        // Create solutions that are greater than the minimum proof target.
+        while valid_solutions.len() < 2 {
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
+                valid_solutions.push(solution);
+            }
+        }
+        let valid_solution_1 = valid_solutions.remove(0);
+        let valid_solution_2 = valid_solutions.remove(0);
+
         let next_block = chain_builder
             .generate_block_with_opts(
                 GenerateBlockOptions {

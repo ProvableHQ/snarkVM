@@ -19,7 +19,7 @@ impl<E: Environment> FromBytes for Group<E> {
     /// Reads the group from a buffer.
     #[inline]
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        Self::from_x_coordinate(FromBytes::read_le(&mut reader)?).map_err(|e| error(e.to_string()))
+        Self::from_x_coordinate(FromBytes::read_le(&mut reader)?).map_err(into_io_error)
     }
 }
 
@@ -27,7 +27,8 @@ impl<E: Environment> FromBytesUnchecked for Group<E> {
     /// Reads the group from a buffer.
     #[inline]
     fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
-        Self::from_x_coordinate_unchecked(FromBytes::read_le(&mut reader)?).map_err(|e| io_error(e.to_string()))
+        // Currently the same as the checked version, but might change in the future.
+        Self::from_x_coordinate(FromBytes::read_le(&mut reader)?).map_err(into_io_error)
     }
 }
 

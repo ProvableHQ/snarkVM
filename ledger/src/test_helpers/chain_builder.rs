@@ -387,10 +387,12 @@ impl TestChainBuilder {
         // Construct the block.
         let subdag = Subdag::from(subdag_map).unwrap();
         let block = self.ledger.prepare_advance_to_next_quorum_block(subdag, transmissions, rng)?;
-        self.ledger.check_next_block(&block, rng)?;
+        self.ledger.check_next_block(&block, rng).with_context(|| "Failed to (internally) check generated block")?;
 
-        // Update th ledger state.
-        self.ledger.advance_to_next_block(&block)?;
+        // Update the ledger state.
+        self.ledger
+            .advance_to_next_block(&block)
+            .with_context(|| "Failed to (internally) advance to generated block")?;
         self.previous_leader_certificate = Some(leader_certificate.clone());
 
         Ok(block)
