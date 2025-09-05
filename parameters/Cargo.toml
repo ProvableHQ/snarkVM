@@ -25,7 +25,7 @@ edition = "2024"
 
 [features]
 filesystem = [ "aleo-std/storage" ]
-large_params = []
+large_params = [ ]
 locktick = [ "dep:locktick" ]
 no_std_out = [ ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
