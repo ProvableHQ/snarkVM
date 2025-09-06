@@ -5,4 +5,6 @@ ignore = [
   "RUSTSEC-2024-0436",
   # TODO replace encoding crate with encoding_rs
   "RUSTSEC-2021-0153",
+  # TODO find a suitable replacement for fxhash.
+  "RUSTSEC-2025-0057",
 ]
