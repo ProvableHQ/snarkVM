@@ -17,14 +17,14 @@
 extern crate criterion;
 
 use snarkvm_console::{account::PrivateKey, network::MainnetV0, prelude::*};
-use snarkvm_ledger::test_helpers::sample_genesis_block;
+use snarkvm_ledger::test_helpers::{TestChainBuilder, sample_genesis_block};
 
 use criterion::Criterion;
 
 type CurrentNetwork = MainnetV0;
 
 /// Helper method to benchmark serialization.
-fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + Clone>(
+fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + FromBytesUnchecked + Clone>(
     c: &mut Criterion,
     name: &str,
     object: T,
@@ -62,6 +62,14 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
         let buffer = object.to_bytes_le().unwrap();
         c.bench_function(&format!("{name}::from_bytes_le"), move |b| b.iter(|| T::from_bytes_le(&buffer).unwrap()));
     }
+
+    // snarkvm_utilities::FromBytesUncheckd
+    {
+        let buffer = object.to_bytes_le().unwrap();
+        c.bench_function(&format!("{name}::from_bytes_le_unchecked"), move |b| {
+            b.iter(|| T::from_bytes_le_unchecked(&buffer).unwrap())
+        });
+    }
     // bincode::deserialize
     {
         let buffer = bincode::serialize(&object).unwrap();
@@ -80,13 +88,19 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
 
 fn block_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
-    let block = sample_genesis_block(&mut rng);
+
+    let mut builder = TestChainBuilder::new(&mut rng).unwrap();
+    let block = builder.generate_block(&mut rng).unwrap();
+
     bench_serialization(c, "Block", block);
 }
 
 fn block_header_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
-    let block = sample_genesis_block(&mut rng);
+
+    let mut builder = TestChainBuilder::new(&mut rng).unwrap();
+    let block = builder.generate_block(&mut rng).unwrap();
+
     bench_serialization(c, "Header", *block.header());
 }
 

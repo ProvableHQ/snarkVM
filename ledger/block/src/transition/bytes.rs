@@ -84,6 +84,13 @@ impl<N: Network> FromBytes for Transition<N> {
     }
 }
 
+impl<N: Network> FromBytesUnchecked for Transition<N> {
+    #[inline]
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le(reader)
+    }
+}
+
 impl<N: Network> ToBytes for Transition<N> {
     /// Writes the literal to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
