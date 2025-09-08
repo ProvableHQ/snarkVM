@@ -3460,6 +3460,7 @@ dependencies = [
  "snarkvm-ledger-narwhal-batch-certificate",
  "snarkvm-ledger-narwhal-batch-header",
  "snarkvm-ledger-narwhal-transmission-id",
+ "tracing",
 ]
 
 [[package]]
@@ -3474,6 +3475,7 @@ dependencies = [
  "snarkvm-ledger-narwhal-batch-header",
  "snarkvm-ledger-narwhal-transmission-id",
  "time",
+ "tracing",
 ]
 
 [[package]]
@@ -3502,6 +3504,7 @@ dependencies = [
  "snarkvm-ledger-narwhal-batch-header",
  "snarkvm-ledger-narwhal-subdag",
  "snarkvm-ledger-narwhal-transmission-id",
+ "tracing",
 ]
 
 [[package]]

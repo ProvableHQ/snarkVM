@@ -27,7 +27,12 @@ edition = "2024"
 default = [ "rayon" ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
+tracing = [ "dep:tracing" ]
 test-helpers = [ "snarkvm-ledger-narwhal-transmission-id/test-helpers", "time" ]
+
+[dependencies.tracing]
+workspace = true
+optional = true
 
 [dependencies.snarkvm-console]
 workspace = true

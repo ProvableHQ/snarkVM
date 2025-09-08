@@ -78,7 +78,8 @@ serial = [
 tracing = [
   "snarkvm-synthesizer/tracing",
   "snarkvm-ledger-block/tracing",
-  "snarkvm-ledger-store/tracing"
+  "snarkvm-ledger-store/tracing",
+  "snarkvm-ledger-narwhal/tracing",
 ]
 test = [
   "snarkvm-console/test",

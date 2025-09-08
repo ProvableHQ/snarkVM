@@ -17,6 +17,7 @@ use super::*;
 
 impl<N: Network> Subdag<N> {
     /// Shared functionality between FromBytes and FromBytesUnchecked.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip_all), inline(never))]
     fn internal_read_le<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
@@ -39,7 +40,7 @@ impl<N: Network> Subdag<N> {
             // Read the number of certificates.
             let num_certificates = u16::read_le(&mut reader)?;
             // Ensure the number of certificates is within bounds.
-            if num_certificates > N::LATEST_MAX_CERTIFICATES().map_err(error)? {
+            if num_certificates > N::LATEST_MAX_CERTIFICATES().map_err(into_io_error)? {
                 return Err(error(format!("Number of certificates ({num_certificates}) exceeds the maximum.",)));
             }
             // Read the certificates.

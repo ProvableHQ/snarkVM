@@ -17,6 +17,7 @@ use super::*;
 
 impl<N: Network> BatchHeader<N> {
     /// Shared functionality between FromBytes and FromBytesUnchecked.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip_all), inline(never))]
     fn internal_read_le<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
@@ -46,7 +47,7 @@ impl<N: Network> BatchHeader<N> {
             )));
         }
         // Read the transmission IDs.
-        let mut transmission_ids = IndexSet::new();
+        let mut transmission_ids = IndexSet::with_capacity(num_transmission_ids as usize);
         for _ in 0..num_transmission_ids {
             // Insert the transmission ID.
             transmission_ids.insert(TransmissionID::read_le(&mut reader)?);

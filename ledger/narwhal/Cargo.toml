@@ -58,6 +58,10 @@ batch-certificate = [ "snarkvm-ledger-narwhal-batch-certificate" ]
 batch-header = [ "snarkvm-ledger-narwhal-batch-header" ]
 data = [ "snarkvm-ledger-narwhal-data" ]
 subdag = [ "snarkvm-ledger-narwhal-subdag" ]
+tracing = [
+  "snarkvm-ledger-narwhal-batch-header/tracing",
+  "snarkvm-ledger-narwhal-batch-certificate/tracing",
+]
 transmission = [ "snarkvm-ledger-narwhal-transmission" ]
 transmission-id = [ "snarkvm-ledger-narwhal-transmission-id" ]
 

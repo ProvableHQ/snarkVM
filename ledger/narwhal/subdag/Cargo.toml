@@ -28,9 +28,14 @@ default = [ "indexmap/rayon", "rayon" ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 test-helpers = [ "snarkvm-ledger-narwhal-batch-certificate/test-helpers" ]
+tracing = [ "dep:tracing"]
 
 [dependencies.snarkvm-console]
 workspace = true
+
+[dependencies.tracing]
+workspace = true
+optional = true
 
 [dependencies.snarkvm-ledger-narwhal-batch-certificate]
 workspace = true

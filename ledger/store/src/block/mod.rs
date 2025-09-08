@@ -722,7 +722,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the previous block hash of the given `block height`.
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)), inline(never))]
     fn get_previous_block_hash(&self, height: u32) -> Result<Option<N::BlockHash>> {
         if height.is_zero() {
             Ok(Some(N::BlockHash::default()))
@@ -732,23 +732,25 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the block hash for the given `block height`.
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)), inline(never))]
     fn get_block_hash(&self, height: u32) -> Result<Option<N::BlockHash>> {
         Ok(self.id_map().get_confirmed(&height)?.map(|x| *x))
     }
 
     /// Returns the block height for the given `block hash`.
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)), inline(never))]
     fn get_block_height(&self, block_hash: &N::BlockHash) -> Result<Option<u32>> {
         Ok(self.reverse_id_map().get_confirmed(block_hash)?.map(|x| *x))
     }
 
     /// Returns the block header for the given `block hash`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)), inline(never))]
     fn get_block_header(&self, block_hash: &N::BlockHash) -> Result<Option<Header<N>>> {
         Ok(self.header_map().get_confirmed(block_hash)?.map(|x| x.into_owned()))
     }
 
     /// Returns the block authority for the given `block hash`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)), inline(never))]
     fn get_block_authority(&self, block_hash: &N::BlockHash) -> Result<Option<Authority<N>>> {
         Ok(self.authority_map().get_confirmed(block_hash)?.map(|x| x.into_owned()))
     }
@@ -760,7 +762,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Returns the batch certificate for the given `certificate ID`.
     ///
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)), inline(never))]
     fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
         // Retrieve the height and round for the given certificate ID.
         let Some((block_height, round)) = self.certificate_map().get_confirmed(certificate_id)?.map(|x| *x) else {
@@ -795,11 +797,13 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the block ratifications for the given `block hash`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)), inline(never))]
     fn get_block_ratifications(&self, block_hash: &N::BlockHash) -> Result<Option<Ratifications<N>>> {
         Ok(self.ratifications_map().get_confirmed(block_hash)?.map(|x| x.into_owned()))
     }
 
     /// Returns the block solutions for the given `block hash`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)), inline(never))]
     fn get_block_solutions(&self, block_hash: &N::BlockHash) -> Result<Solutions<N>> {
         let Some(solutions) = self.solutions_map().get_confirmed(block_hash)? else {
             bail!("Missing solutions for block ('{block_hash}')");
@@ -836,6 +840,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the block transactions for the given `block hash`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)), inline(never))]
     fn get_block_transactions(&self, block_hash: &N::BlockHash) -> Result<Option<Transactions<N>>> {
         // Retrieve the transaction IDs.
         let Some(transaction_ids) = self.transactions_map().get_confirmed(block_hash)? else {
@@ -849,6 +854,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 
     /// Returns the block aborted transaction IDs for the given `block hash`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
     fn get_block_aborted_transaction_ids(&self, block_hash: &N::BlockHash) -> Result<Option<Vec<N::TransactionID>>> {
         Ok(self.aborted_transaction_ids_map().get_confirmed(block_hash)?.map(|x| x.into_owned()))
     }

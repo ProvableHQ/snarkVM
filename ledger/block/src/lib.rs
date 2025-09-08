@@ -145,6 +145,7 @@ impl<N: Network> Block<N> {
 
     /// Initializes a new block from the given previous block hash, block header, authority,
     /// ratifications, solutions, aborted solution IDs, transactions, and aborted transaction IDs.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
     pub fn from(
         previous_hash: N::BlockHash,
         header: Header<N>,
@@ -242,6 +243,7 @@ impl<N: Network> Block<N> {
     ///
     /// This function does *not* perform any checks on the given data, and should only be called
     /// if the inputs are trusted.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip_all), inline(never))]
     pub fn from_unchecked(
         block_hash: N::BlockHash,
         previous_hash: N::BlockHash,

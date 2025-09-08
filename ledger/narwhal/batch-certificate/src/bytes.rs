@@ -17,6 +17,7 @@ use super::*;
 
 impl<N: Network> BatchCertificate<N> {
     /// Used by FromBytes and FromBytesUnchecked.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip_all), inline(never))]
     fn read_signatures<R: Read>(mut reader: R, unchecked: bool) -> IoResult<IndexSet<Signature<N>>> {
         // Read the number of signatures.
         let num_signatures = u16::read_le(&mut reader)?;
@@ -75,6 +76,7 @@ impl<N: Network> ToBytes for BatchCertificate<N> {
 
 impl<N: Network> FromBytesUnchecked for BatchCertificate<N> {
     /// Reads the batch certificate from the buffer.
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip_all), inline(never))]
     fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;

@@ -34,7 +34,7 @@ wasm = [
   "snarkvm-synthesizer-program/wasm",
   "snarkvm-synthesizer-snark/wasm"
 ]
-tracing = [ "dep:tracing" ]
+tracing = [ "snarkvm-ledger-narwhal-subdag/tracing", "dep:tracing" ]
 test = [ "snarkvm-synthesizer-process/test" ]
 test-helpers = [ ]
 
