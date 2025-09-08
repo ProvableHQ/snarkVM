@@ -88,6 +88,13 @@ impl<N: Network> FromBytes for Transaction<N> {
     }
 }
 
+impl<N: Network> FromBytesUnchecked for Transaction<N> {
+    #[inline]
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le(reader)
+    }
+}
+
 impl<N: Network> ToBytes for Transaction<N> {
     /// Writes the transaction to the buffer.
     #[inline]

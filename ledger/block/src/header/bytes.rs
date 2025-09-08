@@ -49,6 +49,13 @@ impl<N: Network> FromBytes for Header<N> {
     }
 }
 
+impl<N: Network> FromBytesUnchecked for Header<N> {
+    #[inline]
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le(reader)
+    }
+}
+
 impl<N: Network> ToBytes for Header<N> {
     /// Writes the block header to the buffer.
     #[inline]

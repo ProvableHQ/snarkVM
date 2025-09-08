@@ -113,6 +113,13 @@ impl<N: Network> FromBytes for ConfirmedTransaction<N> {
     }
 }
 
+impl<N: Network> FromBytesUnchecked for ConfirmedTransaction<N> {
+    #[inline]
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le(reader)
+    }
+}
+
 impl<N: Network> ToBytes for ConfirmedTransaction<N> {
     /// Writes the confirmed transaction to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
