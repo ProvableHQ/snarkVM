@@ -88,6 +88,10 @@ jobs:
         run: |
           cargo bench --package=snarkvm-ledger --bench transaction -- --output-format bencher | tee -a output.txt
 
+      - name: Benchmark ledger (store)
+        run: |
+          cargo bench --package=snarkvm-ledger --bench store -- --output-format bencher | tee -a output.txt
+
       - name: Benchmark ledger/puzzle
         run: |
           cargo bench --package=snarkvm-ledger-puzzle --bench puzzle --features=setup -- --output-format bencher | tee -a output.txt

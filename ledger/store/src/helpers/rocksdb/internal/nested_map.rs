@@ -16,8 +16,8 @@
 #![allow(clippy::type_complexity)]
 
 use super::*;
-use crate::helpers::{NestedMap, NestedMapRead};
-use console::prelude::{FromBytes, anyhow, cfg_into_iter};
+use crate::helpers::{NestedMap, NestedMapRead, StorageFormat};
+use console::prelude::{FromBytes, FromBytesUnchecked, anyhow, cfg_into_iter};
 
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering};
@@ -28,9 +28,9 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[derive(Clone)]
 pub struct NestedDataMap<
-    M: Serialize + DeserializeOwned,
-    K: Serialize + DeserializeOwned,
-    V: Serialize + DeserializeOwned,
+    M: Serialize + FromBytesUnchecked,
+    K: Serialize + FromBytesUnchecked,
+    V: Serialize + FromBytesUnchecked,
 > {
     /// The rocksDB instance.
     pub(super) database: RocksDB,
@@ -44,7 +44,7 @@ pub struct NestedDataMap<
     pub(super) checkpoints: Arc<Mutex<Vec<usize>>>,
 }
 
-impl<M: Serialize + DeserializeOwned, K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> Debug
+impl<M: Serialize + FromBytesUnchecked, K: Serialize + FromBytesUnchecked, V: Serialize + FromBytesUnchecked> Debug
     for NestedDataMap<M, K, V>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -465,8 +465,8 @@ impl<
         // Possibly deserialize the entries in parallel.
         Ok(cfg_into_iter!(entries)
             .map(|(k, v)| {
-                let k = bincode::deserialize::<K>(&k);
-                let v = bincode::deserialize::<V>(&v);
+                let k = StorageFormat::deserialize::<K>(&k);
+                let v = StorageFormat::deserialize::<V>(&v);
 
                 k.and_then(|k| v.map(|v| (k, v)))
             })
@@ -520,7 +520,7 @@ impl<
     ///
     fn get_value_confirmed(&'a self, map: &M, key: &K) -> Result<Option<Cow<'a, V>>> {
         match self.get_map_key_raw(map, key) {
-            Ok(Some(bytes)) => Ok(Some(Cow::Owned(bincode::deserialize(&bytes)?))),
+            Ok(Some(bytes)) => Ok(Some(Cow::Owned(StorageFormat::deserialize(&bytes)?))),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
@@ -639,18 +639,18 @@ impl<
             .ok()?;
 
         // Deserialize the map, key, and value.
-        let map = bincode::deserialize(entry_map)
+        let map = StorageFormat::deserialize(entry_map)
             .map_err(|e| {
                 error!("RocksDB NestedIter deserialize(map) error: {e}");
             })
             .ok()?;
-        let key = bincode::deserialize(entry_key)
+        let key = StorageFormat::deserialize(entry_key)
             .map_err(|e| {
                 error!("RocksDB NestedIter deserialize(key) error: {e}");
             })
             .ok()?;
         // Deserialize the value.
-        let value = bincode::deserialize(value)
+        let value = StorageFormat::deserialize(value)
             .map_err(|e| {
                 error!("RocksDB NestedIter deserialize(value) error: {e}");
             })
@@ -706,12 +706,12 @@ impl<
             .ok()?;
 
         // Deserialize the map and key.
-        let map = bincode::deserialize(entry_map)
+        let map = StorageFormat::deserialize(entry_map)
             .map_err(|e| {
                 error!("RocksDB NestedKeys deserialize(map) error: {e}");
             })
             .ok()?;
-        let key = bincode::deserialize(entry_key)
+        let key = StorageFormat::deserialize(entry_key)
             .map_err(|e| {
                 error!("RocksDB NestedKeys deserialize(key) error: {e}");
             })

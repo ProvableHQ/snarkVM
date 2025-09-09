@@ -23,6 +23,9 @@ pub(crate) mod test_helpers;
 mod traits;
 pub use traits::*;
 
+mod serializer;
+pub use serializer::*;
+
 /// This macro executes the given block of operations as a new atomic write batch IFF there is no
 /// atomic write batch in progress yet. This ensures that complex atomic operations consisting of
 /// multiple lower-level operations - which might also need to be atomic if executed individually -
