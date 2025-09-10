@@ -23,6 +23,9 @@ macro_rules! try_vm_runtime {
     ($e:expr) => {{
         use std::panic;
 
+        // Store the old hook (if any).
+        let prev_hook = panic::take_hook();
+
         // Set a custom hook before calling catch_unwind to
         // indicate that the panic was expected and handled.
         panic::set_hook(Box::new(|e| {
@@ -37,8 +40,8 @@ macro_rules! try_vm_runtime {
         // Perform the operation that may panic.
         let result = panic::catch_unwind(panic::AssertUnwindSafe($e));
 
-        // Restore the standard panic hook.
-        let _ = panic::take_hook();
+        // Restore the previous panic hook.
+        panic::set_hook(prev_hook);
 
         // Return the result, allowing regular error-handling.
         result
