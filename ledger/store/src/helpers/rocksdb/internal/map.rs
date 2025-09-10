@@ -115,11 +115,17 @@ impl<
         self.database.atomic_depth.fetch_add(1, Ordering::SeqCst);
 
         // Ensure that the atomic batch is empty.
-        assert!(self.atomic_batch.lock().is_empty());
+        assert!(
+            self.atomic_batch.lock().is_empty(),
+            "Cannot start an atomic operation when the atomic batch is not empty"
+        );
         // Ensure that the database atomic batch is empty; skip this check if the atomic
         // writes are paused, as there may be pending operations.
         if !self.database.are_atomic_writes_paused() {
-            assert!(self.database.atomic_batch.lock().is_empty());
+            assert!(
+                self.database.atomic_batch.lock().is_empty(),
+                "Cannot start an atomic operation when the database atomic batch is not empty"
+            );
         }
     }
 
@@ -227,7 +233,10 @@ impl<
 
         // Ensure that the value of `atomic_depth` doesn't overflow, meaning that all the
         // calls to `start_atomic` have corresponding calls to `finish_atomic`.
-        assert!(previous_atomic_depth != 0);
+        assert_ne!(
+            previous_atomic_depth, 0,
+            "Atomic depth underflow: finish_atomic called without corresponding start_atomic"
+        );
 
         // If we're at depth 0, it is the final call to `finish_atomic` and the
         // atomic write batch can be physically executed. This is skipped if the
@@ -238,7 +247,10 @@ impl<
             // Execute all the operations atomically.
             self.database.rocksdb.write(batch)?;
             // Ensure that the database atomic batch is empty.
-            assert!(self.database.atomic_batch.lock().is_empty());
+            assert!(
+                self.database.atomic_batch.lock().is_empty(),
+                "Database atomic batch must empty after write operation"
+            );
         }
 
         Ok(())
