@@ -58,5 +58,11 @@ pub use serialize::*;
 pub mod errors;
 pub use errors::*;
 
+#[cfg(feature = "async")]
+/// Helpers to spawn async tasks.
+pub mod task;
+#[cfg(feature = "async")]
+pub use task::*;
+
 /// Use old name for backward-compatibility.
 pub use errors::io_error as error;
