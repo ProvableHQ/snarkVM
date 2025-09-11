@@ -3786,6 +3786,7 @@ dependencies = [
  "smol_str",
  "snarkvm-utilities-derives",
  "thiserror 2.0.17",
+ "tokio",
  "tracing",
  "tracing-test",
  "zeroize",

@@ -124,7 +124,7 @@ package = [
   "dep:dotenvy"
 ]
 
-async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
+async = [ "snarkvm-ledger?/async", "snarkvm-synthesizer?/async", "snarkvm-utilities?/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "snarkvm-synthesizer/history" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
@@ -514,6 +514,10 @@ default-features = false
 
 [workspace.dependencies.smallvec]
 version = "1.14"
+
+[workspace.dependencies.tokio]
+version = "1"
+default-features = false
 
 [workspace.dependencies.tempfile]
 version = "3.15"

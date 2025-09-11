@@ -40,6 +40,11 @@ workspace = true
 [dependencies.colored]
 workspace = true
 
+[dependencies.tokio]
+workspace = true
+optional = true
+features = ["rt"]
+
 [dependencies.num_cpus]
 version = "1"
 
@@ -83,6 +88,7 @@ workspace = true
 
 [features]
 default = [ "derive" ]
+async = [ "tokio" ]
 derive = [ "snarkvm-utilities-derives" ]
 dev-print = [ ]
 serial = [ "derive" ]
