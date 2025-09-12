@@ -18,6 +18,7 @@
 use crate::helpers::{NestedMap, NestedMapRead};
 use console::network::prelude::*;
 
+use anyhow::Context;
 use core::hash::Hash;
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::{Mutex, RwLock};
@@ -282,9 +283,9 @@ impl<
     ///
     fn contains_key_confirmed(&self, map: &M, key: &K) -> Result<bool> {
         // Serialize 'm'.
-        let m = bincode::serialize(map)?;
+        let m = bincode::serialize(map).with_context(|| "Failed to serialize map")?;
         // Concatenate 'm' and 'k' with a 0-byte separator.
-        let mk = to_map_key(&m, &bincode::serialize(key)?);
+        let mk = to_map_key(&m, &bincode::serialize(key).with_context(|| "Failed to serialize map key")?);
         // Return whether the concatenated key exists in the map.
         Ok(self.map_inner.read().contains_key(&mk))
     }

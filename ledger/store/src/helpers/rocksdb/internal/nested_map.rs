@@ -19,6 +19,7 @@ use super::*;
 use crate::helpers::{NestedMap, NestedMapRead};
 use console::prelude::{FromBytes, anyhow, cfg_into_iter};
 
+use anyhow::Context;
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering};
 use tracing::error;
@@ -59,10 +60,11 @@ impl<M: Serialize + DeserializeOwned, K: Serialize + DeserializeOwned, V: Serial
     fn create_prefixed_map(&self, map: &M) -> Result<Vec<u8>> {
         let mut raw_map = self.context.clone();
 
-        let map_size: u32 = bincode::serialized_size(&map)?.try_into()?;
+        let map_size: u32 =
+            bincode::serialized_size(&map).with_context(|| "Failed to get size of serialize map")?.try_into()?;
         raw_map.extend_from_slice(&map_size.to_le_bytes());
 
-        bincode::serialize_into(&mut raw_map, map)?;
+        bincode::serialize_into(&mut raw_map, map).with_context(|| "Failed to serialize map")?;
         Ok(raw_map)
     }
 
@@ -463,14 +465,15 @@ impl<
         }
 
         // Possibly deserialize the entries in parallel.
-        Ok(cfg_into_iter!(entries)
+        cfg_into_iter!(entries)
             .map(|(k, v)| {
                 let k = bincode::deserialize::<K>(&k);
                 let v = bincode::deserialize::<V>(&v);
 
                 k.and_then(|k| v.map(|v| (k, v)))
             })
-            .collect::<Result<_, bincode::Error>>()?)
+            .collect::<Result<_, bincode::Error>>()
+            .with_context(|| "Failed to deserialize map entries")
     }
 
     ///
@@ -520,7 +523,10 @@ impl<
     ///
     fn get_value_confirmed(&'a self, map: &M, key: &K) -> Result<Option<Cow<'a, V>>> {
         match self.get_map_key_raw(map, key) {
-            Ok(Some(bytes)) => Ok(Some(Cow::Owned(bincode::deserialize(&bytes)?))),
+            Ok(Some(bytes)) => {
+                let v = bincode::deserialize(&bytes).with_context(|| "Failed to deserialize value")?;
+                Ok(Some(Cow::Owned(v)))
+            }
             Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
