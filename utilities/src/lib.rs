@@ -34,9 +34,6 @@ pub use bytes::*;
 pub mod defer;
 pub use defer::*;
 
-mod vm_error;
-pub use vm_error::*;
-
 pub mod iterator;
 pub use iterator::*;
 
@@ -66,3 +63,16 @@ pub use task::*;
 
 /// Use old name for backward-compatibility.
 pub use errors::io_error as error;
+
+/// This macro provides a VM runtime environment which will safely halt
+/// without producing logs that look like unexpected behavior.
+/// In debug mode, it prints to stderr using the format: "VM safely halted at {location}: {halt message}".
+///
+/// It is more efficient to set the panic hook once and directly use `errors::try_vm_runtime`.
+#[macro_export]
+macro_rules! try_vm_runtime {
+    ($e:expr) => {{
+        $crate::errors::set_panic_hook();
+        $crate::errors::try_vm_runtime($e)
+    }};
+}

@@ -14,7 +14,16 @@
 // limitations under the License.
 
 use colored::Colorize;
-use std::borrow::Borrow;
+
+use std::{any::Any, backtrace::Backtrace, borrow::Borrow, cell::Cell, panic};
+
+thread_local! {
+/// The message backtrace of the last panic on this thread (if any).
+///
+/// We store this information here instead of directly processing it in a panic hook, because panic hooks are global whereas this can be processed on a per-thread basis.
+/// For example, one thread may execute a program where panics should *not* cause the entire process to terminate, while in another thread there is a panic due to a bug.
+static PANIC_INFO: Cell<Option<(String, Backtrace)>> = const { Cell::new(None) };
+}
 
 /// Generates an `io::Error` from the given string.
 #[inline]
@@ -80,7 +89,17 @@ pub trait PrettyUnwrap {
     fn pretty_expect<S: ToString>(self, context: S) -> Self::Inner;
 }
 
-/// Helper for `PrettyUnwrap`, which creates a panic with the `anyhow::Error` nicely formatted and also logs the panic.
+/// Set the global panic hook for process. Should be called exactly once.
+pub fn set_panic_hook() {
+    std::panic::set_hook(Box::new(|err| {
+        let msg = err.to_string();
+        let trace = Backtrace::force_capture();
+        PANIC_INFO.with(move |info| info.set(Some((msg, trace))));
+    }));
+}
+
+/// Helper for `PrettyUnwrap`:
+/// Creates a panic with the `anyhow::Error` nicely formatted.
 #[track_caller]
 #[inline]
 fn pretty_panic(error: &anyhow::Error) -> ! {
@@ -97,6 +116,7 @@ impl<T> PrettyUnwrap for anyhow::Result<T> {
     type Inner = T;
 
     #[track_caller]
+    #[inline]
     fn pretty_unwrap(self) -> Self::Inner {
         match self {
             Ok(result) => result,
@@ -117,9 +137,59 @@ impl<T> PrettyUnwrap for anyhow::Result<T> {
     }
 }
 
+/// `try_vm_runtime` executes the given closure in an environment which will safely halt
+/// without producing logs that look like unexpected behavior.
+/// In debug mode, it prints to stderr using the format: "VM safely halted at {location}: {halt message}".
+///
+/// Note: For this to work as expected, panics must be set to `unwind` during compilation (default), and the closure cannot invoke any async code that may potentially execute in a different OS thread.
+#[track_caller]
+#[inline]
+pub fn try_vm_runtime<R, F: FnMut() -> R>(f: F) -> Result<R, Box<dyn Any + Send>> {
+    // Perform the operation that may panic.
+    let result = std::panic::catch_unwind(panic::AssertUnwindSafe(f));
+
+    if result.is_err() {
+        // Get the stored panic and backtrace from the thread-local variable.
+        let (msg, _) = PANIC_INFO.with(|info| info.take()).expect("No panic information stored?");
+
+        #[cfg(debug_assertions)]
+        {
+            // Remove all words up to "panicked".
+            // And prepend with "VM Safely halted"
+            let msg = msg
+                .to_string()
+                .split_ascii_whitespace()
+                .skip_while(|&word| word != "panicked")
+                .collect::<Vec<&str>>()
+                .join(" ")
+                .replacen("panicked", "VM safely halted", 1);
+
+            eprintln!("{msg}");
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            // Discard message
+            let _ = msg;
+        }
+    }
+
+    // Return the result, allowing regular error-handling.
+    result
+}
+
+/// `catch_unwind` calls the given closure `f` and, if `f` panics, returns the panic message and backtrace.
+#[inline]
+pub fn catch_unwind<R, F: FnMut() -> R>(f: F) -> Result<R, (String, Backtrace)> {
+    // Perform the operation that may panic.
+    std::panic::catch_unwind(panic::AssertUnwindSafe(f)).map_err(|_| {
+        // Get the stored panic and backtrace from the thread-local variable.
+        PANIC_INFO.with(|info| info.take()).expect("No panic information stored?")
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{PrettyUnwrap, flatten_error, pretty_panic};
+    use super::{PrettyUnwrap, catch_unwind, flatten_error, pretty_panic, set_panic_hook, try_vm_runtime};
 
     use anyhow::{Context, Result, anyhow, bail};
     use colored::Colorize;
@@ -177,14 +247,31 @@ mod tests {
         assert_eq!(*result.downcast::<String>().expect("Error was not a string"), expected);
     }
 
+    // Ensure catch_unwind stores the panic message as expected.
+    #[test]
+    fn test_catch_unwind() {
+        set_panic_hook();
+        let result = catch_unwind(move || {
+            panic!("This is my message");
+        });
+        // Remove hook so test asserts work normally again.
+        let _ = std::panic::take_hook();
+
+        let (msg, bt) = result.expect_err("No panic caught");
+        assert!(msg.ends_with("This is my message"));
+
+        // This function should be in the panics backtrace
+        assert!(bt.to_string().contains("test_catch_unwind"));
+    }
+
     /// Ensure catch_unwind does not break `try_vm_runtime`.
     #[test]
     fn test_nested_with_try_vm_runtime() {
-        use crate::try_vm_runtime;
+        set_panic_hook();
 
         let result = std::panic::catch_unwind(|| {
             // try_vm_runtime uses catch_unwind internally
-            let vm_result = try_vm_runtime!(|| {
+            let vm_result = try_vm_runtime(|| {
                 panic!("VM operation failed!");
             });
 
