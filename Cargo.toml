@@ -517,7 +517,6 @@ version = "1.14"
 
 [workspace.dependencies.tokio]
 version = "1"
-default-features = false
 
 [workspace.dependencies.tempfile]
 version = "3.15"
