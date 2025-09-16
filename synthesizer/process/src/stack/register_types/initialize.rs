@@ -646,7 +646,7 @@ impl<N: Network> RegisterTypes<N> {
     // }
 
     /// Ensure any struct referenced directly or otherwise exists.
-    pub(crate) fn check_plaintext_type(stack: &Stack<N>, type_: &PlaintextType<N>) -> Result<()> {
+    pub fn check_plaintext_type(stack: &Stack<N>, type_: &PlaintextType<N>) -> Result<()> {
         match type_ {
             PlaintextType::Literal(..) => Ok(()),
             PlaintextType::Struct(struct_name) => {

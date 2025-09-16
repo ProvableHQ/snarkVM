@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use snarkvm_synthesizer_process::{RegisterTypes, Stack};
+
 use super::*;
 
 /// Ensures the given iterator has no duplicate elements, and that the ledger
@@ -189,7 +191,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Verify the signature corresponds to the transaction ID.
                 ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
 
-                ensure_deployment_valid_for_consensus_version(consensus_version, deployment, id)?;
+                let stack = self.process.read().get_stack(deployment.program_id())?;
+                ensure_deployment_valid_for_consensus_version(&*stack, consensus_version, deployment, id)?;
 
                 // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.
                 if let Some(given_owner) = deployment.program_owner() {
@@ -440,6 +443,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 }
 
 fn ensure_deployment_valid_for_consensus_version<N: Network>(
+    stack: &Stack<N>,
     consensus_version: ConsensusVersion,
     deployment: &Deployment<N>,
     id: &N::TransactionID,
@@ -492,6 +496,14 @@ fn ensure_deployment_valid_for_consensus_version<N: Network>(
             !deployment.program().contains_external_struct(),
             "Invalid deployment transaction '{id}' - external structs may only be used beginning with Consensus version 10"
         );
+    }
+
+    if consensus_version >= ConsensusVersion::V11 {
+        for mapping in stack.program().mappings().values() {
+            // These calls make sure structs exist.
+            RegisterTypes::check_plaintext_type(stack, mapping.key().plaintext_type())?;
+            RegisterTypes::check_plaintext_type(stack, mapping.value().plaintext_type())?;
+        }
     }
 
     Ok(())
