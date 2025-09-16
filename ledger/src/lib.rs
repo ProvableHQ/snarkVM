@@ -37,10 +37,8 @@ pub use snarkvm_ledger_test_helpers;
 mod helpers;
 pub use helpers::*;
 
-mod check_next_block;
-pub use check_next_block::PendingBlock;
-
 mod advance;
+mod check_next_block;
 mod check_transaction_basic;
 mod contains;
 mod find;
@@ -230,7 +228,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Fetch the latest block.
         let block = ledger
             .get_block(latest_height)
-            .map_err(|_| anyhow!("Failed to load block {latest_height} from the ledger"))?;
+            .map_err(|err| err.context("Failed to load block {latest_height} from the ledger"))?;
 
         // Set the current block.
         ledger.current_block = Arc::new(RwLock::new(block));

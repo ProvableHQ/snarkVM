@@ -22,7 +22,7 @@ mod bytes;
 mod serialize;
 mod string;
 
-use console::prelude::*;
+use console::{network::error, prelude::*};
 use snarkvm_ledger_block::Transaction;
 use snarkvm_ledger_narwhal_data::Data;
 use snarkvm_ledger_puzzle::Solution;

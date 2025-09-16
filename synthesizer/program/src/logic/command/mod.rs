@@ -50,7 +50,7 @@ use crate::{
     StackTrait,
 };
 use console::{
-    network::prelude::*,
+    network::{error, prelude::*},
     program::{Identifier, Register},
 };
 

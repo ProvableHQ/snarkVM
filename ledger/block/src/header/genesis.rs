@@ -49,21 +49,22 @@ impl<N: Network> Header<N> {
     }
 
     /// Returns `true` if the block header is a genesis block header.
-    pub fn is_genesis(&self) -> bool {
-        // Ensure the previous ledger root is zero.
-        *self.previous_state_root == Field::zero()
-            // Ensure the transactions root is nonzero.
-            && self.transactions_root != Field::zero()
-            // Ensure the finalize root is nonzero.
-            && self.finalize_root != Field::zero()
-            // Ensure the ratifications root is nonzero.
-            && self.ratifications_root != Field::zero()
-            // Ensure the solutions root is zero.
-            && self.solutions_root == Field::zero()
-            // Ensure the subdag root is zero.
-            && self.subdag_root == Field::zero()
-            // Ensure the metadata is a genesis metadata.
-            && self.metadata.is_genesis()
+    ///
+    /// Return an error if the header is malformed.
+    pub fn is_genesis(&self) -> Result<bool> {
+        if !self.metadata.is_genesis()? {
+            return Ok(false);
+        }
+
+        // Ensure the header is valid otherwise
+        ensure!(*self.previous_state_root == Field::zero(), "Invalid previous state root");
+        ensure!(self.transactions_root != Field::zero(), "Invalid transactions root");
+        ensure!(self.finalize_root != Field::zero(), "Invalid finalize root");
+        ensure!(self.ratifications_root != Field::zero(), "Invalid ratifications root");
+        ensure!(self.solutions_root == Field::zero(), "Invalid solutions root");
+        ensure!(self.subdag_root == Field::zero(), "Invalid subdag root");
+
+        Ok(true)
     }
 }
 
@@ -104,7 +105,7 @@ mod tests {
         // Prepare the genesis block header.
         let header = crate::header::test_helpers::sample_block_header(rng);
         // Ensure the block header is a genesis block header.
-        assert!(header.is_genesis());
+        assert!(header.is_genesis().unwrap());
 
         // Ensure the genesis block contains the following.
         assert_eq!(*header.previous_state_root(), Field::zero());

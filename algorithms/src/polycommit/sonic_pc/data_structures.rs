@@ -18,7 +18,7 @@ use crate::{crypto_hash::sha256::sha256, fft::EvaluationDomain, polycommit::kzg1
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{ConstraintFieldError, Field, PrimeField, ToConstraintField};
 use snarkvm_parameters::mainnet::MAX_NUM_POWERS;
-use snarkvm_utilities::{FromBytes, ToBytes, error, serialize::*};
+use snarkvm_utilities::{FromBytes, ToBytes, error, into_io_error, serialize::*};
 
 use hashbrown::HashMap;
 use std::{
@@ -683,12 +683,14 @@ impl<E: PairingEngine> BatchLCProof<E> {
 
 impl<E: PairingEngine> FromBytes for BatchLCProof<E> {
     fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
-        CanonicalDeserialize::deserialize_compressed(&mut reader).map_err(|_| error("could not deserialize struct"))
+        CanonicalDeserialize::deserialize_compressed(&mut reader)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize struct")))
     }
 }
 
 impl<E: PairingEngine> ToBytes for BatchLCProof<E> {
     fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        CanonicalSerialize::serialize_compressed(self, &mut writer).map_err(|_| error("could not serialize struct"))
+        CanonicalSerialize::serialize_compressed(self, &mut writer)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not serialize struct")))
     }
 }

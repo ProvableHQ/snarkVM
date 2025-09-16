@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> FromBytes for PrivateKey<N> {
     /// Reads an account private key from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        Self::try_from(Field::new(FromBytes::read_le(&mut reader)?)).map_err(|e| error(format!("{e}")))
+        Self::try_from(Field::new(FromBytes::read_le(&mut reader)?)).map_err(into_io_error)
     }
 }
 

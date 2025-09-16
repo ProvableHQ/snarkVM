@@ -18,7 +18,10 @@ mod merkle;
 mod serialize;
 mod string;
 
-use console::{network::prelude::*, types::Field};
+use console::{
+    network::{error, prelude::*},
+    types::Field,
+};
 use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 use snarkvm_ledger_puzzle::{PuzzleSolutions, SolutionID};

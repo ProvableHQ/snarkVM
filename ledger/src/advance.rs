@@ -15,6 +15,8 @@
 
 use super::*;
 
+use anyhow::Context;
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns a candidate for the next block in the ledger, using a committed subdag and its transmissions.
     pub fn prepare_advance_to_next_quorum_block<R: Rng + CryptoRng>(
@@ -31,8 +33,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Currently, we do not support ratifications from the memory pool.
         ensure!(ratifications.is_empty(), "Ratifications are currently unsupported from the memory pool");
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) =
-            self.construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)?;
+        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = self
+            .construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)
+            .with_context(|| "Failed to construct block template")?;
 
         // Construct the new quorum block.
         Block::new_quorum(
@@ -71,7 +74,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 candidate_solutions,
                 candidate_transactions,
                 rng,
-            )?;
+            )
+            .with_context(|| "Failed to construct block template")?;
 
         // Construct the new beacon block.
         Block::new_beacon(
@@ -92,7 +96,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Acquire the write lock on the current block.
         let mut current_block = self.current_block.write();
         // Check again for any possible race conditions.
-        if current_block.is_genesis() {
+        if current_block.is_genesis()? {
             // current block is initialized as the genesis block, but the ledger will
             // also advance to it on startup.
             ensure!(

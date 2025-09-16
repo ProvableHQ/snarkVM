@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-block"
-version = "4.1.0"
+version = "4.2.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A block for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -65,6 +65,12 @@ workspace = true
 
 [dependencies.snarkvm-synthesizer-snark]
 workspace = true
+
+[dependencies.snarkvm-utilities]
+workspace = true
+
+[dependencies.anyhow]
+version = "1"
 
 [dependencies.indexmap]
 workspace = true

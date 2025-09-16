@@ -51,35 +51,25 @@ We recommend installing Rust using [rustup](https://www.rustup.rs/). You can ins
   Download the [Windows 64-bit executable](https://win.rustup.rs/x86_64) or
   [Windows 32-bit executable](https://win.rustup.rs/i686) and follow the on-screen instructions.
 
-### 2.2.1 Build from Crates.io
+### 2.2 Using snarkVM as a Library
 
-We recommend installing `snarkvm` this way. In your terminal, run:
+snarkVM is primarily designed to be used as a library in Rust projects. Add it to your `Cargo.toml` with your favourite published version:
 
-```bash
-cargo install snarkvm
+```toml
+[dependencies]
+snarkvm = "<major>.<minor>.<patch>"
 ```
 
-Now to use `snarkvm`, in your terminal, run:
-```bash
-snarkvm
-```
+### 2.3 Build from Source Code
 
-### 2.2.2 Build from Source Code
-
-Alternatively, you can install `snarkvm` by building from the source code as follows:
+You can also build snarkVM from source:
 
 ```bash
-# Download the source code
-git clone --branch mainnet --single-branch https://github.com/ProvableHQ/snarkVM.git 
+# Fetch the repository's development (staging) branch
+git clone --branch staging --single-branch https://github.com/ProvableHQ/snarkVM.git 
 cd snarkVM
-git checkout tags/testnet-beta
-# Install snarkVM
-cargo install --path .
-```
-
-Now to use `snarkvm`, in your terminal, run:
-```bash
-snarkvm
+# Build the library
+cargo build --release
 ```
 
 ## 3. Contributors

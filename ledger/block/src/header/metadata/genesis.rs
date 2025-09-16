@@ -15,58 +15,67 @@
 
 use super::*;
 
+use snarkvm_utilities::ensure_equals;
+
+const GENESIS_ROUND: u64 = 0;
+const GENESIS_HEIGHT: u32 = 0;
+const GENESIS_CUMULATIVE_WEIGHT: u128 = 0;
+const GENESIS_CUMULATIVE_PROOF_TARGET: u128 = 0;
+
 impl<N: Network> Metadata<N> {
     /// Initializes the genesis metadata.
     pub fn genesis() -> Result<Self> {
-        // Prepare a genesis metadata.
-        let network = N::ID;
-        let round = 0;
-        let height = 0;
-        let cumulative_weight = 0;
-        let cumulative_proof_target = 0;
-        let coinbase_target = N::GENESIS_COINBASE_TARGET;
-        let proof_target = N::GENESIS_PROOF_TARGET;
-        let last_coinbase_target = N::GENESIS_COINBASE_TARGET;
-        let last_coinbase_timestamp = N::GENESIS_TIMESTAMP;
-        let timestamp = N::GENESIS_TIMESTAMP;
-
-        // Return the genesis metadata.
         Self::new(
-            network,
-            round,
-            height,
-            cumulative_weight,
-            cumulative_proof_target,
-            coinbase_target,
-            proof_target,
-            last_coinbase_target,
-            last_coinbase_timestamp,
-            timestamp,
+            N::ID,
+            GENESIS_ROUND,
+            GENESIS_HEIGHT,
+            GENESIS_CUMULATIVE_WEIGHT,
+            GENESIS_CUMULATIVE_PROOF_TARGET,
+            N::GENESIS_COINBASE_TARGET,
+            N::GENESIS_PROOF_TARGET,
+            N::GENESIS_COINBASE_TARGET,
+            N::GENESIS_TIMESTAMP,
+            N::GENESIS_TIMESTAMP,
         )
+        .with_context(|| "Failed to create genesis block")
     }
 
     /// Returns `true` if the metadata is a genesis metadata.
-    pub fn is_genesis(&self) -> bool {
-        // Ensure the network ID is correct.
-        self.network == N::ID
-            // Ensure the round in the genesis block is 0.
-            && self.round == 0u64
-            // Ensure the height in the genesis block is 0.
-            && self.height == 0u32
-            // Ensure the cumulative weight in the genesis block is 0.
-            && self.cumulative_weight == 0u128
-            // Ensure the cumulative proof target in the genesis block is 0.
-            && self.cumulative_proof_target == 0u128
-            // Ensure the coinbase target in the genesis block is `GENESIS_COINBASE_TARGET`.
-            && self.coinbase_target == N::GENESIS_COINBASE_TARGET
-            // Ensure the proof target in the genesis block is `GENESIS_PROOF_TARGET`.
-            && self.proof_target == N::GENESIS_PROOF_TARGET
-            // Ensure the last coinbase target in the genesis block is `GENESIS_COINBASE_TARGET`.
-            && self.last_coinbase_target == N::GENESIS_COINBASE_TARGET
-            // Ensure the last coinbase timestamp in the genesis block is `GENESIS_TIMESTAMP`.
-            && self.last_coinbase_timestamp == N::GENESIS_TIMESTAMP
-            // Ensure the timestamp in the genesis block is `GENESIS_TIMESTAMP`.
-            && self.timestamp == N::GENESIS_TIMESTAMP
+    ///
+    /// Return an error if the block is at height 0 but not a valid genesis header.
+    pub fn is_genesis(&self) -> Result<bool> {
+        // Only blocks at height 0 are genesis blocks.
+        if self.round != 0u64 {
+            return Ok(false);
+        }
+
+        // Check the genesis block header is valid otherwise.
+        // We cannot call `Self::check_validity` here as that function calls `is_genesis` internally.
+        ensure!(self.network == N::ID, "Invalid network ID");
+        ensure!(self.round == GENESIS_ROUND, "Genesis block not at genesis round");
+        ensure!(self.height == GENESIS_HEIGHT, "Genesis block not at genesis height");
+
+        ensure_equals!(self.cumulative_weight, GENESIS_CUMULATIVE_WEIGHT, "Invalid cumulative weight");
+        ensure_equals!(
+            self.cumulative_proof_target,
+            GENESIS_CUMULATIVE_PROOF_TARGET,
+            "Invalid cumulative proof target"
+        );
+        ensure_equals!(self.timestamp, N::GENESIS_TIMESTAMP, "Invalid timestamp");
+        ensure_equals!(self.last_coinbase_timestamp, N::GENESIS_TIMESTAMP, "Invalid last coinbase timestamp");
+        ensure_equals!(
+            self.coinbase_target,
+            N::GENESIS_COINBASE_TARGET,
+            "Invalid coinsbase target for genesis block expected {expected}."
+        );
+        ensure_equals!(
+            self.last_coinbase_target,
+            N::GENESIS_COINBASE_TARGET,
+            "Invalid last coinbase target for genesis block"
+        );
+        ensure_equals!(self.proof_target, N::GENESIS_PROOF_TARGET, "Invalid proof target for genesis block");
+
+        Ok(true)
     }
 }
 
@@ -105,7 +114,7 @@ mod tests {
         // Prepare the genesis metadata.
         let metadata = crate::header::metadata::test_helpers::sample_block_metadata(rng);
         // Ensure the metadata is a genesis metadata.
-        assert!(metadata.is_genesis());
+        assert!(metadata.is_genesis().unwrap());
 
         // Ensure the genesis block contains the following.
         assert_eq!(metadata.network(), CurrentNetwork::ID);

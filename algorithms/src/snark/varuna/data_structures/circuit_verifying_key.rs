@@ -15,16 +15,17 @@
 
 use crate::{polycommit::sonic_pc, snark::varuna::ahp::indexer::*};
 use snarkvm_curves::PairingEngine;
-use snarkvm_utilities::{FromBytes, FromBytesDeserializer, ToBytes, ToBytesSerializer, error, serialize::*};
-use std::{
-    io::{self, Read, Write},
-    string::String,
-};
+use snarkvm_utilities::{FromBytes, FromBytesDeserializer, ToBytes, ToBytesSerializer, into_io_error, serialize::*};
 
 use anyhow::Result;
-use core::{fmt, str::FromStr};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
-use std::cmp::Ordering;
+use std::{
+    cmp::Ordering,
+    fmt,
+    io::{self, Read, Write},
+    str::FromStr,
+    string::String,
+};
 
 /// Verification key for a specific index (i.e., R1CS matrices).
 #[derive(Debug, Clone, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
@@ -39,13 +40,15 @@ pub struct CircuitVerifyingKey<E: PairingEngine> {
 
 impl<E: PairingEngine> FromBytes for CircuitVerifyingKey<E> {
     fn read_le<R: Read>(r: R) -> io::Result<Self> {
-        Self::deserialize_compressed(r).map_err(|_| error("could not deserialize CircuitVerifyingKey"))
+        Self::deserialize_compressed(r)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize CircuitVerifyingKey")))
     }
 }
 
 impl<E: PairingEngine> ToBytes for CircuitVerifyingKey<E> {
     fn write_le<W: Write>(&self, w: W) -> io::Result<()> {
-        self.serialize_compressed(w).map_err(|_| error("could not serialize CircuitVerifyingKey"))
+        self.serialize_compressed(w)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not serialize CircuitVerifyingKey")))
     }
 }
 

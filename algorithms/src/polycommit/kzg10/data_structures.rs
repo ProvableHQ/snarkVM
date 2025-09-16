@@ -24,6 +24,7 @@ use snarkvm_utilities::{
     FromBytes,
     ToBytes,
     error,
+    into_io_error,
     serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Valid, Validate},
 };
 
@@ -424,13 +425,15 @@ impl<E: PairingEngine> KZGProof<E> {
 
 impl<E: PairingEngine> FromBytes for KZGProof<E> {
     fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
-        CanonicalDeserialize::deserialize_compressed(&mut reader).map_err(|_| error("could not deserialize KZG proof"))
+        CanonicalDeserialize::deserialize_compressed(&mut reader)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize KZG proof")))
     }
 }
 
 impl<E: PairingEngine> ToBytes for KZGProof<E> {
     fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        CanonicalSerialize::serialize_compressed(self, &mut writer).map_err(|_| error("could not serialize KZG proof"))
+        CanonicalSerialize::serialize_compressed(self, &mut writer)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not serialize KZG proof")))
     }
 }
 

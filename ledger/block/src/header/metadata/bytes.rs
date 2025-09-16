@@ -51,7 +51,7 @@ impl<N: Network> FromBytes for Metadata<N> {
             last_coinbase_timestamp,
             timestamp,
         )
-        .map_err(|e| error(e.to_string()))
+        .map_err(into_io_error)
     }
 }
 

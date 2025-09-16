@@ -30,7 +30,7 @@ impl<N: Network> FromStr for PrivateKey<N> {
             bail!("Invalid account private key prefix: found {:?}, expected {:?}", &data[0..11], PRIVATE_KEY_PREFIX)
         }
         // Output the private key.
-        Ok(Self::try_from(Field::new(FromBytes::read_le(&data[11..43])?)).map_err(|e| error(format!("{e}")))?)
+        Ok(Self::try_from(Field::new(FromBytes::read_le(&data[11..43])?)).map_err(into_io_error)?)
     }
 }
 

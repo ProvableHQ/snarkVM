@@ -25,7 +25,7 @@ mod bytes;
 mod parse;
 
 use console::{
-    network::prelude::*,
+    network::{error, prelude::*},
     program::{Identifier, Register, RegisterType},
 };
 

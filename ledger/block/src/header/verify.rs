@@ -39,7 +39,10 @@ impl<N: Network> Header<N> {
         current_timestamp: i64,
     ) -> Result<()> {
         // Ensure the block header is well-formed.
-        ensure!(self.is_valid(), "Header is malformed in block {expected_height}");
+        if let Err(err) = self.check_validity() {
+            anyhow::bail!("Header is malformed in block {expected_height}: {err}");
+        }
+
         // Ensure the previous state root is correct.
         ensure!(
             self.previous_state_root == expected_previous_state_root,

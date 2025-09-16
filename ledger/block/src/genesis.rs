@@ -20,25 +20,32 @@ impl<N: Network> Block<N> {
     pub const NUM_GENESIS_TRANSACTIONS: usize = 4;
 
     /// Returns `true` if the block is a genesis block.
-    pub fn is_genesis(&self) -> bool {
-        // Ensure the previous block hash is zero.
-        self.previous_hash == N::BlockHash::default()
-            // Ensure the header is a genesis block header.
-            && self.header.is_genesis()
-            // Ensure the genesis authority is a beacon.
-            && self.authority.is_beacon()
-            // Ensure there is the correct number of ratification operations in the genesis block.
-            && self.ratifications.len() == 1
-            // Ensure there are no solutions in the genesis block.
-            && self.solutions.is_empty()
-            // Ensure there is the correct number of accepted transaction in the genesis block.
-            && self.transactions.num_accepted() == Self::NUM_GENESIS_TRANSACTIONS
-            // Ensure there is the correct number of rejected transaction in the genesis block.
-            && self.transactions.num_rejected() == 0
-            // Ensure there is the correct number of finalize operations in the genesis block.
-            && self.transactions.num_finalize() == 2 * Self::NUM_GENESIS_TRANSACTIONS
-            // Ensure there are no aborted transaction IDs in the genesis block.
-            && self.aborted_transaction_ids.is_empty()
+    pub fn is_genesis(&self) -> Result<bool> {
+        if !self.header.is_genesis()? {
+            return Ok(false);
+        }
+
+        ensure!(self.previous_hash == N::BlockHash::default(), "Invalid previous hash");
+        ensure!(self.authority.is_beacon(), "Invalid block authority");
+        ensure!(self.solutions.is_empty(), "Invalid solutins");
+        ensure!(self.transactions.num_rejected() == 0, "Invalid number of rejected transactions");
+        ensure!(self.aborted_transaction_ids.is_empty(), "Genesis block must not contain aborted transactions");
+
+        // Perform additional checks in production
+        #[cfg(not(any(test, feature = "test")))]
+        {
+            ensure!(self.ratifications.len() == 1, "Invalid number of ratifications");
+            ensure!(
+                self.transactions.num_accepted() == Self::NUM_GENESIS_TRANSACTIONS,
+                "Invalid number of accepted transactions"
+            );
+            ensure!(
+                self.transactions.num_finalize() == 2 * Self::NUM_GENESIS_TRANSACTIONS,
+                "Invalid number of finalized transactions"
+            );
+        }
+
+        Ok(true)
     }
 }
 
@@ -53,6 +60,6 @@ mod tests {
     fn test_genesis() {
         // Load the genesis block.
         let genesis_block = Block::<CurrentNetwork>::read_le(CurrentNetwork::genesis_bytes()).unwrap();
-        assert!(genesis_block.is_genesis());
+        assert!(genesis_block.is_genesis().unwrap());
     }
 }

@@ -42,17 +42,21 @@ pub use testnet_v0::*;
 pub mod prelude {
     pub use crate::{
         CANARY_V0_CONSENSUS_VERSION_HEIGHTS,
+        CanaryV0,
         ConsensusVersion,
         MAINNET_V0_CONSENSUS_VERSION_HEIGHTS,
+        MainnetV0,
         Network,
         TEST_CONSENSUS_VERSION_HEIGHTS,
         TESTNET_V0_CONSENSUS_VERSION_HEIGHTS,
+        TestnetV0,
         consensus_config_value,
         environment::prelude::*,
     };
 }
 
-use crate::environment::prelude::*;
+pub use crate::environment::prelude::*;
+
 use snarkvm_algorithms::{
     AlgebraicSponge,
     crypto_hash::PoseidonSponge,

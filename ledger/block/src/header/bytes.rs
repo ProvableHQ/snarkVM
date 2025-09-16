@@ -45,7 +45,7 @@ impl<N: Network> FromBytes for Header<N> {
             subdag_root,
             metadata,
         )
-        .map_err(|e| error(e.to_string()))
+        .map_err(|e| error(format!("{e:#?}")))
     }
 }
 

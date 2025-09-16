@@ -613,11 +613,13 @@ impl<N: Network> Block<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use console::account::{Address, PrivateKey};
+
     use snarkvm_algorithms::snark::varuna::VarunaVersion;
+    use snarkvm_console::account::{Address, PrivateKey};
     use snarkvm_ledger_query::Query;
     use snarkvm_ledger_store::{BlockStore, helpers::memory::BlockMemory};
     use snarkvm_synthesizer_process::Process;
+    use snarkvm_utilities::PrettyUnwrap;
 
     use aleo_std::StorageMode;
     use std::sync::OnceLock;
@@ -714,7 +716,7 @@ pub mod test_helpers {
             rng,
         )
         .unwrap();
-        assert!(block.header().is_genesis(), "Failed to initialize a genesis block");
+        assert!(block.header().is_genesis().pretty_unwrap(), "Failed to initialize a genesis block");
         // Return the block, transaction, and private key.
         (block, transaction, private_key)
     }
@@ -730,6 +732,7 @@ pub mod test_helpers {
         let last_coinbase_target = u64::MAX;
         let timestamp = i64::MAX - 1;
         let last_coinbase_timestamp = timestamp - 1;
+
         Metadata::new(
             network,
             round,
@@ -742,7 +745,7 @@ pub mod test_helpers {
             last_coinbase_timestamp,
             timestamp,
         )
-        .unwrap()
+        .pretty_unwrap()
     }
 }
 

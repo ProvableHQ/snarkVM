@@ -29,7 +29,7 @@ impl<E: Environment> FromBytes for StringType<E> {
         let mut bytes = vec![0u8; num_bytes as usize];
         reader.read_exact(&mut bytes)?;
         // Return the string.
-        Ok(Self::new(&String::from_utf8(bytes).map_err(|e| error(e.to_string()))?))
+        Ok(Self::new(&String::from_utf8(bytes).map_err(error)?))
     }
 }
 

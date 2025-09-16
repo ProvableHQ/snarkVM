@@ -15,6 +15,8 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use snarkvm_utilities::ensure_equals;
+
 use super::*;
 
 impl<N: Network> Metadata<N> {
@@ -33,78 +35,50 @@ impl<N: Network> Metadata<N> {
         current_timestamp: i64,
     ) -> Result<()> {
         // Ensure the block metadata is well-formed.
-        ensure!(self.is_valid(), "Metadata is malformed in block {expected_height}");
-        // Ensure the round is correct.
-        ensure!(
-            self.round == expected_round,
-            "Round is incorrect in block {expected_height} (found '{}', expected '{}')",
-            self.round,
-            expected_round
-        );
-        // Ensure the height is correct.
-        ensure!(
-            self.height == expected_height,
-            "Height is incorrect in block {expected_height} (found '{}', expected '{}')",
-            self.height,
-            expected_height
-        );
-        // Ensure the cumulative weight is correct.
-        ensure!(
-            self.cumulative_weight == expected_cumulative_weight,
-            "Cumulative weight is incorrect in block {expected_height} (found '{}', expected '{}')",
+        if let Err(err) = self.check_validity() {
+            bail!("Metadata is malformed in block {expected_height}: {err}");
+        }
+
+        ensure_equals!(self.round, expected_round, "Round is incorrect in block {expected_height}");
+        ensure_equals!(self.height, expected_height, "Height is incorrect in block {expected_height}");
+        ensure_equals!(
             self.cumulative_weight,
-            expected_cumulative_weight
+            expected_cumulative_weight,
+            "Cumulative weight is incorrect in block {expected_height}"
         );
-        // Ensure the cumulative proof target is correct.
-        ensure!(
-            self.cumulative_proof_target == expected_cumulative_proof_target,
-            "Cumulative proof target is incorrect in block {expected_height} (found '{}', expected '{}')",
+        ensure_equals!(
             self.cumulative_proof_target,
-            expected_cumulative_proof_target
+            expected_cumulative_proof_target,
+            "Cumulative proof target is incorrect in block {expected_height}"
         );
-        // Ensure the coinbase target is correct.
-        ensure!(
-            self.coinbase_target == expected_coinbase_target,
-            "Coinbase target is incorrect in block {expected_height} (found '{}', expected '{}')",
+        ensure_equals!(
             self.coinbase_target,
-            expected_coinbase_target
+            expected_coinbase_target,
+            "Coinbase target is incorrect in block {expected_height}"
         );
-        // Ensure the proof target is correct.
-        ensure!(
-            self.proof_target == expected_proof_target,
-            "Proof target is incorrect in block {expected_height} (found '{}', expected '{}')",
+        ensure_equals!(
             self.proof_target,
-            expected_proof_target
+            expected_proof_target,
+            "Proof target is incorrect in block {expected_height}"
         );
-        // Ensure the last coinbase target is correct.
-        ensure!(
-            self.last_coinbase_target == expected_last_coinbase_target,
-            "Last coinbase target is incorrect in block {expected_height} (found '{}', expected '{}')",
+        ensure_equals!(
             self.last_coinbase_target,
-            expected_last_coinbase_target
+            expected_last_coinbase_target,
+            "Last coinbase target is incorrect in block {expected_height}"
         );
-        // Ensure the last coinbase timestamp is correct.
-        ensure!(
-            self.last_coinbase_timestamp == expected_last_coinbase_timestamp,
-            "Last coinbase timestamp is incorrect in block {expected_height} (found '{}', expected '{}')",
+        ensure_equals!(
             self.last_coinbase_timestamp,
-            expected_last_coinbase_timestamp
+            expected_last_coinbase_timestamp,
+            "Last coinbase timestamp is incorrect in block {expected_height}"
         );
-        // Ensure the timestamp is correct.
-        ensure!(
-            self.timestamp == expected_timestamp,
-            "Timestamp is incorrect in block {expected_height} (found '{}', expected '{}')",
-            self.timestamp,
-            expected_timestamp
-        );
-        // Ensure the timestamp is after the current timestamp.
+        ensure_equals!(self.timestamp, expected_timestamp, "Timestamp is incorrect in block {expected_height}");
         ensure!(
             self.timestamp <= current_timestamp,
             "Timestamp is in the future in block {expected_height} (found '{}', expected before '{}')",
             self.timestamp,
             current_timestamp
         );
-        // Return success.
+
         Ok(())
     }
 }

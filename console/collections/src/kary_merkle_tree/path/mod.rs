@@ -132,7 +132,7 @@ impl<PH: PathHash, const DEPTH: u8, const ARITY: u8> FromBytes for KaryMerklePat
             .map(|_| (0..ARITY).map(|_| FromBytes::read_le(&mut reader)).collect::<IoResult<Vec<_>>>())
             .collect::<IoResult<Vec<_>>>()?;
         // Return the Merkle path.
-        Self::try_from((leaf_index, siblings)).map_err(error)
+        Self::try_from((leaf_index, siblings)).map_err(into_io_error)
     }
 }
 

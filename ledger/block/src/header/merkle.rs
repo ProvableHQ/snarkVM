@@ -133,8 +133,10 @@ mod tests {
                     u64::rand(rng),
                     rng.gen_range(0..i64::MAX),
                     rng.gen_range(0..i64::MAX),
-                )?,
-            )?;
+                )
+                .with_context(|| "Failed to generate block metadata")?,
+            )
+            .with_context(|| "Failed to create block header")?;
 
             // Compute the header root.
             let root = header.to_root()?;

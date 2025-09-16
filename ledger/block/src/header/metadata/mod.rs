@@ -23,6 +23,7 @@ mod verify;
 
 use console::{network::prelude::*, types::Field};
 
+use anyhow::Context;
 use core::marker::PhantomData;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -80,40 +81,57 @@ impl<N: Network> Metadata<N> {
             timestamp,
             _phantom: PhantomData,
         };
+
         // Ensure the header is valid.
-        match metadata.is_valid() {
-            true => Ok(metadata),
-            false => bail!("Invalid block metadata: {:?}", metadata),
-        }
+        metadata.check_validity().with_context(|| "Invalid block metadata")?;
+
+        Ok(metadata)
     }
 
     /// Returns `true` if the block metadata is well-formed.
+    ///
+    /// Consider using [`Self::check_validity`] to get more information on invalid block metadata.
     pub fn is_valid(&self) -> bool {
-        match self.height == 0u32 {
-            true => self.is_genesis(),
-            false => {
-                // Ensure the network ID is correct.
-                self.network == N::ID
-                    // Ensure the round is nonzero.
-                    && self.round != 0u64
-                    // Ensure the height is nonzero.
-                    && self.height != 0u32
-                    // Ensure the round is at least as large as the height.
-                    && self.round >= self.height as u64
-                    // Ensure the coinbase target is at or above the minimum.
-                    && self.coinbase_target >= N::GENESIS_COINBASE_TARGET
-                    // Ensure the proof target is at or above the minimum.
-                    && self.proof_target >= N::GENESIS_PROOF_TARGET
-                    // Ensure the coinbase target is larger than the proof target.
-                    && self.coinbase_target > self.proof_target
-                    // Ensure the last coinbase target is at or above the minimum.
-                    && self.last_coinbase_target >= N::GENESIS_COINBASE_TARGET
-                    // Ensure the last coinbase timestamp is after the genesis timestamp.
-                    && self.last_coinbase_timestamp >= N::GENESIS_TIMESTAMP
-                    // Ensure the timestamp in the block is after the genesis timestamp.
-                    && self.timestamp > N::GENESIS_TIMESTAMP
+        self.check_validity().is_ok()
+    }
+
+    /// Returns `Ok(())` if the block metadata is well-formed, and error describing (one of) the problem(s) in the block header.
+    pub fn check_validity(&self) -> Result<()> {
+        if self.height == 0u32 {
+            // [`Self::is_genesis`] performs its own validity checks.
+            if !self.is_genesis().with_context(|| "Genesis block check failed")? {
+                bail!("Block at height 0 is not a genesis block");
             }
+            return Ok(());
         }
+
+        // Ensure the network ID is correct.
+        ensure!(self.network == N::ID, "Invalid network ID");
+        ensure!(self.round > 0u64, "Invalid round");
+        ensure!(self.round >= self.height as u64, "Round must be greater or equal to height");
+        ensure!(self.proof_target >= N::GENESIS_PROOF_TARGET, "Invalid proof target");
+
+        ensure!(self.last_coinbase_timestamp >= N::GENESIS_TIMESTAMP, "Ensure last coinbase timestamp");
+        ensure!(self.timestamp > N::GENESIS_TIMESTAMP, "Invalid timeestamp");
+
+        if self.coinbase_target < N::GENESIS_COINBASE_TARGET {
+            bail!(
+                "Invalid coinbase target: Was {actual} but expected {min} or greater.",
+                actual = self.coinbase_target,
+                min = N::GENESIS_COINBASE_TARGET,
+            );
+        }
+
+        if self.proof_target < N::GENESIS_PROOF_TARGET {
+            bail!(
+                "Invalid proof target: Was {actual} but expected {min} or greater.",
+                actual = self.proof_target,
+                min = N::GENESIS_PROOF_TARGET,
+            );
+        }
+
+        ensure!(self.coinbase_target > self.proof_target, "Invalid coinbase target: must be greater than proof target");
+        Ok(())
     }
 }
 

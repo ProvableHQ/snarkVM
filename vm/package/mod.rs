@@ -207,10 +207,48 @@ pub(crate) mod test_helpers {
 
     use std::{fs::File, io::Write};
 
+    use anyhow::anyhow;
+
     type CurrentNetwork = MainnetV0;
 
     fn temp_dir() -> PathBuf {
         tempfile::tempdir().expect("Failed to open temporary directory").keep()
+    }
+
+    fn env_template() -> String {
+        r#"
+    NETWORK=mainnet
+    PRIVATE_KEY={{PASTE_YOUR_PRIVATE_KEY_HERE}}
+    "#
+        .to_string()
+    }
+
+    /// Loads the environment variables from the .env file.
+    fn dotenv_load() -> Result<()> {
+        // Load environment variables from .env file.
+        // Fails if .env file not found, not readable or invalid.
+        dotenvy::dotenv().map_err(|_| {
+            anyhow!(
+                "Missing a '.env' file. Create the '.env' file in your package's root directory with the following:\n\n{}\n",
+                env_template()
+            )
+        })?;
+        Ok(())
+    }
+
+    /// Returns the private key from the environment.
+    fn dotenv_private_key() -> Result<PrivateKey<CurrentNetwork>> {
+        if cfg!(test) {
+            let rng = &mut crate::utilities::TestRng::fixed(123456789);
+            PrivateKey::<CurrentNetwork>::new(rng)
+        } else {
+            use std::str::FromStr;
+            dotenv_load()?;
+            // Load the private key from the environment.
+            let private_key = dotenvy::var("PRIVATE_KEY").map_err(|e| anyhow!("Missing PRIVATE_KEY - {e}"))?;
+            // Parse the private key.
+            PrivateKey::<CurrentNetwork>::from_str(&private_key)
+        }
     }
 
     /// Samples a (temporary) package containing a `token.aleo` program.
@@ -429,7 +467,7 @@ function main:
         match program_id.to_string().as_str() {
             "token.aleo" => {
                 // Sample a random private key.
-                let private_key = crate::cli::helpers::dotenv_private_key().unwrap();
+                let private_key = dotenv_private_key().unwrap();
                 let caller = Address::try_from(&private_key).unwrap();
 
                 // Initialize the function name.
@@ -443,7 +481,7 @@ function main:
             }
             "wallet.aleo" => {
                 // Initialize caller 0.
-                let caller0_private_key = crate::cli::helpers::dotenv_private_key().unwrap();
+                let caller0_private_key = dotenv_private_key().unwrap();
                 let caller0 = Address::try_from(&caller0_private_key).unwrap();
 
                 // Initialize caller 1.
@@ -465,7 +503,7 @@ function main:
             }
             "grandparent.aleo" => {
                 // Initialize caller 0.
-                let caller0_private_key = crate::cli::helpers::dotenv_private_key().unwrap();
+                let caller0_private_key = dotenv_private_key().unwrap();
 
                 // Initialize caller 1.
                 let caller1_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();

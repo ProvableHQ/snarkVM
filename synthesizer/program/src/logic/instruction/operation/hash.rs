@@ -240,7 +240,7 @@ macro_rules! do_hash {
 /// Evaluate a hash operation.
 ///
 /// This allows running the hash without the machinery of stacks and registers.
-/// This is necessary for the Leo interpeter.
+/// This is necessary for the Leo interpreter.
 pub fn evaluate_hash<N: Network>(
     variant: HashVariant,
     input: &Value<N>,

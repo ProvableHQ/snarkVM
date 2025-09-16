@@ -59,7 +59,7 @@ impl<N: Network> FromBytes for Authorization<N> {
             (0..num_transitions).map(|_| Transition::read_le(&mut reader)).collect::<IoResult<Vec<_>>>()?;
 
         // Return the new `Authorization` instance.
-        Self::try_from((requests, transitions)).map_err(error)
+        Self::try_from((requests, transitions)).map_err(into_io_error)
     }
 }
 

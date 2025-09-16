@@ -18,7 +18,10 @@ mod bytes;
 mod serialize;
 mod string;
 
-use console::{network::prelude::*, types::Field};
+use console::{
+    network::{error, prelude::*},
+    types::Field,
+};
 
 /// Enum to represent the allowed set of Merkle tree operations.
 #[derive(Copy, Clone, PartialEq, Eq)]

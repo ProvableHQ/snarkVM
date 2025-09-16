@@ -89,6 +89,8 @@ pub mod prelude {
         cfg_zip_fold,
         error,
         has_duplicates,
+        into_io_error,
+        io_error,
     };
 
     pub use std::io::{Read, Result as IoResult, Write};

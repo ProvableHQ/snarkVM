@@ -117,7 +117,7 @@ impl<E: Environment, const DEPTH: u8> FromBytes for MerklePath<E, DEPTH> {
         let siblings =
             (0..DEPTH).map(|_| Ok(Field::new(FromBytes::read_le(&mut reader)?))).collect::<IoResult<Vec<_>>>()?;
         // Return the Merkle path.
-        Self::try_from((U64::new(leaf_index), siblings)).map_err(error)
+        Self::try_from((U64::new(leaf_index), siblings)).map_err(into_io_error)
     }
 }
 

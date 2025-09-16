@@ -17,7 +17,7 @@ use std::{collections::BTreeMap, io};
 
 use crate::snark::varuna::{CircuitId, verifier::BatchCombiners};
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ToBytes, Write, error, serialize::*};
+use snarkvm_utilities::{ToBytes, Write, into_io_error, serialize::*};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct MatrixSums<F: PrimeField> {
@@ -58,7 +58,8 @@ impl<F: PrimeField> ThirdMessage<F> {
 
 impl<F: PrimeField> ToBytes for ThirdMessage<F> {
     fn write_le<W: Write>(&self, mut w: W) -> io::Result<()> {
-        CanonicalSerialize::serialize_compressed(self, &mut w).map_err(|_| error("Could not serialize ThirdMessage"))
+        CanonicalSerialize::serialize_compressed(self, &mut w)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("Could not serialize ThirdMessage")))
     }
 }
 
@@ -70,6 +71,7 @@ pub struct FourthMessage<F: PrimeField> {
 
 impl<F: PrimeField> ToBytes for FourthMessage<F> {
     fn write_le<W: Write>(&self, mut w: W) -> io::Result<()> {
-        CanonicalSerialize::serialize_compressed(self, &mut w).map_err(|_| error("Could not serialize FourthMessage"))
+        CanonicalSerialize::serialize_compressed(self, &mut w)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("Could not serialize FourthMessage")))
     }
 }

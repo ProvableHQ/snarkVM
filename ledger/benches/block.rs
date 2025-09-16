@@ -18,6 +18,7 @@ extern crate criterion;
 
 use snarkvm_console::{network::MainnetV0, prelude::*};
 use snarkvm_ledger_block::Block;
+use snarkvm_utilities::PrettyUnwrap;
 
 use criterion::Criterion;
 
@@ -25,7 +26,7 @@ type CurrentNetwork = MainnetV0;
 
 /// Loads the genesis block.
 fn load_genesis_block() -> Block<CurrentNetwork> {
-    Block::<CurrentNetwork>::from_bytes_le(CurrentNetwork::genesis_bytes()).unwrap()
+    Block::<CurrentNetwork>::from_bytes_le(CurrentNetwork::genesis_bytes()).pretty_unwrap()
 }
 
 /// Helper method to benchmark serialization.

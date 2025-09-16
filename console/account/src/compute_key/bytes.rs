@@ -19,11 +19,9 @@ impl<N: Network> FromBytes for ComputeKey<N> {
     /// Reads an account compute key from a buffer.
     #[inline]
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let pk_sig =
-            Group::from_x_coordinate(Field::new(N::Field::read_le(&mut reader)?)).map_err(|e| error(format!("{e}")))?;
-        let pr_sig =
-            Group::from_x_coordinate(Field::new(N::Field::read_le(&mut reader)?)).map_err(|e| error(format!("{e}")))?;
-        Self::try_from((pk_sig, pr_sig)).map_err(|e| error(format!("{e}")))
+        let pk_sig = Group::from_x_coordinate(Field::new(N::Field::read_le(&mut reader)?)).map_err(into_io_error)?;
+        let pr_sig = Group::from_x_coordinate(Field::new(N::Field::read_le(&mut reader)?)).map_err(into_io_error)?;
+        Self::try_from((pk_sig, pr_sig)).map_err(into_io_error)
     }
 }
 

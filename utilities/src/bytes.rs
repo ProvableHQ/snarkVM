@@ -28,8 +28,6 @@ use serde::{
 };
 use smol_str::SmolStr;
 
-use crate::error;
-
 /// Takes as input a sequence of structs, and converts them to a series of little-endian bytes.
 /// All traits that implement `ToBytes` can be automatically converted to bytes in this manner.
 #[macro_export]
@@ -292,7 +290,7 @@ impl FromBytes for bool {
         match u8::read_le(reader) {
             Ok(0) => Ok(false),
             Ok(1) => Ok(true),
-            Ok(_) => Err(error("FromBytes::read failed")),
+            Ok(_) => Err(std::io::Error::other("FromBytes::read failed")),
             Err(err) => Err(err),
         }
     }
@@ -325,7 +323,7 @@ impl FromBytes for SocketAddr {
         let ip = match u8::read_le(&mut reader)? {
             0 => IpAddr::V4(Ipv4Addr::from(u32::read_le(&mut reader)?)),
             1 => IpAddr::V6(Ipv6Addr::from(u128::read_le(&mut reader)?)),
-            _ => return Err(error("Invalid IP address")),
+            _ => return Err(std::io::Error::other("Invalid IP address")),
         };
         // Read the port.
         let port = u16::read_le(&mut reader)?;

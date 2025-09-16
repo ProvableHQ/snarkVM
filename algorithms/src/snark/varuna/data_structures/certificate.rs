@@ -15,7 +15,7 @@
 
 use crate::polycommit::sonic_pc;
 use snarkvm_curves::PairingEngine;
-use snarkvm_utilities::{FromBytes, ToBytes, error, serialize::*};
+use snarkvm_utilities::{FromBytes, ToBytes, into_io_error, serialize::*};
 use std::io::{self, Read, Write};
 
 /// A certificate for the verifying key.
@@ -34,12 +34,14 @@ impl<E: PairingEngine> Certificate<E> {
 
 impl<E: PairingEngine> ToBytes for Certificate<E> {
     fn write_le<W: Write>(&self, mut w: W) -> io::Result<()> {
-        Self::serialize_compressed(self, &mut w).map_err(|_| error("Failed to serialize certificate"))
+        Self::serialize_compressed(self, &mut w)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("Failed to serialize certificate")))
     }
 }
 
 impl<E: PairingEngine> FromBytes for Certificate<E> {
     fn read_le<R: Read>(mut r: R) -> io::Result<Self> {
-        Self::deserialize_compressed(&mut r).map_err(|_| error("Failed to deserialize certificate"))
+        Self::deserialize_compressed(&mut r)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("Failed to deserialize certificate")))
     }
 }
