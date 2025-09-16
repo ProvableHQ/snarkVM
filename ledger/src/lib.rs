@@ -37,8 +37,10 @@ pub use helpers::*;
 
 pub use crate::block::*;
 
-mod advance;
 mod check_next_block;
+pub use check_next_block::PendingBlock;
+
+mod advance;
 mod check_transaction_basic;
 mod contains;
 mod find;
