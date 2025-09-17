@@ -175,17 +175,17 @@ fn snark_batch_verify(c: &mut Criterion) {
     let rng = &mut TestRng::default();
 
     c.bench_function("snark_batch_verify", move |b| {
-        let num_constraints_base = 100;
-        let num_variables_base = 25;
+        let num_constraints_base = 10000;
+        let num_variables_base = 25000;
 
-        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(1000, 1000, 100).unwrap();
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100000, 100000, 100000).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
         let universal_prover = &universal_srs.to_universal_prover().unwrap();
         let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
         let fs_parameters = FS::sample_parameters();
 
-        let circuit_batch_size = 5;
-        let instance_batch_size = 5;
+        let circuit_batch_size = 1;
+        let instance_batch_size = 50;
 
         let mut pks = Vec::with_capacity(circuit_batch_size);
         let mut vks = Vec::with_capacity(circuit_batch_size);
@@ -344,7 +344,7 @@ fn snark_certificate_verify(c: &mut Criterion) {
 criterion_group! {
     name = varuna_snark;
     config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
+    targets = snark_batch_verify
 }
 
 criterion_main!(varuna_snark);
