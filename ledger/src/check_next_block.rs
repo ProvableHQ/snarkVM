@@ -15,6 +15,8 @@
 
 use super::*;
 
+use snarkvm_utilities::ensure_equals;
+
 use crate::narwhal::BatchHeader;
 
 use anyhow::{Context, bail};
@@ -58,27 +60,15 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // First check that the heights and hashes of the pending block sequence and of the new block are correct.
         // The hash checks should be redundant, but we perform them out of extra caution.
         let mut expected_height = self.latest_height() + 1;
-        for pending in pending_blocks {
-            if pending.height() != expected_height {
-                bail!(
-                    "Pending block has invalid height. Expected {expected_height}, but got {actual}.",
-                    actual = pending.height()
-                );
-            }
 
-            if self.contains_block_hash(&pending.hash())? {
-                bail!("Hash for pending block '{}' already exists in the ledger", block.hash())
+        for block in pending_blocks.iter().map(|b| b.deref()).chain([block]) {
+            ensure_equals!(block.height(), expected_height, "Block has invalid height");
+
+            if self.contains_block_hash(&block.hash())? {
+                bail!("Hash '{}' for block at height {} already exists in the ledger", block.height(), block.hash())
             }
 
             expected_height += 1;
-        }
-
-        if self.contains_block_hash(&block.hash())? {
-            bail!("Block hash '{}' already exists in the ledger", block.hash())
-        }
-
-        if block.height() != expected_height {
-            bail!("Block has invalid height. Expected {expected_height}, but got {}.", block.height());
         }
 
         // Ensure solution IDs are unique
@@ -259,17 +249,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     fn check_block_solution_ids(&self, block: &Block<N>, pending_blocks: &[PendingBlock<N>]) -> Result<()> {
         let mut pending_ids = HashSet::new();
 
-        for pending_block in pending_blocks {
-            for solution_id in pending_block.solutions().solution_ids() {
+        for block in pending_blocks.iter().map(|b| b.deref()).chain([block]) {
+            for solution_id in block.solutions().solution_ids() {
                 if !pending_ids.insert(solution_id) || self.contains_solution_id(solution_id)? {
                     bail!("Solution ID {solution_id} already exists in the ledger");
                 }
-            }
-        }
-
-        for solution_id in block.solutions().solution_ids() {
-            if !pending_ids.insert(solution_id) || self.contains_solution_id(solution_id)? {
-                bail!("Solution ID {solution_id} already exists in the ledger");
             }
         }
 
