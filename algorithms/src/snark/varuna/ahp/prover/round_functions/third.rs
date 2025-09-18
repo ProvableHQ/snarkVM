@@ -68,7 +68,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         .collect()
     }
 
-    /// Output the third round message and the next state.
+    /// Output the third round message and the next state.'
     pub fn prover_third_round<'a, R: RngCore>(
         verifier_first_message: &verifier::FirstMessage<F>,
         verifier_second_message: &verifier::SecondMessage<F>,
@@ -264,6 +264,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         state: &mut prover::State<F, SM>,
     ) -> Result<BTreeMap<CircuitId, Vec<DensePolynomial<F>>>> {
         let assignments_time = start_timer!(|| "Calculate assignments");
+
+        #[allow(clippy::unused_enumerate_index)]
         let assignments: BTreeMap<_, _> = state
             .circuit_specific_states
             .iter()
