@@ -81,6 +81,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             bail!("Block has invalid height. Expected {expected_height}, but got {}.", block.height());
         }
 
+        // Ensure solution IDs are unique
+        self.check_block_solution_ids(block, pending_blocks)?;
+
         // Ensure the certificates in the block subdag have met quorum requirements.
         self.check_block_subdag_quorum(block)?;
 
@@ -258,9 +261,31 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         })
     }
 
+    /// Ensure solutions IDs are unique and did not already appear in previous blocks.
+    /// Called by [`Self::check_block_subdag_inner`]
+    fn check_block_solution_ids(&self, block: &Block<N>, pending_blocks: &[PendingBlock<N>]) -> Result<()> {
+        let mut pending_ids = HashSet::new();
+
+        for pending_block in pending_blocks {
+            for solution_id in pending_block.solutions().solution_ids() {
+                if !pending_ids.insert(solution_id) || self.contains_solution_id(solution_id)? {
+                    bail!("Solution ID {solution_id} already exists in the ledger");
+                }
+            }
+        }
+
+        for solution_id in block.solutions().solution_ids() {
+            if !pending_ids.insert(solution_id) || self.contains_solution_id(solution_id)? {
+                bail!("Solution ID {solution_id} already exists in the ledger");
+            }
+        }
+
+        Ok(())
+    }
+
     /// Check that the certificates in the block subdag have met quorum requirements.
     ///
-    /// Called by [`Self::check_block_subdag`]
+    /// Called by [`Self::check_block_subdag_inner`]
     fn check_block_subdag_quorum(&self, block: &Block<N>) -> Result<()> {
         // Check if the block has a subdag.
         let subdag = match block.authority() {
@@ -304,7 +329,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Checks that the block subdag can not be split into multiple valid subdags.
     ///
-    /// Called by [`Self::check_block_subdag`]
+    /// Called by [`Self::check_block_subdag_inner`]
     fn check_block_subdag_atomicity(&self, block: &Block<N>) -> Result<()> {
         // Returns `true` if there is a path from the previous certificate to the current certificate.
         fn is_linked<N: Network>(
