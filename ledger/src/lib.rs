@@ -482,6 +482,9 @@ pub(crate) mod test_helpers {
     use snarkvm_ledger_store::ConsensusStore;
     use snarkvm_synthesizer::vm::VM;
 
+    // Re-export all other ledger test helpers here.
+    pub(crate) use snarkvm_ledger_test_helpers::*;
+
     pub(crate) type CurrentNetwork = MainnetV0;
     pub(crate) type CurrentAleo = AleoV0;
 

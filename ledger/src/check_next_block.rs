@@ -25,7 +25,7 @@ use anyhow::{Context, bail};
 /// solutions, and transmissions have not been verified yet.
 ///
 /// This type is created by `Ledger::check_block_subdag` and consumed by `Ledger::check_block_content`.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PendingBlock<N: Network>(Block<N>);
 
 impl<N: Network> Deref for PendingBlock<N> {
@@ -366,5 +366,80 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        check_next_block::PendingBlock,
+        test_helpers::{sample_genesis_block, sample_test_env},
+    };
+
+    use console::prelude::*;
+
+    #[test]
+    fn test_check_block_subdag_inner_duplicate_hash() {
+        let mut rng = TestRng::default();
+        let test_env = sample_test_env(&mut rng);
+        let ledger = test_env.ledger;
+
+        // Get the existing genesis block
+        let genesis_block = ledger.latest_block().clone();
+
+        // Try to check a block with the same hash as genesis (already exists)
+        let result = ledger.check_block_subdag_inner(&genesis_block, &[]);
+        assert!(result.is_err(), "check_block_subdag_inner should fail for duplicate block hash");
+
+        // The error could be either about duplicate hash or invalid height
+        let error_message = result.unwrap_err().to_string();
+        assert!(
+            error_message.contains("already exists in the ledger")
+                || error_message.contains("Block has invalid height"),
+        );
+    }
+
+    #[test]
+    fn test_check_block_subdag_with_empty_pending_blocks() {
+        let mut rng = TestRng::default();
+        let test_env = sample_test_env(&mut rng);
+        let ledger = test_env.ledger;
+
+        let genesis_block = ledger.latest_block().clone();
+
+        // Test all individual functions with empty pending blocks.
+        //TODO(kaimast): test with blocks other than the genesis.
+
+        let result1 = ledger.check_block_solution_ids(&genesis_block, &[]);
+        assert!(result1.is_ok(), "check_block_solution_ids should succeed with empty pending blocks");
+
+        let result2 = ledger.check_block_subdag_quorum(&genesis_block);
+        assert!(result2.is_ok(), "check_block_subdag_quorum should succeed");
+
+        let result3 = ledger.check_block_subdag_atomicity(&genesis_block);
+        assert!(result3.is_ok(), "check_block_subdag_atomicity should succeed");
+
+        let result4 = ledger.check_block_subdag_leaves(&genesis_block, &[]);
+        assert!(result4.is_ok(), "check_block_subdag_leaves should succeed with empty pending blocks");
+    }
+
+    #[test]
+    fn test_pending_block_properties() {
+        let mut rng = TestRng::default();
+
+        //TODO(kaimast): test with blocks other than the genesis.
+        let genesis_block = sample_genesis_block(&mut rng);
+        let pending_block = PendingBlock(genesis_block.clone());
+
+        // Test all properties accessible through Deref
+        assert_eq!(pending_block.height(), genesis_block.height());
+        assert_eq!(pending_block.hash(), genesis_block.hash());
+        assert_eq!(pending_block.round(), genesis_block.round());
+        assert_eq!(pending_block.timestamp(), genesis_block.timestamp());
+        assert_eq!(pending_block.previous_hash(), genesis_block.previous_hash());
+
+        // Test Clone and PartialEq
+        let pending_block2 = pending_block.clone();
+        assert_eq!(pending_block, pending_block2, "PendingBlock should be cloneable and equal");
     }
 }

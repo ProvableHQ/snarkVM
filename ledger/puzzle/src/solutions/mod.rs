@@ -87,35 +87,45 @@ impl<N: Network> Deref for PuzzleSolutions<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::PartialSolution;
+
     use console::account::{Address, PrivateKey};
+
+    pub type CurrentNetwork = console::network::MainnetV0;
 
     use std::collections::HashSet;
 
-    type CurrentNetwork = console::network::MainnetV0;
+    /// Generates a single solution.
+    pub fn sample_solution(rng: &mut TestRng) -> Solution<CurrentNetwork> {
+        let address = Address::try_from(PrivateKey::new(rng).unwrap()).unwrap();
+        let partial_solution = PartialSolution::new(rng.r#gen(), address, u64::rand(rng)).unwrap();
+        Solution::new(partial_solution, u64::rand(rng))
+    }
 
-    /// Returns the solutions for the given number of solutions.
-    pub(crate) fn sample_solutions_with_count(
-        num_solutions: usize,
-        rng: &mut TestRng,
-    ) -> PuzzleSolutions<CurrentNetwork> {
-        // Sample a new solutions.
-        let mut solutions = vec![];
-        for _ in 0..num_solutions {
-            let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-            let address = Address::try_from(private_key).unwrap();
-
-            let partial_solution = PartialSolution::new(rng.r#gen(), address, u64::rand(rng)).unwrap();
-            let solution = Solution::new(partial_solution, u64::rand(rng));
-            solutions.push(solution);
-        }
+    /// Generates a given number of solutions.
+    pub fn sample_solutions_with_count(num_solutions: usize, rng: &mut TestRng) -> PuzzleSolutions<CurrentNetwork> {
+        let solutions = (0..num_solutions).map(|_| sample_solution(rng)).collect();
         PuzzleSolutions::new(solutions).unwrap()
     }
 
+    // Test that empty puzzle solutions are rejected
     #[test]
     fn test_new_is_not_empty() {
         // Ensure the solutions are not empty.
         assert!(PuzzleSolutions::<CurrentNetwork>::new(vec![]).is_err());
+    }
+
+    #[test]
+    fn test_duplicate_solutions_in_puzzle() {
+        let mut rng = TestRng::default();
+
+        // Create a solution and try to use it twice
+        let solution = sample_solution(&mut rng);
+        let duplicate_solution = solution;
+
+        let result = PuzzleSolutions::new(vec![solution, duplicate_solution]);
+        assert!(result.is_err(), "Duplicate solutions in puzzle solutions should be rejected");
     }
 
     #[test]

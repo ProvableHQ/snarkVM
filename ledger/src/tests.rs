@@ -72,11 +72,11 @@ fn extract_transmissions(
 }
 
 /// Helper to build chains with custom structures for testing
-struct TestChainBuilder {
+pub struct TestChainBuilder {
     /// The keys of all validators.
     private_keys: Vec<PrivateKey<CurrentNetwork>>,
 
-    ledger: Ledger<CurrentNetwork, LedgerType>,
+    pub ledger: Ledger<CurrentNetwork, LedgerType>,
 
     last_block_round: u64,
 
