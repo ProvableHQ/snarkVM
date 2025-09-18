@@ -651,7 +651,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let result = match verification {
             Ok(()) => match self.block_store().contains_state_root(&fee.global_state_root()) {
                 Ok(true) => Ok(()),
-                Ok(false) => bail!("Fee verification failed: global state root not found"),
+                Ok(false) => bail!("Fee verification failed: global state root not found"), // NOTE: review dependent codebases for this error message before changing it.
                 Err(error) => bail!("Fee verification failed: {error}"),
             },
             Err(error) => bail!("Fee verification failed: {error}"),
