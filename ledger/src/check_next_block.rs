@@ -120,13 +120,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     fn check_block_content_inner<R: CryptoRng + Rng>(&self, block: &Block<N>, rng: &mut R) -> Result<()> {
         let latest_block = self.latest_block();
 
-        // Ensure the solutions do not already exist.
-        for solution_id in block.solutions().solution_ids() {
-            if self.contains_solution_id(solution_id)? {
-                bail!("Solution ID {solution_id} already exists in the ledger");
-            }
-        }
-
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
