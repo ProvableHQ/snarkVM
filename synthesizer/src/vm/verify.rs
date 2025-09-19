@@ -456,8 +456,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // If the `CONSENSUS_VERSION` is greater than or equal to `V9`, then verify that:
         //   - the program checksum is present in the deployment
         //   - the program owner is present in the deployment
-        // If the `CONSENSUS_VERSION` is less than `V10`, then verify that:
+        // If the `CONSENSUS_VERSION` is less than `V11`, then verify that:
         //   - the program does not use the external struct syntax `some_program.aleo/StructT`
+        //   - the program's mappings do not use non-existent structs.
         if consensus_version < ConsensusVersion::V8 {
             ensure!(
                 deployment.edition().is_zero(),
