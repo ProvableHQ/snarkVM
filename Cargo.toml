@@ -24,6 +24,12 @@ license = "Apache-2.0"
 edition = "2024"
 rust-version = "1.88.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
 
+[package.metadata.cargo-semver-checks.lints]
+workspace = true
+# We ignore removed features as `cli` is now missing
+# TODO remove this exception on the next release
+feature_missing = "allow"
+
 [workspace]
 members = [
   "algorithms",
