@@ -797,7 +797,7 @@ jobs:
 
   check-cargo-semver-checks:
     executor: rust-docker
-    resource_class: << pipeline.parameters.large >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - checkout
       - setup_environment:
