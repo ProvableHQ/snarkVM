@@ -20,7 +20,7 @@ use crate::{
     RegistersSigner,
     RegistersTrait,
     StackTrait,
-    types_structurally_equivalent,
+    types_equivalent,
 };
 use console::{
     network::prelude::*,
@@ -668,7 +668,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                     // Ensure the plaintext type matches the member type.
                     RegisterType::Plaintext(plaintext_type) => {
                         ensure!(
-                            types_structurally_equivalent(stack, member_type, stack, plaintext_type,)?,
+                            types_equivalent(stack, member_type, stack, plaintext_type,)?,
                             "Struct '{struct_name}' member type mismatch: expected '{member_type}', found '{plaintext_type}'"
                         )
                     }
@@ -739,7 +739,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         // Ensure the plaintext type matches the member type.
                         RegisterType::Plaintext(plaintext_type) => {
                             ensure!(
-                                types_structurally_equivalent(
+                                types_equivalent(
                                     stack,
                                     plaintext_type,
                                     stack,

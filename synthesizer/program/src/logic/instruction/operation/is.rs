@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait, register_types_structurally_equivalent};
+use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait, register_types_equivalent};
 use console::{
     network::prelude::*,
     program::{Literal, LiteralType, Plaintext, PlaintextType, Register, RegisterType, Value},
@@ -139,7 +139,7 @@ impl<N: Network, const VARIANT: u8> IsInstruction<N, VARIANT> {
             bail!("Instruction '{}' expects 2 inputs, found {} inputs", Self::opcode(), input_types.len())
         }
         // Ensure the operands are of the same type.
-        if !register_types_structurally_equivalent(stack, &input_types[0], stack, &input_types[1])? {
+        if !register_types_equivalent(stack, &input_types[0], stack, &input_types[1])? {
             bail!(
                 "Instruction '{}' expects inputs of the same type. Found inputs of type '{}' and '{}'",
                 Self::opcode(),

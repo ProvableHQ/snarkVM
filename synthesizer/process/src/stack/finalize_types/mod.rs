@@ -53,7 +53,7 @@ use snarkvm_synthesizer_program::{
     Remove,
     Set,
     StackTrait,
-    types_structurally_equivalent,
+    types_equivalent,
 };
 
 use indexmap::IndexMap;
@@ -221,7 +221,7 @@ impl<N: Network> FinalizeTypes<N> {
     }
 }
 
-pub fn finalize_types_structurally_equivalent<N: Network>(
+pub fn finalize_types_equivalent<N: Network>(
     stack0: &impl StackTrait<N>,
     type0: &FinalizeType<N>,
     stack1: &impl StackTrait<N>,
@@ -229,7 +229,7 @@ pub fn finalize_types_structurally_equivalent<N: Network>(
 ) -> Result<bool> {
     match (type0, type1) {
         (FinalizeType::Plaintext(plaintext0), FinalizeType::Plaintext(plaintext1)) => {
-            types_structurally_equivalent(stack0, plaintext0, stack1, plaintext1)
+            types_equivalent(stack0, plaintext0, stack1, plaintext1)
         }
         (FinalizeType::Future(future0), FinalizeType::Future(future1)) => Ok(future0 == future1),
         _ => Ok(false),

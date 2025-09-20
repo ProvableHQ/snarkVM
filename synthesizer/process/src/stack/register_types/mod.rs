@@ -46,8 +46,8 @@ use snarkvm_synthesizer_program::{
     Operand,
     Program,
     StackTrait,
-    register_types_structurally_equivalent,
-    types_structurally_equivalent,
+    register_types_equivalent,
+    types_equivalent,
 };
 use snarkvm_utilities::dev_eprintln;
 

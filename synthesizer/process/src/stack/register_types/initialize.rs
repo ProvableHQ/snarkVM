@@ -330,7 +330,7 @@ impl<N: Network> RegisterTypes<N> {
 
         // Ensure the operand type and the output type match.
         let operand_type = self.get_type_from_operand(stack, operand)?;
-        if !register_types_structurally_equivalent(stack, register_type, stack, &operand_type)? {
+        if !register_types_equivalent(stack, register_type, stack, &operand_type)? {
             bail!(
                 "Output '{operand}' does not match the expected output operand type: expected '{}', found '{}'",
                 operand_type,
