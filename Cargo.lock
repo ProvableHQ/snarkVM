@@ -3528,6 +3528,7 @@ dependencies = [
  "aleo-std",
  "anyhow",
  "bincode",
+ "colored 3.0.0",
  "num-bigint",
  "num_cpus",
  "rand 0.8.5",

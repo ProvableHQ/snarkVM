@@ -13,6 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use colored::Colorize;
+
+use std::{borrow::Borrow, fmt::Display};
+
 /// Generates an `io::Error` from the given string.
 pub fn io_error<S: ToString>(err: S) -> std::io::Error {
     std::io::Error::other(err.to_string())
@@ -28,12 +32,11 @@ pub fn into_io_error<E: Into<anyhow::Error>>(err: E) -> std::io::Error {
 
 /// Helper function for `log_error` and `log_warning`.
 #[inline]
-fn flatten_anyhow_error(error: &anyhow::Error) -> String {
-    let mut output = error.to_string();
-    for next in error.chain().skip(1) {
-        output = format!("{output} — {next}");
-    }
-    output
+#[track_caller]
+fn flatten_anyhow_error<E: Borrow<anyhow::Error>>(error: E) -> String {
+    let error = error.borrow();
+    let chain = error.chain().skip(1).map(|next| next.to_string()).collect::<Vec<String>>().join(" — ");
+    format!("{error} {}", format!(" — {chain}").dimmed())
 }
 
 /// Logs `anyhow::Error`'s its error chain using the `ERROR` log level.
@@ -41,7 +44,9 @@ fn flatten_anyhow_error(error: &anyhow::Error) -> String {
 /// This follows the existing convention in the codebase that joins errors using em dashes.
 /// For example, an error "Invalid transaction" with a cause "Proof failed"would be logged
 /// as "Invalid transaction — Proof failed".
-pub fn log_error(error: &anyhow::Error) {
+#[inline]
+#[track_caller]
+pub fn log_error<E: Borrow<anyhow::Error>>(error: E) {
     tracing::error!("{}", flatten_anyhow_error(error));
 }
 
@@ -50,14 +55,19 @@ pub fn log_error(error: &anyhow::Error) {
 /// This follows the existing convention in the codebase that joins errors using em dashes.
 /// For example, an error "Invalid transaction" with a cause "Proof failed"would be logged
 /// as "Invalid transaction — Proof failed".
-pub fn log_warning(error: &anyhow::Error) {
+#[inline]
+#[track_caller]
+pub fn log_warning<E: Borrow<anyhow::Error>>(error: E) {
     tracing::warn!("{}", flatten_anyhow_error(error));
 }
 
 /// Displays an `anyhow::Error`'s main error and its error chain to stderr.
 ///
 /// This can be used to show a "pretty" error to the end user.
-pub fn display_error(error: &anyhow::Error) {
+#[inline]
+#[track_caller]
+pub fn display_error<E: Borrow<anyhow::Error>>(error: E) {
+    let error = error.borrow();
     eprintln!("⚠️ {error}");
     error.chain().skip(1).for_each(|cause| eprintln!("     ↳ {cause}"));
 }
@@ -77,6 +87,36 @@ macro_rules! ensure_equals {
             anyhow::bail!("{}: Was {} but expected {}.", $message, $actual, $expected);
         }
     };
+}
+
+/// A trait that allows turning  an Error into a log message.
+pub trait LoggableError {
+    /// Log the error with the given context and log level `ERROR`.
+    fn log_error<S: Send + Sync + Display + 'static>(self, context: S);
+    /// Log the error with the given context and log level `WARNING`.
+    fn log_warning<S: Send + Sync + Display + 'static>(self, context: S);
+    /// Log the error with the given context and log level `DEBUG`.
+    fn log_debug<S: Send + Sync + Display + 'static>(self, context: S);
+}
+
+impl<E: Into<anyhow::Error>> LoggableError for E {
+    /// Log the error with the given context and log level `ERROR`.
+    fn log_error<S: Send + Sync + Display + 'static>(self, context: S) {
+        let err: anyhow::Error = self.into();
+        log_error(err.context(context));
+    }
+
+    /// Log the error with the given context and log level `WARNING`.
+    fn log_warning<S: Send + Sync + Display + 'static>(self, context: S) {
+        let err: anyhow::Error = self.into();
+        log_warning(err.context(context));
+    }
+
+    /// Log the error with the given context and log level `DEBUG`.
+    fn log_debug<S: Send + Sync + Display + 'static>(self, context: S) {
+        let err: anyhow::Error = self.into();
+        log_warning(err.context(context));
+    }
 }
 
 /// A trait to provide a nicer way to unwarp `anyhow::Result`.
