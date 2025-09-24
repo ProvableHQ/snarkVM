@@ -18,8 +18,10 @@
 use super::*;
 use crate::helpers::{NestedMap, NestedMapRead};
 use console::prelude::{FromBytes, anyhow, cfg_into_iter};
-use snarkvm_utilities::bytes::unchecked_deserialize;
 
+use snarkvm_utilities::bincode;
+
+use anyhow::Context;
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering};
 use tracing::error;
@@ -58,19 +60,29 @@ impl<M: Serialize + DeserializeOwned, K: Serialize + DeserializeOwned, V: Serial
 {
     #[inline]
     fn create_prefixed_map(&self, map: &M) -> Result<Vec<u8>> {
+        // The length of the stored size in bytes.
+        const SIZE_LEN: usize = std::mem::size_of::<u32>();
+
         let mut raw_map = self.context.clone();
 
-        let map_size: u32 = bincode::serialized_size(&map)?.try_into()?;
-        raw_map.extend_from_slice(&map_size.to_le_bytes());
+        // Keep space to write the length later
+        let size_pos = raw_map.len();
+        raw_map.extend_from_slice(&[0; SIZE_LEN]);
 
-        bincode::serialize_into(&mut raw_map, map)?;
+        // Serialize the map.
+        let len = bincode::serialize_into_write(&mut raw_map, map)?;
+        let len = u32::try_from(len).with_context(|| "Serialized size too large")?;
+
+        // Now write the size of the map.
+        raw_map.as_mut_slice()[size_pos..size_pos + SIZE_LEN].copy_from_slice(&len.to_le_bytes());
+
         Ok(raw_map)
     }
 
     #[inline]
     fn create_prefixed_map_key(&self, map: &M, key: &K) -> Result<Vec<u8>> {
         let mut raw_map_key = self.create_prefixed_map(map)?;
-        bincode::serialize_into(&mut raw_map_key, key)?;
+        bincode::serialize_into_write(&mut raw_map_key, key)?;
         Ok(raw_map_key)
     }
 
@@ -466,12 +478,12 @@ impl<
         // Possibly deserialize the entries in parallel.
         Ok(cfg_into_iter!(entries)
             .map(|(k, v)| {
-                let k = unchecked_deserialize::<K>(&k);
-                let v = unchecked_deserialize::<V>(&v);
+                let k = bincode::unchecked_deserialize::<K>(&k);
+                let v = bincode::unchecked_deserialize::<V>(&v);
 
                 k.and_then(|k| v.map(|v| (k, v)))
             })
-            .collect::<Result<_, bincode::Error>>()?)
+            .collect::<Result<_, bincode::DecodeError>>()?)
     }
 
     ///
@@ -521,7 +533,7 @@ impl<
     ///
     fn get_value_confirmed(&'a self, map: &M, key: &K) -> Result<Option<Cow<'a, V>>> {
         match self.get_map_key_raw(map, key) {
-            Ok(Some(bytes)) => Ok(Some(Cow::Owned(unchecked_deserialize(&bytes)?))),
+            Ok(Some(bytes)) => Ok(Some(Cow::Owned(bincode::unchecked_deserialize(&bytes)?))),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
@@ -640,18 +652,18 @@ impl<
             .ok()?;
 
         // Deserialize the map, key, and value.
-        let map = unchecked_deserialize(entry_map)
+        let map = bincode::unchecked_deserialize(entry_map)
             .map_err(|e| {
                 error!("RocksDB NestedIter deserialize(map) error: {e}");
             })
             .ok()?;
-        let key = unchecked_deserialize(entry_key)
+        let key = bincode::unchecked_deserialize(entry_key)
             .map_err(|e| {
                 error!("RocksDB NestedIter deserialize(key) error: {e}");
             })
             .ok()?;
         // Deserialize the value.
-        let value = unchecked_deserialize(value)
+        let value = bincode::unchecked_deserialize(value)
             .map_err(|e| {
                 error!("RocksDB NestedIter deserialize(value) error: {e}");
             })
@@ -707,12 +719,12 @@ impl<
             .ok()?;
 
         // Deserialize the map and key.
-        let map = unchecked_deserialize(entry_map)
+        let map = bincode::unchecked_deserialize(entry_map)
             .map_err(|e| {
                 error!("RocksDB NestedKeys deserialize(map) error: {e}");
             })
             .ok()?;
-        let key = unchecked_deserialize(entry_key)
+        let key = bincode::unchecked_deserialize(entry_key)
             .map_err(|e| {
                 error!("RocksDB NestedKeys deserialize(key) error: {e}");
             })
@@ -747,7 +759,7 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for NestedValues
         let value = self.db_iter.value()?;
 
         // Deserialize the value.
-        let value = unchecked_deserialize(value)
+        let value = bincode::unchecked_deserialize(value)
             .map_err(|e| {
                 error!("RocksDB NestedValues deserialize(value) error: {e}");
             })

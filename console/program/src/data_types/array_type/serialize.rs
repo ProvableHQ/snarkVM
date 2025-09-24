@@ -38,7 +38,9 @@ impl<'de, N: Network> Deserialize<'de> for ArrayType<N> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
     use snarkvm_console_network::MainnetV0;
+    use snarkvm_utilities::bincode;
 
     /// Add test cases here to be checked for serialization.
     pub(crate) const TEST_CASES: &[&str] = &[

@@ -35,7 +35,7 @@ workspace = true
 [dependencies.snarkvm-ledger-puzzle]
 workspace = true
 
-[dev-dependencies.bincode]
+[dev-dependencies.snarkvm-utilities]
 workspace = true
 
 [dev-dependencies.serde_json]

@@ -20,6 +20,9 @@ workspace = true
 [dependencies.snarkvm-console-types-scalar]
 workspace = true
 
+[dependencies.snarkvm-utilities]
+workspace = true
+
 [dev-dependencies.bincode]
 workspace = true
 

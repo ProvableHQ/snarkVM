@@ -39,6 +39,8 @@ impl<'de, N: Network> Deserialize<'de> for Signature<N> {
 mod tests {
     use super::*;
 
+    use snarkvm_utilities::bincode;
+
     const ITERATIONS: u64 = 1000;
 
     #[test]

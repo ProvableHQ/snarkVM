@@ -18,7 +18,7 @@
 use crate::helpers::{NestedMap, NestedMapRead};
 use console::network::prelude::*;
 
-use snarkvm_utilities::bytes::unchecked_deserialize;
+use snarkvm_utilities::bincode;
 
 use core::hash::Hash;
 #[cfg(feature = "locktick")]
@@ -338,7 +338,7 @@ impl<
             .into_iter()
             .map(|k| {
                 // Deserialize 'k'.
-                let key: K = unchecked_deserialize(&k).unwrap();
+                let key: K = bincode::unchecked_deserialize(&k).unwrap();
                 // Concatenate 'm' and 'k' with a 0-byte separator.
                 let mk = to_map_key(&m, &k);
                 // Return the key-value pair.
@@ -466,11 +466,11 @@ impl<
                 // Acquire the read lock on 'map_inner'.
                 let map_inner = self.map_inner.read();
                 // Deserialize 'map'.
-                let m = unchecked_deserialize(&map).unwrap();
+                let m = bincode::unchecked_deserialize(&map).unwrap();
                 // Return an iterator over each key.
                 keys.into_iter().map(move |k| {
                     // Deserialize 'k'.
-                    let key = unchecked_deserialize(&k).unwrap();
+                    let key = bincode::unchecked_deserialize(&k).unwrap();
                     // Concatenate 'm' and 'k' with a 0-byte separator.
                     let mk = to_map_key(&map, &k);
                     // Return the map-key-value triple.
@@ -492,9 +492,9 @@ impl<
             .into_iter()
             .flat_map(|(map, keys)| {
                 // Deserialize 'map'.
-                let m: M = unchecked_deserialize(&map).unwrap();
+                let m: M = bincode::unchecked_deserialize(&map).unwrap();
                 // Return an iterator over each key.
-                keys.into_iter().map(move |k| (Cow::Owned(m), Cow::Owned(unchecked_deserialize(&k).unwrap())))
+                keys.into_iter().map(move |k| (Cow::Owned(m), Cow::Owned(bincode::unchecked_deserialize(&k).unwrap())))
             })
             .collect_vec()
             .into_iter()

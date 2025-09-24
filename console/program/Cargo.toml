@@ -53,6 +53,3 @@ workspace = true
 [dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
-
-[dev-dependencies.bincode]
-workspace = true

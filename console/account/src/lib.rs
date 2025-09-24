@@ -50,7 +50,9 @@ pub use view_key::*;
 #[cfg(test)]
 mod tests {
     use crate::{Address, ComputeKey, PrivateKey, Signature, ViewKey};
+
     use snarkvm_console_network::{MainnetV0, prelude::*};
+    use snarkvm_utilities::bincode;
 
     type CurrentNetwork = MainnetV0;
 

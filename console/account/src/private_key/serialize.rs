@@ -42,7 +42,9 @@ impl<'de, N: Network> Deserialize<'de> for PrivateKey<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use snarkvm_console_network::MainnetV0;
+    use snarkvm_utilities::bincode;
 
     type CurrentNetwork = MainnetV0;
 

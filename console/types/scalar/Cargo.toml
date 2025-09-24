@@ -21,7 +21,7 @@ workspace = true
 workspace = true
 features = [ "derive" ]
 
-[dev-dependencies.bincode]
+[dev-dependencies.snarkvm-utilities]
 workspace = true
 
 [dev-dependencies.serde_json]

@@ -20,6 +20,9 @@ workspace = true
 [dependencies.snarkvm-console-types-group]
 workspace = true
 
+[dependencies.snarkvm-utilities]
+workspace = true
+
 [dev-dependencies.bincode]
 workspace = true
 

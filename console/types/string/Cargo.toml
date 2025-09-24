@@ -20,7 +20,7 @@ workspace = true
 [dependencies.snarkvm-console-types-integers]
 workspace = true
 
-[dev-dependencies.bincode]
+[dependencies.snarkvm-utilities]
 workspace = true
 
 [dev-dependencies.serde_json]

@@ -56,7 +56,7 @@ optional = true
 workspace = true
 features = [ "preserve_order" ]
 
-[dev-dependencies.bincode]
+[dev-dependencies.snarkvm-utilities]
 workspace = true
 
 [dev-dependencies.snarkvm-ledger-narwhal-subdag]

@@ -19,7 +19,10 @@ pub enum SerializationError {
     AnyhowError(#[from] anyhow::Error),
     /// During serialization with bincode, we encountered a serialization issue
     #[error(transparent)]
-    BincodeError(#[from] bincode::Error),
+    BincodeEncodeError(#[from] bincode::error::EncodeError),
+    /// During serialization with bincode, we encountered a serialization issue
+    #[error(transparent)]
+    BincodeDecodeError(#[from] bincode::error::DecodeError),
     /// During serialization we could not serialize to the right sized int
     #[error(transparent)]
     IntError(#[from] std::num::TryFromIntError),

@@ -45,8 +45,11 @@ impl<'de, N: Network> Deserialize<'de> for PuzzleSolutions<N> {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+
     use crate::PartialSolution;
+
     use console::account::{Address, PrivateKey};
+    use snarkvm_utilities::bincode;
 
     type CurrentNetwork = console::network::MainnetV0;
 

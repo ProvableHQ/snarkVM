@@ -63,7 +63,9 @@ impl<'de, N: Network> Deserialize<'de> for PartialSolution<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use console::{account::PrivateKey, network::MainnetV0};
+    use snarkvm_utilities::bincode;
 
     type CurrentNetwork = MainnetV0;
 

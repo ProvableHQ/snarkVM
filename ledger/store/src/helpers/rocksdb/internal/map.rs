@@ -18,7 +18,7 @@
 use super::*;
 use crate::helpers::{Map, MapRead};
 
-use snarkvm_utilities::bytes::unchecked_deserialize;
+use snarkvm_utilities::bincode;
 
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use indexmap::IndexMap;
@@ -351,7 +351,7 @@ impl<
         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
     {
         match self.get_raw(key) {
-            Ok(Some(bytes)) => Ok(Some(Cow::Owned(unchecked_deserialize(&bytes)?))),
+            Ok(Some(bytes)) => Ok(Some(Cow::Owned(bincode::unchecked_deserialize(&bytes)?))),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
@@ -443,12 +443,12 @@ impl<
         let (key, value) = self.db_iter.item()?;
 
         // Deserialize the key and value.
-        let key = unchecked_deserialize(&key[PREFIX_LEN..])
+        let key = bincode::unchecked_deserialize(&key[PREFIX_LEN..])
             .map_err(|e| {
                 error!("RocksDB Iter deserialize(key) error: {e}");
             })
             .ok()?;
-        let value = unchecked_deserialize(value)
+        let value = bincode::unchecked_deserialize(value)
             .map_err(|e| {
                 error!("RocksDB Iter deserialize(value) error: {e}");
             })
@@ -481,7 +481,7 @@ impl<'a, K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + Deserialize
         }
 
         // Deserialize the key.
-        let key = unchecked_deserialize(&self.db_iter.key()?[PREFIX_LEN..])
+        let key = bincode::unchecked_deserialize(&self.db_iter.key()?[PREFIX_LEN..])
             .map_err(|e| {
                 error!("RocksDB Keys deserialize(key) error: {e}");
             })
@@ -514,7 +514,7 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
         }
 
         // Deserialize the value.
-        let value = unchecked_deserialize(self.db_iter.value()?)
+        let value = bincode::unchecked_deserialize(self.db_iter.value()?)
             .map_err(|e| {
                 error!("RocksDB Values deserialize(value) error: {e}");
             })
@@ -535,7 +535,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> DataMap<K
     {
         let mut raw_key: SmallVec<[u8; 64]> = SmallVec::new();
         raw_key.extend_from_slice(&self.context);
-        bincode::serialize_into(&mut raw_key, &key)?;
+        bincode::serialize_into_write(&mut raw_key, &key)?;
         Ok(raw_key)
     }
 

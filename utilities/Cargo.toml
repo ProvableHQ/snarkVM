@@ -36,6 +36,7 @@ workspace = true
 
 [dependencies.bincode]
 workspace = true
+features = [ "std", "alloc", "serde" ]
 
 [dependencies.num_cpus]
 version = "1"

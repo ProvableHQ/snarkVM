@@ -51,9 +51,6 @@ workspace = true
 [dependencies.anyhow]
 workspace = true
 
-[dependencies.bincode]
-workspace = true
-
 [dependencies.indexmap]
 workspace = true
 features = [ "serde", "rayon" ]
@@ -91,6 +88,9 @@ features = [ "test", "default" ]
 workspace = true
 
 [dev-dependencies.rand]
+workspace = true
+
+[dev-dependencies.snarkvm-utilities]
 workspace = true
 
 [dev-dependencies.snarkvm-ledger-puzzle-epoch]

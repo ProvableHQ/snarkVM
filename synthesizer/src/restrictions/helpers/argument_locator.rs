@@ -131,6 +131,8 @@ impl<'de> Deserialize<'de> for ArgumentLocator {
 mod tests {
     use super::*;
 
+    use snarkvm_utilities::bincode;
+
     const ITERATIONS: usize = 1000;
 
     pub(crate) fn sample_argument_locator<R: Rng + CryptoRng>(rng: &mut R) -> ArgumentLocator {

@@ -73,9 +73,6 @@ workspace = true
 [dependencies.anyhow]
 workspace = true
 
-[dependencies.bincode]
-workspace = true
-
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]

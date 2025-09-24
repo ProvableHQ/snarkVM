@@ -51,7 +51,7 @@ features = [ "preserve_order" ]
 workspace = true
 optional = true
 
-[dev-dependencies.bincode]
+[dev-dependencies.snarkvm-utilities]
 workspace = true
 
 [dev-dependencies.snarkvm-ledger-narwhal-batch-header]

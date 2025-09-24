@@ -33,7 +33,9 @@ impl<'de, N: Network> Deserialize<'de> for GraphKey<N> {
 mod tests {
     use super::*;
     use crate::PrivateKey;
+
     use snarkvm_console_network::MainnetV0;
+    use snarkvm_utilities::bincode;
 
     type CurrentNetwork = MainnetV0;
 

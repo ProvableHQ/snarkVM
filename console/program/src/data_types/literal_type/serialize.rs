@@ -39,6 +39,8 @@ impl<'de> Deserialize<'de> for LiteralType {
 mod tests {
     use super::*;
 
+    use snarkvm_utilities::bincode;
+
     /// Add test cases here to be checked for serialization.
     const TEST_CASES: &[&str] = &[
         "address",

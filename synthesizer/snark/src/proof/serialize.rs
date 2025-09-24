@@ -39,6 +39,8 @@ impl<'de, N: Network> Deserialize<'de> for Proof<N> {
 mod tests {
     use super::*;
 
+    use snarkvm_utilities::bincode;
+
     #[test]
     fn test_serde_json() -> Result<()> {
         // Sample the proof.

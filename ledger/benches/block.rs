@@ -18,6 +18,7 @@ extern crate criterion;
 
 use snarkvm_console::{account::PrivateKey, network::MainnetV0, prelude::*};
 use snarkvm_ledger::test_helpers::{TestChainBuilder, sample_genesis_block};
+use snarkvm_utilities::bincode;
 
 use criterion::Criterion;
 

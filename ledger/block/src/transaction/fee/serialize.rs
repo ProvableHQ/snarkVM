@@ -58,6 +58,8 @@ impl<'de, N: Network> Deserialize<'de> for Fee<N> {
 mod tests {
     use super::*;
 
+    use snarkvm_utilities::bincode;
+
     #[test]
     fn test_serde_json() -> Result<()> {
         let rng = &mut TestRng::default();

@@ -63,8 +63,10 @@ impl<'de, N: Network> Deserialize<'de> for Solutions<N> {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+
     use console::account::{Address, PrivateKey};
     use snarkvm_ledger_puzzle::{PartialSolution, Solution};
+    use snarkvm_utilities::bincode;
 
     type CurrentNetwork = console::network::MainnetV0;
 

@@ -34,6 +34,7 @@ mod varuna {
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
     use snarkvm_utilities::{
         ToBytes,
+        bincode,
         rand::{TestRng, Uniform},
     };
 
@@ -353,6 +354,7 @@ mod varuna_hiding {
     use snarkvm_utilities::{
         FromBytes,
         ToBytes,
+        bincode,
         rand::{TestRng, Uniform},
     };
 

@@ -58,7 +58,9 @@ impl<'de, N: Network> Deserialize<'de> for Record<N, Ciphertext<N>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use snarkvm_console_network::MainnetV0;
+    use snarkvm_utilities::bincode;
 
     type CurrentNetwork = MainnetV0;
 

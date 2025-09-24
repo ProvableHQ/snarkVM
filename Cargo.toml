@@ -431,7 +431,8 @@ version = "1.0.73"
 features = ["backtrace"]
 
 [workspace.dependencies.bincode]
-version = "1.3.3"
+version = "2"
+default-features = false
 
 [workspace.dependencies.bytes]
 version = "1"

@@ -27,15 +27,15 @@ version = "0.5"
 workspace = true
 features = [ "derive" ]
 
-[dev-dependencies.bincode]
-workspace = true
-
 [dev-dependencies.criterion]
 workspace = true
 
 [dev-dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
+
+[dev-dependencies.snarkvm-utilities]
+workspace = true
 
 [features]
 default = [

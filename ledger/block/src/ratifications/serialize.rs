@@ -67,7 +67,9 @@ impl<'de, N: Network> Deserialize<'de> for Ratifications<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use console::network::MainnetV0;
+    use snarkvm_utilities::bincode;
 
     type CurrentNetwork = MainnetV0;
 

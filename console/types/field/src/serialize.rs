@@ -38,7 +38,9 @@ impl<'de, E: Environment> Deserialize<'de> for Field<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use snarkvm_console_network_environment::Console;
+    use snarkvm_utilities::bincode;
 
     type CurrentEnvironment = Console;
 

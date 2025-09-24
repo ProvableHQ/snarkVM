@@ -69,6 +69,8 @@ mod tests {
     use super::*;
     use console::prelude::TestRng;
 
+    use snarkvm_utilities::bincode;
+
     fn check_serde_json<
         T: Serialize + for<'a> Deserialize<'a> + Debug + Display + PartialEq + Eq + FromStr + ToBytes + FromBytes,
     >(

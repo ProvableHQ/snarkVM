@@ -18,7 +18,7 @@
 use crate::helpers::{Map, MapRead};
 use console::network::prelude::*;
 
-use snarkvm_utilities::bytes::unchecked_deserialize;
+use snarkvm_utilities::bincode;
 
 use indexmap::IndexMap;
 
@@ -122,7 +122,7 @@ impl<
             }
             // Otherwise, remove the key-value pair directly from the map.
             false => {
-                self.map.write().remove(&bincode::serialize(&key)?);
+                self.map.write().remove(&bincode::serialize(key)?);
             }
         }
 
@@ -318,7 +318,7 @@ impl<
         K: Borrow<Q>,
         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
     {
-        Ok(self.map.read().get(&bincode::serialize(key)?).cloned().map(Cow::Owned))
+        Ok(self.map.read().get(&bincode::serialize(&key)?).cloned().map(Cow::Owned))
     }
 
     ///
@@ -352,7 +352,7 @@ impl<
     }
 
     ///
-    /// Returns an iterator visiting each key-value pair in the map.
+    ///  Returns an iterator visiting each key-value pair in the map.
     ///
     fn iter_confirmed(&'a self) -> Self::Iterator {
         // Note: The 'unwrap' is safe here, because the keys are defined by us.
@@ -360,7 +360,7 @@ impl<
             .read()
             .clone()
             .into_iter()
-            .map(|(k, v)| (Cow::Owned(unchecked_deserialize(&k).unwrap()), Cow::Owned(v)))
+            .map(|(k, v)| (Cow::Owned(bincode::unchecked_deserialize(&k).unwrap()), Cow::Owned(v)))
     }
 
     ///
@@ -368,7 +368,7 @@ impl<
     ///
     fn keys_confirmed(&'a self) -> Self::Keys {
         // Note: The 'unwrap' is safe here, because the keys are defined by us.
-        self.map.read().clone().into_keys().map(|k| Cow::Owned(unchecked_deserialize(&k).unwrap()))
+        self.map.read().clone().into_keys().map(|k| Cow::Owned(bincode::unchecked_deserialize(&k).unwrap()))
     }
 
     ///

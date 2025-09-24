@@ -50,6 +50,9 @@ mod print;
 pub mod rand;
 pub use self::rand::*;
 
+/// Wrapper around `bincode` that ensures we use the correct configuration.
+pub mod bincode;
+
 pub mod serialize;
 pub use serialize::*;
 

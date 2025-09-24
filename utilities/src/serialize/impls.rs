@@ -17,8 +17,6 @@ use std::io::{Read, Write};
 
 use crate::{FromBytes, SerializationError, ToBytes, serialize::traits::*};
 
-use bincode::Options;
-
 use std::{borrow::Cow, collections::BTreeMap, marker::PhantomData, rc::Rc, sync::Arc};
 
 impl Valid for bool {
@@ -53,7 +51,9 @@ impl CanonicalDeserialize for bool {
 impl CanonicalSerialize for String {
     #[inline]
     fn serialize_with_mode<W: Write>(&self, mut writer: W, _compress: Compress) -> Result<(), SerializationError> {
-        Ok(bincode::serialize_into(&mut writer, self)?)
+        let _config = crate::bincode::config();
+
+        crate::bincode::serialize_into_write(&mut writer, self).map(|_| ()).map_err(|err| err.into())
     }
 
     #[inline]
@@ -80,15 +80,13 @@ impl Valid for String {
 impl CanonicalDeserialize for String {
     #[inline]
     fn deserialize_with_mode<R: Read>(
-        reader: R,
+        mut reader: R,
         _compress: Compress,
         _validate: Validate,
     ) -> Result<Self, SerializationError> {
-        Ok(bincode::DefaultOptions::new()
-            .with_fixint_encoding() // this option is for compatibility with the defaults
-            .allow_trailing_bytes() // so is this
-            .with_limit(10 * 1024)  // a limit to guard against OOMs
-            .deserialize_from(reader)?)
+        let config = crate::bincode::config().with_limit::<10240>(); // a limit to guard against OOMs
+
+        bincode::serde::decode_from_std_read(&mut reader, config).map_err(|err| err.into())
     }
 }
 

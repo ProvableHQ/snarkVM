@@ -24,6 +24,7 @@ use snarkvm_fields::{
     traits::{FftParameters, FieldParameters},
 };
 use snarkvm_utilities::{
+    bincode,
     rand::TestRng,
     serialize::{CanonicalDeserialize, Flags, SWFlags},
 };

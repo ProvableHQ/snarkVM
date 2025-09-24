@@ -11,6 +11,9 @@ edition = "2024"
 [dependencies.snarkvm-console-network-environment]
 workspace = true
 
+[dependencies.snarkvm-utilities]
+workspace = true
+
 [dev-dependencies.bincode]
 workspace = true
 

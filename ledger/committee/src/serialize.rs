@@ -63,6 +63,8 @@ impl<'de, N: Network> Deserialize<'de> for Committee<N> {
 mod tests {
     use super::*;
 
+    use snarkvm_utilities::bincode;
+
     fn check_serde_json<
         T: Serialize + for<'a> Deserialize<'a> + Debug + Display + PartialEq + Eq + FromStr + ToBytes + FromBytes,
     >(

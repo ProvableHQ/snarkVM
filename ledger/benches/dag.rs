@@ -15,7 +15,7 @@
 
 use snarkvm_console::prelude::*;
 use snarkvm_ledger::narwhal::subdag::test_helpers::sample_subdag;
-use snarkvm_utilities::bytes::unchecked_deserialize;
+use snarkvm_utilities::bincode;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
@@ -62,7 +62,7 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
         });
 
         c.bench_function(&format!("{name}::unchecked_deserialize (bincode)"), |b| {
-            b.iter(|| unchecked_deserialize::<T>(&buffer).unwrap())
+            b.iter(|| bincode::unchecked_deserialize::<T>(&buffer).unwrap())
         });
     }
 

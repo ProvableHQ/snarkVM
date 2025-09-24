@@ -38,8 +38,10 @@ impl<'de, N: Network> Deserialize<'de> for ProgramCore<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::Program;
     use console::network::MainnetV0;
+    use snarkvm_utilities::bincode;
 
     type CurrentNetwork = MainnetV0;
 
