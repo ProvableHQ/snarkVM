@@ -71,9 +71,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             expected_height += 1;
         }
 
-        // Ensure solution IDs are unique
-        self.check_block_solution_ids(block, pending_blocks)?;
-
         // Ensure the certificates in the block subdag have met quorum requirements.
         self.check_block_subdag_quorum(block)?;
 
@@ -109,6 +106,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     fn check_block_content_inner<R: CryptoRng + Rng>(&self, block: &Block<N>, rng: &mut R) -> Result<()> {
         let latest_block = self.latest_block();
+
+        // Ensure solution IDs are unique
+        self.check_block_solution_ids(block, &[])?;
 
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
