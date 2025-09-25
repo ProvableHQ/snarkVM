@@ -32,10 +32,9 @@ pub struct ConsensusDB<N: Network> {
     block_store: BlockStore<N, BlockDB<N>>,
 }
 
-#[rustfmt::skip]
 impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {
-    type FinalizeStorage = FinalizeDB<N>;
     type BlockStorage = BlockDB<N>;
+    type FinalizeStorage = FinalizeDB<N>;
     type TransactionStorage = TransactionDB<N>;
     type TransitionStorage = TransitionDB<N>;
 
@@ -45,10 +44,7 @@ impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {
         let finalize_store = FinalizeStore::<N, FinalizeDB<N>>::open(storage.clone())?;
         let block_store = BlockStore::<N, BlockDB<N>>::open(storage)?;
 
-        Ok(Self {
-            finalize_store,
-            block_store,
-        })
+        Ok(Self { finalize_store, block_store })
     }
 
     /// Initializes the consensus storage with the block cache enabled.
@@ -57,10 +53,7 @@ impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {
         let finalize_store = FinalizeStore::<N, FinalizeDB<N>>::open(storage.clone())?;
         let block_store = BlockStore::<N, BlockDB<N>>::open_with_cache(storage)?;
 
-        Ok(Self {
-            finalize_store,
-            block_store,
-        })
+        Ok(Self { finalize_store, block_store })
     }
 
     /// Returns the finalize store.

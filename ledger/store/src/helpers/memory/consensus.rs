@@ -32,10 +32,9 @@ pub struct ConsensusMemory<N: Network> {
     block_store: BlockStore<N, BlockMemory<N>>,
 }
 
-#[rustfmt::skip]
 impl<N: Network> ConsensusStorage<N> for ConsensusMemory<N> {
-    type FinalizeStorage = FinalizeMemory<N>;
     type BlockStorage = BlockMemory<N>;
+    type FinalizeStorage = FinalizeMemory<N>;
     type TransactionStorage = TransactionMemory<N>;
     type TransitionStorage = TransitionMemory<N>;
 
@@ -47,10 +46,7 @@ impl<N: Network> ConsensusStorage<N> for ConsensusMemory<N> {
         // Initialize the block store.
         let block_store = BlockStore::<N, BlockMemory<N>>::open(storage)?;
         // Return the consensus storage.
-        Ok(Self {
-            finalize_store,
-            block_store,
-        })
+        Ok(Self { finalize_store, block_store })
     }
 
     /// Initializes the consensus storage with the block cache enabled.
