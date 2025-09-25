@@ -65,12 +65,12 @@ import external_struct_parent.aleo;
 
 program child.aleo;
 
-struct T:
+struct S:
     x as field;
 
-struct OuterT:
+struct Outer:
     x as field;
-    s as T;
+    s as S;
 
 struct Outer2:
     s as external_struct_parent.aleo/S;
@@ -81,15 +81,15 @@ function make_s:
 
 function make_t:
     call external_struct_parent.aleo/make_s into r0;
-    output r0 as T.public;
+    output r0 as S.public;
 
 function call_make_outer:
     call external_struct_parent.aleo/make_outer 3field into r0;
-    output r0 as OuterT.public;
+    output r0 as Outer.public;
 
 function call_make_array:
     call external_struct_parent.aleo/make_array 4field into r0;
-    output r0 as [T; 2u32].public;
+    output r0 as [S; 2u32].public;
 
 function pass_s:
     cast 1field into r0 as external_struct_parent.aleo/S;
@@ -97,7 +97,7 @@ function pass_s:
     output r1 as field.public;
 
 function pass_t:
-    cast 2field into r0 as T;
+    cast 2field into r0 as S;
     call external_struct_parent.aleo/accept_s r0 into r1;
     output r1 as field.public;
 

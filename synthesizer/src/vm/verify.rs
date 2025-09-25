@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use console::program::PlaintextType;
-
 use super::*;
 
 /// Ensures the given iterator has no duplicate elements, and that the ledger
@@ -458,6 +456,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         //   - the program owner is present in the deployment
         // If the `CONSENSUS_VERSION` is less than `V11`, then verify that:
         //   - the program does not use the external struct syntax `some_program.aleo/StructT`
+        // If the `CONSENSUS_VERSION` is greater than or equal to `V11`, then verify that:
         //   - the program's mappings do not use non-existent structs.
         if consensus_version < ConsensusVersion::V8 {
             ensure!(
@@ -501,41 +500,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         if consensus_version >= ConsensusVersion::V11 {
-            for mapping in deployment.program().mappings().values() {
-                // These calls make sure structs exist.
-                self.plaintext_exists(mapping.key().plaintext_type(), deployment.program())?;
-                self.plaintext_exists(mapping.value().plaintext_type(), deployment.program())?;
-            }
+            self.process.read().mapping_types_exist(deployment.program())?;
         }
 
         Ok(())
-    }
-
-    // If `type_` is a struct or an array containing a struct, ensure the struct type exists.
-    fn plaintext_exists(&self, type_: &PlaintextType<N>, program: &Program<N>) -> Result<()> {
-        match type_ {
-            PlaintextType::Literal(..) => Ok(()),
-            PlaintextType::Struct(struct_name) => {
-                // Retrieve the struct from the program.
-                ensure!(
-                    program.get_struct(struct_name).is_ok(),
-                    "Struct '{struct_name}' in '{}' is not defined.",
-                    program.id()
-                );
-                Ok(())
-            }
-            PlaintextType::ExternalStruct(locator) => {
-                let stack = self.process.read().get_stack(locator.program_id())?;
-                ensure!(
-                    stack.program().get_struct(locator.resource()).is_ok(),
-                    "Struct '{}' in '{}' is not defined.",
-                    locator.resource(),
-                    stack.program().id(),
-                );
-                Ok(())
-            }
-            PlaintextType::Array(array_type) => self.plaintext_exists(array_type.base_element_type(), program),
-        }
     }
 }
 

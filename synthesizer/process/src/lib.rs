@@ -51,6 +51,7 @@ use console::{
         Literal,
         Locator,
         Plaintext,
+        PlaintextType,
         ProgramID,
         Record,
         Request,
@@ -180,6 +181,42 @@ impl<N: Network> Process<N> {
             } else {
                 self.stacks.write().shift_remove(&program_id);
             }
+        }
+    }
+
+    /// Ensure that the types referred to in this program's mappings exist.
+    pub fn mapping_types_exist(&self, program: &Program<N>) -> Result<()> {
+        for mapping in program.mappings().values() {
+            self.plaintext_exists(mapping.key().plaintext_type(), program)?;
+            self.plaintext_exists(mapping.value().plaintext_type(), program)?;
+        }
+        Ok(())
+    }
+
+    // If `type_` is a struct or an array containing a struct, ensure the struct type exists.
+    fn plaintext_exists(&self, type_: &PlaintextType<N>, program: &Program<N>) -> Result<()> {
+        match type_ {
+            PlaintextType::Literal(..) => Ok(()),
+            PlaintextType::Struct(struct_name) => {
+                // Retrieve the struct from the program.
+                ensure!(
+                    program.get_struct(struct_name).is_ok(),
+                    "Struct '{struct_name}' in '{}' is not defined.",
+                    program.id()
+                );
+                Ok(())
+            }
+            PlaintextType::ExternalStruct(locator) => {
+                let stack = self.get_stack(locator.program_id())?;
+                ensure!(
+                    stack.program().get_struct(locator.resource()).is_ok(),
+                    "Struct '{}' in '{}' is not defined.",
+                    locator.resource(),
+                    stack.program().id(),
+                );
+                Ok(())
+            }
+            PlaintextType::Array(array_type) => self.plaintext_exists(array_type.base_element_type(), program),
         }
     }
 }
