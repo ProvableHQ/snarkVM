@@ -23,7 +23,7 @@ impl<N: Network> FromStr for GraphKey<N> {
     /// Reads in an account graph key from a base58 string.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Encode the string into base58.
-        let data = bs58::decode(s).into_vec().map_err(|err| anyhow!("{:?}", err))?;
+        let data = bs58::decode(s).into_vec().map_err(|err| anyhow!("{err:?}"))?;
         if data.len() != 41 {
             bail!("Invalid account graph key length: found {}, expected 41", data.len())
         } else if data[0..9] != GRAPH_KEY_PREFIX {

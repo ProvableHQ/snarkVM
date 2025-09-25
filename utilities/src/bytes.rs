@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use std::{
+    cell::Cell,
     fmt,
     io::{Read, Result as IoResult, Write},
     marker::PhantomData,
@@ -27,6 +28,21 @@ use serde::{
     ser::{self, SerializeTuple},
 };
 use smol_str::SmolStr;
+
+thread_local! {
+    static UNCHECKED_DESERIALIZE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Performs a bincode deserialization without any checks of the data.
+///
+/// Important: This should only be used when deserializing from local storage.
+#[inline(always)]
+pub fn unchecked_deserialize<T: de::DeserializeOwned>(data: &[u8]) -> Result<T, bincode::Error> {
+    UNCHECKED_DESERIALIZE.set(true);
+    let result = bincode::deserialize(data);
+    UNCHECKED_DESERIALIZE.set(false);
+    result
+}
 
 /// Takes as input a sequence of structs, and converts them to a series of little-endian bytes.
 /// All traits that implement `ToBytes` can be automatically converted to bytes in this manner.
@@ -78,8 +94,39 @@ pub trait FromBytes {
     {
         Ok(Self::read_le(bytes)?)
     }
+
+    /// Same behavior as `Self::from_bytes_le` but avoids costly checks.
+    /// This shall only be called when deserializing from a trusted source, such as local storage.
+    ///
+    /// Returns `Self` from a byte array in little-endian order.
+    fn from_bytes_le_unchecked(bytes: &[u8]) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self::read_le_unchecked(bytes)?)
+    }
+
+    /// Same behavior as [`Self::read_le`] but avoids costly checks.
+    /// This shall only be called when deserializing from a trusted source, such as local storage.
+    ///
+    /// The default implementation simply calls [`Self::read_le`].
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
+        Self::read_le(reader)
+    }
+
+    /// Helper function that deserializes either unchecked or checked based on the given boolean flag.
+    fn read_le_with_unchecked<R: Read>(reader: R, unchecked: bool) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
+        if unchecked { Self::read_le_unchecked(reader) } else { Self::read_le(reader) }
+    }
 }
 
+/// Helper struct to serialize an object.
 pub struct ToBytesSerializer<T: ToBytes>(PhantomData<T>);
 
 impl<T: ToBytes> ToBytesSerializer<T> {
@@ -162,6 +209,22 @@ impl<'de, T: FromBytes> FromBytesDeserializer<T> {
                 true => FromBytes::read_le(&buffer[..size_a]).map_err(de::Error::custom),
                 false => Err(error),
             },
+        }
+    }
+}
+
+pub struct FromBytesUncheckedDeserializer<T: FromBytes>(PhantomData<T>);
+
+impl<'de, T: FromBytes> FromBytesUncheckedDeserializer<T> {
+    /// Deserializes a dynamically-sized byte array.
+    pub fn deserialize_with_size_encoding<D: Deserializer<'de>>(deserializer: D, name: &str) -> Result<T, D::Error> {
+        let mut buffer = Vec::with_capacity(32);
+        deserializer.deserialize_bytes(FromBytesVisitor::new(&mut buffer, name))?;
+
+        if UNCHECKED_DESERIALIZE.get() {
+            FromBytes::read_le_unchecked(&*buffer).map_err(de::Error::custom)
+        } else {
+            FromBytes::read_le(&*buffer).map_err(de::Error::custom)
         }
     }
 }

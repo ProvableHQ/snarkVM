@@ -350,8 +350,7 @@ impl<N: Network> Stack<N> {
         // Check that the constructor cost does not exceed the maximum.
         ensure!(
             constructor_cost <= transaction_spend_limit,
-            "Constructor has a cost '{constructor_cost}' which exceeds the transaction spend limit '{}'",
-            transaction_spend_limit
+            "Constructor has a cost '{constructor_cost}' which exceeds the transaction spend limit '{transaction_spend_limit}'"
         );
 
         // Check that the functions are valid.

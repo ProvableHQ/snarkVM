@@ -150,6 +150,11 @@ impl<N: Network> Subdag<N> {
         // Ensure the leader certificate is an even round.
         Ok(Self { subdag })
     }
+
+    /// Initializes a new subdag.
+    pub fn from_unchecked(subdag: BTreeMap<u64, IndexSet<BatchCertificate<N>>>) -> Self {
+        Self { subdag }
+    }
 }
 
 impl<N: Network> Subdag<N> {
@@ -240,6 +245,8 @@ pub mod test_helpers {
     use super::*;
     use console::{network::MainnetV0, prelude::TestRng};
 
+    use snarkvm_ledger_narwhal_batch_certificate::test_helpers::*;
+
     use indexmap::{IndexSet, indexset};
 
     type CurrentNetwork = MainnetV0;
@@ -266,11 +273,7 @@ pub mod test_helpers {
         // Process the earliest round.
         let mut previous_certificate_ids = IndexSet::new();
         for _ in 0..AVAILABILITY_THRESHOLD {
-            let certificate =
-                snarkvm_ledger_narwhal_batch_certificate::test_helpers::sample_batch_certificate_for_round(
-                    starting_round,
-                    rng,
-                );
+            let certificate = sample_batch_certificate_for_round(starting_round, rng);
             previous_certificate_ids.insert(certificate.id());
             subdag.entry(starting_round).or_default().insert(certificate);
         }
@@ -278,19 +281,21 @@ pub mod test_helpers {
         // Process the middle round.
         let mut previous_certificate_ids_2 = IndexSet::new();
         for _ in 0..QUORUM_THRESHOLD {
-            let certificate =
-                snarkvm_ledger_narwhal_batch_certificate::test_helpers::sample_batch_certificate_for_round_with_previous_certificate_ids(starting_round + 1, previous_certificate_ids.clone(), rng);
+            let certificate = sample_batch_certificate_for_round_with_previous_certificate_ids(
+                starting_round + 1,
+                previous_certificate_ids.clone(),
+                rng,
+            );
             previous_certificate_ids_2.insert(certificate.id());
             subdag.entry(starting_round + 1).or_default().insert(certificate);
         }
 
         // Process the latest round.
-        let certificate =
-            snarkvm_ledger_narwhal_batch_certificate::test_helpers::sample_batch_certificate_for_round_with_previous_certificate_ids(
-                starting_round + 2,
-                previous_certificate_ids_2,
-                rng,
-            );
+        let certificate = sample_batch_certificate_for_round_with_previous_certificate_ids(
+            starting_round + 2,
+            previous_certificate_ids_2,
+            rng,
+        );
         subdag.insert(starting_round + 2, indexset![certificate]);
 
         // Return the subdag.

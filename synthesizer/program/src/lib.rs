@@ -563,7 +563,7 @@ impl<N: Network> ProgramCore<N> {
                 PlaintextType::Struct(member_identifier) => {
                     // Ensure the member struct name exists in the program.
                     if !self.structs.contains_key(member_identifier) {
-                        bail!("'{member_identifier}' in struct '{}' is not defined.", struct_name)
+                        bail!("'{member_identifier}' in struct '{struct_name}' is not defined.")
                     }
                 }
                 PlaintextType::ExternalStruct(locator) => {
@@ -599,11 +599,11 @@ impl<N: Network> ProgramCore<N> {
 
         // Add the struct name to the identifiers.
         if self.components.insert(ProgramLabel::Identifier(struct_name), ProgramDefinition::Struct).is_some() {
-            bail!("'{}' already exists in the program.", struct_name)
+            bail!("'{struct_name}' already exists in the program.")
         }
         // Add the struct to the program.
         if self.structs.insert(struct_name, struct_).is_some() {
-            bail!("'{}' already exists in the program.", struct_name)
+            bail!("'{struct_name}' already exists in the program.")
         }
         Ok(())
     }
@@ -917,7 +917,7 @@ impl<N: Network> ProgramCore<N> {
             if let Some(CallOperator::Locator(locator)) = instruction.call_operator() {
                 // Check if the locator is restricted.
                 if locator.to_string() == "credits.aleo/upgrade" {
-                    bail!("External call to restricted locator '{}'", locator)
+                    bail!("External call to restricted locator '{locator}'")
                 }
             }
             Ok(())

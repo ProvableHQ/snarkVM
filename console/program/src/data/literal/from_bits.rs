@@ -49,7 +49,7 @@ impl<N: Network> Literal<N> {
                     false => bail!("String literal exceeds maximum length of {} bytes.", N::MAX_STRING_BYTES),
                 }
             }
-            17.. => bail!("Failed to initialize literal variant {} from bits (LE)", variant),
+            17.. => bail!("Failed to initialize literal variant {variant} from bits (LE)"),
         };
         Ok(literal)
     }
@@ -87,7 +87,7 @@ impl<N: Network> Literal<N> {
                     false => bail!("String literal exceeds maximum length of {} bytes.", N::MAX_STRING_BYTES),
                 }
             }
-            17.. => bail!("Failed to initialize literal variant {} from bits (BE)", variant),
+            17.. => bail!("Failed to initialize literal variant {variant} from bits (BE)"),
         };
         Ok(literal)
     }

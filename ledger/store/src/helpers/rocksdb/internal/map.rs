@@ -18,6 +18,8 @@
 use super::*;
 use crate::helpers::{Map, MapRead};
 
+use snarkvm_utilities::bytes::unchecked_deserialize;
+
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use indexmap::IndexMap;
 use smallvec::SmallVec;
@@ -349,7 +351,7 @@ impl<
         Q: PartialEq + Eq + Hash + Serialize + ?Sized,
     {
         match self.get_raw(key) {
-            Ok(Some(bytes)) => Ok(Some(Cow::Owned(bincode::deserialize(&bytes)?))),
+            Ok(Some(bytes)) => Ok(Some(Cow::Owned(unchecked_deserialize(&bytes)?))),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
@@ -441,12 +443,12 @@ impl<
         let (key, value) = self.db_iter.item()?;
 
         // Deserialize the key and value.
-        let key = bincode::deserialize(&key[PREFIX_LEN..])
+        let key = unchecked_deserialize(&key[PREFIX_LEN..])
             .map_err(|e| {
                 error!("RocksDB Iter deserialize(key) error: {e}");
             })
             .ok()?;
-        let value = bincode::deserialize(value)
+        let value = unchecked_deserialize(value)
             .map_err(|e| {
                 error!("RocksDB Iter deserialize(value) error: {e}");
             })
@@ -479,7 +481,7 @@ impl<'a, K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + Deserialize
         }
 
         // Deserialize the key.
-        let key = bincode::deserialize(&self.db_iter.key()?[PREFIX_LEN..])
+        let key = unchecked_deserialize(&self.db_iter.key()?[PREFIX_LEN..])
             .map_err(|e| {
                 error!("RocksDB Keys deserialize(key) error: {e}");
             })
@@ -512,7 +514,7 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
         }
 
         // Deserialize the value.
-        let value = bincode::deserialize(self.db_iter.value()?)
+        let value = unchecked_deserialize(self.db_iter.value()?)
             .map_err(|e| {
                 error!("RocksDB Values deserialize(value) error: {e}");
             })

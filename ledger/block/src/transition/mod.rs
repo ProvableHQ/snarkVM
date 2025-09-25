@@ -145,7 +145,7 @@ impl<N: Network> Transition<N> {
                         Ok(Input::Record(*serial_number, *tag))
                     }
                     (InputID::ExternalRecord(input_hash), Value::Record(..)) => Ok(Input::ExternalRecord(*input_hash)),
-                    _ => bail!("Malformed request input: {:?}, {input}", input_id),
+                    _ => bail!("Malformed request input: {input_id:?}, {input}"),
                 }
             })
             .collect::<Result<Vec<_>>>()?;

@@ -40,7 +40,7 @@ impl<N: Network> VerifierFile<N> {
         // Ensure the directory path exists.
         ensure!(directory.exists(), "The build directory does not exist: '{}'", directory.display());
         // Ensure the function name is valid.
-        ensure!(!Program::is_reserved_keyword(function_name), "Function name is invalid (reserved): {}", function_name);
+        ensure!(!Program::is_reserved_keyword(function_name), "Function name is invalid (reserved): {function_name}");
 
         // Create the candidate verifier file.
         let verifier_file = Self { function_name: *function_name, verifying_key };

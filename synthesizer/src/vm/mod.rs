@@ -86,6 +86,7 @@ use snarkvm_synthesizer_snark::VerifyingKey;
 use snarkvm_utilities::try_vm_runtime;
 
 use aleo_std::prelude::{finish, lap, timer};
+use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Either;
 #[cfg(feature = "locktick")]
@@ -297,35 +298,54 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
-    /// Returns a new genesis block for a beacon chain.
+    /// Returns a new genesis block for a beacon chain with the default size (four validators).
     pub fn genesis_beacon<R: Rng + CryptoRng>(&self, private_key: &PrivateKey<N>, rng: &mut R) -> Result<Block<N>> {
-        let private_keys = [*private_key, PrivateKey::new(rng)?, PrivateKey::new(rng)?, PrivateKey::new(rng)?];
+        self.genesis_beacon_with_size(private_key, 4, rng)
+    }
+
+    /// Returns a new genesis block for a beacon chain.
+    pub fn genesis_beacon_with_size<R: Rng + CryptoRng>(
+        &self,
+        private_key: &PrivateKey<N>,
+        num_validators: usize,
+        rng: &mut R,
+    ) -> Result<Block<N>> {
+        ensure!(num_validators >= 4, "Need at least four validators");
+
+        let mut private_keys = vec![*private_key];
+        for _ in 1..num_validators {
+            private_keys.push(PrivateKey::new(rng)?);
+        }
 
         // Construct the committee members.
-        let members = indexmap::indexmap! {
-            Address::try_from(private_keys[0])? => (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-            Address::try_from(private_keys[1])? => (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-            Address::try_from(private_keys[2])? => (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-            Address::try_from(private_keys[3])? => (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-        };
+        let mut members = IndexMap::with_capacity(num_validators);
+        for key in &private_keys {
+            let addr = Address::try_from(key)?;
+            members.insert(addr, (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8));
+        }
+
         // Construct the committee.
         let committee = Committee::<N>::new_genesis(members)?;
 
         // Compute the remaining supply.
-        let remaining_supply = N::STARTING_SUPPLY - (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE * 4);
+        let remaining_supply = N::STARTING_SUPPLY
+            .checked_sub(snarkvm_ledger_committee::MIN_VALIDATOR_STAKE * (num_validators as u64))
+            .with_context(|| "Not enough starting supply for this many validators")?;
+
         // Construct the public balances.
-        let public_balances = indexmap::indexmap! {
-            Address::try_from(private_keys[0])? => remaining_supply / 4,
-            Address::try_from(private_keys[1])? => remaining_supply / 4,
-            Address::try_from(private_keys[2])? => remaining_supply / 4,
-            Address::try_from(private_keys[3])? => remaining_supply / 4,
-        };
+        let mut public_balances = IndexMap::with_capacity(4);
+        for key in &private_keys {
+            let addr = Address::try_from(key)?;
+            public_balances.insert(addr, remaining_supply / num_validators as u64);
+        }
+
         // Construct the bonded balances.
         let bonded_balances = committee
             .members()
             .iter()
             .map(|(address, (amount, _, _))| (*address, (*address, *address, *amount)))
             .collect();
+
         // Return the genesis block.
         self.genesis_quorum(private_key, committee, public_balances, bonded_balances, rng)
     }

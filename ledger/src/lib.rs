@@ -29,13 +29,13 @@ pub use snarkvm_ledger_puzzle as puzzle;
 pub use snarkvm_ledger_query as query;
 pub use snarkvm_ledger_store as store;
 
-pub use crate::block::*;
-
-#[cfg(feature = "test-helpers")]
-pub use snarkvm_ledger_test_helpers;
+#[cfg(any(test, feature = "test-helpers"))]
+pub mod test_helpers;
 
 mod helpers;
 pub use helpers::*;
+
+pub use crate::block::*;
 
 mod advance;
 mod check_next_block;
@@ -467,73 +467,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test_helpers {
-    use crate::Ledger;
-    use aleo_std::StorageMode;
-    use console::{
-        account::{Address, PrivateKey, ViewKey},
-        network::MainnetV0,
-        prelude::*,
-    };
-    use snarkvm_circuit::network::AleoV0;
-    use snarkvm_ledger_store::ConsensusStore;
-    use snarkvm_synthesizer::vm::VM;
-
-    pub(crate) type CurrentNetwork = MainnetV0;
-    pub(crate) type CurrentAleo = AleoV0;
-
-    #[cfg(not(feature = "rocks"))]
-    pub(crate) type CurrentLedger =
-        Ledger<CurrentNetwork, snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>>;
-    #[cfg(feature = "rocks")]
-    pub(crate) type CurrentLedger =
-        Ledger<CurrentNetwork, snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>>;
-
-    #[cfg(not(feature = "rocks"))]
-    pub(crate) type CurrentConsensusStore =
-        ConsensusStore<CurrentNetwork, snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>>;
-    #[cfg(feature = "rocks")]
-    pub(crate) type CurrentConsensusStore =
-        ConsensusStore<CurrentNetwork, snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>>;
-
-    #[cfg(not(feature = "rocks"))]
-    pub(crate) type CurrentConsensusStorage = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
-    #[cfg(feature = "rocks")]
-    pub(crate) type CurrentConsensusStorage = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
-
-    #[allow(dead_code)]
-    pub(crate) struct TestEnv {
-        pub ledger: CurrentLedger,
-        pub private_key: PrivateKey<CurrentNetwork>,
-        pub view_key: ViewKey<CurrentNetwork>,
-        pub address: Address<CurrentNetwork>,
-    }
-
-    pub(crate) fn sample_test_env(rng: &mut (impl Rng + CryptoRng)) -> TestEnv {
-        // Sample the genesis private key.
-        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-        let view_key = ViewKey::try_from(&private_key).unwrap();
-        let address = Address::try_from(&private_key).unwrap();
-        // Sample the ledger.
-        let ledger = sample_ledger(private_key, rng);
-        // Return the test environment.
-        TestEnv { ledger, private_key, view_key, address }
-    }
-
-    pub(crate) fn sample_ledger(
-        private_key: PrivateKey<CurrentNetwork>,
-        rng: &mut (impl Rng + CryptoRng),
-    ) -> CurrentLedger {
-        // Initialize the store.
-        let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
-        // Create a genesis block.
-        let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
-        // Initialize the ledger with the genesis block.
-        let ledger = CurrentLedger::load(genesis.clone(), StorageMode::new_test(None)).unwrap();
-        // Ensure the genesis block is correct.
-        assert_eq!(genesis, ledger.get_block(0).unwrap());
-        // Return the ledger.
-        ledger
-    }
+pub mod prelude {
+    pub use crate::{Ledger, authority, block, block::*, committee, helpers::*, narwhal, puzzle, query, store};
 }

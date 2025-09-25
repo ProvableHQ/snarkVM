@@ -17,6 +17,9 @@
 
 use crate::helpers::{Map, MapRead};
 use console::network::prelude::*;
+
+use snarkvm_utilities::bytes::unchecked_deserialize;
+
 use indexmap::IndexMap;
 
 use core::{borrow::Borrow, hash::Hash};
@@ -353,7 +356,11 @@ impl<
     ///
     fn iter_confirmed(&'a self) -> Self::Iterator {
         // Note: The 'unwrap' is safe here, because the keys are defined by us.
-        self.map.read().clone().into_iter().map(|(k, v)| (Cow::Owned(bincode::deserialize(&k).unwrap()), Cow::Owned(v)))
+        self.map
+            .read()
+            .clone()
+            .into_iter()
+            .map(|(k, v)| (Cow::Owned(unchecked_deserialize(&k).unwrap()), Cow::Owned(v)))
     }
 
     ///
@@ -361,7 +368,7 @@ impl<
     ///
     fn keys_confirmed(&'a self) -> Self::Keys {
         // Note: The 'unwrap' is safe here, because the keys are defined by us.
-        self.map.read().clone().into_keys().map(|k| Cow::Owned(bincode::deserialize(&k).unwrap()))
+        self.map.read().clone().into_keys().map(|k| Cow::Owned(unchecked_deserialize(&k).unwrap()))
     }
 
     ///

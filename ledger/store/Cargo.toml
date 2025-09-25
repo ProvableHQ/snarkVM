@@ -64,6 +64,9 @@ workspace = true
 [dependencies.snarkvm-synthesizer-snark]
 workspace = true
 
+[dependencies.snarkvm-utilities]
+workspace = true
+
 [dependencies.aleo-std-storage]
 workspace = true
 
@@ -111,6 +114,9 @@ workspace = true
 optional = true
 
 [dev-dependencies.aleo-std]
+workspace = true
+
+[dev-dependencies.snarkvm-ledger-block]
 workspace = true
 
 [dev-dependencies.snarkvm-ledger-committee]

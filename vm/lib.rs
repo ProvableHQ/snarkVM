@@ -49,7 +49,7 @@ pub mod prelude {
     #[cfg(feature = "console")]
     pub use crate::console::{account::*, network::prelude::*, program::*};
     #[cfg(feature = "ledger")]
-    pub use crate::ledger::*;
+    pub use crate::ledger::prelude::*;
     #[cfg(feature = "synthesizer")]
     pub use crate::synthesizer::prelude::*;
 }

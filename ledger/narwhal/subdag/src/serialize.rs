@@ -32,14 +32,12 @@ impl<N: Network> Serialize for Subdag<N> {
 impl<'de, N: Network> Deserialize<'de> for Subdag<N> {
     /// Deserializes the subdag from a JSON-string or buffer.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        match deserializer.is_human_readable() {
-            true => {
-                let mut value = serde_json::Value::deserialize(deserializer)?;
+        if deserializer.is_human_readable() {
+            let mut value = serde_json::Value::deserialize(deserializer)?;
 
-                Ok(Self::from(DeserializeExt::take_from_value::<D>(&mut value, "subdag")?)
-                    .map_err(de::Error::custom)?)
-            }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "subdag"),
+            Ok(Self::from(DeserializeExt::take_from_value::<D>(&mut value, "subdag")?).map_err(de::Error::custom)?)
+        } else {
+            FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "subdag")
         }
     }
 }

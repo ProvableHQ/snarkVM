@@ -57,57 +57,56 @@ impl<N: Network> Serialize for Transaction<N> {
 impl<'de, N: Network> Deserialize<'de> for Transaction<N> {
     /// Deserializes the transaction from a JSON-string or buffer.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        match deserializer.is_human_readable() {
-            true => {
-                // Deserialize the transaction into a JSON value.
-                let mut transaction = serde_json::Value::deserialize(deserializer)?;
-                // Retrieve the transaction ID.
-                let id: N::TransactionID = DeserializeExt::take_from_value::<D>(&mut transaction, "id")
-                    .map_err(|err| de::Error::custom(format!("Failed to parse transaction ID: {err}")))?;
+        if deserializer.is_human_readable() {
+            // Deserialize the transaction into a JSON value.
+            let mut transaction = serde_json::Value::deserialize(deserializer)?;
+            // Retrieve the transaction ID.
+            let id: N::TransactionID = DeserializeExt::take_from_value::<D>(&mut transaction, "id")
+                .map_err(|err| de::Error::custom(format!("Failed to parse transaction ID: {err}")))?;
 
-                // Recover the transaction.
-                let transaction = match transaction
-                    .get("type")
-                    .ok_or_else(|| de::Error::custom("The \"type\" field is missing"))?
-                    .as_str()
-                {
-                    Some("deploy") => {
-                        // Retrieve the owner.
-                        let owner = DeserializeExt::take_from_value::<D>(&mut transaction, "owner")?;
-                        // Retrieve the deployment.
-                        let deployment = DeserializeExt::take_from_value::<D>(&mut transaction, "deployment")?;
-                        // Retrieve the fee.
-                        let fee = DeserializeExt::take_from_value::<D>(&mut transaction, "fee")?;
-                        // Construct the transaction.
-                        Transaction::from_deployment(owner, deployment, fee).map_err(de::Error::custom)?
-                    }
-                    Some("execute") => {
-                        // Retrieve the execution.
-                        let execution = DeserializeExt::take_from_value::<D>(&mut transaction, "execution")?;
-                        // Retrieve the fee, if it exists.
-                        let fee = serde_json::from_value(
-                            transaction.get_mut("fee").unwrap_or(&mut serde_json::Value::Null).take(),
-                        )
-                        .map_err(de::Error::custom)?;
-                        // Construct the transaction.
-                        Transaction::from_execution(execution, fee).map_err(de::Error::custom)?
-                    }
-                    Some("fee") => {
-                        // Retrieve the fee.
-                        let fee = DeserializeExt::take_from_value::<D>(&mut transaction, "fee")?;
-                        // Construct the transaction.
-                        Transaction::from_fee(fee).map_err(de::Error::custom)?
-                    }
-                    _ => return Err(de::Error::custom("Invalid transaction type")),
-                };
-
-                // Ensure the transaction ID matches.
-                match id == transaction.id() {
-                    true => Ok(transaction),
-                    false => Err(de::Error::custom(error("Mismatching transaction ID, possible data corruption"))),
+            // Recover the transaction.
+            let transaction = match transaction
+                .get("type")
+                .ok_or_else(|| de::Error::custom("The \"type\" field is missing"))?
+                .as_str()
+            {
+                Some("deploy") => {
+                    // Retrieve the owner.
+                    let owner = DeserializeExt::take_from_value::<D>(&mut transaction, "owner")?;
+                    // Retrieve the deployment.
+                    let deployment = DeserializeExt::take_from_value::<D>(&mut transaction, "deployment")?;
+                    // Retrieve the fee.
+                    let fee = DeserializeExt::take_from_value::<D>(&mut transaction, "fee")?;
+                    // Construct the transaction.
+                    Transaction::from_deployment(owner, deployment, fee).map_err(de::Error::custom)?
                 }
+                Some("execute") => {
+                    // Retrieve the execution.
+                    let execution = DeserializeExt::take_from_value::<D>(&mut transaction, "execution")?;
+                    // Retrieve the fee, if it exists.
+                    let fee = serde_json::from_value(
+                        transaction.get_mut("fee").unwrap_or(&mut serde_json::Value::Null).take(),
+                    )
+                    .map_err(de::Error::custom)?;
+                    // Construct the transaction.
+                    Transaction::from_execution(execution, fee).map_err(de::Error::custom)?
+                }
+                Some("fee") => {
+                    // Retrieve the fee.
+                    let fee = DeserializeExt::take_from_value::<D>(&mut transaction, "fee")?;
+                    // Construct the transaction.
+                    Transaction::from_fee(fee).map_err(de::Error::custom)?
+                }
+                _ => return Err(de::Error::custom("Invalid transaction type")),
+            };
+
+            // Ensure the transaction ID matches.
+            match id == transaction.id() {
+                true => Ok(transaction),
+                false => Err(de::Error::custom(error("Mismatching transaction ID, possible data corruption"))),
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "transaction"),
+        } else {
+            FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "transaction")
         }
     }
 }

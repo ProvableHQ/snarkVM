@@ -81,7 +81,7 @@ impl<N: Network> Record<N, Ciphertext<N>> {
             };
             // Insert the decrypted entry.
             if decrypted_data.insert(*id, entry).is_some() {
-                bail!("Duplicate identifier in record: {}", id);
+                bail!("Duplicate identifier in record: {id}");
             }
             // Increment the index.
             index += num_randomizers;

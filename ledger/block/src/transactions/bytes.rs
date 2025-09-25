@@ -16,9 +16,9 @@
 use super::*;
 
 impl<N: Network> FromBytes for Transactions<N> {
-    /// Reads the transactions from buffer.
+    /// Deserialize either unchecked or checked based on the given boolean flag.
     #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -32,9 +32,23 @@ impl<N: Network> FromBytes for Transactions<N> {
             return Err(error("Failed to read transactions: too many transactions"));
         }
         // Read the transactions.
-        let transactions = (0..num_txs).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
+        let transactions = (0..num_txs)
+            .map(|_| FromBytes::read_le_with_unchecked(&mut reader, unchecked))
+            .collect::<Result<Vec<_>, _>>()?;
         // Return the transactions.
         Ok(Self::from(&transactions))
+    }
+
+    /// Reads the transactions from buffer.
+    #[inline]
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    /// Reads the transactions from the buffer without performing any checks on the data.
+    #[inline]
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 

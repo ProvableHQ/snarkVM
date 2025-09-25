@@ -23,7 +23,7 @@ impl<N: Network> FromStr for PrivateKey<N> {
     /// Reads in an account private key from a base58 string.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Encode the string into base58.
-        let data = bs58::decode(s).into_vec().map_err(|err| anyhow!("{:?}", err))?;
+        let data = bs58::decode(s).into_vec().map_err(|err| anyhow!("{err:?}"))?;
         if data.len() != 43 {
             bail!("Invalid account private key length: found {}, expected 43", data.len())
         } else if data[0..11] != PRIVATE_KEY_PREFIX {

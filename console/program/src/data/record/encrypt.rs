@@ -92,7 +92,7 @@ impl<N: Network> Record<N, Plaintext<N>> {
             };
             // Insert the encrypted entry.
             if encrypted_data.insert(*id, entry).is_some() {
-                bail!("Duplicate identifier in record: {}", id);
+                bail!("Duplicate identifier in record: {id}");
             }
             // Increment the index.
             index += num_randomizers;

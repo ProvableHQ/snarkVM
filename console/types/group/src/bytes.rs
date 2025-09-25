@@ -19,7 +19,7 @@ impl<E: Environment> FromBytes for Group<E> {
     /// Reads the group from a buffer.
     #[inline]
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        Self::from_x_coordinate(FromBytes::read_le(&mut reader)?).map_err(|e| error(e.to_string()))
+        Self::from_x_coordinate(FromBytes::read_le(&mut reader)?).map_err(into_io_error)
     }
 }
 
@@ -51,7 +51,9 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, Group::read_le(&expected_bytes[..])?);
+            assert_eq!(expected, Group::read_le_unchecked(&expected_bytes[..])?);
             assert!(Group::<CurrentEnvironment>::read_le(&expected_bytes[1..]).is_err());
+            assert!(Group::<CurrentEnvironment>::read_le_unchecked(&expected_bytes[1..]).is_err());
         }
         Ok(())
     }

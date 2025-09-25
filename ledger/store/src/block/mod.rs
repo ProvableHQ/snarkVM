@@ -972,7 +972,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         };
 
         // Return the block.
-        Ok(Some(Block::from(
+        Ok(Some(Block::from_unchecked(
+            *block_hash,
             previous_hash,
             header,
             authority,

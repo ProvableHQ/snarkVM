@@ -21,6 +21,12 @@ impl<E: Environment> FromBytes for Address<E> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         Ok(Address::new(FromBytes::read_le(&mut reader)?))
     }
+
+    /// Reads in an account address from a buffer without performing checks on the data.
+    #[inline]
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        Ok(Address::new(FromBytes::read_le_unchecked(&mut reader)?))
+    }
 }
 
 impl<E: Environment> ToBytes for Address<E> {
@@ -50,7 +56,9 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, Address::read_le(&expected_bytes[..])?);
+            assert_eq!(expected, Address::read_le_unchecked(&expected_bytes[..])?);
             assert!(Address::<CurrentEnvironment>::read_le(&expected_bytes[1..]).is_err());
+            assert!(Address::<CurrentEnvironment>::read_le_unchecked(&expected_bytes[1..]).is_err());
         }
         Ok(())
     }

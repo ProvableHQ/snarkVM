@@ -104,13 +104,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 "The given block is not the direct successor of the latest block"
             );
         } else {
+            ensure!(block.height() != 0, "Non-genesis blocks cannot have height 0");
             ensure!(
                 current_block.height() + 1 == block.height(),
                 "The given block is not the direct successor of the latest block"
             );
         }
         // Update the VM.
-        self.vm.add_next_block(block)?;
+        self.vm.add_next_block(block).with_context(|| "Failed to add block to VM")?;
         // Update the current block.
         *current_block = block.clone();
         // Drop the write lock on the current block.

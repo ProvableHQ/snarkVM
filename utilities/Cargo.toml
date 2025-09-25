@@ -52,6 +52,7 @@ workspace = true
 
 [dependencies.serde]
 workspace = true
+features = [ "derive" ]
 
 [dependencies.serde_json]
 workspace = true

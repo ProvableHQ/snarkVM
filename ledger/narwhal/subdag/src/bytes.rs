@@ -15,9 +15,9 @@
 
 use super::*;
 
-impl<N: Network> FromBytes for Subdag<N> {
-    /// Reads the subdag from the buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+impl<N: Network> Subdag<N> {
+    /// Shared functionality between FromBytes and FromBytesUnchecked.
+    fn internal_read_le<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -43,17 +43,28 @@ impl<N: Network> FromBytes for Subdag<N> {
                 return Err(error(format!("Number of certificates ({num_certificates}) exceeds the maximum.",)));
             }
             // Read the certificates.
-            let mut certificates = IndexSet::new();
+            let mut certificates = IndexSet::with_capacity(num_certificates as usize);
             for _ in 0..num_certificates {
-                // Read the certificate.
-                certificates.insert(BatchCertificate::read_le(&mut reader)?);
+                let cert = BatchCertificate::read_le_with_unchecked(&mut reader, unchecked)?;
+                certificates.insert(cert);
             }
             // Insert the round and certificates.
             subdag.insert(round, certificates);
         }
 
         // Return the subdag.
-        Self::from(subdag).map_err(error)
+        if unchecked { Ok(Self::from_unchecked(subdag)) } else { Self::from(subdag).map_err(error) }
+    }
+}
+impl<N: Network> FromBytes for Subdag<N> {
+    /// Reads the subDAG from the given buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::internal_read_le(reader, false)
+    }
+
+    /// Reads the subDAG from the given buffer without performing any checks on the data.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::internal_read_le(reader, true)
     }
 }
 
@@ -92,6 +103,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, Subdag::read_le(&expected_bytes[..]).unwrap());
+            assert_eq!(expected, Subdag::read_le_unchecked(&expected_bytes[..]).unwrap());
         }
     }
 }

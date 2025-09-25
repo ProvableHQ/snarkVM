@@ -168,7 +168,7 @@ impl<N: Network> ConfirmedTransaction<N> {
     /// Returns a new instance of a rejected execute transaction.
     ///
     /// Arguments:
-    /// - `index`: The index of the tranaction within the block.
+    /// - `index`: The index of the transaction within the block.
     /// - `transaction`: The associated fee transaction.
     /// - `rejected`: The rejected execute transaction.
     /// - `finalize_operations`: The finalize operations for the fee transaction.

@@ -591,12 +591,13 @@ pub fn sample_genesis_block_and_transactions(
 }
 
 /// Samples a random genesis block, the transactions from the genesis block, and the genesis private key.
+/// If this function was called before, this returns a cached version.
 pub fn sample_genesis_block_and_components(
     rng: &mut TestRng,
 ) -> (Block<CurrentNetwork>, Transactions<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
     static INSTANCE: OnceLock<(Block<CurrentNetwork>, Transactions<CurrentNetwork>, PrivateKey<CurrentNetwork>)> =
         OnceLock::new();
-    INSTANCE.get_or_init(|| crate::sample_genesis_block_and_components_raw(rng)).clone()
+    INSTANCE.get_or_init(|| crate::sample_genesis_block_and_components_uncached(rng)).clone()
 }
 
 pub fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
@@ -608,7 +609,7 @@ pub fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwor
 }
 
 /// Samples a random genesis block, the transactions from the genesis block, and the genesis private key.
-fn sample_genesis_block_and_components_raw(
+pub fn sample_genesis_block_and_components_uncached(
     rng: &mut TestRng,
 ) -> (Block<CurrentNetwork>, Transactions<CurrentNetwork>, PrivateKey<CurrentNetwork>) {
     // Sample the genesis private key.

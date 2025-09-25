@@ -66,14 +66,14 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v4.0.0-rust-1.88.0-snarkvm-stable-cache
+        default: v4.2.0-rust-1.88.0-snarkvm-stable-cache
     steps:
       - run: set -e
       - run:
           name: Prepare environment variables and install dependencies
           command: |
             echo 'export "RUSTC_WRAPPER"="$CIRCLE_WORKING_DIRECTORY/.bin/sccache"' >> $BASH_ENV
-            echo 'export "SCCACHE_CACHE_SIZE"="200M"' >> $BASH_ENV
+            echo 'export "SCCACHE_CACHE_SIZE"="20000M"' >> $BASH_ENV
 
             # Disable incremental builds so that sccache works as expected
             echo 'export CARGO_INCREMENTAL=0' >> "$BASH_ENV"
@@ -106,13 +106,14 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v4.0.0-rust-1.88.0-snarkvm-stable-cache
+        default: v4.2.0-rust-1.88.0-snarkvm-stable-cache
     steps:
       - run: (sccache -s || true)
       - run: set +e
       - save_cache:
           key: << parameters.cache_key >>
           paths:
+            - /home/circleci/project/target
             - /home/circleci/.cache/sccache
             - /home/circleci/.cargo
             - /home/circleci/.aleo/resources
@@ -134,13 +135,13 @@ commands:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.0.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
+          cache_key: v4.2.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
       - run:
           name: "Run Tests"
           timeout: << parameters.timeout >>
           command: RUST_MIN_STACK=67108864 cargo test --package=<< parameters.workspace_member >> << parameters.flags >>
       - clear_environment:
-          cache_key: v4.0.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
+          cache_key: v4.2.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
 
   install_rust_nightly:
     description: "Install Rust nightly toolchain"
@@ -554,6 +555,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
+          timeout: 20
           workspace_member: snarkvm-parameters
           flags: -- --test-threads=2
 
@@ -727,7 +729,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.0.0-rust-1.88.0-snarkvm-wasm-cache
+          cache_key: v4.2.0-rust-1.88.0-snarkvm-wasm-cache
       - run:
           no_output_timeout: 30m
           command: |
@@ -744,7 +746,7 @@ jobs:
             # Run the tests
             cd wasm && wasm-pack test --node
       - clear_environment:
-          cache_key: v4.0.0-rust-1.88.0-snarkvm-wasm-cache
+          cache_key: v4.2.0-rust-1.88.0-snarkvm-wasm-cache
 
   check-fmt:
     executor: rust-docker
@@ -753,13 +755,13 @@ jobs:
       - checkout
       - install_rust_nightly
       - setup_environment:
-          cache_key: v4.0.0-rust-1.88.0-snarkvm-fmt-cache
+          cache_key: v4.2.0-rust-1.88.0-snarkvm-fmt-cache
       - run:
           name: Check style
           no_output_timeout: 35m
           command: cargo +nightly fmt --all -- --check
       - clear_environment:
-          cache_key: v4.0.0-rust-1.88.0-snarkvm-fmt-cache
+          cache_key: v4.2.0-rust-1.88.0-snarkvm-fmt-cache
 
   check-unused-dependencies:
     executor: rust-docker
@@ -767,7 +769,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.0.0-rust-1.88.0-machete-cache
+          cache_key: v4.2.0-rust-1.88.0-machete-cache
       - run:
           name: Check for unused dependencies
           no_output_timeout: 10m
@@ -775,7 +777,7 @@ jobs:
             cargo install cargo-machete@0.7.0
             cargo machete
       - clear_environment:
-          cache_key: v4.0.0-rust-1.88.0-machete-cache
+          cache_key: v4.2.0-rust-1.88.0-machete-cache
 
   check-cargo-audit:
     executor: rust-docker
@@ -783,7 +785,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.0.0-rust-1.88.0-cargo-audit-cache
+          cache_key: v4.2.0-rust-1.88.0-cargo-audit-cache
       - run:
           name:  Check for security vulnerabilities
           no_output_timeout: 10m
@@ -791,7 +793,24 @@ jobs:
             cargo install cargo-audit@0.21.2 --locked
             cargo audit -D warnings
       - clear_environment:
-          cache_key: v4.0.0-rust-1.88.0-cargo-audit-cache
+          cache_key: v4.2.0-rust-1.88.0-cargo-audit-cache
+
+  check-cargo-semver-checks:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.large >>
+    steps:
+      - checkout
+      - setup_environment:
+          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
+      - run:
+          name: Check for semver violations
+          no_output_timeout: 15m
+          command: |
+            cargo install cargo-semver-checks@0.43.0 --locked
+            BASELINE_REV=eff84712b # UPDATE ME ON NECESSARY BREAKING CHANGES
+            cargo semver-checks --workspace --default-features --baseline-rev $BASELINE_REV
+      - clear_environment:
+          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
 
   check-clippy:
     executor: rust-docker
@@ -799,7 +818,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.0.0-rust-1.88.0-snarkvm-clippy-cache
+          cache_key: v4.2.0-rust-1.88.0-snarkvm-clippy-cache
       - run:
           name: Check Clippy (default features)
           timeout: 20m
@@ -811,7 +830,7 @@ jobs:
           command: |
             cargo clippy --workspace --all-targets --all-features -- -D warnings
       - clear_environment:
-          cache_key: v4.0.0-rust-1.88.0-snarkvm-clippy-cache
+          cache_key: v4.2.0-rust-1.88.0-snarkvm-clippy-cache
 
   check-all-targets:
     executor: rust-docker
@@ -819,13 +838,13 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.0.0-rust-1.88.0-snarkvm-all-targets-cache
+          cache_key: v4.2.0-rust-1.88.0-snarkvm-all-targets-cache
       - run:
           name: Check all targets
           no_output_timeout: 35m
           command: cargo check --release --workspace --all-targets
       - clear_environment:
-          cache_key: v4.0.0-rust-1.88.0-snarkvm-all-targets-cache
+          cache_key: v4.2.0-rust-1.88.0-snarkvm-all-targets-cache
 
   verify-windows:
     executor:
@@ -849,6 +868,7 @@ workflows:
       - check-clippy
       - check-unused-dependencies
       - check-cargo-audit
+      - check-cargo-semver-checks
       - check-all-targets
 
   circuit-workflow:

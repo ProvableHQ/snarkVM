@@ -16,8 +16,8 @@
 use super::*;
 
 impl<N: Network> FromBytes for BatchHeader<N> {
-    /// Reads the batch header from the buffer.
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    /// Read the batch header either with or without checks on the data.
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -55,7 +55,7 @@ impl<N: Network> FromBytes for BatchHeader<N> {
         // Read the number of previous certificate IDs.
         let num_previous_certificate_ids = u16::read_le(&mut reader)?;
         // Ensure the number of previous certificate IDs is within bounds.
-        if num_previous_certificate_ids > N::LATEST_MAX_CERTIFICATES().map_err(error)? {
+        if num_previous_certificate_ids > N::LATEST_MAX_CERTIFICATES().map_err(io_error)? {
             return Err(error(format!(
                 "Number of previous certificate IDs ({num_previous_certificate_ids}) exceeds the maximum.",
             )));
@@ -71,18 +71,42 @@ impl<N: Network> FromBytes for BatchHeader<N> {
             .collect::<Result<IndexSet<_>, _>>()?;
 
         // Read the signature.
-        let signature = Signature::read_le(&mut reader)?;
 
         // Construct the batch.
-        let batch =
+        let batch = if unchecked {
+            let signature = Signature::read_le_unchecked(&mut reader)?;
+            Self::from_unchecked(
+                author,
+                batch_id,
+                round,
+                timestamp,
+                committee_id,
+                transmission_ids,
+                previous_certificate_ids,
+                signature,
+            )
+        } else {
+            let signature = Signature::read_le(&mut reader)?;
             Self::from(author, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, signature)
-                .map_err(error)?;
+                .map_err(io_error)?
+        };
 
         // Return the batch.
         match batch.batch_id == batch_id {
             true => Ok(batch),
             false => Err(error("Invalid batch ID")),
         }
+    }
+
+    /// Reads the batch header from the buffer.
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    /// Reads the batch header from the buffer *without* performing any checks
+    /// for consistency/correctness.
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 
@@ -132,6 +156,7 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
             assert_eq!(expected, BatchHeader::read_le(&expected_bytes[..]).unwrap());
+            assert_eq!(expected, BatchHeader::read_le_unchecked(&expected_bytes[..]).unwrap());
         }
     }
 }

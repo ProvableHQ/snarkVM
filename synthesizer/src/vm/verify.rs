@@ -404,8 +404,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Ensure the transaction spend does not exceed the transaction spend limit.
                         ensure!(
                             transaction_spend <= transaction_spend_limit,
-                            "Transaction '{id}' exceeds the transaction spend limit '{}'",
-                            transaction_spend_limit
+                            "Transaction '{id}' exceeds the transaction spend limit '{transaction_spend_limit}'"
                         );
                         // Ensure the fee is sufficient to cover the cost.
                         if *fee.base_amount()? < cost {
