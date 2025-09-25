@@ -464,7 +464,8 @@ version = "0.14"
 version = "1.4"
 
 [workspace.dependencies.locktick]
-version = "0.3"
+#version = "0.3"
+path = "../locktick"
 
 [workspace.dependencies.lru]
 version = "0.16"

@@ -42,11 +42,21 @@ impl<N: Network> ConsensusStorage<N> for ConsensusDB<N> {
     /// Initializes the consensus storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         let storage = storage.into();
-        // Initialize the finalize store.
         let finalize_store = FinalizeStore::<N, FinalizeDB<N>>::open(storage.clone())?;
-        // Initialize the block store.
         let block_store = BlockStore::<N, BlockDB<N>>::open(storage)?;
-        // Return the consensus storage.
+
+        Ok(Self {
+            finalize_store,
+            block_store,
+        })
+    }
+
+    /// Initializes the consensus storage with the block cache enabled.
+    fn open_with_cache<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        let storage = storage.into();
+        let finalize_store = FinalizeStore::<N, FinalizeDB<N>>::open(storage.clone())?;
+        let block_store = BlockStore::<N, BlockDB<N>>::open_with_cache(storage)?;
+
         Ok(Self {
             finalize_store,
             block_store,

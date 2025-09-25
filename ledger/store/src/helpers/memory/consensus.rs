@@ -53,6 +53,12 @@ impl<N: Network> ConsensusStorage<N> for ConsensusMemory<N> {
         })
     }
 
+    /// Initializes the consensus storage with the block cache enabled.
+    fn open_with_cache<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        // Blocks are already in memory, so no cache is needed.
+        Self::open(storage)
+    }
+
     /// Returns the finalize store.
     fn finalize_store(&self) -> &FinalizeStore<N, Self::FinalizeStorage> {
         &self.finalize_store
