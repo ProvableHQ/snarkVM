@@ -19,7 +19,7 @@ use snarkvm_utilities::ensure_equals;
 
 use std::collections::VecDeque;
 
-use anyhow::{Result, bail, ensure};
+use anyhow::Result;
 
 /// Helper struct for caching the most recent blocks.
 pub(super) struct BlockCache<N: Network> {
@@ -29,12 +29,11 @@ pub(super) struct BlockCache<N: Network> {
 }
 
 impl<N: Network> BlockCache<N> {
-    /// Cache the 10 most recent blocks.
+    /// The maximum size of the cache in blocks.
     pub(super) const BLOCK_CACHE_SIZE: u32 = 10;
 
     /// Initialize the cache with the given blocks.
     pub fn new(blocks: Vec<Block<N>>) -> Result<Self> {
-        ensure!(!blocks.is_empty(), "Block cache cannot be empty");
         Ok(Self { blocks: VecDeque::from(blocks) })
     }
 
@@ -42,15 +41,13 @@ impl<N: Network> BlockCache<N> {
     /// Must be the successor of the last block inserted into the cache.
     #[inline]
     pub fn insert(&mut self, block: Block<N>) -> Result<()> {
-        let Some(prev) = self.blocks.back() else {
-            bail!("Block cache cannot be empty");
-        };
-
-        ensure_equals!(
-            prev.height() + 1,
-            block.height(),
-            "Block is not the successor of the last block inserted into the cache"
-        );
+        if let Some(prev) = self.blocks.back() {
+            ensure_equals!(
+                prev.height() + 1,
+                block.height(),
+                "Block is not the successor of the last block inserted into the cache"
+            );
+        }
 
         self.blocks.push_back(block.clone());
         if self.blocks.len() > (Self::BLOCK_CACHE_SIZE as usize) {
@@ -64,7 +61,10 @@ impl<N: Network> BlockCache<N> {
     #[inline]
     pub fn get_block(&self, block_height: u32) -> Option<&Block<N>> {
         // Is the block height in the range of the cache?
-        let first_block = self.blocks.front().expect("Block cache cannot be empty");
+        let Some(first_block) = self.blocks.front() else {
+            // Cache is empty
+            return None;
+        };
 
         let offset = block_height.checked_sub(first_block.height())?;
         self.blocks.get(offset as usize)

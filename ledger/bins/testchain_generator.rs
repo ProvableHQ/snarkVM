@@ -88,8 +88,8 @@ fn main() -> Result<()> {
         let batch_size = (num_blocks - blocks.len()).min(100);
         let mut batch = builder.generate_blocks(batch_size, &mut rng).with_context(|| "Failed to generate blocks")?;
 
-        println!("Generated {pos} of {num_blocks} blocks");
         pos += batch_size;
+        println!("Generated {pos} of {num_blocks} blocks");
         blocks.append(&mut batch);
     }
 

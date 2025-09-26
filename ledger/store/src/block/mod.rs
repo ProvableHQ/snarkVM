@@ -1019,8 +1019,13 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
         let mut initial_cache = Vec::new();
         let cache_end_height = u32::try_from(tree.number_of_leaves())?;
-        let cache_start_height = cache_end_height - BlockCache::<N>::BLOCK_CACHE_SIZE + 1;
+        let cache_start_height = cache_end_height.saturating_sub(BlockCache::<N>::BLOCK_CACHE_SIZE - 1);
         for height in cache_start_height..=cache_end_height {
+            // Ignore genesis block.
+            if height == 0 {
+                continue;
+            }
+
             // Get the hash for the next block to add to the cache.
             let hash = storage
                 .id_map()
@@ -1073,6 +1078,11 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
         // Return success.
         Ok(())
+    }
+
+    /// Returns the size of the block cache (or `None` if the block cache is not enabled).
+    pub fn cache_size(&self) -> Option<u32> {
+        if self.block_cache.is_none() { None } else { Some(BlockCache::<N>::BLOCK_CACHE_SIZE) }
     }
 
     /// Reverts the Merkle tree to its shape before the insertion of the last 'n' blocks.

@@ -337,6 +337,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.puzzle()
     }
 
+    /// Returns the size of the block cache (or `None` if the block cache is not enabled).
+    pub fn block_cache_size(&self) -> Option<u32> {
+        self.vm.block_store().cache_size()
+    }
+
     /// Returns the provers and the number of solutions they have submitted for the current epoch.
     pub fn epoch_provers(&self) -> Arc<RwLock<IndexMap<Address<N>, u32>>> {
         self.epoch_provers_cache.clone()
