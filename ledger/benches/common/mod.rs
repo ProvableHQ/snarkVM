@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_ledger::{Block, Ledger};
+use snarkvm_ledger::{Block, Ledger, LedgerOptions};
 use snarkvm_ledger_store::{BlockStorage, BlockStore, ConsensusStorage};
 use snarkvm_utilities::{FromBytes, PrettyUnwrap};
 
@@ -28,8 +28,14 @@ pub type CurrentNetwork = snarkvm_console::network::MainnetV0;
 #[allow(dead_code)]
 pub fn create_storage<S: BlockStorage<CurrentNetwork>>(
     genesis_block: &Block<CurrentNetwork>,
+    enable_cache: bool,
 ) -> BlockStore<CurrentNetwork, S> {
-    let store = BlockStore::<CurrentNetwork, S>::open(StorageMode::new_test(None)).expect("Failed to create storage");
+    let store = if enable_cache {
+        BlockStore::<CurrentNetwork, S>::open_with_cache(StorageMode::new_test(None))
+    } else {
+        BlockStore::<CurrentNetwork, S>::open(StorageMode::new_test(None))
+    }
+    .expect("Failed to create storage");
 
     store.insert(genesis_block).unwrap();
     store
@@ -39,8 +45,12 @@ pub fn create_storage<S: BlockStorage<CurrentNetwork>>(
 #[allow(dead_code)]
 pub fn create_ledger<S: ConsensusStorage<CurrentNetwork>>(
     genesis_block: Block<CurrentNetwork>,
+    enable_cache: bool,
 ) -> Ledger<CurrentNetwork, S> {
-    Ledger::load(genesis_block, StorageMode::new_test(None)).pretty_expect("Failed to create empty test ledger")
+    let opts = if enable_cache { LedgerOptions::default().enable_block_cache() } else { LedgerOptions::default() };
+
+    Ledger::load_with_opts(genesis_block, StorageMode::new_test(None), opts)
+        .pretty_expect("Failed to create empty test ledger")
 }
 
 /// Load blocks, which were generated using `snarkvm-testchain-generator --no-ledger [..]` from the given path.

@@ -45,6 +45,7 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
+use tracing::debug;
 
 pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
 
@@ -142,6 +143,11 @@ impl Database for RocksDB {
         let database = if let Some(db) = databases.get(&db_path) {
             db.clone()
         } else {
+            // Do not log, if we fail to get the current directory for some reason.
+            if let Ok(current_dir) = std::env::current_dir() {
+                debug!("Opening rocksDB at {full_path:?}", full_path = current_dir.join(db_path.clone()));
+            }
+
             // Customize database options.
             let mut options = rocksdb::Options::default();
             options.set_compression_type(rocksdb::DBCompressionType::Lz4);
@@ -169,7 +175,7 @@ impl Database for RocksDB {
                 default_readopts: Default::default(),
             };
 
-            databases.insert(db_path.clone(), db.clone());
+            databases.insert(db_path, db.clone());
 
             db
         };

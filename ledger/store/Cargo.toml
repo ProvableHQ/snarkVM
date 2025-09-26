@@ -111,6 +111,7 @@ optional = true
 
 [dependencies.tracing]
 workspace = true
+features = [ "log" ]
 
 [dev-dependencies.aleo-std]
 workspace = true

@@ -35,6 +35,7 @@ fn bench_ledger_advancement<S: ConsensusStorage<CurrentNetwork>>(
     group: &mut BenchmarkGroup<WallTime>,
     genesis_block: &Block<CurrentNetwork>,
     blocks: &[Block<CurrentNetwork>],
+    enable_cache: bool,
     check_next_block: bool,
     rng: &mut TestRng,
 ) {
@@ -46,7 +47,7 @@ fn bench_ledger_advancement<S: ConsensusStorage<CurrentNetwork>>(
 
     group.bench_function(name, |b| {
         b.iter_custom(|num_ops| {
-            let ledger = create_ledger::<S>(genesis_block.clone());
+            let ledger = create_ledger::<S>(genesis_block.clone(), enable_cache);
             let mut blocks_iter = blocks.iter();
 
             let start = Instant::now();
@@ -69,11 +70,12 @@ fn bench_ledger_checks<S: ConsensusStorage<CurrentNetwork>>(
     group: &mut BenchmarkGroup<WallTime>,
     genesis_block: &Block<CurrentNetwork>,
     blocks: &[Block<CurrentNetwork>],
+    enable_cache: bool,
     rng: &mut TestRng,
 ) {
     group.bench_function(format!("Ledger<{name}>::check_next_block"), |b| {
         b.iter_custom(|num_ops| {
-            let ledger = create_ledger::<S>(genesis_block.clone());
+            let ledger = create_ledger::<S>(genesis_block.clone(), enable_cache);
             let mut blocks_iter = blocks.iter();
 
             // Pre-load the ledger with blocks.
@@ -98,7 +100,7 @@ fn ledger_advance(c: &mut Criterion) {
 
     let (genesis_block, blocks) = load_blocks("test-ledger").pretty_expect("Failed to load blocks from disk");
 
-    let mut rng = TestRng::default();
+    let rng = &mut TestRng::default();
 
     let mut group = c.benchmark_group("ledger_advance");
     group.sample_size(10);
@@ -109,16 +111,27 @@ fn ledger_advance(c: &mut Criterion) {
             &mut group,
             &genesis_block,
             &blocks,
+            false, // disable cache
             check_next_block,
-            &mut rng,
+            rng,
         );
         bench_ledger_advancement::<ConsensusDB<CurrentNetwork>>(
             "BlockDB",
             &mut group,
             &genesis_block,
             &blocks,
+            false, // disable cache
             check_next_block,
-            &mut rng,
+            rng,
+        );
+        bench_ledger_advancement::<ConsensusDB<CurrentNetwork>>(
+            "CachedBlockDB",
+            &mut group,
+            &genesis_block,
+            &blocks,
+            true, // enable cache
+            check_next_block,
+            rng,
         );
     }
 
@@ -127,9 +140,26 @@ fn ledger_advance(c: &mut Criterion) {
         &mut group,
         &genesis_block,
         &blocks,
-        &mut rng,
+        false, // disable cache
+        rng,
     );
-    bench_ledger_checks::<ConsensusDB<CurrentNetwork>>("BlockDB", &mut group, &genesis_block, &blocks, &mut rng);
+    bench_ledger_checks::<ConsensusDB<CurrentNetwork>>(
+        "BlockDB",
+        &mut group,
+        &genesis_block,
+        &blocks,
+        false, // disable cache
+        rng,
+    );
+    bench_ledger_checks::<ConsensusDB<CurrentNetwork>>(
+        "CachedBlockDB",
+        &mut group,
+        &genesis_block,
+        &blocks,
+        true, // enable cache
+        rng,
+    );
+
     group.finish();
 }
 

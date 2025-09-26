@@ -16,6 +16,9 @@
 pub mod confirmed_tx_type;
 pub use confirmed_tx_type::*;
 
+mod cache;
+use cache::BlockCache;
+
 use crate::{
     TransactionStorage,
     TransactionStore,
@@ -45,11 +48,12 @@ use snarkvm_ledger_puzzle::{Solution, SolutionID};
 use snarkvm_synthesizer_program::{FinalizeOperation, Program};
 
 use aleo_std_storage::StorageMode;
-use anyhow::Result;
+use anyhow::{Context, Result};
 #[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
+use locktick::{LockGuard, parking_lot::RwLock};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
+use tracing::debug;
 use std::{borrow::Cow, sync::Arc};
 
 #[cfg(not(feature = "serial"))]
@@ -989,36 +993,71 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String>;
 }
 
-/// The block store.
+/// The `BlockStore` is the user facing API that either uses `BlockMemory` or `BlockDB` as its storae backend.
 #[derive(Clone)]
 pub struct BlockStore<N: Network, B: BlockStorage<N>> {
     /// The block storage.
     storage: B,
     /// The block tree.
     tree: Arc<RwLock<BlockTree<N>>>,
+    /// Cache of the most recent blocks.
+    block_cache: Arc<Option<RwLock<BlockCache<N>>>>,
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
-    /// Initializes the block store.
+    /// Initializes the block storage without a block cache..
     pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
-        // Initialize the block storage.
         let storage = B::open(storage)?;
+        let tree = Self::generate_block_tree(&storage)?;
 
-        // Compute the block tree.
-        let tree = {
-            // Prepare an iterator over the block heights and prepare the leaves of the block tree.
-            let hashes = storage
+        Ok(Self { storage, tree: Arc::new(RwLock::new(tree)), block_cache: Arc::new(None) })
+    }
+
+    /// Initializes the block storage with a cache for the most recent blocks.
+    pub fn open_with_cache<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        let storage = B::open(storage)?;
+        let tree = Self::generate_block_tree(&storage)?;
+
+        let mut initial_cache = Vec::new();
+        let cache_end_height = u32::try_from(tree.number_of_leaves())?;
+        let cache_start_height = cache_end_height.saturating_sub(BlockCache::<N>::BLOCK_CACHE_SIZE);
+
+        for height in cache_start_height..cache_end_height {
+            // Ignore genesis block.
+            if height == 0 {
+                continue;
+            }
+
+            // Get the hash for the next block to add to the cache.
+            let hash = storage
                 .id_map()
-                .iter_confirmed()
-                .sorted_unstable_by(|(h1, _), (h2, _)| h1.cmp(h2))
-                .map(|(_, hash)| hash.to_bits_le())
-                .collect::<Vec<Vec<bool>>>();
-            // Construct the block tree.
-            Arc::new(RwLock::new(N::merkle_tree_bhp(&hashes)?))
-        };
+                .get_confirmed(&height)?
+                .with_context(|| format!("Block {height} exists in tree but not in storage"))?;
 
-        // Return the block store.
-        Ok(Self { storage, tree })
+            initial_cache.push(
+                storage.get_block(&hash)?.with_context(|| format!("Block {hash} exists in tree but not in storage"))?,
+            );
+        }
+
+        let block_cache = RwLock::new(BlockCache::new(initial_cache)?);
+        Ok(Self { storage, tree: Arc::new(RwLock::new(tree)), block_cache: Arc::new(Some(block_cache)) })
+    }
+
+    /// Helper function for [`Self::open`] and [`Self::open_with_cache`].
+    ///
+    /// Builds a merkle tree from the set of all block hashes.
+    fn generate_block_tree(storage: &B) -> Result<BlockTree<N>> {
+        // Prepare an iterator over the block heights and prepare the leaves of the block tree.
+        let hashes = storage
+            .id_map()
+            .iter_confirmed()
+            .sorted_unstable_by(|(h1, _), (h2, _)| h1.cmp(h2))
+            .map(|(_, hash)| hash.to_bits_le())
+            .collect::<Vec<Vec<bool>>>();
+
+        // Construct the block tree.
+        debug!("Found {} blocks on disk", hashes.len());
+        N::merkle_tree_bhp(&hashes)
     }
 
     /// Stores the given block into storage.
@@ -1035,8 +1074,19 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         self.storage.insert((*updated_tree.root()).into(), block)?;
         // Update the block tree.
         *tree = updated_tree;
+        // Add the block to the block cache (unless it is a genesis block).
+        if block.height() != 0
+            && let Some(block_cache) = &*self.block_cache
+        {
+            block_cache.write().insert(block.clone())?;
+        }
         // Return success.
         Ok(())
+    }
+
+    /// Returns the size of the block cache (or `None` if the block cache is not enabled).
+    pub fn cache_size(&self) -> Option<u32> {
+        if self.block_cache.is_none() { None } else { Some(BlockCache::<N>::BLOCK_CACHE_SIZE) }
     }
 
     /// Reverts the Merkle tree to its shape before the insertion of the last 'n' blocks.
@@ -1053,7 +1103,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         Ok(())
     }
 
-    /// Removes the last 'n' blocks from storage.
+    /// Removes the last (most recent) `n`` blocks from storage.
     pub fn remove_last_n(&self, n: u32) -> Result<()> {
         // Ensure 'n' is non-zero.
         ensure!(n > 0, "Cannot remove zero blocks");
@@ -1096,6 +1146,10 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
         // Update the block tree.
         *tree = updated_tree;
+        // Also remove the last n blocks from the cache.
+        if let Some(block_cache) = &*self.block_cache {
+            block_cache.write().remove_last_n(n)?;
+        }
         // Return success.
         Ok(())
     }
@@ -1184,6 +1238,23 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
+    /// Returns the read-locked `BlockCache`.
+    ///
+    /// This may return `None` due to lock contention, even if the cache is enabled.
+    #[inline]
+    #[cfg(feature = "locktick")]
+    fn get_block_cache(&self) -> Option<LockGuard<parking_lot::RwLockReadGuard<'_, BlockCache<N>>>> {
+        // This uses `try_read` to avoid deadlocks or prologned blocking of a thread in rayon: https://github.com/rayon-rs/rayon/issues/1205
+        if let Some(cache) = &*self.block_cache { cache.try_read() } else { None }
+    }
+
+    #[inline]
+    #[cfg(not(feature = "locktick"))]
+    fn get_block_cache(&self) -> Option<parking_lot::RwLockReadGuard<'_, BlockCache<N>>> {
+        // This uses `try_read` to avoid deadlocks or prologned blocking of a thread in rayon: https://github.com/rayon-rs/rayon/issues/1205
+        if let Some(cache) = &*self.block_cache { cache.try_read() } else { None }
+    }
+
     /// Returns the current state root.
     pub fn current_state_root(&self) -> N::StateRoot {
         (*self.tree.read().root()).into()
@@ -1211,11 +1282,23 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns the previous block hash of the given `block height`.
     pub fn get_previous_block_hash(&self, height: u32) -> Result<Option<N::BlockHash>> {
+        if let Some(cache) = self.get_block_cache()
+            && let Some(block) = cache.get_block(height)
+        {
+            return Ok(Some(block.previous_hash()));
+        }
+
         self.storage.get_previous_block_hash(height)
     }
 
     /// Returns the block hash for the given `block height`.
     pub fn get_block_hash(&self, height: u32) -> Result<Option<N::BlockHash>> {
+        if let Some(cache) = self.get_block_cache()
+            && let Some(block) = cache.get_block(height)
+        {
+            return Ok(Some(block.hash()));
+        }
+
         self.storage.get_block_hash(height)
     }
 
@@ -1226,22 +1309,46 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns the block header for the given `block hash`.
     pub fn get_block_header(&self, block_hash: &N::BlockHash) -> Result<Option<Header<N>>> {
-        self.storage.get_block_header(block_hash)
+        if let Some(cache) = self.get_block_cache()
+            && let Some(block) = cache.get_block_by_hash(block_hash)
+        {
+            Ok(Some(*block.header()))
+        } else {
+            self.storage.get_block_header(block_hash)
+        }
     }
 
     /// Returns the block authority for the given `block hash`.
     pub fn get_block_authority(&self, block_hash: &N::BlockHash) -> Result<Option<Authority<N>>> {
-        self.storage.get_block_authority(block_hash)
+        if let Some(cache) = self.get_block_cache()
+            && let Some(block) = cache.get_block_by_hash(block_hash)
+        {
+            Ok(Some(block.authority().clone()))
+        } else {
+            self.storage.get_block_authority(block_hash)
+        }
     }
 
     /// Returns the block ratifications for the given `block hash`.
     pub fn get_block_ratifications(&self, block_hash: &N::BlockHash) -> Result<Option<Ratifications<N>>> {
-        self.storage.get_block_ratifications(block_hash)
+        if let Some(block_cache) = self.get_block_cache()
+            && let Some(block) = block_cache.get_block_by_hash(block_hash)
+        {
+            Ok(Some(block.ratifications().clone()))
+        } else {
+            self.storage.get_block_ratifications(block_hash)
+        }
     }
 
     /// Returns the block solutions for the given `block hash`.
     pub fn get_block_solutions(&self, block_hash: &N::BlockHash) -> Result<Solutions<N>> {
-        self.storage.get_block_solutions(block_hash)
+        if let Some(block_cache) = self.get_block_cache()
+            && let Some(block) = block_cache.get_block_by_hash(block_hash)
+        {
+            Ok(block.solutions().clone())
+        } else {
+            self.storage.get_block_solutions(block_hash)
+        }
     }
 
     /// Returns the prover solution for the given solution ID.

@@ -90,6 +90,33 @@ pub type RecordMap<N> = IndexMap<Field<N>, Record<N, Plaintext<N>>>;
 /// The capacity of the LRU cache holding the recently queried committees.
 const COMMITTEE_CACHE_SIZE: usize = 16;
 
+/// Options
+pub struct LedgerOptions {
+    startup_checks: bool,
+    block_cache: bool,
+}
+
+impl Default for LedgerOptions {
+    /// Creates the default ledger option, with a checked startup and no block cache.
+    fn default() -> Self {
+        Self { startup_checks: false, block_cache: false }
+    }
+}
+
+impl LedgerOptions {
+    /// Disables checks at startup.
+    /// This can increase performance, but is less safe.
+    pub fn disable_startup_checks(self) -> Self {
+        Self { startup_checks: false, block_cache: self.block_cache }
+    }
+
+    /// Enables caching of the most recent blocks.
+    /// This can increase performance, but consumes more memory.
+    pub fn enable_block_cache(self) -> Self {
+        Self { startup_checks: self.startup_checks, block_cache: true }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum RecordsFilter<N: Network> {
     /// Returns all records associated with the account.
@@ -152,43 +179,42 @@ pub struct Ledger<N: Network, C: ConsensusStorage<N>> {
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Loads the ledger from storage.
     pub fn load(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
-        let timer = timer!("Ledger::load");
+        Self::load_with_opts(genesis_block, storage_mode, LedgerOptions::default())
+    }
+
+    /// Loads the ledger from storage, without performing integrity checks.
+    pub fn load_unchecked(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
+        Self::load_with_opts(genesis_block, storage_mode, LedgerOptions::default().disable_startup_checks())
+    }
+
+    pub fn load_with_opts(genesis_block: Block<N>, storage_mode: StorageMode, options: LedgerOptions) -> Result<Self> {
+        let timer = timer!("Ledger::load_with_opts");
 
         // Retrieve the genesis hash.
         let genesis_hash = genesis_block.hash();
-        // Initialize the ledger.
-        let ledger = Self::load_unchecked(genesis_block, storage_mode)?;
 
-        // Ensure the ledger contains the correct genesis block.
-        if !ledger.contains_block_hash(&genesis_hash)? {
-            bail!("Incorrect genesis block (run 'snarkos clean' and try again)")
+        let ledger = Self::initialize(genesis_block, storage_mode, options.block_cache)?;
+        if options.startup_checks {
+            ledger.check_integrity(genesis_hash)?;
         }
-
-        // Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
-        const NUM_BLOCKS: usize = 10;
-        // Retrieve the latest height.
-        let latest_height = ledger.current_block.read().height();
-        debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
-        // Sample random block heights.
-        let block_heights: Vec<u32> =
-            (0..=latest_height).choose_multiple(&mut OsRng, (latest_height as usize).min(NUM_BLOCKS));
-        cfg_into_iter!(block_heights).try_for_each(|height| {
-            ledger.get_block(height)?;
-            Ok::<_, Error>(())
-        })?;
-        lap!(timer, "Check existence of {NUM_BLOCKS} random blocks");
 
         finish!(timer);
         Ok(ledger)
     }
 
-    /// Loads the ledger from storage, without performing integrity checks.
-    pub fn load_unchecked(genesis_block: Block<N>, storage_mode: StorageMode) -> Result<Self> {
-        let timer = timer!("Ledger::load_unchecked");
+    /// Sets up the consensus store and ledger.
+    fn initialize(genesis_block: Block<N>, storage_mode: StorageMode, enable_block_cache: bool) -> Result<Self> {
+        let timer = timer!("Ledger::initialize");
 
         info!("Loading the ledger from storage...");
-        // Initialize the consensus store.
-        let store = match ConsensusStore::<N, C>::open(storage_mode) {
+        // Initialize the consensus store
+        let result = if enable_block_cache {
+            ConsensusStore::<N, C>::open_with_cache(storage_mode)
+        } else {
+            ConsensusStore::<N, C>::open(storage_mode)
+        };
+
+        let store = match result {
             Ok(store) => store,
             Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
         };
@@ -239,8 +265,34 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Set the epoch prover cache.
         ledger.epoch_provers_cache = Arc::new(RwLock::new(ledger.load_epoch_provers()));
 
-        finish!(timer, "Initialize ledger");
+        finish!(timer);
         Ok(ledger)
+    }
+
+    /// Spot check the integrity of `NUM_BLOCKS` random blocks upon bootup.
+    fn check_integrity(&self, genesis_hash: N::BlockHash) -> Result<()> {
+        let timer = timer!("Ledger::check_integrity");
+
+        // Ensure the ledger contains the correct genesis block.
+        if !self.contains_block_hash(&genesis_hash)? {
+            bail!("Incorrect genesis block (run 'snarkos clean' and try again)")
+        }
+
+        const NUM_BLOCKS: usize = 10;
+        // Retrieve the latest height.
+        let latest_height = self.current_block.read().height();
+        debug_assert_eq!(latest_height, self.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
+        // Sample random block heights.
+        let block_heights: Vec<u32> =
+            (0..=latest_height).choose_multiple(&mut OsRng, (latest_height as usize).min(NUM_BLOCKS));
+        cfg_into_iter!(block_heights).try_for_each(|height| {
+            self.get_block(height)?;
+            Ok::<_, Error>(())
+        })?;
+        lap!(timer, "Check existence of {NUM_BLOCKS} random blocks");
+
+        finish!(timer);
+        Ok(())
     }
 
     /// Creates a rocksdb checkpoint in the specified directory, which needs to not exist at the
@@ -283,6 +335,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the puzzle.
     pub const fn puzzle(&self) -> &Puzzle<N> {
         self.vm.puzzle()
+    }
+
+    /// Returns the size of the block cache (or `None` if the block cache is not enabled).
+    pub fn block_cache_size(&self) -> Option<u32> {
+        self.vm.block_store().cache_size()
     }
 
     /// Returns the provers and the number of solutions they have submitted for the current epoch.
@@ -468,5 +525,17 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 }
 
 pub mod prelude {
-    pub use crate::{Ledger, authority, block, block::*, committee, helpers::*, narwhal, puzzle, query, store};
+    pub use crate::{
+        Ledger,
+        LedgerOptions,
+        authority,
+        block,
+        block::*,
+        committee,
+        helpers::*,
+        narwhal,
+        puzzle,
+        query,
+        store,
+    };
 }

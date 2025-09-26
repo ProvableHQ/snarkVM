@@ -43,6 +43,9 @@ pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Initializes the consensus storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
 
+    /// Initializes the consensus storage with the block cache enabled.
+    fn open_with_cache<S: Into<StorageMode>>(storage: S) -> Result<Self>;
+
     /// Returns the finalize storage.
     fn finalize_store(&self) -> &FinalizeStore<N, Self::FinalizeStorage>;
     /// Returns the block storage.
@@ -104,7 +107,7 @@ pub trait ConsensusStorage<N: Network>: 'static + Clone + Send + Sync {
     }
 }
 
-/// The consensus store.
+/// Consensus store that either uses memory or rocksdb as a backend.
 #[derive(Clone)]
 pub struct ConsensusStore<N: Network, C: ConsensusStorage<N>> {
     /// The consensus storage.
@@ -116,9 +119,15 @@ pub struct ConsensusStore<N: Network, C: ConsensusStorage<N>> {
 impl<N: Network, C: ConsensusStorage<N>> ConsensusStore<N, C> {
     /// Initializes the consensus store.
     pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
-        // Initialize the consensus storage.
         let storage = C::open(storage.into())?;
-        // Return the consensus store.
+        Ok(Self { storage, _phantom: PhantomData })
+    }
+
+    /// Initializes the consensus store with the block cache enabled.
+    ///
+    /// Note: This is identical to [`Self::open`] for memory-backed storage.
+    pub fn open_with_cache<S: Into<StorageMode>>(storage: S) -> Result<Self> {
+        let storage = C::open_with_cache(storage.into())?;
         Ok(Self { storage, _phantom: PhantomData })
     }
 
