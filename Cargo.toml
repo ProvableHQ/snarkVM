@@ -145,7 +145,6 @@ locktick = [
 ]
 noconfig = [ ]
 rocks = [ "snarkvm-ledger/rocks", "snarkvm-synthesizer/rocks" ]
-test = [ "snarkvm-ledger/test" ]
 test-helpers = [ "snarkvm-ledger/test-helpers" ]
 timer = [ "snarkvm-ledger/timer" ]
 algorithms = [ "snarkvm-algorithms" ]
@@ -159,9 +158,19 @@ parameters = [ "snarkvm-parameters" ]
 synthesizer = [ "snarkvm-synthesizer" ]
 utilities = [ "snarkvm-utilities" ]
 wasm = [ "snarkvm-wasm" ]
+test = [
+  "snarkvm-console/test",
+  "snarkvm-ledger/test"
+]
 test_exports = [ "snarkvm-algorithms/test_exports" ]
-test_targets = [ "snarkvm-console/test_targets" ]
-test_consensus_heights = [ "snarkvm-console/test_consensus_heights" ]
+test_targets = [
+  "snarkvm-ledger/test_targets",
+  "snarkvm-console/test_targets"
+]
+test_consensus_heights = [
+  "snarkvm-ledger/test_consensus_heights",
+  "snarkvm-console/test_consensus_heights"
+]
 serial = [
   "snarkvm-algorithms?/serial",
   "snarkvm-console?/serial",

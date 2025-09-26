@@ -87,6 +87,9 @@ test-helpers = [
   "snarkvm-ledger-narwhal/test-helpers",
   "dep:snarkvm-circuit"
 ]
+test_consensus_heights = [
+  "snarkvm-console/test_consensus_heights",
+]
 test_targets = [
   "snarkvm-console/test_targets",
 ]
