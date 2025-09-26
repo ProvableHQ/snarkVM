@@ -70,7 +70,7 @@ use aleo_std::{
     StorageMode,
     prelude::{finish, lap, timer},
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use core::ops::Range;
 use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
@@ -195,7 +195,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         let ledger = Self::initialize(genesis_block, storage_mode, options.block_cache)?;
         if options.startup_checks {
-            ledger.check_integrity(genesis_hash)?;
+            ledger.check_integrity(genesis_hash).with_context(|| "Startup integrity checks failed")?;
         }
 
         finish!(timer);
@@ -208,16 +208,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         info!("Loading the ledger from storage...");
         // Initialize the consensus store
-        let result = if enable_block_cache {
+        let store = if enable_block_cache {
             ConsensusStore::<N, C>::open_with_cache(storage_mode)
         } else {
             ConsensusStore::<N, C>::open(storage_mode)
-        };
+        }?;
 
-        let store = match result {
-            Ok(store) => store,
-            Err(e) => bail!("Failed to load ledger (run 'snarkos clean' and try again)\n\n{e}\n"),
-        };
         lap!(timer, "Load consensus store");
 
         // Initialize a new VM.
@@ -250,11 +246,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Retrieve the latest height.
         let latest_height =
-            ledger.vm.block_store().max_height().ok_or_else(|| anyhow!("Failed to load blocks from the ledger"))?;
+            ledger.vm.block_store().max_height().with_context(|| "Failed to load blocks from the ledger")?;
         // Fetch the latest block.
         let block = ledger
             .get_block(latest_height)
-            .map_err(|err| err.context("Failed to load block {latest_height} from the ledger"))?;
+            .with_context(|| format!("Failed to load block {latest_height} from the ledger"))?;
 
         // Set the current block.
         ledger.current_block = Arc::new(RwLock::new(block));
