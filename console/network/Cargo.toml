@@ -13,9 +13,13 @@ filesystem = [ "snarkvm-parameters/filesystem" ]
 wasm = [
   "snarkvm-parameters/wasm"
 ]
-test = [ ]
+test = [ "test_targets", "test_consensus_heights", "test_max_certificates" ]
+# Lowers the target for solutions
 test_targets = [ ]
+# Lowers the height at which consensus version upgrades happen
 test_consensus_heights = [ ]
+# Lowers the value for MAX_CERTIFICATES
+test_max_certificates = [ ]
 
 [dependencies.snarkvm-algorithms]
 workspace = true

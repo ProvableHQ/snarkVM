@@ -247,14 +247,14 @@ pub trait Network:
 
     /// Returns the list of consensus versions.
     #[allow(non_snake_case)]
-    #[cfg(not(any(test, feature = "test", feature = "test_consensus_heights")))]
+    #[cfg(not(any(test, feature = "test_consensus_heights")))]
     fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
         // Initialize the consensus version heights directly from the constant.
         CONSENSUS_VERSION_HEIGHTS.get_or_init(|| Self::_CONSENSUS_VERSION_HEIGHTS)
     }
     /// Returns the list of test consensus versions.
     #[allow(non_snake_case)]
-    #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
+    #[cfg(any(test, feature = "test_consensus_heights"))]
     fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
         CONSENSUS_VERSION_HEIGHTS.get_or_init(load_test_consensus_heights)
     }
