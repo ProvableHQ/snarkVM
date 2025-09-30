@@ -179,12 +179,12 @@ pub fn register_types_equivalent<N: Network>(
 ///
 /// This definition of equivalence was chosen to balance these concerns:
 ///
-/// 1. All programs from before the existence of external structs will continue to work -
-/// thus it's necessary for a struct created from another program to be considered equivalent
-/// to a local one with the same name and structure, as in practice that was the behavior.
+/// 1. All programs from before the existence of external structs will continue to work;
+///    thus it's necessary for a struct created from another program to be considered equivalent
+///    to a local one with the same name and structure, as in practice that was the behavior.
 /// 2. We don't want to allow a fork. Thus we do need to check names, not just structural
-/// equivalence - otherwise we could get a program deployable to a node which is using
-/// this check, but not deployable to a node running an earlier SnarkVM.
+///    equivalence - otherwise we could get a program deployable to a node which is using
+///    this check, but not deployable to a node running an earlier SnarkVM.
 ///
 /// The stacks are passed because struct types need to access their stack to get their
 /// structure.

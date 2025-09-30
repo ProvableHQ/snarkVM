@@ -37,32 +37,32 @@ import child.aleo;
 
 program parent.aleo;
 
-struct T:
+struct S:
     x as field;
 
 mapping foo:
     key as field.public;
-    value as T.public;
+    value as S.public;
 
 mapping bar:
     key as field.public;
     value as child.aleo/S.public;
 
 mapping baz:
-    key as T.public;
+    key as S.public;
     value as field.public;
 
 closure make_t:
     input r0 as field;
-    cast r0 into r1 as T;
-    output r1 as T;
+    cast r0 into r1 as S;
+    output r1 as S;
 
 function store_t:
     call make_t 12field into r0;
     async store_t r0 into r1;
     output r1 as parent.aleo/store_t.future;
 finalize store_t:
-    input r0 as T.public;
+    input r0 as S.public;
     set r0 into foo[0field];
 
 function store_s:
@@ -79,7 +79,7 @@ function store_s_as_t:
     output r1 as parent.aleo/store_s_as_t.future;
 finalize store_s_as_t:
     input r0 as child.aleo/S.public;
-    cast r0.x into r1 as T;
+    cast r0.x into r1 as S;
     set r1 into foo[2field];
 
 function baz_keys:

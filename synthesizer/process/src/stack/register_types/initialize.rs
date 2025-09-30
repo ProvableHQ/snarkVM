@@ -332,9 +332,7 @@ impl<N: Network> RegisterTypes<N> {
         let operand_type = self.get_type_from_operand(stack, operand)?;
         if !register_types_equivalent(stack, register_type, stack, &operand_type)? {
             bail!(
-                "Output '{operand}' does not match the expected output operand type: expected '{}', found '{}'",
-                operand_type,
-                register_type
+                "Output '{operand}' does not match the expected output operand type: expected '{operand_type}', found '{register_type}'",
             )
         }
         Ok(())
