@@ -39,7 +39,7 @@ fn flatten_anyhow_error(error: &anyhow::Error) -> String {
 /// Logs `anyhow::Error`'s its error chain using the `ERROR` log level.
 ///
 /// This follows the existing convention in the codebase that joins errors using em dashes.
-/// For example, an error "Invalid transaction" with a cause "Proof failed"would be logged
+/// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
 /// as "Invalid transaction — Proof failed".
 pub fn log_error(error: &anyhow::Error) {
     tracing::error!("{}", flatten_anyhow_error(error));
@@ -48,7 +48,7 @@ pub fn log_error(error: &anyhow::Error) {
 /// Logs `anyhow::Error`'s its error chain using the `WARN` log level.
 ///
 /// This follows the existing convention in the codebase that joins errors using em dashes.
-/// For example, an error "Invalid transaction" with a cause "Proof failed"would be logged
+/// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
 /// as "Invalid transaction — Proof failed".
 pub fn log_warning(error: &anyhow::Error) {
     tracing::warn!("{}", flatten_anyhow_error(error));
@@ -68,8 +68,6 @@ pub fn display_error(error: &anyhow::Error) {
 /// * `actual` - The actual value
 /// * `expected` - The expected value  
 /// * `message` - A description of what was being checked
-///
-/// This will generate an error message like:
 #[macro_export]
 macro_rules! ensure_equals {
     ($actual:expr, $expected:expr, $message:expr) => {
@@ -87,8 +85,7 @@ pub trait PrettyUnwrap {
     fn pretty_unwrap(self) -> Self::Inner;
 }
 
-/// Helper for `PrettyUnwrap`:
-/// Creates a panic with the `anyhow::Error` nicely formatted.
+/// Helper for `PrettyUnwrap`, which creates a panic with the `anyhow::Error` nicely formatted and also logs the panic.
 #[track_caller]
 #[inline]
 fn pretty_panic(error: &anyhow::Error) -> ! {

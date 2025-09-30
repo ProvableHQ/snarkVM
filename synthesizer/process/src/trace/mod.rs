@@ -340,9 +340,20 @@ impl<N: Network> Trace<N> {
 
         if !batch_inclusions.is_empty() {
             // Fetch the inclusion proving key.
+            #[cfg(not(feature = "wasm"))]
             let proving_key = match inclusion_version {
                 Some(InclusionAssignmentWrapper::V0(..)) => ProvingKey::<N>::new(N::inclusion_v0_proving_key().clone()),
                 Some(InclusionAssignmentWrapper::V1(..)) => ProvingKey::<N>::new(N::inclusion_proving_key().clone()),
+                None => bail!("Invalid or missing inclusion version"),
+            };
+            #[cfg(feature = "wasm")]
+            let proving_key = match inclusion_version {
+                Some(InclusionAssignmentWrapper::V0(..)) => {
+                    ProvingKey::<N>::new(N::inclusion_v0_proving_key(None).clone())
+                }
+                Some(InclusionAssignmentWrapper::V1(..)) => {
+                    ProvingKey::<N>::new(N::inclusion_proving_key(None).clone())
+                }
                 None => bail!("Invalid or missing inclusion version"),
             };
             // Insert the inclusion proving key and assignments.

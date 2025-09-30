@@ -40,6 +40,8 @@ mod testnet_v0;
 pub use testnet_v0::*;
 
 pub mod prelude {
+    #[cfg(feature = "wasm")]
+    pub use crate::get_or_init_consensus_version_heights;
     pub use crate::{
         CANARY_V0_CONSENSUS_VERSION_HEIGHTS,
         CanaryV0,
@@ -254,7 +256,6 @@ pub trait Network:
     #[allow(non_snake_case)]
     #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
     fn CONSENSUS_VERSION_HEIGHTS() -> &'static [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
-        // NOTE: this function may panic, as it is only called during startup.
         CONSENSUS_VERSION_HEIGHTS.get_or_init(load_test_consensus_heights)
     }
 
@@ -313,14 +314,23 @@ pub trait Network:
     /// Returns the verifying key for the given function name in `credits.aleo`.
     fn get_credits_verifying_key(function_name: String) -> Result<&'static Arc<VarunaVerifyingKey<Self>>>;
 
+    #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the inclusion_v0 circuit.
     fn inclusion_v0_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
+
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the inclusion_v0 circuit.
+    fn inclusion_v0_proving_key(bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>>;
 
     /// Returns the `verifying key` for the inclusion_v0 circuit.
     fn inclusion_v0_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
 
+    #[cfg(not(feature = "wasm"))]
     /// Returns the `proving key` for the inclusion circuit.
     fn inclusion_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
+
+    #[cfg(feature = "wasm")]
+    fn inclusion_proving_key(bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>>;
 
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
@@ -499,4 +509,27 @@ pub trait Network:
         root: &Field<Self>,
         leaf: &Vec<Field<Self>>,
     ) -> bool;
+}
+
+/// Returns the consensus version heights, initializing them if necessary.
+///
+/// If a `heights` string is provided, it must be a comma-separated list of ascending block heights
+/// starting from zero (e.g., `"0,2,3,4,..."`) with a number of heights exactly equal to the value
+/// of the Network trait's `NUM_CONSENSUS_VERSIONS` constant. These heights correspond to the
+/// activation block of each `ConsensusVersion`.
+///
+/// If `heights` is `None`, the function will use SnarkVM's default test consensus heights.
+///
+/// This function caches the initialized heights, and can be set only once. Further calls will
+/// return the cached heights.
+///
+/// This method should be called by `wasm` users who need to set test values for consensus heights
+/// for purposes such as testing on a local devnet. If this method needs to be used, it should be
+/// called immediately after the wasm module is initialized.
+#[cfg(feature = "wasm")]
+pub fn get_or_init_consensus_version_heights(
+    heights: Option<String>,
+) -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {
+    let heights = load_test_consensus_heights_inner(heights);
+    *CONSENSUS_VERSION_HEIGHTS.get_or_init(|| heights)
 }

@@ -372,6 +372,28 @@ macro_rules! impl_remote {
 
                 impl_load_bytes_logic_remote!($remote_url, $local_dir, &filename, metadata, expected_checksum, expected_size);
             }
+
+            #[cfg(feature = "wasm")]
+            /// Verify external bytes.
+            pub fn verify_bytes(buffer: &[u8]) -> Result<(), $crate::errors::ParameterError> {
+                let metadata: serde_json::Value = serde_json::from_str(Self::METADATA).expect("Metadata was not well-formatted");
+                let expected_checksum: String =
+                    metadata[concat!($ftype, "_checksum")].as_str().expect("Failed to parse checksum").to_string();
+                let expected_size: usize =
+                    metadata[concat!($ftype, "_size")].to_string().parse().expect("Failed to retrieve the file size");
+
+                // Ensure the size matches.
+                if buffer.len() != expected_size {
+                    return Err($crate::errors::ParameterError::SizeMismatch(expected_size, buffer.len()));
+                }
+
+                // Ensure the checksum matches.
+                let candidate_checksum = checksum!(buffer);
+                if expected_checksum != candidate_checksum {
+                    return checksum_error!(expected_checksum, candidate_checksum);
+                }
+                Ok(())
+            }
         }
 
         paste::item! {

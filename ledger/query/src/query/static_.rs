@@ -14,7 +14,8 @@
 // limitations under the License.
 
 use crate::QueryTrait;
-use console::{network::prelude::*, program::StatePath, types::Field};
+
+use snarkvm_console::{network::prelude::*, program::StatePath, types::Field};
 
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
@@ -52,16 +53,17 @@ impl<N: Network> FromStr for StaticQuery<N> {
     }
 }
 
-#[cfg_attr(feature = "async", async_trait(?Send))]
+#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 impl<N: Network> QueryTrait<N> for StaticQuery<N> {
     /// Returns the current state root.
     fn current_state_root(&self) -> Result<N::StateRoot> {
         Ok(self.state_root)
     }
 
-    /// Returns the current state root.
+    /// Returns the current state root (async version).
     #[cfg(feature = "async")]
     async fn current_state_root_async(&self) -> Result<N::StateRoot> {
+        // There is no I/O in StaticQuery, so the sync version is identical.
         self.current_state_root()
     }
 
@@ -73,9 +75,10 @@ impl<N: Network> QueryTrait<N> for StaticQuery<N> {
         }
     }
 
-    /// Returns a state path for the given `commitment`.
+    /// Returns a state path for the given `commitment` (async version).
     #[cfg(feature = "async")]
     async fn get_state_path_for_commitment_async(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
+        // There is no I/O in StaticQuery, so the sync version is identical.
         self.get_state_path_for_commitment(commitment)
     }
 
@@ -87,20 +90,22 @@ impl<N: Network> QueryTrait<N> for StaticQuery<N> {
             .collect::<Result<Vec<StatePath<N>>>>()
     }
 
-    /// Returns a list of state paths for the given list of `commitment`s.
+    /// Returns a list of state paths for the given list of `commitment`s (async version).
     #[cfg(feature = "async")]
     async fn get_state_paths_for_commitments_async(&self, commitments: &[Field<N>]) -> Result<Vec<StatePath<N>>> {
+        // There is no I/O in StaticQuery, so the sync version is identical.
         self.get_state_paths_for_commitments(commitments)
     }
 
-    /// Returns the current block height
+    /// Returns the current block height.
     fn current_block_height(&self) -> Result<u32> {
         Ok(self.block_height)
     }
 
-    /// Returns the current block height
+    /// Returns the current block height (async version).
     #[cfg(feature = "async")]
     async fn current_block_height_async(&self) -> Result<u32> {
+        // There is no I/O in StaticQuery, so the sync version is identical.
         self.current_block_height()
     }
 }
@@ -108,7 +113,7 @@ impl<N: Network> QueryTrait<N> for StaticQuery<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::network::TestnetV0;
+    use snarkvm_console::network::TestnetV0;
 
     #[test]
     fn test_static_query_parse() {
