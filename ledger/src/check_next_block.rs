@@ -148,6 +148,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         };
 
         // Ensure the block is correct.
+        let now = OffsetDateTime::now_utc();
+        let current_timestamp = now.unix_timestamp().saturating_mul(1000) + (now.nanosecond() / 1_000_000) as i64; // TODO: look into durability of typesize and forking risk.
         let (expected_existing_solution_ids, expected_existing_transaction_ids) = block.verify(
             &latest_block,
             self.latest_state_root(),
@@ -155,7 +157,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             &committee_lookback,
             self.puzzle(),
             self.latest_epoch_hash()?,
-            OffsetDateTime::now_utc().unix_timestamp(),
+            current_timestamp,
             ratified_finalize_operations,
         )?;
 
