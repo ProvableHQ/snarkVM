@@ -285,7 +285,7 @@ mod tests {
 
         for transaction in transactions {
             match transaction {
-                Transaction::Deploy(_, _, _, deployment, fee) => {
+                Transaction::Deploy(_, _, deployment, fee) => {
                     // Compute the deployment ID.
                     let deployment_id = deployment.to_deployment_id().unwrap();
                     // Verify the fee.
@@ -293,7 +293,7 @@ mod tests {
                         .verify_fee(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &fee, deployment_id)
                         .unwrap();
                 }
-                Transaction::Execute(_, _, execution, fee) => {
+                Transaction::Execute(_, execution, fee) => {
                     // Compute the execution ID.
                     let execution_id = execution.to_execution_id().unwrap();
                     // Verify the fee.

@@ -19,7 +19,9 @@ mod bytes;
 mod serialize;
 mod string;
 
-use crate::Transaction;
+use std::sync::OnceLock;
+
+use crate::{Transaction, transaction::DeploymentID};
 use console::{
     network::prelude::*,
     program::{Address, Identifier, ProgramID},
@@ -30,6 +32,8 @@ use snarkvm_synthesizer_snark::{Certificate, VerifyingKey};
 
 #[derive(Clone)]
 pub struct Deployment<N: Network> {
+    /// The deployment id
+    id: OnceLock<DeploymentID<N>>,
     /// The edition.
     edition: u16,
     /// The program.
@@ -59,14 +63,20 @@ impl<N: Network> Eq for Deployment<N> {}
 impl<N: Network> Deployment<N> {
     /// Initializes a new deployment.
     pub fn new(
+        deployment_id: Option<DeploymentID<N>>,
         edition: u16,
         program: Program<N>,
         verifying_keys: Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>,
         program_checksum: Option<[U8<N>; 32]>,
         program_owner: Option<Address<N>>,
     ) -> Result<Self> {
+        // Set the deployment id.
+        let id = OnceLock::new();
+        if let Some(inner_id) = deployment_id {
+            let _ = id.set(inner_id);
+        }
         // Construct the deployment.
-        let deployment = Self { edition, program, verifying_keys, program_checksum, program_owner };
+        let deployment = Self { id, edition, program, verifying_keys, program_checksum, program_owner };
         // Ensure the deployment is ordered.
         deployment.check_is_ordered()?;
         // Return the deployment.
@@ -206,7 +216,14 @@ impl<N: Network> Deployment<N> {
 
     /// Returns the deployment ID.
     pub fn to_deployment_id(&self) -> Result<Field<N>> {
-        Ok(*Transaction::deployment_tree(self)?.root())
+        if let Some(id) = self.id.get() {
+            return Ok(*id);
+        }
+
+        let id = *Transaction::deployment_tree(self)?.root();
+        let _ = self.id.set(id);
+
+        Ok(id)
     }
 }
 
@@ -296,6 +313,7 @@ function compute:
         // Create a new deployment with the desired edition.
         // Note the only valid editions for V1 deployments are 0 and 1.
         Deployment::<CurrentNetwork>::new(
+            None,
             edition % 2,
             deployment.program().clone(),
             deployment.verifying_keys().clone(),
@@ -340,6 +358,7 @@ function compute:
             .clone();
         // Create a new deployment with the desired edition.
         Deployment::<CurrentNetwork>::new(
+            None,
             edition,
             deployment.program().clone(),
             deployment.verifying_keys().clone(),

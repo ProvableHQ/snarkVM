@@ -122,7 +122,7 @@ pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
         // Ensure the transaction is a execution.
         let (transaction_id, execution, fee) = match transaction {
             Transaction::Deploy(..) => bail!("Attempted to insert a deploy transaction into execution storage."),
-            Transaction::Execute(transaction_id, _, execution, fee) => (transaction_id, execution, fee),
+            Transaction::Execute(transaction_id, execution, fee) => (transaction_id, execution, fee),
             Transaction::Fee(..) => bail!("Attempted to insert a fee transaction into execution storage."),
         };
 
@@ -232,7 +232,7 @@ pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Return the execution.
-        Ok(Some(Execution::from(transitions.into_iter(), global_state_root, proof)?))
+        Ok(Some(Execution::from(None, transitions.into_iter(), global_state_root, proof)?))
     }
 
     /// Returns the transaction for the given `transaction ID`.
@@ -262,7 +262,7 @@ pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Construct the execution.
-        let execution = Execution::from(transitions.into_iter(), global_state_root, proof)?;
+        let execution = Execution::from(None, transitions.into_iter(), global_state_root, proof)?;
 
         // Construct the transaction.
         let transaction = match has_fee {

@@ -27,7 +27,7 @@ impl<N: Network> Transaction<N> {
     /// Returns the Merkle leaf for the given ID of a function or transition in the transaction.
     pub fn to_leaf(&self, id: &Field<N>) -> Result<TransactionLeaf<N>> {
         match self {
-            Self::Deploy(_, _, _, deployment, fee) => {
+            Self::Deploy(_, _, deployment, fee) => {
                 // Check if the ID is the transition ID for the fee.
                 if *id == **fee.id() {
                     // Return the transaction leaf.
@@ -48,7 +48,7 @@ impl<N: Network> Transaction<N> {
                 // Error if the function hash was not found.
                 bail!("Function hash not found in deployment transaction");
             }
-            Self::Execute(_, _, execution, fee) => {
+            Self::Execute(_, execution, fee) => {
                 // Check if the ID is the transition ID for the fee.
                 if let Some(fee) = fee {
                     if *id == **fee.id() {
@@ -92,11 +92,11 @@ impl<N: Network> Transaction<N> {
     pub fn to_tree(&self) -> Result<TransactionTree<N>> {
         match self {
             // Compute the deployment tree.
-            Transaction::Deploy(_, _, _, deployment, fee) => {
+            Transaction::Deploy(_, _, deployment, fee) => {
                 Self::transaction_tree(Self::deployment_tree(deployment)?, Some(fee))
             }
             // Compute the execution tree.
-            Transaction::Execute(_, _, execution, fee) => {
+            Transaction::Execute(_, execution, fee) => {
                 Self::transaction_tree(Self::execution_tree(execution)?, fee.as_ref())
             }
             // Compute the fee tree.
@@ -252,8 +252,16 @@ impl<N: Network> Transaction<N> {
     pub fn deployment_tree_v2(deployment: &Deployment<N>) -> Result<DeploymentTree<N>> {
         // Ensure the number of leaves is within the Merkle tree size.
         Self::check_deployment_size(deployment)?;
+        // Get the program checksum.
+        let Some(program_checksum) = deployment.program_checksum() else {
+            bail!("Program checksum is required for V2 deployment tree");
+        };
+        // Get the program owner.
+        let Some(program_owner) = deployment.program_owner() else {
+            bail!("Program owner is required for V2 deployment tree");
+        };
         // Compute a hash of the deployment bytes.
-        let deployment_hash = N::hash_sha3_256(&to_bits_le!(deployment.to_bytes_le()?))?;
+        let deployment_hash = N::hash_sha3_256(&to_bits_le!(program_checksum, program_owner, deployment.edition()))?;
         // Prepare the header for the hash.
         let header = to_bits_le![deployment.version()? as u8, deployment_hash];
         // Prepare the leaves.

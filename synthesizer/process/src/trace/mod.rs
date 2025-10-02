@@ -185,7 +185,7 @@ impl<N: Network> Trace<N> {
             rng,
         )?;
         // Return the execution.
-        Execution::from(self.transitions.iter().cloned(), global_state_root, Some(proof))
+        Execution::from(None, self.transitions.iter().cloned(), global_state_root, Some(proof))
     }
 
     /// Returns a new fee with a proof, for the current inclusion assignment and global state root.

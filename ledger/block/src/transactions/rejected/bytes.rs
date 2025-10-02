@@ -21,18 +21,22 @@ impl<N: Network> FromBytes for Rejected<N> {
         let variant = u8::read_le(&mut reader)?;
         match variant {
             0 => {
+                // Read the unconfirmed deployment id.
+                let id = N::TransactionID::read_le(&mut reader)?;
                 // Read the program owner.
                 let program_owner = ProgramOwner::read_le(&mut reader)?;
                 // Read the deployment.
                 let deployment = Deployment::read_le(&mut reader)?;
                 // Return the rejected deployment.
-                Ok(Self::new_deployment(program_owner, deployment))
+                Ok(Self::new_deployment(id, program_owner, deployment))
             }
             1 => {
+                // Read the unconfirmed execution id.
+                let id = N::TransactionID::read_le(&mut reader)?;
                 // Read the execution.
                 let execution = Execution::read_le(&mut reader)?;
                 // Return the rejected execution.
-                Ok(Self::new_execution(execution))
+                Ok(Self::new_execution(id, execution))
             }
             2.. => Err(error(format!("Failed to decode rejected transaction variant {variant}"))),
         }
@@ -43,17 +47,21 @@ impl<N: Network> ToBytes for Rejected<N> {
     /// Writes the rejected transaction to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         match self {
-            Self::Deployment(program_owner, deployment) => {
+            Self::Deployment(id, program_owner, deployment) => {
                 // Write the variant.
                 0u8.write_le(&mut writer)?;
+                // Write the unconfirmed deployment id.
+                id.write_le(&mut writer)?;
                 // Write the program owner.
                 program_owner.write_le(&mut writer)?;
                 // Write the deployment.
                 deployment.write_le(&mut writer)
             }
-            Self::Execution(execution) => {
+            Self::Execution(id, execution) => {
                 // Write the variant.
                 1u8.write_le(&mut writer)?;
+                // Write the unconfirmed execution id.
+                id.write_le(&mut writer)?;
                 // Write the execution.
                 execution.write_le(&mut writer)
             }

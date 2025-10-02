@@ -1561,7 +1561,7 @@ mod tests {
         let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
 
         let fee_id = fee.id();
-        let unconfirmed_id = rejected.to_unconfirmed_id(&fee.fee_transition()).unwrap().into();
+        let unconfirmed_id = rejected.to_unconfirmed_id().into();
 
         // Construct the block.
         let block = Block::new_beacon(

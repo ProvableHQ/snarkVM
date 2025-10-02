@@ -19,24 +19,24 @@ mod string;
 
 use super::*;
 
-use crate::{Deployment, Execution, Fee};
+use crate::{Deployment, Execution};
 
 /// A wrapper around the rejected deployment or execution.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Rejected<N: Network> {
-    Deployment(ProgramOwner<N>, Box<Deployment<N>>),
-    Execution(Box<Execution<N>>),
+    Deployment(N::TransactionID, ProgramOwner<N>, Box<Deployment<N>>),
+    Execution(N::TransactionID, Box<Execution<N>>),
 }
 
 impl<N: Network> Rejected<N> {
     /// Initializes a rejected deployment.
-    pub fn new_deployment(program_owner: ProgramOwner<N>, deployment: Deployment<N>) -> Self {
-        Self::Deployment(program_owner, Box::new(deployment))
+    pub fn new_deployment(id: N::TransactionID, program_owner: ProgramOwner<N>, deployment: Deployment<N>) -> Self {
+        Self::Deployment(id, program_owner, Box::new(deployment))
     }
 
     /// Initializes a rejected execution.
-    pub fn new_execution(execution: Execution<N>) -> Self {
-        Self::Execution(Box::new(execution))
+    pub fn new_execution(id: N::TransactionID, execution: Execution<N>) -> Self {
+        Self::Execution(id, Box::new(execution))
     }
 
     /// Returns true if the rejected transaction is a deployment.
@@ -52,46 +52,44 @@ impl<N: Network> Rejected<N> {
     /// Returns the program owner of the rejected deployment.
     pub fn program_owner(&self) -> Option<&ProgramOwner<N>> {
         match self {
-            Self::Deployment(program_owner, _) => Some(program_owner),
-            Self::Execution(_) => None,
+            Self::Deployment(_, program_owner, _) => Some(program_owner),
+            Self::Execution(_, _) => None,
         }
     }
 
     /// Returns the rejected deployment.
     pub fn deployment(&self) -> Option<&Deployment<N>> {
         match self {
-            Self::Deployment(_, deployment) => Some(deployment),
-            Self::Execution(_) => None,
+            Self::Deployment(_, _, deployment) => Some(deployment),
+            Self::Execution(_, _) => None,
         }
     }
 
     /// Returns the rejected execution.
     pub fn execution(&self) -> Option<&Execution<N>> {
         match self {
-            Self::Deployment(_, _) => None,
-            Self::Execution(execution) => Some(execution),
+            Self::Deployment(_, _, _) => None,
+            Self::Execution(_, execution) => Some(execution),
         }
     }
 
     /// Returns the rejected ID.
     pub fn to_id(&self) -> Result<Field<N>> {
         match self {
-            Self::Deployment(_, deployment) => deployment.to_deployment_id(),
-            Self::Execution(execution) => execution.to_execution_id(),
+            Self::Deployment(_, _, deployment) => deployment.to_deployment_id(),
+            Self::Execution(_, execution) => execution.to_execution_id(),
         }
     }
 
     /// Returns the unconfirmed transaction ID, which is defined as the transaction ID prior to confirmation.
     /// When a transaction is rejected, its fee transition is used to construct the confirmed transaction ID,
     /// changing the original transaction ID.
-    pub fn to_unconfirmed_id(&self, fee: &Option<Fee<N>>) -> Result<Field<N>> {
-        // Compute the deployment or execution tree.
-        let tree = match self {
-            Self::Deployment(_, deployment) => Transaction::deployment_tree(deployment)?,
-            Self::Execution(execution) => Transaction::execution_tree(execution)?,
-        };
-        // Construct the transaction tree and return the unconfirmed transaction ID.
-        Ok(*Transaction::transaction_tree(tree, fee.as_ref())?.root())
+    pub fn to_unconfirmed_id(&self) -> Field<N> {
+        // Retrieve the deployment or execution id.
+        match self {
+            Self::Deployment(id, _, _) => **id,
+            Self::Execution(id, _) => **id,
+        }
     }
 }
 
@@ -110,13 +108,13 @@ pub mod test_helpers {
         rng: &mut TestRng,
     ) -> Rejected<CurrentNetwork> {
         // Sample a deploy transaction.
-        let deployment = match crate::transaction::test_helpers::sample_deployment_transaction(
+        let (id, deployment) = match crate::transaction::test_helpers::sample_deployment_transaction(
             version,
             edition,
             is_fee_private,
             rng,
         ) {
-            Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
+            Transaction::Deploy(id, _, deployment, _) => (id, (*deployment).clone()),
             _ => unreachable!(),
         };
 
@@ -126,20 +124,20 @@ pub mod test_helpers {
         let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
         // Return the rejected deployment.
-        Rejected::new_deployment(program_owner, deployment)
+        Rejected::new_deployment(id, program_owner, deployment)
     }
 
     /// Samples a rejected execution.
     pub(crate) fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
         // Sample an execute transaction.
-        let execution =
+        let (id, execution) =
             match crate::transaction::test_helpers::sample_execution_transaction_with_fee(is_fee_private, rng, 0) {
-                Transaction::Execute(_, _, execution, _) => execution,
+                Transaction::Execute(id, execution, _) => (id, execution),
                 _ => unreachable!(),
             };
 
         // Return the rejected execution.
-        Rejected::new_execution(*execution)
+        Rejected::new_execution(id, *execution)
     }
 
     /// Sample a list of randomly rejected transactions.

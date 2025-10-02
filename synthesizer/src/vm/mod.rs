@@ -1547,7 +1547,7 @@ function do:
         let transaction = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
 
         // Destructure the deployment transaction.
-        let Transaction::Deploy(_, _, program_owner, deployment, fee) = transaction else {
+        let Transaction::Deploy(_, program_owner, deployment, fee) = transaction else {
             panic!("Expected a deployment transaction");
         };
 
@@ -1560,17 +1560,18 @@ function do:
             vks_with_overreport.push((*id, (vk, cert.clone())));
         }
 
+        let deployment_id = deployment.as_ref().to_deployment_id().unwrap();
+
         // Each additional constraint costs 25 microcredits, so we need to increase the fee by 25 microcredits.
         let required_fee = *fee.base_amount().unwrap() + 25;
         // Authorize a new fee.
-        let fee_authorization = vm
-            .authorize_fee_public(&private_key, required_fee, 0, deployment.as_ref().to_deployment_id().unwrap(), rng)
-            .unwrap();
+        let fee_authorization = vm.authorize_fee_public(&private_key, required_fee, 0, deployment_id, rng).unwrap();
         // Compute the fee.
         let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
 
         // Create a new deployment transaction with the overreported verifying keys.
         let adjusted_deployment = Deployment::new(
+            Some(deployment_id),
             deployment.edition(),
             deployment.program().clone(),
             vks_with_overreport,
@@ -1617,7 +1618,7 @@ function do:
         let transaction = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
 
         // Destructure the deployment transaction.
-        let Transaction::Deploy(txid, _, program_owner, deployment, fee) = transaction else {
+        let Transaction::Deploy(txid, program_owner, deployment, fee) = transaction else {
             panic!("Expected a deployment transaction");
         };
 
@@ -1632,6 +1633,7 @@ function do:
 
         // Create a new deployment transaction with the underreported verifying keys.
         let adjusted_deployment = Deployment::new(
+            None,
             deployment.edition(),
             deployment.program().clone(),
             vks_with_underreport,
@@ -1639,9 +1641,7 @@ function do:
             deployment.program_owner(),
         )
         .unwrap();
-        let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
-        let adjusted_transaction =
-            Transaction::Deploy(txid, deployment_id, program_owner, Box::new(adjusted_deployment), fee);
+        let adjusted_transaction = Transaction::Deploy(txid, program_owner, Box::new(adjusted_deployment), fee);
 
         // Verify the deployment transaction. It should error when enforcing the first constraint over the vk limit.
         let result = vm.check_transaction(&adjusted_transaction, None, rng);
@@ -1700,7 +1700,7 @@ function do:
         let transaction = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
 
         // Destructure the deployment transaction.
-        let Transaction::Deploy(txid, _, program_owner, deployment, fee) = transaction else {
+        let Transaction::Deploy(txid, program_owner, deployment, fee) = transaction else {
             panic!("Expected a deployment transaction");
         };
 
@@ -1713,6 +1713,7 @@ function do:
 
         // Create a new deployment transaction with the underreported verifying keys.
         let adjusted_deployment = Deployment::new(
+            None,
             deployment.edition(),
             deployment.program().clone(),
             vks_with_underreport,
@@ -1720,9 +1721,7 @@ function do:
             deployment.program_owner(),
         )
         .unwrap();
-        let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
-        let adjusted_transaction =
-            Transaction::Deploy(txid, deployment_id, program_owner, Box::new(adjusted_deployment), fee);
+        let adjusted_transaction = Transaction::Deploy(txid, program_owner, Box::new(adjusted_deployment), fee);
 
         // Verify the deployment transaction. It should error when synthesizing the first variable over the vk limit.
         let result = vm.check_transaction(&adjusted_transaction, None, rng);
@@ -2657,7 +2656,7 @@ finalize transfer_public_to_private:
         )
         .unwrap();
         let proof = Proof::<CurrentNetwork>::from_str(execution.get("proof").unwrap().as_str().unwrap()).unwrap();
-        let new_execution = Execution::from(new_transitions.into_iter(), global_state_root, Some(proof)).unwrap();
+        let new_execution = Execution::from(None, new_transitions.into_iter(), global_state_root, Some(proof)).unwrap();
         let authorization = vm
             .authorize_fee_public(&caller_private_key, 10_000_000, 0, new_execution.to_execution_id().unwrap(), rng)
             .unwrap();
@@ -2921,7 +2920,7 @@ function add_thrice:
         )
         .unwrap();
         let proof = Proof::<CurrentNetwork>::from_str(execution.get("proof").unwrap().as_str().unwrap()).unwrap();
-        let new_execution = Execution::from(new_transitions.into_iter(), global_state_root, Some(proof)).unwrap();
+        let new_execution = Execution::from(None, new_transitions.into_iter(), global_state_root, Some(proof)).unwrap();
         let authorization = vm
             .authorize_fee_public(&caller_private_key, 10_000_000, 0, new_execution.to_execution_id().unwrap(), rng)
             .unwrap();

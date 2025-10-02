@@ -197,7 +197,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     fn insert(&self, transaction: &Transaction<N>) -> Result<()> {
         // Ensure the transaction is a deployment.
         let (transaction_id, owner, deployment, fee) = match transaction {
-            Transaction::Deploy(transaction_id, _, owner, deployment, fee) => (transaction_id, owner, deployment, fee),
+            Transaction::Deploy(transaction_id, owner, deployment, fee) => (transaction_id, owner, deployment, fee),
             Transaction::Execute(..) => bail!("Attempted to insert an execute transaction into deployment storage."),
             Transaction::Fee(..) => bail!("Attempted to insert fee transaction into deployment storage."),
         };
@@ -611,7 +611,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Return the deployment.
-        Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?))
+        Ok(Some(Deployment::new(None, edition, program, verifying_keys, program_checksum, program_owner)?))
     }
 
     /// Returns the fee for the given `transaction ID`.
@@ -1053,7 +1053,7 @@ mod tests {
         for transaction in transactions {
             let transaction_id = transaction.id();
             let (program_id, edition) = match transaction {
-                Transaction::Deploy(_, _, _, ref deployment, _) => (*deployment.program_id(), deployment.edition()),
+                Transaction::Deploy(_, _, ref deployment, _) => (*deployment.program_id(), deployment.edition()),
                 _ => panic!("Incorrect transaction type"),
             };
             let fee_id = *transaction.fee_transition().unwrap().id();
