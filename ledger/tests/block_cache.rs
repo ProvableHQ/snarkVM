@@ -211,24 +211,17 @@ fn test_block_cache_performance_comparison() {
 
     // Add the same blocks to both ledgers.
     const NUM_BLOCKS: u32 = 20;
-    for i in 1..=NUM_BLOCKS {
+    for _ in 1..=NUM_BLOCKS {
         let transactions = vec![];
 
         // Add to non-cached ledger.
-        let block_no_cache = ledger_no_cache
+        let block = ledger_no_cache
             .prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], transactions.clone(), rng)
             .unwrap();
-        ledger_no_cache.advance_to_next_block(&block_no_cache).unwrap();
+        ledger_no_cache.advance_to_next_block(&block).unwrap();
 
-        // Add to cached ledger.
-        let block_with_cache = ledger_with_cache
-            .prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], transactions, rng)
-            .unwrap();
-        ledger_with_cache.advance_to_next_block(&block_with_cache).unwrap();
-
-        // Verify both ledgers have the same state.
-        assert_eq!(ledger_no_cache.latest_height(), i);
-        assert_eq!(ledger_with_cache.latest_height(), i);
+        // Add the same block to cached ledger.
+        ledger_with_cache.advance_to_next_block(&block).unwrap();
     }
 
     // Test retrieval performance for recent blocks (should be cached).
@@ -257,7 +250,7 @@ fn test_block_cache_performance_comparison() {
     for height in 0..=latest_height {
         let block_no_cache = ledger_no_cache.get_block(height).unwrap();
         let block_with_cache = ledger_with_cache.get_block(height).unwrap();
-        assert_eq!(block_no_cache.hash(), block_with_cache.hash());
+        assert_eq!(block_no_cache.hash(), block_with_cache.hash(), "different block hashes at height {height}");
         assert_eq!(block_no_cache.height(), block_with_cache.height());
     }
 }

@@ -36,7 +36,7 @@ pub mod test_helpers {
     use super::*;
     use console::network::MainnetV0;
 
-    type CurrentNetwork = MainnetV0;
+    pub(crate) type CurrentNetwork = MainnetV0;
 
     /// Samples an accepted deploy.
     pub(crate) fn sample_accepted_deploy(rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
