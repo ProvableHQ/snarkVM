@@ -34,6 +34,12 @@ harness = false
 required-features = [ "test-helpers", "rocks" ]
 
 [[bench]]
+name = "advance"
+path = "benches/advance.rs"
+harness = false
+required-features = [ "test-helpers", "rocks" ]
+
+[[bench]]
 name = "dag"
 path = "benches/dag.rs"
 harness = false
