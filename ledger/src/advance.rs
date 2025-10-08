@@ -385,7 +385,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             next_last_coinbase_target,
             next_last_coinbase_timestamp,
             next_timestamp,
-        )?;
+        )
+        .with_context(|| "Failed to construct the block metadata")?;
 
         // Construct the header.
         let header = Header::from(
@@ -396,7 +397,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             solutions_root,
             subdag_root,
             metadata,
-        )?;
+        )
+        .with_context(|| "Failed to construct the block header")?;
 
         // Return the block template.
         Ok((header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids))
