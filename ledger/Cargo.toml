@@ -16,6 +16,11 @@ categories = [ "cryptography", "web-programming" ]
 license = "Apache-2.0"
 edition = "2024"
 
+[[test]]
+name = "block-cache"
+path = "tests/block_cache.rs"
+required-features = [ "rocks" ]
+
 [[bench]]
 name = "block"
 path = "benches/block.rs"
