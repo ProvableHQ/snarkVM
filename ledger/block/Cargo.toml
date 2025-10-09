@@ -36,6 +36,7 @@ wasm = [
 ]
 test = [ "snarkvm-synthesizer-process/test" ]
 test-helpers = [ ]
+test_targets = [ "snarkvm-console/test_targets" ]
 
 [dependencies.snarkvm-console]
 workspace = true

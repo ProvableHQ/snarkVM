@@ -125,9 +125,47 @@ mod tests {
     }
 
     #[test]
-    fn test_genesis_bincode() -> Result<()> {
+    fn test_genesis_bincode_unchecked_mainnet() -> Result<()> {
+        let genesis_block = Block::<MainnetV0>::read_le_unchecked(MainnetV0::genesis_bytes()).unwrap();
+
+        // Serialize
+        let expected_bytes = genesis_block.to_bytes_le()?;
+        let expected_bytes_with_size_encoding = bincode::serialize(&genesis_block)?;
+        assert_eq!(&expected_bytes[..], &expected_bytes_with_size_encoding[8..]);
+
+        // Deserialize
+        assert_eq!(genesis_block, Block::read_le_unchecked(&expected_bytes[..])?);
+        assert_eq!(
+            genesis_block,
+            snarkvm_utilities::bytes::unchecked_deserialize(&expected_bytes_with_size_encoding[..])?
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_genesis_bincode_unchecked_testnet() -> Result<()> {
+        let genesis_block = Block::<TestnetV0>::read_le_unchecked(TestnetV0::genesis_bytes()).unwrap();
+
+        // Serialize
+        let expected_bytes = genesis_block.to_bytes_le()?;
+        let expected_bytes_with_size_encoding = bincode::serialize(&genesis_block)?;
+        assert_eq!(&expected_bytes[..], &expected_bytes_with_size_encoding[8..]);
+
+        // Deserialize
+        assert_eq!(genesis_block, Block::read_le_unchecked(&expected_bytes[..])?);
+        assert_eq!(
+            genesis_block,
+            snarkvm_utilities::bytes::unchecked_deserialize(&expected_bytes_with_size_encoding[..])?
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_genesis_bincode_mainnet() -> Result<()> {
         // Load the genesis block.
-        let genesis_block = Block::<CurrentNetwork>::read_le(CurrentNetwork::genesis_bytes()).unwrap();
+        let genesis_block = Block::<MainnetV0>::read_le(MainnetV0::genesis_bytes()).unwrap();
 
         // Serialize
         let expected_bytes = genesis_block.to_bytes_le()?;
@@ -139,5 +177,29 @@ mod tests {
         assert_eq!(genesis_block, bincode::deserialize(&expected_bytes_with_size_encoding[..])?);
 
         Ok(())
+    }
+
+    // When `test_targets` is enabled, the gensis bytes do not match the expected coinbase target.
+    // (except for Mainnet which ignores this feature)
+    #[cfg(not(feature = "test_targets"))]
+    mod production {
+        use super::*;
+
+        #[test]
+        fn test_genesis_bincode_testnet() -> Result<()> {
+            // Load the genesis block.
+            let genesis_block = Block::<TestnetV0>::read_le(TestnetV0::genesis_bytes()).unwrap();
+
+            // Serialize
+            let expected_bytes = genesis_block.to_bytes_le()?;
+            let expected_bytes_with_size_encoding = bincode::serialize(&genesis_block)?;
+            assert_eq!(&expected_bytes[..], &expected_bytes_with_size_encoding[8..]);
+
+            // Deserialize
+            assert_eq!(genesis_block, Block::read_le(&expected_bytes[..])?);
+            assert_eq!(genesis_block, bincode::deserialize(&expected_bytes_with_size_encoding[..])?);
+
+            Ok(())
+        }
     }
 }

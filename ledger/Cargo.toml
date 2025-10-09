@@ -84,6 +84,7 @@ test-helpers = [
 ]
 test_targets = [
   "snarkvm-console/test_targets",
+  "snarkvm-ledger-block/test_targets",
 ]
 timer = [ "aleo-std/timer" ]
 

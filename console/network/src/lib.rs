@@ -298,6 +298,9 @@ pub trait Network:
     fn INCLUSION_UPGRADE_HEIGHT() -> Result<u32>;
 
     /// Returns the genesis block bytes.
+    ///
+    /// Note, that this always returns the bytes of the production genesis block.
+    /// As a result, this may not match the bytes of the genesis block with the `test_targets` feature enabled.
     fn genesis_bytes() -> &'static [u8];
 
     /// Returns the restrictions list as a JSON-compatible string.

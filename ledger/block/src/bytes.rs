@@ -152,9 +152,7 @@ impl<N: Network> ToBytes for Block<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::network::MainnetV0;
-
-    type CurrentNetwork = MainnetV0;
+    use console::network::{MainnetV0, TestnetV0};
 
     #[test]
     fn test_bytes() -> Result<()> {
@@ -170,9 +168,33 @@ mod tests {
     }
 
     #[test]
-    fn test_genesis_bytes() -> Result<()> {
+    fn test_genesis_bytes_mainnet_unchecked() -> Result<()> {
         // Load the genesis block.
-        let genesis_block = Block::<CurrentNetwork>::read_le(CurrentNetwork::genesis_bytes()).unwrap();
+        let genesis_block = Block::<MainnetV0>::read_le_unchecked(MainnetV0::genesis_bytes()).unwrap();
+
+        // Check the byte representation.
+        let expected_bytes = genesis_block.to_bytes_le()?;
+        assert_eq!(genesis_block, Block::read_le_unchecked(&expected_bytes[..])?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_genesis_bytes_testnet_unchecked() -> Result<()> {
+        // Load the genesis block.
+        let genesis_block = Block::<TestnetV0>::read_le_unchecked(TestnetV0::genesis_bytes()).unwrap();
+
+        // Check the byte representation.
+        let expected_bytes = genesis_block.to_bytes_le()?;
+        assert_eq!(genesis_block, Block::read_le_unchecked(&expected_bytes[..])?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_genesis_bytes_mainnet() -> Result<()> {
+        // Load the genesis block.
+        let genesis_block = Block::<MainnetV0>::read_le(MainnetV0::genesis_bytes()).unwrap();
 
         // Check the byte representation.
         let expected_bytes = genesis_block.to_bytes_le()?;
@@ -182,16 +204,22 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_bincode() -> Result<()> {
-        // Load the genesis block.
-        let genesis_block = Block::<CurrentNetwork>::read_le(CurrentNetwork::genesis_bytes()).unwrap();
+    // When `test_targets` is enabled, the gensis bytes do not match the expected coinbase target.
+    // (except for Mainnet which ignores this feature)
+    #[cfg(not(feature = "test_targets"))]
+    mod production {
+        use super::*;
+        #[test]
+        fn test_genesis_bytes_testnet() -> Result<()> {
+            // Load the genesis block.
+            let genesis_block = Block::<TestnetV0>::read_le(TestnetV0::genesis_bytes()).unwrap();
 
-        let bincode_data = bincode::serialize(&genesis_block)?;
-        let block = bincode::deserialize(&bincode_data)?;
+            // Check the byte representation.
+            let expected_bytes = genesis_block.to_bytes_le()?;
+            assert_eq!(genesis_block, Block::read_le(&expected_bytes[..])?);
+            assert_eq!(genesis_block, Block::read_le_unchecked(&expected_bytes[..])?);
 
-        assert_eq!(genesis_block, block);
-
-        Ok(())
+            Ok(())
+        }
     }
 }
