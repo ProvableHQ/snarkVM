@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> FromBytes for Header<N> {
     /// Reads the block header from the buffer.
     #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -27,25 +27,49 @@ impl<N: Network> FromBytes for Header<N> {
         }
 
         // Read from the buffer.
-        let previous_state_root = N::StateRoot::read_le(&mut reader)?;
-        let transactions_root = Field::<N>::read_le(&mut reader)?;
-        let finalize_root = Field::<N>::read_le(&mut reader)?;
-        let ratifications_root = Field::<N>::read_le(&mut reader)?;
-        let solutions_root = Field::<N>::read_le(&mut reader)?;
-        let subdag_root = Field::<N>::read_le(&mut reader)?;
-        let metadata = Metadata::read_le(&mut reader)?;
+        let previous_state_root = N::StateRoot::read_le_with_unchecked(&mut reader, unchecked)?;
+        let transactions_root = Field::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
+        let finalize_root = Field::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
+        let ratifications_root = Field::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
+        let solutions_root = Field::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
+        let subdag_root = Field::<N>::read_le_with_unchecked(&mut reader, unchecked)?;
+        let metadata = Metadata::read_le_with_unchecked(&mut reader, unchecked)?;
 
         // Construct the block header.
-        Self::from(
-            previous_state_root,
-            transactions_root,
-            finalize_root,
-            ratifications_root,
-            solutions_root,
-            subdag_root,
-            metadata,
-        )
-        .map_err(|e| error(format!("{e:#?}")))
+        if unchecked {
+            Self::from_unchecked(
+                previous_state_root,
+                transactions_root,
+                finalize_root,
+                ratifications_root,
+                solutions_root,
+                subdag_root,
+                metadata,
+            )
+        } else {
+            Self::from(
+                previous_state_root,
+                transactions_root,
+                finalize_root,
+                ratifications_root,
+                solutions_root,
+                subdag_root,
+                metadata,
+            )
+        }
+        .map_err(into_io_error)
+    }
+
+    /// Reads the block header from the buffer.
+    #[inline]
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    /// Reads the block header from the buffer without performing any validity checks.
+    #[inline]
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 

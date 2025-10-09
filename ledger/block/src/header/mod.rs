@@ -63,8 +63,7 @@ impl<N: Network> Header<N> {
         subdag_root: Field<N>,
         metadata: Metadata<N>,
     ) -> Result<Self> {
-        // Construct a new block header.
-        let header = Self {
+        let header = Self::from_unchecked(
             previous_state_root,
             transactions_root,
             finalize_root,
@@ -72,10 +71,33 @@ impl<N: Network> Header<N> {
             solutions_root,
             subdag_root,
             metadata,
-        };
+        )?;
+
         // Ensure the header is valid.
         header.check_validity().with_context(|| "Invalid block header")?;
         Ok(header)
+    }
+
+    /// Initializes a new block header with the given inputs,
+    /// and without performing any validity checks.
+    pub fn from_unchecked(
+        previous_state_root: N::StateRoot,
+        transactions_root: Field<N>,
+        finalize_root: Field<N>,
+        ratifications_root: Field<N>,
+        solutions_root: Field<N>,
+        subdag_root: Field<N>,
+        metadata: Metadata<N>,
+    ) -> Result<Self> {
+        Ok(Self {
+            previous_state_root,
+            transactions_root,
+            finalize_root,
+            ratifications_root,
+            solutions_root,
+            subdag_root,
+            metadata,
+        })
     }
 
     /// Returns `true` if the block header is well-formed.

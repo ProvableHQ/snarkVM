@@ -18,12 +18,12 @@ use super::*;
 impl<N: Network> FromBytes for Metadata<N> {
     /// Reads the metadata from the buffer.
     #[inline]
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+    fn read_le_with_unchecked<R: Read>(mut reader: R, unchecked: bool) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
         if version != 1 {
-            return Err(error("Invalid metadata version"));
+            return Err(io_error("Invalid metadata version"));
         }
 
         // Read from the buffer.
@@ -39,19 +39,42 @@ impl<N: Network> FromBytes for Metadata<N> {
         let timestamp = i64::read_le(&mut reader)?;
 
         // Construct the metadata.
-        Self::new(
-            network,
-            round,
-            height,
-            cumulative_weight,
-            cumulative_proof_target,
-            coinbase_target,
-            proof_target,
-            last_coinbase_target,
-            last_coinbase_timestamp,
-            timestamp,
-        )
+        if unchecked {
+            Self::from_unchecked(
+                network,
+                round,
+                height,
+                cumulative_weight,
+                cumulative_proof_target,
+                coinbase_target,
+                proof_target,
+                last_coinbase_target,
+                last_coinbase_timestamp,
+                timestamp,
+            )
+        } else {
+            Self::from(
+                network,
+                round,
+                height,
+                cumulative_weight,
+                cumulative_proof_target,
+                coinbase_target,
+                proof_target,
+                last_coinbase_target,
+                last_coinbase_timestamp,
+                timestamp,
+            )
+        }
         .map_err(into_io_error)
+    }
+
+    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, false)
+    }
+
+    fn read_le_unchecked<R: Read>(reader: R) -> IoResult<Self> {
+        Self::read_le_with_unchecked(reader, true)
     }
 }
 

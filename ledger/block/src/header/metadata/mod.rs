@@ -54,6 +54,8 @@ pub struct Metadata<N: Network> {
 
 impl<N: Network> Metadata<N> {
     /// Initializes a new metadata with the given inputs.
+    ///
+    /// This is identitcal to calling [`Self::from`].
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         network: u16,
@@ -67,8 +69,69 @@ impl<N: Network> Metadata<N> {
         last_coinbase_timestamp: i64,
         timestamp: i64,
     ) -> Result<Self> {
+        Self::from(
+            network,
+            round,
+            height,
+            cumulative_weight,
+            cumulative_proof_target,
+            coinbase_target,
+            proof_target,
+            last_coinbase_target,
+            last_coinbase_timestamp,
+            timestamp,
+        )
+    }
+
+    /// Initializes a new metadata with the given inputs.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from(
+        network: u16,
+        round: u64,
+        height: u32,
+        cumulative_weight: u128,
+        cumulative_proof_target: u128,
+        coinbase_target: u64,
+        proof_target: u64,
+        last_coinbase_target: u64,
+        last_coinbase_timestamp: i64,
+        timestamp: i64,
+    ) -> Result<Self> {
         // Construct a new metadata.
-        let metadata = Self {
+        let metadata = Self::from_unchecked(
+            network,
+            round,
+            height,
+            cumulative_weight,
+            cumulative_proof_target,
+            coinbase_target,
+            proof_target,
+            last_coinbase_target,
+            last_coinbase_timestamp,
+            timestamp,
+        )?;
+
+        // Ensure the header is valid.
+        metadata.check_validity().with_context(|| "Invalid block metadata")?;
+
+        Ok(metadata)
+    }
+
+    /// Initializes a new metadata with the given inputs, and without performing any validity checks.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_unchecked(
+        network: u16,
+        round: u64,
+        height: u32,
+        cumulative_weight: u128,
+        cumulative_proof_target: u128,
+        coinbase_target: u64,
+        proof_target: u64,
+        last_coinbase_target: u64,
+        last_coinbase_timestamp: i64,
+        timestamp: i64,
+    ) -> Result<Self> {
+        Ok(Self {
             network,
             round,
             height,
@@ -80,12 +143,7 @@ impl<N: Network> Metadata<N> {
             last_coinbase_timestamp,
             timestamp,
             _phantom: PhantomData,
-        };
-
-        // Ensure the header is valid.
-        metadata.check_validity().with_context(|| "Invalid block metadata")?;
-
-        Ok(metadata)
+        })
     }
 
     /// Returns `true` if the block metadata is well-formed.
