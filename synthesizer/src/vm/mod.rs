@@ -451,30 +451,42 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             block.previous_hash(),
         )?;
 
+        // Helper to abort the atomic write batch.
+        let abort = |block_store: &BlockStore<N, C::BlockStorage>,
+                     finalize_store: &FinalizeStore<N, C::FinalizeStorage>| {
+            if cfg!(feature = "rocks") {
+                // Clear all pending atomic operations so that unpausing the atomic writes
+                // doesn't execute any of the queued storage operations.
+                block_store.abort_atomic();
+                finalize_store.abort_atomic();
+
+                // Disable the atomic batch override.
+                // Note: This call is guaranteed to succeed (without error), because `DISCARD_BATCH == true`.
+                block_store.unpause_atomic_writes::<true>()?;
+            }
+
+            anyhow::Result::<()>::Ok(())
+        };
+
         // Pause the atomic writes, so that both the insertion and finalization belong to a single batch.
         #[cfg(feature = "rocks")]
         self.block_store().pause_atomic_writes()?;
 
         // First, insert the block.
         if let Err(insert_error) = self.block_store().insert(block) {
-            if cfg!(feature = "rocks") {
-                // Clear all pending atomic operations so that unpausing the atomic writes
-                // doesn't execute any of the queued storage operations.
-                self.block_store().abort_atomic();
-                // Disable the atomic batch override.
-                // Note: This call is guaranteed to succeed (without error), because `DISCARD_BATCH == true`.
-                self.block_store().unpause_atomic_writes::<true>()?;
-            }
-
+            abort(self.block_store(), self.finalize_store())?;
             return Err(insert_error);
         };
 
         // Next, finalize the transactions.
         match self.finalize(state, block.ratifications(), block.solutions(), block.transactions()) {
             Ok(_ratified_finalize_operations) => {
-                // If the block advances to `ConsensusVersion::V8`, updated the VKs used for the credits program.
+                // If the block advances to `ConsensusVersion::V8`, update the VKs used for the credits program.
                 if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
-                    self.update_credits_verifying_keys()?;
+                    if let Err(err) = self.update_credits_verifying_keys() {
+                        abort(self.block_store(), self.finalize_store())?;
+                        return Err(err);
+                    }
                 }
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
@@ -493,13 +505,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
             Err(finalize_error) => {
                 if cfg!(feature = "rocks") {
-                    // Clear all pending atomic operations so that unpausing the atomic writes
-                    // doesn't execute any of the queued storage operations.
-                    self.block_store().abort_atomic();
-                    self.finalize_store().abort_atomic();
-                    // Disable the atomic batch override.
-                    // Note: This call is guaranteed to succeed (without error), because `DISCARD_BATCH == true`.
-                    self.block_store().unpause_atomic_writes::<true>()?;
+                    // Abort the write batch.
+                    abort(self.block_store(), self.finalize_store())?;
+
                     // Rollback the Merkle tree.
                     self.block_store().remove_last_n_from_tree_only(1).inspect_err(|_| {
                         // Log the finalize error.
