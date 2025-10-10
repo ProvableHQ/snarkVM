@@ -60,7 +60,7 @@ The following is an (incomplete) list of features flags in the snarkVM crate.
 * **instrumentation** -
   Adds `tracing::instrument` statements to (some) functions. This is useful for profiling, but should not be used in production.
 * **serial** -
-  *Disables* paralle processing using `rayon`.
+  *Disables* parallel processing using `rayon`. This is useful for specialized profiling, but should not be used in production.
 * **algorithms** -
   Adds the `algorithms` crate to `snarkvm` (as `snarkvm::algorithms`)
 * **circuit** -
@@ -78,7 +78,7 @@ The following is an (incomplete) list of features flags in the snarkVM crate.
 
 ### 3. Building Guide
 
-You can also build snarkVM from source. Because snarkVM is a library, this follwing guide is only useful if you plan to make modifications to its source code.
+You can also build snarkVM from source. Because snarkVM is a library, this following guide is only useful if you plan to make modifications to its source code.
 
 ### 3.1 Install Rust
 
@@ -98,7 +98,7 @@ We recommend installing Rust using [rustup](https://www.rustup.rs/). You can ins
 - Windows (64-bit):
 
   Download the [Windows 64-bit executable](https://win.rustup.rs/x86_64) or
-  [Windows 32-bit executable](https://win.rustup.rs/i686) and follow the on-screen instructions.i
+  [Windows 32-bit executable](https://win.rustup.rs/i686) and follow the on-screen instructions.
 
 ### 3.2 Additional Dependencies
 
