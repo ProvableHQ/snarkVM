@@ -24,7 +24,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     ///
     /// # Panics
     /// This function panics if called from an async context.
-    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip_all))]
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip_all, fields(height=block.height())))]
     pub fn check_next_block<R: CryptoRng + Rng>(&self, block: &Block<N>, rng: &mut R) -> Result<()> {
         let height = block.height();
         let latest_block = self.latest_block();
@@ -146,7 +146,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     ///
     /// This does not verify that the batches are signed correctly or that the edges are valid
     /// (only point to the previous round), as those checks already happened when the node received the batch.
-    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip_all))]
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip_all, fields(height=block.height())))]
     fn check_block_subdag_leaves(&self, block: &Block<N>) -> Result<()> {
         // Check if the block has a subdag.
         let Authority::Quorum(subdag) = block.authority() else {
@@ -188,7 +188,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Check that the certificates in the block subdag have met quorum requirements.
     ///
     /// Called by [`Self::check_block_subdag`]
-    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip_all))]
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip_all, fields(height=block.height())))]
     fn check_block_subdag_quorum(&self, block: &Block<N>) -> Result<()> {
         // Check if the block has a subdag.
         let subdag = match block.authority() {

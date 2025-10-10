@@ -101,7 +101,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     ///
     /// # Panics
     /// This function panics if called from an async context.
-    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip_all))]
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip_all, fields(height=block.height())))]
     pub fn advance_to_next_block(&self, block: &Block<N>) -> Result<()> {
         // Acquire the write lock on the current block.
         let mut current_block = self.current_block.write();
