@@ -139,10 +139,18 @@ pub trait Network:
     const EXECUTION_STORAGE_PENALTY_THRESHOLD: u64 = 5000;
     /// The cost in microcredits per constraint for the deployment transaction.
     const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
-    /// The maximum number of variables in a deployment.
-    const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
-    /// The maximum number of constraints in a deployment.
-    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
+    /// The maximum number of variables in a deployment. These limit were enforced at the transaction level.
+    /// This corresponds to ~0.5 second single-threaded runtime at mainnet launch reference validator hardware.
+    const MAX_DEPLOYMENT_VARIABLES_V0: u64 = 1 << 21; // 2,097,152 variables
+    /// The maximum number of constraints in a deployment. These limit were enforced at the transaction level.
+    /// This corresponds to ~0.5 second single-threaded runtime at mainnet launch reference validator hardware.
+    const MAX_DEPLOYMENT_CONSTRAINTS_V0: u64 = 1 << 21; // 2,097,152 constraints
+    /// The maximum number of variables in a deployment. These limits are enforced at the block level.
+    /// This corresponds to ~4 seconds single-threaded runtime at mainnet launch reference validator hardware.
+    const MAX_DEPLOYMENT_VARIABLES_V1: u64 = 1 << 24; // 16,777,216 variables
+    /// The maximum number of constraints in a deployment. These limits are enforced at the block level.
+    /// This corresponds to ~4 seconds single-threaded runtime at mainnet launch reference validator hardware.
+    const MAX_DEPLOYMENT_CONSTRAINTS_V1: u64 = 1 << 24; // 16,777,216 constraints
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
     /// A list of consensus versions and their corresponding transaction spend limits in microcredits.

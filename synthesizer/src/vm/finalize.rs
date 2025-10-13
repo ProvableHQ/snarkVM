@@ -287,6 +287,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 process.revert_stacks();
             }
 
+            // Determine the consensus version.
+            let consensus_version = N::CONSENSUS_VERSION(state.block_height()).unwrap();
+
             // Initialize a list of the confirmed transactions.
             let mut confirmed = Vec::with_capacity(num_transactions);
             // Initialize a list of the aborted transactions.
@@ -305,6 +308,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut deployment_payers: IndexSet<Address<N>> = IndexSet::new();
             // Initialize a list of the successful deployments.
             let mut deployments = IndexSet::new();
+            // Initialize a counter for the deployment constraints seen.
+            let mut deployment_constraints_seen = 0u64;
+            // Initialize a counter for the deployment variables seen.
+            let mut deployment_variables_seen = 0u64;
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
@@ -319,6 +326,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                 // Determine if the transaction should be aborted.
                 if let Some(reason) = self.should_abort_transaction(
+                    consensus_version,
                     transaction,
                     &transition_ids,
                     &input_ids,
@@ -326,6 +334,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     &tpks,
                     &deployment_payers,
                     &deployments,
+                    deployment_constraints_seen,
+                    deployment_variables_seen,
                 ) {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), reason));
@@ -473,6 +483,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         if let Transaction::Deploy(_, _, _, deployment, fee) = confirmed_transaction.transaction() {
                             fee.payer().map(|payer| deployment_payers.insert(payer));
                             deployments.insert(*deployment.program_id());
+                            deployment_constraints_seen = deployment_constraints_seen
+                                .saturating_add(deployment.num_combined_constraints().map_err(|e| e.to_string())?);
+                            deployment_variables_seen = deployment_variables_seen
+                                .saturating_add(deployment.num_combined_variables().map_err(|e| e.to_string())?);
                         }
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
@@ -807,19 +821,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is producing a duplicate transition public key
     /// - The transaction is another deployment in the block from the same public fee payer.
     /// - The transaction contains a transition that has been deployed or upgraded in this block.
+    /// - The transaction is exceeding the deployment constraints or variables limit.
     ///
     /// - Note: If a transaction is a deployment for a program following its deployment or redeployment in this block,
     ///   it is not aborted. Instead, it will be rejected and its fee will be consumed.
     #[allow(clippy::too_many_arguments)]
     fn should_abort_transaction(
         &self,
+        consensus_version: ConsensusVersion,
         transaction: &Transaction<N>,
         transition_ids: &IndexSet<N::TransitionID>,
         input_ids: &IndexSet<Field<N>>,
         output_ids: &IndexSet<Field<N>>,
         tpks: &IndexSet<Group<N>>,
         deployment_payers: &IndexSet<Address<N>>,
-        deployments: &IndexSet<ProgramID<N>>,
+        deployments_seen: &IndexSet<ProgramID<N>>,
+        deployment_constraints_seen: u64,
+        deployment_variables_seen: u64,
     ) -> Option<String> {
         // Ensure that:
         //  - the transaction is not producing a duplicate transition.
@@ -834,7 +852,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 return Some(format!("Duplicate transition {transition_id}"));
             }
             // If the transition's program is being deployed or redeployed in this block, abort the transaction.
-            if deployments.contains(transition.program_id()) {
+            if deployments_seen.contains(transition.program_id()) {
                 return Some(format!(
                     "Program {} is being deployed or redeployed in this block",
                     transition.program_id()
@@ -877,6 +895,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
+        if consensus_version >= ConsensusVersion::V12 {
+            // If the transaction is a deployment, ensure that it is not exceeding the deployment constraints or variables limit.
+            if let Transaction::Deploy(_, _, _, deployment, _) = transaction {
+                let Ok(num_combined_constraints) = deployment.num_combined_constraints() else {
+                    return Some("Failed to compute the number of combined constraints for a deployment".to_string());
+                };
+                let num_combined_constraints = num_combined_constraints.saturating_add(deployment_constraints_seen);
+                let Ok(num_combined_variables) = deployment.num_combined_variables() else {
+                    return Some("Failed to compute the number of combined variables for a deployment".to_string());
+                };
+                let num_combined_variables = num_combined_variables.saturating_add(deployment_variables_seen);
+                // If the deployment constraints or variables are already seen, abort the transaction.
+                if num_combined_constraints >= N::MAX_DEPLOYMENT_CONSTRAINTS_V1
+                    || num_combined_variables >= N::MAX_DEPLOYMENT_VARIABLES_V1
+                {
+                    return Some("Exceeding deployment constraints or variables limit".to_string());
+                }
+            }
+        }
+
         // Return `None` because the transaction is well-formed.
         None
     }
@@ -897,6 +935,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut valid_transactions = Vec::with_capacity(transactions.len());
         let mut aborted_transactions = Vec::with_capacity(transactions.len());
 
+        // Determine the consensus version.
+        let consensus_version = N::CONSENSUS_VERSION(self.block_store().current_block_height())?;
+
         // Initialize a list of created transition IDs.
         let mut transition_ids: IndexSet<N::TransitionID> = Default::default();
         // Initialize a list of spent input IDs.
@@ -909,6 +950,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut deployment_payers: IndexSet<Address<N>> = Default::default();
         // Initialize a list of the successful deployments.
         let mut deployments = IndexSet::new();
+        // Initialize a counter for the deployment constraints seen.
+        let mut deployment_constraints_seen = 0u64;
+        // Initialize a counter for the deployment variables seen.
+        let mut deployment_variables_seen = 0u64;
 
         // Abort the transactions that are have duplicates or are invalid. This will prevent the VM from performing
         // verification on transactions that would have been aborted in `VM::atomic_speculate`.
@@ -921,6 +966,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             // Determine if the transaction should be aborted.
             match self.should_abort_transaction(
+                consensus_version,
                 transaction,
                 &transition_ids,
                 &input_ids,
@@ -928,6 +974,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 &tpks,
                 &deployment_payers,
                 &deployments,
+                deployment_constraints_seen,
+                deployment_variables_seen,
             ) {
                 // Store the aborted transaction.
                 Some(reason) => aborted_transactions.push((*transaction, reason.to_string())),
@@ -945,6 +993,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
                         fee.payer().map(|payer| deployment_payers.insert(payer));
                         deployments.insert(*deployment.program_id());
+                        deployment_constraints_seen =
+                            deployment_constraints_seen.saturating_add(deployment.num_combined_constraints()?);
+                        deployment_variables_seen =
+                            deployment_variables_seen.saturating_add(deployment.num_combined_variables()?);
                     }
 
                     // Add the transaction to the list of transactions to verify.

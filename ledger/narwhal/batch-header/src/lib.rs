@@ -351,8 +351,8 @@ mod tests {
 
     #[test]
     fn test_max_synthesis_cost_below_batch_spend_limit() {
-        fn max_synthesis_cost_valid<N: Network>() {
-            let max_synthesis_cost = N::MAX_DEPLOYMENT_VARIABLES.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS)
+        fn max_synthesis_cost_valid_v0<N: Network>() {
+            let max_synthesis_cost = N::MAX_DEPLOYMENT_VARIABLES_V0.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS_V0)
                 * N::SYNTHESIS_FEE_MULTIPLIER
                 / N::ARC_0005_COMPUTE_DISCOUNT;
             for (_, height) in N::CONSENSUS_VERSION_HEIGHTS().iter() {
@@ -360,8 +360,20 @@ mod tests {
             }
         }
 
-        max_synthesis_cost_valid::<CanaryV0>();
-        max_synthesis_cost_valid::<TestnetV0>();
-        max_synthesis_cost_valid::<MainnetV0>();
+        fn max_synthesis_cost_valid_v1<N: Network>() {
+            let max_synthesis_cost = N::MAX_DEPLOYMENT_VARIABLES_V1.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS_V1)
+                * N::SYNTHESIS_FEE_MULTIPLIER
+                / N::ARC_0005_COMPUTE_DISCOUNT;
+            for (_, height) in N::CONSENSUS_VERSION_HEIGHTS().iter() {
+                assert!(max_synthesis_cost < BatchHeader::<N>::batch_spend_limit(*height));
+            }
+        }
+
+        max_synthesis_cost_valid_v0::<CanaryV0>();
+        max_synthesis_cost_valid_v0::<TestnetV0>();
+        max_synthesis_cost_valid_v0::<MainnetV0>();
+        max_synthesis_cost_valid_v1::<CanaryV0>();
+        max_synthesis_cost_valid_v1::<TestnetV0>();
+        max_synthesis_cost_valid_v1::<MainnetV0>();
     }
 }
