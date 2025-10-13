@@ -41,6 +41,8 @@ pub enum ConsensusVersion {
     V10 = 10,
     /// V11: Support for external structs.
     V11 = 11,
+    /// V12: Support for block-level deployment constraints and variables limits.
+    V12 = 12,
 }
 
 impl ConsensusVersion {
@@ -50,7 +52,7 @@ impl ConsensusVersion {
 }
 
 /// The number of consensus versions.
-pub(crate) const NUM_CONSENSUS_VERSIONS: usize = 11;
+pub(crate) const NUM_CONSENSUS_VERSIONS: usize = 12;
 
 /// The consensus version height for `CanaryV0`.
 pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] = [
@@ -65,6 +67,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V9, 8_028_000),
     (ConsensusVersion::V10, 8_600_000),
     (ConsensusVersion::V11, 10_235_000),
+    (ConsensusVersion::V12, 11_800_000),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -80,6 +83,7 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V9, 10_272_000),
     (ConsensusVersion::V10, 11_205_000),
     (ConsensusVersion::V11, 13_575_000),
+    (ConsensusVersion::V12, 15_200_000),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -95,6 +99,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V9, 9_800_000),
     (ConsensusVersion::V10, 10_525_000),
     (ConsensusVersion::V11, 12_660_000),
+    (ConsensusVersion::V12, 14_300_000),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -110,6 +115,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V9, 12),
     (ConsensusVersion::V10, 13),
     (ConsensusVersion::V11, 14),
+    (ConsensusVersion::V12, 15),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
