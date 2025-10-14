@@ -387,6 +387,7 @@ function dummy:
     let deployment_0 = transaction_0.deployment().expect("Expected a deployment transaction");
     // Generate a second deployment transaction with an incremented edition and a different fee.
     let deployment_1 = Deployment::new(
+        None,
         deployment_0.edition() + 1,
         deployment_0.program().clone(),
         deployment_0.verifying_keys().clone(),
@@ -432,6 +433,7 @@ function dummy:
 
     // Redeploy the program with the other private key, using the original deployment.
     let deployment = Deployment::new(
+        None,
         1,
         program.clone(),
         deployment_0.verifying_keys().clone(),

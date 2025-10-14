@@ -180,14 +180,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Next, verify the deployment or execution.
         match transaction {
-            Transaction::Deploy(id, deployment_id, owner, deployment, _) => {
+            Transaction::Deploy(id, owner, deployment, _) => {
                 // Sanity check that the program is not `credits.aleo`.
                 ensure!(
                     deployment.program_id() != &ProgramID::from_str("credits.aleo")?,
                     "Cannot deploy 'credits.aleo'"
                 );
                 // Verify the signature corresponds to the transaction ID.
-                ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
+                ensure!(
+                    owner.verify(deployment.to_deployment_id()?),
+                    "Invalid owner signature for deployment transaction '{id}'"
+                );
                 // If the `CONSENSUS_VERSION` is less than `V8`, ensure that
                 //   - the deployment edition is zero.
                 // If the `CONSENSUS_VERSION` is less than `V9` ensure that
@@ -383,9 +386,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     }
                 }
             }
-            Transaction::Execute(id, execution_id, execution, _) => {
+            Transaction::Execute(id, execution, _) => {
                 // Ensure the execution was not previously rejected (replay attack prevention).
-                if self.block_store().contains_rejected_deployment_or_execution_id(execution_id)? {
+                if self.block_store().contains_rejected_deployment_or_execution_id(&execution.to_execution_id()?)? {
                     bail!("Transaction '{id}' contains a previously rejected execution")
                 }
                 // Verify the execution.
@@ -421,7 +424,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let transaction_spend_limit =
             consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
         match transaction {
-            Transaction::Deploy(id, deployment_id, _, deployment, fee) => {
+            Transaction::Deploy(id, _, deployment, fee) => {
                 // Ensure the rejected ID is not present.
                 ensure!(rejected_id.is_none(), "Transaction '{id}' should not have a rejected ID (deployment)");
                 // Compute the minimum deployment cost.
@@ -443,9 +446,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     )
                 }
                 // Verify the fee.
-                self.check_fee_internal(fee, *deployment_id, is_partially_verified)?;
+                self.check_fee_internal(fee, deployment.to_deployment_id()?, is_partially_verified)?;
             }
-            Transaction::Execute(id, execution_id, execution, fee) => {
+            Transaction::Execute(id, execution, fee) => {
                 // Ensure the rejected ID is not present.
                 ensure!(rejected_id.is_none(), "Transaction '{id}' should not have a rejected ID (execution)");
                 // If the transaction contains only 1 transition, and the transition is a split or upgrade, then the fee can be skipped.
@@ -478,7 +481,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         ensure!(*fee.base_amount()? == 0, "Transaction '{id}' has a non-zero base fee (execution)");
                     }
                     // Verify the fee.
-                    self.check_fee_internal(fee, *execution_id, is_partially_verified)?;
+                    self.check_fee_internal(fee, execution.to_execution_id()?, is_partially_verified)?;
                 } else {
                     // Ensure the fee can be safely skipped.
                     ensure!(!is_fee_required, "Transaction '{id}' is missing a fee (execution)");
@@ -784,7 +787,7 @@ mod tests {
 
         for transaction in transactions {
             match transaction {
-                Transaction::Execute(_, _, execution, _) => {
+                Transaction::Execute(_, execution, _) => {
                     // Ensure the proof exists.
                     assert!(execution.proof().is_some());
                     // Verify the execution.
@@ -821,7 +824,7 @@ mod tests {
 
         for transaction in transactions {
             match transaction {
-                Transaction::Execute(_, _, execution, Some(fee)) => {
+                Transaction::Execute(_, execution, Some(fee)) => {
                     let execution_id = execution.to_execution_id().unwrap();
 
                     // Ensure the proof exists.
@@ -1063,6 +1066,7 @@ function compute:
 
         // Construct the mutated execution.
         let mutated_execution = Execution::from(
+            None,
             [mutated_transition].into_iter(),
             execution.global_state_root(),
             execution.proof().cloned(),

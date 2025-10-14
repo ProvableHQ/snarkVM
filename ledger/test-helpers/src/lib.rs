@@ -178,6 +178,7 @@ function compute:
         .clone();
     // Create a new deployment with the desired edition.
     Deployment::<CurrentNetwork>::new(
+        None,
         edition % 2,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
@@ -222,6 +223,7 @@ function compute:
         .clone();
     // Create a new deployment with the desired edition.
     Deployment::<CurrentNetwork>::new(
+        None,
         edition,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
@@ -239,8 +241,8 @@ pub fn sample_rejected_deployment(
     rng: &mut TestRng,
 ) -> Rejected<CurrentNetwork> {
     // Sample a deploy transaction.
-    let deployment = match crate::sample_deployment_transaction(version, edition, is_fee_private, rng) {
-        Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
+    let (id, deployment) = match crate::sample_deployment_transaction(version, edition, is_fee_private, rng) {
+        Transaction::Deploy(id, _, deployment, _) => (id, (*deployment).clone()),
         _ => unreachable!(),
     };
 
@@ -250,7 +252,7 @@ pub fn sample_rejected_deployment(
     let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
     // Return the rejected deployment.
-    Rejected::new_deployment(program_owner, deployment)
+    Rejected::new_deployment(id, program_owner, deployment)
 }
 
 /******************************************* Execution ********************************************/
@@ -262,7 +264,7 @@ pub fn sample_execution(rng: &mut TestRng, index: usize) -> Execution<CurrentNet
     // Retrieve a transaction.
     let transaction = block.transactions().iter().nth(index).unwrap().deref().clone();
     // Retrieve the execution.
-    if let Transaction::Execute(_, _, execution, _) = transaction {
+    if let Transaction::Execute(_, execution, _) = transaction {
         *execution
     } else {
         panic!("Index {index} exceeded the number of executions in the genesis block")
@@ -272,13 +274,13 @@ pub fn sample_execution(rng: &mut TestRng, index: usize) -> Execution<CurrentNet
 /// Samples a rejected execution.
 pub fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
     // Sample an execute transaction.
-    let execution = match crate::sample_execution_transaction_with_fee(is_fee_private, rng, 0) {
-        Transaction::Execute(_, _, execution, _) => execution,
+    let (id, execution) = match crate::sample_execution_transaction_with_fee(is_fee_private, rng, 0) {
+        Transaction::Execute(id, execution, _) => (id, execution),
         _ => unreachable!(),
     };
 
     // Return the rejected execution.
-    Rejected::new_execution(*execution)
+    Rejected::new_execution(id, *execution)
 }
 
 /********************************************** Fee ***********************************************/

@@ -22,7 +22,7 @@ impl<N: Network> Serialize for Transaction<N> {
         // and instead recompute it when reconstructing the transaction, to ensure there was no malleability.
         match serializer.is_human_readable() {
             true => match self {
-                Self::Deploy(id, _, owner, deployment, fee) => {
+                Self::Deploy(id, owner, deployment, fee) => {
                     let mut transaction = serializer.serialize_struct("Transaction", 5)?;
                     transaction.serialize_field("type", "deploy")?;
                     transaction.serialize_field("id", &id)?;
@@ -31,7 +31,7 @@ impl<N: Network> Serialize for Transaction<N> {
                     transaction.serialize_field("fee", &fee)?;
                     transaction.end()
                 }
-                Self::Execute(id, _, execution, fee) => {
+                Self::Execute(id, execution, fee) => {
                     let mut transaction = serializer.serialize_struct("Transaction", 3 + fee.is_some() as usize)?;
                     transaction.serialize_field("type", "execute")?;
                     transaction.serialize_field("id", &id)?;

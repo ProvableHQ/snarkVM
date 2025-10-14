@@ -18,6 +18,14 @@ use super::*;
 impl<N: Network> FromBytes for Deployment<N> {
     /// Reads the deployment from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the id variant.
+        let id_variant = u8::read_le(&mut reader)?;
+        // Read the deployment id.
+        let id = match id_variant {
+            0 => None,
+            1 => Some(DeploymentID::<N>::read_le(&mut reader)?),
+            _ => return Err(error(format!("Invalid id variant '{id_variant}'"))),
+        };
         // Read the version and ensure the version is valid.
         let version = match u8::read_le(&mut reader)? {
             1 => DeploymentVersion::V1,
@@ -82,7 +90,7 @@ impl<N: Network> FromBytes for Deployment<N> {
         };
 
         // Return the deployment.
-        Self::new(edition, program, verifying_keys, program_checksum, program_owner)
+        Self::new(id, edition, program, verifying_keys, program_checksum, program_owner)
             .map_err(|err| error(format!("{err}")))
     }
 }
@@ -90,6 +98,14 @@ impl<N: Network> FromBytes for Deployment<N> {
 impl<N: Network> ToBytes for Deployment<N> {
     /// Writes the deployment to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        // Write the deployment id.
+        match self.id.get() {
+            None => 0u8.write_le(&mut writer)?,
+            Some(id) => {
+                1u8.write_le(&mut writer)?;
+                id.write_le(&mut writer)?;
+            }
+        };
         // Determine the version.
         // Note: This method checks that either both or neither of the program checksum and program owner are present.
         let version = self.version().map_err(error)?;

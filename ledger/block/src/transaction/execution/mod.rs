@@ -17,7 +17,9 @@ mod bytes;
 mod serialize;
 mod string;
 
-use crate::{Transaction, Transition};
+use std::sync::OnceLock;
+
+use crate::{Transaction, Transition, transaction::ExecutionID};
 use console::{account::Field, network::prelude::*, program::ProgramID};
 use snarkvm_synthesizer_snark::Proof;
 
@@ -25,6 +27,8 @@ use indexmap::IndexMap;
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Execution<N: Network> {
+    /// The execution id
+    id: OnceLock<ExecutionID<N>>,
     /// The transitions.
     transitions: IndexMap<N::TransitionID, Transition<N>>,
     /// The global state root.
@@ -36,17 +40,28 @@ pub struct Execution<N: Network> {
 impl<N: Network> Execution<N> {
     /// Initialize a new `Execution` instance.
     pub fn new() -> Self {
-        Self { transitions: Default::default(), global_state_root: Default::default(), proof: None }
+        Self {
+            id: Default::default(),
+            transitions: Default::default(),
+            global_state_root: Default::default(),
+            proof: None,
+        }
     }
 
     /// Initializes a new `Execution` instance with the given transitions.
     pub fn from(
+        excution_id: Option<ExecutionID<N>>,
         transitions: impl Iterator<Item = Transition<N>>,
         global_state_root: N::StateRoot,
         proof: Option<Proof<N>>,
     ) -> Result<Self> {
+        let id = OnceLock::new();
+        if let Some(inner_id) = excution_id {
+            let _ = id.set(inner_id);
+        }
+
         // Construct the execution.
-        let execution = Self { transitions: transitions.map(|t| (*t.id(), t)).collect(), global_state_root, proof };
+        let execution = Self { id, transitions: transitions.map(|t| (*t.id(), t)).collect(), global_state_root, proof };
         // Ensure the transitions are not empty.
         ensure!(!execution.transitions.is_empty(), "Execution cannot initialize from empty list of transitions");
         // Return the new `Execution` instance.
@@ -70,7 +85,14 @@ impl<N: Network> Execution<N> {
 
     /// Returns the execution ID.
     pub fn to_execution_id(&self) -> Result<Field<N>> {
-        Ok(*Transaction::execution_tree(self)?.root())
+        if let Some(id) = self.id.get() {
+            return Ok(*id);
+        }
+
+        let id = *Transaction::execution_tree(self)?.root();
+        let _ = self.id.set(id);
+
+        Ok(id)
     }
 }
 
@@ -157,7 +179,7 @@ pub mod test_helpers {
         // Retrieve a transaction.
         let transaction = block.transactions().iter().nth(index).unwrap().deref().clone();
         // Retrieve the execution.
-        if let Transaction::Execute(_, _, execution, _) = transaction {
+        if let Transaction::Execute(_, execution, _) = transaction {
             *execution
         } else {
             panic!("Index {index} exceeded the number of executions in the genesis block")

@@ -18,6 +18,14 @@ use super::*;
 impl<N: Network> FromBytes for Execution<N> {
     /// Reads the execution from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the id variant.
+        let id_variant = u8::read_le(&mut reader)?;
+        // Read the execution id.
+        let id = match id_variant {
+            0 => None,
+            1 => Some(ExecutionID::<N>::read_le(&mut reader)?),
+            _ => return Err(error(format!("Invalid id variant '{id_variant}'"))),
+        };
         // Read the version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
@@ -51,14 +59,25 @@ impl<N: Network> FromBytes for Execution<N> {
             1 => Some(Proof::read_le(&mut reader)?),
             _ => return Err(error(format!("Invalid proof variant '{proof_variant}'"))),
         };
-        // Return the new `Execution` instance.
-        Self::from(transitions.into_iter(), global_state_root, proof).map_err(|e| error(e.to_string()))
+        // Compute the new `Execution` instance.
+        let execution =
+            Self::from(id, transitions.into_iter(), global_state_root, proof).map_err(|e| error(e.to_string()))?;
+
+        Ok(execution)
     }
 }
 
 impl<N: Network> ToBytes for Execution<N> {
     /// Writes the execution to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        // Write the execution id.
+        match self.id.get() {
+            None => 0u8.write_le(&mut writer)?,
+            Some(id) => {
+                1u8.write_le(&mut writer)?;
+                id.write_le(&mut writer)?;
+            }
+        };
         // Write the version.
         1u8.write_le(&mut writer)?;
         // Write the number of transitions.

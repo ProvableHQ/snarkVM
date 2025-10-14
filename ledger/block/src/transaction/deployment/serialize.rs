@@ -25,7 +25,11 @@ impl<N: Network> Serialize for Deployment<N> {
                     DeploymentVersion::V1 => 3,
                     DeploymentVersion::V2 => 5,
                 };
-                let mut deployment = serializer.serialize_struct("Deployment", len)?;
+                let mut deployment =
+                    serializer.serialize_struct("Deployment", len + self.id.get().is_some() as usize)?;
+                if let Some(id) = self.id.get() {
+                    deployment.serialize_field("id", id)?;
+                }
                 deployment.serialize_field("edition", &self.edition)?;
                 deployment.serialize_field("program", &self.program)?;
                 deployment.serialize_field("verifying_keys", &self.verifying_keys)?;
@@ -52,6 +56,8 @@ impl<'de, N: Network> Deserialize<'de> for Deployment<N> {
 
                 // Recover the deployment.
                 let deployment = Self::new(
+                    serde_json::from_value(deployment.get_mut("id").unwrap_or(&mut serde_json::Value::Null).take())
+                        .map_err(de::Error::custom)?,
                     // Retrieve the edition.
                     DeserializeExt::take_from_value::<D>(&mut deployment, "edition")?,
                     // Retrieve the program.

@@ -20,7 +20,13 @@ impl<N: Network> Serialize for Execution<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let mut execution = serializer.serialize_struct("Execution", 2 + self.proof.is_some() as usize)?;
+                let mut execution = serializer.serialize_struct(
+                    "Execution",
+                    3 + self.id.get().is_some() as usize + self.proof.is_some() as usize,
+                )?;
+                if let Some(id) = self.id.get() {
+                    execution.serialize_field("id", id)?;
+                }
                 execution
                     .serialize_field("transitions", &self.transitions.values().collect::<Vec<&Transition<N>>>())?;
                 execution.serialize_field("global_state_root", &self.global_state_root)?;
@@ -41,6 +47,9 @@ impl<'de, N: Network> Deserialize<'de> for Execution<N> {
             true => {
                 // Parse the execution from a string into a value.
                 let mut execution = serde_json::Value::deserialize(deserializer)?;
+                // Retrieve the execution id.
+                let id = serde_json::from_value(execution.get_mut("id").unwrap_or(&mut serde_json::Value::Null).take())
+                    .map_err(de::Error::custom)?;
                 // Retrieve the transitions.
                 let transitions: Vec<_> = DeserializeExt::take_from_value::<D>(&mut execution, "transitions")?;
                 // Retrieve the global state root.
@@ -50,7 +59,10 @@ impl<'de, N: Network> Deserialize<'de> for Execution<N> {
                     serde_json::from_value(execution.get_mut("proof").unwrap_or(&mut serde_json::Value::Null).take())
                         .map_err(de::Error::custom)?;
                 // Recover the execution.
-                Self::from(transitions.into_iter(), global_state_root, proof).map_err(de::Error::custom)
+                let execution =
+                    Self::from(id, transitions.into_iter(), global_state_root, proof).map_err(de::Error::custom)?;
+
+                Ok(execution)
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "execution"),
         }
