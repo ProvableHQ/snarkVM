@@ -3450,7 +3450,6 @@ function adder:
     }
 
     #[test]
-    #[ignore = "memory-intensive"]
     fn test_deployment_array_nesting_limit() {
         use crate::test_helpers::CurrentNetwork;
 
