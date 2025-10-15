@@ -151,11 +151,14 @@ fn check_serialize<const VARIANT: u8>(
         let result_c = operation.finalize(&stack, &mut finalize_registers);
 
         // Check that either all operations failed, or all operations succeeded.
-        let all_failed = result_a.is_err() && result_b.is_err() && result_c.is_err();
-        let all_succeeded = result_a.is_ok() && result_b.is_ok() && result_c.is_ok();
+        let result_a_is_ok = result_a.is_ok();
+        let result_b_is_ok = result_b.is_ok() && <CurrentAleo as circuit::Environment>::is_satisfied();
+        let result_c_is_ok = result_c.is_ok();
+        let all_failed = !result_a_is_ok && !result_b_is_ok && !result_c_is_ok;
+        let all_succeeded = result_a_is_ok && result_b_is_ok && result_c_is_ok;
         assert!(
-            all_failed || all_succeeded,
-            "The results of the evaluation, execution, and finalization should either all succeed or all fail"
+            all_failed ^ all_succeeded,
+            "The results of the evaluation (pass: {result_a_is_ok}), execution (pass: {result_b_is_ok}), and finalization (pass: {result_c_is_ok}) should either all succeed or all fail",
         );
 
         // If all operations succeeded, check that the outputs are consistent.

@@ -37,7 +37,7 @@ use snarkvm_synthesizer_program::{
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
-const ITERATIONS: usize = 25;
+const ITERATIONS: usize = 1000;
 
 /// Samples the stack. Note: Do not replicate this for real program use, it is insecure.
 #[allow(clippy::type_complexity)]
@@ -80,6 +80,8 @@ fn sample_stack(
     Ok((stack, operands, r1))
 }
 
+// This test function verifies that the deserialize instruction is consistent across evaluation, execution, and finalization.
+// It repeats the test for a desired number of iterations and until it reaches a desired number of failures.
 fn check_deserialize<const VARIANT: u8>(
     operation: impl FnOnce(
         Vec<Operand<CurrentNetwork>>,
@@ -91,6 +93,7 @@ fn check_deserialize<const VARIANT: u8>(
     type_: &PlaintextType<CurrentNetwork>,
     mode: &circuit::Mode,
     iterations: usize,
+    num_failures: usize,
 ) {
     // Initalize an RNG.
     let rng = &mut TestRng::default();
@@ -115,22 +118,33 @@ fn check_deserialize<const VARIANT: u8>(
     let (stack, operands, destination) = sample_stack(opcode, type_, &bits_type, *mode).unwrap();
 
     // Initialize the operation.
-    let operation = operation(operands, bits_type, destination.clone(), type_.clone());
+    let operation = operation(operands, bits_type.clone(), destination.clone(), type_.clone());
     // Initialize the function name.
     let function_name = Identifier::from_str("run").unwrap();
     // Initialize a destination operand.
     let destination_operand = Operand::Register(destination);
 
-    // Run the test for a desired number of iterations.
-    for _ in 0..iterations {
+    // Run the test for a desired number of iterations and yntil we reach the desired number of failures.
+    let mut failures = 0;
+    let mut total_iterations = 0;
+
+    while failures < num_failures || total_iterations < iterations {
         // Sample the plaintext.
         let plaintext = stack.sample_plaintext(type_, rng).unwrap();
 
         // Get the bits of the plaintext.
-        let bits = match VARIANT {
-            0 => plaintext.to_bits_le(),
-            1 => plaintext.to_bits_raw_le(),
-            _ => panic!("Invalid 'deserialize' variant"),
+        // On odd iterations, use the correct bits.
+        // On even iterations, sample random bits of the correct size.
+        let bits = match (type_, total_iterations % 2 == 1) {
+            // Note. We make an exception for scalar types since the underlying implementation panics in a hard-to-test way.
+            (PlaintextType::Literal(LiteralType::Scalar), _) | (_, true) => match VARIANT {
+                0 => plaintext.to_bits_le(),
+                1 => plaintext.to_bits_raw_le(),
+                _ => panic!("Invalid 'deserialize' variant"),
+            },
+            (_, false) => {
+                stack.sample_plaintext(&PlaintextType::Array(bits_type.clone()), rng).unwrap().to_bits_raw_le()
+            }
         };
 
         // Check that the number of bits matches.
@@ -154,11 +168,14 @@ fn check_deserialize<const VARIANT: u8>(
         let result_c = operation.finalize(&stack, &mut finalize_registers);
 
         // Check that either all operations failed, or all operations succeeded.
-        let all_failed = result_a.is_err() && result_b.is_err() && result_c.is_err();
-        let all_succeeded = result_a.is_ok() && result_b.is_ok() && result_c.is_ok();
+        let result_a_is_ok = result_a.is_ok();
+        let result_b_is_ok = result_b.is_ok() && <CurrentAleo as circuit::Environment>::is_satisfied();
+        let result_c_is_ok = result_c.is_ok();
+        let all_failed = !result_a_is_ok && !result_b_is_ok && !result_c_is_ok;
+        let all_succeeded = result_a_is_ok && result_b_is_ok && result_c_is_ok;
         assert!(
-            all_failed || all_succeeded,
-            "The results of the evaluation, execution, and finalization should either all succeed or all fail"
+            all_failed ^ all_succeeded,
+            "The results of the evaluation (pass: {result_a_is_ok}), execution (pass: {result_b_is_ok}), and finalization (pass: {result_c_is_ok}) should either all succeed or all fail",
         );
 
         // If all operations succeeded, check that the outputs are consistent.
@@ -179,46 +196,48 @@ fn check_deserialize<const VARIANT: u8>(
                 "The results of the evaluation and execution are inconsistent"
             );
             assert_eq!(output_a, output_c, "The results of the evaluation and finalization are inconsistent");
-
-            // Check that the output type is consistent with the declared type.
-            match output_a {
-                Value::Plaintext(output_plaintext) => {
-                    // Check that the output plaintext matches the input.
-                    assert_eq!(output_plaintext, plaintext, "The output value does not match the input type");
-                }
-                _ => unreachable!("The output type is inconsistent with the declared type"),
-            }
+        }
+        // Otherwise, increment the failure counter.
+        else {
+            failures += 1;
         }
         // Reset the circuit.
         <CurrentAleo as circuit::Environment>::reset();
+        // Increment the total iteration counter.
+        total_iterations += 1;
     }
 }
 
-// Get the types to be tested.
-fn test_types(variant: DeserializeVariant) -> Vec<PlaintextType<CurrentNetwork>> {
+// Get the types to be tested and the required number of failures.
+// For some data types, failures are expected when the input bits do not correspond to a valid encoding of the data type.
+// For example, not all bit strings of length 253 are valid encodings of a field element.
+// In other cases, such as integers, all bit strings of the correct length are valid encodings, and no failures are expected.
+fn test_types(variant: DeserializeVariant) -> Vec<(PlaintextType<CurrentNetwork>, usize)> {
     let mut types = vec![
-        PlaintextType::Literal(LiteralType::Address),
-        PlaintextType::Literal(LiteralType::Boolean),
-        PlaintextType::Literal(LiteralType::Field),
-        PlaintextType::Literal(LiteralType::Group),
-        PlaintextType::Literal(LiteralType::I8),
-        PlaintextType::Literal(LiteralType::I16),
-        PlaintextType::Literal(LiteralType::I32),
-        PlaintextType::Literal(LiteralType::I64),
-        PlaintextType::Literal(LiteralType::I128),
-        PlaintextType::Literal(LiteralType::U8),
-        PlaintextType::Literal(LiteralType::U16),
-        PlaintextType::Literal(LiteralType::U32),
-        PlaintextType::Literal(LiteralType::U64),
-        PlaintextType::Literal(LiteralType::U128),
-        PlaintextType::Literal(LiteralType::Scalar),
-        PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap()),
+        (PlaintextType::Literal(LiteralType::Address), 25),
+        (PlaintextType::Literal(LiteralType::Boolean), 0),
+        (PlaintextType::Literal(LiteralType::Field), 25),
+        (PlaintextType::Literal(LiteralType::Group), 25),
+        (PlaintextType::Literal(LiteralType::I8), 0),
+        (PlaintextType::Literal(LiteralType::I16), 0),
+        (PlaintextType::Literal(LiteralType::I32), 0),
+        (PlaintextType::Literal(LiteralType::I64), 0),
+        (PlaintextType::Literal(LiteralType::I128), 0),
+        (PlaintextType::Literal(LiteralType::U8), 0),
+        (PlaintextType::Literal(LiteralType::U16), 0),
+        (PlaintextType::Literal(LiteralType::U32), 0),
+        (PlaintextType::Literal(LiteralType::U64), 0),
+        (PlaintextType::Literal(LiteralType::U128), 0),
+        // Note. We make an exception for scalar types since the underlying implementation panics in a hard-to-test way.
+        (PlaintextType::Literal(LiteralType::Scalar), 0),
+        (PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap()), 0),
     ];
 
     // Add additional types for the raw variant.
     if variant == DeserializeVariant::FromBitsRaw {
-        types.push(PlaintextType::Array(
-            ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(32)]).unwrap(),
+        types.push((
+            PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(32)]).unwrap()),
+            0,
         ))
     }
 
@@ -239,13 +258,14 @@ macro_rules! test_deserialize {
                     let modes = [circuit::Mode::Public, circuit::Mode::Private];
 
                     for mode in modes.iter() {
-                        for type_ in test_types(DeserializeVariant::$variant).iter() {
+                        for (type_, num_failures) in test_types(DeserializeVariant::$variant).iter() {
                             check_deserialize(
                                 operation,
                                 opcode,
                                 type_,
                                 mode,
-                                $iterations
+                                $iterations,
+                                *num_failures,
                             );
                         }
                     }
@@ -256,3 +276,92 @@ macro_rules! test_deserialize {
 
 test_deserialize!(deserialize_bits, DeserializeBits, FromBits, ITERATIONS);
 test_deserialize!(deserialize_bits_raw, DeserializeBitsRaw, FromBitsRaw, ITERATIONS);
+
+// This test verifies that programs that use deserialize with the wrong bit sizes fail to compile.
+#[test]
+fn test_deserialize_invalid_types() {
+    // Load a process.
+    let mut process = Process::<CurrentNetwork>::load().unwrap();
+
+    // Sample an rng.
+    let rng = &mut TestRng::default();
+
+    // Verify that programs that use deserialize with the wrong types fail to compile.
+    for (i, is_raw) in [true, false].into_iter().enumerate() {
+        for j in 0..ITERATIONS {
+            for (k, (type_, _)) in test_types(DeserializeVariant::FromBits).iter().enumerate() {
+                println!("Testing deserialize program with invalid type {type_} for iteration {i}");
+
+                // A dummy function to get the struct definition.
+                let fail_get_struct = |_: &Identifier<CurrentNetwork>| bail!("structs are not supported");
+
+                // Get the size in bits.
+                let size_in_bits = match is_raw {
+                    false => type_.size_in_bits(&fail_get_struct).unwrap(),
+                    true => type_.size_in_bits_raw(&fail_get_struct).unwrap(),
+                };
+
+                // Sample a wrong size in bits.
+                let wrong_size_in_bits = loop {
+                    let candidate = rng.gen_range(1..=CurrentNetwork::MAX_ARRAY_ELEMENTS);
+                    if candidate != size_in_bits {
+                        break candidate;
+                    }
+                };
+
+                // Get the instruction suffix.
+                let suffix = if is_raw { ".raw" } else { "" };
+
+                // Sample a program that uses deserialize with the wrong bit size in the function scope.
+                let program = Program::from_str(&format!(
+                    "program testing_{i}_{j}_{k}.aleo;
+                function run:
+                    input r0 as [boolean; {wrong_size_in_bits}u32].public;
+                    deserialize.bits{suffix} r0 ([boolean; {wrong_size_in_bits}u32]) into r1 ({type_});
+                ",
+                ))
+                .unwrap();
+
+                // Verify that the program cannot be added to the process.
+                let result = process.add_program(&program);
+                assert!(result.is_err());
+
+                // Sample a program that uses deserialize with the wrong bit size in the function scope.
+                let program = Program::from_str(&format!(
+                    "program testing_{i}_{j}_{k}.aleo;
+                function run:
+                    input r0 as [boolean; {wrong_size_in_bits}u32].public;
+                    async run r0 into r1;
+                    output r1 as testing_{i}_{j}_{k}.aleo/run.future;
+                finalize run:
+                    input r0 as [boolean; {wrong_size_in_bits}u32].public;
+                    deserialize.bits{suffix} r0 ([boolean; {wrong_size_in_bits}u32]) into r1 ({type_});
+                ",
+                ))
+                .unwrap();
+
+                // Verify that the program cannot be added to the process.
+                let result = process.add_program(&program);
+                assert!(result.is_err());
+
+                // Sample a program that uses the correct bit size in the function and finalize scope.
+                let program = Program::from_str(&format!(
+                    "program testing_{i}_{j}_{k}.aleo;
+                function run:
+                    input r0 as [boolean; {size_in_bits}u32].public;
+                    deserialize.bits{suffix} r0 ([boolean; {size_in_bits}u32]) into r1 ({type_});
+                    async run r0 into r2;
+                    output r2 as testing_{i}_{j}_{k}.aleo/run.future;
+                finalize run:
+                    input r0 as [boolean; {size_in_bits}u32].public;
+                    deserialize.bits{suffix} r0 ([boolean; {size_in_bits}u32]) into r1 ({type_});
+                ",
+                ))
+                .unwrap();
+
+                // Verify that the program can be added to the prcess.
+                process.add_program(&program).unwrap();
+            }
+        }
+    }
+}
