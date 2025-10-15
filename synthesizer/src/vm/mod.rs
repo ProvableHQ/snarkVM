@@ -3448,4 +3448,146 @@ function adder:
         // Check that the program was deployed.
         assert!(vm.process().read().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
     }
+
+    #[test]
+    #[ignore = "memory-intensive"]
+    fn test_deployment_array_allocation_limit() {
+        use crate::test_helpers::CurrentNetwork;
+        
+        let rng = &mut TestRng::default();
+
+        // Initialize a private key.
+        let private_key = sample_genesis_private_key(rng);
+
+        // Initialize the genesis block.
+        let genesis = sample_genesis_block(rng);
+
+        // Initialize the VM.
+        let vm = sample_vm();
+        // Update the VM.
+        vm.add_next_block(&genesis).unwrap();
+
+        // Advance the ledger past ConsensusVersion::V11 where the new array size limit starts to take place.
+        let transactions: [Transaction<CurrentNetwork>; 0] = [];
+        while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V11).unwrap()
+        {
+            // Call the function
+            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&next_block).unwrap();
+        }
+
+        // First, determine the maximum number of arrays we can allocate by trying to construct programs
+        // with increasing numbers of arrays until Program::try_from fails.
+        let mut max_arrays = 0;
+        let mut test_array_count = 1;
+        
+        println!("Finding maximum number of arrays with {} elements each...", CurrentNetwork::MAX_ARRAY_ELEMENTS);
+        
+        loop {
+            // Generate a program string with `test_array_count` arrays, each with MAX_ARRAY_ELEMENTS.
+            let mut program_string = format!(
+                "program array_limit_test_{}.aleo;\n\n  function allocate_arrays:\n",
+                test_array_count
+            );
+            
+            // Create cast instructions for each array
+            for i in 0..test_array_count {
+                // Generate MAX_ARRAY_ELEMENTS u32 values for the cast
+                let elements: Vec<String> = (0..CurrentNetwork::MAX_ARRAY_ELEMENTS)
+                    .map(|j| format!("{}u32", j % 256))  // Use modulo to keep values small
+                    .collect();
+                let elements_str = elements.join(" ");
+                
+                program_string.push_str(&format!(
+                    "    cast {} into r{} as [u32; {}u32];\n",
+                    elements_str, i, CurrentNetwork::MAX_ARRAY_ELEMENTS
+                ));
+            }
+            
+            // Add a simple output instruction using the first array
+            program_string.push_str("    output r0 as [u32; 512u32].private;\n");
+
+            // Add a constructor
+            program_string.push_str("constructor:\n  assert.eq true true;\n");
+
+            // Try to parse the program
+            match Program::<CurrentNetwork>::from_str(&program_string) {
+                Ok(_) => {
+                    max_arrays = test_array_count;
+                    println!("Successfully created program with {} arrays", test_array_count);
+                    test_array_count += 1;
+                    
+                    // Add a reasonable upper bound to prevent infinite loops
+                    if test_array_count > 100 {
+                        println!("Reached upper bound of 100 arrays, stopping search");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    println!("Failed to create program with {} arrays: {}", test_array_count, e);
+                    break;
+                }
+            }
+        }
+        
+        assert!(max_arrays > 0, "Should be able to create at least one array");
+        println!("Maximum arrays that can be allocated: {}", max_arrays);
+        
+        // Now create and deploy a program with the maximum number of arrays
+        let mut final_program_string = format!(
+            "program array_allocation_limit.aleo;\n\n  function allocate_max_arrays:\n"
+        );
+        
+        // Create cast instructions for the maximum number of arrays
+        for i in 0..max_arrays {
+            let elements: Vec<String> = (0..CurrentNetwork::MAX_ARRAY_ELEMENTS)
+                .map(|j| format!("{}u32", j % 256))
+                .collect();
+            let elements_str = elements.join(" ");
+            
+            final_program_string.push_str(&format!(
+                "    cast {} into r{} as [u32; {}u32];\n",
+                elements_str, i, CurrentNetwork::MAX_ARRAY_ELEMENTS
+            ));
+        }
+        
+        // Add output instruction
+        final_program_string.push_str("    output r0 as [u32; 512u32].private;\n");
+
+        // Add a constructor
+        final_program_string.push_str("constructor:\n  assert.eq true true;\n");
+        
+        let program = Program::<CurrentNetwork>::from_str(&final_program_string).unwrap();
+        
+        // Deploy the program
+        let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
+        // Check the deployment transaction.
+        vm.check_transaction(&deployment, None, rng).unwrap();
+        // Sample the next block.
+        let block = sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
+        // Check that the deployment is accepted.
+        assert_eq!(block.transactions().num_accepted(), 1);
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+        
+        // Execute the program
+        let transaction = vm
+            .execute(
+                &private_key,
+                ("array_allocation_limit.aleo", "allocate_max_arrays"),
+                std::iter::empty::<Value<CurrentNetwork>>(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
+            
+        // Verify the execution
+        vm.check_transaction(&transaction, None, rng).unwrap();
+        
+        println!("Successfully deployed and executed program with {} arrays of {} elements each", 
+                max_arrays, CurrentNetwork::MAX_ARRAY_ELEMENTS);
+    }
 }
