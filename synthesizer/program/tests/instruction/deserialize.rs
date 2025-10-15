@@ -287,13 +287,16 @@ fn test_deserialize_invalid_types() {
     let rng = &mut TestRng::default();
 
     // Verify that programs that use deserialize with the wrong types fail to compile.
-    for (i, is_raw) in [true, false].into_iter().enumerate() {
+    for (i, variant) in [DeserializeVariant::FromBits, DeserializeVariant::FromBitsRaw].into_iter().enumerate() {
         for j in 0..ITERATIONS {
             for (k, (type_, _)) in test_types(DeserializeVariant::FromBits).iter().enumerate() {
                 println!("Testing deserialize program with invalid type {type_} for iteration {i}");
 
                 // A dummy function to get the struct definition.
                 let fail_get_struct = |_: &Identifier<CurrentNetwork>| bail!("structs are not supported");
+
+                // Determine if we are testing the raw variant.
+                let is_raw = variant == DeserializeVariant::FromBitsRaw;
 
                 // Get the size in bits.
                 let size_in_bits = match is_raw {

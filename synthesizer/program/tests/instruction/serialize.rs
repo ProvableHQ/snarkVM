@@ -264,3 +264,95 @@ macro_rules! test_serialize {
 
 test_serialize!(serialize_bits, SerializeBits, ToBits, ITERATIONS);
 test_serialize!(serialize_bits_raw, SerializeBitsRaw, ToBitsRaw, ITERATIONS);
+
+// This test verifies that programs that use serialize with the wrong bit sizes fail to compile.
+#[test]
+fn test_serialize_invalid_types() {
+    // Load a process.
+    let mut process = Process::<CurrentNetwork>::load().unwrap();
+
+    // Sample an rng.
+    let rng = &mut TestRng::default();
+
+    // Verify that programs that use serialize with the wrong types fail to compile.
+    for (i, variant) in [SerializeVariant::ToBits, SerializeVariant::ToBitsRaw].into_iter().enumerate() {
+        for j in 0..ITERATIONS {
+            for (k, type_) in test_types(variant).iter().enumerate() {
+                println!("Testing serialize program with invalid type {type_} for iteration {i}");
+
+                // A dummy function to get the struct definition.
+                let fail_get_struct = |_: &Identifier<CurrentNetwork>| bail!("structs are not supported");
+
+                // Determine if the variant is raw.
+                let is_raw = variant == SerializeVariant::ToBitsRaw;
+
+                // Get the size in bits.
+                let size_in_bits = match is_raw {
+                    false => type_.size_in_bits(&fail_get_struct).unwrap(),
+                    true => type_.size_in_bits_raw(&fail_get_struct).unwrap(),
+                };
+
+                // Sample a wrong size in bits.
+                let wrong_size_in_bits = loop {
+                    let candidate = rng.gen_range(1..=CurrentNetwork::MAX_ARRAY_ELEMENTS);
+                    if candidate != size_in_bits {
+                        break candidate;
+                    }
+                };
+
+                // Get the instruction suffix.
+                let suffix = if is_raw { ".raw" } else { "" };
+
+                // Sample a program that uses serialize with the wrong bit size in the function scope.
+                let program = Program::from_str(&format!(
+                    "program testing_{i}_{j}_{k}.aleo;
+                function run:
+                    input r0 as {type_}.public;
+                    serialize.bits{suffix} r0 ({type_}) into r1 ([boolean; {wrong_size_in_bits}u32]);
+                ",
+                ))
+                .unwrap();
+
+                // Verify that the program cannot be added to the process.
+                let result = process.add_program(&program);
+                assert!(result.is_err());
+
+                // Sample a program that uses serialize with the wrong bit size in the function scope.
+                let program = Program::from_str(&format!(
+                    "program testing_{i}_{j}_{k}.aleo;
+                function run:
+                    input r0 as {type_}.public;
+                    async run r0 into r1;
+                    output r1 as testing_{i}_{j}_{k}.aleo/run.future;
+                finalize run:
+                    input r0 as {type_}.public;
+                    serialize.bits{suffix} r0 ({type_}) into r1 ([boolean; {wrong_size_in_bits}u32]);
+                ",
+                ))
+                .unwrap();
+
+                // Verify that the program cannot be added to the process.
+                let result = process.add_program(&program);
+                assert!(result.is_err());
+
+                // Sample a program that uses the correct bit size in the function and finalize scope.
+                let program = Program::from_str(&format!(
+                    "program testing_{i}_{j}_{k}.aleo;
+                function run:
+                    input r0 as {type_}.public;
+                    serialize.bits{suffix} r0 ({type_}) into r1 ([boolean; {size_in_bits}u32]);
+                    async run r0 into r2;
+                    output r2 as testing_{i}_{j}_{k}.aleo/run.future;
+                finalize run:
+                    input r0 as {type_}.public;
+                    serialize.bits{suffix} r0 ({type_}) into r1 ([boolean; {size_in_bits}u32]);
+                ",
+                ))
+                .unwrap();
+
+                // Verify that the program can be added to the prcess.
+                process.add_program(&program).unwrap();
+            }
+        }
+    }
+}

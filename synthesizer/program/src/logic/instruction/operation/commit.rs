@@ -34,7 +34,7 @@ pub type CommitPED64<N> = CommitInstruction<N, { CommitVariant::CommitPED64 as u
 pub type CommitPED128<N> = CommitInstruction<N, { CommitVariant::CommitPED128 as u8 }>;
 
 /// Which commit function to use.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum CommitVariant {
     CommitBHP256,
     CommitBHP512,
