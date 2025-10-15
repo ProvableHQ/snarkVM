@@ -213,31 +213,39 @@ fn check_deserialize<const VARIANT: u8>(
 // For example, not all bit strings of length 253 are valid encodings of a field element.
 // In other cases, such as integers, all bit strings of the correct length are valid encodings, and no failures are expected.
 fn test_types(variant: DeserializeVariant) -> Vec<(PlaintextType<CurrentNetwork>, usize)> {
+    let default_num_failures = || match variant {
+        DeserializeVariant::FromBits => 25,
+        DeserializeVariant::FromBitsRaw => 0,
+    };
+
     let mut types = vec![
         (PlaintextType::Literal(LiteralType::Address), 25),
-        (PlaintextType::Literal(LiteralType::Boolean), 0),
+        (PlaintextType::Literal(LiteralType::Boolean), default_num_failures()),
         (PlaintextType::Literal(LiteralType::Field), 25),
         (PlaintextType::Literal(LiteralType::Group), 25),
-        (PlaintextType::Literal(LiteralType::I8), 0),
-        (PlaintextType::Literal(LiteralType::I16), 0),
-        (PlaintextType::Literal(LiteralType::I32), 0),
-        (PlaintextType::Literal(LiteralType::I64), 0),
-        (PlaintextType::Literal(LiteralType::I128), 0),
-        (PlaintextType::Literal(LiteralType::U8), 0),
-        (PlaintextType::Literal(LiteralType::U16), 0),
-        (PlaintextType::Literal(LiteralType::U32), 0),
-        (PlaintextType::Literal(LiteralType::U64), 0),
-        (PlaintextType::Literal(LiteralType::U128), 0),
+        (PlaintextType::Literal(LiteralType::I8), default_num_failures()),
+        (PlaintextType::Literal(LiteralType::I16), default_num_failures()),
+        (PlaintextType::Literal(LiteralType::I32), default_num_failures()),
+        (PlaintextType::Literal(LiteralType::I64), default_num_failures()),
+        (PlaintextType::Literal(LiteralType::I128), default_num_failures()),
+        (PlaintextType::Literal(LiteralType::U8), default_num_failures()),
+        (PlaintextType::Literal(LiteralType::U16), default_num_failures()),
+        (PlaintextType::Literal(LiteralType::U32), default_num_failures()),
+        (PlaintextType::Literal(LiteralType::U64), default_num_failures()),
+        (PlaintextType::Literal(LiteralType::U128), default_num_failures()),
         // Note. We make an exception for scalar types since the underlying implementation panics in a hard-to-test way.
         (PlaintextType::Literal(LiteralType::Scalar), 0),
-        (PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap()), 0),
+        (
+            PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap()),
+            default_num_failures(),
+        ),
     ];
 
     // Add additional types for the raw variant.
     if variant == DeserializeVariant::FromBitsRaw {
         types.push((
             PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(32)]).unwrap()),
-            0,
+            default_num_failures(),
         ))
     }
 
