@@ -115,7 +115,9 @@ mod varuna {
                                 $snark_inst::batch_circuit_setup(&universal_srs, unique_instances.as_slice()).unwrap();
                             println!("Called circuit setup");
 
+                            #[allow(clippy::mutable_key_type)]
                             let mut pks_to_constraints = BTreeMap::new();
+                            #[allow(clippy::mutable_key_type)]
                             let mut vks_to_inputs = BTreeMap::new();
 
                             for (index_pk, index_vk) in index_keys.iter() {
@@ -147,6 +149,7 @@ mod varuna {
                                 }
                                 fake_instance_inputs.push(fake_instance_input);
                             }
+                            #[allow(clippy::mutable_key_type)]
                             let mut vks_to_fake_inputs = BTreeMap::new();
                             for (i, vk) in vks_to_inputs.keys().enumerate() {
                                 vks_to_fake_inputs.insert(*vk, fake_instance_inputs[i].as_slice());

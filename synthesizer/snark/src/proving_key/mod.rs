@@ -74,6 +74,7 @@ impl<N: Network> ProvingKey<N> {
 
         // Prepare the instances.
         let num_expected_instances = assignments.len();
+        #[allow(clippy::mutable_key_type)]
         let instances: BTreeMap<_, _> = assignments
             .iter()
             .map(|(proving_key, assignments)| (proving_key.deref(), assignments.as_slice()))

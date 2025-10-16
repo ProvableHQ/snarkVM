@@ -87,6 +87,7 @@ impl<N: Network> VerifyingKey<N> {
 
         // Convert the instances.
         let num_expected_keys = inputs.len();
+        #[allow(clippy::mutable_key_type)]
         let keys_to_inputs: BTreeMap<_, _> =
             inputs.iter().map(|(verifying_key, inputs)| (verifying_key.deref(), inputs.as_slice())).collect();
         ensure!(keys_to_inputs.len() == num_expected_keys, "Incorrect number of verifying keys for batch proof");

@@ -107,6 +107,7 @@ fn snark_batch_prove(c: &mut Criterion) {
 
         let mut pks = Vec::with_capacity(circuit_batch_size);
         let mut all_circuits = Vec::with_capacity(circuit_batch_size);
+        #[allow(clippy::mutable_key_type)]
         let mut keys_to_constraints = BTreeMap::new();
 
         for i in 0..circuit_batch_size {
@@ -191,7 +192,9 @@ fn snark_batch_verify(c: &mut Criterion) {
         let mut vks = Vec::with_capacity(circuit_batch_size);
         let mut all_circuits = Vec::with_capacity(circuit_batch_size);
         let mut all_inputs = Vec::with_capacity(circuit_batch_size);
+        #[allow(clippy::mutable_key_type)]
         let mut keys_to_constraints = BTreeMap::new();
+        #[allow(clippy::mutable_key_type)]
         let mut keys_to_inputs = BTreeMap::new();
         for i in 0..circuit_batch_size {
             let num_constraints = num_constraints_base + i;

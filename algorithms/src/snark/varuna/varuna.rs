@@ -120,6 +120,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             let circuit_verifying_key = CircuitVerifyingKey {
                 circuit_info: indexed_circuit.index_info,
                 circuit_commitments,
+                circuit_commitments_hash: Default::default(),
                 id: indexed_circuit.id,
             };
             let circuit_proving_key = CircuitProvingKey {
@@ -134,10 +135,10 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         Ok(circuit_keys)
     }
 
-    fn init_sponge<'a>(
+    fn init_sponge(
         fs_parameters: &FS::Parameters,
         inputs_and_batch_sizes: &BTreeMap<CircuitId, (usize, &[Vec<E::Fr>])>,
-        circuit_commitments: impl Iterator<Item = &'a [crate::polycommit::sonic_pc::Commitment<E>]>,
+        circuit_commitments_hashes: Vec<E::Fq>,
     ) -> FS {
         let mut sponge = FS::new_with_parameters(fs_parameters);
         sponge.absorb_bytes(Self::PROTOCOL_NAME);
@@ -147,9 +148,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
                 sponge.absorb_nonnative_field_elements(input.iter().copied());
             }
         }
-        for circuit_specific_commitments in circuit_commitments {
-            sponge.absorb_native_field_elements(circuit_specific_commitments);
-        }
+        sponge.absorb_native_field_elements(&circuit_commitments_hashes);
         sponge
     }
 
@@ -393,10 +392,13 @@ where
 
         let committer_key = CommitterUnionKey::union(keys_to_constraints.keys().map(|pk| pk.committer_key.deref()));
 
-        let circuit_commitments =
-            keys_to_constraints.keys().map(|pk| pk.circuit_verifying_key.circuit_commitments.as_slice());
+        let circuit_commitments_hashes = keys_to_constraints
+            .keys()
+            .map(|pk| pk.circuit_verifying_key.get_or_calculate_circuit_commitments_hash::<FS>(fs_parameters))
+            .copied()
+            .collect();
 
-        let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone());
+        let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments_hashes);
 
         // --------------------------------------------------------------------
         // First round
@@ -860,7 +862,12 @@ where
         let fifth_commitments = [LabeledCommitment::new_with_info(&fifth_round_info["h_2"], comms.h_2)];
 
         let circuit_commitments = keys_to_inputs.keys().map(|vk| vk.circuit_commitments.as_slice());
-        let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone());
+        let circuit_commitments_hashes = keys_to_inputs
+            .keys()
+            .map(|vk| vk.get_or_calculate_circuit_commitments_hash::<FS>(fs_parameters))
+            .copied()
+            .collect();
+        let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments_hashes);
 
         // --------------------------------------------------------------------
         // First round

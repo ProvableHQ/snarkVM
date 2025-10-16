@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{polycommit::sonic_pc, snark::varuna::ahp::indexer::*};
+use crate::{AlgebraicSponge, polycommit::sonic_pc, snark::varuna::ahp::indexer::*};
 use snarkvm_curves::PairingEngine;
 use snarkvm_utilities::{FromBytes, FromBytesDeserializer, ToBytes, ToBytesSerializer, into_io_error, serialize::*};
 
@@ -25,10 +25,11 @@ use std::{
     io::{self, Read, Write},
     str::FromStr,
     string::String,
+    sync::OnceLock,
 };
 
 /// Verification key for a specific index (i.e., R1CS matrices).
-#[derive(Debug, Clone, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CircuitVerifyingKey<E: PairingEngine> {
     /// Stores information about the size of the circuit, as well as its defined
     /// field.
@@ -36,6 +37,21 @@ pub struct CircuitVerifyingKey<E: PairingEngine> {
     /// Commitments to the indexed polynomials.
     pub circuit_commitments: Vec<sonic_pc::Commitment<E>>,
     pub id: CircuitId,
+    pub circuit_commitments_hash: OnceLock<E::Fq>,
+}
+
+impl<E: PairingEngine> CircuitVerifyingKey<E> {
+    pub fn get_or_calculate_circuit_commitments_hash<FS: AlgebraicSponge<E::Fq, 2>>(
+        &self,
+        fs_parameters: &FS::Parameters,
+    ) -> &E::Fq {
+        self.circuit_commitments_hash.get_or_init(|| {
+            let mut sponge = FS::new_with_parameters(fs_parameters);
+            sponge.absorb_native_field_elements(&self.circuit_commitments);
+
+            sponge.squeeze_native_field_elements(1)[0]
+        })
+    }
 }
 
 impl<E: PairingEngine> FromBytes for CircuitVerifyingKey<E> {
@@ -96,6 +112,58 @@ impl<'de, E: PairingEngine> Deserialize<'de> for CircuitVerifyingKey<E> {
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "verifying key"),
         }
+    }
+}
+
+impl<E: PairingEngine> CanonicalSerialize for CircuitVerifyingKey<E> {
+    fn serialize_with_mode<W: Write>(&self, mut writer: W, compress: Compress) -> Result<(), SerializationError> {
+        self.circuit_info.serialize_with_mode(&mut writer, compress)?;
+        self.circuit_commitments.serialize_with_mode(&mut writer, compress)?;
+        self.id.serialize_with_mode(&mut writer, compress)?;
+        // The hash is omitted.
+        Ok(())
+    }
+
+    fn serialized_size(&self, compress: Compress) -> usize {
+        self.circuit_info.serialized_size(compress)
+            + self.circuit_commitments.serialized_size(compress)
+            + self.id.serialized_size(compress)
+        // The hash is omitted.
+    }
+}
+
+impl<E: PairingEngine> CanonicalDeserialize for CircuitVerifyingKey<E> {
+    fn deserialize_with_mode<R: Read>(
+        mut reader: R,
+        compress: Compress,
+        validate: Validate,
+    ) -> Result<Self, SerializationError> {
+        let circuit_info = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
+        let circuit_commitments = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
+        let id = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
+        Ok(Self { circuit_info, circuit_commitments, id, circuit_commitments_hash: Default::default() })
+    }
+}
+
+impl<E: PairingEngine> Valid for CircuitVerifyingKey<E> {
+    fn check(&self) -> Result<(), SerializationError> {
+        Valid::check(&self.circuit_info)?;
+        Valid::check(&self.circuit_commitments)?;
+        Valid::check(&self.id)?;
+        // The hash is omitted.
+        Ok(())
+    }
+
+    fn batch_check<'a>(batch: impl Iterator<Item = &'a Self> + Send) -> Result<(), SerializationError>
+    where
+        Self: 'a,
+    {
+        let batch: Vec<_> = batch.collect();
+        Valid::batch_check(batch.iter().map(|v| &v.circuit_info))?;
+        Valid::batch_check(batch.iter().map(|v| &v.circuit_commitments))?;
+        Valid::batch_check(batch.iter().map(|v| &v.id))?;
+        // The hash is omitted.
+        Ok(())
     }
 }
 
