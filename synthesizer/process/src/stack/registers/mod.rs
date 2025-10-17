@@ -67,6 +67,12 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
         &self.call_stack
     }
 
+    /// Returns a reference to the register types.
+    #[inline]
+    pub fn register_types_ref(&self) -> &RegisterTypes<N> {
+        &self.register_types
+    }
+
     /// Initializes a new set of registers, given the call stack.
     #[inline]
     pub fn new(call_stack: CallStack<N>, register_types: RegisterTypes<N>) -> Self {

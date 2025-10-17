@@ -329,11 +329,21 @@ impl<N: Network> Stack<N> {
             };
 
             // Save the synthesis info for the instruction.
+            let register_types = registers.register_types_ref();
             let operation_name = format!(
-                "{}_{}_{}",
+                "{}_{}_{}_{}",
                 function.name(),
                 instruction.opcode(),
-                instruction.operands().iter().map(|operand| operand.to_string()).collect::<Vec<_>>().join("_")
+                instruction
+                    .operands()
+                    .iter()
+                    .map(|operand| register_types.get_type_from_operand(self, operand).unwrap())
+                    .join("_"),
+                instruction
+                    .destinations()
+                    .iter()
+                    .map(|destination| register_types.get_type(self, destination).unwrap())
+                    .join("_")
             );
             let synthesis_info = SynthesisInfo {
                 operation_name,
