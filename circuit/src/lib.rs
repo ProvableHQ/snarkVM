@@ -36,6 +36,8 @@ pub mod modules {
         Environment,
         Inject,
         Mode,
+        SYNTHESIS_INFO,
+        SynthesisInfo,
         TestnetCircuit,
     };
 

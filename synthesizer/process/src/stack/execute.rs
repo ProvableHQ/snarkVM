@@ -15,6 +15,8 @@
 
 use super::*;
 
+use snarkvm_circuit::{SYNTHESIS_INFO, SynthesisInfo};
+
 impl<N: Network> Stack<N> {
     /// Executes a program closure on the given inputs.
     ///
@@ -274,6 +276,11 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Initialize the registers");
 
         Self::log_circuit::<A>("Request");
+        // Save the synthesis info for the preamble.
+        let operation_name = format!("{}_preamble", function.name());
+        let synthesis_info =
+            SynthesisInfo { operation_name, num_variables: A::num_variables(), num_constraints: A::num_constraints() };
+        SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);
 
         // Retrieve the number of constraints for verifying the request in the circuit.
         let num_request_constraints = A::num_constraints();
@@ -320,6 +327,21 @@ impl<N: Network> Stack<N> {
                 // Otherwise, execute the instruction normally.
                 _ => instruction.execute(self, &mut registers),
             };
+
+            // Save the synthesis info for the instruction.
+            let operation_name = format!(
+                "{}_{}_{}",
+                function.name(),
+                instruction.opcode(),
+                instruction.operands().iter().map(|operand| operand.to_string()).collect::<Vec<_>>().join("_")
+            );
+            let synthesis_info = SynthesisInfo {
+                operation_name,
+                num_variables: A::num_variables(),
+                num_constraints: A::num_constraints(),
+            };
+            SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);
+
             // If the execution fails, bail and return the error.
             if let Err(error) = result {
                 bail!("Failed to execute instruction ({instruction}): {error}");
@@ -423,11 +445,15 @@ impl<N: Network> Stack<N> {
 
         Self::log_circuit::<A>("Response");
 
+        // Save the synthesis info for the postamble.
+        let operation_name = format!("{}_postamble", function.name());
+        let synthesis_info =
+            SynthesisInfo { operation_name, num_variables: A::num_variables(), num_constraints: A::num_constraints() };
+        SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);
+
         // Retrieve the number of constraints for verifying the response in the circuit.
         let num_response_constraints =
             A::num_constraints().saturating_sub(num_request_constraints).saturating_sub(num_function_constraints);
-
-        Self::log_circuit::<A>("Complete");
 
         // Eject the response.
         let response = response.eject_value();

@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use crate::{
+    console::{Deserialize, Serialize},
     helpers::{Constraint, Counter},
     prelude::*,
 };
@@ -21,12 +22,9 @@ use snarkvm_fields::PrimeField;
 
 #[cfg(feature = "save_r1cs_hashes")]
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
 #[cfg(feature = "save_r1cs_hashes")]
-use std::{
-    hash::{Hash, Hasher},
-    sync::Mutex,
-};
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "save_r1cs_hashes")]
 struct Sha256Hasher(Sha256);
@@ -58,6 +56,16 @@ pub type Scope = String;
 /// have deterministic order, as they may be created in parallel.
 #[cfg(feature = "save_r1cs_hashes")]
 pub static R1CS_HASHES: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::new());
+
+/// A list of data of all the R1CS info per synthesis.
+pub static SYNTHESIS_INFO: Mutex<Vec<SynthesisInfo>> = Mutex::new(Vec::new());
+
+#[derive(Debug, Hash, Serialize, Deserialize)]
+pub struct SynthesisInfo {
+    pub operation_name: String,
+    pub num_variables: u64,
+    pub num_constraints: u64,
+}
 
 #[derive(Debug, Hash)]
 pub struct R1CS<F: PrimeField> {

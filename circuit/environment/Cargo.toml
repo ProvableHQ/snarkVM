@@ -44,6 +44,9 @@ workspace = true
 [dependencies.num-traits]
 workspace = true
 
+[dependencies.serde]
+workspace = true
+
 [dependencies.sha2]
 workspace = true
 optional = true
