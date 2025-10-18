@@ -370,6 +370,25 @@ impl<N: Network> Display for Command<N> {
     }
 }
 
+// Simply print the opcode as a string.
+impl<N: Network> Command<N> {
+    pub fn display_opcode(&self) -> String {
+        match self {
+            Self::Instruction(instruction) => instruction.opcode().to_string(),
+            Self::Await(_await) => "await".to_string(),
+            Self::Contains(_contains) => "contains".to_string(),
+            Self::Get(_get) => "get".to_string(),
+            Self::GetOrUse(_get_or_use) => "get.or_use".to_string(),
+            Self::RandChaCha(_rand_chacha) => "rand.chacha".to_string(),
+            Self::Remove(_remove) => "remove".to_string(),
+            Self::Set(_set) => "set".to_string(),
+            Self::BranchEq(_branch_eq) => "branch.eq".to_string(),
+            Self::BranchNeq(_branch_neq) => "branch.neq".to_string(),
+            Self::Position(_position) => "position".to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
