@@ -20,6 +20,9 @@ workspace = true
 [dependencies.snarkvm-circuit-collections]
 workspace = true
 
+[dependencies.snarkvm-circuit-environment]
+workspace = true
+
 [dependencies.snarkvm-circuit-network]
 workspace = true
 

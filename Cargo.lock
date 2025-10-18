@@ -2986,6 +2986,7 @@ dependencies = [
  "snarkvm-circuit-account",
  "snarkvm-circuit-algorithms",
  "snarkvm-circuit-collections",
+ "snarkvm-circuit-environment",
  "snarkvm-circuit-network",
  "snarkvm-circuit-types",
  "snarkvm-console",

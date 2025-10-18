@@ -15,6 +15,8 @@
 
 use super::*;
 
+use snarkvm_circuit_environment::{SYNTHESIS_INFO, SynthesisInfo};
+
 impl<A: Aleo> Response<A> {
     /// Initializes a response, given the number of inputs, tvk, tcm, outputs, output types, and output registers.
     pub fn from_outputs(
@@ -39,7 +41,7 @@ impl<A: Aleo> Response<A> {
             .zip_eq(output_registers)
             .enumerate()
             .map(|(index, ((output, output_type), output_register))| {
-                match output_type {
+                let res = match output_type {
                     // For a constant output, compute the hash (using `tcm`) of the output.
                     console::ValueType::Constant(..) => {
                         // Prepare the index as a constant field element.
@@ -174,7 +176,18 @@ impl<A: Aleo> Response<A> {
                             Value::Record(..) => A::halt("Expected a future output, found a record output"),
                         }
                     }
-                }
+                };
+
+                // Save the synthesis info for the output.
+                let operation_name = format!("output_{output_type}");
+                let synthesis_info = SynthesisInfo {
+                    operation_name,
+                    num_variables: A::num_variables(),
+                    num_constraints: A::num_constraints(),
+                };
+                SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);
+
+                res
             })
             .collect();
 

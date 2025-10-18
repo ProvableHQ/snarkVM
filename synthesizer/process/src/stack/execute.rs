@@ -276,8 +276,8 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Initialize the registers");
 
         Self::log_circuit::<A>("Request");
-        // Save the synthesis info for the preamble.
-        let operation_name = format!("{}_preamble", function.name());
+        // Save the synthesis info for the request.
+        let operation_name = "request".to_string();
         let synthesis_info =
             SynthesisInfo { operation_name, num_variables: A::num_variables(), num_constraints: A::num_constraints() };
         SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);
@@ -331,8 +331,7 @@ impl<N: Network> Stack<N> {
             // Save the synthesis info for the instruction.
             let register_types = registers.register_types_ref();
             let operation_name = format!(
-                "{}_{}_{}_{}",
-                function.name(),
+                "{}_{}_{}",
                 instruction.opcode(),
                 instruction
                     .operands()
@@ -455,8 +454,8 @@ impl<N: Network> Stack<N> {
 
         Self::log_circuit::<A>("Response");
 
-        // Save the synthesis info for the postamble.
-        let operation_name = format!("{}_postamble", function.name());
+        // Save the synthesis info for the response.
+        let operation_name = "response".to_string();
         let synthesis_info =
             SynthesisInfo { operation_name, num_variables: A::num_variables(), num_constraints: A::num_constraints() };
         SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);

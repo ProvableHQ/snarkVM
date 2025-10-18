@@ -15,6 +15,8 @@
 
 use super::*;
 
+use snarkvm_circuit_environment::{SYNTHESIS_INFO, SynthesisInfo};
+
 impl<A: Aleo> Request<A> {
     /// Returns `true` if the input IDs are derived correctly, the input records all belong to the signer,
     /// and the signature is valid.
@@ -139,6 +141,12 @@ impl<A: Aleo> Request<A> {
         // Initialize a vector for a message.
         let mut message = Vec::new();
 
+        // Save the synthesis info for the request.
+        let operation_name = "request".to_string();
+        let synthesis_info =
+            SynthesisInfo { operation_name, num_variables: A::num_variables(), num_constraints: A::num_constraints() };
+        SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);
+
         // Perform the input ID checks.
         let input_checks = input_ids
             .iter()
@@ -146,7 +154,7 @@ impl<A: Aleo> Request<A> {
             .zip_eq(input_types)
             .enumerate()
             .map(|(index, ((input_id, input), input_type))| {
-                match input_id {
+                let res = match input_id {
                     // A constant input is hashed (using `tcm`) to a field element.
                     InputID::Constant(input_hash) => {
                         // Add the input hash to the message.
@@ -300,7 +308,16 @@ impl<A: Aleo> Request<A> {
                         // Ensure the expected hash matches the computed hash.
                         input_hash.is_equal(&A::hash_psd8(&preimage))
                     }
-                }
+                };
+                // Save the synthesis info for the input.
+                let operation_name = format!("input_{input_type}");
+                let synthesis_info = SynthesisInfo {
+                    operation_name,
+                    num_variables: A::num_variables(),
+                    num_constraints: A::num_constraints(),
+                };
+                SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);
+                res
             })
             .fold(Boolean::constant(true), |acc, x| acc & x);
 
