@@ -277,7 +277,7 @@ impl<N: Network> Stack<N> {
 
         Self::log_circuit::<A>("Request");
         // Save the synthesis info for the request.
-        let operation_name = "request".to_string();
+        let operation_name = "input_end".to_string();
         let synthesis_info =
             SynthesisInfo { operation_name, num_variables: A::num_variables(), num_constraints: A::num_constraints() };
         SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);
@@ -453,12 +453,6 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Construct the response");
 
         Self::log_circuit::<A>("Response");
-
-        // Save the synthesis info for the response.
-        let operation_name = "response".to_string();
-        let synthesis_info =
-            SynthesisInfo { operation_name, num_variables: A::num_variables(), num_constraints: A::num_constraints() };
-        SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);
 
         // Retrieve the number of constraints for verifying the response in the circuit.
         let num_response_constraints =

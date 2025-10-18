@@ -142,7 +142,7 @@ impl<A: Aleo> Request<A> {
         let mut message = Vec::new();
 
         // Save the synthesis info for the request.
-        let operation_name = "request".to_string();
+        let operation_name = "input_start".to_string();
         let synthesis_info =
             SynthesisInfo { operation_name, num_variables: A::num_variables(), num_constraints: A::num_constraints() };
         SYNTHESIS_INFO.lock().unwrap().push(synthesis_info);
