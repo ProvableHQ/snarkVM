@@ -25,3 +25,6 @@ mod macros;
 
 mod rewards;
 pub use rewards::*;
+
+mod sequential_op;
+pub use sequential_op::*;

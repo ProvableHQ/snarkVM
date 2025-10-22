@@ -67,8 +67,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 time_since_last_block,
                 coinbase_reward,
                 candidate_ratifications,
-                candidate_solutions,
-                verified_transactions.into_iter(),
+                candidate_solutions.clone(),
+                verified_transactions.into_iter().cloned().collect(),
             )?;
 
         // Get the aborted transaction ids.
@@ -138,8 +138,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 time_since_last_block,
                 None,
                 candidate_ratifications,
-                solutions,
-                candidate_transactions.iter(),
+                solutions.clone(),
+                candidate_transactions,
             )?;
 
         // Ensure the ratifications after speculation match.
@@ -191,6 +191,35 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[cfg(any(test, feature = "test"))]
     pub const MAXIMUM_CONFIRMED_TRANSACTIONS: usize = 8;
 
+    fn atomic_speculate(
+        &self,
+        state: FinalizeGlobalState,
+        time_since_last_block: i64,
+        coinbase_reward: Option<u64>,
+        ratifications: Vec<Ratify<N>>,
+        solutions: Solutions<N>,
+        transactions: Vec<Transaction<N>>,
+    ) -> Result<(
+        Ratifications<N>,
+        Vec<ConfirmedTransaction<N>>,
+        Vec<(Transaction<N>, String)>,
+        Vec<FinalizeOperation<N>>,
+    )> {
+        let sequential_op = SequentialOperation::AtomicSpeculate(
+            state,
+            time_since_last_block,
+            coinbase_reward,
+            ratifications,
+            solutions,
+            transactions,
+        );
+        let SequentialOperationResult::AtomicSpeculate(ret) = self.run_sequential_operation(sequential_op) else {
+            unreachable!();
+        };
+
+        ret
+    }
+
     /// Performs atomic speculation over a list of transactions.
     ///
     /// Returns the ratifications, confirmed transactions, aborted transactions,
@@ -201,24 +230,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ///   - If `coinbase_reward = Some(coinbase_reward)`, then the method will append a
     ///     `Ratify::BlockReward(block_reward)` and `Ratify::PuzzleReward(puzzle_reward)`
     ///     to the front of the `ratifications` list.
-    fn atomic_speculate<'a>(
+    pub(crate) fn atomic_speculate_inner(
         &self,
         state: FinalizeGlobalState,
         time_since_last_block: i64,
         coinbase_reward: Option<u64>,
         ratifications: Vec<Ratify<N>>,
-        solutions: &Solutions<N>,
-        transactions: impl ExactSizeIterator<Item = &'a Transaction<N>>,
+        solutions: Solutions<N>,
+        transactions: Vec<Transaction<N>>,
     ) -> Result<(
         Ratifications<N>,
         Vec<ConfirmedTransaction<N>>,
         Vec<(Transaction<N>, String)>,
         Vec<FinalizeOperation<N>>,
     )> {
-        // Acquire the atomic lock, which is needed to ensure this function is not called concurrently
-        // with other `atomic_finalize!` macro calls, which will cause a `bail!` to be triggered erroneously.
-        // Note: This lock must be held for the entire scope of the call to `atomic_finalize!`.
-        let _atomic_lock = self.atomic_lock.lock();
+        self.ensure_sequential_processing();
 
         let timer = timer!("VM::atomic_speculate");
 
@@ -319,7 +345,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                 // Determine if the transaction should be aborted.
                 if let Some(reason) = self.should_abort_transaction(
-                    transaction,
+                    &transaction,
                     &transition_ids,
                     &input_ids,
                     &output_ids,
@@ -336,7 +362,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Process the transaction in an isolated atomic batch.
                 // - If the transaction succeeds, the finalize operations are stored.
                 // - If the transaction fails, the atomic batch is aborted and no finalize operations are stored.
-                let outcome = match transaction {
+                let outcome = match &transaction {
                     // The finalize operation here involves appending the 'stack',
                     // and adding the program to the finalize tree.
                     Transaction::Deploy(_, _, program_owner, deployment, fee) => {
@@ -535,7 +561,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let post_ratifications = reward_ratifications.iter().chain(post_ratifications);
 
             // Process the post-ratifications.
-            match Self::atomic_post_ratify::<false>(&self.puzzle, store, state, post_ratifications, solutions) {
+            match Self::atomic_post_ratify::<false>(&self.puzzle, store, state, post_ratifications, &solutions) {
                 // Store the finalize operations from the post-ratify.
                 Ok(operations) => ratified_finalize_operations.extend(operations),
                 // Note: This will abort the entire atomic batch.
@@ -570,10 +596,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         solutions: &Solutions<N>,
         transactions: &Transactions<N>,
     ) -> Result<Vec<FinalizeOperation<N>>> {
-        // Acquire the atomic lock, which is needed to ensure this function is not called concurrently
-        // with other `atomic_finalize!` macro calls, which will cause a `bail!` to be triggered erroneously.
-        // Note: This lock must be held for the entire scope of the call to `atomic_finalize!`.
-        let _atomic_lock = self.atomic_lock.lock();
+        self.ensure_sequential_processing();
 
         let timer = timer!("VM::atomic_finalize");
 
@@ -1846,8 +1869,8 @@ finalize transfer_public:
                 CurrentNetwork::BLOCK_TIME as i64,
                 None,
                 vec![],
-                &None.into(),
-                [deployment_transaction].iter(),
+                None.into(),
+                vec![deployment_transaction],
             )
             .unwrap();
         assert_eq!(candidate_transactions.len(), 1);
@@ -1935,15 +1958,15 @@ finalize transfer_public:
         vm.check_transaction(&bond_validator_transaction, None, rng).unwrap();
 
         // Speculate on the transactions.
-        let transactions = [bond_validator_transaction.clone()];
+        let transactions = vec![bond_validator_transaction.clone()];
         let (_, confirmed_transactions, _, _) = vm
             .atomic_speculate(
                 sample_finalize_state(1),
                 CurrentNetwork::BLOCK_TIME as i64,
                 None,
                 vec![],
-                &None.into(),
-                transactions.iter(),
+                None.into(),
+                transactions,
             )
             .unwrap();
 
@@ -2192,15 +2215,15 @@ finalize transfer_public:
         // Transfer_10 -> Balance = 30 - 10 = 20
         // Transfer_20 -> Balance = 20 - 20 = 0
         {
-            let transactions = [mint_10.clone(), transfer_10.clone(), transfer_20.clone()];
+            let transactions = vec![mint_10.clone(), transfer_10.clone(), transfer_20.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
                     sample_finalize_state(1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
-                    &None.into(),
-                    transactions.iter(),
+                    None.into(),
+                    transactions,
                 )
                 .unwrap();
 
@@ -2220,15 +2243,15 @@ finalize transfer_public:
         // Mint_20 -> Balance = 10 + 20 = 30
         // Transfer_30 -> Balance = 30 - 30 = 0
         {
-            let transactions = [transfer_20.clone(), mint_10.clone(), mint_20.clone(), transfer_30.clone()];
+            let transactions = vec![transfer_20.clone(), mint_10.clone(), mint_20.clone(), transfer_30.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
                     sample_finalize_state(1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
-                    &None.into(),
-                    transactions.iter(),
+                    None.into(),
+                    transactions,
                 )
                 .unwrap();
 
@@ -2248,15 +2271,15 @@ finalize transfer_public:
         // Transfer_20 -> Balance = 20 - 20 = 0
         // Transfer_10 -> Balance = 0 - 10 = -10 (should be rejected)
         {
-            let transactions = [transfer_20.clone(), transfer_10.clone()];
+            let transactions = vec![transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
                     sample_finalize_state(1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
-                    &None.into(),
-                    transactions.iter(),
+                    None.into(),
+                    transactions,
                 )
                 .unwrap();
 
@@ -2280,15 +2303,15 @@ finalize transfer_public:
         // Transfer_20 -> Balance = 10 - 20 = -10 (should be rejected)
         // Transfer_10 -> Balance = 10 - 10 = 0
         {
-            let transactions = [mint_20.clone(), transfer_30.clone(), transfer_20.clone(), transfer_10.clone()];
+            let transactions = vec![mint_20.clone(), transfer_30.clone(), transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
                     sample_finalize_state(1),
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
-                    &None.into(),
-                    transactions.iter(),
+                    None.into(),
+                    transactions,
                 )
                 .unwrap();
 

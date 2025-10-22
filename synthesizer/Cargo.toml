@@ -147,6 +147,10 @@ optional = true
 workspace = true
 features = [ "preserve_order" ]
 
+[dependencies.tokio]
+version = "1"
+features = [ "sync" ]
+
 [dependencies.tracing]
 workspace = true
 

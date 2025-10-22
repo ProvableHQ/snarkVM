@@ -104,7 +104,12 @@ use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::{SeedableRng, rngs::StdRng};
-use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
+use std::{
+    collections::HashSet,
+    num::NonZeroUsize,
+    sync::{Arc, mpsc},
+    thread,
+};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -126,10 +131,10 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     partially_verified_transactions: Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>>,
     /// The restrictions list.
     restrictions: Restrictions<N>,
-    /// The lock to guarantee atomicity over calls to speculate and finalize.
-    atomic_lock: Arc<Mutex<()>>,
-    /// The lock for ensuring there is no concurrency when advancing blocks.
-    block_lock: Arc<Mutex<()>>,
+    /// A sender to the channel for operations that must be performed sequentially.
+    sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
+    /// The handle to the thread which processes operations sequentially.
+    sequential_ops_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -218,8 +223,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             deployments.iter().try_for_each(|deployment| process.load_deployment(deployment))?;
         }
 
-        // Return the new VM.
-        Ok(Self {
+        // Construct the VM object.
+        let vm = Self {
             process: Arc::new(RwLock::new(process)),
             puzzle: Self::new_puzzle()?,
             store,
@@ -227,9 +232,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 NonZeroUsize::new(Transactions::<N>::MAX_TRANSACTIONS).unwrap(),
             ))),
             restrictions: Restrictions::load()?,
-            atomic_lock: Arc::new(Mutex::new(())),
-            block_lock: Arc::new(Mutex::new(())),
-        })
+            sequential_ops_tx: Default::default(),
+            sequential_ops_thread: Default::default(),
+        };
+
+        // Spawn a thread for sequential operations.
+        let (sequential_ops_tx, sequential_ops_rx) = mpsc::channel();
+        let sequential_ops_thread = vm.start_sequential_queue(sequential_ops_rx);
+
+        // Populate the fields related to the sequential operations.
+        *vm.sequential_ops_tx.write() = Some(sequential_ops_tx);
+        *vm.sequential_ops_thread.lock() = Some(sequential_ops_thread);
+
+        // Return the new VM.
+        Ok(vm)
     }
 
     /// Returns `true` if a program with the given program ID exists.
@@ -444,12 +460,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
     }
 
-    /// Adds the given block into the VM.
     #[inline]
     pub fn add_next_block(&self, block: &Block<N>) -> Result<()> {
-        // Acquire the block lock, which is needed to ensure this function is not called concurrently.
-        // Note: This lock must be held for the entire scope of this function.
-        let _block_lock = self.block_lock.lock();
+        let sequential_op = SequentialOperation::AddNextBlock(block.clone());
+        let SequentialOperationResult::AddNextBlock(ret) = self.run_sequential_operation(sequential_op) else {
+            unreachable!();
+        };
+
+        ret
+    }
+
+    /// Adds the given block into the VM.
+    #[inline]
+    pub(crate) fn add_next_block_inner(&self, block: Block<N>) -> Result<()> {
+        self.ensure_sequential_processing();
 
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
@@ -465,7 +489,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.block_store().pause_atomic_writes()?;
 
         // First, insert the block.
-        if let Err(insert_error) = self.block_store().insert(block) {
+        if let Err(insert_error) = self.block_store().insert(&block) {
             if cfg!(feature = "rocks") {
                 // Clear all pending atomic operations so that unpausing the atomic writes
                 // doesn't execute any of the queued storage operations.
