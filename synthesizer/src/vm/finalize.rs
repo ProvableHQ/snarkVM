@@ -596,6 +596,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         solutions: &Solutions<N>,
         transactions: &Transactions<N>,
     ) -> Result<Vec<FinalizeOperation<N>>> {
+        // The tests may run this method ad-hoc, outside of the context of add_next_block.
+        #[cfg(not(test))]
         self.ensure_sequential_processing();
 
         let timer = timer!("VM::atomic_finalize");
