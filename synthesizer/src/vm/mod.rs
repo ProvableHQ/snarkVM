@@ -583,6 +583,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     }
 }
 
+impl<N: Network, C: ConsensusStorage<N>> Drop for VM<N, C> {
+    fn drop(&mut self) {
+        // This check isn't perfect, but in practice it was only needed in order
+        // for tests to not leak memory.
+        if Arc::strong_count(&self.sequential_ops_tx) == 2 {
+            self.run_sequential_operation(SequentialOperation::Shutdown);
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;

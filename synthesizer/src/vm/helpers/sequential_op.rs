@@ -44,6 +44,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let ret = vm.atomic_speculate_inner(a, b, c, d, e, f);
                         SequentialOperationResult::AtomicSpeculate(ret)
                     }
+                    SequentialOperation::Shutdown => {
+                        // Send a reply in order to resume the caller's workflow.
+                        let _ = response_tx.send(SequentialOperationResult::Shutdown);
+                        // The thread may be closed.
+                        break;
+                    }
                 };
 
                 // Relay the results of the operation to the caller.
@@ -81,6 +87,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 pub enum SequentialOperation<N: Network> {
     AddNextBlock(Block<N>),
     AtomicSpeculate(FinalizeGlobalState, i64, Option<u64>, Vec<Ratify<N>>, Solutions<N>, Vec<Transaction<N>>),
+    Shutdown,
 }
 
 impl<N: Network> fmt::Display for SequentialOperation<N> {
@@ -91,6 +98,9 @@ impl<N: Network> fmt::Display for SequentialOperation<N> {
             }
             SequentialOperation::AtomicSpeculate(state, ..) => {
                 write!(f, "atomic speculate (height {}, round {})", state.block_height(), state.block_round())
+            }
+            SequentialOperation::Shutdown => {
+                write!(f, "shutdown")
             }
         }
     }
@@ -113,4 +123,5 @@ pub enum SequentialOperationResult<N: Network> {
             Vec<FinalizeOperation<N>>,
         )>,
     ),
+    Shutdown,
 }
