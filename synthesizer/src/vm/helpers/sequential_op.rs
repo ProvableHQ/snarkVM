@@ -59,21 +59,27 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     }
 
     /// Sends the given operation to the thread used for sequential processing.
-    pub fn run_sequential_operation(&self, op: SequentialOperation<N>) -> SequentialOperationResult<N> {
+    pub fn run_sequential_operation(&self, op: SequentialOperation<N>) -> Option<SequentialOperationResult<N>> {
         debug!("Queuing operation '{op}' for sequential processing");
 
         // Prepare a oneshot channel to obtain the result of the queued operation.
         let (response_tx, response_rx) = oneshot::channel();
         let request = SequentialOperationRequest { op, response_tx };
 
-        // This pattern match is infallible.
+        // This pattern match is infallible unless already shutting down the thread.
         if let Some(tx) = &*self.sequential_ops_tx.read() {
             // Send the operation to be processed sequentially.
             let _ = tx.send(request);
-        }
 
-        // Wait for the result of the queued operation.
-        response_rx.blocking_recv().expect("Logic bug: response_tx was dropped before transmitting")
+            // Wait for the result of the queued operation.
+            let Ok(response) = response_rx.blocking_recv() else {
+                return None;
+            };
+
+            Some(response)
+        } else {
+            None
+        }
     }
 
     /// A safeguard used to ensure that the given operation is processed in the thread

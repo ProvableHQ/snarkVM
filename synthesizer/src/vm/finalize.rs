@@ -213,8 +213,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             solutions,
             transactions,
         );
-        let SequentialOperationResult::AtomicSpeculate(ret) = self.run_sequential_operation(sequential_op) else {
-            unreachable!();
+        let Some(SequentialOperationResult::AtomicSpeculate(ret)) = self.run_sequential_operation(sequential_op) else {
+            bail!("Already shutting down");
         };
 
         ret

@@ -463,8 +463,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub fn add_next_block(&self, block: &Block<N>) -> Result<()> {
         let sequential_op = SequentialOperation::AddNextBlock(block.clone());
-        let SequentialOperationResult::AddNextBlock(ret) = self.run_sequential_operation(sequential_op) else {
-            unreachable!();
+        let Some(SequentialOperationResult::AddNextBlock(ret)) = self.run_sequential_operation(sequential_op) else {
+            bail!("Already shutting down");
         };
 
         ret
@@ -588,7 +588,10 @@ impl<N: Network, C: ConsensusStorage<N>> Drop for VM<N, C> {
         // This check isn't perfect, but in practice it was only needed in order
         // for tests to not leak memory.
         if Arc::strong_count(&self.sequential_ops_tx) == 2 {
+            // Send a shutdown signal.
             self.run_sequential_operation(SequentialOperation::Shutdown);
+            // Disable the channel.
+            self.sequential_ops_tx.write().take();
         }
     }
 }
