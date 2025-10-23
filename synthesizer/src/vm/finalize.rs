@@ -2084,15 +2084,15 @@ finalize transfer_public:
         vm.check_transaction(&bond_validator_transaction, None, rng).unwrap();
 
         // Speculate on the transactions.
-        let transactions = [bond_validator_transaction.clone()];
+        let transactions = vec![bond_validator_transaction.clone()];
         let (_, confirmed_transactions, _, _) = vm
             .atomic_speculate(
                 sample_finalize_state(1),
                 CurrentNetwork::BLOCK_TIME as i64,
                 None,
                 vec![],
-                &None.into(),
-                transactions.iter(),
+                None.into(),
+                transactions,
             )
             .unwrap();
 
@@ -2104,15 +2104,15 @@ finalize transfer_public:
         );
 
         // Speculate on the transactions.
-        let transactions = [bond_validator_transaction.clone()];
+        let transactions = vec![bond_validator_transaction.clone()];
         let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
             .atomic_speculate(
                 sample_finalize_state(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V3).unwrap()),
                 CurrentNetwork::BLOCK_TIME as i64,
                 None,
                 vec![],
-                &None.into(),
-                transactions.iter(),
+                None.into(),
+                transactions,
             )
             .unwrap();
 
