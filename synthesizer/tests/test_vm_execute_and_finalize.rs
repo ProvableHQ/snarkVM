@@ -39,7 +39,6 @@ use snarkvm_synthesizer_program::FinalizeGlobalState;
 
 use anyhow::Result;
 use indexmap::IndexMap;
-use rayon::prelude::*;
 use snarkvm_console::account::Address;
 use utilities::*;
 
@@ -55,7 +54,7 @@ fn test_vm_execute_and_finalize() {
         load_tests::<_, ProgramTest>("./tests/vm/execute_and_finalize", "./expectations/vm/execute_and_finalize");
 
     // Run each test and compare it against its corresponding expectation.
-    tests.par_iter().for_each(|test| {
+    tests.iter().for_each(|test| {
         // Run the test.
         let output = run_test(test);
         // Check against the expected output.
