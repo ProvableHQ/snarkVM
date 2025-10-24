@@ -14,12 +14,17 @@
 // limitations under the License.
 
 use snarkvm_console::prelude::{CanaryV0, MainnetV0, Network, TestRng, TestnetV0, ToBytes};
-use snarkvm_ledger::{Ledger, store::helpers::rocksdb::ConsensusDB, test_helpers::TestChainBuilder};
+use snarkvm_ledger::{Ledger, Transaction, store::helpers::rocksdb::ConsensusDB, test_helpers::TestChainBuilder};
 
 use aleo_std::StorageMode;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, builder::PossibleValuesParser};
-use std::fs;
+use std::{
+    fs::{self, File},
+    io::Read,
+    path::Path,
+    str::FromStr,
+};
 
 #[derive(Parser)]
 struct Args {
@@ -38,6 +43,10 @@ struct Args {
     /// Remove existing ledger if it already exists.
     #[clap(long, short = 'f')]
     force: bool,
+    /// Load the transactions to be used with the generated blocks. They are expected to be
+    /// stored in a JSON-encoded format.
+    #[clap(long)]
+    txs_path: Option<String>,
     /// The name of the network to generate the chain for.
     #[clap(long, value_parser=PossibleValuesParser::new(vec![CanaryV0::SHORT_NAME, TestnetV0::SHORT_NAME, MainnetV0::SHORT_NAME]), default_value=TestnetV0::SHORT_NAME)]
     network: String,
@@ -95,13 +104,40 @@ fn generate_testchain<N: Network>(args: Args) -> Result<()> {
 
     remove_ledger(N::ID, &storage_mode, args.force)?;
 
+    let txs = if let Some(path) = args.txs_path {
+        let path = Path::new(&path);
+        println!("Attempting to load txs from {}", path.display());
+
+        let mut txs = Vec::new();
+        if path.is_dir() {
+            let mut buffer = String::new();
+            for entry in fs::read_dir(path)? {
+                let entry = entry?;
+                let path = entry.path();
+
+                let mut file = File::open(path)?;
+                let _ = file.read_to_string(&mut buffer)?;
+                let tx = Transaction::<N>::from_str(&buffer)?;
+                txs.push(tx);
+                buffer.clear();
+            }
+        }
+
+        println!("Loaded {} txs from {}", txs.len(), path.display());
+        txs
+    } else {
+        Default::default()
+    };
+
     let num_validators = args.num_validators;
     let num_blocks = args.num_blocks;
 
     println!("Initializing test chain builder for {} with {num_validators} validators", N::SHORT_NAME);
     let mut builder: TestChainBuilder<N> = match args.genesis_path {
-        Some(genesis_path) => TestChainBuilder::new_with_quorum_size_and_genesis_block(num_validators, genesis_path),
-        None => TestChainBuilder::new_with_quorum_size(num_validators, &mut rng),
+        Some(genesis_path) => {
+            TestChainBuilder::new_with_quorum_size_and_genesis_block(num_validators, genesis_path, txs)
+        }
+        None => TestChainBuilder::new_with_quorum_size(num_validators, &mut rng, txs),
     }
     .with_context(|| "Failed to set up test chain builder")?;
 

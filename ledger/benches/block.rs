@@ -77,7 +77,7 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
 fn block_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
 
-    let mut builder = TestChainBuilder::<CurrentNetwork>::new(&mut rng).unwrap();
+    let mut builder = TestChainBuilder::<CurrentNetwork>::new(&mut rng, vec![]).unwrap();
     let block = builder.generate_block(&mut rng).unwrap();
 
     bench_serialization(c, "Block", block);
@@ -86,7 +86,7 @@ fn block_serialization(c: &mut Criterion) {
 fn block_header_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
 
-    let mut builder = TestChainBuilder::<CurrentNetwork>::new(&mut rng).unwrap();
+    let mut builder = TestChainBuilder::<CurrentNetwork>::new(&mut rng, vec![]).unwrap();
     let block = builder.generate_block(&mut rng).unwrap();
 
     bench_serialization(c, "Header", *block.header());
