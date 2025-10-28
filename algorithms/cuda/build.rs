@@ -69,10 +69,17 @@ fn main() {
     };
 
     if nvcc.is_ok() {
+        // Clear CXXFLAGS environment variables to avoid conflicts with CUDA compilation
+        // (the global CXXFLAGS "-include cstdint" causes header redefinitions in nvcc)
+        env::remove_var("CXXFLAGS");
+        env::remove_var("HOST_CXXFLAGS");
+        env::remove_var("CXXFLAGS_x86_64_unknown_linux_gnu");
+        env::remove_var("CXXFLAGS_x86_64-unknown-linux-gnu");
+
         let mut nvcc = cc::Build::new();
-        nvcc.cuda(true);
+        nvcc.cuda(true).flag("-ccbin").flag("/usr/bin/g++-12");
         nvcc.flag("-g");
-        nvcc.flag("-arch=sm_70");
+        nvcc.flag("-arch=sm_80");
         nvcc.flag("-maxrregcount=255");
         nvcc.flag("-Xcompiler").flag("-Wno-unused-function");
         nvcc.flag("-Xcompiler").flag("-Wno-subobject-linkage");
