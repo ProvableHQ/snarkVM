@@ -15,34 +15,20 @@
 
 use super::Certificate;
 use crate::{
-    AlgebraicSponge,
-    SNARK,
-    SNARKError,
+    AlgebraicSponge, SNARK, SNARKError,
     fft::EvaluationDomain,
     polycommit::sonic_pc::{
-        Commitment,
-        CommitterUnionKey,
-        Evaluations,
-        LabeledCommitment,
-        QuerySet,
-        Randomness,
-        SonicKZG10,
+        Commitment, CommitterUnionKey, Evaluations, LabeledCommitment, QuerySet, Randomness, SonicKZG10,
     },
     r1cs::{ConstraintSynthesizer, SynthesisError},
     snark::varuna::{
-        CircuitProvingKey,
-        CircuitVerifyingKey,
-        Proof,
-        SNARKMode,
-        UniversalSRS,
-        VarunaVersion,
+        CircuitProvingKey, CircuitVerifyingKey, Proof, SNARKMode, UniversalSRS, VarunaVersion,
         ahp::{AHPError, AHPForR1CS, CircuitId, EvaluationsProvider},
-        proof,
-        prover,
-        witness_label,
+        proof, prover, witness_label,
     },
     srs::UniversalVerifier,
 };
+use aleo_std::prelude::{finish, lap, timer};
 use rand::RngCore;
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
@@ -355,7 +341,7 @@ where
         keys_to_constraints: &BTreeMap<&CircuitProvingKey<E, SM>, &[C]>,
         zk_rng: &mut R,
     ) -> Result<Self::Proof> {
-        let prover_time = start_timer!(|| "Varuna::Prover");
+        let timer = timer!("Varuna::prove_batch");
         if keys_to_constraints.is_empty() {
             bail!(SNARKError::EmptyBatch);
         }
@@ -365,6 +351,7 @@ where
             circuits_to_constraints.insert(pk.circuit.deref(), *constraints);
         }
         let prover_state = AHPForR1CS::<_, SM>::init_prover(&circuits_to_constraints, zk_rng)?;
+        lap!(timer, "Initialize prover state");
 
         // extract information from the prover key and state to consume in further
         // calculations
@@ -397,13 +384,14 @@ where
             keys_to_constraints.keys().map(|pk| pk.circuit_verifying_key.circuit_commitments.as_slice());
 
         let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone());
+        lap!(timer, "Setup batch information and initialize sponge");
 
         // --------------------------------------------------------------------
         // First round
 
         let prover_state = AHPForR1CS::<_, SM>::prover_first_round(prover_state, zk_rng)?;
+        lap!(timer, "First round prover computation");
 
-        let first_round_comm_time = start_timer!(|| "Committing to first round polys");
         let (first_commitments, first_commitment_randomnesses) = {
             let first_round_oracles = prover_state.first_round_oracles.as_ref().unwrap();
             SonicKZG10::<E, FS>::commit(
@@ -413,7 +401,7 @@ where
                 SM::ZK.then_some(zk_rng),
             )?
         };
-        end_timer!(first_round_comm_time);
+        lap!(timer, "First round polynomial commitments");
 
         Self::absorb_labeled(&first_commitments, &mut sponge);
 
@@ -432,15 +420,15 @@ where
 
         let (second_oracles, prover_state) =
             AHPForR1CS::<_, SM>::prover_second_round(&verifier_first_message, prover_state, zk_rng)?;
+        lap!(timer, "Second round prover computation");
 
-        let second_round_comm_time = start_timer!(|| "Committing to second round polys");
         let (second_commitments, second_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
             second_oracles.iter().map(Into::into),
             SM::ZK.then_some(zk_rng),
         )?;
-        end_timer!(second_round_comm_time);
+        lap!(timer, "Second round polynomial commitments");
 
         Self::absorb_labeled(&second_commitments, &mut sponge);
 
@@ -492,15 +480,15 @@ where
             zk_rng,
             varuna_version,
         )?;
+        lap!(timer, "Third round prover computation");
 
-        let third_round_comm_time = start_timer!(|| "Committing to third round polys");
         let (third_commitments, third_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
             third_oracles.iter().map(Into::into),
             SM::ZK.then_some(zk_rng),
         )?;
-        end_timer!(third_round_comm_time);
+        lap!(timer, "Third round polynomial commitments");
 
         match varuna_version {
             VarunaVersion::V1 => {
@@ -540,15 +528,15 @@ where
 
         let (prover_fourth_message, fourth_oracles, mut prover_state) =
             AHPForR1CS::<_, SM>::prover_fourth_round(&verifier_second_msg, &verifier_third_msg, prover_state, zk_rng)?;
+        lap!(timer, "Fourth round prover computation");
 
-        let fourth_round_comm_time = start_timer!(|| "Committing to fourth round polys");
         let (fourth_commitments, fourth_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
             fourth_oracles.iter().map(Into::into),
             SM::ZK.then_some(zk_rng),
         )?;
-        end_timer!(fourth_round_comm_time);
+        lap!(timer, "Fourth round polynomial commitments");
 
         Self::absorb_labeled_with_sums(&fourth_commitments, &prover_fourth_message.sums, &mut sponge);
 
@@ -566,15 +554,15 @@ where
         // --------------------------------------------------------------------
         // Fifth round
         let fifth_oracles = AHPForR1CS::<_, SM>::prover_fifth_round(verifier_fourth_msg, prover_state, zk_rng)?;
+        lap!(timer, "Fifth round prover computation");
 
-        let fifth_round_comm_time = start_timer!(|| "Committing to fifth round polys");
         let (fifth_commitments, fifth_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
             fifth_oracles.iter().map(Into::into),
             SM::ZK.then_some(zk_rng),
         )?;
-        end_timer!(fifth_round_comm_time);
+        lap!(timer, "Fifth round polynomial commitments");
 
         Self::absorb_labeled(&fifth_commitments, &mut sponge);
 
@@ -654,8 +642,8 @@ where
             &verifier_state,
             varuna_version,
         )?;
+        lap!(timer, "Construct linear combinations");
 
-        let eval_time = start_timer!(|| "Evaluating linear combinations over query set");
         let mut evaluations = std::collections::BTreeMap::new();
         for (label, (_, point)) in query_set.to_set() {
             if !AHPForR1CS::<E::Fr, SM>::LC_WITH_ZERO_EVAL.contains(&label.as_str()) {
@@ -666,7 +654,7 @@ where
         }
 
         let evaluations = proof::Evaluations::from_map(&evaluations, batch_sizes.clone());
-        end_timer!(eval_time);
+        lap!(timer, "Evaluate linear combinations over query set");
 
         sponge.absorb_nonnative_field_elements(evaluations.to_field_elements());
 
@@ -679,6 +667,7 @@ where
             &query_set.to_set(),
             &mut sponge,
         )?;
+        lap!(timer, "Generate polynomial commitment proof");
 
         let proof = Proof::<E>::new(
             batch_sizes,
@@ -690,8 +679,9 @@ where
         )?;
         proof.check_batch_sizes()?;
         ensure!(proof.pc_proof.is_hiding() == SM::ZK);
+        lap!(timer, "Construct and validate final proof");
 
-        end_timer!(prover_time);
+        finish!(timer);
         Ok(proof)
     }
 
