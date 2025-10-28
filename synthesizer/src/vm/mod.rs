@@ -3485,10 +3485,12 @@ function adder:
             CurrentNetwork::MAX_ARRAY_ELEMENTS
         );
 
+        let mut program = None;
+
         loop {
             // Generate a program string with nested arrays of `test_depth` levels
             let mut program_string =
-                format!("program array_depth_test_{test_depth}.aleo;\n\n  function allocate_nested_array:\n");
+                "program array_nesting_limit.aleo;\n\n  function allocate_max_nested_array:\n".to_string();
 
             // Build the nested array type string (e.g., [[[u32; 512]; 512]; 512])
             let mut array_type = "u32".to_string();
@@ -3559,10 +3561,11 @@ function adder:
 
             // Try to parse the program
             match Program::<CurrentNetwork>::from_str(&program_string) {
-                Ok(_) => {
+                Ok(valid_program) => {
                     max_depth = test_depth;
                     println!("Successfully created program with array depth {test_depth}");
                     test_depth += 1;
+                    program = Some(valid_program);
                 }
                 Err(e) => {
                     println!("Failed to create program {program_string} with array depth {test_depth}: {e}");
@@ -3571,76 +3574,8 @@ function adder:
             }
         }
 
-        assert!(max_depth > 0, "Should be able to create at least one level of array nesting");
-        println!("Maximum array nesting depth: {max_depth}");
-
-        // Now create and deploy a program with the maximum array nesting depth
-        let mut final_program_string =
-            "program array_nesting_limit.aleo;\n\n  function allocate_max_nested_array:\n".to_string();
-
-        // Build the nested array type string for the maximum depth
-        let mut final_array_type = "u32".to_string();
-        for _ in 0..max_depth {
-            final_array_type = format!("[{}; {}u32]", final_array_type, CurrentNetwork::MAX_ARRAY_ELEMENTS);
-        }
-
-        // Create the cast instructions for maximum depth
-        if max_depth == 1 {
-            // Simple case: single-level array
-            let elements: Vec<String> =
-                (0..CurrentNetwork::MAX_ARRAY_ELEMENTS).map(|j| format!("{}u32", j % 256)).collect();
-            let elements_str = elements.join(" ");
-
-            final_program_string.push_str(&format!("    cast {elements_str} into r0 as {final_array_type};\n"));
-        } else {
-            // Multi-level nested arrays
-            let elements: Vec<String> =
-                (0..CurrentNetwork::MAX_ARRAY_ELEMENTS).map(|j| format!("{}u32", j % 256)).collect();
-            let elements_str = elements.join(" ");
-
-            // Create inner array type
-            let mut inner_type = "u32".to_string();
-            for _ in 0..(max_depth - 1) {
-                inner_type = format!("[{}; {}u32]", inner_type, CurrentNetwork::MAX_ARRAY_ELEMENTS);
-            }
-
-            // Create the innermost arrays first
-            for i in 0..std::cmp::min(CurrentNetwork::MAX_ARRAY_ELEMENTS, 8) {
-                if max_depth == 2 {
-                    final_program_string.push_str(&format!("    cast {elements_str} into r{i} as {inner_type};\n"));
-                } else {
-                    final_program_string.push_str(&format!(
-                        "    cast {elements_str} into r{i} as [u32; {}u32];\n",
-                        CurrentNetwork::MAX_ARRAY_ELEMENTS
-                    ));
-                }
-            }
-
-            // Cast the inner arrays into the outer array
-            let inner_refs: Vec<String> =
-                (0..std::cmp::min(CurrentNetwork::MAX_ARRAY_ELEMENTS, 8)).map(|i| format!("r{i}")).collect();
-            let inner_refs_str = inner_refs.join(" ");
-
-            final_program_string.push_str(&format!(
-                "    cast {inner_refs_str} into r{} as {final_array_type};\n",
-                CurrentNetwork::MAX_ARRAY_ELEMENTS + 1,
-            ));
-        }
-
-        // Add output instruction
-        if max_depth == 1 {
-            final_program_string.push_str(&format!("    output r0 as {final_array_type}.private;\n"));
-        } else {
-            final_program_string.push_str(&format!(
-                "    output r{} as {final_array_type}.private;\n",
-                CurrentNetwork::MAX_ARRAY_ELEMENTS + 1,
-            ));
-        }
-
-        // Add a constructor
-        final_program_string.push_str("constructor:\n  assert.eq true true;\n");
-
-        let program = Program::<CurrentNetwork>::from_str(&final_program_string).unwrap();
+        let program = program.unwrap();
+        assert_eq!(max_depth, 1); // Large arrays quickly run into the program size limit.
 
         // Deploy the program
         let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
@@ -3675,5 +3610,13 @@ function adder:
             max_depth,
             CurrentNetwork::MAX_ARRAY_ELEMENTS
         );
+
+        // Sample the next block.
+        let block = sample_next_block(&vm, &private_key, &[transaction], rng).unwrap();
+        // Check that the execution is accepted.
+        assert_eq!(block.transactions().num_accepted(), 1);
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
     }
 }
