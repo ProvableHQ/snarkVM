@@ -15,18 +15,13 @@
 
 use crate::{
     fft::{
-        DensePolynomial,
-        EvaluationDomain,
-        Evaluations,
+        DensePolynomial, EvaluationDomain, Evaluations,
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        AHPError,
-        Matrix,
-        SNARKMode,
-        VarunaVersion,
+        AHPError, Matrix, SNARKMode, VarunaVersion,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
         matrices::transpose,
         prover::{self, MatrixSums, ThirdMessage},
@@ -40,7 +35,7 @@ use snarkvm_utilities::{ExecutionPool, cfg_iter};
 use anyhow::{Result, ensure};
 use itertools::Itertools;
 use rand::RngCore;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Instant};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -78,6 +73,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         varuna_version: VarunaVersion,
     ) -> Result<(Option<prover::ThirdMessage<F>>, prover::ThirdOracles<F>, prover::State<'a, F, SM>), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::ThirdRound");
+        let third_round_start_time = Instant::now();
+        let mut state_start_time = Instant::now();
 
         let zk_bound = Self::zk_bound();
 
@@ -91,9 +88,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             varuna_version,
         )
         .map_err(AHPError::AnyhowError)?;
+        println!("\tSelect third round challenges: {:?}", state_start_time.elapsed());
+        state_start_time = Instant::now();
 
         let assignments = Self::calculate_assignments(&mut state)?;
-        let matrix_transposes = Self::calculate_matrix_transpose(&mut state)?;
+        let matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Vec<Vec<(F, usize)>>>> =
+            Self::calculate_matrix_transpose(&mut state)?;
+        println!("\tCalculate matrix transposes: {:?}", state_start_time.elapsed());
+        state_start_time = Instant::now();
 
         let (h_1, x_g_1_sum, msg) = Self::calculate_lineval_sumcheck_witness(
             &mut state,
@@ -105,6 +107,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             &eta_c,
             varuna_version,
         )?;
+        println!("\tCalculate lineval sumcheck witness: {:?}", state_start_time.elapsed());
+        state_start_time = Instant::now();
 
         #[cfg(debug_assertions)]
         {
@@ -136,6 +140,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(oracles.matches_info(&Self::third_round_polynomial_info(state.max_variable_domain.size())));
 
         end_timer!(round_time);
+        println!("\tOracles: {:?}", state_start_time.elapsed());
+        println!("\tTotal third round time: {:?}", third_round_start_time.elapsed());
 
         Ok((msg, oracles, state))
     }
