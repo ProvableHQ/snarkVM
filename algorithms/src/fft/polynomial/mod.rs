@@ -266,6 +266,7 @@ impl<F: PrimeField> Polynomial<'_, F> {
     }
 
     fn eval_over_domain_helper(self, domain: EvaluationDomain<F>) -> Evaluations<F> {
+        println!("\t\t\tEvalDomainHelper");
         match self {
             Sparse(Cow::Borrowed(s)) => {
                 let evals = domain.elements().map(|elem| s.evaluate(elem)).collect();
@@ -290,18 +291,25 @@ impl<F: PrimeField> Polynomial<'_, F> {
             }
             Dense(Cow::Owned(mut d)) => {
                 if d.degree() >= domain.size() {
-                    d.coeffs
+                    let start_time = Instant::now();
+
+                    let res = d
+                        .coeffs
                         .chunks(domain.size())
                         .map(|d| Evaluations::from_vec_and_domain(domain.fft(d), domain))
-                        .fold(Evaluations::from_vec_and_domain(vec![F::zero(); domain.size()], domain), |mut acc, e| {
-                            cfg_iter_mut!(acc.evaluations).zip(e.evaluations).for_each(|(a, e)| *a += e);
-                            acc
-                        })
+                        .fold(
+                            Evaluations::from_vec_and_domain(vec![F::zero(); domain.size()], domain),
+                            |mut acc, e| {
+                                cfg_iter_mut!(acc.evaluations).zip(e.evaluations).for_each(|(a, e)| *a += e);
+                                acc
+                            },
+                        );
+                    println!("\t\t\tFFT chunks: {:?}", Instant::now().duration_since(start_time));
+                    res
                 } else {
                     let start_time = Instant::now();
                     domain.fft_in_place(&mut d.coeffs);
-                    let end_time = Instant::now();
-                    println!("\t\t\tFFT in place: {:?}", end_time.duration_since(start_time));
+                    println!("\t\t\tFFT in place: {:?}", Instant::now().duration_since(start_time));
                     Evaluations::from_vec_and_domain(d.coeffs, domain)
                 }
             }
