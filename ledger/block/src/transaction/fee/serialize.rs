@@ -45,7 +45,9 @@ impl<'de, N: Network> Deserialize<'de> for Fee<N> {
                 // Retrieve the global state root.
                 let global_state_root = DeserializeExt::take_from_value::<D>(&mut fee, "global_state_root")?;
                 // Retrieve the proof.
-                let proof = DeserializeExt::take_from_value::<D>(&mut fee, "proof")?;
+                let proof =
+                serde_json::from_value(fee.get_mut("proof").unwrap_or(&mut serde_json::Value::Null).take())
+                    .map_err(de::Error::custom)?;
                 // Recover the fee.
                 Self::from(transition, global_state_root, proof).map_err(de::Error::custom)
             }
