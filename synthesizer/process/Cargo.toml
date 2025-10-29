@@ -46,6 +46,7 @@ wasm = [
 test = [ "snarkvm-console/test" ]
 timer = [ "aleo-std/timer" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
+dev_skip_checks = [ ]
 
 [[bench]]
 name = "stack_operations"
