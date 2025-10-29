@@ -237,9 +237,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let mut xg_1_sum = DensePolynomial::zero();
         let mut circuit_index = 0;
         let mut instances_seen = 0;
-        for (i, (lineval_a, lineval_b, lineval_c)) in
-            job_pool.execute_all().into_iter().collect::<Result<Vec<_>>>()?.into_iter().tuples().enumerate()
-        {
+
+        let start_time = Instant::now();
+        let job_results = job_pool.execute_all().into_iter().collect::<Result<Vec<_>>>()?;
+        println!("\t\tCalculate lineval sumcheck instance witness polys: {:?}", start_time.elapsed());
+
+        for (i, (lineval_a, lineval_b, lineval_c)) in job_results.into_iter().tuples().enumerate() {
             h_1_sum += &lineval_a.h_1_i;
             h_1_sum += &lineval_b.h_1_i;
             h_1_sum += &lineval_c.h_1_i;

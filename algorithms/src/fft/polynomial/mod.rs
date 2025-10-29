@@ -21,7 +21,7 @@ use snarkvm_fields::{Field, PrimeField};
 use snarkvm_utilities::{SerializationError, cfg_iter_mut, serialize::*};
 
 use anyhow::{Result, ensure};
-use std::{borrow::Cow, convert::TryInto};
+use std::{borrow::Cow, convert::TryInto, time::Instant};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -298,7 +298,10 @@ impl<F: PrimeField> Polynomial<'_, F> {
                             acc
                         })
                 } else {
+                    let start_time = Instant::now();
                     domain.fft_in_place(&mut d.coeffs);
+                    let end_time = Instant::now();
+                    println!("\t\t\tFFT in place: {:?}", end_time.duration_since(start_time));
                     Evaluations::from_vec_and_domain(d.coeffs, domain)
                 }
             }
