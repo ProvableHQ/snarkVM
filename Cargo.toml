@@ -141,16 +141,6 @@ package = [
 ]
 async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-dev-print = [ 
-  "snarkvm-utilities/dev-print",
-  "snarkvm-algorithms/dev-print",
-  "snarkvm-circuit/dev-print",
-  "snarkvm-curves/dev-print",
-  "snarkvm-fields/dev-print",
-  "snarkvm-parameters/dev-print",
-  "snarkvm-synthesizer/dev-print",
-]
-save_r1cs_hashes = [ "snarkvm-circuit/save_r1cs_hashes" ]
 history = [ "snarkvm-synthesizer/history" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
 locktick = [
@@ -175,9 +165,6 @@ parameters = [ "snarkvm-parameters" ]
 synthesizer = [ "snarkvm-synthesizer" ]
 utilities = [ "snarkvm-utilities" ]
 wasm = [ "snarkvm-wasm" ]
-test_exports = [ "snarkvm-algorithms/test_exports" ]
-test_targets = [ "snarkvm-console/test_targets" ]
-test_consensus_heights = [ "snarkvm-console/test_consensus_heights" ]
 serial = [
   "snarkvm-algorithms?/serial",
   "snarkvm-console?/serial",
@@ -186,6 +173,23 @@ serial = [
   "snarkvm-utilities/serial",
   "snarkvm-ledger?/serial"
 ]
+
+dev-print = [ 
+  "snarkvm-utilities/dev-print",
+  "snarkvm-algorithms/dev-print",
+  "snarkvm-circuit/dev-print",
+  "snarkvm-curves/dev-print",
+  "snarkvm-fields/dev-print",
+  "snarkvm-parameters/dev-print",
+  "snarkvm-synthesizer/dev-print",
+]
+dev_skip_checks = [
+  "snarkvm-synthesizer/dev_skip_checks"
+]
+save_r1cs_hashes = [ "snarkvm-circuit/save_r1cs_hashes" ]
+test_exports = [ "snarkvm-algorithms/test_exports" ]
+test_targets = [ "snarkvm-console/test_targets" ]
+test_consensus_heights = [ "snarkvm-console/test_consensus_heights" ]
 
 [workspace.dependencies.snarkvm-algorithms]
 path = "algorithms"

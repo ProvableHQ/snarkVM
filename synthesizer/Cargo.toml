@@ -59,6 +59,7 @@ wasm = [
   "snarkvm-synthesizer-snark/wasm"
 ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
+dev_skip_checks = [ "snarkvm-synthesizer-snark/dev_skip_checks" ]
 
 [[bench]]
 name = "kary_merkle_tree"

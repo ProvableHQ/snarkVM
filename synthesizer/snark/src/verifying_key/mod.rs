@@ -82,6 +82,10 @@ impl<N: Network> VerifyingKey<N> {
         inputs: Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>,
         proof: &Proof<N>,
     ) -> Result<()> {
+        if cfg!(feature = "dev_skip_checks") {
+            return Ok(());
+        }
+
         #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
 
