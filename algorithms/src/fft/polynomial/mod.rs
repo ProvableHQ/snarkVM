@@ -278,15 +278,25 @@ impl<F: PrimeField> Polynomial<'_, F> {
             }
             Dense(Cow::Borrowed(d)) => {
                 if d.degree() >= domain.size() {
-                    d.coeffs
+                    let start_time = Instant::now();
+                    let res = d
+                        .coeffs
                         .chunks(domain.size())
                         .map(|d| Evaluations::from_vec_and_domain(domain.fft(d), domain))
-                        .fold(Evaluations::from_vec_and_domain(vec![F::zero(); domain.size()], domain), |mut acc, e| {
-                            cfg_iter_mut!(acc.evaluations).zip(e.evaluations).for_each(|(a, e)| *a += e);
-                            acc
-                        })
+                        .fold(
+                            Evaluations::from_vec_and_domain(vec![F::zero(); domain.size()], domain),
+                            |mut acc, e| {
+                                cfg_iter_mut!(acc.evaluations).zip(e.evaluations).for_each(|(a, e)| *a += e);
+                                acc
+                            },
+                        );
+                    println!("\t\t\tFFT chunks: {:?}", Instant::now().duration_since(start_time));
+                    res
                 } else {
-                    Evaluations::from_vec_and_domain(domain.fft(&d.coeffs), domain)
+                    let start_time = Instant::now();
+                    let res = Evaluations::from_vec_and_domain(domain.fft(&d.coeffs), domain);
+                    println!("\t\t\tFFT: {:?}", Instant::now().duration_since(start_time));
+                    res
                 }
             }
             Dense(Cow::Owned(mut d)) => {
