@@ -109,6 +109,9 @@ workspace = true
 features = [ "write" ]
 optional = true
 
+[dependencies.tracing]
+workspace = true
+
 [dev-dependencies.aleo-std]
 workspace = true
 

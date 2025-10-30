@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{borrow::Borrow, fmt::Display};
+use std::borrow::Borrow;
 
 /// Generates an `io::Error` from the given string.
 #[inline]
@@ -32,7 +32,7 @@ pub fn into_io_error<E: Into<anyhow::Error>>(err: E) -> std::io::Error {
 
 /// Helper function for `log_error` and `log_warning`.
 #[inline]
-fn flatten_anyhow_error<E: Borrow<anyhow::Error>>(error: E) -> String {
+pub fn flatten_anyhow_error<E: Borrow<anyhow::Error>>(error: E) -> String {
     let error = error.borrow();
     let mut output = error.to_string();
     for next in error.chain().skip(1) {
@@ -41,26 +41,118 @@ fn flatten_anyhow_error<E: Borrow<anyhow::Error>>(error: E) -> String {
     output
 }
 
-/// Logs `anyhow::Error`'s its error chain using the `ERROR` log level.
+/// Logs an `anyhow::Error`'s error chain at the `ERROR` level.
 ///
 /// This follows the existing convention in the codebase that joins errors using em dashes.
 /// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
 /// as "Invalid transaction — Proof failed".
-#[inline]
-#[track_caller]
-pub fn log_error<E: Borrow<anyhow::Error>>(error: E) {
-    tracing::error!("{}", flatten_anyhow_error(error));
+///
+/// # Usage
+/// ```rust
+/// use snarkvm_utilities::elog_error;
+/// use anyhow::anyhow;
+///
+/// let my_error = anyhow!("Something went wrong");
+/// let user_id = 123;
+///
+/// // Log error without context
+/// elog_error!(my_error);
+///
+/// // Log error with formatted context  
+/// elog_error!(anyhow!("Database error"), "Failed to process transaction for user {}", user_id);
+/// ```
+#[macro_export]
+macro_rules! elog_error {
+    ($error:expr) => {
+        {
+            tracing::error!("{}", $crate::errors::flatten_anyhow_error($error));
+        }
+    };
+    ($err:expr, $($arg:expr),*) => {
+        {
+            #[allow(unused_imports)]
+            use anyhow::Context;
+            let err: anyhow::Error = $err.into();
+            let err = err.context(format!($($arg,)*));
+            tracing::error!("{}", $crate::errors::flatten_anyhow_error(&err));
+        }
+    };
 }
 
-/// Logs `anyhow::Error`'s its error chain using the `WARN` log level.
+/// Logs an `anyhow::Error`'s error chain at the `WARN` level.
 ///
 /// This follows the existing convention in the codebase that joins errors using em dashes.
 /// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
 /// as "Invalid transaction — Proof failed".
-#[inline]
-#[track_caller]
-pub fn log_warning<E: Borrow<anyhow::Error>>(error: E) {
-    tracing::warn!("{}", flatten_anyhow_error(error));
+///
+/// # Usage
+/// ```rust
+/// use snarkvm_utilities::elog_warning;
+/// use anyhow::anyhow;
+///
+/// let my_error = anyhow!("Validation failed");
+/// let height = 42;
+///
+/// // Log warning without context
+/// elog_warning!(my_error);
+///
+/// // Log warning with formatted context
+/// elog_warning!(anyhow!("Block validation error"), "Failed to validate block at height {}", height);
+/// ```
+#[macro_export]
+macro_rules! elog_warning {
+    ($error:expr) => {
+        {
+            tracing::warn!("{}", $crate::errors::flatten_anyhow_error($error));
+        }
+    };
+    ($err:expr, $($arg:expr),*) => {
+        {
+
+            #[allow(unused_imports)]
+            use anyhow::Context;
+            let err: anyhow::Error = $err.into();
+            let err = err.context(format!($($arg,)*));
+             tracing::warn!("{}", $crate::errors::flatten_anyhow_error(&err));
+        }
+    };
+}
+
+/// Logs an `anyhow::Error`'s error chain at the `DEBUG` level.
+///
+/// This follows the existing convention in the codebase that joins errors using em dashes.
+/// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
+/// as "Invalid transaction — Proof failed".
+///
+/// # Usage
+/// ```rust
+/// use snarkvm_utilities::elog_debug;
+/// use anyhow::anyhow;
+///
+/// let my_error = anyhow!("Processing failed");
+/// let step_name = "validation";
+///
+/// // Log debug without context
+/// elog_debug!(my_error);
+///
+/// // Log debug with formatted context
+/// elog_debug!(anyhow!("Step failed"), "Processing step {} failed", step_name);
+/// ```
+#[macro_export]
+macro_rules! elog_debug {
+    ($error:expr) => {
+        {
+            tracing::debug!("{}", $crate::errors::flatten_anyhow_error($error));
+        }
+    };
+  ($err:expr, $($arg:expr),*) => {
+        {
+            #[allow(unused_imports)]
+            let err: anyhow::Error = $err.into();
+            let err = err.context(format!($($arg,)*));
+            tracing::debug!("{}", $crate::errors::flatten_anyhow_error(&err));
+        }
+    };
 }
 
 /// Displays an `anyhow::Error`'s main error and its error chain to stderr.
@@ -86,55 +178,6 @@ macro_rules! ensure_equals {
             anyhow::bail!("{}: Was {} but expected {}.", $message, $actual, $expected);
         }
     };
-}
-
-/// A trait that allows printing the entire error chain of an Error (it is implemented for [`anyhow::Error`]) along with a custom context message.
-///
-/// This reduces the need for custom error printing code and ensures consistency across log messages.
-///
-/// # Example
-/// The following code will log `user-facing message - low level error` as an error.
-///
-/// ```rust
-/// use anyhow::anyhow;
-/// use snarkvm_utilities::LoggableError;
-///
-/// let my_error = anyhow!("low level problem");
-/// my_error.log_error("user-facing message");
-/// ```
-pub trait LoggableError {
-    /// Log the error with the given context and log level `ERROR`.
-    fn log_error<S: Send + Sync + Display + 'static>(self, context: S);
-    /// Log the error with the given context and log level `WARNING`.
-    fn log_warning<S: Send + Sync + Display + 'static>(self, context: S);
-    /// Log the error with the given context and log level `DEBUG`.
-    fn log_debug<S: Send + Sync + Display + 'static>(self, context: S);
-}
-
-impl<E: Into<anyhow::Error>> LoggableError for E {
-    /// Log the error with the given context and log level `ERROR`.
-    #[track_caller]
-    #[inline]
-    fn log_error<S: Send + Sync + Display + 'static>(self, context: S) {
-        let err: anyhow::Error = self.into();
-        log_error(err.context(context));
-    }
-
-    /// Log the error with the given context and log level `WARNING`.
-    #[track_caller]
-    #[inline]
-    fn log_warning<S: Send + Sync + Display + 'static>(self, context: S) {
-        let err: anyhow::Error = self.into();
-        log_warning(err.context(context));
-    }
-
-    /// Log the error with the given context and log level `DEBUG`.
-    #[track_caller]
-    #[inline]
-    fn log_debug<S: Send + Sync + Display + 'static>(self, context: S) {
-        let err: anyhow::Error = self.into();
-        log_warning(err.context(context));
-    }
 }
 
 /// A trait to provide a nicer way to unwarp `anyhow::Result`.
@@ -262,5 +305,25 @@ mod tests {
 
         assert!(result.is_ok(), "Should handle VM error gracefully");
         assert_eq!(result.unwrap(), "handled_vm_error");
+    }
+
+    #[test]
+    fn test_elog_context_formatting() {
+        use anyhow::anyhow;
+
+        let user_id = 12345;
+        let operation = "transaction";
+
+        // Test that context formatting works correctly
+        // We can't easily test the actual logging output, but we can verify the macro compiles
+        // and runs without panicking
+        crate::elog_error!(anyhow!("Database connection failed"), "Failed {} for user {}", operation, user_id);
+        crate::elog_warning!(anyhow!("Database connection failed"), "Retrying {} for user {}", operation, user_id);
+        crate::elog_debug!(anyhow!("Database connection failed"), "Debug info for {} user {}", operation, user_id);
+
+        // Test without context
+        crate::elog_error!(anyhow!("Simple error"));
+        crate::elog_warning!(anyhow!("Simple warning"));
+        crate::elog_debug!(anyhow!("Simple debug"));
     }
 }

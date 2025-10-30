@@ -18,7 +18,7 @@
 use super::*;
 use crate::helpers::{Map, MapRead};
 
-use snarkvm_utilities::{LoggableError, bytes::unchecked_deserialize};
+use snarkvm_utilities::{bytes::unchecked_deserialize, elog_error};
 
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use indexmap::IndexMap;
@@ -455,10 +455,11 @@ impl<
 
         // Deserialize the key and value.
         let key = unchecked_deserialize(&key[PREFIX_LEN..])
-            .map_err(|err| err.log_error("RocksDB Iter deserialize(key) error"))
+            .map_err(|err| elog_error!(err, "RocksDB Iter deserialize(key) error"))
             .ok()?;
-        let value =
-            unchecked_deserialize(value).map_err(|err| err.log_error("RocksDB Iter deserialize(value) error")).ok()?;
+        let value = unchecked_deserialize(value)
+            .map_err(|err| elog_error!(err, "RocksDB Iter deserialize(value) error"))
+            .ok()?;
 
         self.db_iter.next();
 
@@ -488,7 +489,7 @@ impl<'a, K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + Deserialize
 
         // Deserialize the key.
         let key = unchecked_deserialize(&self.db_iter.key()?[PREFIX_LEN..])
-            .map_err(|err| err.log_error("RocksDB Keys deserialize(key) error"))
+            .map_err(|err| elog_error!(err, "RocksDB Keys deserialize(key) error"))
             .ok()?;
 
         self.db_iter.next();
@@ -519,7 +520,7 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
 
         // Deserialize the value.
         let value = unchecked_deserialize(self.db_iter.value()?)
-            .map_err(|err| err.log_error("RocksDB Values deserialize(value) error"))
+            .map_err(|err| elog_error!(err, "RocksDB Values deserialize(value) error"))
             .ok()?;
 
         self.db_iter.next();
