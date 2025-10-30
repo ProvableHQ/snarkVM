@@ -3799,6 +3799,7 @@ dependencies = [
  "snarkvm-utilities-derives",
  "thiserror 2.0.17",
  "tracing",
+ "tracing-test",
  "zeroize",
 ]
 

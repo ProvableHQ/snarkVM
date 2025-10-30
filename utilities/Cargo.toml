@@ -75,6 +75,9 @@ default-features = false
 workspace = true
 features = [ "derive" ]
 
+[dev-dependencies.tracing-test]
+workspace = true
+
 [features]
 default = [ "derive" ]
 derive = [ "snarkvm-utilities-derives" ]

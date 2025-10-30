@@ -109,6 +109,9 @@ workspace = true
 features = [ "write" ]
 optional = true
 
+[dependencies.tracing]
+workspace = true
+
 [dev-dependencies.aleo-std]
 workspace = true
 
@@ -126,7 +129,7 @@ path = "../../ledger/test-helpers"
 workspace = true
 
 [dev-dependencies.tracing-test]
-version = "0.2.5"
+workspace = true
 
 [dev-dependencies.tracing]
 workspace = true
