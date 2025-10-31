@@ -41,7 +41,7 @@ pub type DeserializeBits<N> = DeserializeInstruction<N, { DeserializeVariant::Fr
 pub type DeserializeBitsRaw<N> = DeserializeInstruction<N, { DeserializeVariant::FromBitsRaw as u8 }>;
 
 /// The deserialization variant.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum DeserializeVariant {
     FromBits,
     FromBitsRaw,

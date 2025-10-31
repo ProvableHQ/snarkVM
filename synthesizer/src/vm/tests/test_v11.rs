@@ -19,8 +19,8 @@ use crate::vm::test_helpers::*;
 
 use console::{
     network::ConsensusVersion,
-    program::Value,
-    types::{Boolean, U8},
+    program::{ArrayType, LiteralType, PlaintextType, Value},
+    types::{Boolean, Scalar, U8, U32},
 };
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
@@ -386,4 +386,155 @@ constructor:
             });
         assert!(execution.is_err(), "The execution should fail");
     }
+}
+
+// This test checks `deserialize.bits.raw` with invalid scalar.
+// This edge case is tested to verify that `Scalar::from_bits_le` does not induce unexpected failures.
+// This test case is needed because it is not easy to test scalar deserialization with our existing instruction testing framework.
+#[test]
+fn test_deserialize_invalid_scalar() {
+    // Define the program.
+    let program = Program::from_str(
+        r"
+program deser_invalid_scalar.aleo;
+
+function test_function:
+    input r0 as [boolean; 251u32].private;
+    deserialize.bits.raw r0 ([boolean; 251u32]) into r1 (scalar);
+
+function test_finalize:
+    input r0 as [boolean; 251u32].public;
+    async test_finalize r0 into r1;
+    output r1 as deser_invalid_scalar.aleo/test_finalize.future;
+finalize test_finalize:
+    input r0 as [boolean; 251u32].public;
+    deserialize.bits.raw r0 ([boolean; 251u32]) into r1 (scalar);
+
+constructor:
+    assert.eq true true;
+    ",
+    )
+    .unwrap();
+
+    // Initialize an RNG.
+    // Note. This seed was chosen to make the test deterministic.
+    let rng = &mut TestRng::from_seed(113456789);
+
+    // Initialize a new caller.
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Initialize the VM at the V11 height.
+    let v11_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V11).unwrap();
+    let vm = sample_vm_at_height(v11_height, rng);
+
+    // Deploy the program, catching panics and repeating until the program is deployed successfully.
+    // The deployment may panic because `Scalar::eject_value` panics on invalid scalars.
+    loop {
+        println!("Attempting to deploy the program...");
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            vm.deploy(&caller_private_key, &program, None, 0, None, rng)
+        }));
+        let deployment = match result {
+            Ok(Ok(deployment)) => deployment,
+            _ => continue,
+        };
+        println!("Checking for acceptance...");
+        let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+        if block.transactions().num_accepted() == 0 {
+            continue;
+        }
+        vm.add_next_block(&block).unwrap();
+        break;
+    }
+
+    // Execute with random valid bits.
+    let bits = vm
+        .process()
+        .read()
+        .get_stack("deser_invalid_scalar.aleo")
+        .unwrap()
+        .sample_plaintext(&PlaintextType::Literal(LiteralType::Scalar), rng)
+        .unwrap()
+        .to_bits_raw_le();
+    let value = Value::Plaintext(Plaintext::from_bit_array(bits, 251).unwrap());
+    let execution_0 = vm
+        .execute(
+            &caller_private_key,
+            ("deser_invalid_scalar.aleo", "test_finalize"),
+            vec![value.clone()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let execution_1 = vm
+        .execute(
+            &caller_private_key,
+            ("deser_invalid_scalar.aleo", "test_function"),
+            vec![value].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution_0, execution_1], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 2);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Sample random invalid bits until we find one.
+    let type_ = PlaintextType::Array(
+        ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(251)]).unwrap(),
+    );
+    let bits = loop {
+        // Sample a random bit array.
+        let bits = vm
+            .process()
+            .read()
+            .get_stack("deser_invalid_scalar.aleo")
+            .unwrap()
+            .sample_plaintext(&type_, rng)
+            .unwrap()
+            .to_bits_raw_le();
+        // Check if the bits are invalid.
+        if Scalar::<CurrentNetwork>::from_bits_le(&bits).ok().is_none() {
+            break bits;
+        }
+    };
+
+    // Execute `test_function` with the invalid bits and check that it panics.
+    let value = Value::Plaintext(Plaintext::from_bit_array(bits.clone(), 251).unwrap());
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        vm.execute(
+            &caller_private_key,
+            ("deser_invalid_scalar.aleo", "test_function"),
+            vec![value].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+    }));
+    assert!(result.is_err(), "The execution should panic");
+
+    // Execute `test_finalize` with the invalid bits and check that it fails.
+    let value = Value::Plaintext(Plaintext::from_bit_array(bits, 251).unwrap());
+    let execution = vm
+        .execute(
+            &caller_private_key,
+            ("deser_invalid_scalar.aleo", "test_finalize"),
+            vec![value].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 1);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
 }

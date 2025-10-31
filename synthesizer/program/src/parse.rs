@@ -117,8 +117,10 @@ impl<N: Network> FromStr for ProgramCore<N> {
 
     /// Returns a program from a string literal.
     fn from_str(string: &str) -> Result<Self> {
+        let len = string.len();
+        let max_program_size = N::MAX_PROGRAM_SIZE;
         // Ensure the raw program string is less than MAX_PROGRAM_SIZE.
-        ensure!(string.len() <= N::MAX_PROGRAM_SIZE, "Program length exceeds N::MAX_PROGRAM_SIZE.");
+        ensure!(len <= max_program_size, "Program length {len} exceeds max program size {max_program_size}.");
 
         match Self::parse(string) {
             Ok((remainder, object)) => {

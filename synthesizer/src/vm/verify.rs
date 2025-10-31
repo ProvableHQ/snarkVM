@@ -219,7 +219,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     );
                     ensure!(
                         !deployment.program().contains_v9_syntax(),
-                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V9`"
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V9` (constructor, Operand::Checksum, Operand::Edition, Operand::ProgramOwner)."
                     );
                 }
                 if consensus_version >= ConsensusVersion::V9 {
@@ -235,7 +235,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 if consensus_version < ConsensusVersion::V11 {
                     ensure!(
                         !deployment.program().contains_v11_syntax(),
-                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V11`"
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V11` (`.raw` hash or signature verification variants, `ecdsa.verify.*` opcodes, arrays that exceed the previous maximum length of 32)."
                     );
                 }
 

@@ -25,7 +25,7 @@ pub type SerializeBits<N> = SerializeInstruction<N, { SerializeVariant::ToBits a
 pub type SerializeBitsRaw<N> = SerializeInstruction<N, { SerializeVariant::ToBitsRaw as u8 }>;
 
 /// The serialize variant.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum SerializeVariant {
     ToBits,
     ToBitsRaw,
