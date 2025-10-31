@@ -37,6 +37,9 @@ workspace = true
 [dependencies.bincode]
 workspace = true
 
+[dependencies.colored]
+workspace = true
+
 [dependencies.num_cpus]
 version = "1"
 

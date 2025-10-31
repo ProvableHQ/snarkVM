@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use colored::Colorize;
 use std::borrow::Borrow;
 
 /// Generates an `io::Error` from the given string.
@@ -30,15 +31,12 @@ pub fn into_io_error<E: Into<anyhow::Error>>(err: E) -> std::io::Error {
     std::io::Error::other(flatten_anyhow_error(&err))
 }
 
-/// Helper function for `log_error` and `log_warning`.
+/// Helper function for the `elog_*` macros.
 #[inline]
 pub fn flatten_anyhow_error<E: Borrow<anyhow::Error>>(error: E) -> String {
     let error = error.borrow();
-    let mut output = error.to_string();
-    for next in error.chain().skip(1) {
-        output = format!("{output} — {next}");
-    }
-    output
+    let chain = error.chain().skip(1).map(|next| next.to_string()).collect::<Vec<String>>().join(" — ");
+    format!("{error}{}", format!(" — {chain}").dimmed())
 }
 
 /// Logs an `anyhow::Error`'s error chain at the `ERROR` level.
@@ -148,6 +146,7 @@ macro_rules! elog_debug {
   ($err:expr, $($arg:expr),*) => {
         {
             #[allow(unused_imports)]
+            use anyhow::Context;
             let err: anyhow::Error = $err.into();
             let err = err.context(format!($($arg,)*));
             tracing::debug!("{}", $crate::errors::flatten_anyhow_error(&err));
@@ -160,7 +159,8 @@ macro_rules! elog_debug {
 /// This can be used to show a "pretty" error to the end user.
 #[track_caller]
 #[inline]
-pub fn display_error(error: &anyhow::Error) {
+pub fn display_error<E: Borrow<anyhow::Error>>(error: E) {
+    let error = error.borrow();
     eprintln!("⚠️ {error}");
     error.chain().skip(1).for_each(|cause| eprintln!("     ↳ {cause}"));
 }
@@ -235,12 +235,14 @@ mod tests {
     use super::{PrettyUnwrap, flatten_anyhow_error, pretty_panic};
 
     use anyhow::{Context, Result, anyhow, bail};
+    use colored::Colorize;
 
     const ERRORS: [&str; 3] = ["Third error", "Second error", "First error"];
 
     #[test]
     fn flatten_error() {
-        let expected = format!("{} — {} — {}", ERRORS[0], ERRORS[1], ERRORS[2]);
+        // First error should be printed regularly, the other two dimmed.
+        let expected = format!("{} {}", ERRORS[0], format!(" — {} — {}", ERRORS[1], ERRORS[2]).dimmed());
 
         let my_error = anyhow!(ERRORS[2]).context(ERRORS[1]).context(ERRORS[0]);
         let result = flatten_anyhow_error(&my_error);
@@ -319,20 +321,22 @@ mod tests {
 
         // Test that context formatting works correctly
         crate::elog_error!(anyhow!("Database connection failed"), "Failed {} for user {}", operation, user_id);
-        assert!(&logs_contain(module_path!()));
-        assert!(&logs_contain(&format!("Failed {operation} for user {user_id} — Database connection failed")));
+        assert!(logs_contain(module_path!()));
+        assert!(logs_contain(&format!("Failed {operation} for user {user_id}")));
+        assert!(logs_contain("Database connection failed"));
+        assert!(logs_contain("ERROR"));
+
         crate::elog_warning!(anyhow!("Database connection failed"), "Retrying {operation} for user {user_id}");
-        assert!(&logs_contain(&format!("Retrying {operation} for user {user_id} — Database connection failed")));
+        assert!(logs_contain(&format!("Retrying {operation} for user {user_id}")));
+        assert!(logs_contain("WARN"));
 
         // Test logging without context.
-        crate::elog_error!(anyhow!("Simple error"));
-        assert!(&logs_contain("Simple error"));
-        // Check for correct log level.
-        assert!(&logs_contain("ERROR"));
-        // Check for module name.
-        assert!(&logs_contain(module_path!()));
+        crate::elog_debug!(anyhow!("Simple debug message"));
+        assert!(logs_contain("Simple debug message"));
+        assert!(logs_contain("DEBUG"));
+        assert!(logs_contain(module_path!()));
 
         crate::elog_warning!(anyhow!("Simple warning"));
-        assert!(&logs_contain("Simple warning"));
+        assert!(logs_contain("Simple warning"));
     }
 }
