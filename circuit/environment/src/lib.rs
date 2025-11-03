@@ -85,6 +85,7 @@ pub mod prelude {
             Square as _,
             SquareRoot as _,
             ToBits as _,
+            ToBitsRaw as _,
             string_parser,
             types::{
                 integer_magnitude::Magnitude,

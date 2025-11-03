@@ -31,6 +31,8 @@ use snarkvm_synthesizer_snark::{Proof, ProvingKey, VerifyingKey};
 
 use std::{collections::HashMap, sync::OnceLock};
 
+use crate::Authorization;
+
 #[derive(Clone, Debug, Default)]
 pub struct Trace<N: Network> {
     /// The list of transitions.
@@ -374,12 +376,21 @@ impl<N: Network> Trace<N> {
         inclusion_version: InclusionVersion,
         mut verifier_inputs: Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>,
         global_state_root: N::StateRoot,
-        transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
+        transitions: impl ExactSizeIterator<Item = &'a Transition<N>> + Clone,
         proof: &Proof<N>,
     ) -> Result<()> {
         // Construct the batch of inclusion verifier inputs.
         let batch_inclusion_inputs =
-            Inclusion::prepare_verifier_inputs(global_state_root, inclusion_version, transitions)?;
+            Inclusion::prepare_verifier_inputs(global_state_root, inclusion_version, transitions.clone())?;
+
+        let expected_n_inclusions = Authorization::number_of_input_records(transitions);
+        ensure!(
+            batch_inclusion_inputs.len() == expected_n_inclusions,
+            "Unexpected number of inclusion inputs: {} instead of {}",
+            batch_inclusion_inputs.len(),
+            expected_n_inclusions
+        );
+
         // Insert the batch of inclusion verifier inputs to the verifier inputs.
         if !batch_inclusion_inputs.is_empty() {
             // Retrieve the inclusion verifying key depending on the inclusion version.

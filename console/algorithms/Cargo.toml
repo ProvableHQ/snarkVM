@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-algorithms"
-version = "4.2.1"
+version = "4.3.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -14,13 +14,23 @@ path = "benches/bhp.rs"
 harness = false
 
 [[bench]]
-name = "poseidon"
-path = "benches/poseidon.rs"
+name = "ecdsa"
+path = "benches/ecdsa.rs"
 harness = false
 
 [[bench]]
 name = "elligator2"
 path = "benches/elligator2.rs"
+harness = false
+
+[[bench]]
+name = "keccak"
+path = "benches/keccak.rs"
+harness = false
+
+[[bench]]
+name = "poseidon"
+path = "benches/poseidon.rs"
 harness = false
 
 [dependencies.snarkvm-console-types]
@@ -36,6 +46,14 @@ workspace = true
 [dependencies.blake2s_simd]
 version = "1.0"
 
+[dependencies.hex]
+version = "0.4"
+
+[dependencies.k256]
+version = "0.13"
+features = [ "digest", "ecdsa" ]
+default-features = false
+
 [dependencies.smallvec]
 workspace = true
 features = [ "const_generics", "const_new" ]
@@ -45,6 +63,9 @@ version = "2"
 features = [ "keccak", "sha3" ]
 
 [dev-dependencies.snarkvm-curves]
+workspace = true
+
+[dev-dependencies.bincode]
 workspace = true
 
 [dev-dependencies.criterion]

@@ -17,6 +17,7 @@ use console::{account::Address, network::prelude::*};
 use snarkvm_ledger_committee::{Committee, MIN_DELEGATOR_STAKE};
 
 use indexmap::IndexMap;
+use std::sync::atomic::AtomicU64;
 
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::Mutex;
@@ -74,13 +75,14 @@ pub fn staking_rewards<N: Network>(
         })
         .collect();
 
-    // Track validators not in committee.
+    // Track validators not in committee as well as their stake.
     // Pre-allocating with an expected capacity prevents reallocation while the mutex is held.
     let hashset_capacity = committee.members().len();
     let missing_validators = Mutex::new(std::collections::HashSet::<Address<N>>::with_capacity(hashset_capacity));
+    let invalid_validator_stake = AtomicU64::new(0);
 
     // Compute the updated stakers.
-    cfg_iter!(stakers)
+    let staking_rewards = cfg_iter!(stakers)
         .map(|(staker, (validator, stake))| {
             // If the validator is not in the valid validators list, skip the staker.
             let Some((validator_stake, commission_rate)) = valid_validators.get(validator) else {
@@ -90,6 +92,7 @@ pub fn staking_rewards<N: Network>(
                     if logged.insert(*validator) {
                         trace!("Validator {validator} is not in the committee - skipping all stakers");
                     }
+                    invalid_validator_stake.fetch_add(*stake, std::sync::atomic::Ordering::Relaxed);
                 }
                 return (*staker, (*validator, *stake));
             };
@@ -157,7 +160,15 @@ pub fn staking_rewards<N: Network>(
             // Return the staker and the updated stake.
             (*staker, (*validator, stake.saturating_add(staking_reward_after_commission)))
         })
-        .collect()
+        .collect();
+
+    if tracing::enabled!(tracing::Level::TRACE) {
+        let invalid_validator_stake = invalid_validator_stake.load(std::sync::atomic::Ordering::Relaxed);
+        trace!("Total stake invalidated due to validator not in committee: {invalid_validator_stake}");
+    }
+
+    // Return the result.
+    staking_rewards
 }
 
 /// Returns the proving rewards for a given coinbase reward and list of prover solutions.

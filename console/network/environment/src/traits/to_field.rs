@@ -32,3 +32,9 @@ pub trait ToFields {
     /// Returns the object as a list of base field elements.
     fn to_fields(&self) -> Result<Vec<Self::Field>>;
 }
+
+/// Unary operator for converting to a list of base fields.
+pub trait ToFieldsRaw: ToFields {
+    /// Returns the object as a list of base field elements using the raw bits.
+    fn to_fields_raw(&self) -> Result<Vec<Self::Field>>;
+}

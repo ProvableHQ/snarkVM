@@ -285,7 +285,7 @@ mod tests {
         types::Field,
     };
     use snarkvm_ledger_block::Transition;
-    use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command, execution_cost_v1, execution_cost_v2};
+    use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command};
     use snarkvm_synthesizer_program::StackTrait;
 
     use indexmap::IndexMap;
@@ -423,8 +423,8 @@ mod tests {
 
         let query = Query::VM(vm.block_store().clone());
         let (execution, _) = vm.execute_authorization_raw(authorization, &query, rng).unwrap();
-        let (cost, _) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
-        let (old_cost, _) = execution_cost_v1(&vm.process().read(), &execution).unwrap();
+        let (cost, _) = execution_cost(&vm.process().read(), &execution, ConsensusVersion::V2).unwrap();
+        let (old_cost, _) = execution_cost(&vm.process().read(), &execution, ConsensusVersion::V1).unwrap();
 
         assert_eq!(34_060, cost);
         assert_eq!(51_060, old_cost);
@@ -560,7 +560,7 @@ finalize test:
 
         let query = Query::VM(vm.block_store().clone());
         let (execution, _) = vm.execute_authorization_raw(authorization, &query, rng).unwrap();
-        let (cost, _) = execution_cost_v1(&vm.process().read(), &execution).unwrap();
+        let (cost, _) = execution_cost(&vm.process().read(), &execution, ConsensusVersion::V1).unwrap();
         println!("Cost: {cost}");
     }
 
@@ -948,7 +948,7 @@ finalize test:
         assert_eq!(execution.transitions().len(), <CurrentNetwork as Network>::MAX_INPUTS + 1);
 
         // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
+        let (_, (_, finalize_cost)) = execution_cost(&vm.process().read(), &execution, ConsensusVersion::V2).unwrap();
 
         // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
         let mut expected_cost = 0;
@@ -1086,7 +1086,7 @@ finalize test:
         assert_eq!(execution.transitions().len(), Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1);
 
         // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
+        let (_, (_, finalize_cost)) = execution_cost(&vm.process().read(), &execution, ConsensusVersion::V2).unwrap();
 
         // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
         let mut expected_cost = 0;

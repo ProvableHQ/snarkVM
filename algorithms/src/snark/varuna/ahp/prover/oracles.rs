@@ -25,8 +25,10 @@ use crate::{
 /// The first set of prover oracles.
 #[derive(Debug, Clone)]
 pub struct FirstOracles<F: PrimeField> {
+    // The hiding counterparts w^\hat_{i, j}(X) of the shifted witness
+    // polynomials \overline{w}_{i, j}(X) for each instance.
     pub(in crate::snark::varuna) batches: BTreeMap<CircuitId, Vec<WitnessPoly<F>>>,
-    /// The sum-check hiding polynomial.
+    /// The sum-check hiding polynomial `m(X)`.
     pub mask_poly: Option<LabeledPolynomial<F>>,
 }
 
@@ -113,6 +115,8 @@ impl<F: PrimeField> ThirdOracles<F> {
 /// The fourth set of prover oracles.
 #[derive(Debug)]
 pub struct FourthOracles<F: PrimeField> {
+    // The {g_{M, i}(X)} for each matrix M and circuit i as defined in the
+    // Varuna spec.
     pub(in crate::snark::varuna) gs: BTreeMap<CircuitId, MatrixGs<F>>,
 }
 

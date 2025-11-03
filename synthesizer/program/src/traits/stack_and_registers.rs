@@ -127,7 +127,7 @@ pub trait StackTrait<N: Network> {
     fn sample_value<R: Rng + CryptoRng>(
         &self,
         burner_address: &Address<N>,
-        value_type: &ValueType<N>,
+        value_type: &RegisterType<N>,
         rng: &mut R,
     ) -> Result<Value<N>>;
 

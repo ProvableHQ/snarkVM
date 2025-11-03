@@ -49,6 +49,14 @@ pub enum CastType<N: Network> {
     ExternalRecord(Locator<N>),
 }
 
+impl<N: Network> CastType<N> {
+    /// Returns `true` if the cast type is an array and the size exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        matches!(self,
+            Self::Plaintext(plaintext_type) if plaintext_type.exceeds_max_array_size(max_array_size))
+    }
+}
+
 impl<N: Network> Parser for CastType<N> {
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the cast type from the string.
@@ -1077,13 +1085,17 @@ impl<N: Network, const VARIANT: u8> FromBytes for CastOperation<N, VARIANT> {
     /// Reads the operation from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the number of operands.
-        let num_operands = u8::read_le(&mut reader)? as usize;
+        let mut num_operands = u8::read_le(&mut reader)? as usize;
+        // If the number of operands is `u8::MAX`, read the actual number of operands as a `u16`.
+        if num_operands == u8::MAX as usize {
+            num_operands = u16::read_le(&mut reader)? as usize
+        }
 
         // Ensure that the number of operands does not exceed the upper bound.
         // Note: Although a similar check is performed later, this check is performed to ensure that an exceedingly large number of operands is not allocated.
         // Note: This check is purely a sanity check, as it is not type-aware.
-        if num_operands.is_zero() || num_operands > N::MAX_RECORD_ENTRIES {
-            return Err(error(format!("The number of operands must be nonzero and <= {}", N::MAX_RECORD_ENTRIES)));
+        if num_operands.is_zero() || num_operands > N::MAX_ARRAY_ELEMENTS {
+            return Err(error(format!("The number of operands must be nonzero and <= {}", N::MAX_ARRAY_ELEMENTS)));
         }
 
         // Initialize the vector for the operands.
@@ -1134,7 +1146,14 @@ impl<N: Network, const VARIANT: u8> ToBytes for CastOperation<N, VARIANT> {
         }
 
         // Write the number of operands.
-        u8::try_from(self.operands.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        if self.operands.len() >= u8::MAX as usize {
+            // Write the `u8::MAX` value.
+            u8::MAX.write_le(&mut writer)?;
+            // Write the actual number of operands as a `u16`.
+            u16::try_from(self.operands.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        } else {
+            u8::try_from(self.operands.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        }
         // Write the operands.
         self.operands.iter().try_for_each(|operand| operand.write_le(&mut writer))?;
         // Write the destination register.

@@ -72,3 +72,24 @@ impl<N: Network> From<EntryType<N>> for ValueType<N> {
         }
     }
 }
+
+impl<N: Network> ValueType<N> {
+    /// Returns `true` if the value type contains a string type.
+    /// Record, external record, and future types are checked elsewhere.
+    pub fn contains_string_type(&self) -> bool {
+        use ValueType::*;
+        matches!(
+            self,
+            Constant(plaintext) | Public(plaintext) | Private(plaintext) if plaintext.contains_string_type()
+        )
+    }
+
+    /// Returns `true` if the value type is an array and the size exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        use ValueType::*;
+        matches!(
+            self,
+            Constant(plaintext) | Public(plaintext) | Private(plaintext) if plaintext.exceeds_max_array_size(max_array_size)
+        )
+    }
+}

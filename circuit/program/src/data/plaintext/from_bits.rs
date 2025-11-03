@@ -66,7 +66,7 @@ impl<A: Aleo> Plaintext<A> {
         let variant = [variant1, variant2];
 
         // Literal
-        if variant == [false, false] {
+        if variant == PlaintextType::<A::Network>::LITERAL_PREFIX_BITS {
             let literal_variant = U8::from_bits_le(next_bits(8));
             let literal_size = U16::from_bits_le(next_bits(16)).eject_value();
             let literal = Literal::from_bits_le(&literal_variant, next_bits(*literal_size as usize));
@@ -77,7 +77,7 @@ impl<A: Aleo> Plaintext<A> {
             Self::Literal(literal, cell)
         }
         // Struct
-        else if variant == [false, true] {
+        else if variant == PlaintextType::<A::Network>::STRUCT_PREFIX_BITS {
             let num_members = U8::from_bits_le(next_bits(8)).eject_value();
 
             let mut members = IndexMap::with_capacity(*num_members as usize);
@@ -97,7 +97,7 @@ impl<A: Aleo> Plaintext<A> {
             Self::Struct(members, cell)
         }
         // Array
-        else if variant == [true, false] {
+        else if variant == PlaintextType::<A::Network>::ARRAY_PREFIX_BITS {
             let num_elements = U32::from_bits_le(next_bits(32)).eject_value();
 
             let mut elements = Vec::with_capacity(*num_elements as usize);
@@ -155,7 +155,7 @@ impl<A: Aleo> Plaintext<A> {
         let variant = [variant1, variant2];
 
         // Literal
-        if variant == [false, false] {
+        if variant == PlaintextType::<A::Network>::LITERAL_PREFIX_BITS {
             let literal_variant = U8::from_bits_be(next_bits(8));
             let literal_size = U16::from_bits_be(next_bits(16)).eject_value();
             let literal = Literal::from_bits_be(&literal_variant, next_bits(*literal_size as usize));
@@ -166,7 +166,7 @@ impl<A: Aleo> Plaintext<A> {
             Self::Literal(literal, cell)
         }
         // Struct
-        else if variant == [false, true] {
+        else if variant == PlaintextType::<A::Network>::STRUCT_PREFIX_BITS {
             let num_members = U8::from_bits_be(next_bits(8)).eject_value();
 
             let mut members = IndexMap::with_capacity(*num_members as usize);
@@ -186,7 +186,7 @@ impl<A: Aleo> Plaintext<A> {
             Self::Struct(members, cell)
         }
         // Array
-        else if variant == [true, false] {
+        else if variant == PlaintextType::<A::Network>::ARRAY_PREFIX_BITS {
             let num_elements = U32::from_bits_be(next_bits(32)).eject_value();
 
             let mut elements = Vec::with_capacity(*num_elements as usize);

@@ -15,73 +15,61 @@
 
 use snarkvm_console::prelude::*;
 use snarkvm_ledger::{
+    Block,
     store::{
         BlockStorage,
-        BlockStore,
         helpers::{memory::BlockMemory, rocksdb::BlockDB},
     },
-    test_helpers::TestChainBuilder,
 };
 use snarkvm_utilities::PrettyUnwrap;
-
-use aleo_std_storage::StorageMode;
 
 use criterion::{BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::WallTime};
 use rand::seq::SliceRandom;
 use std::time::Instant;
 
-type Network = snarkvm_console::network::MainnetV0;
+mod common;
+use common::{CurrentNetwork, create_storage, initialize_logging, load_blocks};
 
-/// The number of blocks in the store for get/search operations.
-/// Also, the number of pre-generated blocks.
-const NUM_BLOCKS: usize = 1000;
-
-// Helper method to benchmark serialization.
-fn bench_block_store<S: BlockStorage<Network>>(
+/// Runs the benchmark for the given implementation of `BlockStorage`.
+fn bench_block_store<S: BlockStorage<CurrentNetwork>>(
     name: &str,
     group: &mut BenchmarkGroup<WallTime>,
+    genesis_block: &Block<CurrentNetwork>,
+    blocks: &[Block<CurrentNetwork>],
     num_validators: usize,
 ) {
     let rng = &mut TestRng::default();
 
-    // Pre-generate enough blocks for all benchmarks.
-    println!("Generating test chain of {NUM_BLOCKS} blocks with {num_validators} validators");
-    let mut builder = TestChainBuilder::new_with_quorum_size(num_validators, rng).pretty_unwrap();
-    let blocks = builder.generate_blocks(NUM_BLOCKS, rng).unwrap();
-
-    println!("Done generating blocks. Starting benchmark.");
-
-    // TODO(kaimast): Figure out a way to pre-generate a large number of blocks or reduce the number of iterations.
-    /*   group.bench_function(format!("{name}::insert/{num_validators}validators"), |b| {
+    group.bench_function(format!("{name}::insert/{num_validators}validators"), |b| {
         b.iter_custom(|num_inserts| {
             let num_inserts = num_inserts as usize;
-            let store = BlockStore::<Network, S>::open(StorageMode::new_test(None)).unwrap();
-            store.insert(builder.genesis_block()).unwrap();
+            let store = create_storage::<S>(genesis_block);
 
-            assert!(num_inserts < NUM_BLOCKS);
+            assert!(num_inserts < blocks.len());
 
             let start = Instant::now();
             for block in &blocks[..num_inserts] {
-                if let Err(err) = store.insert(&block) {
-                    panic!("Failed to insert block at height {}: {err}", block.height());
-                }
+                store
+                    .insert(block)
+                    .map_err(|err| err.context(format!("Failed to insert block at height {}", block.height())))
+                    .pretty_unwrap();
             }
 
             start.elapsed()
         })
-    });*/
+    });
 
     group.bench_function(format!("{name}::get_block/{num_validators}validators"), |b| {
         let hashes: Vec<_> = blocks.iter().map(|b| b.hash()).collect();
 
         b.iter_custom(|num_gets| {
-            let store = BlockStore::<Network, S>::open(StorageMode::new_test(None)).unwrap();
-            store.insert(builder.genesis_block()).unwrap();
+            let store = create_storage::<S>(genesis_block);
 
-            for block in &blocks {
-                if let Err(err) = store.insert(block) {
-                    panic!("Failed to insert block at height {}: {err}", block.height());
-                }
+            for block in blocks {
+                store
+                    .insert(block)
+                    .map_err(|err| err.context(format!("Failed to insert block at height {}", block.height())))
+                    .pretty_unwrap();
             }
 
             let start = Instant::now();
@@ -98,10 +86,9 @@ fn bench_block_store<S: BlockStorage<Network>>(
         let hashes: Vec<_> = blocks.iter().map(|b| b.hash()).collect();
 
         b.iter_custom(|num_gets| {
-            let store = BlockStore::<Network, S>::open(StorageMode::new_test(None)).unwrap();
-            store.insert(builder.genesis_block()).unwrap();
+            let store = create_storage::<S>(genesis_block);
 
-            for block in &blocks {
+            for block in blocks {
                 if let Err(err) = store.insert(block) {
                     panic!("Failed to insert block at height {}: {err}", block.height());
                 }
@@ -119,17 +106,23 @@ fn bench_block_store<S: BlockStorage<Network>>(
 }
 
 fn block_store(c: &mut Criterion) {
+    initialize_logging();
+
+    const NUM_VALIDATORS: usize = 4;
+
+    let (genesis_block, blocks) = load_blocks("test-ledger").pretty_expect("Failed to load blocks from disk");
+
     let mut group = c.benchmark_group("block_store");
     group.sample_size(10);
 
-    //TODO(kaimast) find a way to speed this up
-    //for f in 1..=4 {
-    for f in 1..=1 {
-        let num_validators = 3 * f + 1;
-
-        bench_block_store::<BlockMemory<Network>>("BlockMemory", &mut group, num_validators);
-        bench_block_store::<BlockDB<Network>>("BlockDB", &mut group, num_validators);
-    }
+    bench_block_store::<BlockMemory<CurrentNetwork>>(
+        "BlockMemory",
+        &mut group,
+        &genesis_block,
+        &blocks,
+        NUM_VALIDATORS,
+    );
+    bench_block_store::<BlockDB<CurrentNetwork>>("BlockDB", &mut group, &genesis_block, &blocks, NUM_VALIDATORS);
 
     group.finish();
 }

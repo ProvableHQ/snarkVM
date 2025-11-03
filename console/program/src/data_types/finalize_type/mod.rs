@@ -16,6 +16,7 @@
 mod bytes;
 mod parse;
 mod serialize;
+mod size_in_bits;
 
 use crate::{Locator, PlaintextType};
 

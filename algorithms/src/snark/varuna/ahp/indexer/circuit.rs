@@ -126,20 +126,22 @@ impl<F: PrimeField, SM: SNARKMode> Circuit<F, SM> {
         self.index_info.max_degree::<F, SM>()
     }
 
-    /// The size of the constraint domain in this R1CS instance.
+    /// The size of the constraint (i. e. row) domain in this R1CS instance.
     pub fn constraint_domain_size(&self) -> Result<usize> {
         Ok(crate::fft::EvaluationDomain::<F>::new(self.index_info.num_constraints)
             .ok_or(anyhow!("Cannot create EvaluationDomain"))?
             .size())
     }
 
-    /// The size of the variable domain in this R1CS instance.
+    /// The size of the variable (i. e. column) domain in this R1CS instance.
     pub fn variable_domain_size(&self) -> Result<usize> {
         Ok(crate::fft::EvaluationDomain::<F>::new(self.index_info.num_public_and_private_variables)
             .ok_or(anyhow!("Cannot create EvaluationDomain"))?
             .size())
     }
 
+    /// Compute the row, col, rowcol and rowcolval polynomials of the three
+    /// matrices in this R1CS instance.
     pub fn interpolate_matrix_evals(&self) -> Result<impl Iterator<Item = LabeledPolynomial<F>>> {
         let mut iters = Vec::with_capacity(3);
         for (label, evals) in [("a", &self.a_arith), ("b", &self.b_arith), ("c", &self.c_arith)] {

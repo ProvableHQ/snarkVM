@@ -37,7 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace, constructor_cost_in_microcredits_v2, cost_in_microcredits_v3};
+use crate::{CallMetrics, Process, Trace};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -343,31 +343,11 @@ impl<N: Network> Stack<N> {
         drop(register_types);
         drop(finalize_types);
 
-        // Get the constructor cost.
-        let constructor_cost = constructor_cost_in_microcredits_v2(self)?;
-        // Get the last transaction spend limit.
-        let transaction_spend_limit = N::TRANSACTION_SPEND_LIMIT.last().unwrap().1;
-        // Check that the constructor cost does not exceed the maximum.
-        ensure!(
-            constructor_cost <= transaction_spend_limit,
-            "Constructor has a cost '{constructor_cost}' which exceeds the transaction spend limit '{transaction_spend_limit}'"
-        );
-
         // Check that the functions are valid.
         for function in self.program.functions().values() {
             // Determine the number of calls for the function.
             // This includes a safety check for the maximum number of calls.
             self.get_number_of_calls(function.name())?;
-
-            // Get the finalize cost.
-            let finalize_cost = cost_in_microcredits_v3(self, function.name())?;
-            // Check that the finalize cost does not exceed the maximum.
-            ensure!(
-                finalize_cost <= transaction_spend_limit,
-                "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
-                function.name(),
-                transaction_spend_limit
-            );
         }
         Ok(())
     }

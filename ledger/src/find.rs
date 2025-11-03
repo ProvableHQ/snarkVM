@@ -15,6 +15,8 @@
 
 use super::*;
 
+use snarkvm_utilities::LoggableError;
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the block height that contains the given `state root`.
     pub fn find_block_height_from_state_root(&self, state_root: N::StateRoot) -> Result<Option<u32>> {
@@ -128,8 +130,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             match commitment {
                 Ok(Some(commitment)) => Some((commitment, record)),
                 Ok(None) => None,
-                Err(e) => {
-                    warn!("Failed to process 'find_record_ciphertexts({:?})': {e}", filter);
+                Err(err) => {
+                    err.log_warning(format!("Failed to process 'find_record_ciphertexts({filter:?})'"));
                     None
                 }
             }
@@ -146,8 +148,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.find_record_ciphertexts(view_key, filter).map(|iter| {
             iter.flat_map(|(commitment, record)| match record.decrypt(view_key) {
                 Ok(record) => Some((commitment, record)),
-                Err(e) => {
-                    warn!("Failed to decrypt the record: {e}");
+                Err(err) => {
+                    err.log_warning("Failed to decrypt record");
                     None
                 }
             })

@@ -46,6 +46,12 @@ We recommend installing Rust using [rustup](https://www.rustup.rs/). You can ins
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   ```
 
+  For macOS users, you will need to subsequently install the following packages:
+  ```bash
+  brew install pkgconf
+  brew install openssl
+  ```
+
 - Windows (64-bit):
 
   Download the [Windows 64-bit executable](https://win.rustup.rs/x86_64) or

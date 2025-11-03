@@ -50,10 +50,12 @@ mod print;
 pub mod rand;
 pub use self::rand::*;
 
+/// Helpers for data (de-)serialization.
 pub mod serialize;
 pub use serialize::*;
 
-mod errors;
+/// Helpers for error handling.
+pub mod errors;
 pub use errors::*;
 
 /// Use old name for backward-compatibility.

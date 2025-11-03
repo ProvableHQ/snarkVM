@@ -134,7 +134,7 @@ impl<N: Network> Execution<N> {
     }
 
     /// Returns an iterator over the underlying transitions.
-    pub fn transitions(&self) -> impl '_ + ExactSizeIterator + DoubleEndedIterator<Item = &Transition<N>> {
+    pub fn transitions(&self) -> impl '_ + ExactSizeIterator + DoubleEndedIterator<Item = &Transition<N>> + Clone {
         self.transitions.values()
     }
 

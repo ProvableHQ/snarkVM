@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-network"
-version = "4.2.1"
+version = "4.3.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Network console library for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -43,7 +43,7 @@ workspace = true
 workspace = true
 
 [dependencies.enum-iterator]
-version = "2.1"
+workspace = true
 
 [dependencies.indexmap]
 workspace = true

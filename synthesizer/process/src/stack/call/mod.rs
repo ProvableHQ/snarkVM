@@ -366,7 +366,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                                     )?))
                                 }
                                 // For non-record outputs, call sample_value.
-                                _ => substack.sample_value(&address, output.value_type(), rng),
+                                _ => substack.sample_value(&address, &output.value_type().into(), rng),
                             })
                             .collect::<Result<Vec<_>>>()?;
 

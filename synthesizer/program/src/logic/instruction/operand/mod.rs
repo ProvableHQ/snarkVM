@@ -90,6 +90,13 @@ impl<N: Network> From<&Register<N>> for Operand<N> {
     }
 }
 
+impl<N: Network> Operand<N> {
+    /// Returns `true` if the operand contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        matches!(self, Self::Literal(Literal::String(_)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

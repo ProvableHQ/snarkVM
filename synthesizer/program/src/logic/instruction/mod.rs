@@ -25,7 +25,7 @@ pub use operation::*;
 mod bytes;
 mod parse;
 
-use crate::{RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
+use crate::{RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait, instruction};
 use console::{
     network::Network,
     prelude::{
@@ -90,46 +90,144 @@ pub enum Instruction<N: Network> {
     CommitPED64(CommitPED64<N>),
     /// Performs a Pedersen commitment on up to a 128-bit input.
     CommitPED128(CommitPED128<N>),
+    /// Deserializes the bits into a value.
+    DeserializeBits(DeserializeBits<N>),
+    /// Deserializes the raw bits into a value.
+    DeserializeBitsRaw(DeserializeBitsRaw<N>),
     /// Divides `first` by `second`, storing the outcome in `destination`.
     Div(Div<N>),
     /// Divides `first` by `second`, wrapping around at the boundary of the type, and storing the outcome in `destination`.
     DivWrapped(DivWrapped<N>),
     /// Doubles `first`, storing the outcome in `destination`.
     Double(Double<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `digest` using ECDSA.
+    ECDSAVerifyDigest(ECDSAVerifyDigest<N>),
+    /// Computes whether `signature` is valid for the given Ethereum `address` and `digest` using ECDSA.
+    ECDSAVerifyDigestEth(ECDSAVerifyDigestEth<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with Keccak256.
+    ECDSAVerifyKeccak256(ECDSAVerifyKeccak256<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with Keccak256 and raw inputs.
+    ECDSAVerifyKeccak256Raw(ECDSAVerifyKeccak256Raw<N>),
+    /// Computes whether `signature` is valid for the given Ethereum `address` and `message` using ECDSA with Keccak256 and raw inputs.
+    ECDSAVerifyKeccak256Eth(ECDSAVerifyKeccak256Eth<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with Keccak384.
+    ECDSAVerifyKeccak384(ECDSAVerifyKeccak384<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with Keccak384 and raw inputs.
+    ECDSAVerifyKeccak384Raw(ECDSAVerifyKeccak384Raw<N>),
+    /// Computes whether `signature` is valid for the given Ethereum `address` and `message` using ECDSA with Keccak384 and raw inputs.
+    ECDSAVerifyKeccak384Eth(ECDSAVerifyKeccak384Eth<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with Keccak512.
+    ECDSAVerifyKeccak512(ECDSAVerifyKeccak512<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with Keccak512 and raw inputs.
+    ECDSAVerifyKeccak512Raw(ECDSAVerifyKeccak512Raw<N>),
+    /// Computes whether `signature` is valid for the given Ethereum `address` and `message` using ECDSA with Keccak512 and raw inputs.
+    ECDSAVerifyKeccak512Eth(ECDSAVerifyKeccak512Eth<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with SHA3-256.
+    ECDSAVerifySha3_256(ECDSAVerifySha3_256<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with SHA3-256 and raw inputs.
+    ECDSAVerifySha3_256Raw(ECDSAVerifySha3_256Raw<N>),
+    /// Computes whether `signature` is valid for the given Ethereum `address` and `message` using ECDSA with SHA3-256 and raw inputs.
+    ECDSAVerifySha3_256Eth(ECDSAVerifySha3_256Eth<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with SHA3-384.
+    ECDSAVerifySha3_384(ECDSAVerifySha3_384<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with SHA3-384 and raw inputs.
+    ECDSAVerifySha3_384Raw(ECDSAVerifySha3_384Raw<N>),
+    /// Computes whether `signature` is valid for the given Ethereum `address` and `message` using ECDSA with SHA3-384 and raw inputs.
+    ECDSAVerifySha3_384Eth(ECDSAVerifySha3_384Eth<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with SHA3-512.
+    ECDSAVerifySha3_512(ECDSAVerifySha3_512<N>),
+    /// Computes whether `signature` is valid for the given `signer` and `message` using ECDSA with SHA3-512 and raw inputs.
+    ECDSAVerifySha3_512Raw(ECDSAVerifySha3_512Raw<N>),
+    /// Computes whether `signature` is valid for the given Ethereum `address` and `message` using ECDSA with SHA3-512 and raw inputs.
+    ECDSAVerifySha3_512Eth(ECDSAVerifySha3_512Eth<N>),
     /// Computes whether `first` is greater than `second` as a boolean, storing the outcome in `destination`.
     GreaterThan(GreaterThan<N>),
     /// Computes whether `first` is greater than or equal to `second` as a boolean, storing the outcome in `destination`.
     GreaterThanOrEqual(GreaterThanOrEqual<N>),
     /// Performs a BHP hash on inputs of 256-bit chunks.
     HashBHP256(HashBHP256<N>),
+    /// Performs a BHP hash on the input's raw bits in 256-bit chunks.  
+    HashBHP256Raw(HashBHP256Raw<N>),
     /// Performs a BHP hash on inputs of 512-bit chunks.
     HashBHP512(HashBHP512<N>),
+    /// Performs a BHP hash on the input's raw bits in 512-bit chunks.  
+    HashBHP512Raw(HashBHP512Raw<N>),
     /// Performs a BHP hash on inputs of 768-bit chunks.
     HashBHP768(HashBHP768<N>),
+    /// Performs a BHP hash on the input's raw bits in 768-bit chunks.  
+    HashBHP768Raw(HashBHP768Raw<N>),
     /// Performs a BHP hash on inputs of 1024-bit chunks.
     HashBHP1024(HashBHP1024<N>),
-    /// Performs a Keccak hash, outputting 256 bits.
+    /// Performs a BHP hash on the input's raw bits in 1024-bit chunks.
+    HashBHP1024Raw(HashBHP1024Raw<N>),
+    /// Performs a Keccak hash on the input, outputting 256 bits, hashing the result with BHP256.
     HashKeccak256(HashKeccak256<N>),
-    /// Performs a Keccak hash, outputting 384 bits.
+    /// Performs a Keccak hash on the input's raw bits, hashing the result with BHP256.
+    HashKeccak256Raw(HashKeccak256Raw<N>),
+    /// Performs a Keccak hash on the input, outputting 256 bits.
+    HashKeccak256Native(HashKeccak256Native<N>),
+    /// Performs a Keccak hash on the input's raw bits, outputting 256 bits.
+    HashKeccak256NativeRaw(HashKeccak256NativeRaw<N>),
+    /// Performs a Keccak hash on the input, outputting 384 bits, hashing the result with BHP512.
     HashKeccak384(HashKeccak384<N>),
-    /// Performs a Keccak hash, outputting 512 bits.
+    /// Performs a Keccak hash on the input's raw bits, outputting 384 bits, hashing the result with BHP512.
+    HashKeccak384Raw(HashKeccak384Raw<N>),
+    /// Performs a Keccak hash on the input, outputting 384 bits.
+    HashKeccak384Native(HashKeccak384Native<N>),
+    /// Performs a Keccak hash on the input's raw bits, outputting 384 bits.
+    HashKeccak384NativeRaw(HashKeccak384NativeRaw<N>),
+    /// Performs a Keccak hash on the input, outputting 512 bits, hashing the result with BHP512.
     HashKeccak512(HashKeccak512<N>),
+    /// Performs a Keccak hash on the input's raw bits, outputting 512 bits, hashing the result with BHP512.
+    HashKeccak512Raw(HashKeccak512Raw<N>),
+    /// Performs a Keccak hash on the input, outputting 512 bits.
+    HashKeccak512Native(HashKeccak512Native<N>),
+    /// Performs a Keccak hash on the input's raw bits, outputting 512 bits.
+    HashKeccak512NativeRaw(HashKeccak512NativeRaw<N>),
     /// Performs a Pedersen hash on up to a 64-bit input.
     HashPED64(HashPED64<N>),
+    /// Performs a Pedersen hash on the input's raw bits up to a 64-bit input.
+    HashPED64Raw(HashPED64Raw<N>),
     /// Performs a Pedersen hash on up to a 128-bit input.
     HashPED128(HashPED128<N>),
+    /// Performs a Pedersen hash on the input's raw bits up to a 128-bit input.
+    HashPED128Raw(HashPED128Raw<N>),
     /// Performs a Poseidon hash with an input rate of 2.
     HashPSD2(HashPSD2<N>),
+    /// Performs a Poseidon hash on the input's raw fields with an input rate of 2.
+    HashPSD2Raw(HashPSD2Raw<N>),
     /// Performs a Poseidon hash with an input rate of 4.
     HashPSD4(HashPSD4<N>),
+    /// Performs a Poseidon hash on the input's raw fields with an input rate of 4.
+    HashPSD4Raw(HashPSD4Raw<N>),
     /// Performs a Poseidon hash with an input rate of 8.
     HashPSD8(HashPSD8<N>),
-    /// Performs a SHA-3 hash, outputting 256 bits.
+    /// Performs a Poseidon hash on the input's raw fields with an input rate of 8.
+    HashPSD8Raw(HashPSD8Raw<N>),
+    /// Performs a SHA-3 hash on the input, outputting 256 bits, hashing the result with BHP256.
     HashSha3_256(HashSha3_256<N>),
-    /// Performs a SHA-3 hash, outputting 384 bits.
+    /// Performs a SHA-3 hash on the input's raw bits, outputting 256 bits, hashing the result with BHP256.
+    HashSha3_256Raw(HashSha3_256Raw<N>),
+    /// Performs a SHA-3 hash on the input's bits, outputting 256 bits.
+    HashSha3_256Native(HashSha3_256Native<N>),
+    /// Performs a SHA-3 hash on the input's raw bits, outputting 256 bits.
+    HashSha3_256NativeRaw(HashSha3_256NativeRaw<N>),
+    /// Performs a SHA-3 hash on the input, outputting 384 bits, hashing the result with BHP512.
     HashSha3_384(HashSha3_384<N>),
-    /// Performs a SHA-3 hash, outputting 512 bits.
+    /// Performs a SHA-3 hash on the input's raw bits, outputting 384 bits, hashing the result with BHP512.
+    HashSha3_384Raw(HashSha3_384Raw<N>),
+    /// Performs a SHA-3 hash on the input's bits, outputting 384 bits.
+    HashSha3_384Native(HashSha3_384Native<N>),
+    /// Performs a SHA-3 hash on the input's raw bits, outputting 384 bits.
+    HashSha3_384NativeRaw(HashSha3_384NativeRaw<N>),
+    /// Performs a SHA-3 hash, outputting 512 bits, hashing the result with BHP512.
     HashSha3_512(HashSha3_512<N>),
+    /// Performs a SHA-3 hash on the input's raw bits, outputting 512 bits, hashing the result with BHP512.
+    HashSha3_512Raw(HashSha3_512Raw<N>),
+    /// Performs a SHA-3 hash on the input's bits, outputting 512 bits.
+    HashSha3_512Native(HashSha3_512Native<N>),
+    /// Performs a SHA-3 hash on the input's raw bits, outputting 512 bits.
+    HashSha3_512NativeRaw(HashSha3_512NativeRaw<N>),
     /// Performs a Poseidon hash with an input rate of 2.
     HashManyPSD2(HashManyPSD2<N>),
     /// Performs a Poseidon hash with an input rate of 4.
@@ -170,6 +268,10 @@ pub enum Instruction<N: Network> {
     Rem(Rem<N>),
     /// Divides `first` by `second`, wrapping around at the boundary of the type, storing the remainder in `destination`.
     RemWrapped(RemWrapped<N>),
+    /// Serializes the bits of the input.
+    SerializeBits(SerializeBits<N>),
+    /// Serializes the raw bits of the input.
+    SerializeBitsRaw(SerializeBitsRaw<N>),
     /// Shifts `first` left by `second` bits, storing the outcome in `destination`.
     Shl(Shl<N>),
     /// Shifts `first` left by `second` bits, wrapping around at the boundary of the type, storing the outcome in `destination`.
@@ -222,6 +324,7 @@ macro_rules! instruction {
     // i.e. `instruction!(custom_macro, self, |instruction| { operation(instruction) })`.
     ($macro_:ident, $object:expr, |$input:ident| $operation:block) => {
         $macro_!{$object, |$input| $operation, {
+            // The original opcodes.
             Abs,
             AbsWrapped,
             Add,
@@ -290,6 +393,61 @@ macro_rules! instruction {
             SubWrapped,
             Ternary,
             Xor,
+
+            // New opcodes added in `ConsensusVersion::V11`
+            DeserializeBits,
+            DeserializeBitsRaw,
+            ECDSAVerifyDigest,
+            ECDSAVerifyDigestEth,
+            ECDSAVerifyKeccak256,
+            ECDSAVerifyKeccak256Raw,
+            ECDSAVerifyKeccak256Eth,
+            ECDSAVerifyKeccak384,
+            ECDSAVerifyKeccak384Raw,
+            ECDSAVerifyKeccak384Eth,
+            ECDSAVerifyKeccak512,
+            ECDSAVerifyKeccak512Raw,
+            ECDSAVerifyKeccak512Eth,
+            ECDSAVerifySha3_256,
+            ECDSAVerifySha3_256Raw,
+            ECDSAVerifySha3_256Eth,
+            ECDSAVerifySha3_384,
+            ECDSAVerifySha3_384Raw,
+            ECDSAVerifySha3_384Eth,
+            ECDSAVerifySha3_512,
+            ECDSAVerifySha3_512Raw,
+            ECDSAVerifySha3_512Eth,
+            HashBHP256Raw,
+            HashBHP512Raw,
+            HashBHP768Raw,
+            HashBHP1024Raw,
+            HashKeccak256Raw,
+            HashKeccak256Native,
+            HashKeccak256NativeRaw,
+            HashKeccak384Raw,
+            HashKeccak384Native,
+            HashKeccak384NativeRaw,
+            HashKeccak512Raw,
+            HashKeccak512Native,
+            HashKeccak512NativeRaw,
+            HashPED64Raw,
+            HashPED128Raw,
+            HashPSD2Raw,
+            HashPSD4Raw,
+            HashPSD8Raw,
+            HashSha3_256Raw,
+            HashSha3_256Native,
+            HashSha3_256NativeRaw,
+            HashSha3_384Raw,
+            HashSha3_384Native,
+            HashSha3_384NativeRaw,
+            HashSha3_512Raw,
+            HashSha3_512Native,
+            HashSha3_512NativeRaw,
+            SerializeBits,
+            SerializeBitsRaw,
+
+            // New opcodes should be added here, with a comment on which consensus version they were added in.
         }}
     };
     // A variant **without** curly braces:
@@ -440,6 +598,27 @@ impl<N: Network> Instruction<N> {
             Instruction::Cast(instruction) if instruction.cast_type().contains_external_struct()
         )
     }
+
+    /// Returns `true` if the instruction contains a literal string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.operands().iter().any(|operand| operand.contains_string_type())
+    }
+
+    /// Returns `true` if the instruction contains an array type with a size that exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        // Only cast and serialize instructions may contain an explicit reference to an array.
+        // Calls may produce them, but they don't explicitly reference the type.
+        match self {
+            Self::Cast(instruction) => instruction.cast_type().exceeds_max_array_size(max_array_size),
+            Self::SerializeBits(instruction) => instruction.destination_type().exceeds_max_array_size(max_array_size),
+            Self::SerializeBitsRaw(instruction) => {
+                instruction.destination_type().exceeds_max_array_size(max_array_size)
+            }
+            Self::DeserializeBits(instruction) => instruction.operand_type().exceeds_max_array_size(max_array_size),
+            Self::DeserializeBitsRaw(instruction) => instruction.operand_type().exceeds_max_array_size(max_array_size),
+            _ => false,
+        }
+    }
 }
 
 impl<N: Network> Debug for Instruction<N> {
@@ -468,7 +647,7 @@ mod tests {
         // Sanity check the number of instructions is unchanged.
         // Note that the number of opcodes **MUST NOT** exceed u16::MAX.
         assert_eq!(
-            68,
+            119,
             Instruction::<CurrentNetwork>::OPCODES.len(),
             "Update me if the number of instructions changes."
         );

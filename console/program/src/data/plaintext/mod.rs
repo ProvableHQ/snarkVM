@@ -24,9 +24,11 @@ mod parse;
 mod serialize;
 mod size_in_fields;
 mod to_bits;
+mod to_bits_raw;
 mod to_fields;
+mod to_fields_raw;
 
-use crate::{Access, Ciphertext, Identifier, Literal};
+use crate::{Access, Ciphertext, Identifier, Literal, PlaintextType};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
@@ -41,6 +43,34 @@ pub enum Plaintext<N: Network> {
     Struct(IndexMap<Identifier<N>, Plaintext<N>>, OnceLock<Vec<bool>>),
     /// An array.
     Array(Vec<Plaintext<N>>, OnceLock<Vec<bool>>),
+}
+
+impl<N: Network> Plaintext<N> {
+    /// Returns a new `Plaintext::Array` from `Vec<bool>`, checking that the length is correct.
+    pub fn from_bit_array(bits: Vec<bool>, length: u32) -> Result<Self> {
+        ensure!(bits.len() == length as usize, "Expected '{length}' bits, got '{}' bits", bits.len());
+        Ok(Self::Array(
+            bits.into_iter().map(|bit| Plaintext::from(Literal::Boolean(Boolean::new(bit)))).collect(),
+            OnceLock::new(),
+        ))
+    }
+
+    /// Returns the `Plaintext` as a `Vec<bool>`, if it is a bit array.
+    pub fn as_bit_array(&self) -> Result<Vec<bool>> {
+        match self {
+            Self::Array(elements, _) => {
+                let mut bits = Vec::with_capacity(elements.len());
+                for element in elements {
+                    match element {
+                        Self::Literal(Literal::Boolean(bit), _) => bits.push(**bit),
+                        _ => bail!("Expected a bit array, found a non-boolean element."),
+                    }
+                }
+                Ok(bits)
+            }
+            _ => bail!("Expected a bit array, found a non-array plaintext."),
+        }
+    }
 }
 
 impl<N: Network> From<Literal<N>> for Plaintext<N> {
@@ -76,11 +106,10 @@ macro_rules! impl_plaintext_from_array {
     };
 }
 
-// Implement for `[U8<N>, SIZE]` for sizes 1 through 32.
-impl_plaintext_from_array!(
-    U8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
-    31, 32
-);
+// Implement for `[U8<N>, SIZE]` for sizes 1 through 256.
+seq_macro::seq!(S in 1..=256 {
+    impl_plaintext_from_array!(U8, S);
+});
 
 #[cfg(test)]
 mod tests {

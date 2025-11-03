@@ -50,9 +50,9 @@ impl<N: Network> Stack<N> {
                     // Retrieve the external stack.
                     let stack = self.get_external_stack(locator.program_id())?;
                     // Sample the input.
-                    stack.sample_value(&burner_address, &ValueType::Record(*locator.resource()), rng)
+                    stack.sample_value(&burner_address, &ValueType::Record(*locator.resource()).into(), rng)
                 }
-                _ => self.sample_value(&burner_address, input_type, rng),
+                _ => self.sample_value(&burner_address, &input_type.into(), rng),
             })
             .collect::<Result<Vec<_>>>()?;
         // Sample a dummy 'is_root'.

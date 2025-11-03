@@ -13,21 +13,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{FinalizeTypes, Process, Stack, StackRef, StackTrait};
+use std::collections::HashMap;
+
+use crate::{Authorization, FinalizeTypes, Process, Stack, StackRef, StackTrait};
 
 use console::{
     prelude::*,
     program::{FinalizeType, Identifier, LiteralType, PlaintextType},
 };
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
 use snarkvm_synthesizer_program::{CastType, Command, Instruction, Operand};
+use snarkvm_synthesizer_snark::proof_size;
+
+pub type MinimumCost = u64;
+pub type StorageCost = u64;
+pub type SynthesisCost = u64;
+pub type ConstructorCost = u64;
+pub type NamespaceCost = u64;
+pub type FinalizeCost = u64;
+pub type DeployCostDetails = (StorageCost, SynthesisCost, ConstructorCost, NamespaceCost);
+pub type ExecuteCostDetails = (StorageCost, FinalizeCost);
 
 /// Returns the deployment cost in microcredits for a given deployment.
 pub fn deployment_cost<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
-) -> Result<(u64, (u64, u64, u64, u64))> {
+) -> Result<(MinimumCost, DeployCostDetails)> {
     if consensus_version >= ConsensusVersion::V10 {
         deployment_cost_v2(process, deployment)
     } else {
@@ -40,21 +53,139 @@ pub fn execution_cost<N: Network>(
     process: &Process<N>,
     execution: &Execution<N>,
     consensus_version: ConsensusVersion,
-) -> Result<(u64, (u64, u64))> {
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
+    let execution_size = execution.size_in_bytes()?;
+
+    execution_cost_given_size(process, execution, execution_size, consensus_version)
+}
+
+// Returns the execution cost in microcredits for a given execution whose size is provided as an argument.
+fn execution_cost_given_size<N: Network>(
+    process: &Process<N>,
+    execution: &Execution<N>,
+    execution_size: u64,
+    consensus_version: ConsensusVersion,
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
     if consensus_version >= ConsensusVersion::V10 {
-        execution_cost_v3(process, execution)
+        execution_cost_v3(process, execution, execution_size)
     } else if consensus_version >= ConsensusVersion::V2 {
-        execution_cost_v2(process, execution)
+        execution_cost_v2(process, execution, execution_size)
     } else {
-        execution_cost_v1(process, execution)
+        execution_cost_v1(process, execution, execution_size)
     }
 }
 
-/// Returns the *minimum* cost in microcredits to publish the given deployment using the reduced synthesis cost (total cost, (storage cost, synthesis cost, constructor cost, namespace cost)).
+/// Returns the execution cost in microcredits for a given `Authorization.
+pub fn execution_cost_for_authorization<N: Network>(
+    process: &Process<N>,
+    authorization: &Authorization<N>,
+    consensus_version: ConsensusVersion,
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
+    ensure!(
+        consensus_version >= ConsensusVersion::V4,
+        "Execution-cost computation for authorization relies on proof-size estimation, which is only implemented for Varuna version >= V2 (consensus version >= V4)"
+    );
+
+    // Reconstruct an Execution from the Authorization. Note that the StateRoot
+    // does not affect the fee (it has constant size).
+    let reconstructed_execution =
+        Execution::from(authorization.transitions().values().cloned(), N::StateRoot::default(), None)?;
+
+    // Compute the size of the proof that will result from proving the
+    // Authorization. The first step is to compute the Varuna batch sizes. The
+    // Varuna circuits that must be proved as part of an Execution are:
+    // - the circuits of each Transition
+    // - one inclusion circuit for input records to *all* of those Transitions
+
+    // TODO: Dynamic dispatch, once implemented, will cause a third type of
+    // circuit to appear which needs to be accounted for here.
+
+    let mut circuit_frequencies = HashMap::new();
+
+    // In order to compute the frequencies of function circuits, we mimic the
+    // operation of Process::verify_execution:
+    for transition in authorization.transitions().values() {
+        let entry =
+            circuit_frequencies.entry((*transition.program_id(), *transition.function_name())).or_insert(0usize);
+        *entry += 1;
+    }
+
+    let mut batch_sizes: Vec<usize> = circuit_frequencies.values().cloned().collect();
+
+    // We now add the single batch of inclusion circuits for input records, if
+    // any:
+    let n_input_records = Authorization::number_of_input_records(authorization.transitions().values());
+    if n_input_records > 0 {
+        batch_sizes.push(n_input_records);
+    }
+
+    // Varuna is always run in hiding (i. e. ZK) mode when proving Executions.
+    let hiding_mode = true;
+
+    // If future versions of Varuna are introduced, the correct one should be
+    // deduced here from the consensus version. Currently only the latest Varuna
+    // version V2 is supported.
+    let varuna_version = VarunaVersion::V2;
+
+    let expected_proof_size = u64::try_from(proof_size::<N>(&batch_sizes, varuna_version, hiding_mode)?)?;
+    let unproved_execution_size = reconstructed_execution.size_in_bytes()?;
+    let execution_size = unproved_execution_size.checked_add(expected_proof_size).ok_or(anyhow!(
+        "The execution size computation overflowed for an authorization when the proof was taken into account"
+    ))?;
+
+    execution_cost_given_size(process, &reconstructed_execution, execution_size, consensus_version)
+}
+
+/// Returns the compute cost for a deployment in microcredits.
+/// This is used to limit the amount of single-threaded compute in the block generation hot
+/// path. This does NOT represent the full costs which a user has to pay.
+pub fn deploy_compute_cost_in_microcredits(
+    cost_details: DeployCostDetails,
+    consensus_version: ConsensusVersion,
+) -> Result<u64> {
+    let (storage_cost, synthesis_cost, constructor_cost, _) = cost_details;
+    let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
+        // From V10, only include the constructor compute cost for
+        // deployments.
+        //
+        // The limits of individual function's finalize compute costs are
+        // checked in calls to `deployment_cost`.
+        constructor_cost
+    } else {
+        // Include the storage, synthesis, and constructor cost for deployments.
+        storage_cost
+            .checked_add(synthesis_cost)
+            .and_then(|synthesis_cost| synthesis_cost.checked_add(constructor_cost))
+            .ok_or(anyhow!("The storage, synthesis, and constructor cost computation overflowed for a deployment"))?
+    };
+    Ok(cost_to_check)
+}
+
+/// Returns the compute cost for an execution in microcredits.
+/// This is used to limit the amount of single-threaded compute in the block generation hot
+/// path. This does NOT represent the full costs which a user has to pay.
+pub fn execute_compute_cost_in_microcredits(
+    cost_details: ExecuteCostDetails,
+    consensus_version: ConsensusVersion,
+) -> Result<u64> {
+    let (storage_cost, finalize_cost) = cost_details;
+    let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
+        // From V10, only include the finalize compute cost for executions.
+        finalize_cost
+    } else {
+        // Include the finalize cost and storage cost for executions.
+        storage_cost
+            .checked_add(finalize_cost)
+            .ok_or(anyhow!("The storage and finalize cost computation overflowed for an execution"))?
+    };
+    Ok(cost_to_check)
+}
+
+/// Returns the *minimum* cost in microcredits to publish the given deployment using the ARC_0005_COMPUTE_DISCOUNT.
 pub fn deployment_cost_v2<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
-) -> Result<(u64, (u64, u64, u64, u64))> {
+) -> Result<(MinimumCost, DeployCostDetails)> {
     // Determine the number of bytes in the deployment.
     let size_in_bytes = deployment.size_in_bytes()?;
     // Retrieve the program ID.
@@ -75,8 +206,24 @@ pub fn deployment_cost_v2<N: Network>(
     let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER
         / N::ARC_0005_COMPUTE_DISCOUNT;
 
+    // Compute a Stack for the deployment.
+    let stack = Stack::new(process, deployment.program())?;
+
     // Compute the constructor cost in microcredits.
-    let constructor_cost = constructor_cost_in_microcredits_v2(&Stack::new(process, deployment.program())?)?;
+    let constructor_cost = constructor_cost_in_microcredits_v2(&stack)?;
+
+    // Check that the functions are valid.
+    for function in deployment.program().functions().values() {
+        // Get the finalize cost.
+        let finalize_cost = cost_in_microcredits_v3(&stack, function.name())?;
+        // Check that the finalize cost does not exceed the maximum.
+        ensure!(
+            finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
+            function.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
 
     // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
     let namespace_cost = 10u64
@@ -84,21 +231,21 @@ pub fn deployment_cost_v2<N: Network>(
         .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
         .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
 
-    // Compute the total cost in microcredits.
-    let total_cost = storage_cost
+    // Compute the minimum cost in microcredits.
+    let minimum_cost = storage_cost
         .checked_add(synthesis_cost)
         .and_then(|x| x.checked_add(constructor_cost))
         .and_then(|x| x.checked_add(namespace_cost))
         .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
 
-    Ok((total_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
+    Ok((minimum_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
 }
 
-/// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, constructor cost, namespace cost)).
+/// Returns the *minimum* cost in microcredits to publish the given deployment.
 pub fn deployment_cost_v1<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
-) -> Result<(u64, (u64, u64, u64, u64))> {
+) -> Result<(MinimumCost, DeployCostDetails)> {
     // Determine the number of bytes in the deployment.
     let size_in_bytes = deployment.size_in_bytes()?;
     // Retrieve the program ID.
@@ -118,8 +265,24 @@ pub fn deployment_cost_v1<N: Network>(
     // Compute the synthesis cost in microcredits.
     let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER;
 
+    // Compute a Stack for the deployment.
+    let stack = Stack::new(process, deployment.program())?;
+
     // Compute the constructor cost in microcredits.
-    let constructor_cost = constructor_cost_in_microcredits_v1(&Stack::new(process, deployment.program())?)?;
+    let constructor_cost = constructor_cost_in_microcredits_v1(&stack)?;
+
+    // Check that the functions are valid.
+    for function in deployment.program().functions().values() {
+        // Get the finalize cost.
+        let finalize_cost = cost_in_microcredits_v2(&stack, function.name())?;
+        // Check that the finalize cost does not exceed the maximum.
+        ensure!(
+            finalize_cost <= N::TRANSACTION_SPEND_LIMIT[0].1,
+            "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
+            function.name(),
+            N::TRANSACTION_SPEND_LIMIT[0].1
+        );
+    }
 
     // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
     let namespace_cost = 10u64
@@ -127,21 +290,24 @@ pub fn deployment_cost_v1<N: Network>(
         .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
         .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
 
-    // Compute the total cost in microcredits.
-    let total_cost = storage_cost
+    // Compute the minimum cost in microcredits.
+    let minimum_cost = storage_cost
         .checked_add(synthesis_cost)
         .and_then(|x| x.checked_add(constructor_cost))
         .and_then(|x| x.checked_add(namespace_cost))
         .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
 
-    Ok((total_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
+    Ok((minimum_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
 }
 
-/// Returns the *minimum* cost in microcredits to publish the given execution using the reduced finalize cost(total cost, (storage cost, finalize cost)).
-/// The latest execution cost version is imported into /stack/mod.rs.
-pub fn execution_cost_v3<N: Network>(process: &Process<N>, execution: &Execution<N>) -> Result<(u64, (u64, u64))> {
+/// Returns the *minimum* cost in microcredits to publish the given execution using the ARC_0005_COMPUTE_DISCOUNT.
+fn execution_cost_v3<N: Network>(
+    process: &Process<N>,
+    execution: &Execution<N>,
+    execution_size: u64,
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
     // Compute the storage cost in microcredits.
-    let storage_cost = execution_storage_cost::<N>(execution.size_in_bytes()?);
+    let storage_cost = execution_storage_cost::<N>(execution_size);
 
     // Get the root transition.
     let transition = execution.peek()?;
@@ -150,18 +316,22 @@ pub fn execution_cost_v3<N: Network>(process: &Process<N>, execution: &Execution
     let stack = process.get_stack(transition.program_id())?;
     let finalize_cost = cost_in_microcredits_v3(&stack, transition.function_name())?;
 
-    // Compute the total cost in microcredits.
-    let total_cost = storage_cost
+    // Compute the minimum cost in microcredits.
+    let minimum_cost = storage_cost
         .checked_add(finalize_cost)
         .ok_or(anyhow!("The total cost computation overflowed for an execution"))?;
 
-    Ok((total_cost, (storage_cost, finalize_cost)))
+    Ok((minimum_cost, (storage_cost, finalize_cost)))
 }
 
-/// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).
-pub fn execution_cost_v2<N: Network>(process: &Process<N>, execution: &Execution<N>) -> Result<(u64, (u64, u64))> {
+/// Returns the *minimum* cost in microcredits to publish the given execution.
+fn execution_cost_v2<N: Network>(
+    process: &Process<N>,
+    execution: &Execution<N>,
+    execution_size: u64,
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
     // Compute the storage cost in microcredits.
-    let storage_cost = execution_storage_cost::<N>(execution.size_in_bytes()?);
+    let storage_cost = execution_storage_cost::<N>(execution_size);
 
     // Get the root transition.
     let transition = execution.peek()?;
@@ -178,10 +348,14 @@ pub fn execution_cost_v2<N: Network>(process: &Process<N>, execution: &Execution
     Ok((total_cost, (storage_cost, finalize_cost)))
 }
 
-/// Returns the *minimum* cost in microcredits to publish the given execution (total cost, (storage cost, finalize cost)).
-pub fn execution_cost_v1<N: Network>(process: &Process<N>, execution: &Execution<N>) -> Result<(u64, (u64, u64))> {
+/// Returns the *minimum* cost in microcredits to publish the given execution.
+fn execution_cost_v1<N: Network>(
+    process: &Process<N>,
+    execution: &Execution<N>,
+    execution_size: u64,
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
     // Compute the storage cost in microcredits.
-    let storage_cost = execution_storage_cost::<N>(execution.size_in_bytes()?);
+    let storage_cost = execution_storage_cost::<N>(execution_size);
 
     // Get the root transition.
     let transition = execution.peek()?;
@@ -221,6 +395,9 @@ const HASH_BHP_PER_BYTE_COST: u64 = 300;
 
 const HASH_PSD_BASE_COST: u64 = 40_000;
 const HASH_PSD_PER_BYTE_COST: u64 = 75;
+
+const ECDSA_VERIFY_BASE_COST: u64 = 60_000;
+const ECDSA_VERIFY_ETH_BASE_COST: u64 = 75_000;
 
 #[derive(Copy, Clone)]
 pub enum ConsensusFeeVersion {
@@ -357,6 +534,16 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::CommitPED128(commit)) => {
             cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
+        Command::Instruction(Instruction::DeserializeBits(deserialize)) => {
+            Ok(plaintext_size_in_bytes(stack, &PlaintextType::Array(deserialize.operand_type().clone()))?
+                .saturating_mul(CAST_PER_BYTE_COST)
+                .saturating_add(CAST_BASE_COST))
+        }
+        Command::Instruction(Instruction::DeserializeBitsRaw(deserialize)) => {
+            Ok(plaintext_size_in_bytes(stack, &PlaintextType::Array(deserialize.operand_type().clone()))?
+                .saturating_mul(CAST_PER_BYTE_COST)
+                .saturating_add(CAST_BASE_COST))
+        }
         Command::Instruction(Instruction::Div(div)) => {
             // Ensure `div` has exactly two operands.
             ensure!(div.operands().len() == 2, "'div' must contain exactly 2 operands");
@@ -373,51 +560,188 @@ pub fn cost_per_command<N: Network>(
         }
         Command::Instruction(Instruction::DivWrapped(_)) => Ok(500),
         Command::Instruction(Instruction::Double(_)) => Ok(500),
+        Command::Instruction(Instruction::ECDSAVerifyDigest(_)) => Ok(ECDSA_VERIFY_BASE_COST),
+        Command::Instruction(Instruction::ECDSAVerifyDigestEth(_)) => Ok(ECDSA_VERIFY_ETH_BASE_COST),
+        Command::Instruction(Instruction::ECDSAVerifyKeccak256(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifyKeccak256Raw(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifyKeccak256Eth(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_ETH_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifyKeccak384(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifyKeccak384Raw(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifyKeccak384Eth(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_ETH_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifyKeccak512(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifyKeccak512Raw(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifyKeccak512Eth(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_ETH_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifySha3_256(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifySha3_256Raw(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifySha3_256Eth(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_ETH_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifySha3_384(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifySha3_384Raw(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifySha3_384Eth(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_ETH_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifySha3_512(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifySha3_512Raw(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::ECDSAVerifySha3_512Eth(ecdsa)) => {
+            cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_ETH_BASE_COST)
+        }
         Command::Instruction(Instruction::GreaterThan(_)) => Ok(500),
         Command::Instruction(Instruction::GreaterThanOrEqual(_)) => Ok(500),
         Command::Instruction(Instruction::HashBHP256(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
+        Command::Instruction(Instruction::HashBHP256Raw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
         Command::Instruction(Instruction::HashBHP512(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashBHP512Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::HashBHP768(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
+        Command::Instruction(Instruction::HashBHP768Raw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
         Command::Instruction(Instruction::HashBHP1024(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashBHP1024Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak256(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
+        Command::Instruction(Instruction::HashKeccak256Raw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashKeccak256Native(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashKeccak256NativeRaw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
         Command::Instruction(Instruction::HashKeccak384(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashKeccak384Raw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashKeccak384Native(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashKeccak384NativeRaw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashKeccak512(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
+        Command::Instruction(Instruction::HashKeccak512Raw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashKeccak512Native(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashKeccak512NativeRaw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
         Command::Instruction(Instruction::HashPED64(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashPED64Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashPED128(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
+        Command::Instruction(Instruction::HashPED128Raw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
         Command::Instruction(Instruction::HashPSD2(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashPSD2Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
         Command::Instruction(Instruction::HashPSD4(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
+        Command::Instruction(Instruction::HashPSD4Raw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
+        }
         Command::Instruction(Instruction::HashPSD8(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashPSD8Raw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
         Command::Instruction(Instruction::HashSha3_256(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
+        Command::Instruction(Instruction::HashSha3_256Raw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashSha3_256Native(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashSha3_256NativeRaw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
         Command::Instruction(Instruction::HashSha3_384(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
+        Command::Instruction(Instruction::HashSha3_384Raw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashSha3_384Native(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashSha3_384NativeRaw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
         Command::Instruction(Instruction::HashSha3_512(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashSha3_512Raw(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashSha3_512Native(hash)) => {
+            cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::HashSha3_512NativeRaw(hash)) => {
             cost_in_size(stack, finalize_types, hash.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::HashManyPSD2(_)) => {
@@ -473,6 +797,16 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::PowWrapped(_)) => Ok(500),
         Command::Instruction(Instruction::Rem(_)) => Ok(500),
         Command::Instruction(Instruction::RemWrapped(_)) => Ok(500),
+        Command::Instruction(Instruction::SerializeBits(serialize)) => {
+            Ok(plaintext_size_in_bytes(stack, &PlaintextType::Array(serialize.destination_type().clone()))?
+                .saturating_mul(CAST_PER_BYTE_COST)
+                .saturating_add(CAST_BASE_COST))
+        }
+        Command::Instruction(Instruction::SerializeBitsRaw(serialize)) => {
+            Ok(plaintext_size_in_bytes(stack, &PlaintextType::Array(serialize.destination_type().clone()))?
+                .saturating_mul(CAST_PER_BYTE_COST)
+                .saturating_add(CAST_BASE_COST))
+        }
         Command::Instruction(Instruction::SignVerify(sign)) => {
             cost_in_size(stack, finalize_types, sign.operands(), HASH_PSD_PER_BYTE_COST, HASH_PSD_BASE_COST)
         }
@@ -704,10 +1038,12 @@ function over_five_thousand:
         // Get execution and cost data.
         let execution_under_5000 = get_execution(&mut process, &program, &under_5000, ["2group"].into_iter());
         let execution_size_under_5000 = execution_under_5000.size_in_bytes().unwrap();
-        let (_, (storage_cost_under_5000, _)) = execution_cost_v3(&process, &execution_under_5000).unwrap();
+        let (_, (storage_cost_under_5000, _)) =
+            execution_cost_v3(&process, &execution_under_5000, execution_size_under_5000).unwrap();
         let execution_over_5000 = get_execution(&mut process, &program, &over_5000, ["2group"].into_iter());
         let execution_size_over_5000 = execution_over_5000.size_in_bytes().unwrap();
-        let (_, (storage_cost_over_5000, _)) = execution_cost_v3(&process, &execution_over_5000).unwrap();
+        let (_, (storage_cost_over_5000, _)) =
+            execution_cost_v3(&process, &execution_over_5000, execution_size_over_5000).unwrap();
 
         // Ensure the sizes are below and above the threshold respectively.
         assert!(execution_size_under_5000 < threshold);

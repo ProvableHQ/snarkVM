@@ -15,5 +15,8 @@
 
 mod assert;
 mod commit;
+mod deserialize;
+mod ecdsa;
 mod hash;
 mod is;
+mod serialize;

@@ -19,7 +19,9 @@ mod find;
 mod parse;
 mod serialize;
 mod to_bits;
+mod to_bits_raw;
 mod to_fields;
+mod to_fields_raw;
 
 use crate::{Access, Argument, Entry, Future, Literal, Plaintext, Record};
 use snarkvm_console_network::Network;

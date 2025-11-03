@@ -38,6 +38,27 @@ pub trait ToBits {
     fn write_bits_be(&self, vec: &mut Vec<Self::Boolean>);
 }
 
+/// Unary operator for converting to raw bits.
+pub trait ToBitsRaw: ToBits {
+    /// Returns the little-endian bits without variant or identifier bits of the circuit.
+    fn to_bits_raw_le(&self) -> Vec<Self::Boolean> {
+        let mut bits = vec![];
+        self.write_bits_raw_le(&mut bits);
+        bits
+    }
+
+    fn write_bits_raw_le(&self, vec: &mut Vec<Self::Boolean>);
+
+    /// Returns the bits-endian bits without variant or identifier bits of the circuit.
+    fn to_bits_raw_be(&self) -> Vec<Self::Boolean> {
+        let mut bits = vec![];
+        self.write_bits_raw_be(&mut bits);
+        bits
+    }
+
+    fn write_bits_raw_be(&self, vec: &mut Vec<Self::Boolean>);
+}
+
 /********************/
 /****** Arrays ******/
 /********************/
@@ -100,6 +121,58 @@ impl<C: ToBits<Boolean = B>, B: BooleanTrait> ToBits for &[C] {
     }
 }
 
+impl<C: ToBitsRaw<Boolean = B>, B: BooleanTrait> ToBitsRaw for Vec<C> {
+    /// A helper method to return a concatenated list of little-endian bits without variant or identifier bits from the circuits.
+    #[inline]
+    fn write_bits_raw_le(&self, vec: &mut Vec<Self::Boolean>) {
+        // The vector is order-preserving, meaning the first circuit in is the first circuit bits out.
+        self.as_slice().write_bits_raw_le(vec);
+    }
+
+    /// A helper method to return a concatenated list of bits-endian bits without variant or identifier bits from the circuits.
+    #[inline]
+    fn write_bits_raw_be(&self, vec: &mut Vec<Self::Boolean>) {
+        // The vector is order-preserving, meaning the first circuit in is the first circuit bits out.
+        self.as_slice().write_bits_raw_be(vec);
+    }
+}
+
+impl<C: ToBitsRaw<Boolean = B>, B: BooleanTrait, const N: usize> ToBitsRaw for [C; N] {
+    /// A helper method to return a concatenated list of little-endian bits without variant or identifier bits from the circuits.
+    #[inline]
+    fn write_bits_raw_le(&self, vec: &mut Vec<Self::Boolean>) {
+        // The slice is order-preserving, meaning the first circuit in is the first circuit bits out.
+        self.as_slice().write_bits_raw_le(vec);
+    }
+
+    /// A helper method to return a concatenated list of bits-endian bits without variant or identifier bits from the circuits.
+    #[inline]
+    fn write_bits_raw_be(&self, vec: &mut Vec<Self::Boolean>) {
+        // The slice is order-preserving, meaning the first circuit in is the first circuit bits out.
+        self.as_slice().write_bits_raw_be(vec);
+    }
+}
+
+impl<C: ToBitsRaw<Boolean = B>, B: BooleanTrait> ToBitsRaw for &[C] {
+    /// A helper method to return a concatenated list of little-endian bits without variant or identifier bits from the circuits.
+    #[inline]
+    fn write_bits_raw_le(&self, vec: &mut Vec<Self::Boolean>) {
+        // The slice is order-preserving, meaning the first circuit in is the first circuit bits out.
+        for elem in self.iter() {
+            elem.write_bits_raw_le(vec);
+        }
+    }
+
+    /// A helper method to return a concatenated list of bits-endian bits without variant or identifier bits from the circuits.
+    #[inline]
+    fn write_bits_raw_be(&self, vec: &mut Vec<Self::Boolean>) {
+        // The slice is order-preserving, meaning the first circuit in is the first circuit bits out.
+        for elem in self.iter() {
+            elem.write_bits_raw_be(vec);
+        }
+    }
+}
+
 /********************/
 /****** Tuples ******/
 /********************/
@@ -142,6 +215,40 @@ macro_rules! to_bits_tuple {
                 // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
                 self.$i0.write_bits_be(vec);
                 $(self.$idx.write_bits_be(vec);)+
+            }
+        }
+
+        impl<B: BooleanTrait, $t0: ToBitsRaw<Boolean = B>, $($ty: ToBitsRaw<Boolean = B>),+> ToBitsRaw for ($t0, $($ty),+) {
+            /// A helper method to return a concatenated list of little-endian bits without variant or identifier bits from the circuits.
+            #[inline]
+            fn write_bits_raw_le(&self, vec: &mut Vec<Self::Boolean>) {
+                // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
+                (&self).write_bits_raw_le(vec);
+            }
+
+            /// A helper method to return a concatenated list of bits-endian bits without variant or identifier bits from the circuits.
+            #[inline]
+            fn write_bits_raw_be(&self, vec: &mut Vec<Self::Boolean>) {
+                // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
+                (&self).write_bits_raw_be(vec);
+            }
+        }
+
+        impl<'a, B: BooleanTrait, $t0: ToBitsRaw<Boolean = B>, $($ty: ToBitsRaw<Boolean = B>),+> ToBitsRaw for &'a ($t0, $($ty),+) {
+            /// A helper method to return a concatenated list of little-endian bits without variant or identifier bits from the circuits.
+            #[inline]
+            fn write_bits_raw_le(&self, vec: &mut Vec<Self::Boolean>) {
+                // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
+                self.$i0.write_bits_raw_le(vec);
+                $(self.$idx.write_bits_raw_le(vec);)+
+            }
+
+            /// A helper method to return a concatenated list of bits-endian bits without variant or identifier bits from the circuits.
+            #[inline]
+            fn write_bits_raw_be(&self, vec: &mut Vec<Self::Boolean>) {
+                // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
+                self.$i0.write_bits_raw_be(vec);
+                $(self.$idx.write_bits_raw_be(vec);)+
             }
         }
     }

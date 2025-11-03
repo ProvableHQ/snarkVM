@@ -17,7 +17,7 @@ mod bytes;
 mod parse;
 pub(crate) mod serialize;
 
-use crate::{PlaintextType, U32};
+use crate::{LiteralType, PlaintextType, U32};
 use snarkvm_console_network::prelude::*;
 
 use core::fmt::{Debug, Display};
@@ -29,6 +29,57 @@ pub struct ArrayType<N: Network> {
     element_type: Box<PlaintextType<N>>,
     /// The length of the array.
     length: U32<N>,
+}
+
+impl<N: Network> ArrayType<N> {
+    /// Returns `true` if the `ArrayType` is a bit array.
+    pub const fn is_bit_array(&self) -> bool {
+        matches!(self.next_element_type(), PlaintextType::Literal(LiteralType::Boolean))
+    }
+
+    /// Returns `true` if the `ArrayType` contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        // Initialize depth counter and current array type.
+        let mut array_type = self;
+
+        // Check nested array types up to the maximum data depth.
+        for _ in 0..=N::MAX_DATA_DEPTH {
+            // Check if the current element type is a string type.
+            if array_type.next_element_type().contains_string_type() {
+                return true;
+            }
+            // If the next element is an array, continue to the next depth. Otherwise, we can stop checking.
+            if let PlaintextType::Array(next) = array_type.next_element_type() {
+                array_type = next;
+            } else {
+                return false;
+            }
+        }
+        // If we reach here, it means we've exceeded the maximum depth without finding a non-array type.
+        true
+    }
+
+    /// Returns `true` if the `ArrayType` contains an array type with a size that exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        // Initialize depth counter and current array type.
+        let mut array_type = self;
+
+        // Check nested array types up to the maximum data depth.
+        for _ in 0..=N::MAX_DATA_DEPTH {
+            // Check if the current array's length exceeds the maximum allowed size.
+            if **array_type.length() > max_array_size {
+                return true;
+            }
+            // If the next element is an array, continue to the next depth. Otherwise, we can stop checking.
+            if let PlaintextType::Array(next) = array_type.next_element_type() {
+                array_type = next;
+            } else {
+                return false;
+            }
+        }
+        // If we reach here, it means we've exceeded the maximum depth without finding a non-array type.
+        true
+    }
 }
 
 impl<N: Network> ArrayType<N> {

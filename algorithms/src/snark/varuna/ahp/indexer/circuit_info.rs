@@ -25,10 +25,13 @@ use std::io;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct CircuitInfo {
     /// The number of public inputs after padding.
+    // This includes the constant 1
     pub num_public_inputs: usize,
     /// The number of public and private variables in the constraint system.
     /// Note: This does *NOT* include the number of constants in the constraint
     /// system.
+    // This includes the padded instance (constant 1 and public variables) as
+    // well as the witness, but is not itself padded.
     pub num_public_and_private_variables: usize,
     /// The number of constraints.
     pub num_constraints: usize,

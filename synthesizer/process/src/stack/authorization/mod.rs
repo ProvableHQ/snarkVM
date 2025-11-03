@@ -18,7 +18,7 @@ mod serialize;
 mod string;
 
 use console::{network::prelude::*, program::Request, types::Field};
-use snarkvm_ledger_block::{Transaction, Transition};
+use snarkvm_ledger_block::{Input, Transaction, Transition};
 use snarkvm_synthesizer_program::StackTrait;
 
 use indexmap::IndexMap;
@@ -285,6 +285,19 @@ impl<N: Network> PartialEq for Authorization<N> {
 
 impl<N: Network> Eq for Authorization<N> {}
 
+impl<N: Network> Authorization<N> {
+    /// Returns the total number of inputs to the passed `Transition`s that are of
+    /// type `Input::Record`.
+    // This method is used to ensure consistency between `prepare_verifier_inputs`
+    // and the batch-size calculation used in `execution_cost_for_authorization`.
+    #[inline]
+    pub fn number_of_input_records<'a>(transitions: impl ExactSizeIterator<Item = &'a Transition<N>>) -> usize {
+        transitions
+            .map(|transition| transition.inputs().iter().filter(|input| matches!(input, Input::Record(_, _))).count())
+            .sum()
+    }
+}
+
 /// Ensures the given request and transition correspond to one another.
 fn ensure_request_and_transition_matches<N: Network>(
     index: usize,
@@ -334,6 +347,20 @@ fn ensure_request_and_transition_matches<N: Network>(
         transition.scm(),
     );
     Ok(())
+}
+
+#[cfg(feature = "test")]
+impl<N: Network> Authorization<N> {
+    /// Initialize an `Authorization` instance with the given requests and
+    /// transitions without performing any consistency checks between them.
+    pub fn from_unchecked((requests, transitions): (Vec<Request<N>>, Vec<Transition<N>>)) -> Self {
+        Authorization {
+            requests: Arc::new(RwLock::new(VecDeque::from(requests))),
+            transitions: Arc::new(RwLock::new(IndexMap::from_iter(
+                transitions.into_iter().map(|transition| (*transition.id(), transition)),
+            ))),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -32,7 +32,7 @@ mod certificate;
 pub use certificate::Certificate;
 
 mod proof;
-pub use proof::Proof;
+pub use proof::{Proof, proof_size};
 
 mod proving_key;
 pub use proving_key::ProvingKey;

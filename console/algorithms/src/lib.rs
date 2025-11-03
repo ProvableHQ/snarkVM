@@ -29,6 +29,9 @@ pub use blake2xs::Blake2Xs;
 mod elligator2;
 pub use elligator2::Elligator2;
 
+mod ecdsa;
+pub use ecdsa::*;
+
 mod keccak;
 pub use keccak::*;
 

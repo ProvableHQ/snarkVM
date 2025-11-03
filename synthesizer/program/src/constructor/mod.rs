@@ -60,6 +60,16 @@ impl<N: Network> ConstructorCore<N> {
             )
         })
     }
+
+    /// Returns `true` if the constructor commands contain a string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.commands.iter().any(|command| command.contains_string_type())
+    }
+
+    /// Returns `true` if the constructor contains an array type with a size that exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        self.commands.iter().any(|command| command.exceeds_max_array_size(max_array_size))
+    }
 }
 
 impl<N: Network> ConstructorCore<N> {

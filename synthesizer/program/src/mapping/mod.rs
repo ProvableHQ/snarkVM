@@ -58,6 +58,17 @@ impl<N: Network> Mapping<N> {
     pub fn contains_external_struct(&self) -> bool {
         self.key.plaintext_type().contains_external_struct() || self.value.plaintext_type().contains_external_struct()
     }
+
+    /// Returns `true` if the mapping contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.key.plaintext_type().contains_string_type() || self.value.plaintext_type().contains_string_type()
+    }
+
+    /// Returns `true` if the mapping contains an array type with a size that exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        self.key.plaintext_type().exceeds_max_array_size(max_array_size)
+            || self.value.plaintext_type().exceeds_max_array_size(max_array_size)
+    }
 }
 
 impl<N: Network> TypeName for Mapping<N> {

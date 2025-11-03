@@ -37,14 +37,18 @@ commands:
       - restore_cache:
           key: cargo-cache-{{ arch }}-{{ checksum "Cargo.lock" }}
       - run:
-          name: "Install Rust and run cargo check"
+          name: "Install Rust"
           command: |
             $ProgressPreference = "SilentlyContinue"
-            # Remove the circleci installed rustc.
-            choco uninstall -y rust
+            # Remove the version of rustc that (might be) installed already..
+            # Use non-interactive mode and force uninstall to prevent the job from getting stuck.
+            choco uninstall rust -y --force
+
             # Install rust with rustup.
             Invoke-WebRequest -Uri "https://win.rustup.rs/" -OutFile "C:\rustup-init.exe"
             & C:\rustup-init.exe -y --default-toolchain "1.88.0-x86_64-pc-windows-msvc" --no-modify-path --profile minimal # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+
+            # Add cargo to PATH
             $Env:Path += ";$Env:USERPROFILE\.cargo\bin"
             # Verify the installation.
             cargo --version --verbose
@@ -52,6 +56,12 @@ commands:
             if (!(Test-Path "Cargo.lock" -PathType Leaf)) {
                 cargo generate-lockfile
             }
+      - run:
+          name: "Run cargo check"
+          command: |
+            # Add cargo to PATH
+            $Env:Path += ";$Env:USERPROFILE\.cargo\bin"
+            # Check that the given package compiles
             cd << parameters.workspace_member >>
             cargo check --examples --benches --tests
       - save_cache:
@@ -130,8 +140,11 @@ commands:
         type: string
         default: ""
       timeout:
-        type: integer
-        default: 10
+        type: string
+        default: 10m
+      no_output_timeout:
+        type: string
+        default: 10m
     steps:
       - checkout
       - setup_environment:
@@ -139,6 +152,7 @@ commands:
       - run:
           name: "Run Tests"
           timeout: << parameters.timeout >>
+          no_output_timeout: << parameters.no_output_timeout >>
           command: RUST_MIN_STACK=67108864 cargo test --package=<< parameters.workspace_member >> << parameters.flags >>
       - clear_environment:
           cache_key: v4.2.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
@@ -432,7 +446,7 @@ jobs:
       - run_test:
           workspace_member: snarkvm-ledger
           flags: --release --features=rocks -- --test-threads=2
-          timeout: 20
+          timeout: 20m
 
   ledger-with-valid-solutions:
     executor: rust-docker
@@ -555,7 +569,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
-          timeout: 20
+          timeout: 20m
           workspace_member: snarkvm-parameters
           flags: -- --test-threads=2
 
@@ -567,6 +581,9 @@ jobs:
           workspace_member: snarkvm-parameters
           flags: --no-run --features large_params
           cache_key_suffix: -large
+          # Compilation can take very long and produce no output for a while.
+          no_output_timeout: 20m
+          timeout: 30m
 
   parameters-uncached:
     executor: rust-docker
@@ -584,7 +601,7 @@ jobs:
       - run_test:
           workspace_member: snarkvm-synthesizer
           flags: --lib --bins
-          timeout: 20
+          timeout: 20m
 
   synthesizer-test:
     executor: rust-docker
@@ -594,7 +611,7 @@ jobs:
           workspace_member: snarkvm-synthesizer
           flags: --lib --bins --features test
           cache_key_suffix: -test
-          timeout: 25
+          timeout: 25m
 
 #  synthesizer-mem-heavy:
 #    executor: rust-docker
@@ -610,8 +627,11 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
+          timeout: 30m
+          # test_vm_execute_and_finalize can take over 10 minutes in the current setup
+          no_output_timeout: 20m
           workspace_member: snarkvm-synthesizer
-          flags: --test '*' --features test -- --test-threads=4
+          flags: --test '*' --features test -- --test-threads=4 
           cache_key_suffix: -integration
 
   synthesizer-process:
@@ -655,6 +675,8 @@ jobs:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
           flags: keccak
+          timeout: 30m
+          no_output_timeout: 20m
           cache_key_suffix: -integration-keccak
 
   synthesizer-program-integration-psd:
@@ -673,6 +695,8 @@ jobs:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
           flags: sha
+          timeout: 30m
+          no_output_timeout: 20m
           cache_key_suffix: -integration-sha
 
   synthesizer-program-integration-instruction-is:
@@ -797,7 +821,7 @@ jobs:
 
   check-cargo-semver-checks:
     executor: rust-docker
-    resource_class: << pipeline.parameters.large >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - checkout
       - setup_environment:
@@ -806,9 +830,8 @@ jobs:
           name: Check for semver violations
           no_output_timeout: 15m
           command: |
-            cargo install cargo-semver-checks@0.43.0 --locked
-            BASELINE_REV=eff84712b # UPDATE ME ON NECESSARY BREAKING CHANGES
-            cargo semver-checks --workspace --default-features --baseline-rev $BASELINE_REV
+            bash ./.circleci/semver-checks.sh
+
       - clear_environment:
           cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
 

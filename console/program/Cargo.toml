@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-program"
-version = "4.2.1"
+version = "4.3.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Program operations for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -39,7 +39,7 @@ version = "0.2"
 version = "0.2"
 
 [dependencies.enum-iterator]
-version = "2.1"
+workspace = true
 
 [dependencies.indexmap]
 workspace = true
@@ -53,6 +53,9 @@ workspace = true
 [dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
+
+[dependencies.seq-macro]
+version = "0.3"
 
 [dev-dependencies.bincode]
 workspace = true

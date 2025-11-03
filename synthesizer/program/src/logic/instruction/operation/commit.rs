@@ -34,6 +34,7 @@ pub type CommitPED64<N> = CommitInstruction<N, { CommitVariant::CommitPED64 as u
 pub type CommitPED128<N> = CommitInstruction<N, { CommitVariant::CommitPED128 as u8 }>;
 
 /// Which commit function to use.
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CommitVariant {
     CommitBHP256,
     CommitBHP512,
@@ -41,6 +42,21 @@ pub enum CommitVariant {
     CommitBHP1024,
     CommitPED64,
     CommitPED128,
+}
+
+impl CommitVariant {
+    // Returns the opcode associated with the variant.
+    pub const fn opcode(variant: u8) -> &'static str {
+        match variant {
+            0 => "commit.bhp256",
+            1 => "commit.bhp512",
+            2 => "commit.bhp768",
+            3 => "commit.bhp1024",
+            4 => "commit.ped64",
+            5 => "commit.ped128",
+            6.. => panic!("Invalid 'commit' instruction opcode"),
+        }
+    }
 }
 
 /// Returns 'true' if the destination type is valid.
@@ -74,15 +90,7 @@ impl<N: Network, const VARIANT: u8> CommitInstruction<N, VARIANT> {
     /// Returns the opcode.
     #[inline]
     pub const fn opcode() -> Opcode {
-        match VARIANT {
-            0 => Opcode::Commit("commit.bhp256"),
-            1 => Opcode::Commit("commit.bhp512"),
-            2 => Opcode::Commit("commit.bhp768"),
-            3 => Opcode::Commit("commit.bhp1024"),
-            4 => Opcode::Commit("commit.ped64"),
-            5 => Opcode::Commit("commit.ped128"),
-            6.. => panic!("Invalid 'commit' instruction opcode"),
-        }
+        Opcode::Commit(CommitVariant::opcode(VARIANT))
     }
 
     /// Returns the operands in the operation.

@@ -16,7 +16,9 @@
 mod equal;
 mod find;
 mod to_bits;
+mod to_bits_raw;
 mod to_fields;
+mod to_fields_raw;
 
 use crate::{Access, Entry, Future, Plaintext, Record};
 use snarkvm_circuit_network::Aleo;

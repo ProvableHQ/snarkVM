@@ -26,9 +26,9 @@ use std::collections::{BTreeMap, HashSet};
 use rayon::prelude::*;
 
 /// Precompute a batch of selectors at challenges. We batch:
-/// - constraint domain selectors at alpha
-/// - variable domain selectors at beta
-/// - non_zero domain selectors at gamma
+/// - constraint domain selectors at `alpha`
+/// - variable domain selectors at `beta`
+/// - non_zero domain selectors at `gamma`
 pub(crate) fn precompute_selectors<F: PrimeField>(
     max_constraint_domain: EvaluationDomain<F>,
     constraint_domains: HashSet<EvaluationDomain<F>>,

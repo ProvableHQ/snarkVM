@@ -13,11 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::{FromBytes, ToBytes, io_error};
+
 use enum_iterator::{Sequence, last};
+use std::io;
 
 /// The different consensus versions.
 /// If you need the version active for a specific height, see: `N::CONSENSUS_VERSION`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Sequence)]
+#[repr(u16)]
 pub enum ConsensusVersion {
     /// V1: The initial genesis consensus version.
     V1 = 1,
@@ -39,8 +43,37 @@ pub enum ConsensusVersion {
     V9 = 9,
     /// V10: Lower fees, appropriate record output type checking.
     V10 = 10,
-    /// V11: Support for external structs.
+    /// V11: Expand array size limit to 512 and introduce ECDSA signature verification opcodes.
     V11 = 11,
+    /// V12: Prevent connection to forked nodes, disable StringType.
+    V12 = 12,
+}
+
+impl ToBytes for ConsensusVersion {
+    fn write_le<W: io::Write>(&self, writer: W) -> io::Result<()> {
+        (*self as u16).write_le(writer)
+    }
+}
+
+impl FromBytes for ConsensusVersion {
+    fn read_le<R: io::Read>(reader: R) -> io::Result<Self> {
+        match u16::read_le(reader)? {
+            0 => Err(io_error("Zero is not a valid consensus version")),
+            1 => Ok(Self::V1),
+            2 => Ok(Self::V2),
+            3 => Ok(Self::V3),
+            4 => Ok(Self::V4),
+            5 => Ok(Self::V5),
+            6 => Ok(Self::V6),
+            7 => Ok(Self::V7),
+            8 => Ok(Self::V8),
+            9 => Ok(Self::V9),
+            10 => Ok(Self::V10),
+            11 => Ok(Self::V11),
+            12 => Ok(Self::V12),
+            _ => Err(io_error("Invalid consensus version")),
+        }
+    }
 }
 
 impl ConsensusVersion {
@@ -49,8 +82,15 @@ impl ConsensusVersion {
     }
 }
 
+impl std::fmt::Display for ConsensusVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Use Debug formatting for Display.
+        write!(f, "{self:?}")
+    }
+}
+
 /// The number of consensus versions.
-pub(crate) const NUM_CONSENSUS_VERSIONS: usize = 11;
+pub(crate) const NUM_CONSENSUS_VERSIONS: usize = enum_iterator::cardinality::<ConsensusVersion>();
 
 /// The consensus version height for `CanaryV0`.
 pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] = [
@@ -64,7 +104,8 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V8, 7_565_000),
     (ConsensusVersion::V9, 8_028_000),
     (ConsensusVersion::V10, 8_600_000),
-    (ConsensusVersion::V11, 10_235_000),
+    (ConsensusVersion::V11, 9_510_000),
+    (ConsensusVersion::V12, 9_906_000),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -79,7 +120,8 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V8, 9_430_000),
     (ConsensusVersion::V9, 10_272_000),
     (ConsensusVersion::V10, 11_205_000),
-    (ConsensusVersion::V11, 13_575_000),
+    (ConsensusVersion::V11, 12_870_000),
+    (ConsensusVersion::V12, 13_579_000),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -94,7 +136,8 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V8, 9_173_000),
     (ConsensusVersion::V9, 9_800_000),
     (ConsensusVersion::V10, 10_525_000),
-    (ConsensusVersion::V11, 12_660_000),
+    (ConsensusVersion::V11, 11_952_000),
+    (ConsensusVersion::V12, 12_522_984),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -110,6 +153,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V9, 12),
     (ConsensusVersion::V10, 13),
     (ConsensusVersion::V11, 14),
+    (ConsensusVersion::V12, 15),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
@@ -177,6 +221,7 @@ macro_rules! consensus_config_value {
         // Search the consensus version enacted at the specified height.
         $network::CONSENSUS_VERSION($seek_height).map_or(None, |seek_version| {
             // Search the consensus value for the specified version.
+            // NOTE: calling `consensus_config_value_by_version!` here would require callers to import both macros.
             match $network::$constant.binary_search_by(|(version, _)| version.cmp(&seek_version)) {
                 // If a value was found for this consensus version, return it.
                 Ok(index) => Some($network::$constant[index].1),
@@ -192,6 +237,33 @@ macro_rules! consensus_config_value {
                 }
             }
         })
+    };
+}
+
+/// Returns the consensus configuration value for the specified ConsensusVersion.
+///
+/// Arguments:
+/// - `$network`: The network to use the constant of.
+/// - `$constant`: The constant to search a value of.
+/// - `$seek_version`: The ConsensusVersion to search the value for.
+#[macro_export]
+macro_rules! consensus_config_value_by_version {
+    ($network:ident, $constant:ident, $seek_version:expr) => {
+        // Search the consensus value for the specified version.
+        match $network::$constant.binary_search_by(|(version, _)| version.cmp(&$seek_version)) {
+            // If a value was found for this consensus version, return it.
+            Ok(index) => Some($network::$constant[index].1),
+            // If the specified version was not found exactly, determine whether to return an appropriate value anyway.
+            Err(index) => {
+                // This constant is not yet in effect at this consensus version.
+                if index == 0 {
+                    None
+                // Return the appropriate value belonging to the consensus version *lower* than the sought version.
+                } else {
+                    Some($network::$constant[index - 1].1)
+                }
+            }
+        }
     };
 }
 
@@ -316,5 +388,23 @@ mod tests {
         max_certificates_increasing::<CanaryV0>();
 
         constants_equal_length::<MainnetV0, TestnetV0, CanaryV0>();
+    }
+
+    /// Ensure (de-)serialization works correctly.
+    #[test]
+    fn test_to_bytes() {
+        let version = ConsensusVersion::V8;
+        let bytes = version.to_bytes_le().unwrap();
+        let result = ConsensusVersion::from_bytes_le(&bytes).unwrap();
+        assert_eq!(result, version);
+
+        let version = ConsensusVersion::latest();
+        let bytes = version.to_bytes_le().unwrap();
+        let result = ConsensusVersion::from_bytes_le(&bytes).unwrap();
+        assert_eq!(result, version);
+
+        let invalid_bytes = u16::MAX.to_bytes_le().unwrap();
+        let result = ConsensusVersion::from_bytes_le(&invalid_bytes);
+        assert!(result.is_err());
     }
 }

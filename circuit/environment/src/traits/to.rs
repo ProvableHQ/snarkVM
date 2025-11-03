@@ -65,6 +65,12 @@ pub trait ToFields {
     fn to_fields(&self) -> Vec<Self::Field>;
 }
 
+/// Unary operator for converting to a list of base fields.
+pub trait ToFieldsRaw: ToFields {
+    /// Returns the circuit as a list of base field elements using the raw bits.
+    fn to_fields_raw(&self) -> Vec<Self::Field>;
+}
+
 /// Unary operator for converting to an affine group.
 pub trait ToGroup {
     type Group: GroupTrait<Self::Scalar>;

@@ -392,13 +392,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
     /// Returns the latest edition for the given `program ID`.
     fn get_latest_edition_for_program(&self, program_id: &ProgramID<N>) -> Result<Option<u16>> {
-        // Check if the program ID is for 'credits.aleo'.
-        // This case is handled separately, as it is a default program of the VM.
-        // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
-        if program_id == &ProgramID::from_str("credits.aleo")? {
-            return Ok(None);
-        }
-
         Ok(self.edition_map().get_confirmed(program_id)?.map(|x| *x))
     }
 
@@ -421,13 +414,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
     /// Returns the latest program for the given `program ID`.
     fn get_latest_program(&self, program_id: &ProgramID<N>) -> Result<Option<Program<N>>> {
-        // Check if the program ID is for 'credits.aleo'.
-        // This case is handled separately, as it is a default program of the VM.
-        // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
-        if program_id == &ProgramID::from_str("credits.aleo")? {
-            return Ok(Some(Program::credits()?));
-        }
-
         // Retrieve the latest edition.
         let edition = match self.get_latest_edition_for_program(program_id)? {
             Some(edition) => edition,
@@ -442,18 +428,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
     /// Returns the program for the given `program ID` and `edition`.
     fn get_program_for_edition(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<Program<N>>> {
-        // Check if the program ID is for 'credits.aleo'.
-        // This case is handled separately, as it is a default program of the VM.
-        // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
-        if program_id == &ProgramID::from_str("credits.aleo")? {
-            return Ok(Some(Program::credits()?));
-        }
-
-        // Retrieve the program.
-        match self.program_map().get_confirmed(&(*program_id, edition))? {
-            Some(program) => Ok(Some(program.into_owned())),
-            None => bail!("Failed to get program '{program_id}' (edition {edition})"),
-        }
+        self.program_map().get_confirmed(&(*program_id, edition)).map(|p| p.map(|p| p.into_owned()))
     }
 
     /// Returns the latest verifying key for the given `program ID` and `function name`.
@@ -697,6 +672,12 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     pub fn open(fee_store: FeeStore<N, D::FeeStorage>) -> Result<Self> {
         // Initialize the deployment storage.
         let storage = D::open(fee_store)?;
+
+        // Insert `credits.aleo`, which is the default program.
+        let credits_id = ProgramID::from_str("credits.aleo")?;
+        storage.edition_map().insert(credits_id, 0)?;
+        storage.program_map().insert((credits_id, 0), Program::credits()?)?;
+
         // Return the deployment store.
         Ok(Self { storage, _phantom: PhantomData })
     }

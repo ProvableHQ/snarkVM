@@ -15,19 +15,22 @@
 
 use crate::{
     SNARKError,
-    polycommit::sonic_pc,
-    snark::varuna::{CircuitId, ahp},
+    polycommit::{kzg10::KZGCommitment, sonic_pc},
+    snark::varuna::{CircuitId, VarunaVersion, ahp},
 };
 
 use ahp::prover::{FourthMessage, ThirdMessage};
 use snarkvm_curves::PairingEngine;
-use snarkvm_fields::PrimeField;
+use snarkvm_fields::{One, PrimeField};
 use snarkvm_utilities::{FromBytes, ToBytes, into_io_error, serialize::*};
 
+use anyhow::{Result, anyhow};
 use std::{
     collections::BTreeMap,
     io::{self, Read, Write},
 };
+
+use std::mem::size_of;
 
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Commitments<E: PairingEngine> {
@@ -375,6 +378,82 @@ impl<E: PairingEngine> FromBytes for Proof<E> {
     fn read_le<R: Read>(mut r: R) -> io::Result<Self> {
         Self::deserialize_compressed(&mut r)
             .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize Proof")))
+    }
+}
+
+/// Computes the size in bytes of a Varuna proof as produced by
+/// `Proof::serialize_compressed` without needing to receive the proof itself.
+///
+/// *Arguments*:
+///  - `batch_sizes`: the batch sizes of the circuits and instances being
+///    proved.
+///  - `varuna_version`: the version of Varuna being used
+///  - `hiding`: indicates whether the proof system is run in ZK mode
+///
+/// *Returns*:
+///  - `Ok(size)` for `VarunaVersion::V2`, where `size` is the size of the proof
+///    in bytes.
+///  - `Err` for `VarunaVersion::V1`.
+pub fn proof_size<E: PairingEngine>(
+    batch_sizes: &[usize],
+    varuna_version: VarunaVersion,
+    hiding: bool,
+) -> Result<usize> {
+    let n_circuits: usize = batch_sizes.len();
+    let n_instances: usize = batch_sizes.iter().sum();
+
+    match varuna_version {
+        VarunaVersion::V1 => Err(anyhow!("Proof-size calculation not implemented for Varuna version V1")),
+        VarunaVersion::V2 => {
+            // All fields are serialised in Compressed mode The breakdown is as
+            // follows:
+            // - batch sizes: one `usize` (which is serialised as a `u64`) for each batch
+            //   size, plus one `u64` for the number of batches. This contains the size
+            //   information for the vectors in all other fields, which are therefore
+            //   serialised without their length prefix.
+            // - commitments:
+            //   + witness_commitments: n_instances commitments
+            //   + mask_poly: 1 byte to encode the enum tag (a bool) plus one commitment if
+            //     the variant is Some (if and only if the proof system is run in ZK mode)
+            //   + h_0, g_1, g_2, h_2: four commitments
+            //   + g_a, g_b, g_c: 3 * n_circuits commitments
+            // - evaluations:
+            //   + g_1_eval: one field element
+            //   + g_a_evals, g_b_evals, g_c_evals: 3 * n_circuits field elements
+            // - third_msg:
+            //   + 3 * n_instances field elements
+            // - fourth_msg:
+            //   + 3 * n_circuits field elements
+            // - pc_proof:
+            //   + one usize for the size of the vector (which is always 3)
+            //   + three of [1 commitment + 1 bool (for the Option tag) + {1 field element
+            //     if the variant is Some (if and only if the proof system is run in ZK
+            //     mode)}]
+
+            let n_bool = 1;
+            let n_u64 = 1;
+            let n_field_elements = 1 + 6 * n_circuits + 3 * n_instances;
+            let n_commitments = 4 + n_instances + (if hiding { 1 } else { 0 }) + 3 * n_circuits;
+
+            // The next three sizes are const functions
+            let size_bool = size_of::<bool>();
+            let size_u64 = size_of::<u64>();
+
+            // The next two can be hard-coded if performance becomes critical
+            // and they are considered fully stable. They are 32 and 48 bytes at
+            // the time of writing, respectively (commitments are affine points
+            // written in compressed form).
+            let size_field_element = E::Fr::one().compressed_size();
+            let size_commitment = KZGCommitment::<E>::empty().compressed_size();
+
+            let size_pc_proof = size_u64 + 3 * (size_commitment + 1) + if hiding { size_field_element } else { 0 };
+
+            Ok(n_bool * size_bool
+                + (n_u64 + batch_sizes.len()) * size_u64
+                + n_field_elements * size_field_element
+                + n_commitments * size_commitment
+                + size_pc_proof)
+        }
     }
 }
 

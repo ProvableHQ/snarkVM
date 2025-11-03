@@ -153,6 +153,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let num_non_zero_b = num_non_zero(&b);
         let num_non_zero_c = num_non_zero(&c);
 
+        // Instance variables (including 1) are padded; their concatenation with the
+        // witness is not.
         let num_variables = num_padded_public_variables + num_private_variables;
 
         dev_println!("Number of padded public variables: {num_padded_public_variables}");
@@ -173,10 +175,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             num_non_zero_c,
         };
 
+        // R_i, C_i and C_i[x] in the notation of the Varuna spec.
         let constraint_domain = EvaluationDomain::new(num_constraints).ok_or(SynthesisError::PolyTooLarge)?;
         let variable_domain = EvaluationDomain::new(num_variables).ok_or(SynthesisError::PolyTooLarge)?;
         let input_domain = EvaluationDomain::new(num_padded_public_variables).ok_or(SynthesisError::PolyTooLarge)?;
 
+        // K_A, K_B and K_C in the notation of the Varuna spec.
         let non_zero_a_domain = EvaluationDomain::new(num_non_zero_a).ok_or(SynthesisError::PolyTooLarge)?;
         let non_zero_b_domain = EvaluationDomain::new(num_non_zero_b).ok_or(SynthesisError::PolyTooLarge)?;
         let non_zero_c_domain = EvaluationDomain::new(num_non_zero_c).ok_or(SynthesisError::PolyTooLarge)?;
@@ -260,7 +264,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 }
 
 pub(crate) struct IndexerState<F: PrimeField> {
+    // R_i in the Varuna spec
     constraint_domain: EvaluationDomain<F>,
+    // C_i in the Varuna spec
     variable_domain: EvaluationDomain<F>,
 
     a: Matrix<F>,

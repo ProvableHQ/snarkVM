@@ -26,9 +26,12 @@ mod from_fields;
 mod num_randomizers;
 mod size_in_fields;
 mod to_bits;
+mod to_bits_raw;
 mod to_fields;
+mod to_fields_raw;
 
 use crate::{Access, Ciphertext, Identifier, Literal, Visibility};
+use console::PlaintextType;
 use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::{Address, Boolean, Field, Scalar, U8, U16, U32, environment::prelude::*};
 
@@ -40,6 +43,31 @@ pub enum Plaintext<A: Aleo> {
     Struct(IndexMap<Identifier<A>, Plaintext<A>>, OnceCell<Vec<Boolean<A>>>),
     /// A plaintext array.
     Array(Vec<Plaintext<A>>, OnceCell<Vec<Boolean<A>>>),
+}
+
+impl<A: Aleo> Plaintext<A> {
+    /// Returns a new `Plaintext::Array` from `Vec<Boolean<A>>`, checking that the length is correct.
+    pub fn from_bit_array(bits: Vec<Boolean<A>>, length: u32) -> Result<Self> {
+        ensure!(bits.len() == length as usize, "Expected '{length}' bits, got '{}' bits", bits.len());
+        Ok(Self::Array(bits.into_iter().map(|bit| Plaintext::from(Literal::Boolean(bit))).collect(), OnceCell::new()))
+    }
+
+    /// Returns the `Plaintext` as a `Vec<Boolean<A>>`, if it is a bit array.
+    pub fn as_bit_array(&self) -> Result<Vec<Boolean<A>>> {
+        match self {
+            Self::Array(elements, _) => {
+                let mut bits = Vec::with_capacity(elements.len());
+                for element in elements {
+                    match element {
+                        Self::Literal(Literal::Boolean(bit), _) => bits.push(bit.clone()),
+                        _ => bail!("Expected a bit array, found a non-boolean element."),
+                    }
+                }
+                Ok(bits)
+            }
+            _ => bail!("Expected a bit array, found a non-array plaintext."),
+        }
+    }
 }
 
 impl<A: Aleo> Inject for Plaintext<A> {

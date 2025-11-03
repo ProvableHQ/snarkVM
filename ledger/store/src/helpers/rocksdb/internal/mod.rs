@@ -176,10 +176,10 @@ impl Database for RocksDB {
 
         // Ensure that multiple database instances are possible only when using the test storage
         // mode, and that in such scenarios, all of the instances are only using the test mode.
-        if !matches!(storage, StorageMode::Test(_)) {
-            ensure!(databases.len() == 1);
-        } else {
+        if matches!(storage, StorageMode::Test(_)) {
             ensure!(databases.values().all(|db| matches!(&db.storage_mode, StorageMode::Test(_))));
+        } else {
+            ensure!(databases.len() == 1, "There can only be one active rocksDB database when not in test mode.");
         }
 
         // Ensure the database network ID and storage mode match.

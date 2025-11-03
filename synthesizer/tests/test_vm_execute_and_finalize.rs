@@ -33,7 +33,8 @@ use snarkvm_ledger_block::{
     Transition,
 };
 use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
-use snarkvm_synthesizer::{VM, program::FinalizeOperation};
+use snarkvm_synthesizer::{Authorization, VM, program::FinalizeOperation};
+use snarkvm_synthesizer_process::{execution_cost, execution_cost_for_authorization};
 use snarkvm_synthesizer_program::FinalizeGlobalState;
 
 use anyhow::Result;
@@ -236,6 +237,26 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                         return (serde_yaml::Value::Mapping(result), serde_yaml::Value::Mapping(Default::default()));
                     }
                 };
+
+            // Test cost computation for Authorization
+            if transaction.is_execute() {
+                let consensus_version =
+                    CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
+
+                if consensus_version >= ConsensusVersion::V4 {
+                    let execution = transaction.execution().unwrap();
+
+                    let actual_cost = execution_cost(&vm.process().read(), execution, consensus_version).unwrap();
+
+                    let authorization =
+                        Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
+                    let expected_cost =
+                        execution_cost_for_authorization(&vm.process().read(), &authorization, consensus_version)
+                            .unwrap();
+
+                    assert_eq!(actual_cost, expected_cost);
+                }
+            }
 
             // Attempt to verify the transaction.
             let verified = vm.check_transaction(&transaction, None, rng).is_ok();
