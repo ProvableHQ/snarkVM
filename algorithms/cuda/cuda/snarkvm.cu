@@ -60,6 +60,7 @@ public:
     inline T& operator[](size_t i)              { return h_ptr[i]; }
 };
 
+
 #ifndef __CUDA_ARCH__
 
 #include <vector>

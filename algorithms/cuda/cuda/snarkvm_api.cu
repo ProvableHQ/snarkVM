@@ -17,6 +17,9 @@
 
 #include "snarkvm.cu"
 
+// Include cuVaruna
+#include "../../src/snark/varuna/ahp/prover/cuVaruna/cuda/wrapper.cu"
+
 #ifndef __CUDA_ARCH__
 
 // Lazy instantiation of snarkvm_t
@@ -33,7 +36,7 @@ public:
     bool ok() {
         if (!failed && snarkvm == nullptr) {
             // SNP TODO: max domain size?
-            snarkvm = new snarkvm_t(17);
+            snarkvm = new snarkvm_t(23);
             if (snarkvm == nullptr) {
                 failed = true;
             }

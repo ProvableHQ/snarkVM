@@ -16,9 +16,7 @@
 use crate::{
     fft::DensePolynomial,
     snark::varuna::{
-        AHPError,
-        Matrix,
-        SNARKMode,
+        AHPError, Matrix, SNARKMode,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
         prover::{self, MatrixSums, ThirdMessage},
     },
@@ -29,7 +27,10 @@ use snarkvm_utilities::ExecutionPool;
 use anyhow::Result;
 use itertools::Itertools;
 use rand::RngCore;
-use std::collections::{BTreeMap, VecDeque};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    time::Instant,
+};
 
 struct LinevalPrepInstance<F: PrimeField> {
     z_m_at_alpha: DensePolynomial<F>,
@@ -78,6 +79,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>,
         alpha: &F,
     ) -> Result<ThirdMessage<F>> {
+        let lineval_full_time = Instant::now();
+        let mut lineval_start_time = Instant::now();
+
         let num_instances = first_round_batch_combiners.values().map(|c| c.instance_combiners.len()).collect_vec();
         let total_instances = num_instances.iter().sum::<usize>();
         let matrix_labels = ["a", "b", "c"];
@@ -125,11 +129,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             }
         }
 
+        println!("\tJob setup: {:?}", lineval_start_time.elapsed());
+        lineval_start_time = Instant::now();
+        let job_results = job_pool.execute_all();
+        println!("\tJob execution: {:?}", lineval_start_time.elapsed());
+        lineval_start_time = Instant::now();
+
         let mut sums = num_instances.iter().map(|n| Vec::with_capacity(*n)).collect_vec();
         let mut circuit_index = 0;
         let mut instances_seen = 0;
         for (i, ((circuit_a, lineval_a), (circuit_b, lineval_b), (circuit_c, lineval_c))) in
-            job_pool.execute_all().into_iter().collect::<Result<Vec<_>>>()?.into_iter().tuples().enumerate()
+            job_results.into_iter().collect::<Result<Vec<_>>>()?.into_iter().tuples().enumerate()
         {
             // Sanity check that we're collecting data from the same circuits.
             assert_eq!(circuit_a, circuit_b);
@@ -163,6 +173,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
 
         let msg = ThirdMessage { sums };
+
+        println!("\tJob aggregation: {:?}", lineval_start_time.elapsed());
+        println!("Lineval sumcheck witness computation: {:?}", lineval_full_time.elapsed());
 
         Ok(msg)
     }

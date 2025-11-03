@@ -23,6 +23,9 @@ include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
 edition = "2024"
 
+[dependencies]
+nvtx = { version = "1.3.0"}
+
 [[bench]]
 name = "variable_base"
 path = "benches/msm/variable_base.rs"
@@ -133,7 +136,8 @@ workspace = true
 features = [ "filesystem" ]
 
 [features]
-cuda = [ "snarkvm-algorithms-cuda" ]
+cuda = [ "snarkvm-algorithms-cuda"]
+# cuda = [ "snarkvm-algorithms-cuda", "nvtx" ]
 locktick = [ "snarkvm-parameters/locktick" ]
 profiler = [ "aleo-std/profiler" ]
 test = [ ]

@@ -17,6 +17,7 @@
 use blst::*;
 
 use core::ffi::c_void;
+use std::time::Instant;
 sppark::cuda_error!();
 
 #[repr(C)]
@@ -144,6 +145,8 @@ pub fn polymul<T: std::clone::Clone>(
     Ok(out)
 }
 
+use nvtx::range;
+
 /// Compute a multi-scalar multiplication
 pub fn msm<Affine, Projective, Scalar>(points: &[Affine], scalars: &[Scalar]) -> Result<Projective, cuda::Error> {
     let npoints = scalars.len();
@@ -153,13 +156,17 @@ pub fn msm<Affine, Projective, Scalar>(points: &[Affine], scalars: &[Scalar]) ->
     #[allow(clippy::uninit_assumed_init)]
     let mut ret: Projective = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
     let err = unsafe {
-        snarkvm_msm(
+        let instant = Instant::now();
+        let _range = range!("CUDAMSM");
+        let result = snarkvm_msm(
             &mut ret as *mut _ as *mut c_void,
             points as *const _ as *const c_void,
             npoints,
             scalars as *const _ as *const c_void,
             std::mem::size_of::<Affine>(),
-        )
+        );
+        println!("\t\t\tCUDAMSM time: {:?}", instant.elapsed());
+        result
     };
     if err.code != 0 {
         return Err(err);

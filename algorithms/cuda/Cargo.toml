@@ -32,6 +32,9 @@ quiet = [ ]
 version = "0.3.11"
 features = [ ]
 
+[dependencies.nvtx]
+version = "1.3.0"
+
 [dependencies.sppark]
 version = "0.1.5"
 

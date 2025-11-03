@@ -15,9 +15,7 @@
 
 use crate::{
     fft::{
-        DensePolynomial,
-        EvaluationDomain,
-        Evaluations as EvaluationsOnDomain,
+        DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain,
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
@@ -38,16 +36,19 @@ use anyhow::Result;
 use core::convert::TryInto;
 use itertools::Itertools;
 use rand::RngCore;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Instant};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
-type Sum<F> = F;
-type Lhs<F> = DensePolynomial<F>;
-type Apoly<F> = LabeledPolynomial<F>;
-type Bpoly<F> = LabeledPolynomial<F>;
-type Gpoly<F> = LabeledPolynomial<F>;
+#[cfg(feature = "cuda")]
+use super::super::cuVaruna::calculate_matrix_sumcheck_witness_cuda;
+
+pub type Sum<F> = F;
+pub type Lhs<F> = DensePolynomial<F>;
+pub type Apoly<F> = LabeledPolynomial<F>;
+pub type Bpoly<F> = LabeledPolynomial<F>;
+pub type Gpoly<F> = LabeledPolynomial<F>;
 
 impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     /// Output the number of oracles sent by the prover in the fourth round.
@@ -83,6 +84,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         _r: &mut R,
     ) -> Result<(prover::FourthMessage<F>, prover::FourthOracles<F>, prover::State<'a, F, SM>), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::FourthRound");
+        let fourth_round_full_time = Instant::now();
+        let mut fourth_round_start_time = Instant::now();
 
         let verifier::SecondMessage { alpha, .. } = second_message;
         let verifier::ThirdMessage { beta } = third_message;
@@ -91,6 +94,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let max_non_zero_domain_size = state.max_non_zero_domain;
         let matrix_labels = ["a", "b", "c"];
+
+        let mut flop = 0;
+
         for (&circuit, state_i) in &state.circuit_specific_states {
             let v_R_i_at_alpha = state_i.constraint_domain.evaluate_vanishing_polynomial(*alpha);
             let v_C_i_at_beta = state_i.variable_domain.evaluate_vanishing_polynomial(*beta);
@@ -100,36 +106,99 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let id = circuit.id;
 
             for (matrix_label, non_zero_domain, arith) in itertools::izip!(matrix_labels, k_domains, ariths) {
-                pool.add_job(move || {
-                    let result = Self::calculate_matrix_sumcheck_witness(
-                        matrix_label,
-                        id,
-                        state_i.constraint_domain,
-                        state_i.variable_domain,
-                        non_zero_domain,
-                        arith,
-                        *alpha,
-                        *beta,
-                        v_R_i_alpha_v_C_i_beta,
-                        max_non_zero_domain_size,
-                        &circuit.fft_precomputation,
-                        &circuit.ifft_precomputation,
-                    );
-                    (circuit, result)
-                });
+                flop += 1;
+                if flop {
+                    // flop = false;
+                    pool.add_job(move || {
+                        let result = calculate_matrix_sumcheck_witness_cuda(
+                            matrix_label,
+                            id,
+                            state_i.constraint_domain,
+                            state_i.variable_domain,
+                            non_zero_domain,
+                            arith,
+                            *alpha,
+                            *beta,
+                            v_R_i_alpha_v_C_i_beta,
+                            max_non_zero_domain_size,
+                            &circuit.fft_precomputation,
+                            &circuit.ifft_precomputation,
+                        );
+                        (circuit, result)
+                    });
+                } else {
+                    pool.add_job(move || {
+                        let result = Self::calculate_matrix_sumcheck_witness(
+                            matrix_label,
+                            id,
+                            state_i.constraint_domain,
+                            state_i.variable_domain,
+                            non_zero_domain,
+                            arith,
+                            *alpha,
+                            *beta,
+                            v_R_i_alpha_v_C_i_beta,
+                            max_non_zero_domain_size,
+                            &circuit.fft_precomputation,
+                            &circuit.ifft_precomputation,
+                        );
+                        (circuit, result)
+                    });
+                }
+
+                // pool.add_job(move || {
+                //     // #[cfg(feature = "cuda")]
+                //     println!("Using CUDA for {matrix_label}_{id}");
+                //     let result = calculate_matrix_sumcheck_witness_cuda(
+                //         matrix_label,
+                //         id,
+                //         state_i.constraint_domain,
+                //         state_i.variable_domain,
+                //         non_zero_domain,
+                //         arith,
+                //         *alpha,
+                //         *beta,
+                //         v_R_i_alpha_v_C_i_beta,
+                //         max_non_zero_domain_size,
+                //         &circuit.fft_precomputation,
+                //         &circuit.ifft_precomputation,
+                //     );
+                //     // #[cfg(not(feature = "cuda"))]
+                //     let result = Self::calculate_matrix_sumcheck_witness(
+                //         matrix_label,
+                //         id,
+                //         state_i.constraint_domain,
+                //         state_i.variable_domain,
+                //         non_zero_domain,
+                //         arith,
+                //         *alpha,
+                //         *beta,
+                //         v_R_i_alpha_v_C_i_beta,
+                //         max_non_zero_domain_size,
+                //         &circuit.fft_precomputation,
+                //         &circuit.ifft_precomputation,
+                //     );
+                //     (circuit, result)
+                // });
             }
         }
 
+        println!("\tJob setup: {:?}", fourth_round_start_time.elapsed());
+        fourth_round_start_time = Instant::now();
+        let job_results = pool.execute_all();
+        println!("\tJob execution: {:?}", fourth_round_start_time.elapsed());
+        fourth_round_start_time = Instant::now();
+
         let mut sums = Vec::with_capacity(state.circuit_specific_states.len());
         let mut gs = BTreeMap::new();
-        for ((circuit_a, results_a), (circuit_b, results_b), (circuit_c, results_c)) in
-            pool.execute_all().into_iter().tuples()
+        for ((circuit_a, results_a), (circuit_b, results_b), (circuit_c, results_c)) in job_results.into_iter().tuples()
         {
             assert_eq!(circuit_a, circuit_b);
             assert_eq!(circuit_a, circuit_c);
             let (sum_a, lhs_a, g_a, a_poly_a, b_poly_a) = results_a?;
             let (sum_b, lhs_b, g_b, a_poly_b, b_poly_b) = results_b?;
             let (sum_c, lhs_c, g_c, a_poly_c, b_poly_c) = results_c?;
+
             let matrix_sum = prover::message::MatrixSums { sum_a, sum_b, sum_c };
             sums.push(matrix_sum);
             state.circuit_specific_states.get_mut(circuit_a).unwrap().lhs_polynomials = Some([lhs_a, lhs_b, lhs_c]);
@@ -145,6 +214,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(oracles.matches_info(&Self::fourth_round_polynomial_info(
             state.circuit_specific_states.keys().map(|c| (c.id, &c.index_info))
         )));
+        println!("\tjob aggregation: {:?}", fourth_round_start_time.elapsed());
+        println!("Fourth round computation: {:?}", fourth_round_full_time.elapsed());
 
         end_timer!(round_time);
 
@@ -166,10 +237,16 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         fft_precomputation: &FFTPrecomputation<F>,
         ifft_precomputation: &IFFTPrecomputation<F>,
     ) -> Result<(Sum<F>, Lhs<F>, Gpoly<F>, Apoly<F>, Bpoly<F>)> {
+        let witness_start_time = Instant::now();
+        let mut section_time = Instant::now();
+
         let (row_on_K, col_on_K, row_col_val) =
             (&arithmetization.row, &arithmetization.col, &arithmetization.row_col_val);
         let R_size = constraint_domain.size_as_field_element;
         let C_size = variable_domain.size_as_field_element;
+
+        println!("\t\t{} - Setup: {:?}", label, section_time.elapsed());
+        section_time = Instant::now();
 
         let mut job_pool = snarkvm_utilities::ExecutionPool::with_capacity(2);
         job_pool.add_job(|| {
@@ -199,6 +276,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         });
         let [a_poly, b_poly]: [_; 2] = job_pool.execute_all().try_into().unwrap();
 
+        println!("\t\t{} - Job pool execution: {:?}", label, section_time.elapsed());
+        section_time = Instant::now();
+
         let f_evals_time = start_timer!(|| format!("Computing f evals on K for {label}"));
         let mut inverses: Vec<_> = cfg_iter!(row_on_K.evaluations)
             .zip_eq(&col_on_K.evaluations)
@@ -212,6 +292,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let f_evals_on_K = inverses;
 
         end_timer!(f_evals_time);
+        println!("\t\t{} - F evals computation: {:?}", label, section_time.elapsed());
+        section_time = Instant::now();
 
         let f_poly_time = start_timer!(|| format!("Computing f poly for {label}"));
         // we define f as the rational equation for which we're running the sumcheck
@@ -220,6 +302,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .interpolate_with_pc(ifft_precomputation);
 
         end_timer!(f_poly_time);
+        println!("\t\t{} - F poly computation: {:?}", label, section_time.elapsed());
+        section_time = Instant::now();
+
         let g = DensePolynomial::from_coefficients_slice(&f.coeffs[1..]);
         let mut h = &a_poly
             - &{
@@ -229,11 +314,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 multiplier.add_precomputation(fft_precomputation, ifft_precomputation);
                 multiplier.multiply().unwrap()
             };
+        println!("\t\t{} - Create h: {:?}", label, section_time.elapsed());
+        section_time = Instant::now();
 
         let combiner = F::one(); // We are applying combiners in the fifth round when summing the witnesses
+
         let (lhs, remainder) =
             apply_randomized_selector(&mut h, combiner, &max_non_zero_domain, &non_zero_domain, false)?;
         assert!(remainder.is_none());
+
+        println!("\t\t{} - Randomized selector: {:?}", label, section_time.elapsed());
+        section_time = Instant::now();
 
         let g_label = format!("g_{label}");
         let g = LabeledPolynomial::new(witness_label(id, &g_label, 0), g, Some(non_zero_domain.size() - 2), None);
@@ -242,6 +333,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         assert!(lhs.degree() <= non_zero_domain.size() - 2);
         assert!(g.degree() <= non_zero_domain.size() - 2);
+
+        println!("\t\t{} - Final setup: {:?}", label, section_time.elapsed());
+        println!("\t\t{} - Total witness computation: {:?}", label, witness_start_time.elapsed());
+
         Ok((f.coeffs[0], lhs, g, a_poly, b_poly))
     }
 }

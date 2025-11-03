@@ -642,6 +642,49 @@ finalize test:
     }
 
     #[test]
+    fn test_transfer_private_execution() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+        let address = Address::try_from(&caller_private_key).unwrap();
+
+        // Prepare the VM and records.
+        let (vm, records) = prepare_vm(rng).unwrap();
+
+        // Fetch the unspent record.
+        let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
+
+        // Prepare the inputs.
+        let inputs = [
+            Value::<CurrentNetwork>::Record(record),
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ];
+
+        // Authorize.
+        println!("=======AUTHORIZE=======");
+        let authorization =
+            vm.authorize(&caller_private_key, "credits.aleo", "transfer_private", inputs.clone(), rng).unwrap();
+
+        // Execute.
+        println!("=======EXECUTE=======");
+        let transaction = vm.execute_authorization(authorization, None, None, rng).unwrap();
+        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+        let authorization = vm.authorize(&caller_private_key, "credits.aleo", "transfer_private", inputs, rng).unwrap();
+        println!("=======EXECUTE=======");
+        let now = std::time::Instant::now();
+        let transaction = vm.execute_authorization(authorization, None, None, rng).unwrap();
+        let elapsed = now.elapsed();
+        println!("Total vm.execute_authorization(transfer_private) time: {:?}", elapsed);
+        println!("=======Done=======");
+
+        // Verify the transaction succeeded.
+        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+    }
+
+    #[test]
     fn test_transfer_public_transaction_size() {
         let rng = &mut TestRng::default();
 

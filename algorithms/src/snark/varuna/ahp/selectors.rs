@@ -20,7 +20,10 @@ use snarkvm_utilities::{cfg_into_iter, cfg_iter_mut};
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashSet},
+    time::Instant,
+};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -76,6 +79,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
     src_domain: &EvaluationDomain<F>,
     remainder_witness: bool,
 ) -> Result<(DensePolynomial<F>, Option<DensePolynomial<F>>)> {
+    let start_time = Instant::now();
     // Let H = target_domain;
     // Let H_i = src_domain;
     // Let v_H := H.vanishing_polynomial();
@@ -99,6 +103,8 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
         cfg_iter_mut!(h_i.coeffs).for_each(|c| *c *= multiplier);
 
+        let end_time = Instant::now();
+        println!("\t\t\t\tRandomized selector w/o remainder: {:?}", end_time.duration_since(start_time));
         end_timer!(selector_time);
         Ok((h_i, None))
     } else {
@@ -122,6 +128,8 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
         ensure!(remainder.is_zero(), "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})");
 
+        let end_time = Instant::now();
+        println!("\t\t\t\tRandomized selector with remainder: {:?}", end_time.duration_since(start_time));
         end_timer!(selector_time);
         Ok((h_i, Some(xg_i)))
     }

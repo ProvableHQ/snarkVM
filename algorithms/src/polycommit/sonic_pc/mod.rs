@@ -33,6 +33,7 @@ use std::{
     convert::TryInto,
     marker::PhantomData,
     ops::Mul,
+    time::Instant,
 };
 
 mod data_structures;
@@ -246,7 +247,10 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                 Ok((LabeledCommitment::new(label.to_string(), comm, degree_bound), rand))
             });
         }
+
+        let mut section_time = Instant::now();
         let results: Vec<Result<_, PCError>> = pool.execute_all();
+        println!("\t\tCommit execute jobs: {:?}", section_time.elapsed());
 
         let mut labeled_comms = Vec::with_capacity(results.len());
         let mut randomness = Vec::with_capacity(results.len());

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{borrow::Borrow, collections::BTreeMap};
+use std::{borrow::Borrow, collections::BTreeMap, time::Instant};
 
 use crate::fft::domain::{FFTPrecomputation, IFFTPrecomputation};
 
@@ -71,8 +71,11 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
         if self.polynomials.is_empty() && self.evaluations.is_empty() {
             Some(DensePolynomial::zero())
         } else {
+            let start_time = Instant::now();
+
             let degree = self.polynomials.iter().map(|(_, p)| p.degree() + 1).sum::<usize>();
             let domain = EvaluationDomain::new(degree)?;
+            println!("\t\t\t\t - polymult {} {} {}", degree, domain.size(), self.polynomials.len());
             if self.evaluations.iter().any(|(_, e)| e.domain() != domain) {
                 None
             } else {
@@ -89,8 +92,19 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
 
                     let gpu_result_vec =
                         snarkvm_algorithms_cuda::polymul(domain.size(), &poly_slices, &eval_slices, &F::zero());
+                    let end_time = Instant::now();
+
+                    println!(
+                        "\t\t\t\t - Polynomial multiplication using CUDA: {:?}",
+                        end_time.duration_since(start_time)
+                    );
                     if let Ok(result) = gpu_result_vec {
                         return Some(DensePolynomial::from_coefficients_vec(result));
+                    } else {
+                        println!(
+                            "\t\t\t\t - Polynomial multiplication using CUDA failed: {}",
+                            gpu_result_vec.err()?.to_string()
+                        );
                     }
                 }
 
@@ -128,6 +142,9 @@ impl<'a, F: PrimeField> PolyMultiplier<'a, F> {
                 })
                 .unwrap();
                 domain.out_order_ifft_in_place_with_pc(&mut result, ifft_pc);
+
+                let end_time = Instant::now();
+                println!("\t\t\t\t - Polynomial multiplication using CPU: {:?}", end_time.duration_since(start_time));
                 Some(DensePolynomial::from_coefficients_vec(result))
             }
         }

@@ -308,6 +308,9 @@ impl<N: Network> Trace<N> {
         global_state_root: N::StateRoot,
         rng: &mut R,
     ) -> Result<(N::StateRoot, Proof<N>)> {
+        //DEBUG(dave):
+        let varuna_version = VarunaVersion::V2;
+
         // Ensure the global state root is not zero.
         // Note: To protect user privacy, even when there are *no* inclusion assignments,
         // the user must provide a real global state root (which is checked in consensus).

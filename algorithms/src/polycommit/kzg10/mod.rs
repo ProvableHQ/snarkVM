@@ -34,6 +34,7 @@ use anyhow::{Result, anyhow, ensure};
 use core::{marker::PhantomData, ops::Mul};
 use itertools::Itertools;
 use rand::RngCore;
+use std::time::Instant;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -102,6 +103,7 @@ impl<E: PairingEngine> KZG10<E> {
         hiding_bound: Option<usize>,
         rng: Option<&mut dyn RngCore>,
     ) -> Result<(KZGCommitment<E>, KZGRandomness<E>), PCError> {
+        let start_commit_time = Instant::now();
         Self::check_degree_is_too_large(polynomial.degree(), powers.size())?;
 
         let commit_time = start_timer!(|| format!(
@@ -117,7 +119,14 @@ impl<E: PairingEngine> KZG10<E> {
                 let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + plain_coeffs.len())];
 
                 let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
+                let start_msm_time = Instant::now();
                 let commitment = VariableBase::msm(bases, &plain_coeffs);
+                println!(
+                    "\t\tMSM ({}, {}) plaintext poly time: {:?}",
+                    bases.len(),
+                    plain_coeffs.len(),
+                    start_msm_time.elapsed()
+                );
                 end_timer!(msm_time);
 
                 commitment
@@ -146,12 +155,15 @@ impl<E: PairingEngine> KZG10<E> {
 
         let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs);
         let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
+        let start_msm_time = Instant::now();
         let random_commitment =
             VariableBase::msm(&powers.powers_of_beta_times_gamma_g, random_ints.as_slice()).to_affine();
+        println!("\t\tMSM random poly time: {:?}", start_msm_time.elapsed());
         end_timer!(msm_time);
 
         commitment.add_assign_mixed(&random_commitment);
 
+        println!("\t\tCommit time: {:?}", start_commit_time.elapsed());
         end_timer!(commit_time);
         Ok((KZGCommitment(commitment.into()), randomness))
     }

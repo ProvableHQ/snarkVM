@@ -103,6 +103,7 @@ default = [
   "utilities",
   "package",
   "file",
+  "cuda",
 ]
 full = [
   "default",
@@ -620,7 +621,7 @@ version = "2"
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "off"
 incremental = true
 
 [profile.bench]
@@ -638,7 +639,7 @@ incremental = true
 
 [profile.test]
 opt-level = 3
-lto = "thin"
+lto = "off"
 incremental = true
 debug = true
 debug-assertions = true

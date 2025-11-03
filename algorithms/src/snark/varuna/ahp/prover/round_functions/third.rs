@@ -15,18 +15,13 @@
 
 use crate::{
     fft::{
-        DensePolynomial,
-        EvaluationDomain,
-        Evaluations,
+        DensePolynomial, EvaluationDomain, Evaluations,
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        AHPError,
-        Matrix,
-        SNARKMode,
-        VarunaVersion,
+        AHPError, Matrix, SNARKMode, VarunaVersion,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
         matrices::transpose,
         prover::{self, MatrixSums, ThirdMessage},
@@ -40,7 +35,7 @@ use snarkvm_utilities::{ExecutionPool, cfg_iter};
 use anyhow::{Result, ensure};
 use itertools::Itertools;
 use rand::RngCore;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Instant};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -78,6 +73,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         varuna_version: VarunaVersion,
     ) -> Result<(Option<prover::ThirdMessage<F>>, prover::ThirdOracles<F>, prover::State<'a, F, SM>), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::ThirdRound");
+        let third_round_start_time = Instant::now();
+        let mut state_start_time = Instant::now();
 
         let zk_bound = Self::zk_bound();
 
@@ -91,9 +88,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             varuna_version,
         )
         .map_err(AHPError::AnyhowError)?;
+        println!("\tSelect third round challenges: {:?}", state_start_time.elapsed());
+        state_start_time = Instant::now();
 
         let assignments = Self::calculate_assignments(&mut state)?;
-        let matrix_transposes = Self::calculate_matrix_transpose(&mut state)?;
+        let matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Vec<Vec<(F, usize)>>>> =
+            Self::calculate_matrix_transpose(&mut state)?;
+        println!("\tCalculate matrix transposes: {:?}", state_start_time.elapsed());
+        state_start_time = Instant::now();
 
         let (h_1, x_g_1_sum, msg) = Self::calculate_lineval_sumcheck_witness(
             &mut state,
@@ -105,6 +107,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             &eta_c,
             varuna_version,
         )?;
+        println!("\tCalculate lineval sumcheck witness: {:?}", state_start_time.elapsed());
+        state_start_time = Instant::now();
 
         #[cfg(debug_assertions)]
         {
@@ -136,6 +140,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(oracles.matches_info(&Self::third_round_polynomial_info(state.max_variable_domain.size())));
 
         end_timer!(round_time);
+        println!("\tOracles: {:?}", state_start_time.elapsed());
+        println!("\tTotal third round time: {:?}", third_round_start_time.elapsed());
 
         Ok((msg, oracles, state))
     }
@@ -231,9 +237,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let mut xg_1_sum = DensePolynomial::zero();
         let mut circuit_index = 0;
         let mut instances_seen = 0;
-        for (i, (lineval_a, lineval_b, lineval_c)) in
-            job_pool.execute_all().into_iter().collect::<Result<Vec<_>>>()?.into_iter().tuples().enumerate()
-        {
+
+        let start_time = Instant::now();
+        let job_results = job_pool.execute_all().into_iter().collect::<Result<Vec<_>>>()?;
+        println!("\t\tCalculate lineval sumcheck instance witness polys: {:?}", start_time.elapsed());
+
+        for (i, (lineval_a, lineval_b, lineval_c)) in job_results.into_iter().tuples().enumerate() {
             h_1_sum += &lineval_a.h_1_i;
             h_1_sum += &lineval_b.h_1_i;
             h_1_sum += &lineval_c.h_1_i;
@@ -339,13 +348,16 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // We do this by iterating over the sparse transpose of matrix M
         // Instead of calculating L^C_col(κ)(c), we add val(k)*L^R_row(α) where we know
         // L^C_col(k)(X) will be 1
+        let lineval_full_time = Instant::now();
+        let mut lineval_start_time = Instant::now();
         let m_at_alpha_evals_time = start_timer!(|| format!("Compute m_at_alpha_evals parallel for {_matrix_label}"));
         let l_at_alpha = constraint_domain.evaluate_all_lagrange_coefficients(alpha);
         let m_at_alpha_evals: Vec<_> = cfg_iter!(matrix_transpose)
             .map(|col| col.iter().map(|(val, row_index)| *val * l_at_alpha[*row_index]).sum::<F>())
             .collect();
         end_timer!(m_at_alpha_evals_time);
-
+        println!("\t\tCompute m_at_alpha_evals: {:?}", lineval_start_time.elapsed());
+        lineval_start_time = Instant::now();
         let z_m_at_alpha_time = start_timer!(|| format!("Compute z_m_at_alpha_time for {_matrix_label}"));
         let m_at_alpha = Evaluations::from_vec_and_domain(m_at_alpha_evals, *variable_domain)
             .interpolate_with_pc(ifft_precomputation);
@@ -355,7 +367,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         multiplier.add_polynomial_ref(assignment, "assignment");
         let z_m_at_alpha = multiplier.multiply().unwrap();
         end_timer!(z_m_at_alpha_time);
-
+        println!("\t\tCompute z_m_at_alpha: {:?}", lineval_start_time.elapsed());
+        println!("\t\tTotal lineval time: {:?}", lineval_full_time.elapsed());
         Ok(z_m_at_alpha)
     }
 
@@ -366,12 +379,19 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         combiner: F,
         z_m_at_alpha: Option<DensePolynomial<F>>,
     ) -> Result<LinevalInstance<F>> {
+        let start_time = Instant::now();
         let mut z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
         let sum = z_m_at_alpha.evaluate_over_domain_by_ref(*variable_domain).evaluations.into_iter().sum::<F>();
+        println!("\t\t\tEvaluateOverDomainByRef: {:?}", Instant::now().duration_since(start_time));
 
         let (h_1_i, xg_1_i) =
             apply_randomized_selector(&mut z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;
         let xg_1_i = xg_1_i.ok_or(anyhow::anyhow!("Expected remainder when applying selector."))?;
+
+        println!(
+            "\t\t\tCalculate lineval sumcheck instance witness polys: {:?}",
+            Instant::now().duration_since(start_time)
+        );
 
         Ok(LinevalInstance { h_1_i, xg_1_i, sum })
     }

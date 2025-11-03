@@ -26,5 +26,8 @@ pub(crate) use oracles::*;
 
 mod round_functions;
 
+#[cfg(feature = "cuda")]
+pub(crate) mod cuVaruna;
+
 mod state;
 use state::*;

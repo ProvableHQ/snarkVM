@@ -164,9 +164,41 @@ impl<F: PrimeField> DensePolynomial<F> {
         &self,
         domain: EvaluationDomain<F>,
     ) -> Result<(DensePolynomial<F>, DensePolynomial<F>)> {
-        let self_poly = Polynomial::from(self);
-        let vanishing_poly = Polynomial::from(domain.vanishing_polynomial());
-        self_poly.divide_with_q_and_r(&vanishing_poly)
+        // let self_poly = Polynomial::from(self);
+        // let vanishing_poly = Polynomial::from(domain.vanishing_polynomial());
+        // self_poly.divide_with_q_and_r(&vanishing_poly)
+        let self_len = self.coeffs.len();
+        let dom_size = domain.size();
+
+        if self_len <= dom_size {
+            Ok((DensePolynomial::zero(), self.clone()))
+        } else {
+            let quot_len = self_len - dom_size;
+
+            let mut quot_coeffs = vec![F::zero(); quot_len];
+
+            // Setting the coefficients of the quotient where it doesn't overlap with the
+            // x^dom_size * quotient.
+            let start_no_overlap = quot_len.saturating_sub(dom_size);
+            quot_coeffs[start_no_overlap..].copy_from_slice(&self.coeffs[(start_no_overlap + dom_size)..]);
+
+            // Setting the coefficients where x^dom_size * quotient and quotient itself
+            // overlap, if any.
+            if quot_len > dom_size {
+                for i in (0..(quot_len - dom_size)).rev() {
+                    quot_coeffs[i] = self.coeffs[i + dom_size] + quot_coeffs[i + dom_size];
+                }
+            }
+
+            // Computing the remainder coefficients
+            let mut rem_coeffs = self.coeffs[..dom_size].to_vec();
+            rem_coeffs.iter_mut().zip(&quot_coeffs).for_each(|(a, b)| *a += b);
+
+            Ok((
+                DensePolynomial::from_coefficients_vec(quot_coeffs),
+                DensePolynomial::from_coefficients_vec(rem_coeffs),
+            ))
+        }
     }
 
     /// Evaluate `self` over `domain`.
