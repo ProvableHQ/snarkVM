@@ -141,10 +141,10 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
         if input_types.len() != 2 {
             bail!("Instruction '{}' expects 2 inputs, found {} inputs", Self::opcode(), input_types.len())
         }
-        // Ensure the operands are of the same type.
+        // Ensure the operands have equivalent types.
         if !register_types_equivalent(stack, &input_types[0], stack, &input_types[1])? {
             bail!(
-                "Instruction '{}' expects inputs of the same type. Found inputs of type '{}' and '{}'",
+                "Instruction '{}' expects inputs of equivalent types. Found inputs of type '{}' and '{}'",
                 Self::opcode(),
                 input_types[0],
                 input_types[1]

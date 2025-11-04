@@ -21,6 +21,7 @@ use console::{
         Identifier,
         Literal,
         LiteralType,
+        Locator,
         Plaintext,
         PlaintextType,
         Register,
@@ -192,27 +193,31 @@ impl<N: Network, const VARIANT: u8> DeserializeInstruction<N, VARIANT> {
 ///
 /// This allows running `deserialize` without the machinery of stacks and registers.
 /// This is necessary for the Leo interpreter.
-pub fn evaluate_deserialize<N: Network, F>(
+pub fn evaluate_deserialize<N: Network, F0, F1>(
     variant: DeserializeVariant,
     bits: &[bool],
     destination_type: &PlaintextType<N>,
-    get_struct: &F,
+    get_struct: &F0,
+    get_external_struct: &F1,
 ) -> Result<Plaintext<N>>
 where
-    F: Fn(&Identifier<N>) -> Result<StructType<N>>,
+    F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
+    F1: Fn(&Locator<N>) -> Result<StructType<N>>,
 {
-    evaluate_deserialize_internal(variant as u8, bits, destination_type, get_struct, 0)
+    evaluate_deserialize_internal(variant as u8, bits, destination_type, get_struct, get_external_struct, 0)
 }
 
-fn evaluate_deserialize_internal<N: Network, F>(
+fn evaluate_deserialize_internal<N: Network, F0, F1>(
     variant: u8,
     bits: &[bool],
     destination_type: &PlaintextType<N>,
-    get_struct: &F,
+    get_struct: &F0,
+    get_external_struct: &F1,
     depth: usize,
 ) -> Result<Plaintext<N>>
 where
-    F: Fn(&Identifier<N>) -> Result<StructType<N>>,
+    F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
+    F1: Fn(&Locator<N>) -> Result<StructType<N>>,
 {
     // Ensure that the depth is within the maximum limit.
     if depth > N::MAX_DATA_DEPTH {
@@ -222,8 +227,8 @@ where
     // A helper to get the number of bits needed.
     let get_size_in_bits = |plaintext_type: &PlaintextType<N>| -> Result<usize> {
         match DeserializeVariant::from_u8(variant) {
-            DeserializeVariant::FromBits => plaintext_type.size_in_bits(&get_struct),
-            DeserializeVariant::FromBitsRaw => plaintext_type.size_in_bits_raw(&get_struct),
+            DeserializeVariant::FromBits => plaintext_type.size_in_bits(get_struct, &get_external_struct),
+            DeserializeVariant::FromBitsRaw => plaintext_type.size_in_bits_raw(get_struct, &get_external_struct),
         }
     };
 
@@ -338,6 +343,7 @@ where
                     next_bits(expected_member_size)?,
                     member_type,
                     get_struct,
+                    get_external_struct,
                     depth + 1,
                 )?;
 
@@ -387,6 +393,7 @@ where
                     next_bits(expected_element_size)?,
                     expected_element_type,
                     get_struct,
+                    get_external_struct,
                     depth + 1,
                 )?;
                 elements.push(element);
@@ -398,15 +405,17 @@ where
     }
 }
 
-fn execute_deserialize_internal<A: circuit::Aleo<Network = N>, N: Network, F>(
+fn execute_deserialize_internal<A: circuit::Aleo<Network = N>, N: Network, F0, F1>(
     variant: u8,
     bits: &[circuit::Boolean<A>],
     destination_type: &PlaintextType<N>,
-    get_struct: &F,
+    get_struct: &F0,
+    get_external_struct: &F1,
     depth: usize,
 ) -> Result<circuit::Plaintext<A>>
 where
-    F: Fn(&Identifier<N>) -> Result<StructType<N>>,
+    F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
+    F1: Fn(&Locator<N>) -> Result<StructType<N>>,
 {
     use snarkvm_circuit::{Inject, traits::FromBits};
 
@@ -418,8 +427,8 @@ where
     // A helper to get the number of bits needed.
     let get_size_in_bits = |plaintext_type: &PlaintextType<N>| -> Result<usize> {
         match DeserializeVariant::from_u8(variant) {
-            DeserializeVariant::FromBits => plaintext_type.size_in_bits(get_struct),
-            DeserializeVariant::FromBitsRaw => plaintext_type.size_in_bits_raw(get_struct),
+            DeserializeVariant::FromBits => plaintext_type.size_in_bits(get_struct, get_external_struct),
+            DeserializeVariant::FromBitsRaw => plaintext_type.size_in_bits_raw(get_struct, get_external_struct),
         }
     };
 
@@ -525,6 +534,7 @@ where
                     next_bits(expected_member_size as usize)?,
                     member_type,
                     get_struct,
+                    get_external_struct,
                     depth + 1,
                 )?;
 
@@ -569,6 +579,7 @@ where
                     next_bits(expected_element_size as usize)?,
                     expected_element_type,
                     get_struct,
+                    get_external_struct,
                     depth + 1,
                 )?;
                 elements.push(element);
@@ -605,10 +616,15 @@ impl<N: Network, const VARIANT: u8> DeserializeInstruction<N, VARIANT> {
         // A helper to get a struct declaration.
         let get_struct = |identifier: &Identifier<N>| stack.program().get_struct(identifier).cloned();
 
+        // A helper to get an external struct declaration.
+        let get_external_struct = |locator: &Locator<N>| {
+            stack.get_external_stack(locator.program_id())?.program().get_struct(locator.resource()).cloned()
+        };
+
         // Get the size in bits of the operand.
         let size_in_bits = match VARIANT {
-            0 => self.destination_type.size_in_bits(&get_struct)?,
-            1 => self.destination_type.size_in_bits_raw(&get_struct)?,
+            0 => self.destination_type.size_in_bits(&get_struct, &get_external_struct)?,
+            1 => self.destination_type.size_in_bits_raw(&get_struct, &get_external_struct)?,
             variant => bail!("Invalid `deserialize` variant '{variant}'"),
         };
 
@@ -620,7 +636,14 @@ impl<N: Network, const VARIANT: u8> DeserializeInstruction<N, VARIANT> {
         );
 
         // Deserialize into the desired output.
-        let output = evaluate_deserialize_internal(VARIANT, &bits, &self.destination_type, &get_struct, 0)?;
+        let output = evaluate_deserialize_internal(
+            VARIANT,
+            &bits,
+            &self.destination_type,
+            &get_struct,
+            &get_external_struct,
+            0,
+        )?;
 
         // Store the output.
         registers.store(stack, &self.destination, Value::Plaintext(output))
@@ -651,10 +674,15 @@ impl<N: Network, const VARIANT: u8> DeserializeInstruction<N, VARIANT> {
         // A helper to get a struct declaration.
         let get_struct = |identifier: &Identifier<N>| stack.program().get_struct(identifier).cloned();
 
+        // A helper to get an external struct declaration.
+        let get_external_struct = |locator: &Locator<N>| {
+            stack.get_external_stack(locator.program_id())?.program().get_struct(locator.resource()).cloned()
+        };
+
         // Get the size in bits of the operand.
         let size_in_bits = match VARIANT {
-            0 => self.destination_type.size_in_bits(&get_struct)?,
-            1 => self.destination_type.size_in_bits_raw(&get_struct)?,
+            0 => self.destination_type.size_in_bits(&get_struct, &get_external_struct)?,
+            1 => self.destination_type.size_in_bits_raw(&get_struct, &get_external_struct)?,
             variant => bail!("Invalid `deserialize` variant '{variant}'"),
         };
 
@@ -666,7 +694,8 @@ impl<N: Network, const VARIANT: u8> DeserializeInstruction<N, VARIANT> {
         );
 
         // Deserialize the bits into the desired literal type.
-        let output = execute_deserialize_internal(VARIANT, &bits, &self.destination_type, &get_struct, 0)?;
+        let output =
+            execute_deserialize_internal(VARIANT, &bits, &self.destination_type, &get_struct, &get_external_struct, 0)?;
 
         // Store the output.
         registers.store_circuit(stack, &self.destination, circuit::Value::Plaintext(output))
@@ -701,10 +730,15 @@ impl<N: Network, const VARIANT: u8> DeserializeInstruction<N, VARIANT> {
         // A helper to get a struct declaration.
         let get_struct = |identifier: &Identifier<N>| stack.program().get_struct(identifier).cloned();
 
+        // A helper to get an external struct declaration.
+        let get_external_struct = |locator: &Locator<N>| {
+            stack.get_external_stack(locator.program_id())?.program().get_struct(locator.resource()).cloned()
+        };
+
         // Get the size in bits of the operand.
         let size_in_bits = match VARIANT {
-            0 => self.destination_type.size_in_bits(&get_struct)?,
-            1 => self.destination_type.size_in_bits_raw(&get_struct)?,
+            0 => self.destination_type.size_in_bits(&get_struct, &get_external_struct)?,
+            1 => self.destination_type.size_in_bits_raw(&get_struct, &get_external_struct)?,
             variant => bail!("Invalid `deserialize` variant '{variant}'"),
         };
 

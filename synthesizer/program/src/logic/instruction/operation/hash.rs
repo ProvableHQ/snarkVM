@@ -670,6 +670,11 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
             // A helper to get a struct declaration.
             let get_struct = |identifier: &Identifier<N>| stack.program().get_struct(identifier).cloned();
 
+            // A helper to get an external struct declaration.
+            let get_external_struct = |locator: &Locator<N>| {
+                stack.get_external_stack(locator.program_id())?.program().get_struct(locator.resource()).cloned()
+            };
+
             // A helper to get a record declaration.
             let get_record = |identifier: &Identifier<N>| stack.program().get_record(identifier).cloned();
 
@@ -699,8 +704,20 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
 
             // Get the size in bits.
             let size_in_bits = match variant.is_raw() {
-                false => input_types[0].size_in_bits(&get_struct, &get_record, &get_external_record, &get_future)?,
-                true => input_types[0].size_in_bits_raw(&get_struct, &get_record, &get_external_record, &get_future)?,
+                false => input_types[0].size_in_bits(
+                    &get_struct,
+                    &get_external_struct,
+                    &get_record,
+                    &get_external_record,
+                    &get_future,
+                )?,
+                true => input_types[0].size_in_bits_raw(
+                    &get_struct,
+                    &get_external_struct,
+                    &get_record,
+                    &get_external_record,
+                    &get_future,
+                )?,
             };
             // Check the number of bits.
             ensure!(

@@ -101,11 +101,12 @@ function test_serde_equivalence:
 
         // Structs are not supported.
         let fail_get_struct = |_: &Identifier<CurrentNetwork>| bail!("structs are not supported");
+        let fail_get_external_struct = |_: &Locator<CurrentNetwork>| bail!("structs are not supported");
 
         // Get the bits type.
         let num_bits = match is_raw {
-            true => type_.size_in_bits_raw(&fail_get_struct).unwrap(),
-            false => type_.size_in_bits(&fail_get_struct).unwrap(),
+            true => type_.size_in_bits_raw(&fail_get_struct, &fail_get_external_struct).unwrap(),
+            false => type_.size_in_bits(&fail_get_struct, &fail_get_external_struct).unwrap(),
         };
         let num_bits = u32::try_from(num_bits).unwrap();
         let bits_type = ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(num_bits)]).unwrap();
@@ -191,10 +192,10 @@ fn test_value_size_in_bits() {
     // Load a process.
     let mut process = Process::<CurrentNetwork>::load().unwrap();
 
-    // Define a program with data types that we want to test.
-    let program = Program::<CurrentNetwork>::from_str(
+    // Define a program .
+    let program0 = Program::<CurrentNetwork>::from_str(
         r"
-program test.aleo;
+program test0.aleo;
 
 struct A:
     one as field;
@@ -220,7 +221,7 @@ function dummy:
     input r0 as A.public;
     input r1 as B.public;
     async dummy r0 r1 into r2;
-    output r2 as test.aleo/dummy.future;
+    output r2 as test0.aleo/dummy.future;
 finalize dummy:
     input r0 as A.public;
     input r1 as B.public;
@@ -230,19 +231,69 @@ finalize dummy:
     .unwrap();
 
     // Add the program to the process.
-    process.add_program(&program).unwrap();
+    process.add_program(&program0).unwrap();
+
+    // Define a program with data types that we want to test.
+    let program1 = Program::<CurrentNetwork>::from_str(
+        r"
+import test0.aleo;
+
+program test1.aleo;
+
+struct A:
+    one as field;
+    two as u8;
+    three as signature;
+
+struct B:
+    one as [scalar; 32u32];
+    two as [A; 4u32];
+
+record credits:
+    owner as address.private;
+    microcredits as u64.private;
+
+record C:
+    owner as address.private;
+    data as [u8; 16u32].private;
+    amount as u32.private;
+    ayyy as A.private;
+    bees as [B; 2u32].private;
+
+function dummy:
+    input r0 as A.public;
+    input r1 as B.public;
+    async dummy r0 r1 into r2;
+    output r2 as test1.aleo/dummy.future;
+finalize dummy:
+    input r0 as A.public;
+    input r1 as B.public;
+    assert.eq r0.one r1.two[0u32].one;
+    ",
+    )
+    .unwrap();
+
+    // Add the program to the process.
+    process.add_program(&program1).unwrap();
 
     // Get the stack.
-    let stack = process.get_stack(program.id()).unwrap();
+    let stack = process.get_stack(program1.id()).unwrap();
 
-    // A helper function to get the struct.
+    // A helper function to get a struct declaration.
     let get_struct = |id: &Identifier<CurrentNetwork>| stack.program().get_struct(id).cloned();
+
+    // A helper function to get an external struct declaration.
+    let get_external_struct = |locator: &Locator<CurrentNetwork>| {
+        stack.get_external_stack(locator.program_id())?.program().get_struct(locator.resource()).cloned()
+    };
 
     // A helper to get a record declaration.
     let get_record = |identifier: &Identifier<CurrentNetwork>| stack.program().get_record(identifier).cloned();
 
     // A helper to get an external record declaration.
-    let get_external_record = |_locator: &Locator<CurrentNetwork>| unimplemented!("Not tested");
+    let get_external_record = |locator: &Locator<CurrentNetwork>| {
+        stack.get_external_stack(locator.program_id())?.program().get_record(locator.resource()).cloned()
+    };
 
     // A helper to get the argument types of a future.
     let get_future = |locator: &Locator<CurrentNetwork>| {
@@ -292,15 +343,31 @@ finalize dummy:
         )),
         RegisterType::Plaintext(PlaintextType::Struct(Identifier::from_str("A").unwrap())),
         RegisterType::Plaintext(PlaintextType::Struct(Identifier::from_str("B").unwrap())),
+        RegisterType::Plaintext(PlaintextType::ExternalStruct(Locator::from_str("test0.aleo/A").unwrap())),
+        RegisterType::Plaintext(PlaintextType::ExternalStruct(Locator::from_str("test0.aleo/B").unwrap())),
         RegisterType::Plaintext(PlaintextType::Array(
             ArrayType::new(PlaintextType::Struct(Identifier::from_str("A").unwrap()), vec![U32::new(3)]).unwrap(),
         )),
         RegisterType::Plaintext(PlaintextType::Array(
             ArrayType::new(PlaintextType::Struct(Identifier::from_str("B").unwrap()), vec![U32::new(2)]).unwrap(),
         )),
+        RegisterType::Plaintext(PlaintextType::Array(
+            ArrayType::new(PlaintextType::ExternalStruct(Locator::from_str("test0.aleo/A").unwrap()), vec![U32::new(
+                3,
+            )])
+            .unwrap(),
+        )),
+        RegisterType::Plaintext(PlaintextType::Array(
+            ArrayType::new(PlaintextType::ExternalStruct(Locator::from_str("test0.aleo/B").unwrap()), vec![U32::new(
+                2,
+            )])
+            .unwrap(),
+        )),
         RegisterType::Record(Identifier::from_str("credits").unwrap()),
         RegisterType::Record(Identifier::from_str("C").unwrap()),
-        RegisterType::Future(Locator::from_str("test.aleo/dummy").unwrap()),
+        RegisterType::ExternalRecord(Locator::from_str("test0.aleo/credits").unwrap()),
+        RegisterType::ExternalRecord(Locator::from_str("test0.aleo/C").unwrap()),
+        RegisterType::Future(Locator::from_str("test1.aleo/dummy").unwrap()),
     ];
 
     for is_raw in [false, true] {
@@ -313,10 +380,18 @@ finalize dummy:
 
                 // Get the size in bits.
                 let size_in_bits = match is_raw {
-                    true => {
-                        type_.size_in_bits_raw(&get_struct, &get_record, &get_external_record, &get_future).unwrap()
-                    }
-                    false => type_.size_in_bits(&get_struct, &get_record, &get_external_record, &get_future).unwrap(),
+                    true => type_
+                        .size_in_bits_raw(
+                            &get_struct,
+                            &get_external_struct,
+                            &get_record,
+                            &get_external_record,
+                            &get_future,
+                        )
+                        .unwrap(),
+                    false => type_
+                        .size_in_bits(&get_struct, &get_external_struct, &get_record, &get_external_record, &get_future)
+                        .unwrap(),
                 };
 
                 // Sample the value.
@@ -329,7 +404,9 @@ finalize dummy:
                 };
 
                 // Check that the number of bits matches the expected size.
-                println!("Expected size in bits: {size_in_bits}, Actual size in bits: {}", bits.len());
+                if bits.len() != size_in_bits {
+                    println!("Expected size in bits: {size_in_bits}, Actual size in bits: {}", bits.len());
+                }
                 assert_eq!(bits.len(), size_in_bits);
             }
         })

@@ -170,7 +170,7 @@ impl<N: Network> FinalizeTypes<N> {
         // Insert the input register.
         self.add_input(register.clone(), finalize_type.clone())?;
 
-        // Ensure the register type and the input type match.
+        // Ensure the register type and the input type are equivalent.
         if !finalize_types_equivalent(stack, finalize_type, stack, &self.get_type(stack, register)?)? {
             bail!("Input '{register}' does not match the expected input register type.")
         }
@@ -259,7 +259,7 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used in a `branch` command"),
         };
-        // Check that the operands have the same type.
+        // Check that the operands have equivalent types.
         ensure!(
             types_equivalent(stack, &first_type, stack, &second_type)?,
             "Command '{}' expects operands of the same type. Found operands of type '{}' and '{}'",
@@ -325,7 +325,7 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `contains` command"),
         };
-        // Check that the key type in the mapping matches the key type in the instruction.
+        // Check that the key type in the mapping is equivalent to the key type in the instruction.
         if !types_equivalent(stack, mapping_key_type, stack, &key_type)? {
             bail!(
                 "Key type in `contains` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'."
@@ -390,7 +390,7 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `get` command"),
         };
-        // Check that the key type in the mapping matches the key type in the instruction.
+        // Check that the key type in the mapping is equivalent to the key type in the instruction.
         if !types_equivalent(stack, mapping_key_type, stack, &key_type)? {
             bail!("Key type in `get` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'.")
         }
@@ -453,7 +453,7 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `get.or_use` command"),
         };
-        // Check that the key type in the mapping matches the key type.
+        // Check that the key type in the mapping is equivalent to the key type.
         if !types_equivalent(stack, mapping_key_type, stack, &key_type)? {
             bail!(
                 "Key type in `get.or_use` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'."
@@ -466,7 +466,7 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A default value cannot be a future"),
         };
-        // Check that the value type in the mapping matches the default value type.
+        // Check that the value type in the mapping is equivalent to the default value type.
         if !types_equivalent(stack, mapping_value_type, stack, &default_value_type)? {
             bail!(
                 "Default value type in `get.or_use` '{default_value_type}' does not match the value type in the mapping '{mapping_value_type}'."
@@ -528,7 +528,7 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `set` command"),
         };
-        // Check that the key type in the mapping matches the key type.
+        // Check that the key type in the mapping is equivalent the key type.
         if !types_equivalent(stack, mapping_key_type, stack, &key_type)? {
             bail!("Key type in `set` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'.")
         }
@@ -539,7 +539,7 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a value in a `set` command"),
         };
-        // Check that the value type in the mapping matches the type of the value.
+        // Check that the value type in the mapping is equivalent the type of the value.
         if !types_equivalent(stack, mapping_value_type, stack, &value_type)? {
             bail!(
                 "Value type in `set` '{value_type}' does not match the value type in the mapping '{mapping_value_type}'."
@@ -567,7 +567,7 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `remove` command"),
         };
-        // Check that the key type in the mapping matches the key type.
+        // Check that the key type in the mapping is equivalent the key type.
         if !types_equivalent(stack, mapping_key_type, stack, &key_type)? {
             bail!("Key type in `remove` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'.")
         }
