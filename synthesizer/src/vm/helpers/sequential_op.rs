@@ -16,8 +16,12 @@
 use crate::vm::*;
 use console::network::prelude::Network;
 
+#[cfg(feature = "announce-blocks")]
+use interprocess::local_socket::{self, Stream, prelude::*};
 use std::{fmt, thread};
 use tokio::sync::oneshot;
+#[cfg(feature = "announce-blocks")]
+use tracing::*;
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Launches a thread dedicated to the sequential processing of storage-related
@@ -26,6 +30,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         &self,
         request_rx: mpsc::Receiver<SequentialOperationRequest<N>>,
     ) -> thread::JoinHandle<()> {
+        #[cfg(feature = "announce-blocks")]
+        let mut stream = start_block_announcement_stream();
+
         // Spawn a dedicated thread.
         let vm = self.clone();
         thread::spawn(move || {
@@ -37,7 +44,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Perform the queued operation.
                 let ret = match op {
                     SequentialOperation::AddNextBlock(block) => {
+                        #[cfg(feature = "announce-blocks")]
+                        let ipc_payload = (block.height(), bincode::serialize(&block).unwrap()); // Infallible.
                         let ret = vm.add_next_block_inner(block);
+                        #[cfg(feature = "announce-blocks")]
+                        if ret.is_ok() {
+                            let _ = announce_block(&mut stream, ipc_payload);
+                        }
                         SequentialOperationResult::AddNextBlock(ret)
                     }
                     SequentialOperation::AtomicSpeculate(a, b, c, d, e, f) => {
@@ -137,4 +150,43 @@ pub enum SequentialOperationResult<N: Network> {
             Vec<FinalizeOperation<N>>,
         )>,
     ),
+}
+
+#[cfg(feature = "announce-blocks")]
+fn start_block_announcement_stream() -> Option<Stream> {
+    let path = std::env::var("BLOCK_ANNOUNCE_PATH")
+        .map_err(|_| {
+            warn!("BLOCK_ANNOUNCE_PATH env variable must be set in order to publish blocks via IPC");
+        })
+        .ok()?
+        .to_fs_name::<local_socket::GenericFilePath>()
+        .expect("Invalid path provided as the BLOCK_ANNOUNCE_PATH");
+
+    match Stream::connect(path) {
+        Ok(stream) => {
+            debug!("Successfully started the IPC stream for block announcements");
+            Some(stream)
+        }
+        Err(e) => {
+            warn!("Couldn't start the IPC stream for block announcements: {e}");
+            None
+        }
+    }
+}
+
+#[cfg(feature = "announce-blocks")]
+fn announce_block(stream: &mut Option<Stream>, payload: (u32, Vec<u8>)) -> Result<bool> {
+    if let Some(stream) = stream {
+        let (block_height, block_bytes) = payload;
+        debug!("Announcing block {block_height} to the IPC stream");
+        let payload_size = u32::try_from(4 + block_bytes.len()).unwrap(); // Safe - blocks are smaller than 4GiB.
+        stream.write_all(&payload_size.to_le_bytes())?;
+        stream.write_all(&block_height.to_le_bytes())?;
+        stream.write_all(&block_bytes)?;
+
+        Ok(true)
+    } else {
+        *stream = start_block_announcement_stream();
+        if stream.is_some() { announce_block(stream, payload) } else { Ok(false) }
+    }
 }

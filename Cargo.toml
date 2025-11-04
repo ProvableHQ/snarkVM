@@ -124,6 +124,7 @@ package = [
   "dep:dotenvy"
 ]
 
+announce-blocks = [ "snarkvm-synthesizer/announce-blocks" ]
 async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "snarkvm-synthesizer/history" ]
