@@ -114,13 +114,14 @@ fn check_is<const VARIANT: u8>(
     // Initialize a destination operand.
     let destination_operand = Operand::Register(destination);
 
+    // Create values from literals.
+    let value_a = Value::Plaintext(Plaintext::from(literal_a.clone()));
+    let value_b = Value::Plaintext(Plaintext::from(literal_b.clone()));
+
     /* First, check the operation *succeeds* when both operands are `literal_a.mode_a`. */
     {
         // Attempt to compute the valid operand case.
-        let values = [
-            (Value::Plaintext(Plaintext::from(literal_a)), None),
-            (Value::Plaintext(Plaintext::from(literal_a)), None),
-        ];
+        let values = [(&value_a, None), (&value_a, None)];
         let mut registers = sample_registers(&stack, &function_name, &values).unwrap();
         operation.evaluate(&stack, &mut registers).unwrap();
 
@@ -142,10 +143,7 @@ fn check_is<const VARIANT: u8>(
         }
 
         // Attempt to compute the valid operand case.
-        let values = [
-            (Value::Plaintext(Plaintext::from(literal_a)), Some(*mode_a)),
-            (Value::Plaintext(Plaintext::from(literal_a)), Some(*mode_a)),
-        ];
+        let values = [(&value_a, Some(*mode_a)), (&value_a, Some(*mode_a))];
         let mut registers = sample_registers(&stack, &function_name, &values).unwrap();
         operation.execute::<CurrentAleo>(&stack, &mut registers).unwrap();
 
@@ -186,11 +184,7 @@ fn check_is<const VARIANT: u8>(
         <CurrentAleo as circuit::Environment>::reset();
 
         // Attempt to finalize the valid operand case.
-        let mut registers = sample_finalize_registers(&stack, &function_name, &[
-            Plaintext::from(literal_a),
-            Plaintext::from(literal_a),
-        ])
-        .unwrap();
+        let mut registers = sample_finalize_registers(&stack, &function_name, &[&value_a, &value_a]).unwrap();
         operation.finalize(&stack, &mut registers).unwrap();
 
         // Retrieve the output.
@@ -213,10 +207,7 @@ fn check_is<const VARIANT: u8>(
     /* Next, check the mismatching literals *fail*. */
     if literal_a != literal_b {
         // Attempt to compute the valid operand case.
-        let values = [
-            (Value::Plaintext(Plaintext::from(literal_a)), None),
-            (Value::Plaintext(Plaintext::from(literal_b)), None),
-        ];
+        let values = [(&value_a, None), (&value_b, None)];
         let mut registers = sample_registers(&stack, &function_name, &values).unwrap();
         operation.evaluate(&stack, &mut registers).unwrap();
 
@@ -238,10 +229,7 @@ fn check_is<const VARIANT: u8>(
         }
 
         // Attempt to compute the valid operand case.
-        let values = [
-            (Value::Plaintext(Plaintext::from(literal_a)), Some(*mode_a)),
-            (Value::Plaintext(Plaintext::from(literal_b)), Some(*mode_b)),
-        ];
+        let values = [(&value_a, Some(*mode_a)), (&value_b, Some(*mode_b))];
         let mut registers = sample_registers(&stack, &function_name, &values).unwrap();
         operation.execute::<CurrentAleo>(&stack, &mut registers).unwrap();
 
@@ -282,11 +270,7 @@ fn check_is<const VARIANT: u8>(
         <CurrentAleo as circuit::Environment>::reset();
 
         // Attempt to finalize the valid operand case.
-        let mut registers = sample_finalize_registers(&stack, &function_name, &[
-            Plaintext::from(literal_a),
-            Plaintext::from(literal_b),
-        ])
-        .unwrap();
+        let mut registers = sample_finalize_registers(&stack, &function_name, &[&value_a, &value_b]).unwrap();
         operation.finalize(&stack, &mut registers).unwrap();
 
         // Retrieve the output.

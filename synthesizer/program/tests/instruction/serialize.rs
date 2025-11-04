@@ -138,16 +138,17 @@ fn check_serialize<const VARIANT: u8>(
 
         // Attempt to evaluate the valid operand case.
         let mut evaluate_registers =
-            sample_registers(&stack, &function_name, &[(Value::Plaintext(plaintext.clone()), None)]).unwrap();
+            sample_registers(&stack, &function_name, &[(&Value::Plaintext(plaintext.clone()), None)]).unwrap();
         let result_a = operation.evaluate(&stack, &mut evaluate_registers);
 
         // Attempt to execute the valid operand case.
         let mut execute_registers =
-            sample_registers(&stack, &function_name, &[(Value::Plaintext(plaintext.clone()), Some(*mode))]).unwrap();
+            sample_registers(&stack, &function_name, &[(&Value::Plaintext(plaintext.clone()), Some(*mode))]).unwrap();
         let result_b = operation.execute::<CurrentAleo>(&stack, &mut execute_registers);
 
         // Attempt to finalize the valid operand case.
-        let mut finalize_registers = sample_finalize_registers(&stack, &function_name, &[plaintext]).unwrap();
+        let mut finalize_registers =
+            sample_finalize_registers(&stack, &function_name, &[&Value::Plaintext(plaintext)]).unwrap();
         let result_c = operation.finalize(&stack, &mut finalize_registers);
 
         // Check that either all operations failed, or all operations succeeded.

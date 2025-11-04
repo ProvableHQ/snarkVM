@@ -234,6 +234,8 @@ pub enum Instruction<N: Network> {
     HashManyPSD4(HashManyPSD4<N>),
     /// Performs a Poseidon hash with an input rate of 8.
     HashManyPSD8(HashManyPSD8<N>),
+    /// Returns true if the second i.e. the array contains the `first`, else returns false, storing the outcome in `destination`.
+    In(In<N>),
     /// Computes the multiplicative inverse of `first`, storing the outcome in `destination`.
     Inv(Inv<N>),
     /// Computes whether `first` equals `second` as a boolean, storing the outcome in `destination`.
@@ -365,6 +367,7 @@ macro_rules! instruction {
             HashManyPSD2,
             HashManyPSD4,
             HashManyPSD8,
+            In,
             Inv,
             IsEq,
             IsNeq,

@@ -34,6 +34,8 @@ pub enum Opcode {
     Deserialize(&'static str),
     /// The opcode is for a hash operation (i.e. `hash.psd4`).
     Hash(&'static str),
+    /// The opcode is for an 'in' operation (i.e. `in`).
+    In,
     /// The opcode is for an 'is' operation (i.e. `is.eq`).
     Is(&'static str),
     /// The opcode is for a literal operation (i.e. `add`).
@@ -61,6 +63,7 @@ impl Deref for Opcode {
             Opcode::Deserialize(opcode) => opcode,
             Opcode::Hash(opcode) => opcode,
             Opcode::Is(opcode) => opcode,
+            Opcode::In => &"in",
             Opcode::Literal(opcode) => opcode,
             Opcode::Serialize(opcode) => opcode,
             Opcode::Sign(opcode) => opcode,
@@ -88,6 +91,7 @@ impl Display for Opcode {
             Self::Commit(opcode) => write!(f, "{opcode}"),
             Self::Deserialize(opcode) => write!(f, "{opcode}"),
             Self::Hash(opcode) => write!(f, "{opcode}"),
+            Self::In => write!(f, "{}", self.deref()),
             Self::Is(opcode) => write!(f, "{opcode}"),
             Self::Literal(opcode) => write!(f, "{opcode}"),
             Self::Serialize(opcode) => write!(f, "{opcode}"),
