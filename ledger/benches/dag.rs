@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use snarkvm_console::prelude::*;
-use snarkvm_ledger::narwhal::subdag::test_helpers::sample_subdag;
+use snarkvm_ledger::narwhal::subdag::test_helpers::{sample_compact_subdag, sample_full_subdag};
 use snarkvm_ledger_narwhal::Subdag;
 use snarkvm_utilities::bytes::unchecked_deserialize;
 
@@ -76,23 +76,36 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
     }
 }
 
-fn subdag_serialization(c: &mut Criterion) {
+fn full_subdag_serialization(c: &mut Criterion) {
     let rng = &mut TestRng::default();
-    let obj = sample_subdag(rng);
+    let obj = sample_full_subdag(rng);
 
-    let Subdag::Full { subdag } = &obj else { panic!("Cannot bench compact subDAG") };
+    let Subdag::Full { subdag } = &obj else { unreachable!() };
     let batch = subdag.iter().next().unwrap().1.iter().next().unwrap().clone();
     let batch_header = batch.batch_header().clone();
 
     bench_serialization(c, "BatchHeader", batch_header);
     bench_serialization(c, "BatchCertificate", batch);
-    bench_serialization(c, "Subdag", obj);
+    bench_serialization(c, "FullSubdag", obj);
+}
+
+fn compact_subdag_serialization(c: &mut Criterion) {
+    let rng = &mut TestRng::default();
+    let obj = sample_compact_subdag(rng);
+
+    let Subdag::Compact { subdag } = &obj else { unreachable!() };
+    let batch = subdag.iter().next().unwrap().1.iter().next().unwrap().clone();
+    let batch_header = batch.compact_header().clone();
+
+    bench_serialization(c, "CompactHeader", batch_header);
+    bench_serialization(c, "CompactCertificate", batch);
+    bench_serialization(c, "CompactSubdag", obj);
 }
 
 criterion_group! {
     name = subdag;
     config = Criterion::default().sample_size(10);
-    targets = subdag_serialization
+    targets = full_subdag_serialization, compact_subdag_serialization
 }
 
 criterion_main!(subdag);

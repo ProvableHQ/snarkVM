@@ -15,7 +15,8 @@
 
 use indexmap::IndexSet;
 use snarkvm_console::{
-    program::{Network, Signature},
+    account::Signature,
+    network::Network,
     types::{Address, Field},
 };
 
