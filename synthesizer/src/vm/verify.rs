@@ -174,6 +174,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Check if the transaction exists in the partially-verified cache.
         let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum);
+        info!("Transaction {} is_partially_verified: {is_partially_verified}", transaction.id());
 
         // Verify the fee.
         self.check_fee(transaction, rejected_id, is_partially_verified)?;

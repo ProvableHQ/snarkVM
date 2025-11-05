@@ -27,15 +27,19 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     ) -> Result<Block<N>> {
         // Retrieve the latest block as the previous block (for the next block).
         let previous_block = self.latest_block();
+        let next_height = previous_block.height() + 1;
+        info!("Preparing advance to next quorum block for height {next_height}");
 
         // Decouple the transmissions into ratifications, solutions, and transactions.
         let (ratifications, solutions, transactions) = decouple_transmissions(transmissions.into_iter())?;
         // Currently, we do not support ratifications from the memory pool.
         ensure!(ratifications.is_empty(), "Ratifications are currently unsupported from the memory pool");
+        info!("Decoupled transmissions into ratifications, solutions, and transactions for {next_height}");
         // Construct the block template.
         let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = self
             .construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)
             .with_context(|| "Failed to construct block template")?;
+        info!("Constructed block template for height {next_height}");
 
         // Construct the new quorum block.
         Block::new_quorum(
@@ -344,6 +348,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             u64::try_from(latest_cumulative_proof_target)?,
             latest_coinbase_target,
         )?;
+        info!("Calculated next targets and coinbase reward for height {next_height}");
 
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
@@ -353,6 +358,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             next_cumulative_proof_target,
             previous_block.hash(),
         )?;
+        info!("Constructed finalize state for height {next_height}");
         // Speculate over the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = self.vm.speculate(
             state,
@@ -363,6 +369,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             candidate_transactions.iter(),
             rng,
         )?;
+        info!("Speculated over ratifications, solutions, and transactions for height {next_height}");
 
         // Compute the ratifications root.
         let ratifications_root = ratifications.to_ratifications_root()?;
@@ -372,7 +379,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             Some(subdag) => subdag.to_subdag_root()?,
             None => Field::zero(),
         };
-
+        info!("Constructed subdag root for height {next_height}");
         // Construct the metadata.
         let metadata = Metadata::new(
             N::ID,
