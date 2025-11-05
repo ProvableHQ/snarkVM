@@ -31,7 +31,7 @@ pub fn history_directory_path(network: u16, storage_mode: &StorageMode) -> PathB
     // Create the name of the history directory.
     let directory_name = match &storage_mode {
         StorageMode::Development(id) => format!(".{HISTORY_DIRECTORY_NAME}-{network}-{id}"),
-        StorageMode::Production | StorageMode::Custom(_) => format!("{HISTORY_DIRECTORY_NAME}-{network}"),
+        StorageMode::Production | StorageMode::Custom(..) => format!("{HISTORY_DIRECTORY_NAME}-{network}"),
         StorageMode::Test(_) => unimplemented!(),
     };
 
