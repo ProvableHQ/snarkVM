@@ -61,6 +61,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             .construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)
             .with_context(|| "Failed to construct block template")?;
 
+        // Determine the version for this block.
+        let version = if N::CONSENSUS_VERSION(header.height()).unwrap() >= ConsensusVersion::V10 { 2 } else { 1 };
+
         // --- Solutions ---
         // Construct the solution transmission IDs.
         let solution_transmission_ids = solutions
@@ -95,7 +98,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         );
         aborted_solution_transmission_ids.extend(early_aborted_solution_transmission_ids);
         // Construct the aborted solution IDs.
-        let aborted_solution_ids = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() < ConsensusVersion::V10 {
+        let aborted_solution_ids = if version < 2 {
             Some(
                 aborted_solution_transmission_ids
                     .iter()
@@ -148,7 +151,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         );
         aborted_transaction_transmission_ids.extend(early_aborted_transaction_transmission_ids);
         // Construct the aborted transaction IDs.
-        let aborted_transaction_ids = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() < ConsensusVersion::V10 {
+        let aborted_transaction_ids = if version < 2 {
             Some(
                 aborted_transaction_transmission_ids
                     .iter()
@@ -163,7 +166,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         };
 
         // Construct the compact Subdag
-        let subdag = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {
+        let subdag = if version >= 2 {
             subdag.into_compact(
                 solution_transmission_ids,
                 prior_solution_transmission_ids.clone(),
@@ -181,7 +184,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             aborted_solution_transmission_ids,
             prior_transaction_transmission_ids,
             aborted_transaction_transmission_ids,
-        ) = if N::CONSENSUS_VERSION(self.latest_height()).unwrap() >= ConsensusVersion::V10 {
+        ) = if version >= 2 {
             (
                 Some(prior_solution_transmission_ids),
                 Some(aborted_solution_transmission_ids),

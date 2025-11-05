@@ -308,6 +308,32 @@ impl<N: Network> Block<N> {
         })
     }
 
+    /// Helper function to compute the solution transmission IDs.
+    pub fn compute_solution_transmission_ids(solutions: &Solutions<N>) -> Result<Vec<TransmissionID<N>>> {
+        match solutions.as_puzzle_solutions() {
+            Some(solutions) => {
+                let mut transmission_ids = Vec::with_capacity(solutions.solution_ids().count());
+                for (id, solution) in solutions.iter() {
+                    let checksum = Data::<Solution<N>>::Buffer(solution.to_bytes_le()?.into()).to_checksum::<N>()?;
+                    transmission_ids.push(TransmissionID::Solution(*id, checksum));
+                }
+                Ok(transmission_ids)
+            }
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Helper function to compute the transaction transmission IDs.
+    pub fn compute_transaction_transmission_ids(transactions: &[Transaction<N>]) -> Result<Vec<TransmissionID<N>>> {
+        transactions
+            .iter()
+            .map(|tx| {
+                let checksum = Data::<Transaction<N>>::Buffer(tx.to_bytes_le()?.into()).to_checksum::<N>()?;
+                Ok(TransmissionID::Transaction(tx.id(), checksum))
+            })
+            .collect::<Result<Vec<_>>>()
+    }
+
     /// Borrow the Block and return a Subdag with full batch certificates.
     pub fn to_full_subdag(&self) -> Result<Subdag<N>> {
         let Block {
@@ -335,25 +361,9 @@ impl<N: Network> Block<N> {
             .map(|confirmed| confirmed.to_unconfirmed_transaction())
             .collect::<Result<Vec<_>>>()?;
         // Compute the transaction transmission IDs.
-        let transaction_transmission_ids = unconfirmed_transactions
-            .iter()
-            .map(|tx| {
-                let checksum = Data::<Transaction<N>>::Buffer(tx.to_bytes_le()?.into()).to_checksum::<N>()?;
-                Ok(TransmissionID::Transaction(tx.id(), checksum))
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let transaction_transmission_ids = Self::compute_transaction_transmission_ids(&unconfirmed_transactions)?;
         // Compute the solution transmission IDs.
-        let solution_transmission_ids = match solutions.as_puzzle_solutions() {
-            Some(solutions) => {
-                let mut transmission_ids = Vec::with_capacity(solutions.solution_ids().count());
-                for (id, solution) in solutions.iter() {
-                    let checksum = Data::<Solution<N>>::Buffer(solution.to_bytes_le()?.into()).to_checksum::<N>()?;
-                    transmission_ids.push(TransmissionID::Solution(*id, checksum));
-                }
-                transmission_ids
-            }
-            None => Vec::new(),
-        };
+        let solution_transmission_ids = Self::compute_solution_transmission_ids(solutions)?;
 
         // Convert Quorum authority to subdag with full batch certificates.
         subdag.clone().into_full(

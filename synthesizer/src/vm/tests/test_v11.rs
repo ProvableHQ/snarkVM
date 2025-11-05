@@ -79,7 +79,7 @@ constructor:
         let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 0);
         assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids(), Some(vec![]).as_ref());
+        assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
         vm.add_next_block(&block).unwrap();
     }
 

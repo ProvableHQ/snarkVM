@@ -817,7 +817,7 @@ fn test_aborted_transaction_indexing() {
         .unwrap();
 
     // Check that the block contains the aborted transaction.
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &[aborted_transaction_id]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![aborted_transaction_id]).as_ref());
 
     // Check that the next block is valid.
     ledger.check_next_block(&block, rng).unwrap();
@@ -867,7 +867,7 @@ fn test_aborted_solution_ids() -> Result<()> {
 
     // Enforce that the block solution was aborted properly.
     assert!(block.solutions().is_empty());
-    assert_eq!(block.aborted_solution_ids().unwrap(), &vec![invalid_solution.id()]);
+    assert_eq!(block.aborted_solution_ids(), Some(vec![invalid_solution.id()]).as_ref());
 
     Ok(())
 }
@@ -1032,13 +1032,10 @@ finalize foo:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&execution_ids[2], &deployment_ids[2]]);
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![
-        execution_ids[5],
-        execution_ids[4],
-        execution_ids[3],
-        execution_ids[1],
-        deployment_ids[1]
-    ]);
+    assert_eq!(
+        block.aborted_transaction_ids(),
+        Some(vec![execution_ids[5], execution_ids[4], execution_ids[3], execution_ids[1], deployment_ids[1]]).as_ref()
+    );
 
     // Ensure that verification was not run on aborted deployments.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1080,7 +1077,7 @@ finalize foo:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transfer_id]);
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![execution_ids[0], deployment_ids[0]]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![execution_ids[0], deployment_ids[0]]).as_ref());
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1292,7 +1289,7 @@ function create_duplicate_record:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transfer_1_id, &deployment_1_id]);
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transfer_2_id, deployment_2_id]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![transfer_2_id, deployment_2_id]).as_ref());
 
     // Ensure that verification was not run on aborted deployments.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1330,7 +1327,7 @@ function create_duplicate_record:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transfer_4_id]);
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transfer_3_id, deployment_3_id]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![transfer_3_id, deployment_3_id]).as_ref());
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1448,7 +1445,7 @@ function empty_function:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transaction_1_id]);
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transaction_2_id]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![transaction_2_id]).as_ref());
 
     // Ensure that verification was not run on aborted transactions.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1484,7 +1481,7 @@ function empty_function:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transfer_transaction_id]);
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transaction_3_id]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![transaction_3_id]).as_ref());
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1602,7 +1599,7 @@ function simple_output:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transaction_1_id]);
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transaction_2_id]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![transaction_2_id]).as_ref());
 
     // Ensure that verification was not run on aborted transactions.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1638,7 +1635,7 @@ function simple_output:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().transaction_ids().collect::<Vec<_>>(), vec![&transfer_transaction_id]);
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![transaction_3_id]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![transaction_3_id]).as_ref());
 
     // Ensure that verification was not run on transactions aborted in a previous block.
     let partially_verified_transaction = ledger.vm().partially_verified_transactions().read().clone();
@@ -1695,7 +1692,7 @@ function empty_function:
 
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![deployment_2_id]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![deployment_2_id]).as_ref());
 
     // Enforce that the first program was deployed and the second was aborted.
     assert_eq!(ledger.get_program(*program_1.id()).unwrap(), program_1);
@@ -1746,7 +1743,7 @@ fn test_abort_fee_transaction() {
         .unwrap();
 
     // Check that the block aborts the invalid transaction.
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![fee_transaction_id]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![fee_transaction_id]).as_ref());
     assert_eq!(block.transaction_ids().collect::<Vec<_>>(), vec![&transaction_id]);
 
     // Check that the next block is valid.
@@ -1806,7 +1803,7 @@ fn test_abort_invalid_transaction() {
         .unwrap();
 
     // Check that the block aborts the invalid transaction.
-    assert_eq!(block.aborted_transaction_ids().unwrap(), &vec![invalid_transaction_id]);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![invalid_transaction_id]).as_ref());
     assert_eq!(block.transaction_ids().collect::<Vec<_>>(), vec![&valid_transaction_id_1, &valid_transaction_id_2]);
 
     // Check that the next block is valid.
@@ -1898,7 +1895,7 @@ finalize foo2:
     // Enforce that the block transactions were correct.
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![]).as_ref());
 
     // Enforce that the first program was deployed and the second was rejected.
     assert_eq!(ledger.get_program(*program_1.id()).unwrap(), program_1);
@@ -2341,7 +2338,7 @@ finalize foo:
         assert_eq!(block_confirmed_transactions_ids, confirmed_transaction_ids);
 
         // Enforce that the aborted transactions is correct.
-        assert_eq!(block.aborted_transaction_ids().unwrap(), &aborted_transaction_ids);
+        assert_eq!(block.aborted_transaction_ids(), Some(aborted_transaction_ids).as_ref());
     }
 }
 
@@ -2644,7 +2641,7 @@ mod valid_solutions {
 
         // Enforce that the block solution was accepted properly.
         assert_eq!(block.solutions().len(), 1);
-        assert_eq!(block.aborted_solution_ids().unwrap().len(), 0)
+        assert_eq!(block.aborted_solution_ids(), Some(vec![]).as_ref());
     }
 
     #[test]
@@ -2805,18 +2802,19 @@ mod valid_solutions {
             .vm
             .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.iter(), None, 0, None, rng)
             .unwrap();
-
         // Create a block that advances the ledger past the first solution limit timestamp.
         let timestamp_1 = stake_requirements[0].0;
-        let next_block = chain_builder.generate_block_with_opts(
-            GenerateBlockOptions {
-                timestamp: timestamp_1,
-                transactions: vec![transfer_transaction],
-                skip_votes: true,
-                ..Default::default()
-            },
-            rng,
-        )?;
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    transactions: vec![transfer_transaction],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate first block")?;
         // Advance to the next block.
         ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to first block")?;
 
@@ -2825,15 +2823,17 @@ mod valid_solutions {
         assert!(ledger.is_solution_limit_reached(&prover_address, 0));
 
         // Create a block with a solution.
-        let next_block = chain_builder.generate_block_with_opts(
-            GenerateBlockOptions {
-                timestamp: timestamp_1,
-                solutions: vec![valid_solution],
-                skip_votes: true,
-                ..Default::default()
-            },
-            rng,
-        )?;
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    solutions: vec![valid_solution],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate second block")?;
 
         // Check that the solution is aborted.
         assert!(next_block.solutions().is_empty());
@@ -2853,15 +2853,17 @@ mod valid_solutions {
             .vm
             .execute(&prover_private_key, ("credits.aleo", "bond_public"), inputs.iter(), None, 0, None, rng)
             .unwrap();
-        let next_block = chain_builder.generate_block_with_opts(
-            GenerateBlockOptions {
-                timestamp: timestamp_1,
-                transactions: vec![bond_transaction],
-                skip_votes: true,
-                ..Default::default()
-            },
-            rng,
-        )?;
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    transactions: vec![bond_transaction],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate third block")?;
 
         // Advance to the next block.
         ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to third block")?;
@@ -2871,6 +2873,8 @@ mod valid_solutions {
         // Check that the prover can submit solutions.
         assert_eq!(ledger.num_remaining_solutions(&prover_address, 0), 1);
         assert!(!ledger.is_solution_limit_reached(&prover_address, 0));
+
+        // 5. Check that the next block will accept the solution and abort any excess.
 
         // Generate new solutions to valid_solution_1 will not get rejected due to duplication.
         let mut valid_solutions = Vec::with_capacity(2);
@@ -2884,20 +2888,21 @@ mod valid_solutions {
         let valid_solution_1 = valid_solutions.remove(0);
         let valid_solution_2 = valid_solutions.remove(0);
 
-        // 5. Check that the next block will accept the solution and abort any excess.
-        let next_block = chain_builder.generate_block_with_opts(
-            GenerateBlockOptions {
-                timestamp: timestamp_1,
-                solutions: vec![valid_solution_1, valid_solution_2],
-                skip_votes: true,
-                ..Default::default()
-            },
-            rng,
-        )?;
+        let next_block = chain_builder
+            .generate_block_with_opts(
+                GenerateBlockOptions {
+                    timestamp: timestamp_1,
+                    solutions: vec![valid_solution_1, valid_solution_2],
+                    skip_votes: true,
+                    ..Default::default()
+                },
+                rng,
+            )
+            .with_context(|| "Failed to generate fourth block")?;
 
         // Check that the first solution is accepted and the second is aborted.
         assert!(next_block.solutions().solution_ids().contains(&valid_solution_1.id()));
-        assert_eq!(next_block.aborted_solution_ids().unwrap(), &vec![valid_solution_2.id()]);
+        assert_eq!(next_block.aborted_solution_ids(), Some(vec![valid_solution_2.id()]).as_ref());
 
         // Advance to the next block.
         ledger.advance_to_next_block(&next_block).with_context(|| "Failed to advance to fourth block")?;
@@ -3150,7 +3155,7 @@ mod valid_solutions {
 
             // Check that the block's solutions are well-formed.
             assert_eq!(block.solutions().len(), 1);
-            assert_eq!(block.aborted_solution_ids().unwrap().len(), 0);
+            assert_eq!(block.aborted_solution_ids(), Some(vec![]).as_ref());
 
             // Fetch the solution from the block.
             let (solution_id, solution) = block.solutions().as_ref().unwrap().first().unwrap();
@@ -3285,7 +3290,7 @@ fn test_forged_block_subdags() -> Result<()> {
     // Attack 2: Forge block 2' with the combined subdag of block 2 and 3.
     ////////////////////////////////////////////////////////////////////////////
     {
-        // Combined the subdags.
+        // Combine the subDAGs.
         let mut combined_subdag = block_2_subdag.clone();
         for (round, certificates) in block_3_subdag.iter() {
             combined_subdag
@@ -3301,7 +3306,7 @@ fn test_forged_block_subdags() -> Result<()> {
         // Forge the block.
         let forged_block_2_from_both_subdags = ledger
             .prepare_advance_to_next_quorum_block(
-                Subdag::from_full(combined_subdag).unwrap(),
+                Subdag::Full { subdag: combined_subdag },
                 SubdagTransmissions { transmissions: combined_transmissions, ..Default::default() },
                 &mut rand::thread_rng(),
             )
@@ -3338,7 +3343,7 @@ fn test_forged_block_subdags() -> Result<()> {
         // Forge the block.
         let forged_block_2 = ledger
             .prepare_advance_to_next_quorum_block(
-                Subdag::from_full(subdag).unwrap(),
+                Subdag::Full { subdag },
                 SubdagTransmissions { transmissions, ..Default::default() },
                 &mut rand::thread_rng(),
             )
@@ -3385,34 +3390,49 @@ fn test_subdag_with_long_branch() -> Result<()> {
 
 /// Create a block that is exactly GC rounds long
 #[test]
-fn test_subdag_with_gc_length() -> Result<()> {
+fn test_subdag_with_gc_length() {
     let rng = &mut TestRng::default();
-    let mut chain_builder = TestChainBuilder::new(rng)?;
+    let mut chain_builder = TestChainBuilder::new(rng).unwrap();
 
-    let blocks = chain_builder.generate_blocks_with_opts(
-        BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS / 2,
-        GenerateBlocksOptions { skip_nodes: [0].into(), ..Default::default() },
-        rng,
-    )?;
+    let blocks = chain_builder
+        .generate_blocks_with_opts(
+            BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS / 2,
+            GenerateBlocksOptions { skip_nodes: [0].into(), ..Default::default() },
+            rng,
+        )
+        .unwrap();
 
     // Construct the ledger.
     let ledger =
-        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))?;
+        Ledger::<CurrentNetwork, LedgerType>::load(chain_builder.genesis_block().clone(), StorageMode::new_test(None))
+            .unwrap();
+
+    let previous_block = blocks.last().unwrap();
+    let prior_solution_transmission_ids = Block::compute_solution_transmission_ids(previous_block.solutions()).unwrap();
 
     for block in blocks {
-        ledger.advance_to_next_block(&block)?;
+        ledger.advance_to_next_block(&block).unwrap();
     }
 
     // Now create a long block.
-    let block = chain_builder.generate_block(rng)?;
+    let block = chain_builder.generate_block(rng).unwrap();
 
     {
         // First, let us ensure that the leaf check still works by removing the lowest round and trying to reinsert.
-        let subdag = block.to_full_subdag().unwrap();
-        let Subdag::Full { subdag } = subdag else { unreachable!("") };
-        let mut forged_subdag = subdag.clone();
+        let Authority::Quorum(Subdag::Compact { subdag: block_subdag }) = block.authority() else { unreachable!("") };
+        let mut forged_subdag = block_subdag.clone();
         let transmissions = extract_transmissions(&block);
 
+        let transaction_transmission_ids = Block::compute_transaction_transmission_ids(
+            block
+                .transactions()
+                .iter()
+                .map(|tx| tx.clone().to_unconfirmed_transaction().unwrap())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .unwrap();
+        let solution_transmission_ids = Block::compute_solution_transmission_ids(block.solutions()).unwrap();
         // Remove one round from the subDAG.
         let _ = forged_subdag.first_entry().unwrap().remove();
 
@@ -3421,16 +3441,31 @@ fn test_subdag_with_gc_length() -> Result<()> {
         let transmissions: IndexMap<_, _> = forged_subdag
             .iter()
             .flat_map(|(_, batches)| batches.iter())
-            .flat_map(|batch| batch.transmission_ids().iter())
-            .map(|tid| (*tid, transmissions.get(tid).unwrap().clone()))
+            .flat_map(|batch| {
+                batch.transaction_indices().iter().map(|index| transmissions.get_index(*index as usize).unwrap())
+            })
+            .map(|(id, tn)| (*id, tn.clone()))
             .collect();
 
+        let forged_subdag = Subdag::Compact { subdag: forged_subdag }
+            .into_full(
+                &solution_transmission_ids,
+                &prior_solution_transmission_ids,
+                block.aborted_solution_transmission_ids().as_ref().unwrap(),
+                transaction_transmission_ids.as_slice(),
+                block.prior_transaction_transmission_ids().as_ref().unwrap(),
+                block.aborted_transaction_transmission_ids().as_ref().unwrap(),
+            )
+            .unwrap();
+
         // Forge the block.
-        let forged_block = ledger.prepare_advance_to_next_quorum_block(
-            Subdag::from_full(forged_subdag).unwrap(),
-            SubdagTransmissions { transmissions, ..Default::default() },
-            &mut rand::thread_rng(),
-        )?;
+        let forged_block = ledger
+            .prepare_advance_to_next_quorum_block(
+                forged_subdag,
+                SubdagTransmissions { transmissions, ..Default::default() },
+                &mut rand::thread_rng(),
+            )
+            .unwrap();
 
         assert_ne!(forged_block, block);
 
@@ -3439,9 +3474,7 @@ fn test_subdag_with_gc_length() -> Result<()> {
     }
 
     // Ensure it is still accepted
-    ledger.advance_to_next_block(&block)?;
-
-    Ok(())
+    ledger.advance_to_next_block(&block).unwrap();
 }
 
 #[test]
@@ -3730,4 +3763,19 @@ fn test_find_records_filters_by_ownership() {
     // Ensure that no records were returned for the unrelated view key.
     // This validates that ownership filtering is enforced before decrypting or filtering records.
     assert!(unrelated_records.is_empty(), "Expected no records for unrelated view key");
+}
+
+/// Test serialization of blocks other than the genesis block.
+#[test]
+fn test_block_serialization() {
+    let rng = &mut TestRng::default();
+    let mut chain_builder = TestChainBuilder::<CurrentNetwork>::new(rng).unwrap();
+
+    let blocks = chain_builder.generate_blocks(50, rng).unwrap();
+
+    for block in blocks.into_iter() {
+        let serialized = block.to_bytes_le().unwrap();
+        let deserialized = Block::<CurrentNetwork>::from_bytes_le(&serialized).unwrap();
+        assert_eq!(block, deserialized);
+    }
 }

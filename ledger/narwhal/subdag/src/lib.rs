@@ -280,11 +280,11 @@ impl<N: Network> Subdag<N> {
     /// Returns the subdag with full batch certificates.
     pub fn into_full(
         self,
-        solutions: &[TransmissionID<N>],
-        prior_solutions: &[TransmissionID<N>],
-        aborted_solutions: &[TransmissionID<N>],
+        solution_ids: &[TransmissionID<N>],
+        prior_solution_ids: &[TransmissionID<N>],
+        aborted_solution_ids: &[TransmissionID<N>],
         transaction_ids: &[TransmissionID<N>],
-        prior_transactions: &[TransmissionID<N>],
+        prior_transaction_ids: &[TransmissionID<N>],
         aborted_transaction_ids: &[TransmissionID<N>],
     ) -> Result<Subdag<N>> {
         let subdag = match self {
@@ -300,11 +300,11 @@ impl<N: Network> Subdag<N> {
             for certificate in compact_certificates.into_iter() {
                 // Convert compact certificate to batch certificate.
                 let batch_certificate = certificate.into_batch_certificate(
-                    solutions.iter(),
-                    prior_solutions.iter(),
-                    aborted_solutions.iter(),
+                    solution_ids.iter(),
+                    prior_solution_ids.iter(),
+                    aborted_solution_ids.iter(),
                     transaction_ids.iter(),
-                    prior_transactions.iter(),
+                    prior_transaction_ids.iter(),
                     aborted_transaction_ids.iter(),
                 )?;
                 batch_certificates.insert(batch_certificate);
@@ -397,7 +397,7 @@ impl<N: Network> Subdag<N> {
                 LeaderCertificate::Full(cert)
             }
             Self::Compact { subdag } => {
-                // Retrieve entry for the anchor round.
+                // Retrve entry for the anchor round.
                 let entry = subdag.iter().next_back();
                 debug_assert!(entry.is_some(), "There must be at least one round of certificates");
                 // Retrieve the certificates from the anchor round.
