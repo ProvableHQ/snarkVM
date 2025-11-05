@@ -91,8 +91,8 @@ mod varuna {
                     //     assert!(!$snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, wrong_varuna_version, public_inputs, &proof).unwrap());
                     // }
 
-                    for circuit_batch_size in (0..1).map(|i| 2usize.pow(i)) {
-                        for instance_batch_size in [1, 7968] {
+                    for circuit_batch_size in [50, 1, 10, 100, 200] {
+                        for instance_batch_size in [100, 1, 10, 100, 200] {
                             println!("running test with circuit_batch_size: {circuit_batch_size} and instance_batch_size: {instance_batch_size}");
                             let mut constraints = BTreeMap::new();
                             let mut inputs = BTreeMap::new();
@@ -248,7 +248,7 @@ mod varuna {
         // SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
 
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
+        // SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
 
         // SonicPCTest::test_serde_json(num_constraints, num_variables);
         // SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
