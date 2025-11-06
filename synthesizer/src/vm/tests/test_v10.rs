@@ -294,7 +294,7 @@ function fourth:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids(), Some(vec![]).as_ref());
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block).unwrap();
 
     // Execute the `fourth` function which should fail because the local record is created and consumed in the same program.
@@ -350,7 +350,7 @@ function cannot_be_called_from_test_one:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment_upgraded_two], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids(), Some(vec![]).as_ref());
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block).unwrap();
 
     // Upgrade `test_two` so that `second` does not call `test_one` anymore.
@@ -406,6 +406,7 @@ function cannot_be_called_from_test_one:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids(), Some(vec![]).as_ref());
+    assert!(block.height() >= 13);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 }

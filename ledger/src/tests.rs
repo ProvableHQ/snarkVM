@@ -3772,10 +3772,17 @@ fn test_block_serialization() {
     let mut chain_builder = TestChainBuilder::<CurrentNetwork>::new(rng).unwrap();
 
     let blocks = chain_builder.generate_blocks(50, rng).unwrap();
-
-    for block in blocks.into_iter() {
+    // Test to_bytes_le and from_bytes_le.
+    for block in &blocks {
         let serialized = block.to_bytes_le().unwrap();
         let deserialized = Block::<CurrentNetwork>::from_bytes_le(&serialized).unwrap();
-        assert_eq!(block, deserialized);
+        assert_eq!(*block, deserialized);
+    }
+
+    // Test JSON serialization and deserialization.
+    for block in &blocks {
+        let serialized = serde_json::to_string(&block).unwrap();
+        let deserialized = serde_json::from_str::<Block<CurrentNetwork>>(&serialized).unwrap();
+        assert_eq!(*block, deserialized);
     }
 }

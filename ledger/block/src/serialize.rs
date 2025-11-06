@@ -21,13 +21,15 @@ impl<N: Network> Serialize for Block<N> {
         match serializer.is_human_readable() {
             true => {
                 let current_consensus_version = N::CONSENSUS_VERSION(self.height()).unwrap();
-                let mut block = if current_consensus_version >= ConsensusVersion::V10 {
+                let version = if current_consensus_version >= ConsensusVersion::V10 { 2u8 } else { 1u8 };
+
+                let mut block = if version >= 2 {
                     serializer.serialize_struct("Block", 12)?
                 } else {
                     serializer.serialize_struct("Block", 9)?
                 };
-                if current_consensus_version >= ConsensusVersion::V10 {
-                    block.serialize_field("version", &2u8)?;
+                if version >= 2 {
+                    block.serialize_field("version", &version)?;
                 }
                 block.serialize_field("block_hash", &self.block_hash)?;
                 block.serialize_field("previous_hash", &self.previous_hash)?;
@@ -35,7 +37,7 @@ impl<N: Network> Serialize for Block<N> {
                 block.serialize_field("authority", &self.authority)?;
                 block.serialize_field("ratifications", &self.ratifications)?;
                 block.serialize_field("solutions", &self.solutions)?;
-                if current_consensus_version >= ConsensusVersion::V10 {
+                if version >= 2 {
                     block.serialize_field(
                         "prior_solution_transmission_ids",
                         self.prior_solution_transmission_ids.as_ref().unwrap(),
@@ -48,7 +50,7 @@ impl<N: Network> Serialize for Block<N> {
                     block.serialize_field("aborted_solution_ids", &self.aborted_solution_ids)?;
                 }
                 block.serialize_field("transactions", &self.transactions)?;
-                if current_consensus_version >= ConsensusVersion::V10 {
+                if version >= 2 {
                     block.serialize_field(
                         "prior_transaction_transmission_ids",
                         self.prior_transaction_transmission_ids.as_ref().unwrap(),

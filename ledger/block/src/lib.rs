@@ -433,7 +433,8 @@ impl<N: Network> Block<N> {
         &self.aborted_transaction_transmission_ids
     }
 
-    /// Returns the aborted transaction IDs in this block.
+    /// Returns the aborted transaction IDs in this block for V1 blocks.
+    /// Returns `None` for V2 blocks.
     pub const fn aborted_transaction_ids(&self) -> Option<&Vec<N::TransactionID>> {
         self.aborted_transaction_ids.as_ref()
     }
