@@ -49,7 +49,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let ret = vm.add_next_block_inner(block);
                         #[cfg(feature = "announce-blocks")]
                         if ret.is_ok() {
-                            let _ = announce_block(&mut stream, ipc_payload);
+                            if let Err(e) = announce_block(&mut stream, ipc_payload) {
+                                error!("IPC error: {e}");
+                                // Attempt to restart the stream.
+                                stream = start_block_announcement_stream();
+                            }
                         }
                         SequentialOperationResult::AddNextBlock(ret)
                     }
@@ -164,11 +168,11 @@ fn start_block_announcement_stream() -> Option<Stream> {
 
     match Stream::connect(path) {
         Ok(stream) => {
-            debug!("Successfully started the IPC stream for block announcements");
+            debug!("Successfully (re)started the IPC stream for block announcements");
             Some(stream)
         }
         Err(e) => {
-            warn!("Couldn't start the IPC stream for block announcements: {e}");
+            warn!("Couldn't (re)start the IPC stream for block announcements: {e}");
             None
         }
     }
