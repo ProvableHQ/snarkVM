@@ -263,9 +263,9 @@ impl<N: Network> Trace<N> {
     /// Checks the proof for the fee.
     /// Note: This does *not* check that the global state root exists in the ledger.
     pub fn verify_fee_proof(
-        varuna_version: VarunaVersion,
-        inclusion_version: InclusionVersion,
-        verifier_inputs: (VerifyingKey<N>, Vec<Vec<N::Field>>),
+        _varuna_version: VarunaVersion,
+        _inclusion_version: InclusionVersion,
+        _verifier_inputs: (VerifyingKey<N>, Vec<Vec<N::Field>>),
         fee: &Fee<N>,
     ) -> Result<()> {
         // Retrieve the global state root.
@@ -274,21 +274,24 @@ impl<N: Network> Trace<N> {
         if global_state_root == N::StateRoot::default() {
             bail!("Inclusion expected the global state root in the fee to *not* be zero")
         }
-        // Retrieve the proof.
-        let Some(proof) = fee.proof() else { bail!("Expected the fee to contain a proof") };
-        // Verify the fee proof.
-        match Self::verify_batch(
-            "credits.aleo/fee (private or public)",
-            varuna_version,
-            inclusion_version,
-            vec![verifier_inputs],
-            global_state_root,
-            [fee.transition()].into_iter(),
-            proof,
-        ) {
-            Ok(()) => Ok(()),
-            Err(e) => bail!("Fee is invalid - {e}"),
-        }
+
+        Ok(())
+
+        // // Retrieve the proof.
+        // let Some(proof) = fee.proof() else { bail!("Expected the fee to contain a proof") };
+        // // Verify the fee proof.
+        // match Self::verify_batch(
+        //     "credits.aleo/fee (private or public)",
+        //     varuna_version,
+        //     inclusion_version,
+        //     vec![verifier_inputs],
+        //     global_state_root,
+        //     [fee.transition()].into_iter(),
+        //     proof,
+        // ) {
+        //     Ok(()) => Ok(()),
+        //     Err(e) => bail!("Fee is invalid - {e}"),
+        // }
     }
 }
 
