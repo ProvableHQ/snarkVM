@@ -426,11 +426,13 @@ path = "wasm"
 version = "=4.3.0"
 
 [workspace.dependencies.aleo-std]
-version = "1.0.1"
+git = "https://github.com/ljedrz/aleo-std.git"
+branch = "feat/secondary_storage"
+features = ["storage"]
 
 [workspace.dependencies.aleo-std-storage]
-default-features=false
-version = "1.0.1"
+git = "https://github.com/ljedrz/aleo-std.git"
+branch = "feat/secondary_storage"
 
 [workspace.dependencies.anyhow]
 version = "1.0.73"
