@@ -432,9 +432,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             header,
             ratifications,
             solutions,
-            aborted_solution_ids,
+            Some(aborted_solution_ids),
             transactions,
-            aborted_transaction_ids,
+            Some(aborted_transaction_ids),
             rng,
         )?;
         // Ensure the block is valid genesis block.
@@ -933,9 +933,9 @@ function compute:
             header,
             ratifications,
             None.into(),
-            vec![],
+            Some(vec![]),
             transactions,
-            aborted_transaction_ids,
+            Some(aborted_transaction_ids),
             rng,
         )
     }
@@ -1679,7 +1679,7 @@ function do:
         let block = sample_next_block(&vm, &private_key, &[transaction, adjusted_transaction.clone()], rng).unwrap();
 
         // Check that the block aborts the deployment transaction.
-        assert_eq!(block.aborted_transaction_ids(), &vec![adjusted_transaction.id()]);
+        assert_eq!(block.aborted_transaction_ids(), Some(&vec![adjusted_transaction.id()]));
 
         // Update the VM.
         vm.add_next_block(&block).unwrap();
@@ -1760,7 +1760,7 @@ function do:
         let block = sample_next_block(&vm, &private_key, &[transaction, adjusted_transaction.clone()], rng).unwrap();
 
         // Check that the block aborts the deployment transaction.
-        assert_eq!(block.aborted_transaction_ids(), &vec![adjusted_transaction.id()]);
+        assert_eq!(block.aborted_transaction_ids(), Some(&vec![adjusted_transaction.id()]));
 
         // Update the VM.
         vm.add_next_block(&block).unwrap();
@@ -3033,7 +3033,7 @@ function add_thrice:
         let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
 
         // Check that the transaction was aborted.
-        assert_eq!(block.aborted_transaction_ids().len(), 1);
+        assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
 
         // Update the VM.
         vm.add_next_block(&block).unwrap();
@@ -3267,7 +3267,7 @@ function check:
         let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 2);
         assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
         vm.add_next_block(&block).unwrap();
 
         // Deploy two programs that depend on each other.
@@ -3319,7 +3319,7 @@ function adder:
         let block = sample_next_block(&vm, &caller_private_key, &[deployment_1, deployment_2], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
         assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 1);
+        assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
         vm.add_next_block(&block).unwrap();
 
         // Check that only `child_program.aleo` is in the VM.
@@ -3360,7 +3360,7 @@ function adder:
             let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
             assert_eq!(block.transactions().num_accepted(), 1);
             assert_eq!(block.transactions().num_rejected(), 0);
-            assert_eq!(block.aborted_transaction_ids().len(), 0);
+            assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
             vm.add_next_block(&block).unwrap();
         }
 
@@ -3449,7 +3449,7 @@ function adder:
         let block = sample_next_block(&vm, &caller_private_key, &[deployment, transaction], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
         assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 1);
+        assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
         vm.add_next_block(&block).unwrap();
 
         // Check that the program was deployed.

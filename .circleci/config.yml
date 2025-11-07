@@ -679,6 +679,20 @@ jobs:
       - run_test:
           workspace_member: snarkvm-ledger-narwhal-batch-header
 
+  ledger-narwhal-compact-certificate:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.twoxlarge >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-ledger-narwhal-compact-certificate
+
+  ledger-narwhal-compact-header:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.twoxlarge >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-ledger-narwhal-compact-header
+
   ledger-narwhal-data:
     executor: rust-docker
     resource_class: << pipeline.parameters.small >>
@@ -1143,6 +1157,8 @@ workflows:
       - ledger-narwhal
       - ledger-narwhal-batch-certificate
       - ledger-narwhal-batch-header
+      - ledger-narwhal-compact-certificate
+      - ledger-narwhal-compact-header
       - ledger-narwhal-data
       - ledger-narwhal-subdag
       - ledger-narwhal-transmission

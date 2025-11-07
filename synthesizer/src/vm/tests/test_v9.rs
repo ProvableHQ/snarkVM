@@ -65,7 +65,7 @@ function dummy:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Initialize the program.
@@ -82,7 +82,7 @@ function dummy:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Verify that the VM is at the V9 height.
@@ -105,7 +105,7 @@ function dummy:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Initialize the program.
@@ -122,7 +122,7 @@ function dummy:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     Ok(())
@@ -164,7 +164,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Check that the program is deployed.
@@ -208,7 +208,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Upgrade the program.
@@ -233,7 +233,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Check that the program is upgraded.
@@ -250,7 +250,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Execute the upgraded program.
@@ -351,14 +351,14 @@ constructor:
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v1_fail], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     on_chain_vm.add_next_block(&block)?;
 
     // This deployment should pass.
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v0_pass], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     on_chain_vm.add_next_block(&block)?;
     let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
     assert_eq!(*stack.program_edition(), 0);
@@ -367,14 +367,14 @@ constructor:
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v2_fail], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     on_chain_vm.add_next_block(&block)?;
 
     // This deployment should pass.
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v1_pass], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     on_chain_vm.add_next_block(&block)?;
     let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
     assert_eq!(*stack.program_edition(), 1);
@@ -383,14 +383,14 @@ constructor:
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v2_as_v1_fail], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     on_chain_vm.add_next_block(&block)?;
 
     // This deployment should pass.
     let block = sample_next_block(&on_chain_vm, &caller_private_key, &[deployment_v2_pass], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     on_chain_vm.add_next_block(&block)?;
     let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
     assert_eq!(*stack.program_edition(), 2);
@@ -469,7 +469,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Execute the mint function twice.
@@ -494,7 +494,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[mint_execution_0, mint_execution_1], rng)?;
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     let mut v1_records = block
         .records()
         .map(|(_, record)| record.decrypt(&caller_view_key))
@@ -507,7 +507,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Attempt to execute the mint function.
@@ -538,7 +538,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[convert_execution], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     let mut v2_records = block
         .records()
         .map(|(_, record)| record.decrypt(&caller_view_key))
@@ -560,7 +560,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[burn_execution], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Attempt to execute the burn function with the remaining v1 record.
@@ -671,7 +671,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Execute the store_data_v1 function.
@@ -687,7 +687,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[store_data_v1_execution], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Check that the value was stored correctly.
@@ -706,7 +706,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Attempt to execute the store_data_v1 function.
@@ -722,7 +722,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Execute the migrate_data_v1_to_v2 function.
@@ -738,7 +738,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[migrate_data_v1_to_v2_execution], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Check that the value was migrated correctly.
@@ -776,7 +776,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[store_data_v2_execution], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Check that the value was stored correctly.
@@ -949,7 +949,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Deploy the v0 dependent.
@@ -957,7 +957,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Execute the functions.
@@ -982,7 +982,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng)?;
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Verify that the sum function fails on overflow.
@@ -1016,7 +1016,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Verify that the original sum transaction fails after the dependency upgrade.
@@ -1024,7 +1024,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[sum_unchecked], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Verify that the sum function fails on edition check.
@@ -1049,7 +1049,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 2);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Update the dependent to v1.
@@ -1057,7 +1057,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Verify that the sum function passes.
@@ -1082,7 +1082,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng)?;
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     Ok(())
@@ -1131,7 +1131,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Deploy the failing program.
@@ -1139,7 +1139,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     Ok(())
@@ -1186,7 +1186,7 @@ fn test_anyone_can_upgrade() -> Result<()> {
     let block = sample_next_block(&vm, &caller_private_key, &[transfer_1, transfer_2], rng)?;
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Define the programs.
@@ -1225,7 +1225,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Deploy the second version of the program.
@@ -1233,7 +1233,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Deploy the third version of the program.
@@ -1241,7 +1241,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     Ok(())
@@ -1282,14 +1282,14 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     let transaction = vm.deploy(&caller_private_key, &program_1_v1, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     Ok(())
@@ -1369,7 +1369,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Deploy the second version of the program.
@@ -1377,7 +1377,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Set the lock.
@@ -1393,7 +1393,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Attempt to deploy the third version of the program.
@@ -1401,7 +1401,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     Ok(())
@@ -1518,7 +1518,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Check that the caller is the admin.
@@ -1538,7 +1538,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Attempt to set the expected checksum with the wrong admin.
@@ -1563,7 +1563,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block)?;
 
     // Check that there is no expected checksum set.
@@ -1591,7 +1591,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Check that the expected checksum is set.
@@ -1610,7 +1610,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Update with the expected checksum set.
@@ -1618,7 +1618,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     Ok(())
@@ -1662,7 +1662,7 @@ function dummy:",
     let block = sample_next_block(&vm, &caller_private_key, &[transaction_first], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Deploy the program again without changing its contents.
@@ -1672,7 +1672,7 @@ function dummy:",
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Deploy the program with an extra mapping as an upgrade.
@@ -1682,7 +1682,7 @@ function dummy:",
     let block = sample_next_block(&vm, &caller_private_key, &[transaction_third], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
 
     Ok(())
 }
@@ -1779,14 +1779,14 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     let transaction = vm.deploy(&caller_private_key, &program_1_v0, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Assert that the VM is after the V9 height.
@@ -1850,7 +1850,7 @@ fn test_simple_admin_upgrade() {
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Define the programs.
@@ -1880,7 +1880,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Deploy the first version of the program with the correct admin.
@@ -1888,7 +1888,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Attempt to upgrade the program with the wrong admin.
@@ -1896,7 +1896,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Upgrade the program with the correct admin.
@@ -1904,7 +1904,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 }
 
@@ -1949,7 +1949,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Execute a transaction with the first version of the program.
@@ -1978,7 +1978,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Verify the transaction again and check the cache size.
@@ -2029,7 +2029,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Deploy the second program.
@@ -2041,7 +2041,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Check the owners of the programs.
@@ -2091,7 +2091,7 @@ function dummy2:",
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Pre-generate 3 executions of the dummy function.
@@ -2116,7 +2116,7 @@ function dummy2:",
         let block = sample_next_block(&vm, &caller_private_key, &[execution.clone()], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
         assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
         vm.add_next_block(&block).unwrap();
     }
 
@@ -2125,7 +2125,7 @@ function dummy2:",
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Add the third transaction to a block.
@@ -2133,7 +2133,7 @@ function dummy2:",
     let block = sample_next_block(&vm, &caller_private_key, &[executions[2].clone()], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block).unwrap();
 }
 
@@ -2181,7 +2181,7 @@ fn test_credits_executions() {
     let block = sample_next_block(&vm, &caller_private_key, &[transfer_1], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Skip to consensus height V9.
@@ -2194,7 +2194,7 @@ fn test_credits_executions() {
     let block = sample_next_block(&vm, &caller_private_key, &[transfer_2], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
 }
 
 // This tests verifies that:
@@ -2289,7 +2289,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Deploy the first version of program B.
@@ -2297,7 +2297,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Execute `foo` and `bar`.
@@ -2326,7 +2326,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution_foo, execution_bar], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Upgrade program A to version 1.
@@ -2334,7 +2334,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Execute `foo` and `bar`.
@@ -2363,7 +2363,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution_foo, execution_bar], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Attempt to upgrade program A to version 2.
@@ -2406,7 +2406,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution_foo, execution_bar], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Drop the VM.
@@ -2443,7 +2443,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution_foo, execution_bar], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 }
 
@@ -2491,7 +2491,7 @@ constructor:
     assert_eq!(block.height(), 13);
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Attempt to deploy the second version of the program before block height 15.
@@ -2500,7 +2500,7 @@ constructor:
     assert_eq!(block.height(), 14);
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     // Attempt to deploy the second version of the program at block height 15.
@@ -2509,7 +2509,7 @@ constructor:
     assert_eq!(block.height(), 15);
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block)?;
 
     Ok(())
@@ -2588,7 +2588,7 @@ finalize set_first:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment_v0], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Execute the program.
@@ -2606,7 +2606,7 @@ finalize set_first:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Verify that the entry exists in the mapping.
@@ -2649,7 +2649,7 @@ finalize set_first:
     .unwrap();
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block).unwrap();
 
     // Check that the program was upgraded.
@@ -2676,7 +2676,7 @@ finalize set_first:
     let block = sample_next_block(&vm, &caller_private_key, &[executions[2].clone()], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Verify that the entry exists in the first mapping.
@@ -2698,7 +2698,7 @@ finalize set_first:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment_v1], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Check that the program was upgraded.
@@ -2711,7 +2711,7 @@ finalize set_first:
     let block = sample_next_block(&vm, &caller_private_key, &[executions[3].clone()], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block).unwrap();
 
     // Execute the new program with the new mapping.
@@ -2729,7 +2729,7 @@ finalize set_first:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Verify that the entry exists in the second mapping.
@@ -2775,7 +2775,7 @@ function foo:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment_v0], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Fund two accounts to pay for the two upgrades.
@@ -2811,7 +2811,7 @@ function foo:
     let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 2);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Upgrade the program twice.
@@ -2892,7 +2892,7 @@ function baz:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction_1, transaction_2], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block).unwrap();
 
     // Attempt to upgrade twice using the same edition.
@@ -2973,7 +2973,7 @@ function fly:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction_1, transaction_2], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 1);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
 }
 
 // This test checks that:
@@ -3025,7 +3025,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Deploy the upgradable program.
@@ -3033,7 +3033,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Attempt to execute the upgradable program.
@@ -3051,7 +3051,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block).unwrap();
 
     let execution = vm
@@ -3068,7 +3068,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Upgrade the pre-V9 program.
@@ -3076,7 +3076,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Now execute the upgradable program.
@@ -3094,7 +3094,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 }
 
@@ -3165,7 +3165,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Deploy child programs up to the maximum transition depth.
@@ -3175,7 +3175,7 @@ constructor:
         let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
         assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
         vm.add_next_block(&block).unwrap();
     }
 
@@ -3194,7 +3194,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Deploy a program lower than the lowest program.
@@ -3214,7 +3214,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Upgrade the zero program to call the lower program.
@@ -3236,7 +3236,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Verify that the zero program can be executed.
@@ -3254,7 +3254,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Verify the uppermost parent cannot be executed.
@@ -3284,7 +3284,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Drop the VM.
@@ -3330,7 +3330,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 }
 
@@ -3429,7 +3429,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[child_deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Deploy the parent program.
@@ -3437,7 +3437,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[parent_deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Execute the parent program.
@@ -3455,7 +3455,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Upgrade the child program with a more expensive finalize body.
@@ -3481,7 +3481,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[upgraded_child_deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Execute the child program.
@@ -3499,7 +3499,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Verify that the parent program cannot be executed after the upgrade.
@@ -3517,7 +3517,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block).unwrap();
 
     // Drop the VM.
@@ -3549,7 +3549,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 0);
     vm.add_next_block(&block).unwrap();
 
     // Verify that the parent program still cannot be executed.
@@ -3567,6 +3567,6 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
     vm.add_next_block(&block).unwrap();
 }

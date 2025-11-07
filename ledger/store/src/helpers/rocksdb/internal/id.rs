@@ -78,10 +78,14 @@ pub enum BlockMap {
     Certificate = DataID::BlockCertificateMap as u16,
     Ratifications = DataID::BlockRatificationsMap as u16,
     Solutions = DataID::BlockSolutionsMap as u16,
+    PriorSolutionTransmissionIDs = DataID::BlockPriorSolutionTransmissionIDsMap as u16,
+    AbortedSolutionTransmissionIDs = DataID::BlockAbortedSolutionTransmissionIDsMap as u16,
     PuzzleCommitments = DataID::BlockSolutionIDsMap as u16,
     AbortedSolutionIDs = DataID::BlockAbortedSolutionIDsMap as u16,
     AbortedSolutionHeights = DataID::BlockAbortedSolutionHeightsMap as u16,
     Transactions = DataID::BlockTransactionsMap as u16,
+    PriorTransactionTransmissionIDs = DataID::BlockPriorTransactionTransmissionIDsMap as u16,
+    AbortedTransactionTransmissionIDs = DataID::BlockAbortedTransactionTransmissionIDsMap as u16,
     AbortedTransactionIDs = DataID::BlockAbortedTransactionIDsMap as u16,
     RejectedOrAbortedTransactionID = DataID::BlockRejectedOrAbortedTransactionIDMap as u16,
     ConfirmedTransactions = DataID::BlockConfirmedTransactionsMap as u16,
@@ -303,6 +307,12 @@ enum DataID {
     IDEditionMap,
     // Track deployments that contain an optional checksum
     DeploymentChecksumMap,
+
+    // Compact Subdag support
+    BlockPriorSolutionTransmissionIDsMap,
+    BlockAbortedSolutionTransmissionIDsMap,
+    BlockPriorTransactionTransmissionIDsMap,
+    BlockAbortedTransactionTransmissionIDsMap,
 
     // Testing
     #[cfg(test)]

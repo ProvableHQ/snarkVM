@@ -41,7 +41,7 @@ fn flatten_anyhow_error<E: Borrow<anyhow::Error>>(error: E) -> String {
     output
 }
 
-/// Logs `anyhow::Error`'s its error chain using the `ERROR` log level.
+/// Logs an `anyhow::Error`'s error chain at the `ERROR` log level.
 ///
 /// This follows the existing convention in the codebase that joins errors using em dashes.
 /// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
@@ -52,7 +52,7 @@ pub fn log_error<E: Borrow<anyhow::Error>>(error: E) {
     tracing::error!("{}", flatten_anyhow_error(error));
 }
 
-/// Logs `anyhow::Error`'s its error chain using the `WARN` log level.
+/// Logs an `anyhow::Error`'s error chain at the `WARN` log level.
 ///
 /// This follows the existing convention in the codebase that joins errors using em dashes.
 /// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
@@ -61,6 +61,17 @@ pub fn log_error<E: Borrow<anyhow::Error>>(error: E) {
 #[track_caller]
 pub fn log_warning<E: Borrow<anyhow::Error>>(error: E) {
     tracing::warn!("{}", flatten_anyhow_error(error));
+}
+
+/// Logs an `anyhow::Error`'s error chain at the `DEBUG` log level.
+///
+/// This follows the existing convention in the codebase that joins errors using em dashes.
+/// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
+/// as "Invalid transaction — Proof failed".
+#[inline]
+#[track_caller]
+pub fn log_debug<E: Borrow<anyhow::Error>>(error: E) {
+    tracing::debug!("{}", flatten_anyhow_error(error));
 }
 
 /// Displays an `anyhow::Error`'s main error and its error chain to stderr.
@@ -133,7 +144,7 @@ impl<E: Into<anyhow::Error>> LoggableError for E {
     #[inline]
     fn log_debug<S: Send + Sync + Display + 'static>(self, context: S) {
         let err: anyhow::Error = self.into();
-        log_warning(err.context(context));
+        log_debug(err.context(context));
     }
 }
 

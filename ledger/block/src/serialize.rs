@@ -20,16 +20,48 @@ impl<N: Network> Serialize for Block<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let mut block = serializer.serialize_struct("Block", 9)?;
+                let current_consensus_version = N::CONSENSUS_VERSION(self.height()).unwrap();
+                let version = if current_consensus_version >= ConsensusVersion::V10 { 2u8 } else { 1u8 };
+
+                let mut block = if version >= 2 {
+                    serializer.serialize_struct("Block", 12)?
+                } else {
+                    serializer.serialize_struct("Block", 9)?
+                };
+                if version >= 2 {
+                    block.serialize_field("version", &version)?;
+                }
                 block.serialize_field("block_hash", &self.block_hash)?;
                 block.serialize_field("previous_hash", &self.previous_hash)?;
                 block.serialize_field("header", &self.header)?;
                 block.serialize_field("authority", &self.authority)?;
                 block.serialize_field("ratifications", &self.ratifications)?;
                 block.serialize_field("solutions", &self.solutions)?;
-                block.serialize_field("aborted_solution_ids", &self.aborted_solution_ids)?;
+                if version >= 2 {
+                    block.serialize_field(
+                        "prior_solution_transmission_ids",
+                        self.prior_solution_transmission_ids.as_ref().unwrap(),
+                    )?;
+                    block.serialize_field(
+                        "aborted_solution_transmission_ids",
+                        self.aborted_solution_transmission_ids.as_ref().unwrap(),
+                    )?;
+                } else {
+                    block.serialize_field("aborted_solution_ids", &self.aborted_solution_ids)?;
+                }
                 block.serialize_field("transactions", &self.transactions)?;
-                block.serialize_field("aborted_transaction_ids", &self.aborted_transaction_ids)?;
+                if version >= 2 {
+                    block.serialize_field(
+                        "prior_transaction_transmission_ids",
+                        self.prior_transaction_transmission_ids.as_ref().unwrap(),
+                    )?;
+                    block.serialize_field(
+                        "aborted_transaction_transmission_ids",
+                        self.aborted_transaction_transmission_ids.as_ref().unwrap(),
+                    )?;
+                } else {
+                    block.serialize_field("aborted_transaction_ids", &self.aborted_transaction_ids)?;
+                }
                 block.end()
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
@@ -42,7 +74,30 @@ impl<'de, N: Network> Deserialize<'de> for Block<N> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         if deserializer.is_human_readable() {
             let mut block = serde_json::Value::deserialize(deserializer)?;
+            // Retrieve the version and hash.
+            let version: u8 = DeserializeExt::take_from_value::<D>(&mut block, "version").unwrap_or(1);
             let block_hash: N::BlockHash = DeserializeExt::take_from_value::<D>(&mut block, "block_hash")?;
+
+            let (prior_solution_transmission_ids, aborted_solution_transmission_ids, aborted_solution_ids) =
+                if version >= 2 {
+                    (
+                        Some(DeserializeExt::take_from_value::<D>(&mut block, "prior_solution_transmission_ids")?),
+                        Some(DeserializeExt::take_from_value::<D>(&mut block, "aborted_solution_transmission_ids")?),
+                        None,
+                    )
+                } else {
+                    (None, None, Some(DeserializeExt::take_from_value::<D>(&mut block, "aborted_solution_ids")?))
+                };
+            let (prior_transaction_transmission_ids, aborted_transaction_transmission_ids, aborted_transaction_ids) =
+                if version >= 2 {
+                    (
+                        Some(DeserializeExt::take_from_value::<D>(&mut block, "prior_transaction_transmission_ids")?),
+                        Some(DeserializeExt::take_from_value::<D>(&mut block, "aborted_transaction_transmission_ids")?),
+                        None,
+                    )
+                } else {
+                    (None, None, Some(DeserializeExt::take_from_value::<D>(&mut block, "aborted_transaction_ids")?))
+                };
 
             // Recover the block.
             let block = Self::from(
@@ -51,9 +106,13 @@ impl<'de, N: Network> Deserialize<'de> for Block<N> {
                 DeserializeExt::take_from_value::<D>(&mut block, "authority")?,
                 DeserializeExt::take_from_value::<D>(&mut block, "ratifications")?,
                 DeserializeExt::take_from_value::<D>(&mut block, "solutions")?,
-                DeserializeExt::take_from_value::<D>(&mut block, "aborted_solution_ids")?,
+                prior_solution_transmission_ids,
+                aborted_solution_transmission_ids,
+                aborted_solution_ids,
                 DeserializeExt::take_from_value::<D>(&mut block, "transactions")?,
-                DeserializeExt::take_from_value::<D>(&mut block, "aborted_transaction_ids")?,
+                prior_transaction_transmission_ids,
+                aborted_transaction_transmission_ids,
+                aborted_transaction_ids,
             )
             .map_err(de::Error::custom)?;
 

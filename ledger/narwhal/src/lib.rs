@@ -26,6 +26,16 @@ pub use snarkvm_ledger_narwhal_batch_header as batch_header;
 #[cfg(feature = "batch-header")]
 pub use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 
+#[cfg(feature = "compact-certificate")]
+pub use snarkvm_ledger_narwhal_compact_certificate as compact_certificate;
+#[cfg(feature = "compact-certificate")]
+pub use snarkvm_ledger_narwhal_compact_certificate::CompactCertificate;
+
+#[cfg(feature = "compact-header")]
+pub use snarkvm_ledger_narwhal_compact_header as compact_header;
+#[cfg(feature = "compact-header")]
+pub use snarkvm_ledger_narwhal_compact_header::CompactHeader;
+
 #[cfg(feature = "data")]
 pub use snarkvm_ledger_narwhal_data as data;
 #[cfg(feature = "data")]
@@ -34,7 +44,12 @@ pub use snarkvm_ledger_narwhal_data::Data;
 #[cfg(feature = "subdag")]
 pub use snarkvm_ledger_narwhal_subdag as subdag;
 #[cfg(feature = "subdag")]
-pub use snarkvm_ledger_narwhal_subdag::Subdag;
+pub use snarkvm_ledger_narwhal_subdag::{LeaderCertificate, Subdag};
+
+#[cfg(feature = "traits")]
+pub use snarkvm_ledger_narwhal_traits as traits;
+#[cfg(feature = "traits")]
+pub use snarkvm_ledger_narwhal_traits::NarwhalCertificate;
 
 #[cfg(feature = "transmission")]
 pub use snarkvm_ledger_narwhal_transmission as transmission;

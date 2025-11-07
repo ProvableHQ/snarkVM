@@ -79,7 +79,7 @@ constructor:
         let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 0);
         assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 1);
+        assert_eq!(block.aborted_transaction_ids().unwrap().len(), 1);
         vm.add_next_block(&block).unwrap();
     }
 
@@ -93,7 +93,7 @@ constructor:
         let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
         assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        assert_eq!(block.aborted_transaction_ids(), Some(vec![]).as_ref());
         vm.add_next_block(&block).unwrap();
     }
 }
@@ -257,7 +257,7 @@ constructor:
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    assert_eq!(block.aborted_transaction_ids(), Some(vec![]).as_ref());
     vm.add_next_block(&block).unwrap();
 
     // Parse the invalid address.
@@ -287,7 +287,7 @@ constructor:
         let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
         assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        assert_eq!(block.aborted_transaction_ids(), Some(vec![]).as_ref());
         vm.add_next_block(&block).unwrap();
     }
 
@@ -321,7 +321,7 @@ constructor:
         let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
         assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        assert_eq!(block.aborted_transaction_ids(), Some(vec![]).as_ref());
         vm.add_next_block(&block).unwrap();
 
         // Execute the `verify_message` function to check the signature verification with an invalid address.
@@ -345,7 +345,7 @@ constructor:
         let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 0);
         assert_eq!(block.transactions().num_rejected(), 1);
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        assert_eq!(block.aborted_transaction_ids(), Some(vec![]).as_ref());
         vm.add_next_block(&block).unwrap();
     }
 
