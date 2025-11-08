@@ -46,11 +46,9 @@ impl<E: Environment, const RATE: usize> KeyHash for Poseidon<E, RATE> {
     /// Returns the hash of the given key.
     /// For field element keys, we hash them to prevent under-traversing the path.
     fn hash_key(&self, key: &Self::Key) -> Result<Self::Hash> {
-        // Hash the key with a domain separator.
-        let mut input = Vec::with_capacity(2);
         // Prepend the key with a `2field` element.
-        input.push(Field::<E>::from_u8(2));
-        input.push(*key);
+        let input = [Field::<E>::from_u8(2), *key];
+        // Hash the key with a domain separator.
         Hash::hash(self, &input)
     }
 }

@@ -33,10 +33,9 @@ impl<E: Environment, const RATE: usize> KeyHash<E> for Poseidon<E, RATE> {
 
     /// Returns the hash of the given key.
     fn hash_key(&self, key: &Self::Key) -> Self::Hash {
-        let mut input = Vec::with_capacity(2);
         // Prepend the key with a `2field` element.
-        input.push(Field::<E>::one() + Field::<E>::one());
-        input.push(key.clone());
+        let input = [Field::<E>::one() + Field::<E>::one(), key.clone()];
+        // Hash the input.
         Hash::hash(self, &input)
     }
 }

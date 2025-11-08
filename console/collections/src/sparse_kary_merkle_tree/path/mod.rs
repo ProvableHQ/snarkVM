@@ -99,7 +99,7 @@ impl<E: Environment, PH: PathHash, const DEPTH: u8, const ARITY: u8> SparseKaryM
         let key_bits = key_hash.to_bits_le();
 
         // Compute the number of bits needed per level.
-        let bits_per_level = (ARITY as f64).log2().ceil() as usize;
+        let bits_per_level = ARITY.next_power_of_two().trailing_zeros() as usize;
 
         // Compute the path indices from the key hash using consecutive bits.
         let mut path_indices = Vec::with_capacity(DEPTH as usize);

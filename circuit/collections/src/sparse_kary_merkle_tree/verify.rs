@@ -51,7 +51,7 @@ impl<E: Environment, PH: PathHash<E>, const DEPTH: u8, const ARITY: u8> SparseKa
         let arity = U64::<E>::new(Mode::Constant, console::U64::new(ARITY as u64));
 
         // Compute the number of bits needed per level to represent the arity.
-        let bits_per_level = (ARITY as f64).log2().ceil() as usize;
+        let bits_per_level = ARITY.next_power_of_two().trailing_zeros() as usize;
 
         // Get the key hash as bits.
         let mut key_bits = Vec::with_capacity(256);
@@ -604,7 +604,7 @@ mod tests {
 
             // Check that the number of constraints is reasonable.
             let count = Circuit::count();
-            println!("Constraint count: {:?}", count);
+            println!("Constraint count: {count:?}");
         });
 
         Ok(())

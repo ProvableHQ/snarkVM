@@ -144,9 +144,9 @@ impl<
 
             // Collect all siblings at this level.
             let mut level_siblings = Vec::with_capacity(ARITY as usize - 1);
-            for i in 0..ARITY as usize {
-                if i != index {
-                    let sibling_path = Self::compute_node_path(&path_indices[..depth as usize], i);
+            for i in 0..ARITY {
+                if i as usize != index {
+                    let sibling_path = Self::compute_node_path(&path_indices[..depth as usize], i)?;
                     let sibling_hash = *self.nodes.get(&sibling_path).unwrap_or(&self.empty_hash);
                     level_siblings.push(sibling_hash);
                 }
@@ -206,11 +206,11 @@ impl<
         let path_indices = self.compute_path_indices(key_hash)?;
 
         // Start with the leaf hash.
-        let mut current_hash = *self.leaves.get(&key_hash).ok_or_else(|| anyhow!("Leaf not found"))?;
+        let mut current_hash = *self.leaves.get(key_hash).ok_or_else(|| anyhow!("Leaf not found"))?;
 
         // Store the leaf at its path position in the nodes map as well.
         // This allows other paths to find this leaf when they need it as a sibling.
-        let leaf_path = path_indices.iter().map(|&i| i as u8).collect::<Vec<_>>();
+        let leaf_path = path_indices.iter().map(|&i| u8::try_from(i)).collect::<Result<Vec<_>, _>>()?;
         self.nodes.insert(leaf_path, current_hash);
 
         // Traverse from the leaf to the root, updating all nodes along the path.
@@ -219,12 +219,12 @@ impl<
 
             // Compute the sibling hashes at this level.
             let mut children = Vec::with_capacity(ARITY as usize);
-            for i in 0..ARITY as usize {
-                if i == index {
+            for i in 0..ARITY {
+                if i as usize == index {
                     children.push(current_hash);
                 } else {
                     // Try to get the sibling from the nodes map, otherwise use empty hash.
-                    let sibling_path = Self::compute_node_path(&path_indices[..depth as usize], i);
+                    let sibling_path = Self::compute_node_path(&path_indices[..depth as usize], i)?;
                     children.push(*self.nodes.get(&sibling_path).unwrap_or(&self.empty_hash));
                 }
             }
@@ -235,7 +235,8 @@ impl<
             // Store the PARENT hash at its path (the path from root to this parent node).
             // The parent is at depth `depth`, represented by path_indices[..depth].
             if depth > 0 {
-                let parent_path = path_indices[..depth as usize].iter().map(|&i| i as u8).collect::<Vec<_>>();
+                let parent_path =
+                    path_indices[..depth as usize].iter().map(|&i| u8::try_from(i)).collect::<Result<Vec<_>, _>>()?;
                 self.nodes.insert(parent_path, parent_hash);
             }
 
@@ -258,7 +259,7 @@ impl<
         let key_bits = key_hash.to_bits_le();
 
         // Compute the number of bits needed per level.
-        let bits_per_level = (ARITY as f64).log2().ceil() as usize;
+        let bits_per_level = ARITY.next_power_of_two().trailing_zeros() as usize;
 
         // Use CONSECUTIVE bits from the key hash to get maximum entropy.
         // For example: DEPTH=32, ARITY=2 → uses bits [0..32] → 2^32 unique positions.
@@ -280,13 +281,13 @@ impl<
         Ok(indices)
     }
 
-    /// Computes a unique path identifier for a node in the tree (static version).
-    fn compute_node_path(path_prefix: &[usize], index: usize) -> Vec<u8> {
+    /// Computes a unique path identifier for a node in the tree.
+    fn compute_node_path(path_prefix: &[usize], index: u8) -> Result<Vec<u8>> {
         let mut path = Vec::with_capacity(path_prefix.len() + 1);
         for &p in path_prefix {
-            path.push(p as u8);
+            path.push(u8::try_from(p)?);
         }
-        path.push(index as u8);
-        path
+        path.push(index);
+        Ok(path)
     }
 }

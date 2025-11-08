@@ -91,8 +91,7 @@ fn check_sparse_kary_merkle_tree<
         // Verify the Merkle proof succeeds.
         assert!(
             merkle_tree.verify(&proof, merkle_tree.root(), key, leaf),
-            "Verification failed for position {:?}",
-            position
+            "Verification failed for position {position:?}"
         );
         // Verify the Merkle proof **fails** on an invalid root.
         assert!(!merkle_tree.verify(&proof, &PH::Hash::default(), key, leaf));
@@ -328,7 +327,7 @@ fn test_sparse_kary_merkle_tree_keccak() -> Result<()> {
     match run_test::<10, 4>(&mut rng) {
         Ok(_) => Ok(()),
         Err(e) => {
-            eprintln!("Test failed: {:?}", e);
+            eprintln!("Test failed: {e:?}");
             Err(e)
         }
     }
