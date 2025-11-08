@@ -77,7 +77,7 @@ function buy_token_b:
   input r2 as u64.public;
   cast r1 r2 into r3 as reserves;
   call credits_a.aleo/transfer_private_to_public r0 aleo1rrj2mgall8mw57lcpkkvkxwqkawpc5rjarqm57w8gux2ahnt9sxqf0md56 r1 into r4 r5;
-  call credits_b.aleo/transfer_public_to_private r0.owner r2 into r6 r7;
+  call credits_b.aleo/transfer_public_to_private self.signer r2 into r6 r7;
   async buy_token_b r1 r2 r5 r7 into r8;
   // token_a change record
   output r4 as credits_a.aleo/credits.record;
