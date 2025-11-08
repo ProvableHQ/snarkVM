@@ -282,11 +282,11 @@ fn test_sparse_kary_merkle_tree_bhp() -> Result<()> {
 #[test]
 fn test_sparse_kary_merkle_tree_keccak() -> Result<()> {
     fn run_test<const DEPTH: u8, const ARITY: u8>(rng: &mut TestRng) -> Result<()> {
-        type KH = Keccak256;
+        type KH = Poseidon<CurrentEnvironment, 2>;
         type LH = Keccak256;
         type PH = Keccak256;
 
-        let key_hasher = Keccak256::default();
+        let key_hasher = KH::setup("AleoSparseTreeTest0")?;
         let leaf_hasher = Keccak256::default();
         let path_hasher = Keccak256::default();
 
@@ -298,8 +298,7 @@ fn test_sparse_kary_merkle_tree_keccak() -> Result<()> {
             println!("Iteration {i} - Testing a depth {DEPTH} arity {ARITY} tree with {num_pairs} key-value pairs");
 
             // Generate random keys.
-            let keys =
-                (0..num_pairs).map(|_| Field::<CurrentEnvironment>::rand(rng).to_bits_le()).collect::<Vec<Vec<bool>>>();
+            let keys = (0..num_pairs).map(|_| Field::<CurrentEnvironment>::rand(rng)).collect::<Vec<_>>();
 
             // Generate random leaves.
             let leaves =
@@ -338,11 +337,11 @@ fn test_sparse_kary_merkle_tree_keccak() -> Result<()> {
 #[test]
 fn test_sparse_kary_merkle_tree_sha3() -> Result<()> {
     fn run_test<const DEPTH: u8, const ARITY: u8>(rng: &mut TestRng) -> Result<()> {
-        type KH = Sha3_256;
+        type KH = Poseidon<CurrentEnvironment, 2>;
         type LH = Sha3_256;
         type PH = Sha3_256;
 
-        let key_hasher = Sha3_256::default();
+        let key_hasher = KH::setup("AleoSparseTreeTest0")?;
         let leaf_hasher = Sha3_256::default();
         let path_hasher = Sha3_256::default();
 
@@ -354,8 +353,7 @@ fn test_sparse_kary_merkle_tree_sha3() -> Result<()> {
             println!("Iteration {i} - Testing a depth {DEPTH} arity {ARITY} tree with {num_pairs} key-value pairs");
 
             // Generate random keys.
-            let keys =
-                (0..num_pairs).map(|_| Field::<CurrentEnvironment>::rand(rng).to_bits_le()).collect::<Vec<Vec<bool>>>();
+            let keys = (0..num_pairs).map(|_| Field::<CurrentEnvironment>::rand(rng)).collect::<Vec<_>>();
 
             // Generate random leaves.
             let leaves =

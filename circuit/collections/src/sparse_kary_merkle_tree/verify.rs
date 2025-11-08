@@ -140,7 +140,7 @@ impl<E: Environment, PH: PathHash<E>, const DEPTH: u8, const ARITY: u8> SparseKa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm_circuit_algorithms::{BHP512, BHP1024, Keccak256, Poseidon, Sha3_256};
+    use snarkvm_circuit_algorithms::{BHP512, BHP1024, Keccak256, Poseidon2, Poseidon4, Sha3_256};
     use snarkvm_circuit_types::environment::Circuit;
     use snarkvm_utilities::{TestRng, Uniform};
 
@@ -150,7 +150,7 @@ mod tests {
     const DOMAIN: &str = "SparseTreeCircuit0";
 
     macro_rules! check_verify {
-        ($kh:ident, $lh:ident, $ph:ident, $mode:ident, $depth:expr, $arity:expr, $num_inputs:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
+        ($kh:ident, $lh:ident, $ph:ident, $mode:ident, $depth:expr, $arity:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
             // Initialize the key hasher.
             let native_key_hasher = console::algorithms::$kh::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
             let circuit_key_hasher = $kh::<Circuit>::constant(native_key_hasher.clone());
@@ -166,16 +166,14 @@ mod tests {
             let mut rng = TestRng::default();
 
             for i in 0..ITERATIONS {
-                // Determine the number of key-value pairs.
-                let num_pairs = core::cmp::min(($arity as u128).pow($depth as u32), i + 1);
+                // Set the number of key-value pairs.
+                let num_pairs = i + 1;
 
                 // Generate random keys (field elements).
                 let keys = (0..num_pairs).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
 
                 // Generate random leaves.
-                let leaves = (0..num_pairs)
-                    .map(|_| (0..$num_inputs).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>())
-                    .collect::<Vec<_>>();
+                let leaves = (0..num_pairs).map(|_| vec![Uniform::rand(&mut rng)]).collect::<Vec<_>>();
 
                 // Compute the sparse Merkle tree.
                 let mut merkle_tree = console::sparse_kary_merkle_tree::SparseKaryMerkleTree::<
@@ -237,7 +235,6 @@ mod tests {
                             &leaf,
                         );
                         assert!(!candidate.eject_value());
-                        assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
                     });
                     Circuit::reset();
 
@@ -258,47 +255,39 @@ mod tests {
                             &leaf,
                         );
                         assert!(!candidate.eject_value());
-                        assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
                     });
                     Circuit::reset();
                 }
             }
             Ok(())
         }};
-    }
-
-    // Note: These tests verify the circuit logic works correctly.
-    // Constraint counts may vary slightly based on optimization level and inputs.
-    // The key requirement is R1CS efficiency for state updates.
-
-    macro_rules! check_verify_keccak {
-        ($kh:ident, $lh:ident, $ph:ident, $mode:ident, $depth:expr, $arity:expr, $num_inputs:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
+        ($kh:ident, $lh:ident, $ph:ident, $mode:ident, $depth:expr, $arity:expr, $num_key_bits:expr, $num_input_bits:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
             // Initialize the key hasher.
-            let native_key_hasher = console::algorithms::$kh::default();
-            let circuit_key_hasher = $kh::<Circuit>::new();
+            let native_key_hasher = console::algorithms::$kh::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+            let circuit_key_hasher = $kh::<Circuit>::constant(native_key_hasher.clone());
 
             // Initialize the leaf hasher.
-            let native_leaf_hasher = console::algorithms::$lh::default();
-            let circuit_leaf_hasher = $lh::<Circuit>::new();
+            let native_leaf_hasher = console::algorithms::$lh::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+            let circuit_leaf_hasher = $lh::<Circuit>::constant(native_leaf_hasher.clone());
+
+            // Initialize the path hasher.
+            let native_path_hasher = console::algorithms::$ph::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+            let circuit_path_hasher = $ph::<Circuit>::constant(native_path_hasher.clone());
 
             let mut rng = TestRng::default();
 
-            // Initialize the path hasher.
-            let native_path_hasher = console::algorithms::$ph::default();
-            let circuit_path_hasher = $ph::<Circuit>::new();
-
             for i in 0..ITERATIONS {
-                // Determine the number of key-value pairs.
-                let num_pairs = core::cmp::min(($arity as u128).pow($depth as u32), i + 1);
+                // Set the number of key-value pairs.
+                let num_pairs = i + 1;
 
-                // Generate random keys (field elements for Keccak/SHA3).
+                // Generate random keys.
                 let keys = (0..num_pairs)
-                    .map(|_| console::Field::<<Circuit as Environment>::Network>::rand(&mut rng).to_bits_le())
+                    .map(|_| (0..$num_key_bits).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>())
                     .collect::<Vec<_>>();
 
-                // Generate random leaves (field elements).
+                // Generate random leaves.
                 let leaves = (0..num_pairs)
-                    .map(|_| console::Field::<<Circuit as Environment>::Network>::rand(&mut rng).to_bits_le())
+                    .map(|_| (0..$num_input_bits).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>())
                     .collect::<Vec<_>>();
 
                 // Compute the sparse Merkle tree.
@@ -312,26 +301,25 @@ mod tests {
                 >::new(&native_key_hasher, &native_leaf_hasher, &native_path_hasher)?;
 
                 // Insert key-value pairs.
-                for (key, leaf) in keys.iter().zip(leaves.iter()) {
+                for (key, leaf) in keys.iter().zip_eq(leaves.iter()) {
                     merkle_tree.update(key, leaf)?;
                 }
 
-                for (key, merkle_leaf) in keys.iter().zip(leaves.iter()) {
+                // Verify each key-value pair.
+                for (key, merkle_leaf) in keys.iter().zip_eq(leaves.iter()) {
                     // Compute the Merkle path.
                     let merkle_path = merkle_tree.prove(key, merkle_leaf)?;
-
                     // Initialize the Merkle path.
                     let path = SparseKaryMerklePath::<Circuit, $ph<Circuit>, $depth, $arity>::new(
                         Mode::$mode,
                         merkle_path.clone(),
                     );
-
                     assert_eq!(merkle_path, path.eject_value());
 
                     // Initialize the Merkle root.
-                    let root = <$ph<Circuit> as PathHash<Circuit>>::Hash::new(Mode::$mode, *merkle_tree.root());
+                    let root = Field::new(Mode::$mode, *merkle_tree.root());
                     // Initialize the key.
-                    let circuit_key: Vec<_> = Inject::new(Mode::$mode, key.clone());
+                    let circuit_key = Inject::new(Mode::$mode, key.clone());
                     // Initialize the Merkle leaf.
                     let leaf: Vec<_> = Inject::new(Mode::$mode, merkle_leaf.clone());
 
@@ -348,62 +336,221 @@ mod tests {
                         assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
                     });
                     Circuit::reset();
+
+                    // Initialize an incorrect Merkle root.
+                    let incorrect_root = root.clone() + Field::one();
+
+                    Circuit::scope(format!("Verify (Incorrect Root) {}", Mode::$mode), || {
+                        let candidate = path.verify(
+                            &circuit_key_hasher,
+                            &circuit_leaf_hasher,
+                            &circuit_path_hasher,
+                            &incorrect_root,
+                            &circuit_key,
+                            &leaf,
+                        );
+                        assert!(!candidate.eject_value());
+                    });
+                    Circuit::reset();
+
+                    // Initialize an incorrect key.
+                    let incorrect_key_value = (0..$num_key_bits).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
+                    ensure!(incorrect_key_value != *key, "Incorrect key should differ from the original key");
+                    let incorrect_key = Inject::new(Mode::$mode, incorrect_key_value);
+
+                    Circuit::scope(format!("Verify (Incorrect Key) {}", Mode::$mode), || {
+                        let candidate = path.verify(
+                            &circuit_key_hasher,
+                            &circuit_leaf_hasher,
+                            &circuit_path_hasher,
+                            &root,
+                            &incorrect_key,
+                            &leaf,
+                        );
+                        assert!(!candidate.eject_value());
+                    });
+                    Circuit::reset();
+                }
+            }
+            Ok(())
+        }};
+        ($kh:ident, $lh:ident, $ph:ident, $mode:ident, $depth:expr, $arity:expr, $num_input_bits:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
+            // Initialize the key hasher.
+            let native_key_hasher = console::algorithms::$kh::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+            let circuit_key_hasher = $kh::<Circuit>::constant(native_key_hasher.clone());
+
+            // Initialize the leaf hasher.
+            let native_leaf_hasher = console::algorithms::$lh::default();
+            let circuit_leaf_hasher = $lh::new();
+
+            // Initialize the path hasher.
+            let native_path_hasher = console::algorithms::$ph::default();
+            let circuit_path_hasher = $ph::new();
+
+            let mut rng = TestRng::default();
+
+            for i in 0..ITERATIONS {
+                // Set the number of key-value pairs.
+                let num_pairs = i + 1;
+
+                // Generate random keys (field elements).
+                let keys = (0..num_pairs).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
+
+                // Generate random leaves.
+                let leaves = (0..num_pairs)
+                    .map(|_| (0..$num_input_bits).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>())
+                    .collect::<Vec<_>>();
+
+                // Compute the sparse Merkle tree.
+                let mut merkle_tree = console::sparse_kary_merkle_tree::SparseKaryMerkleTree::<
+                    _,
+                    _,
+                    _,
+                    <Circuit as Environment>::Network,
+                    $depth,
+                    $arity,
+                >::new(&native_key_hasher, &native_leaf_hasher, &native_path_hasher)?;
+
+                // Insert key-value pairs.
+                for (key, leaf) in keys.iter().zip_eq(leaves.iter()) {
+                    merkle_tree.update(key, leaf)?;
+                }
+
+                // Verify each key-value pair.
+                for (key, merkle_leaf) in keys.iter().zip_eq(leaves.iter()) {
+                    // Compute the Merkle path.
+                    let merkle_path = merkle_tree.prove(key, merkle_leaf)?;
+                    // Initialize the Merkle path.
+                    let path = SparseKaryMerklePath::<Circuit, $ph<Circuit>, $depth, $arity>::new(
+                        Mode::$mode,
+                        merkle_path.clone(),
+                    );
+                    assert_eq!(merkle_path, path.eject_value());
+
+                    // Initialize the Merkle root.
+                    let root = Inject::new(Mode::$mode, *merkle_tree.root());
+                    // Initialize the key.
+                    let circuit_key = Inject::new(Mode::$mode, key.clone());
+                    // Initialize the Merkle leaf.
+                    let leaf: Vec<_> = Inject::new(Mode::$mode, merkle_leaf.clone());
+
+                    Circuit::scope(format!("Verify {}", Mode::$mode), || {
+                        let candidate = path.verify(
+                            &circuit_key_hasher,
+                            &circuit_leaf_hasher,
+                            &circuit_path_hasher,
+                            &root,
+                            &circuit_key,
+                            &leaf,
+                        );
+                        assert!(candidate.eject_value());
+                        assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
+                    });
+                    Circuit::reset();
+
+                    // Initialize an incorrect Merkle root.
+                    let incorrect_root = Default::default();
+
+                    Circuit::scope(format!("Verify (Incorrect Root) {}", Mode::$mode), || {
+                        let candidate = path.verify(
+                            &circuit_key_hasher,
+                            &circuit_leaf_hasher,
+                            &circuit_path_hasher,
+                            &incorrect_root,
+                            &circuit_key,
+                            &leaf,
+                        );
+                        assert!(!candidate.eject_value());
+                    });
+                    Circuit::reset();
+
+                    // Initialize an incorrect key.
+                    let mut incorrect_key_value = Uniform::rand(&mut rng);
+                    while incorrect_key_value == *key {
+                        incorrect_key_value = Uniform::rand(&mut rng);
+                    }
+                    let incorrect_key = Field::new(Mode::$mode, incorrect_key_value);
+
+                    Circuit::scope(format!("Verify (Incorrect Key) {}", Mode::$mode), || {
+                        let candidate = path.verify(
+                            &circuit_key_hasher,
+                            &circuit_leaf_hasher,
+                            &circuit_path_hasher,
+                            &root,
+                            &incorrect_key,
+                            &leaf,
+                        );
+                        assert!(!candidate.eject_value());
+                    });
+                    Circuit::reset();
                 }
             }
             Ok(())
         }};
     }
 
-    // #[test]
-    // fn test_verify_bhp512_constant() -> Result<()> {
-    //     check_verify!(BHP1024, BHP1024, BHP512, Constant, 8, 4, 1024, (35000, 0, 0, 0))
-    // }
-    //
-    // #[test]
-    // fn test_verify_bhp512_public() -> Result<()> {
-    //     check_verify!(BHP1024, BHP1024, BHP512, Public, 8, 4, 1024, (8000, 0, 48000, 48100))
-    // }
-    //
-    // #[test]
-    // fn test_verify_bhp512_private() -> Result<()> {
-    //     check_verify!(BHP1024, BHP1024, BHP512, Private, 8, 4, 1024, (8000, 0, 48000, 48100))
-    // }
+    #[test]
+    fn test_verify_poseidon2_constant() -> Result<()> {
+        check_verify!(Poseidon2, Poseidon2, Poseidon2, Constant, 8, 4, (5593, 0, 0, 0))
+    }
 
-    // #[test]
-    // fn test_verify_keccak256_constant() -> Result<()> {
-    //     check_verify_keccak!(Keccak256, Keccak256, Keccak256, Constant, 6, 4, 256, (6000, 0, 0, 0))
-    // }
+    #[test]
+    fn test_verify_poseidon2_public() -> Result<()> {
+        check_verify!(Poseidon2, Poseidon2, Poseidon2, Public, 8, 4, (5322, 0, 11280, 11338))
+    }
 
-    // #[test]
-    // fn test_verify_keccak256_public() -> Result<()> {
-    //     check_verify_keccak!(Keccak256, Keccak256, Keccak256, Public, 6, 4, 256, (7000, 0, 1400000, 1400100))
-    // }
+    #[test]
+    fn test_verify_poseidon2_private() -> Result<()> {
+        check_verify!(Poseidon2, Poseidon2, Poseidon2, Private, 8, 4, (5322, 0, 11280, 11338))
+    }
 
-    // #[test]
-    // fn test_verify_keccak256_private() -> Result<()> {
-    //     check_verify_keccak!(Keccak256, Keccak256, Keccak256, Private, 6, 4, 256, (7000, 0, 1400000, 1400100))
-    // }
+    #[test]
+    fn test_verify_bhp512_constant() -> Result<()> {
+        check_verify!(BHP1024, BHP1024, BHP512, Constant, 8, 4, 256, 256, (34189, 0, 0, 0))
+    }
 
-    // #[test]
-    // fn test_verify_sha3_256_constant() -> Result<()> {
-    //     check_verify_keccak!(Sha3_256, Sha3_256, Sha3_256, Constant, 6, 4, 256, (6000, 0, 0, 0))
-    // }
+    #[test]
+    fn test_verify_bhp512_public() -> Result<()> {
+        check_verify!(BHP1024, BHP1024, BHP512, Public, 8, 4, 256, 256, (9498, 0, 42582, 42720))
+    }
 
-    // #[test]
-    // fn test_verify_sha3_256_public() -> Result<()> {
-    //     check_verify_keccak!(Sha3_256, Sha3_256, Sha3_256, Public, 6, 4, 256, (7000, 0, 1400000, 1400100))
-    // }
+    #[test]
+    fn test_verify_bhp512_private() -> Result<()> {
+        check_verify!(BHP1024, BHP1024, BHP512, Private, 8, 4, 256, 256, (9498, 0, 42582, 42720))
+    }
 
-    // #[test]
-    // fn test_verify_sha3_256_private() -> Result<()> {
-    //     check_verify_keccak!(Sha3_256, Sha3_256, Sha3_256, Private, 6, 4, 256, (7000, 0, 1400000, 1400100))
-    // }
+    #[test]
+    fn test_verify_keccak256_constant() -> Result<()> {
+        check_verify!(Poseidon2, Keccak256, Keccak256, Constant, 6, 4, 256, (6091, 0, 0, 0))
+    }
+
+    #[test]
+    fn test_verify_keccak256_public() -> Result<()> {
+        check_verify!(Poseidon2, Keccak256, Keccak256, Public, 6, 4, 256, (5825, 0, 1078790, 1078834))
+    }
+
+    #[test]
+    fn test_verify_keccak256_private() -> Result<()> {
+        check_verify!(Poseidon2, Keccak256, Keccak256, Private, 6, 4, 256, (5825, 0, 1078790, 1078834))
+    }
+
+    #[test]
+    fn test_verify_sha3_256_constant() -> Result<()> {
+        check_verify!(Poseidon2, Sha3_256, Sha3_256, Constant, 6, 4, 256, (6091, 0, 0, 0))
+    }
+
+    #[test]
+    fn test_verify_sha3_256_public() -> Result<()> {
+        check_verify!(Poseidon2, Sha3_256, Sha3_256, Public, 6, 4, 256, (5825, 0, 1078790, 1078834))
+    }
+
+    #[test]
+    fn test_verify_sha3_256_private() -> Result<()> {
+        check_verify!(Poseidon2, Sha3_256, Sha3_256, Private, 6, 4, 256, (5825, 0, 1078790, 1078834))
+    }
 
     #[test]
     fn test_verify_poseidon2_works() -> Result<()> {
-        type Poseidon2<E> = Poseidon<E, 2>;
-        type Poseidon4<E> = Poseidon<E, 4>;
-
         let mut rng = TestRng::default();
 
         let native_key_hasher = console::algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
@@ -455,7 +602,7 @@ mod tests {
             );
             assert!(candidate.eject_value(), "Verification should succeed");
 
-            // Check that constraints are reasonable (R1CS efficient)
+            // Check that the number of constraints is reasonable.
             let count = Circuit::count();
             println!("Constraint count: {:?}", count);
         });

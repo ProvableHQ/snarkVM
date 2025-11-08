@@ -13,10 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::sparse_kary_merkle_tree::BooleanHash;
 use snarkvm_console_algorithms::{BHP, Keccak, Poseidon};
 use snarkvm_console_types::prelude::*;
-
-use crate::sparse_kary_merkle_tree::BooleanHash;
 
 /// A trait for a Merkle leaf hash function.
 pub trait LeafHash: Clone + Send + Sync {

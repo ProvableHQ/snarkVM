@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_console_algorithms::{BHP, Keccak, Poseidon};
+use snarkvm_console_algorithms::{BHP, Poseidon};
 use snarkvm_console_types::prelude::*;
 
 /// A trait for a key hash function.
@@ -48,7 +48,7 @@ impl<E: Environment, const RATE: usize> KeyHash for Poseidon<E, RATE> {
     fn hash_key(&self, key: &Self::Key) -> Result<Self::Hash> {
         // Hash the key with a domain separator.
         let mut input = Vec::with_capacity(2);
-        // Use field element 2 as domain separator for keys.
+        // Prepend the key with a `2field` element.
         input.push(Field::<E>::from_u8(2));
         input.push(*key);
         Hash::hash(self, &input)
@@ -62,30 +62,11 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> KeyHash for B
     /// Returns the hash of the given key.
     fn hash_key(&self, key: &Self::Key) -> Result<Self::Hash> {
         let mut input = Vec::with_capacity(2 + key.len());
-        // Prepend with two `true` bits as domain separator for keys.
+        // Prepend the key with a `true` & `false` bit.
         input.push(true);
-        input.push(true);
+        input.push(false);
         input.extend(key);
         // Hash the input.
         Hash::hash(self, &input)
-    }
-}
-
-impl<const TYPE: u8, const VARIANT: usize> KeyHash for Keccak<TYPE, VARIANT> {
-    type Hash = Field<Console>;
-    type Key = Vec<bool>;
-
-    /// Returns the hash of the given key.
-    fn hash_key(&self, key: &Self::Key) -> Result<Self::Hash> {
-        let mut input = Vec::with_capacity(2 + key.len());
-        // Prepend with two `true` bits as domain separator for keys.
-        input.push(true);
-        input.push(true);
-        input.extend(key);
-        // Hash the input, then convert bits to field element.
-        // Use only 252 bits to ensure the result fits in the field.
-        let output = Hash::hash(self, &input)?;
-        let bits_to_use = std::cmp::min(252, output.len());
-        Field::from_bits_le(&output[..bits_to_use])
     }
 }

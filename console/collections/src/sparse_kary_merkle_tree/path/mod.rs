@@ -30,12 +30,8 @@ impl<E: Environment, PH: PathHash, const DEPTH: u8, const ARITY: u8> SparseKaryM
     pub fn try_from((key_hash, siblings): (Field<E>, Vec<Vec<PH::Hash>>)) -> Result<Self> {
         // Ensure the Merkle tree depth is greater than 0.
         ensure!(DEPTH > 0, "Merkle tree depth must be greater than 0");
-        // Ensure the Merkle tree depth is less than or equal to 64.
-        ensure!(DEPTH <= 64u8, "Merkle tree depth must be less than or equal to 64");
         // Ensure the Merkle tree arity is greater than 1.
         ensure!(ARITY > 1, "Merkle tree arity must be greater than 1");
-        // Ensure the Merkle tree does not overflow a u128.
-        ensure!((ARITY as u128).checked_pow(DEPTH as u32).is_some(), "Merkle tree size overflowed");
         // Ensure the Merkle path is the correct length.
         ensure!(siblings.len() == DEPTH as usize, "Found an incorrect Merkle path length");
         for sibling in &siblings {

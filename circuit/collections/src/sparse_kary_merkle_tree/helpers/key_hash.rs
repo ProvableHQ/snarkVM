@@ -49,9 +49,9 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> KeyHash<E> fo
     /// Returns the hash of the given key.
     fn hash_key(&self, key: &Self::Key) -> Self::Hash {
         let mut input = Vec::with_capacity(2 + key.len());
-        // Prepend the key with 2 `true` bits.
+        // Prepend the key with a `true` & `false` bit.
         input.push(Boolean::constant(true));
-        input.push(Boolean::constant(true));
+        input.push(Boolean::constant(false));
         input.extend_from_slice(key);
         // Hash the input.
         Hash::hash(self, &input)

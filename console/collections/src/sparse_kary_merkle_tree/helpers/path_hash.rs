@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::BooleanHash;
+use crate::sparse_kary_merkle_tree::BooleanHash;
 use snarkvm_console_algorithms::{BHP, Keccak, Poseidon};
 use snarkvm_console_types::prelude::*;
 
