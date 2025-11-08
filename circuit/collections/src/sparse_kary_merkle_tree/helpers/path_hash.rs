@@ -97,7 +97,7 @@ impl<E: Environment, const TYPE: u8, const VARIANT: usize> PathHash<E> for Kecca
 mod tests {
     use super::*;
     use snarkvm_circuit_algorithms::{BHP512, Poseidon2};
-    use snarkvm_circuit_types::environment::Circuit;
+    use snarkvm_circuit_types::environment::{assert_scope, Circuit};
     use snarkvm_utilities::{TestRng, Uniform};
 
     use anyhow::Result;
@@ -105,141 +105,83 @@ mod tests {
     const ITERATIONS: u64 = 5;
     const DOMAIN: &str = "SparseTreeCircuit0";
 
+    macro_rules! check_hash_children {
+        // For field-based path hashing (all PathHash implementations use Field children)
+        ($native:ident, $circuit:ident, $mode:ident, $arity:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
+            let mut rng = TestRng::default();
+
+            for i in 0..ITERATIONS {
+                // Sample random field elements as children.
+                let children = (0..$arity).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
+
+                // Compute the expected hash.
+                let expected = console::sparse_kary_merkle_tree::PathHash::hash_children(&$native, &children)?;
+
+                // Prepare the circuit input.
+                let circuit_children = children.into_iter().map(|c| Field::new(Mode::$mode, c)).collect::<Vec<_>>();
+
+                Circuit::scope(format!("PathHash {i}"), || {
+                    // Perform the hash operation.
+                    let candidate = $circuit.hash_children(&circuit_children);
+                    // Verify it matches console output.
+                    assert_eq!(expected, candidate.eject_value());
+                    // Check the number of variables and constraints.
+                    assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
+                });
+                Circuit::reset();
+            }
+            Ok::<_, anyhow::Error>(())
+        }};
+    }
+
     #[test]
     fn test_hash_children_bhp512_constant() -> Result<()> {
         let native = snarkvm_console_algorithms::BHP512::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = BHP512::<Circuit>::constant(native.clone());
-
-        let mut rng = TestRng::default();
-
-        for arity in [2, 4, 6] {
-            for _ in 0..ITERATIONS {
-                let children = (0..arity).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
-                let expected = console::sparse_kary_merkle_tree::PathHash::hash_children(&native, &children)?;
-
-                Circuit::scope("PathHash BHP", || {
-                    let circuit_children = children.into_iter().map(|c| Field::new(Mode::Constant, c)).collect::<Vec<_>>();
-                    let candidate = circuit.hash_children(&circuit_children);
-                    assert_eq!(expected, candidate.eject_value());
-                });
-                Circuit::reset();
-            }
-        }
-        Ok(())
+        check_hash_children!(native, circuit, Constant, 2, (1603, 0, 0, 0))?;
+        check_hash_children!(native, circuit, Constant, 3, (2792, 0, 0, 0))
     }
 
     #[test]
     fn test_hash_children_bhp512_public() -> Result<()> {
         let native = snarkvm_console_algorithms::BHP512::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = BHP512::<Circuit>::constant(native.clone());
-
-        let mut rng = TestRng::default();
-
-        for arity in [2, 4] {
-            for _ in 0..ITERATIONS {
-                let children = (0..arity).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
-                let expected = console::sparse_kary_merkle_tree::PathHash::hash_children(&native, &children)?;
-
-                Circuit::scope("PathHash BHP", || {
-                    let circuit_children = children.into_iter().map(|c| Field::new(Mode::Public, c)).collect::<Vec<_>>();
-                    let candidate = circuit.hash_children(&circuit_children);
-                    assert_eq!(expected, candidate.eject_value());
-                });
-                Circuit::reset();
-            }
-        }
-        Ok(())
+        check_hash_children!(native, circuit, Public, 2, (409, 0, 1883, 1887))?;
+        check_hash_children!(native, circuit, Public, 3, (418, 0, 3748, 3756))
     }
 
     #[test]
     fn test_hash_children_bhp512_private() -> Result<()> {
         let native = snarkvm_console_algorithms::BHP512::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = BHP512::<Circuit>::constant(native.clone());
-
-        let mut rng = TestRng::default();
-
-        for arity in [2, 4] {
-            for _ in 0..ITERATIONS {
-                let children = (0..arity).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
-                let expected = console::sparse_kary_merkle_tree::PathHash::hash_children(&native, &children)?;
-
-                Circuit::scope("PathHash BHP", || {
-                    let circuit_children = children.into_iter().map(|c| Field::new(Mode::Private, c)).collect::<Vec<_>>();
-                    let candidate = circuit.hash_children(&circuit_children);
-                    assert_eq!(expected, candidate.eject_value());
-                });
-                Circuit::reset();
-            }
-        }
-        Ok(())
+        check_hash_children!(native, circuit, Private, 2, (409, 0, 1883, 1887))?;
+        check_hash_children!(native, circuit, Private, 3, (418, 0, 3748, 3756))
     }
 
     #[test]
     fn test_hash_children_poseidon2_constant() -> Result<()> {
         let native = snarkvm_console_algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = Poseidon2::<Circuit>::constant(native.clone());
-
-        let mut rng = TestRng::default();
-
-        for arity in [2, 4, 6] {
-            for _ in 0..ITERATIONS {
-                let children = (0..arity).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
-                let expected = console::sparse_kary_merkle_tree::PathHash::hash_children(&native, &children)?;
-
-                Circuit::scope("PathHash Poseidon", || {
-                    let circuit_children = children.into_iter().map(|c| Field::new(Mode::Constant, c)).collect::<Vec<_>>();
-                    let candidate = circuit.hash_children(&circuit_children);
-                    assert_eq!(expected, candidate.eject_value());
-                });
-                Circuit::reset();
-            }
-        }
-        Ok(())
+        check_hash_children!(native, circuit, Constant, 2, (1, 0, 0, 0))?;
+        check_hash_children!(native, circuit, Constant, 4, (1, 0, 0, 0))?;
+        check_hash_children!(native, circuit, Constant, 6, (1, 0, 0, 0))
     }
 
     #[test]
     fn test_hash_children_poseidon2_public() -> Result<()> {
         let native = snarkvm_console_algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = Poseidon2::<Circuit>::constant(native.clone());
-
-        let mut rng = TestRng::default();
-
-        for arity in [2, 4, 6] {
-            for _ in 0..ITERATIONS {
-                let children = (0..arity).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
-                let expected = console::sparse_kary_merkle_tree::PathHash::hash_children(&native, &children)?;
-
-                Circuit::scope("PathHash Poseidon", || {
-                    let circuit_children = children.into_iter().map(|c| Field::new(Mode::Public, c)).collect::<Vec<_>>();
-                    let candidate = circuit.hash_children(&circuit_children);
-                    assert_eq!(expected, candidate.eject_value());
-                });
-                Circuit::reset();
-            }
-        }
-        Ok(())
+        check_hash_children!(native, circuit, Public, 2, (1, 0, 540, 540))?;
+        check_hash_children!(native, circuit, Public, 4, (1, 0, 815, 815))?;
+        check_hash_children!(native, circuit, Public, 6, (1, 0, 1090, 1090))
     }
 
     #[test]
     fn test_hash_children_poseidon2_private() -> Result<()> {
         let native = snarkvm_console_algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = Poseidon2::<Circuit>::constant(native.clone());
-
-        let mut rng = TestRng::default();
-
-        for arity in [2, 4, 6] {
-            for _ in 0..ITERATIONS {
-                let children = (0..arity).map(|_| Uniform::rand(&mut rng)).collect::<Vec<_>>();
-                let expected = console::sparse_kary_merkle_tree::PathHash::hash_children(&native, &children)?;
-
-                Circuit::scope("PathHash Poseidon", || {
-                    let circuit_children = children.into_iter().map(|c| Field::new(Mode::Private, c)).collect::<Vec<_>>();
-                    let candidate = circuit.hash_children(&circuit_children);
-                    assert_eq!(expected, candidate.eject_value());
-                });
-                Circuit::reset();
-            }
-        }
-        Ok(())
+        check_hash_children!(native, circuit, Private, 2, (1, 0, 540, 540))?;
+        check_hash_children!(native, circuit, Private, 4, (1, 0, 815, 815))?;
+        check_hash_children!(native, circuit, Private, 6, (1, 0, 1090, 1090))
     }
 }
