@@ -71,6 +71,7 @@ mod tests {
     const DOMAIN: &str = "SparseTreeCircuit0";
 
     macro_rules! check_hash_key {
+        // For bit-based keys (e.g., BHP with Vec<bool>)
         ($native:ident, $circuit:ident, $mode:ident, $num_inputs:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
             let mut rng = TestRng::default();
 
@@ -87,8 +88,36 @@ mod tests {
                 Circuit::scope(format!("KeyHash {i}"), || {
                     // Perform the hash operation.
                     let candidate = $circuit.hash_key(&circuit_input);
-                    // Verify it matches console output
+                    // Verify it matches console output.
                     assert_eq!(expected, candidate.eject_value());
+                    // Check the number of variables and constraints.
+                    assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
+                });
+                Circuit::reset();
+            }
+            Ok::<_, anyhow::Error>(())
+        }};
+        // For field-based keys (e.g., Poseidon with Field<E>)
+        ($native:ident, $circuit:ident, $mode:ident, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
+            let mut rng = TestRng::default();
+
+            for i in 0..ITERATIONS {
+                // Sample a random field element.
+                let key = Uniform::rand(&mut rng);
+
+                // Compute the expected hash.
+                let expected = console::sparse_kary_merkle_tree::KeyHash::hash_key(&$native, &key)?;
+
+                // Prepare the circuit input.
+                let circuit_key = Field::new(Mode::$mode, key);
+
+                Circuit::scope(format!("KeyHash {i}"), || {
+                    // Perform the hash operation.
+                    let candidate = $circuit.hash_key(&circuit_key);
+                    // Verify it matches console output.
+                    assert_eq!(expected, candidate.eject_value());
+                    // Check the number of variables and constraints.
+                    assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
                 });
                 Circuit::reset();
             }
@@ -100,83 +129,41 @@ mod tests {
     fn test_hash_key_bhp1024_constant() -> Result<()> {
         let native = snarkvm_console_algorithms::BHP1024::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = BHP1024::<Circuit>::constant(native.clone());
-        check_hash_key!(native, circuit, Constant, 1024, (1793, 0, 0, 0))
+        check_hash_key!(native, circuit, Constant, 1024, (1791, 0, 0, 0))
     }
 
     #[test]
     fn test_hash_key_bhp1024_public() -> Result<()> {
         let native = snarkvm_console_algorithms::BHP1024::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = BHP1024::<Circuit>::constant(native.clone());
-        check_hash_key!(native, circuit, Public, 1024, (415, 0, 1744, 1744))
+        check_hash_key!(native, circuit, Public, 1024, (413, 0, 1744, 1744))
     }
 
     #[test]
     fn test_hash_key_bhp1024_private() -> Result<()> {
         let native = snarkvm_console_algorithms::BHP1024::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = BHP1024::<Circuit>::constant(native.clone());
-        check_hash_key!(native, circuit, Private, 1024, (415, 0, 1744, 1744))
+        check_hash_key!(native, circuit, Private, 1024, (413, 0, 1744, 1744))
     }
 
     #[test]
     fn test_hash_key_poseidon2_constant() -> Result<()> {
         let native = snarkvm_console_algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = Poseidon2::<Circuit>::constant(native.clone());
-
-        let mut rng = TestRng::default();
-
-        for _ in 0..ITERATIONS {
-            let key = Uniform::rand(&mut rng);
-            let expected = console::sparse_kary_merkle_tree::KeyHash::hash_key(&native, &key)?;
-
-            Circuit::scope("KeyHash Poseidon", || {
-                let circuit_key = Field::new(Mode::Constant, key);
-                let candidate = circuit.hash_key(&circuit_key);
-                assert_eq!(expected, candidate.eject_value());
-            });
-            Circuit::reset();
-        }
-        Ok(())
+        check_hash_key!(native, circuit, Constant, (1, 0, 0, 0))
     }
 
     #[test]
     fn test_hash_key_poseidon2_public() -> Result<()> {
         let native = snarkvm_console_algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = Poseidon2::<Circuit>::constant(native.clone());
-
-        let mut rng = TestRng::default();
-
-        for _ in 0..ITERATIONS {
-            let key = Uniform::rand(&mut rng);
-            let expected = console::sparse_kary_merkle_tree::KeyHash::hash_key(&native, &key)?;
-
-            Circuit::scope("KeyHash Poseidon", || {
-                let circuit_key = Field::new(Mode::Public, key);
-                let candidate = circuit.hash_key(&circuit_key);
-                assert_eq!(expected, candidate.eject_value());
-            });
-            Circuit::reset();
-        }
-        Ok(())
+        check_hash_key!(native, circuit, Public, (1, 0, 265, 265))
     }
 
     #[test]
     fn test_hash_key_poseidon2_private() -> Result<()> {
         let native = snarkvm_console_algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit = Poseidon2::<Circuit>::constant(native.clone());
-
-        let mut rng = TestRng::default();
-
-        for _ in 0..ITERATIONS {
-            let key = Uniform::rand(&mut rng);
-            let expected = console::sparse_kary_merkle_tree::KeyHash::hash_key(&native, &key)?;
-
-            Circuit::scope("KeyHash Poseidon", || {
-                let circuit_key = Field::new(Mode::Private, key);
-                let candidate = circuit.hash_key(&circuit_key);
-                assert_eq!(expected, candidate.eject_value());
-            });
-            Circuit::reset();
-        }
-        Ok(())
+        check_hash_key!(native, circuit, Private, (1, 0, 265, 265))
     }
 }
