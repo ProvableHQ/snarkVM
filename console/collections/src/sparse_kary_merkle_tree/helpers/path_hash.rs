@@ -13,11 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![forbid(unsafe_code)]
-#![allow(clippy::too_many_arguments)]
+// Re-export the PathHash trait from kary_merkle_tree (supports k-ary trees)
+pub use crate::kary_merkle_tree::PathHash;
 
-extern crate snarkvm_console_collections as console;
-
-pub mod kary_merkle_tree;
-pub mod merkle_tree;
-pub mod sparse_kary_merkle_tree;

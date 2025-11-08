@@ -13,11 +13,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![forbid(unsafe_code)]
-#![allow(clippy::too_many_arguments)]
+use super::*;
 
-extern crate snarkvm_console_collections as console;
+mod helpers;
+use helpers::*;
 
-pub mod kary_merkle_tree;
-pub mod merkle_tree;
-pub mod sparse_kary_merkle_tree;
+mod insert;
+mod insert_many;
+mod update;
+mod update_many;
+mod remove;
+mod prove;
+
+macro_rules! run_tests {
+    ($rng:expr, [$($i:expr),*]) => {
+        $( assert!(run_test::<$i>($rng).is_ok()); )*
+    };
+}
+use run_tests;
+

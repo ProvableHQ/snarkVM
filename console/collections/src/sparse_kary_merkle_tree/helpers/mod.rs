@@ -13,11 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![forbid(unsafe_code)]
-#![allow(clippy::too_many_arguments)]
+mod key_hash;
+pub use key_hash::*;
 
-extern crate snarkvm_console_collections as console;
+mod leaf_hash;
+pub use leaf_hash::*;
 
-pub mod kary_merkle_tree;
-pub mod merkle_tree;
-pub mod sparse_kary_merkle_tree;
+mod path_hash;
+pub use path_hash::*;
+
