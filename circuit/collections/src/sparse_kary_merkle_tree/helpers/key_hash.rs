@@ -34,7 +34,7 @@ impl<E: Environment, const RATE: usize> KeyHash<E> for Poseidon<E, RATE> {
     /// Returns the hash of the given key.
     fn hash_key(&self, key: &Self::Key) -> Self::Hash {
         let mut input = Vec::with_capacity(2);
-        // Use field element 2 as domain separator for keys.
+        // Prepend the key with a `2field` element.
         input.push(Field::<E>::one() + Field::<E>::one());
         input.push(key.clone());
         Hash::hash(self, &input)
@@ -49,7 +49,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> KeyHash<E> fo
     /// Returns the hash of the given key.
     fn hash_key(&self, key: &Self::Key) -> Self::Hash {
         let mut input = Vec::with_capacity(2 + key.len());
-        // Prepend with two `true` bits as domain separator for keys.
+        // Prepend the key with 2 `true` bits.
         input.push(Boolean::constant(true));
         input.push(Boolean::constant(true));
         input.extend_from_slice(key);

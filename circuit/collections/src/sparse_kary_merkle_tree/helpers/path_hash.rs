@@ -43,7 +43,8 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> PathHash<E> f
     /// Returns the hash of the given child nodes.
     fn hash_children(&self, children: &[Self::Hash]) -> Self::Hash {
         let mut input = Vec::new();
-        // Prepend the nodes with a `true` bit.
+        // Prepend the nodes with a `false` & `true` bit.
+        input.push(Boolean::constant(false));
         input.push(Boolean::constant(true));
         for child in children {
             child.write_bits_le(&mut input);
@@ -77,7 +78,8 @@ impl<E: Environment, const TYPE: u8, const VARIANT: usize> PathHash<E> for Kecca
     /// Returns the hash of the given child nodes.
     fn hash_children(&self, children: &[Self::Hash]) -> Self::Hash {
         let mut input = Vec::new();
-        // Prepend the nodes with a `true` bit.
+        // Prepend the nodes with a `false` & `true` bit.
+        input.push(Boolean::constant(false));
         input.push(Boolean::constant(true));
         for child in children {
             child.write_bits_le(&mut input);
