@@ -31,19 +31,32 @@ impl<N: Network> Stack<N> {
 
         for function_name in self.program.functions().keys() {
             // Synthesize the proving and verifying key.
-            self.synthesize_key::<A, R>(function_name, rng)?;
-            lap!(timer, "Synthesize key for {function_name}");
+            let (verifying_key, certificate) = if cfg!(feature = "dev_skip_checks") {
+                // Sample a dummy verifying key.
+                let verifying_key = VerifyingKey::from_str(
+                    "verifier1qygqqqqqqqqqqqyvxgqqqqqqqqq87vsqqqqqqqqqhe7sqqqqqqqqqma4qqqqqqqqqq65yqqqqqqqqqqvqqqqqqqqqqqgtlaj49fmrk2d8slmselaj9tpucgxv6awu6yu4pfcn5xa0yy0tpxpc8wemasjvvxr9248vt3509vpk3u60ejyfd9xtvjmudpp7ljq2csk4yqz70ug3x8xp3xn3ul0yrrw0mvd2g8ju7rts50u3smue03gp99j88f0ky8h6fjlpvh58rmxv53mldmgrxa3fq6spsh8gt5whvsyu2rk4a2wmeyrgvvdf29pwp02srktxnvht3k6ff094usjtllggva2ym75xc4lzuqu9xx8ylfkm3qc7lf7ktk9uu9du5raukh828dzgq26hrarq5ajjl7pz7zk924kekjrp92r6jh9dpp05mxtuffwlmvew84dvnqrkre7lw29mkdzgdxwe7q8z0vnkv2vwwdraekw2va3plu7rkxhtnkuxvce0qkgxcxn5mtg9q2c3vxdf2r7jjse2g68dgvyh85q4mzfnvn07lletrpty3vypus00gfu9m47rzay4mh5w9f03z9zgzgzhkv0mupdqsk8naljqm9tc2qqzhf6yp3mnv2ey89xk7sw9pslzzlkndfd2upzmew4e4vnrkr556kexs9qrykkuhsr260mnrgh7uv0sp2meky0keeukaxgjdsnmy77kl48g3swcvqdjm50ejzr7x04vy7hn7anhd0xeetclxunnl7pd6e52qxdlr3nmutz4zr8f2xqa57a2zkl59a28w842cj4783zpy9hxw03k6vz4a3uu7sm072uqknpxjk8fyq4vxtqd08kd93c2mt40lj9ag35nm4rwcfjayejk57m9qqu83qnkrj3sz90pw808srmf705n2yu6gvqazpvu2mwm8x6mgtlsntxfhr0qas43rqxnccft36z4ygty86390t7vrt08derz8368z8ekn3yywxgp4uq24gm6e58tpp0lcvtpsm3nkwpnmzztx4qvkaf6vk38wg787h8mfpqqqqqqqqqqt49m8x",
+                )?;
+                // Sample a dummy certificate.
+                let certificate = Certificate::from_str(
+                    "certificate1qyqsqqqqqqqqqqxvwszp09v860w62s2l4g6eqf0kzppyax5we36957ywqm2dplzwvvlqg0kwlnmhzfatnax7uaqt7yqqqw0sc4u",
+                )?;
 
-            // Retrieve the proving key.
-            let proving_key = self.get_proving_key(function_name)?;
-            // Retrieve the verifying key.
-            let verifying_key = self.get_verifying_key(function_name)?;
-            lap!(timer, "Retrieve the keys for {function_name}");
+                (verifying_key, certificate)
+            } else {
+                self.synthesize_key::<A, R>(function_name, rng)?;
+                lap!(timer, "Synthesize key for {function_name}");
 
-            // Certify the circuit.
-            let certificate = Certificate::certify(&function_name.to_string(), &proving_key, &verifying_key)?;
-            lap!(timer, "Certify the circuit");
+                // Retrieve the proving key.
+                let proving_key = self.get_proving_key(function_name)?;
+                // Retrieve the verifying key.
+                let verifying_key = self.get_verifying_key(function_name)?;
+                lap!(timer, "Retrieve the keys for {function_name}");
+                // Certify the verifying key.
+                let certificate = Certificate::certify(&function_name.to_string(), &proving_key, &verifying_key)?;
+                lap!(timer, "Certify the verifying key");
 
+                (verifying_key, certificate)
+            };
             // Add the verifying key and certificate to the bundle.
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
@@ -64,10 +77,18 @@ impl<N: Network> Stack<N> {
     ) -> Result<()> {
         let timer = timer!("Stack::verify_deployment");
 
+        // NOTE: As developer, you will likely still want to confirm that your
+        // deployment is within R1CS constraint and variable limits using
+        // targeted and parallelized synthesis.
+        if cfg!(feature = "dev_skip_checks") {
+            return Ok(());
+        }
+
         // Sanity Checks //
 
         // Ensure the deployment is ordered.
         deployment.check_is_ordered()?;
+
         // Ensure the program in the stack and deployment matches.
         ensure!(&self.program == deployment.program(), "The stack program does not match the deployment program");
         // If the deployment contains a checksum, ensure it matches the one computed by the stack.

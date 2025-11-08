@@ -178,16 +178,20 @@ impl<N: Network> Trace<N> {
         // Construct the proving tasks.
         let proving_tasks = self.transition_tasks.values().cloned().collect();
         // Compute the proof.
-        let (global_state_root, proof) = Self::prove_batch::<A, R>(
-            locator,
-            varuna_version,
-            proving_tasks,
-            inclusion_assignments,
-            *global_state_root,
-            rng,
-        )?;
+        let (global_state_root, proof) = if cfg!(feature = "dev_skip_checks") {
+            (*global_state_root, None)
+        } else {
+            Self::prove_batch::<A, R>(
+                locator,
+                varuna_version,
+                proving_tasks,
+                inclusion_assignments,
+                *global_state_root,
+                rng,
+            )?
+        };
         // Return the execution.
-        Execution::from(self.transitions.iter().cloned(), global_state_root, Some(proof))
+        Execution::from(self.transitions.iter().cloned(), global_state_root, proof)
     }
 
     /// Returns a new fee with a proof, for the current inclusion assignment and global state root.
@@ -216,16 +220,20 @@ impl<N: Network> Trace<N> {
         // Construct the proving tasks.
         let proving_tasks = self.transition_tasks.values().cloned().collect();
         // Compute the proof.
-        let (global_state_root, proof) = Self::prove_batch::<A, R>(
-            "credits.aleo/fee (private or public)",
-            varuna_version,
-            proving_tasks,
-            inclusion_assignments,
-            *global_state_root,
-            rng,
-        )?;
+        let (global_state_root, proof) = if cfg!(feature = "dev_skip_checks") {
+            (*global_state_root, None)
+        } else {
+            Self::prove_batch::<A, R>(
+                "credits.aleo/fee (private or public)",
+                varuna_version,
+                proving_tasks,
+                inclusion_assignments,
+                *global_state_root,
+                rng,
+            )?
+        };
         // Return the fee.
-        Ok(Fee::from_unchecked(fee_transition.clone(), global_state_root, Some(proof)))
+        Ok(Fee::from_unchecked(fee_transition.clone(), global_state_root, proof))
     }
 
     /// Checks the proof for the execution.
@@ -307,7 +315,7 @@ impl<N: Network> Trace<N> {
         inclusion_assignments: &[InclusionAssignmentWrapper<N>],
         global_state_root: N::StateRoot,
         rng: &mut R,
-    ) -> Result<(N::StateRoot, Proof<N>)> {
+    ) -> Result<(N::StateRoot, Option<Proof<N>>)> {
         // Ensure the global state root is not zero.
         // Note: To protect user privacy, even when there are *no* inclusion assignments,
         // the user must provide a real global state root (which is checked in consensus).
@@ -371,7 +379,7 @@ impl<N: Network> Trace<N> {
         // Compute the proof.
         let proof = ProvingKey::prove_batch(locator, varuna_version, &proving_tasks, rng)?;
         // Return the global state root and proof.
-        Ok((global_state_root, proof))
+        Ok((global_state_root, Some(proof)))
     }
 
     /// Checks the proof for the given inputs.
