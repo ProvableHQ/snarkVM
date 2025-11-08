@@ -271,85 +271,6 @@ mod tests {
     // Constraint counts may vary slightly based on optimization level and inputs.
     // The key requirement is R1CS efficiency for state updates.
 
-    #[test]
-    fn test_verify_poseidon2_works() -> Result<()> {
-        type Poseidon2<E> = Poseidon<E, 2>;
-        type Poseidon4<E> = Poseidon<E, 4>;
-
-        let mut rng = TestRng::default();
-
-        let native_key_hasher = console::algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
-        let circuit_key_hasher = Poseidon2::<Circuit>::constant(native_key_hasher.clone());
-
-        let native_leaf_hasher = console::algorithms::Poseidon4::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
-        let circuit_leaf_hasher = Poseidon4::<Circuit>::constant(native_leaf_hasher.clone());
-
-        let native_path_hasher = console::algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
-        let circuit_path_hasher = Poseidon2::<Circuit>::constant(native_path_hasher.clone());
-
-        // Test with a single key-value pair
-        let key = Uniform::rand(&mut rng);
-        let leaf = vec![Uniform::rand(&mut rng)];
-
-        let mut merkle_tree = console::sparse_kary_merkle_tree::SparseKaryMerkleTree::<
-            _,
-            _,
-            _,
-            <Circuit as Environment>::Network,
-            16,
-            4,
-        >::new(&native_key_hasher, &native_leaf_hasher, &native_path_hasher)?;
-
-        merkle_tree.update(&key, &leaf)?;
-        let merkle_path = merkle_tree.prove(&key, &leaf)?;
-        assert!(merkle_path.verify(
-            &native_key_hasher,
-            &native_leaf_hasher,
-            &native_path_hasher,
-            merkle_tree.root(),
-            &key,
-            &leaf
-        ));
-
-        let path = SparseKaryMerklePath::<Circuit, Poseidon2<Circuit>, 16, 4>::new(Mode::Private, merkle_path.clone());
-        let root = Field::new(Mode::Public, *merkle_tree.root());
-        let circuit_key = Field::new(Mode::Private, key);
-        let circuit_leaf: Vec<_> = Inject::new(Mode::Private, leaf.clone());
-
-        Circuit::scope("Verify sparse merkle path", || {
-            let candidate = path.verify(
-                &circuit_key_hasher,
-                &circuit_leaf_hasher,
-                &circuit_path_hasher,
-                &root,
-                &circuit_key,
-                &circuit_leaf,
-            );
-            assert!(candidate.eject_value(), "Verification should succeed");
-
-            // Check that constraints are reasonable (R1CS efficient)
-            let count = Circuit::count();
-            println!("Constraint count: {:?}", count);
-        });
-
-        Ok(())
-    }
-
-    // #[test]
-    // fn test_verify_bhp512_constant() -> Result<()> {
-    //     check_verify!(BHP1024, BHP1024, BHP512, Constant, 8, 4, 1024, (35000, 0, 0, 0))
-    // }
-    //
-    // #[test]
-    // fn test_verify_bhp512_public() -> Result<()> {
-    //     check_verify!(BHP1024, BHP1024, BHP512, Public, 8, 4, 1024, (8000, 0, 48000, 48100))
-    // }
-    //
-    // #[test]
-    // fn test_verify_bhp512_private() -> Result<()> {
-    //     check_verify!(BHP1024, BHP1024, BHP512, Private, 8, 4, 1024, (8000, 0, 48000, 48100))
-    // }
-
     macro_rules! check_verify_keccak {
         ($kh:ident, $lh:ident, $ph:ident, $mode:ident, $depth:expr, $arity:expr, $num_inputs:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
             // Initialize the key hasher.
@@ -433,7 +354,21 @@ mod tests {
         }};
     }
 
-    // TODO: Fix trait conflicts for Keccak/SHA3 tests
+    // #[test]
+    // fn test_verify_bhp512_constant() -> Result<()> {
+    //     check_verify!(BHP1024, BHP1024, BHP512, Constant, 8, 4, 1024, (35000, 0, 0, 0))
+    // }
+    //
+    // #[test]
+    // fn test_verify_bhp512_public() -> Result<()> {
+    //     check_verify!(BHP1024, BHP1024, BHP512, Public, 8, 4, 1024, (8000, 0, 48000, 48100))
+    // }
+    //
+    // #[test]
+    // fn test_verify_bhp512_private() -> Result<()> {
+    //     check_verify!(BHP1024, BHP1024, BHP512, Private, 8, 4, 1024, (8000, 0, 48000, 48100))
+    // }
+
     // #[test]
     // fn test_verify_keccak256_constant() -> Result<()> {
     //     check_verify_keccak!(Keccak256, Keccak256, Keccak256, Constant, 6, 4, 256, (6000, 0, 0, 0))
@@ -463,4 +398,68 @@ mod tests {
     // fn test_verify_sha3_256_private() -> Result<()> {
     //     check_verify_keccak!(Sha3_256, Sha3_256, Sha3_256, Private, 6, 4, 256, (7000, 0, 1400000, 1400100))
     // }
+
+    #[test]
+    fn test_verify_poseidon2_works() -> Result<()> {
+        type Poseidon2<E> = Poseidon<E, 2>;
+        type Poseidon4<E> = Poseidon<E, 4>;
+
+        let mut rng = TestRng::default();
+
+        let native_key_hasher = console::algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let circuit_key_hasher = Poseidon2::<Circuit>::constant(native_key_hasher.clone());
+
+        let native_leaf_hasher = console::algorithms::Poseidon4::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let circuit_leaf_hasher = Poseidon4::<Circuit>::constant(native_leaf_hasher.clone());
+
+        let native_path_hasher = console::algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let circuit_path_hasher = Poseidon2::<Circuit>::constant(native_path_hasher.clone());
+
+        // Test with a single key-value pair
+        let key = Uniform::rand(&mut rng);
+        let leaf = vec![Uniform::rand(&mut rng)];
+
+        let mut merkle_tree = console::sparse_kary_merkle_tree::SparseKaryMerkleTree::<
+            _,
+            _,
+            _,
+            <Circuit as Environment>::Network,
+            16,
+            4,
+        >::new(&native_key_hasher, &native_leaf_hasher, &native_path_hasher)?;
+
+        merkle_tree.update(&key, &leaf)?;
+        let merkle_path = merkle_tree.prove(&key, &leaf)?;
+        assert!(merkle_path.verify(
+            &native_key_hasher,
+            &native_leaf_hasher,
+            &native_path_hasher,
+            merkle_tree.root(),
+            &key,
+            &leaf
+        ));
+
+        let path = SparseKaryMerklePath::<Circuit, Poseidon2<Circuit>, 16, 4>::new(Mode::Private, merkle_path.clone());
+        let root = Field::new(Mode::Public, *merkle_tree.root());
+        let circuit_key = Field::new(Mode::Private, key);
+        let circuit_leaf: Vec<_> = Inject::new(Mode::Private, leaf.clone());
+
+        Circuit::scope("Verify sparse merkle path", || {
+            let candidate = path.verify(
+                &circuit_key_hasher,
+                &circuit_leaf_hasher,
+                &circuit_path_hasher,
+                &root,
+                &circuit_key,
+                &circuit_leaf,
+            );
+            assert!(candidate.eject_value(), "Verification should succeed");
+
+            // Check that constraints are reasonable (R1CS efficient)
+            let count = Circuit::count();
+            println!("Constraint count: {:?}", count);
+        });
+
+        Ok(())
+    }
 }
