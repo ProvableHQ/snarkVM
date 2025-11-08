@@ -33,8 +33,9 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> LeafHash for 
 
     /// Returns the hash of the given leaf node.
     fn hash_leaf(&self, leaf: &Self::Leaf) -> Result<Self::Hash> {
-        let mut input = Vec::with_capacity(1 + leaf.len());
-        // Prepend the leaf with a `false` bit.
+        let mut input = Vec::with_capacity(2 + leaf.len());
+        // Prepend the leaf with 2 `false` bits.
+        input.push(false);
         input.push(false);
         input.extend(leaf);
         // Hash the input.
@@ -63,8 +64,9 @@ impl<const TYPE: u8, const VARIANT: usize> LeafHash for Keccak<TYPE, VARIANT> {
 
     /// Returns the hash of the given leaf node.
     fn hash_leaf(&self, leaf: &Self::Leaf) -> Result<Self::Hash> {
-        let mut input = Vec::with_capacity(1 + leaf.len());
-        // Prepend the leaf with a `false` bit.
+        let mut input = Vec::with_capacity(2 + leaf.len());
+        // Prepend the leaf with 2 `false` bits.
+        input.push(false);
         input.push(false);
         input.extend(leaf);
         // Hash the input.

@@ -19,9 +19,6 @@ pub use helpers::{BooleanHash, KeyHash, LeafHash, PathHash};
 mod verify;
 
 #[cfg(test)]
-mod testing;
-
-#[cfg(test)]
 use snarkvm_circuit_types::environment::assert_scope;
 
 use snarkvm_circuit_types::{Boolean, Field, U64, environment::prelude::*};

@@ -75,3 +75,142 @@ impl<E: Environment, const TYPE: u8, const VARIANT: usize> LeafHash for Keccak<E
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_circuit_algorithms::{BHP1024, Poseidon4};
+    use snarkvm_circuit_types::environment::Circuit;
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    use anyhow::Result;
+
+    const ITERATIONS: u64 = 10;
+    const DOMAIN: &str = "SparseTreeCircuit0";
+
+    #[test]
+    fn test_hash_leaf_bhp1024_constant() -> Result<()> {
+        let native = snarkvm_console_algorithms::BHP1024::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let circuit = BHP1024::<Circuit>::constant(native.clone());
+
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            let leaf = console::Field::<<Circuit as Environment>::Network>::rand(&mut rng).to_bits_le();
+            let expected = console::sparse_kary_merkle_tree::LeafHash::hash_leaf(&native, &leaf)?;
+
+            Circuit::scope("LeafHash BHP", || {
+                let circuit_leaf: Vec<_> = Inject::new(Mode::Constant, leaf);
+                let candidate = circuit.hash_leaf(&circuit_leaf);
+                assert_eq!(expected, candidate.eject_value());
+            });
+            Circuit::reset();
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_leaf_bhp1024_public() -> Result<()> {
+        let native = snarkvm_console_algorithms::BHP1024::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let circuit = BHP1024::<Circuit>::constant(native.clone());
+
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            let leaf = console::Field::<<Circuit as Environment>::Network>::rand(&mut rng).to_bits_le();
+            let expected = console::sparse_kary_merkle_tree::LeafHash::hash_leaf(&native, &leaf)?;
+
+            Circuit::scope("LeafHash BHP", || {
+                let circuit_leaf: Vec<_> = Inject::new(Mode::Public, leaf);
+                let candidate = circuit.hash_leaf(&circuit_leaf);
+                assert_eq!(expected, candidate.eject_value());
+            });
+            Circuit::reset();
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_leaf_bhp1024_private() -> Result<()> {
+        let native = snarkvm_console_algorithms::BHP1024::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let circuit = BHP1024::<Circuit>::constant(native.clone());
+
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            let leaf = console::Field::<<Circuit as Environment>::Network>::rand(&mut rng).to_bits_le();
+            let expected = console::sparse_kary_merkle_tree::LeafHash::hash_leaf(&native, &leaf)?;
+
+            Circuit::scope("LeafHash BHP", || {
+                let circuit_leaf: Vec<_> = Inject::new(Mode::Private, leaf);
+                let candidate = circuit.hash_leaf(&circuit_leaf);
+                assert_eq!(expected, candidate.eject_value());
+            });
+            Circuit::reset();
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_leaf_poseidon4_constant() -> Result<()> {
+        let native = snarkvm_console_algorithms::Poseidon4::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let circuit = Poseidon4::<Circuit>::constant(native.clone());
+
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            let leaf = vec![Uniform::rand(&mut rng)];
+            let expected = console::sparse_kary_merkle_tree::LeafHash::hash_leaf(&native, &leaf)?;
+
+            Circuit::scope("LeafHash Poseidon", || {
+                let circuit_leaf: Vec<_> = Inject::new(Mode::Constant, leaf);
+                let candidate = circuit.hash_leaf(&circuit_leaf);
+                assert_eq!(expected, candidate.eject_value());
+            });
+            Circuit::reset();
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_leaf_poseidon4_public() -> Result<()> {
+        let native = snarkvm_console_algorithms::Poseidon4::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let circuit = Poseidon4::<Circuit>::constant(native.clone());
+
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            let leaf = vec![Uniform::rand(&mut rng)];
+            let expected = console::sparse_kary_merkle_tree::LeafHash::hash_leaf(&native, &leaf)?;
+
+            Circuit::scope("LeafHash Poseidon", || {
+                let circuit_leaf: Vec<_> = Inject::new(Mode::Public, leaf);
+                let candidate = circuit.hash_leaf(&circuit_leaf);
+                assert_eq!(expected, candidate.eject_value());
+            });
+            Circuit::reset();
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_leaf_poseidon4_private() -> Result<()> {
+        let native = snarkvm_console_algorithms::Poseidon4::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let circuit = Poseidon4::<Circuit>::constant(native.clone());
+
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            let leaf = vec![Uniform::rand(&mut rng)];
+            let expected = console::sparse_kary_merkle_tree::LeafHash::hash_leaf(&native, &leaf)?;
+
+            Circuit::scope("LeafHash Poseidon", || {
+                let circuit_leaf: Vec<_> = Inject::new(Mode::Private, leaf);
+                let candidate = circuit.hash_leaf(&circuit_leaf);
+                assert_eq!(expected, candidate.eject_value());
+            });
+            Circuit::reset();
+        }
+        Ok(())
+    }
+}
