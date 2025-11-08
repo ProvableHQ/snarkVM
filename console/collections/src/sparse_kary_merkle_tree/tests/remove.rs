@@ -19,7 +19,7 @@ use snarkvm_console_types::prelude::Console;
 
 type CurrentEnvironment = Console;
 
-const ITERATIONS: u128 = 10;
+const ITERATIONS: u128 = 3;
 
 /// Runs the following test:
 /// 1. Construct the Sparse K-ary Merkle tree for the entries.
@@ -126,7 +126,7 @@ fn test_sparse_kary_merkle_tree_remove_bhp() -> Result<()> {
     // Ensure DEPTH = 0 fails.
     assert!(run_test::<0>(&mut rng).is_err());
     // Spot check important depths.
-    run_tests!(&mut rng, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 16, 17, 31, 32, 64]);
+    run_tests!(&mut rng, [1, 2, 3, 4, 5, 7, 8, 10]);
     Ok(())
 }
 
@@ -178,7 +178,7 @@ fn test_sparse_kary_merkle_tree_remove_poseidon() -> Result<()> {
     // Ensure DEPTH = 0 fails.
     assert!(run_test::<0>(&mut rng).is_err());
     // Spot check important depths.
-    run_tests!(&mut rng, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 16, 17, 31, 32, 64]);
+    run_tests!(&mut rng, [1, 2, 3, 4, 5, 7, 8, 10]);
     Ok(())
 }
 

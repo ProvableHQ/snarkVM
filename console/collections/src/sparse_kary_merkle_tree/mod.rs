@@ -32,6 +32,9 @@ use std::marker::PhantomData;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
+/// A path in the sparse k-ary Merkle tree, represented as a sequence of DEPTH digits (0..ARITY-1).
+type TreePath = Vec<u8>;
+
 #[derive(Clone)]
 pub struct SparseKaryMerkleTree<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Hash = PH::Hash>, const DEPTH: u8, const ARITY: u8> {
     /// The path hasher for the Sparse K-ary Merkle tree.
@@ -40,12 +43,12 @@ pub struct SparseKaryMerkleTree<E: Environment, PH: PathHash, KH: KeyHash<Hash =
     key_hasher: KH,
     /// The leaf hasher for the Sparse K-ary Merkle tree.
     leaf_hasher: LH,
-    /// The computed root of the full Sparse K-ary Merkle tree.
+    /// The computed root of the Sparse K-ary Merkle tree.
     root: PH::Hash,
-    /// The internal hashes, stored as a map from node index to hash.
-    /// For a sparse tree, we only store non-empty nodes.
-    tree: BTreeMap<usize, PH::Hash>,
-    /// The canonical empty hash.
+    /// The leaf hashes, indexed by their path in the tree.
+    /// In a sparse tree, we only store non-empty leaves.
+    leaves: BTreeMap<TreePath, PH::Hash>,
+    /// The canonical empty hash (used for empty positions).
     empty_hash: PH::Hash,
     /// The key-value pairs stored in the tree.
     entries: BTreeMap<KH::Key, LH::Leaf>,
@@ -65,11 +68,9 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
 
         // Ensure the Sparse K-ary Merkle tree depth is greater than 0.
         ensure!(DEPTH > 0, "Sparse K-ary Merkle tree depth must be greater than 0");
-        // Ensure the Sparse K-ary Merkle tree depth is less than or equal to 64.
-        ensure!(DEPTH <= 64u8, "Sparse K-ary Merkle tree depth must be less than or equal to 64");
         // Ensure the Sparse K-ary Merkle tree arity is greater than 1.
         ensure!(ARITY > 1, "Sparse K-ary Merkle tree arity must be greater than 1");
-        // Ensure the Sparse K-ary Merkle tree does not overflow a u128.
+        // Ensure the Sparse K-ary Merkle tree does not overflow.
         ensure!((ARITY as u128).checked_pow(DEPTH as u32).is_some(), "Sparse K-ary Merkle tree size overflowed");
 
         // Compute the empty hash (hash of ARITY default hashes).
@@ -90,7 +91,7 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
             key_hasher: key_hasher.clone(),
             leaf_hasher: leaf_hasher.clone(),
             root: root_hash,
-            tree: BTreeMap::new(),
+            leaves: BTreeMap::new(),
             empty_hash,
             entries: BTreeMap::new(),
             sorted,
@@ -112,9 +113,11 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
         // Initialize an empty tree.
         let mut tree = Self::new(path_hasher, key_hasher, leaf_hasher, sorted)?;
 
-        // Insert all entries using batch insert.
-        let entries_map: BTreeMap<_, _> = entries.iter().cloned().collect();
-        tree.insert_many(&entries_map)?;
+        // Insert all entries using the batch insert method.
+        if !entries.is_empty() {
+            let entries_map: BTreeMap<_, _> = entries.iter().cloned().collect();
+            tree.insert_many(&entries_map)?;
+        }
 
         finish!(timer);
 
@@ -129,8 +132,8 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
         // Compute the key hash.
         let key_hash = self.key_hasher.hash_key(&key)?;
 
-        // Compute the leaf index from the key hash.
-        let leaf_index = self.compute_leaf_index(&key_hash)?;
+        // Compute the path from the key hash.
+        let path = self.compute_path(&key_hash)?;
 
         // Compute the leaf hash.
         let leaf_hash = self.leaf_hasher.hash_leaf(&value)?;
@@ -138,8 +141,8 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
         // Update the entries map.
         self.entries.insert(key, value);
 
-        // Update the tree with the new leaf hash.
-        self.tree.insert(leaf_index, leaf_hash);
+        // Update the leaves with the new leaf hash.
+        self.leaves.insert(path, leaf_hash);
 
         // Recompute the root hash.
         self.recompute_root()?;
@@ -157,33 +160,18 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
         // Check that there are entries to insert.
         ensure!(!entries.is_empty(), "There must be at least one entry to insert in the Sparse K-ary Merkle tree");
 
-        // Hash all keys and compute leaf indices.
-        let hash_key = |(key, value): (&KH::Key, &LH::Leaf)| -> Result<(usize, PH::Hash, KH::Key, LH::Leaf)> {
+        // Process all entries and compute their paths and hashes.
+        for (key, value) in entries {
             let key_hash = self.key_hasher.hash_key(key)?;
-            let leaf_index = self.compute_leaf_index(&key_hash)?;
+            let path = self.compute_path(&key_hash)?;
             let leaf_hash = self.leaf_hasher.hash_leaf(value)?;
-            Ok((leaf_index, leaf_hash, key.clone(), value.clone()))
-        };
-
-        // Process entries in parallel if there are many.
-        let updates: Vec<(usize, PH::Hash, KH::Key, LH::Leaf)> = match entries.len() {
-            0..=100 => entries.iter().map(|entry| hash_key(entry)).collect::<Result<Vec<_>>>()?,
-            _ => cfg_iter!(entries).map(|entry| hash_key(entry)).collect::<Result<Vec<_>>>()?,
-        };
-        lap!(timer, "Hashed {} keys and values", updates.len());
-
-        // Update entries map.
-        for (_, _, key, value) in &updates {
+            
             self.entries.insert(key.clone(), value.clone());
+            self.leaves.insert(path, leaf_hash);
         }
 
-        // Update tree with new leaf hashes.
-        for (leaf_index, leaf_hash, _, _) in &updates {
-            self.tree.insert(*leaf_index, *leaf_hash);
-        }
-
-        // Recompute the root hash efficiently for batch updates.
-        self.recompute_root_batch(&updates.iter().map(|(idx, _, _, _)| *idx).collect::<Vec<_>>())?;
+        // Recompute the root hash.
+        self.recompute_root()?;
 
         finish!(timer);
 
@@ -204,17 +192,17 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
         // Compute the key hash.
         let key_hash = self.key_hasher.hash_key(key)?;
 
-        // Compute the leaf index from the key hash.
-        let leaf_index = self.compute_leaf_index(&key_hash)?;
+        // Compute the path from the key hash.
+        let path = self.compute_path(&key_hash)?;
 
-        // Compute the leaf hash.
+        // Compute the new leaf hash.
         let leaf_hash = self.leaf_hasher.hash_leaf(&value)?;
 
         // Update the entries map.
         self.entries.insert(key.clone(), value);
 
-        // Update the tree with the new leaf hash.
-        self.tree.insert(leaf_index, leaf_hash);
+        // Update the leaves with the new leaf hash.
+        self.leaves.insert(path, leaf_hash);
 
         // Recompute the root hash.
         self.recompute_root()?;
@@ -226,47 +214,32 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
 
     #[inline]
     /// Updates multiple key-value pairs in the Sparse K-ary Merkle tree.
-    pub fn update_many(&mut self, entries: &BTreeMap<KH::Key, LH::Leaf>) -> Result<()> {
+    pub fn update_many(&mut self, updates: &BTreeMap<KH::Key, LH::Leaf>) -> Result<()> {
         let timer = timer!("SparseKaryMerkleTree::update_many");
 
-        // Check that there are entries to update.
-        ensure!(!entries.is_empty(), "There must be at least one entry to update in the Sparse K-ary Merkle tree");
+        // Check that there are updates to apply.
+        ensure!(!updates.is_empty(), "There must be at least one update to apply in the Sparse K-ary Merkle tree");
 
         // Ensure all keys exist.
-        for key in entries.keys() {
+        for key in updates.keys() {
             ensure!(
                 self.entries.contains_key(key),
                 "Key does not exist in the Sparse K-ary Merkle tree"
             );
         }
 
-        // Hash all keys and compute leaf indices.
-        let hash_key = |(key, value): (&KH::Key, &LH::Leaf)| -> Result<(usize, PH::Hash, KH::Key, LH::Leaf)> {
+        // Process all updates.
+        for (key, value) in updates {
             let key_hash = self.key_hasher.hash_key(key)?;
-            let leaf_index = self.compute_leaf_index(&key_hash)?;
+            let path = self.compute_path(&key_hash)?;
             let leaf_hash = self.leaf_hasher.hash_leaf(value)?;
-            Ok((leaf_index, leaf_hash, key.clone(), value.clone()))
-        };
-
-        // Process entries in parallel if there are many.
-        let updates: Vec<(usize, PH::Hash, KH::Key, LH::Leaf)> = match entries.len() {
-            0..=100 => entries.iter().map(|entry| hash_key(entry)).collect::<Result<Vec<_>>>()?,
-            _ => cfg_iter!(entries).map(|entry| hash_key(entry)).collect::<Result<Vec<_>>>()?,
-        };
-        lap!(timer, "Hashed {} keys and values", updates.len());
-
-        // Update entries map.
-        for (_, _, key, value) in &updates {
+            
             self.entries.insert(key.clone(), value.clone());
+            self.leaves.insert(path, leaf_hash);
         }
 
-        // Update tree with new leaf hashes.
-        for (leaf_index, leaf_hash, _, _) in &updates {
-            self.tree.insert(*leaf_index, *leaf_hash);
-        }
-
-        // Recompute the root hash efficiently for batch updates.
-        self.recompute_root_batch(&updates.iter().map(|(idx, _, _, _)| *idx).collect::<Vec<_>>())?;
+        // Recompute the root hash.
+        self.recompute_root()?;
 
         finish!(timer);
 
@@ -287,14 +260,14 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
         // Compute the key hash.
         let key_hash = self.key_hasher.hash_key(key)?;
 
-        // Compute the leaf index from the key hash.
-        let leaf_index = self.compute_leaf_index(&key_hash)?;
+        // Compute the path from the key hash.
+        let path = self.compute_path(&key_hash)?;
 
         // Remove from entries map.
         self.entries.remove(key);
 
-        // Remove from tree.
-        self.tree.remove(&leaf_index);
+        // Remove from leaves.
+        self.leaves.remove(&path);
 
         // Recompute the root hash.
         self.recompute_root()?;
@@ -316,58 +289,41 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
         // Compute the key hash.
         let key_hash = self.key_hasher.hash_key(key)?;
 
-        // Compute the leaf index from the key hash.
-        let leaf_index = self.compute_leaf_index(&key_hash)?;
+        // Compute the path from the key hash.
+        let path = self.compute_path(&key_hash)?;
 
-        // Get the value.
-        let value = self.entries.get(key).unwrap();
+        // Initialize a cache for computed subtree hashes to avoid recomputation.
+        let mut cache: BTreeMap<Vec<u8>, PH::Hash> = BTreeMap::new();
 
-        // Compute the leaf hash.
-        let leaf_hash = self.leaf_hasher.hash_leaf(value)?;
+        // Initialize a vector for the sibling hashes.
+        let mut siblings = Vec::with_capacity(DEPTH as usize);
 
-        // Ensure the leaf hash matches the one in the tree.
-        ensure!(
-            self.tree.get(&leaf_index).copied() == Some(leaf_hash),
-            "The given Sparse K-ary Merkle leaf does not match the one in the tree"
-        );
-
-        // Initialize a vector for the Merkle path.
-        let mut path = Vec::with_capacity(DEPTH as usize);
-
-        // Iterate from the leaf to the root, storing the sibling hashes along the path.
-        let mut current_index = leaf_index;
-        for _level in 0..DEPTH {
-            // Compute the sibling indices.
-            if let Some(siblings) = self.compute_siblings::<ARITY>(current_index) {
-                // Get the sibling hashes (or empty hash if not present).
-                let sibling_hashes: Vec<PH::Hash> = siblings
-                    .map(|idx| self.tree.get(&idx).copied().unwrap_or(self.empty_hash))
-                    .collect();
-
-                // Append the sibling hashes to the path.
-                path.push(sibling_hashes);
-
-                // Update the current index to the parent.
-                if let Some(parent_index) = self.compute_parent::<ARITY>(current_index) {
-                    current_index = parent_index;
-                } else {
-                    break;
+        // For each level, collect the sibling hashes.
+        for level in 0..DEPTH as usize {
+            let mut sibling_hashes = Vec::with_capacity((ARITY - 1) as usize);
+            
+            // The digit at this level tells us which child position we're at.
+            let my_position = path[level];
+            
+            // Collect all sibling hashes (all positions except my_position).
+            for position in 0..ARITY {
+                if position != my_position {
+                    // Construct the sibling's path.
+                    let mut sibling_path = path[0..=level].to_vec();
+                    sibling_path[level] = position;
+                    
+                    // Get the sibling's subtree hash (with caching).
+                    let sibling_hash = self.get_subtree_hash_cached(&sibling_path, &mut cache)?;
+                    
+                    sibling_hashes.push(sibling_hash);
                 }
-            } else {
-                // If we're at the root, pad with empty hashes.
-                let empty_hashes = vec![self.empty_hash; (ARITY - 1) as usize];
-                path.push(empty_hashes);
             }
-        }
-
-        // Ensure the path has exactly DEPTH levels.
-        if path.len() < DEPTH as usize {
-            let empty_hashes = vec![self.empty_hash; (ARITY - 1) as usize];
-            path.resize(DEPTH as usize, empty_hashes);
+            
+            siblings.push(sibling_hashes);
         }
 
         // Return the Merkle path.
-        SparseKaryMerklePath::try_from((key_hash, path))
+        SparseKaryMerklePath::try_from((key_hash, siblings))
     }
 
     /// Returns `true` if the given Merkle path is valid for the given root and key-value pair.
@@ -405,13 +361,13 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
         &self.entries
     }
 
-    /// Recomputes the root hash from the current tree state.
-    #[inline]
+    /// Recomputes the root hash from the current leaves using a bottom-up approach.
+    /// This is much more efficient than recursion for sparse trees.
     fn recompute_root(&mut self) -> Result<()> {
         let timer = timer!("SparseKaryMerkleTree::recompute_root");
 
-        // If the tree is empty, compute the empty root.
-        if self.tree.is_empty() {
+        if self.leaves.is_empty() {
+            // Empty tree - compute empty root.
             let mut root_hash = self.empty_hash;
             for _ in 0..DEPTH {
                 let children = vec![root_hash; ARITY as usize];
@@ -422,122 +378,117 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
             return Ok(());
         }
 
-        // Compute the root by hashing from leaves to root.
-        // Start with all leaf nodes (tree only contains leaves).
-        let mut current_level: BTreeMap<usize, PH::Hash> = self.tree.clone();
+        // Build up from leaves to root level by level.
+        // Current level stores path -> hash mappings.
+        let mut current_level: BTreeMap<Vec<u8>, PH::Hash> = self.leaves.clone();
 
         // Process each level from leaves to root.
-        for _level in 0..DEPTH {
-            let mut next_level = BTreeMap::new();
+        for level in (0..DEPTH as usize).rev() {
+            let mut next_level: BTreeMap<Vec<u8>, PH::Hash> = BTreeMap::new();
 
-            // Group nodes by their parent index.
-            let mut parents: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-            for &index in current_level.keys() {
-                if let Some(parent_idx) = self.compute_parent::<ARITY>(index) {
-                    parents.entry(parent_idx).or_default().push(index);
+            // Group current level nodes by their parent path.
+            let mut parents: BTreeMap<Vec<u8>, Vec<(u8, PH::Hash)>> = BTreeMap::new();
+            
+            for (path, hash) in current_level.iter() {
+                if path.len() == level + 1 {
+                    // This node is at the current level.
+                    let parent_path = path[0..level].to_vec();
+                    let position = path[level];
+                    parents.entry(parent_path).or_default().push((position, *hash));
                 }
             }
 
             // Compute hash for each parent.
-            for (parent_idx, _child_indices) in parents {
-                // Get all ARITY children of this parent.
-                let all_children: Vec<usize> = self.compute_child_indexes::<ARITY>(parent_idx).collect();
+            for (parent_path, children) in parents {
                 let mut child_hashes = Vec::with_capacity(ARITY as usize);
                 
-                for child_idx in all_children {
-                    let hash = current_level.get(&child_idx).copied().unwrap_or(self.empty_hash);
+                // Get hash for each child position.
+                for position in 0..ARITY {
+                    let hash = children
+                        .iter()
+                        .find(|(pos, _)| *pos == position)
+                        .map(|(_, h)| *h)
+                        .unwrap_or(self.empty_hash);
                     child_hashes.push(hash);
                 }
                 
                 let parent_hash = self.path_hasher.hash_children(&child_hashes)?;
-                next_level.insert(parent_idx, parent_hash);
+                next_level.insert(parent_path, parent_hash);
             }
 
             current_level = next_level;
-            if current_level.is_empty() {
-                break;
-            }
         }
 
-        // The root should be at index 0.
-        self.root = current_level.get(&0).copied().unwrap_or(self.empty_hash);
+        // The root is the hash at the empty path.
+        self.root = current_level.get(&vec![]).copied().unwrap_or(self.empty_hash);
 
         finish!(timer);
 
         Ok(())
     }
 
-    /// Recomputes the root hash efficiently for batch updates.
-    /// Only recomputes paths affected by the updated leaf indices.
-    #[inline]
-    fn recompute_root_batch(&mut self, updated_indices: &[usize]) -> Result<()> {
-        let timer = timer!("SparseKaryMerkleTree::recompute_root_batch");
+    /// Computes the hash of a subtree rooted at the given path prefix with memoization.
+    fn get_subtree_hash_cached(&self, path: &[u8], cache: &mut BTreeMap<Vec<u8>, PH::Hash>) -> Result<PH::Hash> {
+        // Check cache first.
+        if let Some(&cached_hash) = cache.get(path) {
+            return Ok(cached_hash);
+        }
 
-        // If the tree is empty, compute the empty root.
-        if self.tree.is_empty() {
-            let mut root_hash = self.empty_hash;
-            for _ in 0..DEPTH {
-                let children = vec![root_hash; ARITY as usize];
-                root_hash = self.path_hasher.hash_children(&children)?;
+        let hash = if path.len() == DEPTH as usize {
+            // Leaf level.
+            self.leaves.get(path).copied().unwrap_or(self.empty_hash)
+        } else {
+            // Internal node - check if all children are empty first (optimization).
+            let all_children_empty = (0..ARITY).all(|pos| {
+                let mut child_path = path.to_vec();
+                child_path.push(pos);
+                !self.has_any_descendant(&child_path)
+            });
+
+            if all_children_empty {
+                // All children are empty, use cached empty hash for this level.
+                let depth_from_here = DEPTH as usize - path.len();
+                let mut hash = self.empty_hash;
+                for _ in 0..depth_from_here {
+                    let children = vec![hash; ARITY as usize];
+                    hash = self.path_hasher.hash_children(&children)?;
+                }
+                hash
+            } else {
+                // Compute from children.
+                let mut child_hashes = Vec::with_capacity(ARITY as usize);
+                
+                for position in 0..ARITY {
+                    let mut child_path = path.to_vec();
+                    child_path.push(position);
+                    let child_hash = self.get_subtree_hash_cached(&child_path, cache)?;
+                    child_hashes.push(child_hash);
+                }
+                
+                self.path_hasher.hash_children(&child_hashes)?
             }
-            self.root = root_hash;
-            finish!(timer);
-            return Ok(());
-        }
+        };
 
-        // For batch updates, just call the regular recompute_root.
-        // Since tree only contains leaves, we don't need special optimization.
-        self.recompute_root()?;
-
-        finish!(timer);
-
-        Ok(())
+        // Cache the result.
+        cache.insert(path.to_vec(), hash);
+        Ok(hash)
     }
 
-    /// Computes the leaf index from the key hash using base-ARITY digits.
-    #[inline]
-    fn compute_leaf_index(&self, key_hash: &PH::Hash) -> Result<usize> {
-        // Extract base-ARITY digits from the key hash.
-        // We convert the key hash to a number and extract digits.
-        let path_digits = self.compute_path_digits(key_hash)?;
-        
-        // Compute the leaf index using the path digits.
-        // For a k-ary tree, the leaf index is computed as:
-        // index = d_0 * ARITY^0 + d_1 * ARITY^1 + ... + d_{DEPTH-1} * ARITY^{DEPTH-1}
-        let mut index = 0usize;
-        let mut arity_power = 1usize;
-        
-        for &digit in &path_digits {
-            index += (digit as usize) * arity_power;
-            arity_power = arity_power.checked_mul(ARITY as usize)
-                .ok_or_else(|| anyhow!("Integer overflow when computing leaf index"))?;
+    /// Checks if there are any leaves that are descendants of the given path.
+    fn has_any_descendant(&self, path_prefix: &[u8]) -> bool {
+        if path_prefix.len() >= DEPTH as usize {
+            return self.leaves.contains_key(path_prefix);
         }
 
-        // For a sparse k-ary tree, we need to map this to the actual tree structure.
-        // The tree uses a different indexing scheme where:
-        // - Root is at index 0
-        // - Children of node i are at indices: i * ARITY + 1, i * ARITY + 2, ..., i * ARITY + ARITY
-        // - Leaves start at a specific offset
-        
-        // Compute the maximum number of leaves.
-        let max_leaves = (ARITY as u128).checked_pow(DEPTH as u32)
-            .ok_or_else(|| anyhow!("Integer overflow when computing max leaves"))?;
-        
-        // Compute the start index for leaves.
-        let start = ((max_leaves - 1) / (ARITY as u128 - 1)) as usize;
-        
-        // The leaf position is at start + index.
-        Ok(start + index)
+        // Check if any leaf has this path as a prefix.
+        self.leaves.keys().any(|leaf_path| {
+            leaf_path.len() >= path_prefix.len() && leaf_path[0..path_prefix.len()] == path_prefix[..]
+        })
     }
 
-    /// Computes the path digits (base-ARITY) from the key hash.
-    #[inline]
-    fn compute_path_digits(&self, key_hash: &PH::Hash) -> Result<Vec<u8>>
-    {
-        // Convert the key hash to a number.
-        // We'll use the field value modulo ARITY^DEPTH to get a number in the right range.
-        // Note: This assumes PH::Hash is Field<E> which has to_bits_le() method.
-        // For now, we'll use a workaround by converting to bytes first.
+    /// Computes the path (sequence of DEPTH digits) from the key hash.
+    fn compute_path(&self, key_hash: &PH::Hash) -> Result<TreePath> {
+        // Convert the key hash to bytes and then to bits.
         let bytes = key_hash.to_bytes_le()?;
         let mut bits = Vec::new();
         for byte in bytes {
@@ -546,11 +497,9 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
             }
         }
         
-        // Extract enough bits to represent numbers up to ARITY^DEPTH.
-        // We need at least log2(ARITY^DEPTH) = DEPTH * log2(ARITY) bits.
+        // Extract enough bits to represent DEPTH base-ARITY digits.
         let bits_needed = (DEPTH as f64 * (ARITY as f64).log2()).ceil() as usize;
-        let bits_len = bits.len();
-        let bits_to_use = bits.into_iter().take(bits_needed.min(bits_len)).collect::<Vec<_>>();
+        let bits_to_use: Vec<_> = bits.into_iter().take(bits_needed).collect();
         
         // Convert bits to a number.
         let mut number = 0u128;
@@ -560,48 +509,15 @@ impl<E: Environment, PH: PathHash, KH: KeyHash<Hash = PH::Hash>, LH: LeafHash<Ha
             }
         }
         
-        // Extract base-ARITY digits.
-        let mut digits = Vec::with_capacity(DEPTH as usize);
+        // Extract base-ARITY digits to form the path.
+        let mut path = Vec::with_capacity(DEPTH as usize);
         let mut remaining = number;
-        let arity_u128 = ARITY as u128;
         
         for _ in 0..DEPTH {
-            digits.push((remaining % arity_u128) as u8);
-            remaining /= arity_u128;
+            path.push((remaining % ARITY as u128) as u8);
+            remaining /= ARITY as u128;
         }
         
-        Ok(digits)
-    }
-
-    /// Computes the sibling indices for a given node index.
-    #[inline]
-    fn compute_siblings<const A: u8>(&self, index: usize) -> Option<impl Iterator<Item = usize>> {
-        if index == 0 {
-            // Root has no siblings.
-            None
-        } else {
-            // Find the left-most sibling.
-            let left_most_sibling = ((index - 1) / A as usize) * A as usize + 1;
-            
-            // Return all siblings except for the given index.
-            Some((left_most_sibling..left_most_sibling + A as usize).filter(move |&i| index != i))
-        }
-    }
-
-    /// Computes the parent index for a given node index.
-    #[inline]
-    fn compute_parent<const A: u8>(&self, index: usize) -> Option<usize> {
-        if index > 0 {
-            Some((index - 1) / A as usize)
-        } else {
-            None
-        }
-    }
-
-    /// Computes the child index range for a given parent index.
-    #[inline]
-    fn compute_child_indexes<const A: u8>(&self, parent_index: usize) -> impl Iterator<Item = usize> {
-        let start = parent_index * A as usize + 1;
-        start..start + A as usize
+        Ok(path)
     }
 }

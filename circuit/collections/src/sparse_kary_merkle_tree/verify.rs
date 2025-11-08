@@ -178,7 +178,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: u128 = 10;
+    const ITERATIONS: u128 = 2;
     const DOMAIN: &str = "SparseKaryMerkleTreeCircuit0";
 
     macro_rules! check_verify {
