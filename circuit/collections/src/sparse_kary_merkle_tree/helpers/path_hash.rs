@@ -96,7 +96,7 @@ impl<E: Environment, const TYPE: u8, const VARIANT: usize> PathHash<E> for Kecca
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm_circuit_algorithms::{BHP512, Poseidon2};
+    use snarkvm_circuit_algorithms::{BHP512, Keccak256, Poseidon2, Sha3_256};
     use snarkvm_circuit_types::environment::{assert_scope, Circuit};
     use snarkvm_utilities::{TestRng, Uniform};
 
@@ -106,7 +106,7 @@ mod tests {
     const DOMAIN: &str = "SparseTreeCircuit0";
 
     macro_rules! check_hash_children {
-        // For field-based path hashing (all PathHash implementations use Field children)
+        // For field-based path hashing.
         ($native:ident, $circuit:ident, $mode:ident, $arity:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
             let mut rng = TestRng::default();
 
@@ -119,6 +119,34 @@ mod tests {
 
                 // Prepare the circuit input.
                 let circuit_children = children.into_iter().map(|c| Field::new(Mode::$mode, c)).collect::<Vec<_>>();
+
+                Circuit::scope(format!("PathHash {i}"), || {
+                    // Perform the hash operation.
+                    let candidate = $circuit.hash_children(&circuit_children);
+                    // Verify it matches console output.
+                    assert_eq!(expected, candidate.eject_value());
+                    // Check the number of variables and constraints.
+                    assert_scope!($num_constants, $num_public, $num_private, $num_constraints);
+                });
+                Circuit::reset();
+            }
+            Ok::<_, anyhow::Error>(())
+        }};
+        // For bit-based path hashing.
+        ($native:ident, $circuit:ident, $mode:ident, $arity:expr, $num_input_bits:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
+            let mut rng = TestRng::default();
+
+            for i in 0..ITERATIONS {
+                // Sample random boolean hashes as children.
+                let children = (0..$arity).map(|_| console::sparse_kary_merkle_tree::BooleanHash::<$num_input_bits>::rand(&mut rng)).collect::<Vec<_>>();
+
+                // Compute the expected hash.
+                let expected = console::sparse_kary_merkle_tree::PathHash::hash_children(&$native, &children)?;
+
+                // Prepare the circuit input.
+                let circuit_children: Vec<BooleanHash<Circuit, $num_input_bits>> = children.iter()
+                    .map(|h| BooleanHash::new(Mode::$mode, *h))
+                    .collect();
 
                 Circuit::scope(format!("PathHash {i}"), || {
                     // Perform the hash operation.
@@ -183,5 +211,55 @@ mod tests {
         check_hash_children!(native, circuit, Private, 2, (1, 0, 540, 540))?;
         check_hash_children!(native, circuit, Private, 4, (1, 0, 815, 815))?;
         check_hash_children!(native, circuit, Private, 6, (1, 0, 1090, 1090))
+    }
+
+    #[test]
+    fn test_hash_children_keccak256_constant() -> Result<()> {
+        let native = snarkvm_console_algorithms::Keccak256::default();
+        let circuit = Keccak256::<Circuit>::new();
+        check_hash_children!(native, circuit, Constant, 2, 256, (256, 0, 0, 0))?;
+        check_hash_children!(native, circuit, Constant, 4, 256, (256, 0, 0, 0))?;
+        check_hash_children!(native, circuit, Constant, 8, 256, (256, 0, 0, 0))
+    }
+
+    #[test]
+    fn test_hash_children_keccak256_public() -> Result<()> {
+        let native = snarkvm_console_algorithms::Keccak256::default();
+        let circuit = Keccak256::<Circuit>::new();
+        check_hash_children!(native, circuit, Public, 2, 256, (256, 0, 151424, 151424))?;
+        check_hash_children!(native, circuit, Public, 4, 256, (256, 0, 152448, 152448))
+    }
+
+    #[test]
+    fn test_hash_children_keccak256_private() -> Result<()> {
+        let native = snarkvm_console_algorithms::Keccak256::default();
+        let circuit = Keccak256::<Circuit>::new();
+        check_hash_children!(native, circuit, Private, 2, 256, (256, 0, 151424, 151424))?;
+        check_hash_children!(native, circuit, Private, 4, 256, (256, 0, 152448, 152448))
+    }
+
+    #[test]
+    fn test_hash_children_sha3_256_constant() -> Result<()> {
+        let native = snarkvm_console_algorithms::Sha3_256::default();
+        let circuit = Sha3_256::<Circuit>::new();
+        check_hash_children!(native, circuit, Constant, 2, 256, (256, 0, 0, 0))?;
+        check_hash_children!(native, circuit, Constant, 4, 256, (256, 0, 0, 0))?;
+        check_hash_children!(native, circuit, Constant, 8, 256, (256, 0, 0, 0))
+    }
+
+    #[test]
+    fn test_hash_children_sha3_256_public() -> Result<()> {
+        let native = snarkvm_console_algorithms::Sha3_256::default();
+        let circuit = Sha3_256::<Circuit>::new();
+        check_hash_children!(native, circuit, Public, 2, 256, (256, 0, 151424, 151424))?;
+        check_hash_children!(native, circuit, Public, 4, 256, (256, 0, 152448, 152448))
+    }
+
+    #[test]
+    fn test_hash_children_sha3_256_private() -> Result<()> {
+        let native = snarkvm_console_algorithms::Sha3_256::default();
+        let circuit = Sha3_256::<Circuit>::new();
+        check_hash_children!(native, circuit, Private, 2, 256, (256, 0, 151424, 151424))?;
+        check_hash_children!(native, circuit, Private, 4, 256, (256, 0, 152448, 152448))
     }
 }
