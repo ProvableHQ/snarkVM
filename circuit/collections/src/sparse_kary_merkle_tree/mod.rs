@@ -83,11 +83,7 @@ impl<E: Environment, PH: PathHash<E>, const DEPTH: u8, const ARITY: u8> Eject
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::{
-        algorithms::{BHP1024 as NativeBHP1024, Poseidon as NativePoseidon},
-        sparse_kary_merkle_tree::SparseKaryMerkleTree,
-    };
-    use snarkvm_circuit_algorithms::Poseidon;
+    use snarkvm_circuit_algorithms::Poseidon2;
     use snarkvm_circuit_network::AleoV0 as Circuit;
     use snarkvm_utilities::{TestRng, Uniform};
 
@@ -104,12 +100,11 @@ mod tests {
     ) -> Result<()> {
         let mut rng = TestRng::default();
 
-        type KH = Poseidon<Circuit, 2>;
-        type PH = Poseidon<Circuit, 2>;
+        type PH = Poseidon2<Circuit>;
 
-        type NativeKH = NativePoseidon<<Circuit as Environment>::Network, 2>;
-        type NativeLH = NativePoseidon<<Circuit as Environment>::Network, 4>;
-        type NativePH = NativePoseidon<<Circuit as Environment>::Network, 2>;
+        type NativeKH = console::algorithms::Poseidon2<<Circuit as Environment>::Network>;
+        type NativeLH = console::algorithms::Poseidon2<<Circuit as Environment>::Network>;
+        type NativePH = console::algorithms::Poseidon2<<Circuit as Environment>::Network>;
 
         let key_hasher = NativeKH::setup("AleoSparsePathTest0")?;
         let leaf_hasher = NativeLH::setup("AleoSparsePathTest1")?;
@@ -130,7 +125,7 @@ mod tests {
                 .collect::<Vec<_>>();
 
             // Compute the sparse Merkle tree.
-            let mut merkle_tree = SparseKaryMerkleTree::<
+            let mut merkle_tree = console::sparse_kary_merkle_tree::SparseKaryMerkleTree::<
                 NativeKH,
                 NativeLH,
                 NativePH,
@@ -151,7 +146,7 @@ mod tests {
                 Circuit::scope(format!("New {mode}"), || {
                     let candidate = SparseKaryMerklePath::<Circuit, PH, DEPTH, ARITY>::new(mode, merkle_path.clone());
                     assert_eq!(merkle_path, candidate.eject_value());
-                    // Note: Not checking exact constraint counts as they may vary by implementation
+                    assert_scope!(num_constants, num_public, num_private, num_constraints);
                 });
                 Circuit::reset();
             }
@@ -164,16 +159,16 @@ mod tests {
         // Depth 8, Arity 4: Each path level has 3 siblings (ARITY - 1).
         // Total siblings: 8 * 3 = 24 field elements.
         // Plus 1 field for the key hash = 25 field elements.
-        check_new::<8, 4>(Mode::Constant, 100, 0, 0, 0)
+        check_new::<8, 4>(Mode::Constant, 25, 0, 0, 0)
     }
 
     #[test]
     fn test_new_public() -> Result<()> {
-        check_new::<8, 4>(Mode::Public, 0, 100, 0, 50)
+        check_new::<8, 4>(Mode::Public, 0, 25, 0, 0)
     }
 
     #[test]
     fn test_new_private() -> Result<()> {
-        check_new::<8, 4>(Mode::Private, 0, 0, 100, 50)
+        check_new::<8, 4>(Mode::Private, 0, 0, 25, 0)
     }
 }
