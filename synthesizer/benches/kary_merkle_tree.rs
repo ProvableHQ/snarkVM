@@ -127,13 +127,15 @@ fn batch_prove(c: &mut Criterion) {
 
     // Bench the proof construction.
     for num_assignments in &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] {
+        // Reset the timer to measure only assignment generation.
+        timer = std::time::Instant::now();
+
         // Construct the assignments.
         let assignments =
             [(proving_key.clone(), (0..*num_assignments).map(|_| generate_assignment(&mut rng)).collect::<Vec<_>>())];
 
         // Log the current time elapsed.
         println!(" • Generated {num_assignments} assignments in: {} ms", timer.elapsed().as_millis());
-        timer = std::time::Instant::now();
 
         let varuna_version = VarunaVersion::V2;
         c.bench_function(&format!("KaryMerkleTree batch prove {num_assignments} assignments"), |b| {
