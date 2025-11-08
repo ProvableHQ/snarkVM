@@ -152,21 +152,18 @@ mod tests {
     macro_rules! check_verify {
         ($kh:ident, $lh:ident, $ph:ident, $mode:ident, $depth:expr, $arity:expr, $num_inputs:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
             // Initialize the key hasher.
-            let native_key_hasher =
-                snarkvm_console_algorithms::$kh::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+            let native_key_hasher = console::algorithms::$kh::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
             let circuit_key_hasher = $kh::<Circuit>::constant(native_key_hasher.clone());
 
             // Initialize the leaf hasher.
-            let native_leaf_hasher =
-                snarkvm_console_algorithms::$lh::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+            let native_leaf_hasher = console::algorithms::$lh::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
             let circuit_leaf_hasher = $lh::<Circuit>::constant(native_leaf_hasher.clone());
 
-            let mut rng = TestRng::default();
-
             // Initialize the path hasher.
-            let native_path_hasher =
-                snarkvm_console_algorithms::$ph::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+            let native_path_hasher = console::algorithms::$ph::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
             let circuit_path_hasher = $ph::<Circuit>::constant(native_path_hasher.clone());
+
+            let mut rng = TestRng::default();
 
             for i in 0..ITERATIONS {
                 // Determine the number of key-value pairs.
@@ -191,20 +188,19 @@ mod tests {
                 >::new(&native_key_hasher, &native_leaf_hasher, &native_path_hasher)?;
 
                 // Insert key-value pairs.
-                for (key, leaf) in keys.iter().zip(leaves.iter()) {
+                for (key, leaf) in keys.iter().zip_eq(leaves.iter()) {
                     merkle_tree.update(key, leaf)?;
                 }
 
-                for (key, merkle_leaf) in keys.iter().zip(leaves.iter()) {
+                // Verify each key-value pair.
+                for (key, merkle_leaf) in keys.iter().zip_eq(leaves.iter()) {
                     // Compute the Merkle path.
                     let merkle_path = merkle_tree.prove(key, merkle_leaf)?;
-
                     // Initialize the Merkle path.
                     let path = SparseKaryMerklePath::<Circuit, $ph<Circuit>, $depth, $arity>::new(
                         Mode::$mode,
                         merkle_path.clone(),
                     );
-
                     assert_eq!(merkle_path, path.eject_value());
 
                     // Initialize the Merkle root.
@@ -282,16 +278,13 @@ mod tests {
 
         let mut rng = TestRng::default();
 
-        let native_key_hasher =
-            snarkvm_console_algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let native_key_hasher = console::algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit_key_hasher = Poseidon2::<Circuit>::constant(native_key_hasher.clone());
 
-        let native_leaf_hasher =
-            snarkvm_console_algorithms::Poseidon4::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let native_leaf_hasher = console::algorithms::Poseidon4::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit_leaf_hasher = Poseidon4::<Circuit>::constant(native_leaf_hasher.clone());
 
-        let native_path_hasher =
-            snarkvm_console_algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
+        let native_path_hasher = console::algorithms::Poseidon2::<<Circuit as Environment>::Network>::setup(DOMAIN)?;
         let circuit_path_hasher = Poseidon2::<Circuit>::constant(native_path_hasher.clone());
 
         // Test with a single key-value pair
@@ -342,7 +335,6 @@ mod tests {
         Ok(())
     }
 
-    // TODO: Fix BHP tests - needs Vec<Boolean<E>> keys instead of Field keys
     // #[test]
     // fn test_verify_bhp512_constant() -> Result<()> {
     //     check_verify!(BHP1024, BHP1024, BHP512, Constant, 8, 4, 1024, (35000, 0, 0, 0))
@@ -361,17 +353,17 @@ mod tests {
     macro_rules! check_verify_keccak {
         ($kh:ident, $lh:ident, $ph:ident, $mode:ident, $depth:expr, $arity:expr, $num_inputs:expr, ($num_constants:expr, $num_public:expr, $num_private:expr, $num_constraints:expr)) => {{
             // Initialize the key hasher.
-            let native_key_hasher = snarkvm_console_algorithms::$kh::default();
+            let native_key_hasher = console::algorithms::$kh::default();
             let circuit_key_hasher = $kh::<Circuit>::new();
 
             // Initialize the leaf hasher.
-            let native_leaf_hasher = snarkvm_console_algorithms::$lh::default();
+            let native_leaf_hasher = console::algorithms::$lh::default();
             let circuit_leaf_hasher = $lh::<Circuit>::new();
 
             let mut rng = TestRng::default();
 
             // Initialize the path hasher.
-            let native_path_hasher = snarkvm_console_algorithms::$ph::default();
+            let native_path_hasher = console::algorithms::$ph::default();
             let circuit_path_hasher = $ph::<Circuit>::new();
 
             for i in 0..ITERATIONS {
