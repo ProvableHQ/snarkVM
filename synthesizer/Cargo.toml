@@ -195,5 +195,8 @@ version = "0.9"
 [dev-dependencies.tempfile]
 workspace = true
 
+[dependencies.tracing-subscriber]
+version = "0.3"
+
 [dev-dependencies.walkdir]
 version = "2"

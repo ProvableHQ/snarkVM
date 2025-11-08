@@ -3706,6 +3706,7 @@ dependencies = [
  "snarkvm-utilities",
  "tempfile",
  "tracing",
+ "tracing-subscriber",
  "walkdir",
 ]
 
