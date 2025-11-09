@@ -294,11 +294,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Initialize an iterator for ratifications before finalize.
             let pre_ratifications = ratifications.iter().filter(|r| match r {
                 Ratify::Genesis(_, _, _) => true,
-                Ratify::BlockReward(..) | Ratify::PuzzleReward(..) => false,
+                Ratify::BlockReward(..) | Ratify::PuzzleReward(..) | Ratify::Blob(..) => false,
             });
             // Initialize an iterator for ratifications after finalize.
             let post_ratifications = ratifications.iter().filter(|r| match r {
-                Ratify::Genesis(_, _, _) => false,
+                Ratify::Genesis(_, _, _) | Ratify::Blob(..) => false,
                 Ratify::BlockReward(..) | Ratify::PuzzleReward(..) => true,
             });
 
@@ -625,11 +625,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Initialize an iterator for ratifications before finalize.
             let pre_ratifications = ratifications.iter().filter(|r| match r {
                 Ratify::Genesis(_, _, _) => true,
-                Ratify::BlockReward(..) | Ratify::PuzzleReward(..) => false,
+                Ratify::BlockReward(..) | Ratify::PuzzleReward(..) | Ratify::Blob(..) => false,
             });
             // Initialize an iterator for ratifications after finalize.
             let post_ratifications = ratifications.iter().filter(|r| match r {
-                Ratify::Genesis(_, _, _) => false,
+                Ratify::Genesis(_, _, _) | Ratify::Blob(..) => false,
                 Ratify::BlockReward(..) | Ratify::PuzzleReward(..) => true,
             });
 
@@ -1303,7 +1303,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Set the genesis ratification flag.
                     is_genesis_ratified = true;
                 }
-                Ratify::BlockReward(..) | Ratify::PuzzleReward(..) => continue,
+                Ratify::BlockReward(..) | Ratify::PuzzleReward(..) | Ratify::Blob(..) => continue,
             }
         }
 
@@ -1342,7 +1342,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Iterate over the ratifications.
         for ratify in post_ratifications {
             match ratify {
-                Ratify::Genesis(..) => continue,
+                Ratify::Genesis(..) | Ratify::Blob(..) => continue,
                 Ratify::BlockReward(block_reward) => {
                     // Ensure the block reward has not been ratified yet.
                     ensure!(!is_block_reward_ratified, "Ratify::BlockReward(..) has already been ratified");

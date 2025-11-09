@@ -17,7 +17,11 @@ mod bytes;
 mod serialize;
 mod string;
 
-use console::{network::prelude::*, types::Address};
+use console::{
+    account::{PrivateKey, Signature},
+    network::prelude::*,
+    types::{Address, Field},
+};
 use snarkvm_ledger_committee::Committee;
 
 use indexmap::IndexMap;
@@ -38,12 +42,32 @@ pub enum Ratify<N: Network> {
     BlockReward(u64),
     /// The puzzle reward.
     PuzzleReward(u64),
+    /// The blob ratification as (Hash of the blob, signature of the id, blob data).
+    Blob(Field<N>, Signature<N>, Option<Vec<u8>>),
 }
 
 impl<N: Network> Ratify<N> {
     /// Returns the ratification ID.
     pub fn to_id(&self) -> Result<N::RatificationID> {
-        Ok(N::hash_bhp1024(&self.to_bytes_le()?.to_bits_le())?.into())
+        match self {
+            Ratify::Blob(_blob_id, _signature, _) => {
+                // TODO (raychu86): Blob - Determine the ID for this.
+                todo!()
+            }
+            _ => Ok(N::hash_bhp1024(&self.to_bytes_le()?.to_bits_le())?.into()),
+        }
+    }
+
+    /// Creates a new blob ratification.
+    pub fn new_blob<R: Rng + CryptoRng>(private_key: &PrivateKey<N>, blob_data: Vec<u8>, rng: &mut R) -> Result<Self> {
+        // Calculate the blob ID.
+        let blob_id = N::hash_bhp1024(&blob_data.to_bits_le())?;
+
+        // Sign the blob ID.
+        let signature = private_key.sign(&[blob_id], rng)?;
+
+        // Return the blob ratification.
+        Ok(Ratify::Blob(blob_id, signature, Some(blob_data)))
     }
 }
 
@@ -66,10 +90,17 @@ pub(crate) mod test_helpers {
             .map(|(address, (amount, _, _))| (*address, (*address, *address, *amount)))
             .collect();
 
+        let blob_id = Field::<CurrentNetwork>::rand(rng);
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let signature = private_key.sign(&[blob_id], rng).unwrap();
+        let blob_data: Vec<u8> = (0..256).map(|_| rng.r#gen::<u8>()).collect();
+
         vec![
             Ratify::Genesis(Box::new(committee), Box::new(public_balances), Box::new(bonded_balances)),
             Ratify::BlockReward(rng.r#gen()),
             Ratify::PuzzleReward(rng.r#gen()),
+            Ratify::Blob(blob_id, signature, Some(blob_data)),
+            Ratify::Blob(blob_id, signature, None),
         ]
     }
 }

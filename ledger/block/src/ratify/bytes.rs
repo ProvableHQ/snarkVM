@@ -73,7 +73,26 @@ impl<N: Network> FromBytes for Ratify<N> {
                 // Return the ratify object.
                 Self::PuzzleReward(amount)
             }
-            3.. => return Err(error(format!("Failed to decode ratify object variant {variant}"))),
+            3 => {
+                // Read the blob ID.
+                let blob_id: Field<N> = FromBytes::read_le(&mut reader)?;
+                // Read the signature.
+                let signature: Signature<N> = FromBytes::read_le(&mut reader)?;
+                // Read the blob data if it exists.
+                let blob_exists: bool = FromBytes::read_le(&mut reader)?;
+                let blob = match blob_exists {
+                    true => {
+                        // Read the size of the blob.
+                        let blob_size: u32 = FromBytes::read_le(&mut reader)?;
+                        // Read the blob data.
+                        Some((0..blob_size).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?)
+                    }
+                    false => None,
+                };
+                // Return the ratify object.
+                Self::Blob(blob_id, signature, blob)
+            }
+            4.. => return Err(error(format!("Failed to decode ratify object variant {variant}"))),
         };
         Ok(ratify)
     }
@@ -110,6 +129,24 @@ impl<N: Network> ToBytes for Ratify<N> {
             Self::PuzzleReward(amount) => {
                 (2 as Variant).write_le(&mut writer)?;
                 amount.write_le(&mut writer)
+            }
+            Self::Blob(blob_id, signature, blob) => {
+                (3 as Variant).write_le(&mut writer)?;
+                blob_id.write_le(&mut writer)?;
+                signature.write_le(&mut writer)?;
+                match blob {
+                    Some(data) => {
+                        true.write_le(&mut writer)?;
+                        u32::try_from(data.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+                        for byte in data.iter() {
+                            byte.write_le(&mut writer)?;
+                        }
+                    }
+                    None => {
+                        false.write_le(&mut writer)?;
+                    }
+                }
+                Ok(())
             }
         }
     }

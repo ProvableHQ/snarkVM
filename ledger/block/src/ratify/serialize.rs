@@ -40,6 +40,16 @@ impl<N: Network> Serialize for Ratify<N> {
                     input.serialize_field("amount", &amount)?;
                     input.end()
                 }
+                Self::Blob(blob_id, signature, blob_data) => {
+                    let mut input = serializer.serialize_struct("Ratify", 3 + blob_data.is_some() as usize)?;
+                    input.serialize_field("type", "blob")?;
+                    input.serialize_field("blob_id", &blob_id)?;
+                    input.serialize_field("signature", &signature)?;
+                    if let Some(data) = blob_data {
+                        input.serialize_field("blob", &data)?;
+                    }
+                    input.end()
+                }
             },
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
         }
@@ -79,6 +89,19 @@ impl<'de, N: Network> Deserialize<'de> for Ratify<N> {
                         let amount: u64 = DeserializeExt::take_from_value::<D>(&mut object, "amount")?;
                         // Construct the ratify object.
                         Ratify::PuzzleReward(amount)
+                    }
+                    Some("blob") => {
+                        // Retrieve the blob ID.
+                        let blob_id: Field<N> = DeserializeExt::take_from_value::<D>(&mut object, "blob_id")?;
+                        // Retrieve the signature.
+                        let signature: Signature<N> = DeserializeExt::take_from_value::<D>(&mut object, "signature")?;
+                        // Retrieve the blob data if it exists.
+                        let blob = serde_json::from_value(
+                            object.get_mut("blob").unwrap_or(&mut serde_json::Value::Null).take(),
+                        )
+                        .map_err(de::Error::custom)?;
+                        // Construct the ratify object.
+                        Ratify::Blob(blob_id, signature, blob)
                     }
                     _ => return Err(de::Error::custom("Invalid ratify object type")),
                 };
