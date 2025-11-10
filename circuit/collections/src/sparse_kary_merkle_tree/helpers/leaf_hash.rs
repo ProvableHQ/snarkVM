@@ -31,7 +31,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> LeafHash for 
 
     /// Returns the hash of the given leaf node.
     fn hash_leaf(&self, leaf: &Self::Leaf) -> Self::Hash {
-        let mut input = Vec::with_capacity(1 + leaf.len());
+        let mut input = Vec::with_capacity(2 + leaf.len());
         // Prepend the leaf with 2 `false` bits.
         input.push(Boolean::constant(false));
         input.push(Boolean::constant(false));
