@@ -45,7 +45,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let ret = match op {
                     SequentialOperation::AddNextBlock(block) => {
                         #[cfg(feature = "announce-blocks")]
-                        let ipc_payload = (block.height(), bincode::serialize(&block).unwrap()); // Infallible.
+                        let ipc_payload = (block.height(), bincode::serialize(&block));
                         let ret = vm.add_next_block_inner(block);
                         #[cfg(feature = "announce-blocks")]
                         if ret.is_ok() {
@@ -179,9 +179,13 @@ fn start_block_announcement_stream() -> Option<Stream> {
 }
 
 #[cfg(feature = "announce-blocks")]
-fn announce_block(stream: &mut Option<Stream>, payload: (u32, Vec<u8>)) -> Result<bool> {
+fn announce_block(
+    stream: &mut Option<Stream>,
+    payload: (u32, Result<Vec<u8>, Box<bincode::ErrorKind>>),
+) -> Result<bool> {
     if let Some(stream) = stream {
-        let (block_height, block_bytes) = payload;
+        let (block_height, serialized_block) = payload;
+        let block_bytes = serialized_block?;
         debug!("Announcing block {block_height} to the IPC stream");
         let payload_size = u32::try_from(4 + block_bytes.len()).unwrap(); // Safe - blocks are smaller than 4GiB.
         stream.write_all(&payload_size.to_le_bytes())?;
