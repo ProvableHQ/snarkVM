@@ -104,11 +104,8 @@ impl<
         // Hash the leaf.
         let leaf_hash = self.leaf_hasher.hash_leaf(leaf)?;
 
-        // Check if this is a new leaf.
-        let is_new = !self.leaves.contains_key(&key_hash);
-
-        // Store the leaf hash indexed by key hash.
-        self.leaves.insert(key_hash, leaf_hash);
+        // Store the leaf hash indexed by key hash, checking if this is a new leaf.
+        let is_new = self.leaves.insert(key_hash, leaf_hash).is_none();
 
         // Update the leaf count.
         if is_new {
