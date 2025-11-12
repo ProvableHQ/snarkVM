@@ -16,7 +16,7 @@
 use super::*;
 
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
-use snarkvm_utilities::{cfg_sort_by_cached_key, defer};
+use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Speculates on the given list of transactions in the VM.
@@ -407,6 +407,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             true => match process_rejected_deployment(fee, *deployment.clone()) {
                                 Ok(result) => result,
                                 Err(error) => {
+                                    // Note: On failure, skip this transaction, and continue speculation.
+                                    dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
                                     // Store the aborted transaction.
                                     aborted.push((transaction.clone(), error.to_string()));
                                     // Continue to the next transaction.
@@ -423,18 +425,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         .map_err(|e| e.to_string())
                                 }
                                 // Construct the rejected deploy transaction.
-                                Err(error) => {
-                                    trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
-                                    match process_rejected_deployment(fee, *deployment.clone()) {
-                                        Ok(result) => result,
-                                        Err(error) => {
-                                            // Store the aborted transaction.
-                                            aborted.push((transaction.clone(), error.to_string()));
-                                            // Continue to the next transaction.
-                                            continue 'outer;
-                                        }
+                                Err(_error) => match process_rejected_deployment(fee, *deployment.clone()) {
+                                    Ok(result) => result,
+                                    Err(error) => {
+                                        // Note: On failure, skip this transaction, and continue speculation.
+                                        dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                        // Store the aborted transaction.
+                                        aborted.push((transaction.clone(), error.to_string()));
+                                        // Continue to the next transaction.
+                                        continue 'outer;
                                     }
-                                }
+                                },
                             },
                         }
                     }
@@ -451,52 +452,48 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     .map_err(|e| e.to_string())
                             }
                             // Construct the rejected execute transaction.
-                            Err(error) => {
-                                trace!("Failed to finalize execute tx {} - {error}", transaction.id());
-                                match fee {
-                                    // Finalize the fee, to ensure it is valid.
-                                    Some(fee) => {
-                                        match process.finalize_fee(state, store, fee).and_then(|finalize| {
-                                            Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
-                                        }) {
-                                            Ok((fee_tx, finalize)) => {
-                                                // Construct the rejected execution.
-                                                let rejected = Rejected::new_execution(*execution.clone());
-                                                // Construct the rejected execute transaction.
-                                                ConfirmedTransaction::rejected_execute(
-                                                    counter, fee_tx, rejected, finalize,
-                                                )
+                            Err(_error) => match fee {
+                                // Finalize the fee, to ensure it is valid.
+                                Some(fee) => {
+                                    match process.finalize_fee(state, store, fee).and_then(|finalize| {
+                                        Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
+                                    }) {
+                                        Ok((fee_tx, finalize)) => {
+                                            // Construct the rejected execution.
+                                            let rejected = Rejected::new_execution(*execution.clone());
+                                            // Construct the rejected execute transaction.
+                                            ConfirmedTransaction::rejected_execute(counter, fee_tx, rejected, finalize)
                                                 .map_err(|e| e.to_string())
-                                            }
-                                            Err(error) => {
-                                                // Store the aborted transaction.
-                                                aborted.push((transaction.clone(), error.to_string()));
-                                                // Continue to the next transaction.
-                                                continue 'outer;
-                                            }
                                         }
-                                    }
-
-                                    // This is a foundational bug - the caller is violating protocol rules.
-                                    // It is possible that a `credits.aleo/split` transaction has no fee. However, it
-                                    // is a simple transition without finalize operations and should not fail here.
-                                    // If a `credits.aleo/upgrade` transaction has no fee and fails, we simply abort it.
-                                    // Note: This will abort the entire atomic batch.
-                                    None => {
-                                        // Abort the upgrade transaction.
-                                        if transaction.contains_upgrade() && execution.len() == 1 {
-                                            aborted.push((
-                                                transaction.clone(),
-                                                "Failed to finalize a `credits.aleo/upgrade` call with no fee"
-                                                    .to_string(),
-                                            ));
+                                        Err(error) => {
+                                            // Note: On failure, skip this transaction, and continue speculation.
+                                            dev_eprintln!("Failed to finalize the fee in a rejected execute - {error}");
+                                            // Store the aborted transaction.
+                                            aborted.push((transaction.clone(), error.to_string()));
                                             // Continue to the next transaction.
                                             continue 'outer;
                                         }
-                                        Err("Rejected execute transaction has no fee".to_string())
                                     }
                                 }
-                            }
+
+                                // This is a foundational bug - the caller is violating protocol rules.
+                                // It is possible that a `credits.aleo/split` transaction has no fee. However, it
+                                // is a simple transition without finalize operations and should not fail here.
+                                // If a `credits.aleo/upgrade` transaction has no fee and fails, we simply abort it.
+                                // Note: This will abort the entire atomic batch.
+                                None => {
+                                    // Abort the upgrade transaction.
+                                    if transaction.contains_upgrade() && execution.len() == 1 {
+                                        aborted.push((
+                                            transaction.clone(),
+                                            "Failed to finalize a `credits.aleo/upgrade` call with no fee".to_string(),
+                                        ));
+                                        // Continue to the next transaction.
+                                        continue 'outer;
+                                    }
+                                    Err("Rejected execute transaction has no fee".to_string())
+                                }
+                            },
                         }
                     }
                     // There are no finalize operations here.
@@ -528,7 +525,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     }
                     // If the transaction failed, abort the entire batch.
                     Err(error) => {
-                        error!("Critical bug in speculate: {error}\n\n{transaction}");
+                        eprintln!("Critical bug in speculate: {error}\n\n{transaction}");
                         // Note: This will abort the entire atomic batch.
                         return Err(format!("Failed to speculate on transaction - {error}"));
                     }
@@ -817,7 +814,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     Ok(()) => (),
                     // If the transaction failed to finalize, abort and continue to the next transaction.
                     Err(error) => {
-                        error!("Critical bug in finalize: {error}\n\n{transaction}");
+                        eprintln!("Critical bug in finalize: {error}\n\n{transaction}");
                         // Note: This will abort the entire atomic batch.
                         return Err(format!("Failed to finalize on transaction - {error}"));
                     }
