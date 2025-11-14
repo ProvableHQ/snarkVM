@@ -36,6 +36,9 @@ features = [ "test-helpers", "rocks" ]
 [dependencies.anyhow]
 workspace = true
 
+[dependencies.tracing]
+workspace = true
+
 [dependencies.tracing-subscriber]
 version = "0.3"
 

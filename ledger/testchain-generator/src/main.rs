@@ -13,8 +13,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_console::prelude::{CanaryV0, MainnetV0, Network, TestRng, TestnetV0, ToBytes};
-use snarkvm_ledger::{Ledger, Transaction, store::helpers::rocksdb::ConsensusDB, test_helpers::TestChainBuilder};
+use snarkvm_console::prelude::{
+    CanaryV0,
+    MainnetV0,
+    Network,
+    TEST_CONSENSUS_VERSION_HEIGHTS,
+    TestRng,
+    TestnetV0,
+    ToBytes,
+};
+use snarkvm_ledger::{
+    Ledger,
+    Transaction,
+    store::helpers::rocksdb::ConsensusDB,
+    test_helpers::{TestChainBuilder, chain_builder::GenerateBlocksOptions},
+};
 
 use aleo_std::StorageMode;
 use anyhow::{Context, Result, bail};
@@ -25,6 +38,7 @@ use std::{
     path::Path,
     str::FromStr,
 };
+use tracing::debug;
 
 #[derive(Parser)]
 struct Args {
@@ -104,7 +118,7 @@ fn generate_testchain<N: Network>(args: Args) -> Result<()> {
 
     remove_ledger(N::ID, &storage_mode, args.force)?;
 
-    let txs = if let Some(path) = args.txs_path {
+    let mut txs = if let Some(path) = args.txs_path {
         let path = Path::new(&path);
         println!("Attempting to load txs from {}", path.display());
 
@@ -134,10 +148,8 @@ fn generate_testchain<N: Network>(args: Args) -> Result<()> {
 
     println!("Initializing test chain builder for {} with {num_validators} validators", N::SHORT_NAME);
     let mut builder: TestChainBuilder<N> = match args.genesis_path {
-        Some(genesis_path) => {
-            TestChainBuilder::new_with_quorum_size_and_genesis_block(num_validators, genesis_path, txs)
-        }
-        None => TestChainBuilder::new_with_quorum_size(num_validators, &mut rng, txs),
+        Some(genesis_path) => TestChainBuilder::new_with_quorum_size_and_genesis_block(num_validators, genesis_path),
+        None => TestChainBuilder::new_with_quorum_size(num_validators, &mut rng),
     }
     .with_context(|| "Failed to set up test chain builder")?;
 
@@ -146,9 +158,31 @@ fn generate_testchain<N: Network>(args: Args) -> Result<()> {
     let mut pos = 0;
     let mut blocks = vec![];
 
+    // How many blocks to generate in a single batch.
+    const BATCH_SIZE: usize = 100;
+
+    // How many transactions to insert per block.
+    let latest_consensus_height = TEST_CONSENSUS_VERSION_HEIGHTS.last().unwrap().1 as usize;
+    let num_txn_blocks = num_blocks.saturating_sub(latest_consensus_height);
+    let txns_per_block = txs.len().div_ceil(num_txn_blocks);
+
     while blocks.len() < num_blocks {
-        let batch_size = (num_blocks - blocks.len()).min(100);
-        let mut batch = builder.generate_blocks(batch_size, &mut rng).with_context(|| "Failed to generate blocks")?;
+        let current_height = blocks.len();
+        // How many blocks to generate in this batch.
+        let batch_size = (num_blocks - current_height).min(BATCH_SIZE);
+        // Generate set of transactions to insert in this batch.
+        let num_empty_blocks = latest_consensus_height.saturating_sub(current_height);
+        let num_txns = (batch_size.saturating_sub(num_empty_blocks)) * txns_per_block;
+        let transactions = txs.drain(..num_txns).collect();
+
+        debug!("Generating next batch with {batch_size} blocks and {num_txns} transactions");
+        let mut batch = builder
+            .generate_blocks_with_opts(
+                batch_size,
+                GenerateBlocksOptions { transactions, skip_to_current_version: true, ..Default::default() },
+                &mut rng,
+            )
+            .with_context(|| "Failed to generate blocks")?;
 
         pos += batch_size;
         println!("Generated {pos} of {num_blocks} blocks");

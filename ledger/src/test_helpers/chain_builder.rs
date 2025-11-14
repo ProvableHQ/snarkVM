@@ -39,7 +39,6 @@ use rand_chacha::ChaChaRng;
 use std::{
     cmp,
     collections::{BTreeMap, HashMap},
-    mem,
 };
 use time::OffsetDateTime;
 
@@ -69,8 +68,6 @@ pub struct TestChainBuilder<N: Network> {
     last_committed_batch_round: HashMap<usize, u64>,
     /// The start of the test chain.
     genesis_block: Block<N>,
-    /// Preloaded transactions to populate the blocks with.
-    transactions: Vec<Transaction<N>>,
 }
 
 /// Additional options you can pass to the builder when generating a set of blocks.
@@ -156,27 +153,19 @@ impl<N: Network> TestChainBuilder<N> {
     }
 
     /// Initialize the builder with the default quorum size.
-    pub fn new(rng: &mut TestRng, transactions: Vec<Transaction<N>>) -> Result<Self> {
-        Self::new_with_quorum_size(4, rng, transactions)
+    pub fn new(rng: &mut TestRng) -> Result<Self> {
+        Self::new_with_quorum_size(4, rng)
     }
 
     /// Initialize the builder with the specified quorum size.
-    pub fn new_with_quorum_size(
-        num_validators: usize,
-        rng: &mut TestRng,
-        transactions: Vec<Transaction<N>>,
-    ) -> Result<Self> {
+    pub fn new_with_quorum_size(num_validators: usize, rng: &mut TestRng) -> Result<Self> {
         let (private_keys, genesis) = Self::initialize_components(num_validators, rng)?;
-        Self::from_components(private_keys, genesis, transactions)
+        Self::from_components(private_keys, genesis)
     }
 
     /// Initialize the builder with the specified genesis block..
     /// Note: this function mirrors the way the private keys are sampled in snarkOS `fn parse_genesis`.
-    pub fn new_with_quorum_size_and_genesis_block(
-        num_validators: usize,
-        genesis_path: String,
-        transactions: Vec<Transaction<N>>,
-    ) -> Result<Self> {
+    pub fn new_with_quorum_size_and_genesis_block(num_validators: usize, genesis_path: String) -> Result<Self> {
         // Attempts to load the genesis block file.
         let buffer = std::fs::read(genesis_path)?;
         // Return the genesis block.
@@ -188,30 +177,22 @@ impl<N: Network> TestChainBuilder<N> {
         // Initialize the development private keys.
         let private_keys = (0..num_validators).map(|_| PrivateKey::new(&mut rng).unwrap()).collect();
         // Initialize the builder with the specified committee and genesis block.
-        Self::from_components(private_keys, genesis, transactions)
+        Self::from_components(private_keys, genesis)
     }
 
     /// Initialize the builder with the specified committee and genesis block
-    pub fn from_components(
-        private_keys: Vec<PrivateKey<N>>,
-        genesis_block: Block<N>,
-        transactions: Vec<Transaction<N>>,
-    ) -> Result<Self> {
+    pub fn from_components(private_keys: Vec<PrivateKey<N>>, genesis_block: Block<N>) -> Result<Self> {
         // Initialize the ledger with the genesis block.
         let ledger = Ledger::<N, ConsensusMemory<N>>::load(genesis_block.clone(), StorageMode::new_test(None))
             .with_context(|| "Failed to set up ledger for test chain")?;
 
         ensure!(ledger.genesis_block == genesis_block);
 
-        Self::from_genesis(private_keys, genesis_block, transactions)
+        Self::from_genesis(private_keys, genesis_block)
     }
 
     /// Initialize the builder with the specified committee and gensis block
-    pub fn from_genesis(
-        private_keys: Vec<PrivateKey<N>>,
-        genesis_block: Block<N>,
-        transactions: Vec<Transaction<N>>,
-    ) -> Result<Self> {
+    pub fn from_genesis(private_keys: Vec<PrivateKey<N>>, genesis_block: Block<N>) -> Result<Self> {
         // Initialize the ledger with the genesis block.
         let ledger = Ledger::<N, ConsensusMemory<N>>::load(genesis_block.clone(), StorageMode::new_test(None))
             .with_context(|| "Failed to set up ledger for test chain")?;
@@ -219,27 +200,20 @@ impl<N: Network> TestChainBuilder<N> {
         Ok(Self {
             private_keys,
             ledger,
-
             genesis_block,
             last_batch_round: Default::default(),
             last_committed_batch_round: Default::default(),
             last_block_round: 0,
             round_to_certificates: Default::default(),
             previous_leader_certificate: Default::default(),
-            transactions,
         })
     }
 
     /// Create multiple blocks, with fully-connected DAGs.
     pub fn generate_blocks(&mut self, num_blocks: usize, rng: &mut TestRng) -> Result<Vec<Block<N>>> {
         let num_validators = self.private_keys.len();
-        let transactions = mem::take(&mut self.transactions);
 
-        self.generate_blocks_with_opts(
-            num_blocks,
-            GenerateBlocksOptions { num_validators, transactions, ..Default::default() },
-            rng,
-        )
+        self.generate_blocks_with_opts(num_blocks, GenerateBlocksOptions { num_validators, ..Default::default() }, rng)
     }
 
     /// Create multiple blocks, with additional parameters.
@@ -259,9 +233,10 @@ impl<N: Network> TestChainBuilder<N> {
         // If configured, skip enough blocks to reach the current consensus version.
         if options.skip_to_current_version {
             let (version, height) = TEST_CONSENSUS_VERSION_HEIGHTS.last().unwrap();
+            let mut current_height = self.ledger.latest_height();
             println!("Skipping {height} blocks to reach {version}");
 
-            for _ in 0..*height {
+            while current_height < *height && result.len() < num_blocks {
                 let options = GenerateBlockOptions {
                     skip_votes: options.skip_votes,
                     skip_nodes: options.skip_nodes.clone(),
@@ -269,11 +244,13 @@ impl<N: Network> TestChainBuilder<N> {
                 };
 
                 let block = self.generate_block_with_opts(options, rng)?;
+                current_height = block.height();
                 result.push(block);
             }
 
             // Subtract the number of placeholder blocks from the number of blocks to generate.
-            num_blocks -= *height as usize;
+            assert!(result.len() <= num_blocks);
+            num_blocks -= result.len();
 
             println!("Advanced to the current consensus version");
         }
