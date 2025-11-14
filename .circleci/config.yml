@@ -170,7 +170,6 @@ commands:
       - save_cache:
           key: << parameters.cache_key >>
           paths:
-            - /home/circleci/project/target
             - /home/circleci/.aleo/resources
 
   run_test:
