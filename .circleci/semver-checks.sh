@@ -2,10 +2,12 @@
 
 set -x
 
+BASELINE_REV=5eb528f # UPDATE ME ON NECESSARY BREAKING CHANGES
+
 # Ensure that the command is installed.
 cargo install cargo-semver-checks@0.43.0 --locked
 
-BASELINE_REV=5eb528f # UPDATE ME ON NECESSARY BREAKING CHANGES
+# Ensure we can find the baseline revision
+git fetch --unshallow || true
 
-# Exclude CLI as it has been removed
 cargo semver-checks --workspace --default-features --baseline-rev $BASELINE_REV
