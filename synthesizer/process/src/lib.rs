@@ -68,9 +68,11 @@ use snarkvm_synthesizer_program::{
     Command,
     FinalizeGlobalState,
     FinalizeOperation,
+    Function,
     Instruction,
     Program,
     StackTrait,
+    ValueType,
 };
 use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 use snarkvm_utilities::{defer, dev_println};

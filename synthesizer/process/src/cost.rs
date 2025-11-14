@@ -97,7 +97,7 @@ pub fn execution_cost_for_authorization<N: Network>(
     // - the circuits of each Transition
     // - one inclusion circuit for input records to *all* of those Transitions
 
-    // TODO: Dynamic dispatch, once implemented, will cause a third type of
+    // TODO(dynamic_dispatch): will cause a third type of
     // circuit to appear which needs to be accounted for here.
 
     let mut circuit_frequencies = HashMap::new();

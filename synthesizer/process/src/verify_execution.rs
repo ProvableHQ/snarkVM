@@ -67,6 +67,9 @@ impl<N: Network> Process<N> {
         // Initialize a map of transition IDs to references of the transition.
         let mut transition_map = HashMap::new();
 
+        // Initialize a map of (program ID, record identifier) to translation verifying keys.
+        let mut translation_verifying_keys = HashMap::new();
+
         // Verify each transition.
         for transition in execution.transitions() {
             dev_println!("Verifying transition for {}/{}...", transition.program_id(), transition.function_name());
@@ -141,7 +144,13 @@ impl<N: Network> Process<N> {
                 true => Some(stack.program_checksum_as_field()?),
                 false => None,
             };
-
+            // Retrieve the translation verifying keys for the transition's program.
+            // TODO(dyanmic_dispatch): uncomment this code when the Stack's translation verifying keys are merged in.
+            // TODO(dynamic_dispatch): minor perf issue: this can superfluously retrieve the verifying keys multiple times.
+            // for record_name in stack.program().records().keys() {
+            //     let translation_verifying_key = stack.get_translation_verifying_key(&(*transition.program_id(), *record_name)).ok_or_else(|| bail!("Translation verifying key not found for {}/{}", transition.program_id(), record_name))?;
+            //     translation_verifying_keys.insert((*transition.program_id(), *record_name), translation_verifying_key);
+            // }
             // Ensure the number of inputs and outputs match the expected number in the function.
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
             ensure!(function.outputs().len() == num_outputs, "The number of transition outputs is incorrect");
@@ -178,7 +187,7 @@ impl<N: Network> Process<N> {
             lap!(timer, "Stored the verifier inputs for a transition of {}", function.name());
 
             // Add the transition to the transition map.
-            transition_map.insert(*transition.id(), transition);
+            transition_map.insert(*transition.id(), (transition, function));
         }
 
         // Count the number of verifier instances.
@@ -197,7 +206,22 @@ impl<N: Network> Process<N> {
         })?;
 
         // Construct the list of verifier inputs.
-        let verifier_inputs: Vec<_> = verifier_inputs.values().cloned().collect();
+        let mut verifier_inputs: Vec<_> = verifier_inputs.values().cloned().collect();
+
+        // Construct the batch of translation verifier inputs.
+        let batch_translation_inputs = Translation::prepare_verifier_inputs(&translation_verifying_keys, &transition_map, &call_graph)?;
+        
+        // TODO(dynamic_dispatch): bring appropriate new measurement functions from execution_cost_for_authorization to here.
+
+        for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.iter() {
+            // Retrieve the number of public and private variables.
+            // Note: This number does *NOT* include the number of constants. This is safe because
+            // this program is never deployed, as it is a first-class citizen of the protocol.
+            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+            // Insert the inclusion verifier inputs.
+            verifier_inputs.push((VerifyingKey::<N>::new(verifying_key, num_variables), batch_translation_inputs_for_record));
+        }
+
         // Verify the execution proof.
         Trace::verify_execution_proof(&locator, varuna_version, inclusion_version, verifier_inputs, execution)?;
 
@@ -216,7 +240,7 @@ impl<N: Network> Process<N> {
         parent: Option<&ProgramID<N>>,
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
         program_checksum: Option<N::Field>,
-        transition_map: &mut HashMap<N::TransitionID, &Transition<N>>,
+        transition_map: &mut HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
     ) -> Result<Vec<N::Field>> {
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = transition.tpk().to_xy_coordinates();
@@ -253,7 +277,7 @@ impl<N: Network> Process<N> {
         for transition_id in call_graph.get(transition.id()).unwrap() {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
-            let transition: &&Transition<N> = transition_map.get(transition_id).unwrap();
+            let transition: &Transition<N> = transition_map.get(transition_id).unwrap().0;
             // [Inputs] Extend the verifier inputs with the transition commitment of the external call.
             inputs.extend([**transition.tcm()]);
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
@@ -346,6 +370,7 @@ impl<N: Network> Process<N> {
 
         // Initialize a call graph, which is a map of transition IDs to the transition IDs it calls.
         let mut call_graph = HashMap::new();
+
         // Initialize a mapping from UIDs to transition IDs.
         let mut uid_to_tid = HashMap::new();
 
@@ -353,6 +378,9 @@ impl<N: Network> Process<N> {
         let mut traversal_stack: Vec<TransitionMetadata<N>> = Vec::new();
         // Initialize a counter to provide unique IDs for each transition.
         let mut counter = 0;
+        // Placeholder program id and function name for dynamic calls traversal.
+        let dynamic_pid = ProgramID::<N>::from_str("dynamic.aleo")?;
+        let dynamic_fname = Identifier::<N>::from_str("dynamic")?;
 
         // Iterate over each transition in reverse post-order, and populate the call graph.
         for transition in execution.transitions().rev() {
@@ -370,9 +398,14 @@ impl<N: Network> Process<N> {
                     ));
                 }
                 // If the stack is not empty, then add the current transition ID to the entry.
-                Some(head) => match head.pid == *transition.program_id() && head.fname == *transition.function_name() {
-                    true => head.tid = Some(*transition.id()),
-                    false => bail!("Invalid traversal - unexpected transition in the execution"),
+                Some(head) => {
+                    // For dynamic calls, we skip the defense in depth check whether the transition is the expected one.
+                    // As a result, a malicious re-ordering of dynamic transitions will fail opaquely during proof verification.
+                    let is_dynamic = head.pid == dynamic_pid && head.fname == dynamic_fname;
+                    match is_dynamic || (head.pid == *transition.program_id() && head.fname == *transition.function_name()) {
+                        true => head.tid = Some(*transition.id()),
+                        false => bail!("Invalid traversal - unexpected transition in the execution"),
+                    }
                 },
             }
 
@@ -402,6 +435,14 @@ impl<N: Network> Process<N> {
                         if self.get_stack(pid)?.get_function(fname).is_ok() {
                             children.push(TransitionMetadata::new(&mut counter, *pid, *fname, None));
                         }
+                    }
+                    if let Instruction::CallDynamic(_) = instruction {
+                        // Add the child to the traversal stack.
+                        // NOTE: for dynamic calls, the verifier doesn't have access to a locator or resource.
+                        // However, the verifier can determine the program and function name directly from the DFS ordering of transitions in the Execution.
+                        children.push(TransitionMetadata::new(&mut counter, dynamic_pid, dynamic_fname, None));
+                       
+                        translation_count += 1;
                     }
                 }
 
