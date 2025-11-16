@@ -684,21 +684,21 @@ jobs:
 
   ledger-with-rocksdb-partition1:
     executor: rust-docker
-    resource_class: << pipeline.parameters.large >>
+    resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
-          flags: --release --features=rocks --partition count:1/2 -- --test-threads=8
+          flags: --release --features=rocks --partition count:1/2 -- --test-threads=10
           no_output_timeout: 20m
           timeout: 30m
 
   ledger-with-rocksdb-partition2:
     executor: rust-docker
-    resource_class: << pipeline.parameters.large >>
+    resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
-          flags: --release --features=rocks --partition count:2/2 -- --test-threads=8
+          flags: --release --features=rocks --partition count:2/2 -- --test-threads=10
           no_output_timeout: 20m
           timeout: 30m
 
