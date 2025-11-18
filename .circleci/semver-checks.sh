@@ -1,5 +1,12 @@
 #! /bin/bash
 
+set -euo pipefail
+
+git fetch --unshallow --tags origin || git fetch --tags origin
+
+git rev-parse HEAD
+git tag --list | tail -n 10
+
 # Ensure that the command is installed.
 cargo install cargo-semver-checks@0.43.0 --locked
 
