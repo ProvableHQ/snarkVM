@@ -1088,7 +1088,7 @@ jobs:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
-      - checkout
+      - checkout:
           method: full
       - run:
           name: Drop cached git checkouts (semver)
