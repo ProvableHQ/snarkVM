@@ -163,7 +163,7 @@ commands:
           paths:
             - /home/circleci/.cache/sccache
             - /home/circleci/.cargo/registry
-            - /home/circleci/.cargo/git
+            #- /home/circleci/.cargo/git
             - /home/circleci/.rustup
             - /home/circleci/.cargo/bin
             - /home/circleci/project/.bin
@@ -1089,6 +1089,10 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - checkout
+      - run:
+          name: Drop cached git checkouts (semver)
+          command: |
+            rm -rf /home/circleci/.cargo/git
       - setup_environment:
           cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache-2
       - run:
