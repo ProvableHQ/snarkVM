@@ -170,6 +170,7 @@ commands:
       - save_cache:
           key: << parameters.cache_key >>
           paths:
+            - /home/circleci/project/target
             - /home/circleci/.aleo/resources
 
   run_test:
@@ -1089,7 +1090,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache-1
+          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache-2
       - run:
           name: Check for semver violations
           no_output_timeout: 15m
@@ -1097,7 +1098,7 @@ jobs:
             bash ./.circleci/semver-checks.sh
 
       - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache-1
+          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache-2
 
   check-clippy:
     executor: rust-docker
