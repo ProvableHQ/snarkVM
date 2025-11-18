@@ -1089,6 +1089,7 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - checkout
+          method: full
       - run:
           name: Drop cached git checkouts (semver)
           command: |
