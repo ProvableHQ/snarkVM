@@ -3764,6 +3764,7 @@ dependencies = [
  "clap",
  "snarkvm-console",
  "snarkvm-ledger",
+ "tracing",
  "tracing-subscriber",
 ]
 

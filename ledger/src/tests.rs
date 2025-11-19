@@ -3390,7 +3390,7 @@ fn test_subdag_with_long_branch() -> Result<()> {
 #[test]
 fn test_subdag_with_gc_length() -> Result<()> {
     let rng = &mut TestRng::default();
-    let mut chain_builder = TestChainBuilder::new(rng)?;
+    let mut chain_builder = TestChainBuilder::new(rng).unwrap();
 
     let blocks = chain_builder.generate_blocks_with_opts(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS / 2,

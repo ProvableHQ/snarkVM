@@ -68,12 +68,31 @@ pub struct TestChainBuilder<N: Network> {
 }
 
 /// Additional options you can pass to the builder when generating a set of blocks.
-#[derive(Clone, Default)]
-pub struct GenerateBlocksOptions {
+#[derive(Clone)]
+pub struct GenerateBlocksOptions<N: Network> {
     /// Do not include votes to the previous leader certificate
     pub skip_votes: bool,
     /// Do not generate certificates for the specific node indices (to simulate a partition).
     pub skip_nodes: Vec<usize>,
+    /// A flag indicating that a number of initial "placeholder blocks" should be baked
+    /// wthout transactions in order to skip to the latest version of consensus.
+    pub skip_to_current_version: bool,
+    /// The number of validators.
+    pub num_validators: usize,
+    /// Preloaded transactions to populate the blocks with.
+    pub transactions: Vec<Transaction<N>>,
+}
+
+impl<N: Network> Default for GenerateBlocksOptions<N> {
+    fn default() -> Self {
+        Self {
+            skip_votes: false,
+            skip_nodes: Default::default(),
+            skip_to_current_version: false,
+            num_validators: 0,
+            transactions: Default::default(),
+        }
+    }
 }
 
 /// Additional options you can pass to the builder when generating a single block.
@@ -178,7 +197,6 @@ impl<N: Network> TestChainBuilder<N> {
         Ok(Self {
             private_keys,
             ledger,
-
             genesis_block,
             last_batch_round: Default::default(),
             last_committed_batch_round: Default::default(),
@@ -190,7 +208,9 @@ impl<N: Network> TestChainBuilder<N> {
 
     /// Create multiple blocks, with fully-connected DAGs.
     pub fn generate_blocks(&mut self, num_blocks: usize, rng: &mut TestRng) -> Result<Vec<Block<N>>> {
-        self.generate_blocks_with_opts(num_blocks, GenerateBlocksOptions::default(), rng)
+        let num_validators = self.private_keys.len();
+
+        self.generate_blocks_with_opts(num_blocks, GenerateBlocksOptions { num_validators, ..Default::default() }, rng)
     }
 
     /// Create multiple blocks, with additional parameters.
@@ -200,20 +220,53 @@ impl<N: Network> TestChainBuilder<N> {
     pub fn generate_blocks_with_opts(
         &mut self,
         num_blocks: usize,
-        options: GenerateBlocksOptions,
+        mut options: GenerateBlocksOptions<N>,
         rng: &mut TestRng,
     ) -> Result<Vec<Block<N>>> {
         assert!(num_blocks > 0, "Need to build at least one block");
 
-        let options = GenerateBlockOptions {
-            skip_votes: options.skip_votes,
-            skip_nodes: options.skip_nodes,
-            ..Default::default()
-        };
-
         let mut result = vec![];
-        for _ in 0..num_blocks {
-            let block = self.generate_block_with_opts(options.clone(), rng)?;
+
+        // If configured, skip enough blocks to reach the current consensus version.
+        if options.skip_to_current_version {
+            let (version, target_height) = TEST_CONSENSUS_VERSION_HEIGHTS.last().unwrap();
+            let mut current_height = self.ledger.latest_height();
+
+            let diff = target_height.saturating_sub(current_height);
+
+            if diff > 0 {
+                println!("Skipping {diff} blocks to reach {version}");
+
+                while current_height < *target_height && result.len() < num_blocks {
+                    let options = GenerateBlockOptions {
+                        skip_votes: options.skip_votes,
+                        skip_nodes: options.skip_nodes.clone(),
+                        ..Default::default()
+                    };
+
+                    let block = self.generate_block_with_opts(options, rng)?;
+                    current_height = block.height();
+                    result.push(block);
+                }
+
+                println!("Advanced to the current consensus version at height {target_height}");
+            } else {
+                debug!("Already at the current consensus version. No blocks to skip.");
+            }
+        }
+
+        while result.len() < num_blocks {
+            let num_txs = (BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH * options.num_validators)
+                .min(options.transactions.len());
+
+            let options = GenerateBlockOptions {
+                skip_votes: options.skip_votes,
+                skip_nodes: options.skip_nodes.clone(),
+                transactions: options.transactions.drain(..num_txs).collect(),
+                ..Default::default()
+            };
+
+            let block = self.generate_block_with_opts(options, rng)?;
             result.push(block);
         }
 
@@ -262,8 +315,6 @@ impl<N: Network> TestChainBuilder<N> {
             transmissions.insert(transmission_id, transmission);
         }
 
-        let transmission_ids: IndexSet<_> = transmissions.keys().copied().collect();
-
         // =======================================
         // Create certificates for the new block.
         // =======================================
@@ -302,6 +353,13 @@ impl<N: Network> TestChainBuilder<N> {
                 if self.last_batch_round.get(&key1_idx).unwrap_or(&0) >= &round {
                     continue;
                 }
+
+                let transmission_ids: IndexSet<_> = transmissions
+                    .keys()
+                    .skip(key1_idx * BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH)
+                    .take(BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH)
+                    .copied()
+                    .collect();
 
                 let batch_header = BatchHeader::new(
                     private_key_1,
@@ -404,6 +462,7 @@ impl<N: Network> TestChainBuilder<N> {
 
         // Construct the block.
         let subdag = Subdag::from(subdag_map).unwrap();
+
         let block = self.ledger.prepare_advance_to_next_quorum_block(subdag, transmissions, rng)?;
 
         // Skip to increase performance.

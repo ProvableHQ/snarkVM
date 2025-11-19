@@ -13,13 +13,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_console::prelude::{CanaryV0, MainnetV0, Network, TestRng, TestnetV0, ToBytes};
-use snarkvm_ledger::{Ledger, store::helpers::rocksdb::ConsensusDB, test_helpers::TestChainBuilder};
+use snarkvm_console::prelude::{
+    CanaryV0,
+    MainnetV0,
+    Network,
+    TEST_CONSENSUS_VERSION_HEIGHTS,
+    TestRng,
+    TestnetV0,
+    ToBytes,
+};
+use snarkvm_ledger::{
+    Ledger,
+    Transaction,
+    store::helpers::rocksdb::ConsensusDB,
+    test_helpers::{TestChainBuilder, chain_builder::GenerateBlocksOptions},
+};
 
 use aleo_std::StorageMode;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, builder::PossibleValuesParser};
-use std::fs;
+use std::{fs, path::Path, str::FromStr};
+use tracing::debug;
 
 #[derive(Parser)]
 struct Args {
@@ -38,6 +52,10 @@ struct Args {
     /// Remove existing ledger if it already exists.
     #[clap(long, short = 'f')]
     force: bool,
+    /// Load the transactions to be used with the generated blocks. They are expected to be
+    /// stored in a JSON-encoded format.
+    #[clap(long)]
+    txs_path: Option<String>,
     /// The name of the network to generate the chain for.
     #[clap(long, value_parser=PossibleValuesParser::new(vec![CanaryV0::SHORT_NAME, TestnetV0::SHORT_NAME, MainnetV0::SHORT_NAME]), default_value=TestnetV0::SHORT_NAME)]
     network: String,
@@ -95,6 +113,32 @@ fn generate_testchain<N: Network>(args: Args) -> Result<()> {
 
     remove_ledger(N::ID, &storage_mode, args.force)?;
 
+    let mut txs = if let Some(path) = args.txs_path {
+        let path = Path::new(&path);
+
+        if path.is_dir() {
+            println!("Attempting to load transactions from \"{}\"", path.display());
+        } else {
+            bail!("Cannot load transactions from \"{}\": not a valid directory", path.display());
+        }
+
+        let mut txs = Vec::new();
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            let buffer = fs::read_to_string(path)?;
+            let tx = Transaction::<N>::from_str(&buffer)?;
+
+            txs.push(tx);
+        }
+
+        println!("Loaded {} tranactionss from \"{}\"", txs.len(), path.display());
+        txs
+    } else {
+        Default::default()
+    };
+
     let num_validators = args.num_validators;
     let num_blocks = args.num_blocks;
 
@@ -110,9 +154,31 @@ fn generate_testchain<N: Network>(args: Args) -> Result<()> {
     let mut pos = 0;
     let mut blocks = vec![];
 
+    // How many blocks to generate in a single batch.
+    const BATCH_SIZE: usize = 100;
+
+    // How many transactions to insert per block.
+    let latest_consensus_height = TEST_CONSENSUS_VERSION_HEIGHTS.last().unwrap().1 as usize;
+    let num_txn_blocks = num_blocks.saturating_sub(latest_consensus_height);
+    let txns_per_block = txs.len().div_ceil(num_txn_blocks);
+
     while blocks.len() < num_blocks {
-        let batch_size = (num_blocks - blocks.len()).min(100);
-        let mut batch = builder.generate_blocks(batch_size, &mut rng).with_context(|| "Failed to generate blocks")?;
+        let current_height = blocks.len();
+        // How many blocks to generate in this batch.
+        let batch_size = (num_blocks - current_height).min(BATCH_SIZE);
+        // Generate set of transactions to insert in this batch.
+        let num_empty_blocks = latest_consensus_height.saturating_sub(current_height);
+        let num_txns = (batch_size.saturating_sub(num_empty_blocks)) * txns_per_block;
+        let transactions = txs.drain(..num_txns).collect();
+
+        debug!("Generating next batch with {batch_size} blocks and {num_txns} transactions");
+        let mut batch = builder
+            .generate_blocks_with_opts(
+                batch_size,
+                GenerateBlocksOptions { transactions, skip_to_current_version: true, ..Default::default() },
+                &mut rng,
+            )
+            .with_context(|| "Failed to generate blocks")?;
 
         pos += batch_size;
         println!("Generated {pos} of {num_blocks} blocks");

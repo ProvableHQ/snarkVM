@@ -27,12 +27,16 @@ workspace = true
 
 [dependencies.snarkvm-console]
 workspace = true
+features = [ "test_consensus_heights" ]
 
 [dependencies.snarkvm-ledger]
 workspace = true
 features = [ "test-helpers", "rocks" ]
 
 [dependencies.anyhow]
+workspace = true
+
+[dependencies.tracing]
 workspace = true
 
 [dependencies.tracing-subscriber]
