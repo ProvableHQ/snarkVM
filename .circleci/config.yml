@@ -1063,7 +1063,10 @@ jobs:
           name: Check for unused dependencies
           no_output_timeout: 10m
           command: |
-            cargo install cargo-machete@0.7.0
+            set -euo pipefail
+            if ! command -v cargo-machete >/dev/null 2>&1; then
+              cargo install cargo-machete@0.7.0 --locked
+            fi
             cargo machete
       - clear_environment:
           cache_key: v4.2.0-rust-1.88.0-machete-cache
@@ -1088,7 +1091,8 @@ jobs:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
-      - checkout
+      - checkout:
+          method: full
       - setup_environment:
           cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
       - run:
