@@ -163,7 +163,7 @@ commands:
           paths:
             - /home/circleci/.cache/sccache
             - /home/circleci/.cargo/registry
-            #- /home/circleci/.cargo/git
+            - /home/circleci/.cargo/git
             - /home/circleci/.rustup
             - /home/circleci/.cargo/bin
             - /home/circleci/project/.bin
