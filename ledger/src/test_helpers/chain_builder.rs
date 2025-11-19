@@ -36,10 +36,7 @@ use anyhow::{Context, Result};
 use indexmap::{IndexMap, IndexSet};
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
-use std::{
-    cmp,
-    collections::{BTreeMap, HashMap},
-};
+use std::collections::{BTreeMap, HashMap};
 use time::OffsetDateTime;
 
 pub type CurrentNetwork = MainnetV0;
@@ -222,7 +219,7 @@ impl<N: Network> TestChainBuilder<N> {
     /// This function panics if called from an async context.
     pub fn generate_blocks_with_opts(
         &mut self,
-        mut num_blocks: usize,
+        num_blocks: usize,
         mut options: GenerateBlocksOptions<N>,
         rng: &mut TestRng,
     ) -> Result<Vec<Block<N>>> {
@@ -232,34 +229,35 @@ impl<N: Network> TestChainBuilder<N> {
 
         // If configured, skip enough blocks to reach the current consensus version.
         if options.skip_to_current_version {
-            let (version, height) = TEST_CONSENSUS_VERSION_HEIGHTS.last().unwrap();
+            let (version, target_height) = TEST_CONSENSUS_VERSION_HEIGHTS.last().unwrap();
             let mut current_height = self.ledger.latest_height();
-            println!("Skipping {height} blocks to reach {version}");
 
-            while current_height < *height && result.len() < num_blocks {
-                let options = GenerateBlockOptions {
-                    skip_votes: options.skip_votes,
-                    skip_nodes: options.skip_nodes.clone(),
-                    ..Default::default()
-                };
+            let diff = target_height.saturating_sub(current_height);
 
-                let block = self.generate_block_with_opts(options, rng)?;
-                current_height = block.height();
-                result.push(block);
+            if diff > 0 {
+                println!("Skipping {diff} blocks to reach {version}");
+
+                while current_height < *target_height && result.len() < num_blocks {
+                    let options = GenerateBlockOptions {
+                        skip_votes: options.skip_votes,
+                        skip_nodes: options.skip_nodes.clone(),
+                        ..Default::default()
+                    };
+
+                    let block = self.generate_block_with_opts(options, rng)?;
+                    current_height = block.height();
+                    result.push(block);
+                }
+
+                println!("Advanced to the current consensus version at height {target_height}");
+            } else {
+                debug!("Already at the current consensus version. No blocks to skip.");
             }
-
-            // Subtract the number of placeholder blocks from the number of blocks to generate.
-            assert!(result.len() <= num_blocks);
-            num_blocks -= result.len();
-
-            println!("Advanced to the current consensus version");
         }
 
-        for _ in 0..num_blocks {
-            let num_txs = cmp::min(
-                BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH * options.num_validators,
-                options.transactions.len(),
-            );
+        while result.len() < num_blocks {
+            let num_txs = (BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH * options.num_validators)
+                .min(options.transactions.len());
 
             let options = GenerateBlockOptions {
                 skip_votes: options.skip_votes,

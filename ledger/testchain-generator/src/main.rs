@@ -32,12 +32,7 @@ use snarkvm_ledger::{
 use aleo_std::StorageMode;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, builder::PossibleValuesParser};
-use std::{
-    fs::{self, File},
-    io::Read,
-    path::Path,
-    str::FromStr,
-};
+use std::{fs, path::Path, str::FromStr};
 use tracing::debug;
 
 #[derive(Parser)]
@@ -120,24 +115,25 @@ fn generate_testchain<N: Network>(args: Args) -> Result<()> {
 
     let mut txs = if let Some(path) = args.txs_path {
         let path = Path::new(&path);
-        println!("Attempting to load txs from {}", path.display());
 
-        let mut txs = Vec::new();
         if path.is_dir() {
-            let mut buffer = String::new();
-            for entry in fs::read_dir(path)? {
-                let entry = entry?;
-                let path = entry.path();
-
-                let mut file = File::open(path)?;
-                let _ = file.read_to_string(&mut buffer)?;
-                let tx = Transaction::<N>::from_str(&buffer)?;
-                txs.push(tx);
-                buffer.clear();
-            }
+            println!("Attempting to load transactions from \"{}\"", path.display());
+        } else {
+            bail!("Cannot load transactions from \"{}\": not a valid directory", path.display());
         }
 
-        println!("Loaded {} txs from {}", txs.len(), path.display());
+        let mut txs = Vec::new();
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            let buffer = fs::read_to_string(path)?;
+            let tx = Transaction::<N>::from_str(&buffer)?;
+
+            txs.push(tx);
+        }
+
+        println!("Loaded {} tranactionss from \"{}\"", txs.len(), path.display());
         txs
     } else {
         Default::default()
