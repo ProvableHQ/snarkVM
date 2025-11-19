@@ -187,7 +187,7 @@ fn announce_block(
         let (block_height, serialized_block) = payload;
         let block_bytes = serialized_block?;
         debug!("Announcing block {block_height} to the IPC stream");
-        let payload_size = u32::try_from(std::mem::size_of::<u32>() + block_bytes.len()).unwrap()); // Safe - blocks are smaller than 4GiB.
+        let payload_size = u32::try_from(std::mem::size_of::<u32>() + block_bytes.len()).unwrap(); // Safe - blocks are smaller than 4GiB.
         stream.write_all(&payload_size.to_le_bytes())?;
         stream.write_all(&block_height.to_le_bytes())?;
         stream.write_all(&block_bytes)?;
