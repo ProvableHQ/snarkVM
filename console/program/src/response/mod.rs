@@ -290,6 +290,7 @@ impl<N: Network> Response<N> {
     /// - converting all record outputs to dynamic record outputs
     /// - converting all future outputs to dynamic future outputs.
     /// - leaving all other outputs unchanged.
+    // TODO(dynamic_dispatch): this approach seems wrong because not all outputs will be translated.
     pub fn dynamic_call_outputs(&self) -> Result<Vec<Value<N>>> {
         self.outputs
             .iter()

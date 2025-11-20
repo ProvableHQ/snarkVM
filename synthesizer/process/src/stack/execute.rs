@@ -238,10 +238,8 @@ impl<N: Network> Stack<N> {
         // If a program checksum was passed in, Inject it as `Mode::Public`.
         let program_checksum = program_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
 
-        // Compute the function id.
-        let function_id = compute_function_id(&U16::<N>::new(N::ID as u16), console_request.program_id(), console_request.function_name(), console_request.is_dynamic())?;
-        // Set the function id. // TODO(dynamic_dispatch): ensure we only have to compute it once, not again in call/dynamic.rs
-        registers.set_function_id(function_id);
+        // Set the request.
+        registers.set_request(console_request.clone());
 
         use circuit::{Eject, Inject};
 
@@ -533,6 +531,7 @@ impl<N: Network> Stack<N> {
             registers.ensure_console_and_circuit_registers_match()?;
 
             // Construct the transition.
+            // TODO(perf): we already have the transition from the Authorization at this point. 
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
 
             // Retrieve the proving key.

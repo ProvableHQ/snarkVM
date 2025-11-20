@@ -16,10 +16,10 @@
 use crate::{InputStorage, InputStore, OutputStorage, OutputStore, TransitionStorage, helpers::memory::MemoryMap};
 use console::{
     prelude::*,
-    program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record},
+    program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record, Request},
     types::{Field, Group},
 };
-use snarkvm_ledger_block::Input;
+use snarkvm_ledger_block::{Input, Output};
 
 use aleo_std_storage::StorageMode;
 
@@ -42,8 +42,10 @@ pub struct TransitionMemory<N: Network> {
     reverse_tcm_map: MemoryMap<Field<N>, N::TransitionID>,
     /// The signer commitments.
     scm_map: MemoryMap<N::TransitionID, Field<N>>,
-    /// The dynamic input map.
+    /// The optional caller inputs map.
     caller_input_map: MemoryMap<N::TransitionID, Vec<Input<N>>>,
+    /// The optional caller outputs map.
+    caller_output_map: MemoryMap<N::TransitionID, Vec<Output<N>>>,
 }
 
 #[rustfmt::skip]
@@ -57,6 +59,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     type ReverseTCMMap = MemoryMap<Field<N>, N::TransitionID>;
     type SCMMap = MemoryMap<N::TransitionID, Field<N>>;
     type CallerInputMap = MemoryMap<N::TransitionID, Vec<Input<N>>>;
+    type CallerOutputMap = MemoryMap<N::TransitionID, Vec<Output<N>>>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -71,6 +74,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
             reverse_tcm_map: MemoryMap::default(),
             scm_map: MemoryMap::default(),
             caller_input_map: MemoryMap::default(),
+            caller_output_map: MemoryMap::default(),
         })
     }
 
@@ -117,6 +121,11 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     /// Returns the caller input map.
     fn caller_input_map(&self) -> &Self::CallerInputMap {
         &self.caller_input_map
+    }
+
+    /// Returns the caller output map.
+    fn caller_output_map(&self) -> &Self::CallerOutputMap {
+        &self.caller_output_map
     }
 }
 

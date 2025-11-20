@@ -237,6 +237,8 @@ mod tests {
                 true => Some(Field::rand(rng)),
                 false => None,
             };
+            // Sample 'caller_request'.
+            let caller_request = None;
 
             // Compute the signed request.
             let request = if bool::rand(rng) {
@@ -261,6 +263,8 @@ mod tests {
                     &input_types,
                     inputs.into_iter(),
                     &input_types,
+                    &input_types,
+                    caller_request,
                     root_tvk,
                     is_root,
                     program_checksum,

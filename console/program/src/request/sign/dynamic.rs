@@ -28,6 +28,8 @@ impl<N: Network> Request<N> {
         input_types: &[ValueType<N>],
         caller_inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         caller_input_types: &[ValueType<N>],
+        caller_output_types: &[ValueType<N>],
+        caller_request: &Request<N>,
         root_tvk: Option<Field<N>>,
         is_root: bool,
         program_checksum: Option<Field<N>>,
@@ -208,6 +210,8 @@ impl<N: Network> Request<N> {
             scm,
             caller_input_ids: Some(caller_input_ids),
             caller_inputs: Some(caller_inputs),
+            caller_output_types: Some(caller_output_types.to_vec()),
+            caller_request: Some(Box::new(caller_request.clone())),
         })
     }
 }

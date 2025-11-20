@@ -19,7 +19,7 @@ mod registers_trait;
 use crate::{CallStack, RegisterTypes};
 use console::{
     network::prelude::*,
-    program::{Entry, Identifier, Literal, Plaintext, Register, Value},
+    program::{Entry, Identifier, Literal, Plaintext, Register, Request, Value},
     types::{Address, Field},
 };
 use snarkvm_synthesizer_program::{Operand, RecordTranslationData, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
@@ -57,8 +57,8 @@ pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     tvk_circuit: Option<circuit::Field<A>>,
     /// The record translation data.
     record_translation_data: Option<Vec<RecordTranslationData<N>>>,
-    /// The function id.
-    function_id: Option<Field<N>>,
+    /// The request.
+    request: Option<Request<N>>,
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
@@ -91,7 +91,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
             tvk: None,
             tvk_circuit: None,
             record_translation_data: None,
-            function_id: None,
+            request: None,
         }
     }
 

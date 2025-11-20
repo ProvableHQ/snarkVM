@@ -172,6 +172,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     &function.input_types(),
                     inputs.iter(),
                     self.operand_types(),
+                    self.destination_types(),
+                    registers.request()?,
                     root_tvk,
                     is_root,
                     program_checksum,
@@ -369,6 +371,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             input_types,
                             inputs.iter(),
                             self.operand_types(),
+                            self.destination_types(),
+                            registers.request()?,
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -530,6 +534,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             input_types,
                             inputs.iter(),
                             self.operand_types(),
+                            self.destination_types(),
+                            registers.request()?,
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -620,7 +626,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             };
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
                         let callee_console_input_ids = callee_request.input_ids();
-                        let caller_console_function_id = registers.function_id()?;
+                        let caller_console_request = registers.request()?;
+                        let caller_console_function_id = compute_function_id(&caller_console_request.network_id(), caller_console_request.program_id(), caller_console_request.function_name(), caller_console_request.is_dynamic())?;
                         let callee_console_function_id = compute_function_id(
                             &U16::<N>::new(N::ID as u16),
                             callee_request.program_id(),
@@ -723,7 +730,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         // Collect record outputs to translate.
                         let caller_console_outputs = caller_response_outputs.clone();
-                        let caller_console_output_ids: Vec<OutputID<N>> = vec![]; // TODO: we may need to add this to the Request or Response object.
+                        let caller_console_output_ids: Vec<OutputID<N>> = vec![];  // TODO: we may need to add this to the Request or Response object.
                         let caller_output_types = self.destination_types();
                         let callee_console_outputs = console_callee_response.outputs();
                         let callee_console_output_ids = console_callee_response.output_ids();

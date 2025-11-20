@@ -22,7 +22,7 @@ use console::{
     prelude::{Result, bail},
     program::{
         DynamicRecord, Future, Identifier, Literal, Locator, Plaintext, PlaintextType, ProgramID, Record, Register,
-        RegisterType, Value, ValueType,
+        RegisterType, Request, Value, ValueType,
     },
     types::{Address, Field, U8, U16},
 };
@@ -240,11 +240,11 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
     /// Sets the record translation data.
     fn insert_record_translation_data(&mut self, new_record_translation_data: RecordTranslationData<N>);
 
-    /// Returns the function id.
-    fn function_id(&self) -> Result<Field<N>>;
+    /// Returns the request.
+    fn request(&self) -> Result<&Request<N>>;
 
-    /// Sets the function id.
-    fn set_function_id(&mut self, caller_function_id: Field<N>);
+    /// Sets the request.
+    fn set_request(&mut self, request: Request<N>);
 }
 
 pub trait RegistersTrait<N: Network> {

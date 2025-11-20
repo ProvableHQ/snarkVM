@@ -22,7 +22,9 @@ impl<N: Network> Serialize for Request<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let mut transition = serializer.serialize_struct("Request", 11)?;
+                // TODO(@dynamic_dispatch): ensure optionals are set atomically.
+                let num_fields = if self.caller_input_ids.is_some() { 15 } else { 11 };
+                let mut transition = serializer.serialize_struct("Request", num_fields)?;
                 transition.serialize_field("signer", &self.signer)?;
                 transition.serialize_field("network", &self.network_id)?;
                 transition.serialize_field("program", &self.program_id)?;
@@ -36,6 +38,15 @@ impl<N: Network> Serialize for Request<N> {
                 transition.serialize_field("scm", &self.scm)?;
                 if let Some(caller_input_ids) = &self.caller_input_ids {
                     transition.serialize_field("caller_input_ids", caller_input_ids)?;
+                }
+                if let Some(caller_inputs) = &self.caller_inputs {
+                    transition.serialize_field("caller_inputs", caller_inputs)?;
+                }
+                if let Some(caller_output_types) = &self.caller_output_types {
+                    transition.serialize_field("caller_output_types", caller_output_types)?;
+                }
+                if let Some(caller_request) = &self.caller_request {
+                    transition.serialize_field("caller_request", caller_request)?;
                 }
                 transition.end()
             }
@@ -80,8 +91,21 @@ impl<'de, N: Network> Deserialize<'de> for Request<N> {
                         request.get_mut("caller_input_ids").unwrap_or(&mut serde_json::Value::Null).take(),
                     )
                     .map_err(de::Error::custom)?,
-                    // TODO (dynamic_dispatch) serialise
-                    None,
+                    // Retrieve the optional caller inputs.
+                    serde_json::from_value(
+                        request.get_mut("caller_inputs").unwrap_or(&mut serde_json::Value::Null).take(),
+                    )
+                    .map_err(de::Error::custom)?,
+                    // Retrieve the optional caller output types.
+                    serde_json::from_value(
+                        request.get_mut("caller_output_types").unwrap_or(&mut serde_json::Value::Null).take(),
+                    )
+                    .map_err(de::Error::custom)?,
+                    // Retrieve the optional caller Request.
+                    serde_json::from_value(
+                        request.get_mut("caller_request").unwrap_or(&mut serde_json::Value::Null).take(),
+                    )
+                    .map_err(de::Error::custom)?,
                 )))
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "request"),

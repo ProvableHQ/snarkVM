@@ -32,6 +32,9 @@ impl<N: Network> Serialize for Transition<N> {
                 if let Some(caller_inputs) = &self.caller_inputs {
                     transition.serialize_field("caller_inputs", caller_inputs)?;
                 }
+                if let Some(caller_outputs) = &self.caller_outputs {
+                    transition.serialize_field("caller_outputs", caller_outputs)?;
+                }
                 transition.end()
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
@@ -70,6 +73,12 @@ impl<'de, N: Network> Deserialize<'de> for Transition<N> {
                         transition.get_mut("caller_inputs").unwrap_or(&mut serde_json::Value::Null).take(),
                     )
                     .map_err(de::Error::custom)?,
+                    // Retrieve the optional caller outputs.
+                    serde_json::from_value(
+                        transition.get_mut("caller_outputs").unwrap_or(&mut serde_json::Value::Null).take(),
+                    )
+                    .map_err(de::Error::custom)?,
+
                 )
                 .map_err(de::Error::custom)?;
 

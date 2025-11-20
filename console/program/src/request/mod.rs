@@ -57,6 +57,12 @@ pub struct Request<N: Network> {
     /// The optional caller input values.
     /// Note. These are only present if and only if the request is dynamic.
     caller_inputs: Option<Vec<Value<N>>>,
+    /// The optional caller output types.
+    /// Note. These are only present if and only if the request is dynamic.
+    caller_output_types: Option<Vec<ValueType<N>>>,
+    /// The optional caller Request.
+    /// Note. These are only present if and only if the request is dynamic.
+    caller_request: Option<Box<Request<N>>>,
 }
 
 impl<N: Network>
@@ -74,6 +80,8 @@ impl<N: Network>
         Field<N>,
         Option<Vec<InputID<N>>>,
         Option<Vec<Value<N>>>,
+        Option<Vec<ValueType<N>>>,
+        Option<Box<Request<N>>>,
     )> for Request<N>
 {
     /// Note: See `Request::sign` to create the request. This method is used to eject from a circuit.
@@ -92,6 +100,8 @@ impl<N: Network>
             scm,
             caller_input_ids,
             caller_inputs,
+            caller_output_types,
+            caller_request,
         ): (
             Address<N>,
             U16<N>,
@@ -106,6 +116,8 @@ impl<N: Network>
             Field<N>,
             Option<Vec<InputID<N>>>,
             Option<Vec<Value<N>>>,
+            Option<Vec<ValueType<N>>>,
+            Option<Box<Request<N>>>,
         ),
     ) -> Self {
         // TODO (@d0cd) Verify that adding checks here does not create failure cases.
@@ -159,6 +171,8 @@ impl<N: Network>
                 scm,
                 caller_input_ids,
                 caller_inputs,
+                caller_output_types,
+                caller_request,
             }
         }
     }
@@ -242,6 +256,16 @@ impl<N: Network> Request<N> {
         &self.caller_inputs
     }
 
+    /// Returns the optional caller Request.
+    pub const fn caller_output_types(&self) -> &Option<Vec<ValueType<N>>> {
+        &self.caller_output_types
+    }
+
+    /// Returns the optional caller Request.
+    pub const fn caller_request(&self) -> &Option<Box<Request<N>>> {
+        &self.caller_request
+    }
+
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
         self.caller_input_ids.is_some()
@@ -298,6 +322,10 @@ mod test_helpers {
                     true => Some(Field::rand(rng)),
                     false => None,
                 };
+                // Sample the caller output types.
+                let caller_output_types = None;
+                // Sample 'caller_request'.
+                let caller_request = None;
 
                 // Compute the signed request.
                 let request = if bool::rand(rng) {
@@ -311,6 +339,8 @@ mod test_helpers {
                         &input_types,
                         inputs.into_iter(),
                         &input_types,
+                        &caller_output_types,
+                        &caller_request,
                         root_tvk,
                         is_root,
                         program_checksum,

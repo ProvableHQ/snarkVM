@@ -72,22 +72,29 @@ impl<N: Network> FromBytes for Transition<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
-        // Reqd the optional dynamic inputs.
-        let dynamic = match version {
-            1 => None,
+        // Read the optional dynamic inputs.
+        let (dynamic_caller_inputs, dynamic_caller_outputs) = match version {
+            1 => (None, None),
             2 => {
-                let mut dynamic_inputs = Vec::with_capacity(num_inputs as usize);
+                let mut dynamic_caller_inputs = Vec::with_capacity(num_inputs as usize);
                 for _ in 0..num_inputs {
                     // Read the dynamic input.
-                    dynamic_inputs.push(FromBytes::read_le(&mut reader)?);
+                    dynamic_caller_inputs.push(FromBytes::read_le(&mut reader)?);
                 }
-                Some(dynamic_inputs)
+
+                let mut dynamic_caller_outputs = Vec::with_capacity(num_outputs as usize);
+                for _ in 0..num_outputs {
+                    // Read the dynamic output.
+                    dynamic_caller_outputs.push(FromBytes::read_le(&mut reader)?);
+                }
+
+                (Some(dynamic_caller_inputs), Some(dynamic_caller_outputs))
             }
             _ => return Err(error("Invalid transition version")),
         };
 
         // Construct the candidate transition.
-        let transition = Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, dynamic)
+        let transition = Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, dynamic_caller_inputs, dynamic_caller_outputs)
             .map_err(|e| error(e.to_string()))?;
         // Ensure the transition ID matches the expected ID.
         match transition_id == *transition.id() {
@@ -131,7 +138,13 @@ impl<N: Network> ToBytes for Transition<N> {
         self.scm.write_le(&mut writer)?;
         // Write the optional caller inputs.
         if let Some(caller_inputs) = &self.caller_inputs {
+            (u8::try_from(caller_inputs.len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
             caller_inputs.write_le(&mut writer)?;
+        }
+        // Write the optional caller outputs.
+        if let Some(caller_outputs) = &self.caller_outputs {
+            (u8::try_from(caller_outputs.len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
+            caller_outputs.write_le(&mut writer)?;
         }
 
         Ok(())

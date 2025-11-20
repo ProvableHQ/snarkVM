@@ -67,6 +67,21 @@ impl<N: Network> FromBytes for Request<N> {
             ),
             _ => return Err(error("Invalid request version")),
         };
+        // Read the optional caller Request.
+        let caller_request = match version {
+            1 => None,
+            2 => Some(Box::new(FromBytes::read_le(&mut reader)?)),
+            _ => return Err(error("Invalid request version")),
+        };
+        // Read the optional caller output types.
+        let caller_output_types = match version {
+            1 => None,
+            2 => {
+                let num_caller_output_types = u16::read_le(&mut reader)?;
+                Some((0..num_caller_output_types).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?)
+            },
+            _ => return Err(error("Invalid request version")),
+        };
 
         Ok(Self::from((
             signer,
@@ -82,6 +97,8 @@ impl<N: Network> FromBytes for Request<N> {
             scm,
             caller_input_ids,
             caller_inputs,
+            caller_output_types,
+            caller_request,
         )))
     }
 }
@@ -158,6 +175,19 @@ impl<N: Network> ToBytes for Request<N> {
                 ));
             }
             _ => {}
+        }
+        // Write the optional caller output types.
+        if let Some(caller_output_types) = &self.caller_output_types {
+            u16::try_from(caller_output_types.len())
+                .or_halt_with::<N>("Caller output types length exceeds u16")
+                .write_le(&mut writer)?;
+            for caller_output_type in caller_output_types {
+                caller_output_type.write_le(&mut writer)?;
+            }
+        }
+        // Write the optional caller Request.
+        if let Some(caller_request) = &self.caller_request {
+            caller_request.write_le(&mut writer)?;
         }
 
         Ok(())

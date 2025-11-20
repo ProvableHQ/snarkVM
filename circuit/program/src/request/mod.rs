@@ -157,6 +157,12 @@ pub struct Request<A: Aleo> {
     /// The optional caller input values.
     /// Note. These are only present if and only if the request is dynamic.
     caller_inputs: Option<Vec<console::Value<A::Network>>>,
+    /// The optional caller output types.
+    /// Note. This field is intentionally excluded for the circuit representation and is only used to eject back to the console representation.
+    caller_output_types: Option<Vec<console::ValueType<A::Network>>>,
+    /// The optional caller Request.
+    /// Note. This field is intentionally excluded for the circuit representation and is only used to eject back to the console representation.
+    caller_request: Option<console::Request<A::Network>>,
 }
 
 impl<A: Aleo> Inject for Request<A> {
@@ -267,6 +273,8 @@ impl<A: Aleo> Inject for Request<A> {
             scm,
             caller_input_ids: request.caller_input_ids().clone(),
             caller_inputs: request.caller_inputs().clone(),
+            caller_output_types: request.caller_output_types().clone(),
+            caller_request: request.caller_request().as_ref().map(|request| *request.clone()),
         }
     }
 }
@@ -337,6 +345,16 @@ impl<A: Aleo> Request<A> {
         &self.caller_inputs
     }
 
+    /// Returns the caller output types.
+    pub const fn caller_output_types(&self) -> &Option<Vec<console::ValueType<A::Network>>> {
+        &self.caller_output_types
+    }
+
+    /// Returns the caller Request.
+    pub const fn caller_request(&self) -> &Option<console::Request<A::Network>> {
+        &self.caller_request
+    }
+
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
         self.caller_input_ids.is_some()
@@ -381,6 +399,8 @@ impl<A: Aleo> Eject for Request<A> {
             self.scm.eject_value(),
             self.caller_input_ids().clone(),
             self.caller_inputs().clone(),
+            self.caller_output_types().clone(),
+            self.caller_request().as_ref().map(|request| Box::new(request.clone())),
         ))
     }
 }

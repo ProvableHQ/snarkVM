@@ -82,16 +82,16 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
         }
     }
 
-    /// Returns the function id.
+    /// Returns the request.
     #[inline]
-    fn function_id(&self) -> Result<Field<N>> {
-        self.function_id.ok_or_else(|| anyhow!("Caller function ID is not set in the registers."))
+    fn request(&self) -> Result<&crate::Request<N>> {
+        self.request.as_ref().ok_or_else(|| anyhow!("Caller request is not set in the registers."))
     }
 
-    /// Sets the caller function id.
+    /// Sets the caller request.
     #[inline]
-    fn set_function_id(&mut self, caller_function_id: Field<N>) {
-        self.function_id = Some(caller_function_id);
+    fn set_request(&mut self, request: crate::Request<N>) {
+        self.request = Some(request);
     }
 }
 

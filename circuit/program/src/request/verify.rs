@@ -466,6 +466,8 @@ mod tests {
         let is_root = true;
         // Sample 'program_checksum'.
         let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
+        // Sample 'caller_request'.
+        let caller_request = None;
 
         // Compute the signed request.
         let request = match dynamic {
@@ -488,6 +490,8 @@ mod tests {
                 &input_types,
                 inputs.into_iter(),
                 &input_types,
+                &input_types,
+                caller_request,
                 root_tvk,
                 is_root,
                 program_checksum,
