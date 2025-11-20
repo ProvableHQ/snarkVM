@@ -90,12 +90,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let verifier::SecondMessage { alpha, .. } = second_message;
         let verifier::ThirdMessage { beta } = third_message;
 
-        let mut pool = ExecutionPool::with_capacity(3 * state.circuit_specific_states.len());
+        // let mut pool = ExecutionPool::with_capacity(3 * state.circuit_specific_states.len());
+        let mut pool = ExecutionPool::with_capacity(1);
 
         let max_non_zero_domain_size = state.max_non_zero_domain;
         let matrix_labels = ["a", "b", "c"];
-
-        let mut flop = 0;
 
         for (&circuit, state_i) in &state.circuit_specific_states {
             let v_R_i_at_alpha = state_i.constraint_domain.evaluate_vanishing_polynomial(*alpha);
@@ -106,45 +105,23 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let id = circuit.id;
 
             for (matrix_label, non_zero_domain, arith) in itertools::izip!(matrix_labels, k_domains, ariths) {
-                flop += 1;
-                if flop {
-                    // flop = false;
-                    pool.add_job(move || {
-                        let result = calculate_matrix_sumcheck_witness_cuda(
-                            matrix_label,
-                            id,
-                            state_i.constraint_domain,
-                            state_i.variable_domain,
-                            non_zero_domain,
-                            arith,
-                            *alpha,
-                            *beta,
-                            v_R_i_alpha_v_C_i_beta,
-                            max_non_zero_domain_size,
-                            &circuit.fft_precomputation,
-                            &circuit.ifft_precomputation,
-                        );
-                        (circuit, result)
-                    });
-                } else {
-                    pool.add_job(move || {
-                        let result = Self::calculate_matrix_sumcheck_witness(
-                            matrix_label,
-                            id,
-                            state_i.constraint_domain,
-                            state_i.variable_domain,
-                            non_zero_domain,
-                            arith,
-                            *alpha,
-                            *beta,
-                            v_R_i_alpha_v_C_i_beta,
-                            max_non_zero_domain_size,
-                            &circuit.fft_precomputation,
-                            &circuit.ifft_precomputation,
-                        );
-                        (circuit, result)
-                    });
-                }
+                pool.add_job(move || {
+                    let result = calculate_matrix_sumcheck_witness_cuda(
+                        matrix_label,
+                        id,
+                        state_i.constraint_domain,
+                        state_i.variable_domain,
+                        non_zero_domain,
+                        arith,
+                        *alpha,
+                        *beta,
+                        v_R_i_alpha_v_C_i_beta,
+                        max_non_zero_domain_size,
+                        &circuit.fft_precomputation,
+                        &circuit.ifft_precomputation,
+                    );
+                    (circuit, result)
+                });
 
                 // pool.add_job(move || {
                 //     // #[cfg(feature = "cuda")]
