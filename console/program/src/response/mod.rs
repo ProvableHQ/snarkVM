@@ -290,13 +290,13 @@ impl<N: Network> Response<N> {
     /// - converting all record outputs to dynamic record outputs
     /// - converting all future outputs to dynamic future outputs.
     /// - leaving all other outputs unchanged.
-    // TODO(dynamic_dispatch): this approach seems wrong because not all outputs will be translated.
-    pub fn dynamic_call_outputs(&self) -> Result<Vec<Value<N>>> {
+    pub fn dynamic_call_outputs(&self, caller_output_types: &[ValueType<N>]) -> Result<Vec<Value<N>>> {
         self.outputs
             .iter()
-            .map(|output| match output {
-                Value::Record(record) => Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?)),
-                Value::Future(future) => Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?)),
+            .zip_eq(caller_output_types)
+            .map(|(output, output_type)| match (output, output_type) {
+                (Value::Record(record), ValueType::DynamicRecord) => Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?)),
+                (Value::Future(future), ValueType::DynamicFuture) => Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?)),
                 _ => Ok(output.clone()),
             })
             .collect::<Result<Vec<_>>>()

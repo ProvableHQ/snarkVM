@@ -190,7 +190,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
             // Convert the callee's outputs to the caller's context.
-            response.dynamic_call_outputs()?
+            response.dynamic_call_outputs(self.destination_types())?
         }
         // Else, throw an error.
         else {
@@ -394,7 +394,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+                        let caller_response_outputs = callee_response.dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs, None)
@@ -555,7 +555,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+                        let caller_response_outputs = callee_response.dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs, None)
@@ -611,7 +611,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+                        let caller_response_outputs = callee_response.dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Anonymous helper to get a record translation proving key.
                         let get_record_translation_proving_key =
