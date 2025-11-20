@@ -620,9 +620,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     true => stack,
                                     false => &stack.get_stack_unchecked(&program_id)?,
                                 };
-                                // TODO(dynamic_dispatch): implement this
-                                // record_stack.get_translation_proving_key(record_name)
-                                record_stack.get_proving_key(record_name)
+                                record_stack.get_translation_proving_key(record_name)
                             };
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
                         let callee_console_input_ids = callee_request.input_ids();
