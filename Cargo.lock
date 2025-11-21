@@ -3675,6 +3675,7 @@ dependencies = [
  "k256",
  "locktick",
  "lru",
+ "nvtx",
  "parking_lot",
  "rand 0.8.5",
  "rayon",

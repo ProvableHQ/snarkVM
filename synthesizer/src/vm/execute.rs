@@ -135,19 +135,30 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
     ) -> Result<(Transaction<N>, Response<N>)> {
+        let start_time_execute_authorization_with_response = std::time::Instant::now();
         // Get a default query if one is not provided.
         let query = match query {
             Some(q) => q,
             None => &Query::VM(self.block_store().clone()),
         };
         // Compute the execution.
+        let start_time_execute_authorization = std::time::Instant::now();
         let (execution, response) = self.execute_authorization_raw(execute_authorization, query, rng)?;
+        let elapsed_execute_authorization = start_time_execute_authorization.elapsed();
+        println!("Total execute_authorization time: {:?}", elapsed_execute_authorization);
+
+        let start_time_execute_fee_authorization = std::time::Instant::now();
         let fee = match fee_authorization {
             Some(authorization) => Some(self.execute_fee_authorization_raw(authorization, query, rng)?),
             None => None,
         };
+        let elapsed_execute_fee_authorization = start_time_execute_fee_authorization.elapsed();
+        println!("Total execute_fee_authorization time: {:?}", elapsed_execute_fee_authorization);
+
         // Return the execute transaction and response.
         let transaction = Transaction::from_execution(execution, fee)?;
+        let elapsed_execute_authorization_with_response = start_time_execute_authorization_with_response.elapsed();
+        println!("Total execute_authorization_with_response time: {:?}", elapsed_execute_authorization_with_response);
         Ok((transaction, response))
     }
 
@@ -202,16 +213,25 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Prepare the authorization.
                 let authorization = cast_ref!(authorization as Authorization<$network>);
                 // Execute the call.
+                let start_time_execute = std::time::Instant::now();
                 let (response, mut trace) = $process.execute::<$aleo, _>(authorization.clone(), rng)?;
+                let elapsed_execute = start_time_execute.elapsed();
+                println!("Total execute time: {:?}", elapsed_execute);
                 lap!(timer, "Execute the call");
 
                 // Prepare the assignments.
+                let start_time_prepare = std::time::Instant::now();
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
+                let elapsed_prepare = start_time_prepare.elapsed();
+                println!("Total prepare time: {:?}", elapsed_prepare);
                 lap!(timer, "Prepare the assignments");
 
                 // Compute the proof and construct the execution.
+                let start_time_prove = std::time::Instant::now();
                 let execution = trace.prove_execution::<$aleo, _>(&locator, varuna_version, rng)?;
                 lap!(timer, "Compute the proof");
+                let elapsed_prove = start_time_prove.elapsed();
+                println!("Total prove time: {:?}", elapsed_prove);
 
                 // Return the execution.
                 Ok((cast_ref!(execution as Execution<N>).clone(), cast_ref!(response as Response<N>).clone()))
@@ -251,15 +271,24 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Prepare the authorization.
                 let authorization = cast_ref!(authorization as Authorization<$network>);
                 // Execute the call.
+                let start_time_execute = std::time::Instant::now();
                 let (_, mut trace) = $process.execute::<$aleo, _>(authorization.clone(), rng)?;
+                let elapsed_execute = start_time_execute.elapsed();
+                println!("Total execute time (Fee): {:?}", elapsed_execute);
                 lap!(timer, "Execute the call");
 
                 // Prepare the assignments.
+                let start_time_prepare = std::time::Instant::now();
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
+                let elapsed_prepare = start_time_prepare.elapsed();
+                println!("Total prepare time (Fee): {:?}", elapsed_prepare);
                 lap!(timer, "Prepare the assignments");
 
                 // Compute the proof and construct the fee.
+                let start_time_prove_fee = std::time::Instant::now();
                 let fee = trace.prove_fee::<$aleo, _>(varuna_version, rng)?;
+                let elapsed_prove_fee = start_time_prove_fee.elapsed();
+                println!("Total prove_fee time (Fee): {:?}", elapsed_prove_fee);
                 lap!(timer, "Compute the proof");
 
                 // Return the fee.
@@ -284,6 +313,7 @@ mod tests {
         program::{Ciphertext, Value},
         types::Field,
     };
+    use nvtx::range;
     use snarkvm_ledger_block::Transition;
     use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command};
     use snarkvm_synthesizer_program::StackTrait;
@@ -674,9 +704,11 @@ finalize test:
         assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
         let authorization = vm.authorize(&caller_private_key, "credits.aleo", "transfer_private", inputs, rng).unwrap();
         println!("=======EXECUTE=======");
+        let range = range!("{}", format!("execute_authorization transfer_public"));
         let now = std::time::Instant::now();
         let transaction = vm.execute_authorization(authorization, None, None, rng).unwrap();
         let elapsed = now.elapsed();
+        drop(range);
         println!("Total vm.execute_authorization(transfer_private) time: {:?}", elapsed);
         println!("=======Done=======");
 
@@ -712,9 +744,11 @@ finalize test:
         assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
         let authorization = vm.authorize(&caller_private_key, "credits.aleo", "transfer_public", inputs, rng).unwrap();
         println!("=======EXECUTE=======");
+        let range = range!("{}", format!("execute_authorization transfer_public"));
         let now = std::time::Instant::now();
         let transaction = vm.execute_authorization(authorization, None, None, rng).unwrap();
         let elapsed = now.elapsed();
+        drop(range);
         println!("Total vm.execute_authorization(transfer_public) time: {:?}", elapsed);
         println!("=======Done=======");
 
