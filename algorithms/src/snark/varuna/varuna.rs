@@ -28,7 +28,6 @@ use crate::{
     },
     srs::UniversalVerifier,
 };
-use aleo_std::prelude::{finish, lap, timer};
 use rand::RngCore;
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
@@ -337,7 +336,7 @@ where
     fn prove_batch<C: ConstraintSynthesizer<E::Fr>, R: Rng + CryptoRng>(
         universal_prover: &Self::UniversalProver,
         fs_parameters: &Self::FSParameters,
-        varuna_version: VarunaVersion,
+        _varuna_version: VarunaVersion,
         keys_to_constraints: &BTreeMap<&CircuitProvingKey<E, SM>, &[C]>,
         zk_rng: &mut R,
     ) -> Result<Self::Proof> {

@@ -76,13 +76,11 @@ required-features = [ "test" ]
 name = "transfer_private"
 path = "benches/execute/transfer_private.rs"
 harness = false
-required-features = [ "cuda" ]
 
 [[bench]]
 name = "transfer_public"
 path = "benches/execute/transfer_public.rs"
 harness = false
-required-features = [ "cuda" ]
 
 [dependencies.snarkvm-algorithms]
 workspace = true

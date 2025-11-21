@@ -248,7 +248,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             });
         }
 
-        let mut section_time = Instant::now();
+        let section_time = Instant::now();
         let results: Vec<Result<_, PCError>> = pool.execute_all();
         println!("\t\tCommit execute jobs: {:?}", section_time.elapsed());
 

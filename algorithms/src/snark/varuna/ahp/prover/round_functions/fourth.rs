@@ -44,10 +44,15 @@ use rayon::prelude::*;
 #[cfg(feature = "cuda")]
 use super::super::cuVaruna::calculate_matrix_sumcheck_witness_cuda;
 
+#[allow(dead_code)]
 pub type Sum<F> = F;
+#[allow(dead_code)]
 pub type Lhs<F> = DensePolynomial<F>;
+#[allow(dead_code)]
 pub type Apoly<F> = LabeledPolynomial<F>;
+#[allow(dead_code)]
 pub type Bpoly<F> = LabeledPolynomial<F>;
+#[allow(dead_code)]
 pub type Gpoly<F> = LabeledPolynomial<F>;
 
 impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
@@ -106,7 +111,23 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
             for (matrix_label, non_zero_domain, arith) in itertools::izip!(matrix_labels, k_domains, ariths) {
                 pool.add_job(move || {
+                    #[cfg(feature = "cuda")]
                     let result = calculate_matrix_sumcheck_witness_cuda(
+                        matrix_label,
+                        id,
+                        state_i.constraint_domain,
+                        state_i.variable_domain,
+                        non_zero_domain,
+                        arith,
+                        *alpha,
+                        *beta,
+                        v_R_i_alpha_v_C_i_beta,
+                        max_non_zero_domain_size,
+                        &circuit.fft_precomputation,
+                        &circuit.ifft_precomputation,
+                    );
+                    #[cfg(not(feature = "cuda"))]
+                    let result = Self::calculate_matrix_sumcheck_witness(
                         matrix_label,
                         id,
                         state_i.constraint_domain,
@@ -122,41 +143,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     );
                     (circuit, result)
                 });
-
-                // pool.add_job(move || {
-                //     // #[cfg(feature = "cuda")]
-                //     println!("Using CUDA for {matrix_label}_{id}");
-                //     let result = calculate_matrix_sumcheck_witness_cuda(
-                //         matrix_label,
-                //         id,
-                //         state_i.constraint_domain,
-                //         state_i.variable_domain,
-                //         non_zero_domain,
-                //         arith,
-                //         *alpha,
-                //         *beta,
-                //         v_R_i_alpha_v_C_i_beta,
-                //         max_non_zero_domain_size,
-                //         &circuit.fft_precomputation,
-                //         &circuit.ifft_precomputation,
-                //     );
-                //     // #[cfg(not(feature = "cuda"))]
-                //     let result = Self::calculate_matrix_sumcheck_witness(
-                //         matrix_label,
-                //         id,
-                //         state_i.constraint_domain,
-                //         state_i.variable_domain,
-                //         non_zero_domain,
-                //         arith,
-                //         *alpha,
-                //         *beta,
-                //         v_R_i_alpha_v_C_i_beta,
-                //         max_non_zero_domain_size,
-                //         &circuit.fft_precomputation,
-                //         &circuit.ifft_precomputation,
-                //     );
-                //     (circuit, result)
-                // });
             }
         }
 
@@ -200,6 +186,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)]
     fn calculate_matrix_sumcheck_witness(
         label: &str,
         id: CircuitId,
