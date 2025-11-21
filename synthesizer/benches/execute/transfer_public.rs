@@ -31,6 +31,7 @@ fn bench_transfer_public(c: &mut Criterion) {
             // Measurement (timed).
             |mut inputs| {
                 // Black box to stop the compiler from optimising the call.
+                println!("vm.execute_authorization (transfer_public) START");
                 std::hint::black_box(
                     vm.execute_authorization(
                         inputs.authorization,
@@ -39,7 +40,8 @@ fn bench_transfer_public(c: &mut Criterion) {
                         &mut inputs.rng,
                     )
                     .unwrap(),
-                )
+                );
+                println!("vm.execute_authorization (transfer_public) END");
             },
             criterion::BatchSize::SmallInput,
         )
