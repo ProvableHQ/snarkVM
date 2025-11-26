@@ -9,7 +9,14 @@ outputs:
   add_next_block: succeeded.
 - execute: Commitment '1266307482263846358970326041806201638141701138269282465033372005968041137990field' does not exist
 - execute: Input record for 'mint_and_split.aleo' must belong to the signer
-- execute: Commitment '5664701406562067552828344114098303767897965604026128467062564698122653063423field' does not exist
+- verified: true
+  execute:
+    mint_and_split.aleo/split:
+      outputs:
+      - '{"type":"record","id":"5711723459005820981975862871140952223873534572260023215726411264627797857125field","checksum":"7426836894154832978065174041780401502920907623365044077441298261049696843678field","value":"record1qvqsphj7awr9axkuj67nrc3yfd0lrfyh9pkf5fj74ad3hq8c3v64qwsyqyxx66trwfhkxun9v35hguerqqpqzqq32rg970t2glcjzyeyp3yqxqu6gjf5yjrdhq94jje6v0dfvtrsp5r8gen52205vxwtkcdtlmvav72m7m8d9cymnk3th3e0yfney6tqkq6jfes","sender_ciphertext":"5992012307728800570843571958867469829169633066634794745646494503342494952580field"}'
+      - '{"type":"record","id":"2213487432824001390431408830043269590784753533496623567500878503662933507215field","checksum":"2692323425225928138743508637728544125794817366053668719849166035510149473559field","value":"record1qvqsq3re3gefcu5sqe6gshqfhhqm502cwyxhjn56xv207pnjxrsj5wstqyxx66trwfhkxun9v35hguerqqpqzqz72umqq4kh6l549trzq0cavr34tjugjsnq8s6qxkmvye8pp7qjztjaa33nme8m0jzu2n9q25y5ymf6xmhu2e7gzh5um3g6szq90rysqlsrj4w","sender_ciphertext":"6265020822528923584308281396445892775724890664798206670322396687381779785825field"}'
+  speculate: the execution was accepted
+  add_next_block: succeeded.
 additional:
 - child_outputs:
     credits.aleo/fee_public:
