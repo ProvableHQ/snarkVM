@@ -16,6 +16,8 @@
 use crate::vm::*;
 use console::network::prelude::Network;
 
+use snarkvm_utilities::catch_unwind;
+
 use std::{fmt, thread};
 use tokio::sync::oneshot;
 
@@ -29,25 +31,32 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Spawn a dedicated thread.
         let vm = self.clone();
         thread::spawn(move || {
-            // Sequentially process incoming operations.
-            while let Ok(request) = request_rx.recv() {
-                let SequentialOperationRequest { op, response_tx } = request;
-                debug!("Sequentially processing operation '{op}'");
+            let result = catch_unwind(move || {
+                // Sequentially process incoming operations.
+                while let Ok(request) = request_rx.recv() {
+                    let SequentialOperationRequest { op, response_tx } = request;
+                    debug!("Sequentially processing operation '{op}'");
 
-                // Perform the queued operation.
-                let ret = match op {
-                    SequentialOperation::AddNextBlock(block) => {
-                        let ret = vm.add_next_block_inner(block);
-                        SequentialOperationResult::AddNextBlock(ret)
-                    }
-                    SequentialOperation::AtomicSpeculate(a, b, c, d, e, f) => {
-                        let ret = vm.atomic_speculate_inner(a, b, c, d, e, f);
-                        SequentialOperationResult::AtomicSpeculate(ret)
-                    }
-                };
+                    // Perform the queued operation.
+                    let ret = match op {
+                        SequentialOperation::AddNextBlock(block) => {
+                            let ret = vm.add_next_block_inner(block);
+                            SequentialOperationResult::AddNextBlock(ret)
+                        }
+                        SequentialOperation::AtomicSpeculate(a, b, c, d, e, f) => {
+                            let ret = vm.atomic_speculate_inner(a, b, c, d, e, f);
+                            SequentialOperationResult::AtomicSpeculate(ret)
+                        }
+                    };
 
-                // Relay the results of the operation to the caller.
-                let _ = response_tx.send(ret);
+                    // Relay the results of the operation to the caller.
+                    let _ = response_tx.send(ret);
+                }
+            });
+
+            if let Err((msg, backtrace)) = result {
+                error!("Sequential ops thread encountered a fatal error: {msg}");
+                error!("Backtrace: {backtrace:?}");
             }
         })
     }
