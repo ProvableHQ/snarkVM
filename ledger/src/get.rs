@@ -378,4 +378,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             _ => bail!("Invalid bond_state in finalize storage."),
         }
     }
+
+    /// Returns a tuple containing the number of all the input records and all the output records.
+    pub fn get_record_count(&self) -> (usize, usize) {
+        let transition_store = self.vm.block_store().transition_store();
+        let num_input_records = transition_store.input_store().record_map().len_confirmed();
+        let num_output_records = transition_store.output_store().record_map().len_confirmed();
+        (num_input_records, num_output_records)
+    }
 }

@@ -439,6 +439,11 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
     pub fn storage_mode(&self) -> &StorageMode {
         self.storage.storage_mode()
     }
+
+    /// Returns a reference to the map of the records.
+    pub fn record_map(&self) -> &O::RecordMap {
+        &self.record
+    }
 }
 
 impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {

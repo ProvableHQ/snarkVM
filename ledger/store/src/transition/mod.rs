@@ -370,6 +370,16 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
     pub fn storage_mode(&self) -> &StorageMode {
         self.storage.storage_mode()
     }
+
+    /// Returns a reference to the input store.
+    pub fn input_store(&self) -> &InputStore<N, T::InputStorage> {
+        &self.inputs
+    }
+
+    /// Returns a reference to the output store.
+    pub fn output_store(&self) -> &OutputStore<N, T::OutputStorage> {
+        &self.outputs
+    }
 }
 
 impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
