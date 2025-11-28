@@ -1204,6 +1204,11 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     pub fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String> {
         self.storage.backup_database(path)
     }
+
+    /// Returns a reference to the transactions map.
+    pub fn transactions_map(&self) -> &B::TransactionsMap {
+        self.storage.transactions_map()
+    }
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {

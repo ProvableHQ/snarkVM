@@ -236,6 +236,11 @@ impl<N: Network, F: FeeStorage<N>> FeeStore<N, F> {
     pub fn storage_mode(&self) -> &StorageMode {
         self.storage.storage_mode()
     }
+
+    /// Returns a reference to the fee map.
+    pub fn fee_map(&self) -> &F::FeeMap {
+        self.storage.fee_map()
+    }
 }
 
 impl<N: Network, F: FeeStorage<N>> FeeStore<N, F> {

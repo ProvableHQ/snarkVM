@@ -736,6 +736,11 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     pub fn storage_mode(&self) -> &StorageMode {
         self.storage.storage_mode()
     }
+
+    /// Returns a reference to the program map.
+    pub fn program_map(&self) -> &D::ProgramMap {
+        self.storage.program_map()
+    }
 }
 
 impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {

@@ -355,6 +355,11 @@ impl<N: Network, E: ExecutionStorage<N>> ExecutionStore<N, E> {
     pub fn storage_mode(&self) -> &StorageMode {
         self.storage.storage_mode()
     }
+
+    /// Returns a reference to the ID map.
+    pub fn id_map(&self) -> &E::IDMap {
+        self.storage.id_map()
+    }
 }
 
 impl<N: Network, E: ExecutionStorage<N>> ExecutionStore<N, E> {

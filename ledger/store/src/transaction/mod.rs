@@ -321,6 +321,21 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     pub fn storage_mode(&self) -> &StorageMode {
         self.storage.storage_mode()
     }
+
+    /// Returns a reference to the transaction ID map.
+    pub fn id_map(&self) -> &T::IDMap {
+        self.storage.id_map()
+    }
+
+    /// Returns a reference to the execution store.
+    pub fn execution_store(&self) -> &ExecutionStore<N, T::ExecutionStorage> {
+        self.storage.execution_store()
+    }
+
+    /// Returns a reference to the fee store.
+    pub fn fee_store(&self) -> &FeeStore<N, T::FeeStorage> {
+        self.storage.fee_store()
+    }
 }
 
 impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
