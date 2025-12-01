@@ -34,6 +34,7 @@ wasm = [
   "snarkvm-synthesizer-program/wasm",
   "snarkvm-synthesizer-snark/wasm"
 ]
+instrumentation = [ "dep:tracing" ]
 test = [ "snarkvm-synthesizer-process/test" ]
 test-helpers = [ ]
 
@@ -76,6 +77,10 @@ version = "1"
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]
+
+[dependencies.tracing]
+workspace = true
+optional = true
 
 [dependencies.rayon]
 workspace = true

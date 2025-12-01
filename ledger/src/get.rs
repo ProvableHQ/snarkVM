@@ -50,6 +50,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns the committee lookback for the given round.
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip(self)))]
     pub fn get_committee_lookback_for_round(&self, round: u64) -> Result<Option<Committee<N>>> {
         // Get the round number for the previous committee. Note, we subtract 2 from odd rounds,
         // because committees are updated in even rounds.

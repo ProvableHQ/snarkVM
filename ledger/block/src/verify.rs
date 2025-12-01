@@ -27,6 +27,7 @@ use rayon::prelude::*;
 
 impl<N: Network> Block<N> {
     /// Ensures the block is correct.
+    #[cfg_attr(feature = "instrumentation", tracing::instrument(skip_all, fields(height=self.height())))]
     pub fn verify(
         &self,
         previous_block: &Block<N>,

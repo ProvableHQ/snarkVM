@@ -134,6 +134,7 @@ locktick = [
   "snarkvm-parameters?/locktick",
   "snarkvm-synthesizer?/locktick"
 ]
+instrumentation = [ "snarkvm-ledger/instrumentation" ]
 noconfig = [ ]
 rocks = [ "snarkvm-ledger/rocks", "snarkvm-synthesizer/rocks" ]
 test = [ "snarkvm-ledger/test" ]
