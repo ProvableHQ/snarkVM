@@ -1,0 +1,25 @@
+rules:
+  ###############################################
+  # JSON RULES (*.json)
+  ###############################################
+
+  - id: json-merge-conflict
+    message: >
+      Merge conflict markers detected in JSON.
+    languages: [json]
+    severity: ERROR
+    pattern-regex: '^(<<<<<<< |>>>>>>> )'
+    paths:
+      include:
+        - "**/*.json"
+
+  - id: json-suspect-secrets
+    message: >
+      Possible secret-like value in JSON. Verify it should be committed.
+    languages: [json]
+    severity: WARNING
+    pattern-regex: '(?i)(api[_-]?key|secret|token|password)"\s*:\s*"[A-Za-z0-9/+]{20,}"'
+    paths:
+      include:
+        - "**/*.json"
+

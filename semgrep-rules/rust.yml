@@ -1,0 +1,73 @@
+rules:
+  # We can add unimplemented! and unreachable!, todo! or other similar if we decide
+  #- id: rust-no-todo
+  #  message: >
+  #    Avoid todo!/unimplemented!/unreachable! in non-test code.
+  #    Prefer Result/Option-based error handling.
+  #  languages: [rust]
+  #  severity: ERROR
+  #  pattern-regex: '\b(todo!|unimplemented!|unreachable!)\s*\('
+  #  paths:
+  #    exclude:
+  #      - "tests/**"
+  #      - "**/tests/**"
+  #      - "benches/**"
+  #      - "examples/**"
+
+  # We can use that if we decide to remove println! from src code as a rule
+  #- id: rust-no-println-dbg
+  #  message: >
+  #    Avoid println!/eprintln!/dbg! in library or production code.
+  #    Use structured logging (e.g. tracing::info!/debug!) instead.
+  #  languages: [rust]
+  #  severity: WARNING
+  #  pattern-regex: '\b(println!|eprintln!|dbg!)\s*\('
+  #  paths:
+  #    exclude:
+  #      - "tests/**"
+  #      - "**/tests/**"
+  #      - "benches/**"
+  #      - "examples/**"
+
+  - id: rust-unsafe-block
+    message: >
+      Unsafe block detected. Make sure this is carefully audited and justified.
+    languages: [rust]
+    severity: WARNING
+    pattern: |
+      unsafe { $BODY }
+    paths:
+      exclude:
+        - "tests/**"
+        - "**/tests/**"
+        - "benches/**"
+        - "examples/**"
+        - "algorithms/**"
+
+  - id: rust-unsafe-fn
+    message: >
+      Unsafe function definition detected. Document invariants and audit call sites.
+    languages: [rust]
+    severity: WARNING
+    pattern-regex: '\bunsafe\s+fn\b'
+    paths:
+      exclude:
+        - "tests/**"
+        - "**/tests/**"
+        - "benches/**"
+        - "examples/**"
+        - "algorithms/**"
+
+  - id: rust-no-transmute
+    message: >
+      std::mem::transmute is highly unsafe. Prefer safer abstractions or well-reviewed wrappers.
+    languages: [rust]
+    severity: ERROR
+    pattern: std::mem::transmute($EXPR)
+    paths:
+      exclude:
+        - "tests/**"
+        - "**/tests/**"
+        - "benches/**"
+        - "examples/**"
+

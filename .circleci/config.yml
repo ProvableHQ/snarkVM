@@ -85,6 +85,29 @@ commands:
             - target
           key: cargo-cache-{{ arch }}-{{ checksum "Cargo.lock" }}
 
+  run_semgrep:
+    description: "Run Semgrep static analysis"
+    steps:
+      - checkout
+      - run:
+          name: Install Semgrep
+          command: |
+            set -euo pipefail
+
+            python3 -m pip install --user semgrep
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
+      - run:
+          name: Run Semgrep (Rust + YAML/TOML + Markdown + Shell + JSON)
+          command: |
+            set -euo pipefail
+            semgrep \
+              --config semgrep-rules/rust.yml \
+              --config semgrep-rules/yaml-toml.yml \
+              --config semgrep-rules/markdown.yml \
+              --config semgrep-rules/shell.yml \
+              --config semgrep-rules/json.yml \
+              --error .
+
   setup_environment:
     description: "Setup testing environment"
     parameters:
@@ -1151,6 +1174,12 @@ jobs:
       - check_windows:
           workspace_member: << parameters.workspace_member >>
 
+  semgrep-scan:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.small >>
+    steps:
+      - run_semgrep
+
 workflows:
   version: 2
 
@@ -1162,6 +1191,7 @@ workflows:
       - check-cargo-audit
       - check-cargo-semver-checks
       - check-all-targets
+      - semgrep-scan
 
   circuit-workflow:
     jobs:

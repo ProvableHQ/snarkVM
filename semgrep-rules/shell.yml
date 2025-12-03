@@ -1,0 +1,55 @@
+rules:
+  ###############################################
+  # SHELL / BASH RULES (*.sh)
+  ###############################################
+
+  - id: sh-curl-pipe-sh
+    message: >
+      Piping curl output directly to sh/bash is dangerous. Download, verify, then execute.
+    languages: [bash]
+    severity: ERROR
+    pattern-regex: 'curl[^|]+\|\s*(sh|bash)\b'
+    paths:
+      include:
+        - "**/*.sh"
+
+  - id: sh-wget-pipe-sh
+    message: >
+      Piping wget output directly to sh/bash is dangerous. Download, verify, then execute.
+    languages: [bash]
+    severity: ERROR
+    pattern-regex: 'wget[^|]+\|\s*(sh|bash)\b'
+    paths:
+      include:
+        - "**/*.sh"
+
+  - id: sh-no-sudo
+    message: >
+      Avoid using sudo in reusable scripts. Prefer running the script with the right user/permissions.
+    languages: [bash]
+    severity: WARNING
+    pattern-regex: '\bsudo\b'
+    paths:
+      include:
+        - "**/*.sh"
+
+  - id: sh-merge-conflict
+    message: >
+      Merge conflict markers detected in shell script.
+    languages: [bash]
+    severity: ERROR
+    pattern-regex: '^(<<<<<<< |>>>>>>> )'
+    paths:
+      include:
+        - "**/*.sh"
+
+  - id: sh-suspect-secrets
+    message: >
+      Possible secret in shell script. Verify it should be committed.
+    languages: [bash]
+    severity: WARNING
+    pattern-regex: '(?i)(api[_-]?key|secret|token|password)[^=]{0,20}=\s*["''][A-Za-z0-9/+]{20,}["'']'
+    paths:
+      include:
+        - "**/*.sh"
+

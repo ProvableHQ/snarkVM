@@ -1,0 +1,25 @@
+rules:
+  ###############################################
+  # MARKDOWN RULES (*.md via generic language)
+  ###############################################
+
+  - id: md-merge-conflict
+    message: >
+      Merge conflict markers detected in Markdown.
+    languages: [generic]
+    severity: ERROR
+    # Only match real Git markers, not Markdown underlines.
+    pattern-regex: '^(<<<<<<< |>>>>>>> )'
+    paths:
+      include:
+        - "**/*.md"
+
+  - id: md-suspect-secrets
+    message: >
+      Possible secret-like value in Markdown. Verify it should be committed.
+    languages: [generic]
+    severity: WARNING
+    pattern-regex: '(?i)(api[_-]?key|secret|token|password)[^ \t\n]{0,20}[:=]\s*["''][A-Za-z0-9/+]{20,}["'']?'
+    paths:
+      include:
+        - "**/*.md"
