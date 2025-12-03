@@ -168,6 +168,9 @@ workspace = true
 [dependencies.rayon]
 workspace = true
 
+[dependencies.serde]
+workspace = true
+
 [dependencies.time]
 workspace = true
 

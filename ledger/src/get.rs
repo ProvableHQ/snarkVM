@@ -382,15 +382,15 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns a tuple containing the number of all the input records and all the output records.
-    pub fn get_record_count(&self) -> (usize, usize) {
+    pub fn get_record_count(&self) -> RecordCount {
         let transition_store = self.vm.block_store().transition_store();
         let num_input_records = transition_store.input_store().record_map().len_confirmed();
         let num_output_records = transition_store.output_store().record_map().len_confirmed();
-        (num_input_records, num_output_records)
+        RecordCount { input: num_input_records, output: num_output_records }
     }
 
     /// Returns the list of input and output records applicable to the given block height.
-    pub fn get_num_block_records(&self, height: u32) -> Result<(usize, usize)> {
+    pub fn get_num_block_records(&self, height: u32) -> Result<RecordCount> {
         let block_store = self.vm.block_store();
         let block_hash = match block_store.get_block_hash(height)? {
             Some(block_hash) => block_hash,
@@ -463,6 +463,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             }
         }
 
-        Ok((num_input_records, num_output_records))
+        Ok(RecordCount { input: num_input_records, output: num_output_records })
     }
+}
+
+/// An object representing the number of input and output records.
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize, serde::Serialize)]
+pub struct RecordCount {
+    pub input: usize,
+    pub output: usize,
 }
