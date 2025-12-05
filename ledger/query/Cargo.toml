@@ -65,6 +65,9 @@ workspace = true
 workspace = true
 features = [ "preserve_order" ]
 
+[dependencies.tracing]
+workspace = true
+
 [dependencies.reqwest]
 version = "0.12"
 features = [ "json" ]

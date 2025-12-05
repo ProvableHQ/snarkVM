@@ -3560,6 +3560,7 @@ dependencies = [
  "snarkvm-ledger-block",
  "snarkvm-ledger-store",
  "snarkvm-synthesizer-program",
+ "tracing",
  "ureq",
 ]
 

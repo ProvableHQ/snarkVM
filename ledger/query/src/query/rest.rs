@@ -25,6 +25,7 @@ use snarkvm_synthesizer_program::Program;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use serde::{Deserialize, de::DeserializeOwned};
+use tracing::trace;
 use ureq::http::{self, uri};
 
 use std::str::FromStr;
@@ -202,6 +203,8 @@ impl<N: Network> RestQuery<N> {
     ///  - `route`: the specific API route to use, e.g., `stateRoot/latest`
     fn get_request<T: DeserializeOwned>(&self, route: &str) -> Result<T> {
         let endpoint = self.build_endpoint(route)?;
+        trace!("Issuing GET request to {endpoint}");
+
         let mut response = ureq::get(&endpoint)
             .config()
             .http_status_as_error(false)
@@ -246,6 +249,8 @@ impl<N: Network> RestQuery<N> {
     #[cfg(feature = "async")]
     async fn get_request_async<T: DeserializeOwned>(&self, route: &str) -> Result<T> {
         let endpoint = self.build_endpoint(route)?;
+        trace!("Issuing GET request to {endpoint}");
+
         let response = reqwest::get(&endpoint).await.with_context(|| format!("Failed to fetch from {endpoint}"))?;
 
         if response.status().is_success() {
