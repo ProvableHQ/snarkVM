@@ -431,7 +431,7 @@ impl<E: Environment, I: IntegerType> SquareRoot for Integer<E, I> {
     fn square_root(&self) -> Result<Self::Output> {
         match self.integer.checked_isqrt() {
             Some(integer) => Ok(Integer::new(integer)),
-            None => bail!("Failed to square root an integer: {self}"),
+            None => bail!("Integer square failed on: {self}"),
         }
     }
 }
