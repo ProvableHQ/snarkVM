@@ -681,28 +681,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     }
 }
 
-/// Verifies that the existing output register indices are not changed in a new version of the program.
-// Note. This function is public so that depednent crates can cleanly surface this error to users.
-pub fn check_output_register_indices_unchanged<N: Network>(
-    old_program: &Program<N>,
-    new_program: &Program<N>,
-) -> Result<()> {
-    for (id, function) in old_program.functions() {
-        // Get the corresponding function in the new program.
-        let Ok(new_function) = new_program.get_function(id) else { bail!("Missing function '{id}'") };
-        // Ensure the record output registers match.
-        let existing_output_registers =
-            function.outputs().iter().filter(|output| matches!(output.value_type(), ValueType::Record(_)));
-        let new_output_registers =
-            new_function.outputs().iter().filter(|output| matches!(output.value_type(), ValueType::Record(_)));
-        ensure!(
-            existing_output_registers.eq(new_output_registers),
-            "Function '{id}' has mismatched record output registers"
-        );
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
