@@ -171,6 +171,10 @@
         function renderAllChars(dataSets) {
 
           function renderGraph(parent, name, dataset) {
+            let header = document.createElement('h3');
+            header.textContent = name;
+            parent.appendChild(header);
+
             const canvas = document.createElement('canvas');
             canvas.className = 'benchmark-chart';
             parent.appendChild(canvas);
