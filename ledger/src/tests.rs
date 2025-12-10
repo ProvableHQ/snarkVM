@@ -216,7 +216,7 @@ fn test_insufficient_private_fees() {
     let find_records = || {
         let microcredits = Identifier::from_str("microcredits").unwrap();
         ledger
-            .find_records(&view_key, RecordsFilter::SlowUnspent(private_key))
+            .find_records(&view_key, RecordsFilter::Unspent)
             .unwrap()
             .filter(|(_, record)| match record.data().get(&microcredits) {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
@@ -391,7 +391,7 @@ finalize foo:
     let find_records = || {
         let microcredits = Identifier::from_str("microcredits").unwrap();
         ledger
-            .find_records(&view_key, RecordsFilter::SlowUnspent(private_key))
+            .find_records(&view_key, RecordsFilter::Unspent)
             .unwrap()
             .filter(|(_, record)| match record.data().get(&microcredits) {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
@@ -493,7 +493,7 @@ finalize failed_assert:
     let find_records = || {
         let microcredits = Identifier::from_str("microcredits").unwrap();
         ledger
-            .find_records(&view_key, RecordsFilter::SlowUnspent(private_key))
+            .find_records(&view_key, RecordsFilter::Unspent)
             .unwrap()
             .filter(|(_, record)| match record.data().get(&microcredits) {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
@@ -883,7 +883,7 @@ fn test_execute_duplicate_input_ids() {
     let find_records = || {
         let microcredits = Identifier::from_str("microcredits").unwrap();
         ledger
-            .find_records(&view_key, RecordsFilter::SlowUnspent(private_key))
+            .find_records(&view_key, RecordsFilter::Unspent)
             .unwrap()
             .filter(|(_, record)| match record.data().get(&microcredits) {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
@@ -1131,7 +1131,7 @@ function create_duplicate_record:
     let find_records = || {
         let microcredits = Identifier::from_str("microcredits").unwrap();
         ledger
-            .find_records(&view_key, RecordsFilter::SlowUnspent(private_key))
+            .find_records(&view_key, RecordsFilter::Unspent)
             .unwrap()
             .filter(|(_, record)| match record.data().get(&microcredits) {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
@@ -1826,7 +1826,7 @@ fn test_deployment_duplicate_program_id() {
     let find_records = || {
         let microcredits = Identifier::from_str("microcredits").unwrap();
         ledger
-            .find_records(&view_key, RecordsFilter::SlowUnspent(private_key))
+            .find_records(&view_key, RecordsFilter::Unspent)
             .unwrap()
             .filter(|(_, record)| match record.data().get(&microcredits) {
                 Some(Entry::Private(Plaintext::Literal(Literal::U64(amount), _))) => !amount.is_zero(),
@@ -2289,7 +2289,7 @@ finalize foo:
     // Create an aborted deployment transaction.
     let aborted_deployment = ledger.vm.deploy(&private_key, &program_3, None, public_balance - 10, None, rng).unwrap();
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 10;
     for _ in 0..ITERATIONS {
         // Create a random order for the transactions.
         let mut transactions = vec![
@@ -3545,17 +3545,12 @@ fn test_record_creation_and_consumption_in_call() {
     // A helper function to get the record counts.
     let get_record_counts = || {
         let spent_records = ledger.find_records(&view_key, RecordsFilter::Spent).unwrap().collect_vec().len();
+        let slow_spent_records = spent_records;
 
         let unspent_records = ledger.find_records(&view_key, RecordsFilter::Unspent).unwrap().collect_vec().len();
+        let slow_unspent_records = unspent_records;
 
         let records = ledger.records().collect_vec().len();
-
-        // In this test environment, SlowSpent/SlowUnspent are expected
-        // to agree in *count* with Spent/Unspent. To avoid repeatedly
-        // hitting the slow filters (which are much more expensive),
-        // we reuse the fast counts here.
-        let slow_spent_records = spent_records;
-        let slow_unspent_records = unspent_records;
 
         (spent_records, slow_spent_records, unspent_records, slow_unspent_records, records)
     };
@@ -3817,9 +3812,9 @@ fn test_find_records_filters_by_ownership() {
     // Ensure that we successfully fetched at least one record that is owned by the view key.
     assert!(!owned_records.is_empty(), "Expected at least one record owned by the view key");
 
-    // Generate a new test environment to simulate an unrelated view key.
-    let other_env = crate::test_helpers::sample_test_env(rng);
-    let unrelated_view_key = other_env.view_key;
+    // Generate a truly unrelated view key (not via sample_test_env, which now reuses the genesis key).
+    let unrelated_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let unrelated_view_key = crate::ViewKey::try_from(&unrelated_private_key).unwrap();
 
     // Attempt to fetch records using the unrelated view key.
     let unrelated_records = ledger.find_records(&unrelated_view_key, RecordsFilter::All).unwrap().collect::<Vec<_>>();

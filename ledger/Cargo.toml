@@ -216,3 +216,6 @@ features = [ "test" ]
 [dev-dependencies.tracing-subscriber]
 version = "0.3"
 features = [ "env-filter", "std" ]
+
+[dependencies]
+once_cell = "1.19"

@@ -28,6 +28,9 @@ use snarkvm_circuit::AleoV0;
 use snarkvm_ledger_store::ConsensusStore;
 use snarkvm_synthesizer::vm::VM;
 
+use once_cell::sync::Lazy;
+use snarkvm_ledger_block::Block;
+
 pub use snarkvm_ledger_test_helpers::*;
 
 pub type CurrentNetwork = MainnetV0;
@@ -62,14 +65,36 @@ pub struct TestEnv {
     pub address: Address<CurrentNetwork>,
 }
 
-pub fn sample_test_env(rng: &mut (impl Rng + CryptoRng)) -> TestEnv {
-    // Sample the genesis private key.
+pub struct SharedGenesis {
+    pub private_key: PrivateKey<CurrentNetwork>,
+    pub genesis: Block<CurrentNetwork>,
+}
+
+// Compute a single (private_key, genesis) pair once per test binary.
+pub static SHARED_GENESIS: Lazy<SharedGenesis> = Lazy::new(|| {
+    let rng = &mut TestRng::default();
+
+    // One shared private key for genesis.
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+
+    // Create a store just to build genesis.
+    let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
+    let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
+
+    SharedGenesis { private_key, genesis }
+});
+
+pub fn sample_test_env(_rng: &mut (impl Rng + CryptoRng)) -> TestEnv {
+    let shared = &*SHARED_GENESIS;
+
+    // Reuse the shared private key (Copy)
+    let private_key = shared.private_key;
     let view_key = ViewKey::try_from(&private_key).unwrap();
     let address = Address::try_from(&private_key).unwrap();
-    // Sample the ledger.
-    let ledger = sample_ledger(private_key, rng);
-    // Return the test environment.
+
+    // Each test still gets its own fresh store + ledger
+    let ledger = CurrentLedger::load(shared.genesis.clone(), StorageMode::new_test(None)).unwrap();
+
     TestEnv { ledger, private_key, view_key, address }
 }
 
