@@ -688,7 +688,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
-          flags: --release --features=rocks --partition count:1/2 -- --test-threads=10
+          flags: --release --features=rocks --partition count:1/2 -- --test-threads=8
           no_output_timeout: 20m
           timeout: 30m
 
@@ -698,7 +698,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
-          flags: --release --features=rocks --partition count:2/2 -- --test-threads=10
+          flags: --release --features=rocks --partition count:2/2 -- --test-threads=8
           no_output_timeout: 20m
           timeout: 30m
 
