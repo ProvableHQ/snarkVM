@@ -334,16 +334,17 @@ commands:
             TMPD="$(mktemp -d)"
             if [ -f ".config/nextest.toml" ]; then
               CFG_ARGS+=(--config-file ".config/nextest.toml")
+            else
+              {
+                printf '%s\n' '[profile.ci]'
+                printf '%s\n' 'fail-fast = false'
+                printf '%s\n' "slow-timeout = \"${SLOW_PERIOD}\""
+                printf '%s\n' ''
+                printf '%s\n' '[profile.ci.junit]'
+                printf '%s\n' 'path = "junit.xml"'
+              } > "$TMPD/nextest-override.toml"
+              CFG_ARGS+=(--config-file "$TMPD/nextest-override.toml")
             fi
-            {
-              printf '%s\n' '[profile.ci]'
-              printf '%s\n' 'fail-fast = false'
-              printf '%s\n' "slow-timeout = \"${SLOW_PERIOD}\""
-              printf '%s\n' ''
-              printf '%s\n' '[profile.ci.junit]'
-              printf '%s\n' 'path = "junit.xml"'
-            } > "$TMPD/nextest-override.toml"
-            CFG_ARGS+=(--config-file "$TMPD/nextest-override.toml")
 
             # Print configuration summary for debugging
             echo "==> nextest package: << parameters.workspace_member >>"

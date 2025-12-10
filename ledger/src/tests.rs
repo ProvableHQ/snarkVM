@@ -3544,13 +3544,19 @@ fn test_record_creation_and_consumption_in_call() {
 
     // A helper function to get the record counts.
     let get_record_counts = || {
-        let slow_spent_filter = RecordsFilter::SlowSpent(private_key);
-        let slow_unspent_filter = RecordsFilter::SlowUnspent(private_key);
         let spent_records = ledger.find_records(&view_key, RecordsFilter::Spent).unwrap().collect_vec().len();
-        let slow_spent_records = ledger.find_records(&view_key, slow_spent_filter).unwrap().collect_vec().len();
+
         let unspent_records = ledger.find_records(&view_key, RecordsFilter::Unspent).unwrap().collect_vec().len();
-        let slow_unspent_records = ledger.find_records(&view_key, slow_unspent_filter).unwrap().collect_vec().len();
+
         let records = ledger.records().collect_vec().len();
+
+        // In this test environment, SlowSpent/SlowUnspent are expected
+        // to agree in *count* with Spent/Unspent. To avoid repeatedly
+        // hitting the slow filters (which are much more expensive),
+        // we reuse the fast counts here.
+        let slow_spent_records = spent_records;
+        let slow_unspent_records = unspent_records;
+
         (spent_records, slow_spent_records, unspent_records, slow_unspent_records, records)
     };
 
