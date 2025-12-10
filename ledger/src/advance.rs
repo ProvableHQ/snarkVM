@@ -21,6 +21,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns a candidate for the next block in the ledger, using a committed subdag and its transmissions.
     /// This candidate can then be passed to [`Ledger::advance_to_next_block`] to be added to the ledger.
     ///
+    /// The function will prevent concurrent update to the ledger, and may block if an update is currently in progress.
+    ///
     /// # Panics
     /// This function panics if called from an async context.
     pub fn prepare_advance_to_next_quorum_block<R: Rng + CryptoRng>(
@@ -30,7 +32,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         rng: &mut R,
     ) -> Result<Block<N>> {
         // Retrieve the latest block as the previous block (for the next block).
-        let previous_block = self.latest_block();
+        // Hold this lock while perparing the template, so that the latest block does not change mid-speculation.
+        let previous_block = self.current_block.read().clone();
 
         // Decouple the transmissions into ratifications, solutions, and transactions.
         let (ratifications, solutions, transactions) = decouple_transmissions(transmissions.into_iter())?;
@@ -73,7 +76,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         ensure!(candidate_ratifications.is_empty(), "Ratifications are currently unsupported from the memory pool");
 
         // Retrieve the latest block as the previous block (for the next block).
-        let previous_block = self.latest_block();
+        // Hold this lock while perparing the template, so that the latest block does not change mid-speculation.
+        let previous_block = self.current_block.read().clone();
 
         // Construct the block template.
         let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = self
