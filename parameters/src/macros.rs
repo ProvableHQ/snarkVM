@@ -83,12 +83,20 @@ macro_rules! impl_store_and_remote_fetch {
                 // Write CA bundle to a file in the aleo directory (same location as parameters)
                 // This is more reliable than temp_dir on Android
                 let mut ca_bundle_path = aleo_std::aleo_dir();
-                ca_bundle_path.push("snarkvm_cacert.pem");
 
-                // Ensure parent directory exists
-                if let Some(parent) = ca_bundle_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
+                // Ensure the aleo directory exists before writing to it
+                // The full path being created is: {aleo_dir}/snarkvm_cacert.pem
+                // On Android, aleo_dir() typically returns something like:
+                // - /data/data/com.yourapp/files/.aleo/ (app's data directory)
+                // - or ~/.aleo/ (home directory, if available)
+                std::fs::create_dir_all(&ca_bundle_path).map_err(|e| {
+                    $crate::errors::ParameterError::Crate(
+                        "std::fs",
+                        format!("Failed to create aleo directory at {:?}: {}", ca_bundle_path, e),
+                    )
+                })?;
+
+                ca_bundle_path.push("snarkvm_cacert.pem");
 
                 std::fs::write(&ca_bundle_path, CA_BUNDLE)
                     .map_err(|e| $crate::errors::ParameterError::Crate("std::fs", format!("Failed to write CA bundle: {}", e)))?;
