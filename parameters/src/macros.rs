@@ -86,7 +86,7 @@ macro_rules! impl_store_and_remote_fetch {
                 std::fs::write(&ca_bundle_path, CA_BUNDLE)
                     .map_err(|e| $crate::errors::ParameterError::Crate("std::fs", format!("Failed to write CA bundle: {}", e)))?;
 
-                easy.ca_bundle(&ca_bundle_path)
+                easy.ca_info(&ca_bundle_path)
                     .map_err(|e| $crate::errors::ParameterError::Crate("curl", format!("Failed to set CA bundle: {}", e)))?;
             }
 
