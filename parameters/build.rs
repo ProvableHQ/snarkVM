@@ -17,29 +17,20 @@ use std::{env, fs, path::PathBuf};
 
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let module_path = out_dir.join("ca_bundle.rs");
+    let ca_bundle_path = out_dir.join("cacert.pem");
 
     // Only download CA bundle if building for Android
     let target = env::var("TARGET").unwrap_or_default();
     if target.contains("android") {
-        let ca_bundle_path = out_dir.join("cacert.pem");
-
         // Download Mozilla's CA certificate bundle
         println!("cargo:warning=Downloading CA certificate bundle for Android...");
 
         let ca_bundle_url = "https://curl.se/ca/cacert.pem";
         match download_ca_bundle(ca_bundle_url) {
             Ok(contents) => {
-                // Write the CA bundle as a binary file (for reference)
+                // Write the CA bundle as a binary file that can be included with include_bytes!
+                // This is simpler and more efficient than generating a Rust array
                 fs::write(&ca_bundle_path, &contents).expect("Failed to write CA certificate bundle");
-
-                // Generate a Rust module with the CA bundle embedded
-                let module_content = format!(
-                    "// Auto-generated CA certificate bundle for Android\n\
-                     // Downloaded from: https://curl.se/ca/cacert.pem\n\
-                     pub const CA_BUNDLE: &[u8] = &{contents:?};\n"
-                );
-                fs::write(&module_path, module_content).expect("Failed to write CA bundle module");
 
                 println!("cargo:warning=CA certificate bundle downloaded successfully");
                 println!("cargo:rerun-if-changed=build.rs");
@@ -52,10 +43,8 @@ fn main() {
             }
         }
     } else {
-        // For non-Android targets, generate an empty module to satisfy the include!() macro
-        let module_content = "// Empty CA bundle module for non-Android targets\n\
-                              pub const CA_BUNDLE: &[u8] = &[];\n";
-        fs::write(&module_path, module_content).expect("Failed to write empty CA bundle module");
+        // For non-Android targets, write an empty file
+        fs::write(&ca_bundle_path, b"").expect("Failed to write empty CA bundle");
     }
 }
 

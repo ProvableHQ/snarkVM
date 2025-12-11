@@ -77,8 +77,8 @@ macro_rules! impl_store_and_remote_fetch {
             // On Android, configure curl to use the bundled CA certificate bundle
             #[cfg(target_os = "android")]
             {
-                // Include the auto-generated CA bundle module
-                include!(concat!(env!("OUT_DIR"), "/ca_bundle.rs"));
+                // Include the CA bundle bytes at compile time
+                const CA_BUNDLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/cacert.pem"));
 
                 // Write CA bundle to a temporary file that curl can access
                 let temp_dir = std::env::temp_dir();
