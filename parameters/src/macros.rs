@@ -86,8 +86,12 @@ macro_rules! impl_store_and_remote_fetch {
                 std::fs::write(&ca_bundle_path, CA_BUNDLE)
                     .map_err(|e| $crate::errors::ParameterError::Crate("std::fs", format!("Failed to write CA bundle: {}", e)))?;
 
-                easy.ca_info(&ca_bundle_path)
-                    .map_err(|e| $crate::errors::ParameterError::Crate("curl", format!("Failed to set CA bundle: {}", e)))?;
+                // Set CA bundle via environment variable - curl will pick this up automatically
+                // This is the most reliable method that works across all curl versions
+                let ca_bundle_str = ca_bundle_path.to_str().ok_or_else(|| {
+                    $crate::errors::ParameterError::Crate("std::path", "CA bundle path is not valid UTF-8".to_string())
+                })?;
+                std::env::set_var("CURL_CA_BUNDLE", ca_bundle_str);
             }
 
             #[cfg(not(feature = "no_std_out"))]
