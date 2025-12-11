@@ -74,22 +74,22 @@ macro_rules! impl_store_and_remote_fetch {
             easy.follow_location(true)?;
             easy.url(url)?;
 
-            // On Android, configure curl to use the bundled CA certificate bundle
-            #[cfg(target_os = "android")]
+            // On mobile platforms (Android and iOS), configure curl to use the bundled CA certificate bundle
+            #[cfg(any(target_os = "android", target_os = "ios"))]
             {
                 // Include the CA bundle bytes at compile time
                 const CA_BUNDLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/cacert.pem"));
 
                 // Use ssl_cainfo_blob to set the CA bundle directly from memory
                 // This avoids file I/O and permission issues
-                // Only use this if CA_BUNDLE is not empty (Android builds should have it)
+                // Only use this if CA_BUNDLE is not empty (mobile builds should have it)
                 if !CA_BUNDLE.is_empty() {
                     easy.ssl_cainfo_blob(CA_BUNDLE).map_err(|e| {
                         $crate::errors::ParameterError::Crate("curl", format!("Failed to set CA bundle from memory: {}", e))
                     })?;
                 } else {
                     // Fallback: try to write to a file if blob method doesn't work or bundle is empty
-                    // This should not happen for Android builds, but provides a fallback
+                    // This should not happen for mobile builds, but provides a fallback
                     let mut ca_bundle_path = {
                         let aleo_dir = aleo_std::aleo_dir();
                         if aleo_dir.to_string_lossy().contains(".cargo/registry")

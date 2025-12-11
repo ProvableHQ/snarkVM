@@ -19,11 +19,12 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let ca_bundle_path = out_dir.join("cacert.pem");
 
-    // Only download CA bundle if building for Android
+    // Download CA bundle for mobile platforms (Android and iOS)
     let target = env::var("TARGET").unwrap_or_default();
-    if target.contains("android") {
+    if target.contains("android") || target.contains("ios") {
+        let platform = if target.contains("android") { "Android" } else { "iOS" };
         // Download Mozilla's CA certificate bundle
-        println!("cargo:warning=Downloading CA certificate bundle for Android...");
+        println!("cargo:warning=Downloading CA certificate bundle for {platform}...");
 
         let ca_bundle_url = "https://curl.se/ca/cacert.pem";
         match download_ca_bundle(ca_bundle_url) {
@@ -43,7 +44,7 @@ fn main() {
             }
         }
     } else {
-        // For non-Android targets, write an empty file
+        // For non-mobile targets, write an empty file
         fs::write(&ca_bundle_path, b"").expect("Failed to write empty CA bundle");
     }
 }
