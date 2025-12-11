@@ -74,6 +74,22 @@ macro_rules! impl_store_and_remote_fetch {
             easy.follow_location(true)?;
             easy.url(url)?;
 
+            // On Android, configure curl to use the bundled CA certificate bundle
+            #[cfg(target_os = "android")]
+            {
+                // Include the auto-generated CA bundle module
+                include!(concat!(env!("OUT_DIR"), "/ca_bundle.rs"));
+
+                // Write CA bundle to a temporary file that curl can access
+                let temp_dir = std::env::temp_dir();
+                let ca_bundle_path = temp_dir.join("snarkvm_cacert.pem");
+                std::fs::write(&ca_bundle_path, CA_BUNDLE)
+                    .map_err(|e| $crate::errors::ParameterError::Crate("std::fs", format!("Failed to write CA bundle: {}", e)))?;
+
+                easy.ca_bundle(&ca_bundle_path)
+                    .map_err(|e| $crate::errors::ParameterError::Crate("curl", format!("Failed to set CA bundle: {}", e)))?;
+            }
+
             #[cfg(not(feature = "no_std_out"))]
             {
                 use colored::*;
