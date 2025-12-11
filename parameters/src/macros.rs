@@ -80,19 +80,28 @@ macro_rules! impl_store_and_remote_fetch {
                 // Include the CA bundle bytes at compile time
                 const CA_BUNDLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/cacert.pem"));
 
-                // Write CA bundle to a file in the aleo directory (same location as parameters)
-                // This is more reliable than temp_dir on Android
-                let mut ca_bundle_path = aleo_std::aleo_dir();
+                // On Android, aleo_dir() might return a read-only path (e.g., inside Cargo registry)
+                // So we need to use a writable location. Try aleo_dir first, but fallback to temp_dir
+                let mut ca_bundle_path = {
+                    let aleo_dir = aleo_std::aleo_dir();
+                    // Check if we can write to aleo_dir by trying to create it
+                    // If it fails or the path looks like a source directory, use temp_dir
+                    if aleo_dir.to_string_lossy().contains(".cargo/registry")
+                        || aleo_dir.to_string_lossy().contains("target/")
+                        || std::fs::create_dir_all(&aleo_dir).is_err()
+                    {
+                        // Fallback to temp directory - this should be writable on Android
+                        std::env::temp_dir()
+                    } else {
+                        aleo_dir
+                    }
+                };
 
-                // Ensure the aleo directory exists before writing to it
-                // The full path being created is: {aleo_dir}/snarkvm_cacert.pem
-                // On Android, aleo_dir() typically returns something like:
-                // - /data/data/com.yourapp/files/.aleo/ (app's data directory)
-                // - or ~/.aleo/ (home directory, if available)
+                // Ensure the directory exists before writing to it
                 std::fs::create_dir_all(&ca_bundle_path).map_err(|e| {
                     $crate::errors::ParameterError::Crate(
                         "std::fs",
-                        format!("Failed to create aleo directory at {:?}: {}", ca_bundle_path, e),
+                        format!("Failed to create directory at {:?}: {}", ca_bundle_path, e),
                     )
                 })?;
 
