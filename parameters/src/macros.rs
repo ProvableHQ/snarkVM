@@ -80,20 +80,26 @@ macro_rules! impl_store_and_remote_fetch {
                 // Include the CA bundle bytes at compile time
                 const CA_BUNDLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/cacert.pem"));
 
-                // Write CA bundle to a temporary file that curl can access
-                let temp_dir = std::env::temp_dir();
-                let ca_bundle_path = temp_dir.join("snarkvm_cacert.pem");
+                // Write CA bundle to a file in the aleo directory (same location as parameters)
+                // This is more reliable than temp_dir on Android
+                let mut ca_bundle_path = aleo_std::aleo_dir();
+                ca_bundle_path.push("snarkvm_cacert.pem");
+
+                // Ensure parent directory exists
+                if let Some(parent) = ca_bundle_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+
                 std::fs::write(&ca_bundle_path, CA_BUNDLE)
                     .map_err(|e| $crate::errors::ParameterError::Crate("std::fs", format!("Failed to write CA bundle: {}", e)))?;
 
-                // Set CA bundle via environment variable - curl will pick this up automatically
-                // This is the most reliable method that works across all curl versions
+                // Set CA bundle file path directly using curl's cainfo() method
+                // This is the proper way to configure curl's CA certificate bundle
                 let ca_bundle_str = ca_bundle_path.to_str().ok_or_else(|| {
                     $crate::errors::ParameterError::Crate("std::path", "CA bundle path is not valid UTF-8".to_string())
                 })?;
-                unsafe {
-                    std::env::set_var("CURL_CA_BUNDLE", ca_bundle_str);
-                }
+                easy.cainfo(ca_bundle_str)
+                    .map_err(|e| $crate::errors::ParameterError::Crate("curl", format!("Failed to set CA bundle: {}", e)))?;
             }
 
             #[cfg(not(feature = "no_std_out"))]
