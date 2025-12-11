@@ -95,8 +95,6 @@ optional = true
 
 [target.'cfg(all(not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.curl]
 version = "0.4.43"
-default-features = false
-features = ["rustls"]
 
 [dev-dependencies.snarkvm-algorithms]
 path = "../algorithms"
