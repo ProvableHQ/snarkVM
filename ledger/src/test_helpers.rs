@@ -31,6 +31,14 @@ use snarkvm_synthesizer::vm::VM;
 use once_cell::sync::Lazy;
 use snarkvm_ledger_block::Block;
 
+use std::{
+    fs,
+    io::{Read, Write},
+    path::PathBuf,
+};
+
+use snarkvm_utilities::{FromBytes, ToBytes};
+
 pub use snarkvm_ledger_test_helpers::*;
 
 pub type CurrentNetwork = MainnetV0;
@@ -70,29 +78,78 @@ pub struct SharedGenesis {
     pub genesis: Block<CurrentNetwork>,
 }
 
-// Compute a single (private_key, genesis) pair once per test binary.
-pub static SHARED_GENESIS: Lazy<SharedGenesis> = Lazy::new(|| {
+fn genesis_cache_path() -> PathBuf {
+    // Prefer the workspace target dir. If CARGO_TARGET_DIR is set, use it.
+    // Otherwise, assume snarkvm-ledger is at <workspace>/ledger and target is at <workspace>/target.
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("target"));
+
+    let dir = target_dir.join("test-cache");
+    let _ = fs::create_dir_all(&dir);
+
+    // Versioned so you don’t reuse an incompatible cache after upgrades.
+    dir.join(format!("snarkvm-ledger_shared_genesis_{}.bin", env!("CARGO_PKG_VERSION")))
+}
+
+fn read_shared_genesis_from_file() -> Option<SharedGenesis> {
+    let path = genesis_cache_path();
+    let mut f = fs::File::open(&path).ok()?;
+    let mut bytes = Vec::new();
+    f.read_to_end(&mut bytes).ok()?;
+
+    let mut slice = bytes.as_slice();
+    let private_key = PrivateKey::<CurrentNetwork>::read_le(&mut slice).ok()?;
+    let genesis = Block::<CurrentNetwork>::read_le(&mut slice).ok()?;
+
+    Some(SharedGenesis { private_key, genesis })
+}
+
+fn write_shared_genesis_to_file(shared: &SharedGenesis) {
+    let path = genesis_cache_path();
+    let tmp = path.with_extension("tmp");
+
+    let mut buf = Vec::new();
+    shared.private_key.write_le(&mut buf).expect("write private key");
+    shared.genesis.write_le(&mut buf).expect("write genesis");
+
+    {
+        let mut f = fs::File::create(&tmp).expect("create tmp genesis cache file");
+        f.write_all(&buf).expect("write tmp genesis cache file");
+        let _ = f.sync_all();
+    }
+    fs::rename(&tmp, &path).expect("rename tmp genesis cache file");
+}
+
+fn compute_shared_genesis() -> SharedGenesis {
     let rng = &mut TestRng::default();
 
-    // One shared private key for genesis.
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-
-    // Create a store just to build genesis.
     let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
     let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
 
     SharedGenesis { private_key, genesis }
+}
+
+// Process-local cache, backed by the shared on-disk cache.
+// This is the piece that makes nextest multi-process runs benefit.
+pub static SHARED_GENESIS: Lazy<SharedGenesis> = Lazy::new(|| {
+    if let Some(shared) = read_shared_genesis_from_file() {
+        return shared;
+    }
+
+    let shared = compute_shared_genesis();
+    write_shared_genesis_to_file(&shared);
+    shared
 });
 
 pub fn sample_test_env(_rng: &mut (impl Rng + CryptoRng)) -> TestEnv {
     let shared = &*SHARED_GENESIS;
 
-    // Reuse the shared private key (Copy)
     let private_key = shared.private_key;
     let view_key = ViewKey::try_from(&private_key).unwrap();
     let address = Address::try_from(&private_key).unwrap();
 
-    // Each test still gets its own fresh store + ledger
     let ledger = CurrentLedger::load(shared.genesis.clone(), StorageMode::new_test(None)).unwrap();
 
     TestEnv { ledger, private_key, view_key, address }
