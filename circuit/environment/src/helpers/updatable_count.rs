@@ -564,7 +564,7 @@ mod test {
     #[serial]
     fn check_count_updates_correctly_multiple_times() {
         // `count` is originally `count_is!(1, 2, 3, 4)`. Replace `original_count` to demonstrate replacement.
-        let count = count_is!(17, 18, 19, 20);
+        let count = count_is!(13, 14, 15, 16);
 
         env::set_var("UPDATE_COUNT", "updatable_count.rs");
 

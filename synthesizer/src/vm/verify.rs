@@ -871,7 +871,7 @@ mod tests {
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -908,7 +908,7 @@ mod tests {
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
 
         // Fetch the unspent records.
         let records = genesis.records().collect::<indexmap::IndexMap<_, _>>();
@@ -1047,7 +1047,7 @@ function compute:
         // Fetch the caller's private key.
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -1121,7 +1121,7 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -1167,7 +1167,7 @@ function compute:
         // Sample a new VM
         let new_vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         new_vm.add_next_block(&genesis).unwrap();
 
@@ -1185,7 +1185,7 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -1336,7 +1336,7 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -1496,7 +1496,7 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -1552,7 +1552,7 @@ function compute:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -1680,7 +1680,7 @@ mod credits_migration_tests {
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -1947,7 +1947,7 @@ mod credits_migration_tests {
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
@@ -2137,7 +2137,7 @@ function local_transfer:
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 

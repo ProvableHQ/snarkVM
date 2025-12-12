@@ -641,6 +641,88 @@ pub(crate) mod test_helpers {
     pub(crate) type CurrentNetwork = MainnetV0;
     pub(crate) type CurrentAleo = AleoV0;
 
+    use snarkvm_utilities::{FromBytes, ToBytes};
+    use std::{
+        fs,
+        io,
+        path::{Path, PathBuf},
+    };
+
+    const GENESIS_CACHE_MAGIC: &[u8] = b"SNARKVM_GENESIS_CACHE_V1\n";
+
+    fn default_genesis_cache_path() -> PathBuf {
+        // Put it somewhere stable. You can also use `CARGO_TARGET_DIR` or a repo-local `.cache/`.
+        let base = std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("target"));
+        base.join("snarkvm").join("genesis_cache").join("mainnetv0_genesis.bin")
+    }
+
+    pub(crate) fn load_or_build_genesis_block(
+        vm: &crate::vm::VM<CurrentNetwork, LedgerType>,
+        caller_private_key: &PrivateKey<CurrentNetwork>,
+        rng: &mut TestRng,
+    ) -> anyhow::Result<Block<CurrentNetwork>> {
+        let path = default_genesis_cache_path();
+        if let Ok(block) = try_read_genesis(&path) {
+            return Ok(block);
+        }
+
+        // Build it once (this is the expensive part).
+        let block = vm.genesis_beacon(caller_private_key, rng)?;
+
+        // Best-effort write (don’t fail tests if caching fails).
+        let _ = write_genesis_atomic(&path, &block);
+
+        Ok(block)
+    }
+
+    fn try_read_genesis(path: &Path) -> io::Result<Block<CurrentNetwork>> {
+        let bytes = fs::read(path)?;
+        if !bytes.starts_with(GENESIS_CACHE_MAGIC) {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "bad magic"));
+        }
+
+        let mut cursor = std::io::Cursor::new(&bytes[GENESIS_CACHE_MAGIC.len()..]);
+        Block::<CurrentNetwork>::read_le(&mut cursor)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("decode: {e}")))
+    }
+
+    fn write_genesis_atomic(path: &Path, block: &Block<CurrentNetwork>) -> io::Result<()> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(GENESIS_CACHE_MAGIC);
+        block.write_le(&mut buf).map_err(|e| io::Error::other(format!("encode: {e}")))?;
+
+        let tmp = path.with_extension("tmp");
+        fs::write(&tmp, &buf)?;
+        fs::rename(&tmp, path)?;
+        Ok(())
+    }
+
+    pub(crate) fn deterministic_rng() -> TestRng {
+        TestRng::fixed(123456789)
+    }
+
+    pub(crate) fn deterministic_genesis_key() -> PrivateKey<CurrentNetwork> {
+        // You can also hardcode a known private key string if the type supports it.
+        let mut rng = TestRng::fixed(987654321);
+        PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap()
+    }
+
+    pub(crate) fn sample_genesis_block_disk_cached() -> Block<CurrentNetwork> {
+        static INSTANCE: OnceLock<Block<CurrentNetwork>> = OnceLock::new();
+        INSTANCE
+            .get_or_init(|| {
+                let vm = sample_vm();
+                let mut rng = deterministic_rng();
+                let pk = deterministic_genesis_key();
+                load_or_build_genesis_block(&vm, &pk, &mut rng).unwrap()
+            })
+            .clone()
+    }
+
     #[cfg(not(feature = "rocks"))]
     pub(crate) type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
     #[cfg(feature = "rocks")]
