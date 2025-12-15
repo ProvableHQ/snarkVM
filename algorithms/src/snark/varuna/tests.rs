@@ -244,8 +244,8 @@ mod varuna {
     fn prove_and_verify_with_tall_matrix_big() {
         let num_constraints = 100;
         let num_variables = 25;
-        let pk_size_zk = 91971;
-        let pk_size_posw = 91633;
+        let pk_size_zk = 138547;
+        let pk_size_posw = 138209;
         let mut rng = TestRng::default();
 
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);
@@ -265,8 +265,8 @@ mod varuna {
     fn prove_and_verify_with_tall_matrix_small() {
         let num_constraints = 26;
         let num_variables = 25;
-        let pk_size_zk = 25428;
-        let pk_size_posw = 25090;
+        let pk_size_zk = 34748;
+        let pk_size_posw = 34410;
         let mut rng = TestRng::default();
 
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);
@@ -286,8 +286,8 @@ mod varuna {
     fn prove_and_verify_with_squat_matrix_big() {
         let num_constraints = 25;
         let num_variables = 100;
-        let pk_size_zk = 53523;
-        let pk_size_posw = 53185;
+        let pk_size_zk = 100099;
+        let pk_size_posw = 99761;
         let mut rng = TestRng::default();
 
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);
@@ -307,8 +307,8 @@ mod varuna {
     fn prove_and_verify_with_squat_matrix_small() {
         let num_constraints = 25;
         let num_variables = 26;
-        let pk_size_zk = 25284;
-        let pk_size_posw = 24946;
+        let pk_size_zk = 34604;
+        let pk_size_posw = 34266;
         let mut rng = TestRng::default();
 
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);
@@ -328,8 +328,8 @@ mod varuna {
     fn prove_and_verify_with_square_matrix() {
         let num_constraints = 25;
         let num_variables = 25;
-        let pk_size_zk = 25284;
-        let pk_size_posw = 24946;
+        let pk_size_zk = 34604;
+        let pk_size_posw = 34266;
         let mut rng = TestRng::default();
 
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);

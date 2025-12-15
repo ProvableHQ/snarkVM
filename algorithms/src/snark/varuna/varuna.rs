@@ -24,6 +24,8 @@ use crate::{
         CommitterUnionKey,
         Evaluations,
         LabeledCommitment,
+        LabeledPolynomial,
+        LabeledPolynomialWithBasis,
         QuerySet,
         Randomness,
         SonicKZG10,
@@ -52,7 +54,7 @@ use anyhow::{Result, anyhow, bail, ensure};
 use core::marker::PhantomData;
 use itertools::Itertools;
 use rand::{CryptoRng, Rng};
-use std::{borrow::Borrow, collections::BTreeMap, ops::Deref, sync::Arc};
+use std::{borrow::Borrow, collections::{BTreeMap, BTreeSet}, ops::Deref, sync::Arc};
 
 use crate::srs::UniversalProver;
 
@@ -90,7 +92,36 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
 
             // Varuna only needs degree 2 random polynomials.
             let supported_hiding_bound = 1;
-            let supported_lagrange_sizes = [].into_iter(); // TODO: consider removing lagrange_bases_at_beta_g from CommitterKey
+            // Provide Lagrange bases for common domains used by Varuna, enabling optional
+            // Lagrange-basis commitments during proving (when the basis is large enough).
+            //
+            // Note: We filter sizes by `universal_srs.max_degree() + 1`, as required by
+            // the underlying KZG10 Lagrange basis construction.
+            let max_lagrange_size = universal_srs.max_degree() + 1;
+            let mut supported_lagrange_sizes = BTreeSet::new();
+            let mut maybe_insert = |size: usize| {
+                if size.is_power_of_two() && size <= max_lagrange_size {
+                    supported_lagrange_sizes.insert(size);
+                }
+            };
+            let info = &indexed_circuit.index_info;
+            let constraint_size = EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_constraints).unwrap();
+            let variable_size =
+                EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_public_and_private_variables).unwrap();
+            let non_zero_a_size = EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_non_zero_a).unwrap();
+            let non_zero_b_size = EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_non_zero_b).unwrap();
+            let non_zero_c_size = EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_non_zero_c).unwrap();
+
+            // Round 1 (witness & mask) and round 3 (h_1) can require ~2*|C|.
+            maybe_insert(variable_size);
+            maybe_insert(variable_size.saturating_mul(2));
+            // Round 2 (h_0) can require ~2*|R|.
+            maybe_insert(constraint_size.saturating_mul(2));
+            // Round 5 (h_2) fits within max non-zero domain sizes.
+            maybe_insert(non_zero_a_size);
+            maybe_insert(non_zero_b_size);
+            maybe_insert(non_zero_c_size);
+
             let (committer_key, _) = SonicKZG10::<E, FS>::trim(
                 universal_srs,
                 indexed_circuit.max_degree()?,
@@ -196,6 +227,31 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         for sum in sums.iter() {
             sponge.absorb_nonnative_field_elements([sum.sum_a, sum.sum_b, sum.sum_c]);
         }
+    }
+
+    /// Prepare a polynomial for committing, opportunistically using a supported Lagrange basis.
+    ///
+    /// - Degree-bounded polynomials must remain in monomial form, as degree-bounds are enforced
+    ///   via shifted powers in the SRS.
+    /// - Otherwise, if `ck` supports a Lagrange basis of size at least `poly.degree() + 1`,
+    ///   we commit using Lagrange evaluations on that domain.
+    fn poly_for_commit<'a>(ck: &CommitterUnionKey<E>, poly: &'a LabeledPolynomial<E::Fr>) -> LabeledPolynomialWithBasis<'a, E::Fr> {
+        // Preserve degree bounds (enforced via shifted powers).
+        if poly.degree_bound().is_some() {
+            return poly.into();
+        }
+
+        // Choose the smallest supported Lagrange domain size that is large enough.
+        let min_size = poly.degree().saturating_add(1);
+        let Some((&size, _)) = ck.lagrange_bases_at_beta_g.range(min_size..).next() else {
+            return poly.into();
+        };
+        let Some(domain) = EvaluationDomain::<E::Fr>::new(size) else {
+            return poly.into();
+        };
+
+        let evals = crate::fft::Polynomial::<E::Fr>::evaluate_over_domain(poly.polynomial().clone(), domain);
+        LabeledPolynomialWithBasis::new_lagrange_basis(poly.to_label(), evals, poly.hiding_bound())
     }
 }
 
@@ -409,7 +465,7 @@ where
             SonicKZG10::<E, FS>::commit(
                 universal_prover,
                 &committer_key,
-                first_round_oracles.iter().map(Into::into),
+                first_round_oracles.iter().map(|p| Self::poly_for_commit(&committer_key, p)),
                 SM::ZK.then_some(zk_rng),
             )?
         };
@@ -437,7 +493,7 @@ where
         let (second_commitments, second_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
-            second_oracles.iter().map(Into::into),
+            second_oracles.iter().map(|p| Self::poly_for_commit(&committer_key, p)),
             SM::ZK.then_some(zk_rng),
         )?;
         end_timer!(second_round_comm_time);
@@ -497,7 +553,7 @@ where
         let (third_commitments, third_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
-            third_oracles.iter().map(Into::into),
+            third_oracles.iter().map(|p| Self::poly_for_commit(&committer_key, p)),
             SM::ZK.then_some(zk_rng),
         )?;
         end_timer!(third_round_comm_time);
@@ -545,7 +601,7 @@ where
         let (fourth_commitments, fourth_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
-            fourth_oracles.iter().map(Into::into),
+            fourth_oracles.iter().map(|p| Self::poly_for_commit(&committer_key, p)),
             SM::ZK.then_some(zk_rng),
         )?;
         end_timer!(fourth_round_comm_time);
