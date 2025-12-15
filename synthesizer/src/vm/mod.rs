@@ -764,36 +764,19 @@ pub(crate) mod test_helpers {
         }
     }
 
-    pub(crate) fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
+    pub(crate) fn sample_genesis_private_key(_rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
         static INSTANCE: OnceLock<PrivateKey<CurrentNetwork>> = OnceLock::new();
-        *INSTANCE.get_or_init(|| {
-            // Initialize a new caller.
-            PrivateKey::<CurrentNetwork>::new(rng).unwrap()
-        })
+        *INSTANCE.get_or_init(deterministic_genesis_key)
     }
 
-    pub(crate) fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
-        static INSTANCE: OnceLock<Block<CurrentNetwork>> = OnceLock::new();
-        INSTANCE
-            .get_or_init(|| {
-                // Initialize the VM.
-                let vm = crate::vm::test_helpers::sample_vm();
-                // Initialize a new caller.
-                let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-                // Return the block.
-                vm.genesis_beacon(&caller_private_key, rng).unwrap()
-            })
-            .clone()
+    pub(crate) fn sample_genesis_block(_rng: &mut TestRng) -> Block<CurrentNetwork> {
+        sample_genesis_block_disk_cached()
     }
 
-    pub(crate) fn sample_vm_with_genesis_block(rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
-        // Initialize the VM.
-        let vm = crate::vm::test_helpers::sample_vm();
-        // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
-        // Update the VM.
+    pub(crate) fn sample_vm_with_genesis_block(_rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
+        let vm = sample_vm();
+        let genesis = sample_genesis_block_disk_cached();
         vm.add_next_block(&genesis).unwrap();
-        // Return the VM.
         vm
     }
 
