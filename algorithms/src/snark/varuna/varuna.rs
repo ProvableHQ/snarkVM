@@ -627,7 +627,7 @@ where
         let (fifth_commitments, fifth_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
-            fifth_oracles.iter().map(Into::into),
+            fifth_oracles.iter().map(|p| Self::poly_for_commit(&committer_key, p)),
             SM::ZK.then_some(zk_rng),
         )?;
         end_timer!(fifth_round_comm_time);

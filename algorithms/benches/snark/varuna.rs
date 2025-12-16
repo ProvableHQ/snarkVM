@@ -20,13 +20,21 @@ use snarkvm_algorithms::{
     AlgebraicSponge,
     SNARK,
     crypto_hash::PoseidonSponge,
-    snark::varuna::{CircuitVerifyingKey, TestCircuit, VarunaHidingMode, VarunaSNARK, VarunaVersion, ahp::AHPForR1CS},
+    polycommit::sonic_pc::CommitterKey,
+    snark::varuna::{
+        CircuitVerifyingKey,
+        TestCircuit,
+        VarunaHidingMode,
+        VarunaSNARK,
+        VarunaVersion,
+        ahp::AHPForR1CS,
+    },
 };
 use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
 use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, TestRng};
 
 use criterion::Criterion;
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
 type FS = PoseidonSponge<Fq, 2, 1>;
@@ -134,6 +142,62 @@ fn snark_batch_prove(c: &mut Criterion) {
                 .unwrap()
         })
     });
+}
+
+fn snark_prove_large_lagrange_vs_monomial(c: &mut Criterion) {
+    // Large instance (intended to make commitment cost noticeable).
+    let num_constraints = (1 << 15) - 10;
+    let num_variables = (1 << 15) - 10;
+    let mul_depth = 2;
+
+    // Setup once (not benchmarked).
+    let mut rng = TestRng::fixed(424242);
+    let (circuit, _public_inputs) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, &mut rng);
+    let indexed = AHPForR1CS::<Fr, VarunaHidingMode>::index(&circuit).unwrap();
+    let max_degree = indexed.max_degree().unwrap();
+
+    let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+    let universal_prover = &universal_srs.to_universal_prover().unwrap();
+    let fs_parameters = FS::sample_parameters();
+    let varuna_version = VarunaVersion::V2;
+
+    let (pk_lagrange, _vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+    let pk_monomial = {
+        // Reuse the proving key, but remove Lagrange bases from the committer key to force
+        // monomial-basis commitments throughout proving.
+        let ck = pk_lagrange.committer_key.as_ref();
+        let committer_key = CommitterKey {
+            powers_of_beta_g: ck.powers_of_beta_g.clone(),
+            lagrange_bases_at_beta_g: Default::default(),
+            powers_of_beta_times_gamma_g: ck.powers_of_beta_times_gamma_g.clone(),
+            shifted_powers_of_beta_g: ck.shifted_powers_of_beta_g.clone(),
+            shifted_powers_of_beta_times_gamma_g: ck.shifted_powers_of_beta_times_gamma_g.clone(),
+            enforced_degree_bounds: ck.enforced_degree_bounds.clone(),
+        };
+        let mut pk = pk_lagrange.clone();
+        pk.committer_key = Arc::new(committer_key);
+        pk
+    };
+
+    let mut group = c.benchmark_group("snark_prove_large_lagrange_vs_monomial");
+    group.measurement_time(Duration::from_secs(20));
+
+    group.bench_function("prove_lagrange", |b| {
+        b.iter(|| {
+            let mut iter_rng = TestRng::fixed(999);
+            VarunaInst::prove(universal_prover, &fs_parameters, &pk_lagrange, varuna_version, &circuit, &mut iter_rng)
+                .unwrap()
+        })
+    });
+
+    group.bench_function("prove_monomial", |b| {
+        b.iter(|| {
+            let mut iter_rng = TestRng::fixed(999);
+            VarunaInst::prove(universal_prover, &fs_parameters, &pk_monomial, varuna_version, &circuit, &mut iter_rng)
+                .unwrap()
+        })
+    });
+    group.finish();
 }
 
 fn snark_verify(c: &mut Criterion) {
@@ -344,7 +408,7 @@ fn snark_certificate_verify(c: &mut Criterion) {
 criterion_group! {
     name = varuna_snark;
     config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
+    targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_prove_large_lagrange_vs_monomial, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
 }
 
 criterion_main!(varuna_snark);
