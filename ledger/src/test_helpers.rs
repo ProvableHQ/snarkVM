@@ -107,7 +107,12 @@ fn read_shared_genesis_from_file() -> Option<SharedGenesis> {
 
 fn write_shared_genesis_to_file(shared: &SharedGenesis) {
     let path = genesis_cache_path();
-    let tmp = path.with_extension("tmp");
+    let dir = path.parent().expect("cache file has parent dir");
+    let _ = fs::create_dir_all(dir);
+
+    // Unique tmp per process to avoid nextest multi-process races.
+    let pid = std::process::id();
+    let tmp = path.with_extension(format!("tmp.{pid}"));
 
     let mut buf = Vec::new();
     shared.private_key.write_le(&mut buf).expect("write private key");
@@ -118,7 +123,15 @@ fn write_shared_genesis_to_file(shared: &SharedGenesis) {
         f.write_all(&buf).expect("write tmp genesis cache file");
         let _ = f.sync_all();
     }
-    fs::rename(&tmp, &path).expect("rename tmp genesis cache file");
+
+    match fs::rename(&tmp, &path) {
+        Ok(()) => {}
+        Err(_e) if path.exists() => {
+            // Another process published already.
+            let _ = fs::remove_file(&tmp);
+        }
+        Err(e) => panic!("rename tmp genesis cache file: {e}"),
+    }
 }
 
 fn compute_shared_genesis() -> SharedGenesis {
@@ -139,7 +152,12 @@ pub static SHARED_GENESIS: Lazy<SharedGenesis> = Lazy::new(|| {
     }
 
     let shared = compute_shared_genesis();
-    write_shared_genesis_to_file(&shared);
+
+    // If someone else won the race and wrote it while we computed, just use theirs.
+    if read_shared_genesis_from_file().is_none() {
+        write_shared_genesis_to_file(&shared);
+    }
+
     shared
 });
 
