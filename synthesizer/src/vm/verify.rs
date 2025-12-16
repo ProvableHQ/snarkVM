@@ -705,9 +705,8 @@ mod tests {
     struct CachedFixtures {
         genesis_bytes: Vec<u8>,
         deployment_tx_bytes: Vec<u8>,
-
-        #[allow(dead_code)]
         exec_private_fee_tx_bytes: Vec<u8>,
+        exec_public_fee_tx_bytes: Vec<u8>,
     }
 
     static FIXTURES: Lazy<CachedFixtures> = Lazy::new(|| {
@@ -718,6 +717,7 @@ mod tests {
 
         let deployment_tx = crate::vm::test_helpers::sample_deployment_transaction(rng);
         let exec_private_fee_tx = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
+        let exec_public_fee_tx = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
 
         // Serialize once.
         let mut genesis_bytes = Vec::new();
@@ -729,7 +729,10 @@ mod tests {
         let mut exec_private_fee_tx_bytes = Vec::new();
         exec_private_fee_tx.write_le(&mut exec_private_fee_tx_bytes).expect("serialize exec tx (private fee)");
 
-        CachedFixtures { genesis_bytes, deployment_tx_bytes, exec_private_fee_tx_bytes }
+        let mut exec_public_fee_tx_bytes = Vec::new();
+        exec_public_fee_tx.write_le(&mut exec_public_fee_tx_bytes).expect("serialize exec tx (public fee)");
+
+        CachedFixtures { genesis_bytes, deployment_tx_bytes, exec_private_fee_tx_bytes, exec_public_fee_tx_bytes }
     });
 
     fn cached_genesis() -> Block<CurrentNetwork> {
@@ -742,10 +745,15 @@ mod tests {
         Transaction::read_le(&mut slice).expect("deserialize deployment tx")
     }
 
-    //fn cached_exec_private_fee_tx() -> Transaction<CurrentNetwork> {
-    //    let mut slice = FIXTURES.exec_private_fee_tx_bytes.as_slice();
-    //    Transaction::read_le(&mut slice).expect("deserialize exec tx (private fee)")
-    //}
+    fn cached_exec_private_fee_tx() -> Transaction<CurrentNetwork> {
+        let mut slice = FIXTURES.exec_private_fee_tx_bytes.as_slice();
+        Transaction::read_le(&mut slice).expect("deserialize exec tx (private fee)")
+    }
+
+    fn cached_exec_public_fee_tx() -> Transaction<CurrentNetwork> {
+        let mut slice = FIXTURES.exec_public_fee_tx_bytes.as_slice();
+        Transaction::read_le(&mut slice).expect("deserialize exec tx (public fee)")
+    }
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
@@ -905,19 +913,19 @@ mod tests {
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = cached_genesis();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
         // Fetch a valid execution transaction with a private fee.
-        let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
+        let valid_transaction = cached_exec_private_fee_tx();
         let cache_key = create_cache_key(&vm, &valid_transaction);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch a valid execution transaction with a public fee.
-        let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
+        let valid_transaction = cached_exec_public_fee_tx();
         let cache_key = create_cache_key(&vm, &valid_transaction);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
@@ -1083,7 +1091,7 @@ function compute:
         // Fetch the caller's private key.
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = cached_genesis();
         // Update the VM.
         vm.add_next_block(&genesis).unwrap();
 
