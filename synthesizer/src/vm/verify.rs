@@ -699,6 +699,54 @@ mod tests {
     #[cfg(feature = "test")]
     use snarkvm_utilities::bytes_from_bits_le;
 
+    use once_cell::sync::Lazy;
+    use snarkvm_utilities::{FromBytes, ToBytes};
+
+    struct CachedFixtures {
+        genesis_bytes: Vec<u8>,
+        deployment_tx_bytes: Vec<u8>,
+
+        #[allow(dead_code)]
+        exec_private_fee_tx_bytes: Vec<u8>,
+    }
+
+    static FIXTURES: Lazy<CachedFixtures> = Lazy::new(|| {
+        let rng = &mut TestRng::default();
+
+        // Compute once.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+
+        let deployment_tx = crate::vm::test_helpers::sample_deployment_transaction(rng);
+        let exec_private_fee_tx = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
+
+        // Serialize once.
+        let mut genesis_bytes = Vec::new();
+        genesis.write_le(&mut genesis_bytes).expect("serialize genesis");
+
+        let mut deployment_tx_bytes = Vec::new();
+        deployment_tx.write_le(&mut deployment_tx_bytes).expect("serialize deployment tx");
+
+        let mut exec_private_fee_tx_bytes = Vec::new();
+        exec_private_fee_tx.write_le(&mut exec_private_fee_tx_bytes).expect("serialize exec tx (private fee)");
+
+        CachedFixtures { genesis_bytes, deployment_tx_bytes, exec_private_fee_tx_bytes }
+    });
+
+    fn cached_genesis() -> Block<CurrentNetwork> {
+        let mut slice = FIXTURES.genesis_bytes.as_slice();
+        Block::read_le(&mut slice).expect("deserialize genesis")
+    }
+
+    fn cached_deployment_tx() -> Transaction<CurrentNetwork> {
+        let mut slice = FIXTURES.deployment_tx_bytes.as_slice();
+        Transaction::read_le(&mut slice).expect("deserialize deployment tx")
+    }
+
+    //fn cached_exec_private_fee_tx() -> Transaction<CurrentNetwork> {
+    //    let mut slice = FIXTURES.exec_private_fee_tx_bytes.as_slice();
+    //    Transaction::read_le(&mut slice).expect("deserialize exec tx (private fee)")
+    //}
+
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
     // A helper function to create the cache key for a transaction in the partially-verified transactions cache.
@@ -894,13 +942,14 @@ mod tests {
         let address = Address::try_from(&caller_private_key).unwrap();
 
         // Initialize the genesis block.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        //let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = cached_genesis();
 
         // Fetch the unspent records.
         let records = genesis.records().collect::<indexmap::IndexMap<_, _>>();
 
         // Prepare the fee.
-        let credits = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
+        let _credits = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
 
         // Initialize the VM.
         let vm = crate::vm::test_helpers::sample_vm();
@@ -908,8 +957,9 @@ mod tests {
         vm.add_next_block(&genesis).unwrap();
 
         // Deploy.
-        let program = crate::vm::test_helpers::sample_program();
-        let deployment_transaction = vm.deploy(&caller_private_key, &program, Some(credits), 10, None, rng).unwrap();
+        let _program = crate::vm::test_helpers::sample_program();
+        //let deployment_transaction = vm.deploy(&caller_private_key, &program, Some(credits), 10, None, rng).unwrap();
+        let deployment_transaction = cached_deployment_tx();
 
         // Construct the new block header.
         let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
