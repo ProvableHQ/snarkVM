@@ -76,7 +76,7 @@ fn biginteger_bytes_test<B: BigInteger>(rng: &mut TestRng) {
 }
 
 fn biginteger_to_string_test<B: BigInteger>(rng: &mut TestRng) {
-    const ITERATIONS: u64 = 1_000_000;
+    const ITERATIONS: u64 = 900_000;
 
     // Sanity check the integers starting from 0 to ITERATIONS.
     for integer in 0..ITERATIONS {

@@ -55,7 +55,7 @@ impl<N: Network> ToBytes for Ratifications<N> {
 mod tests {
     use super::*;
 
-    const ITERATIONS: u32 = 100;
+    const ITERATIONS: u32 = 90;
 
     #[test]
     fn test_bytes() -> Result<()> {

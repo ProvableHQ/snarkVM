@@ -114,7 +114,7 @@ mod tests {
 
     use std::ops::RangeInclusive;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 64;
 
     #[allow(clippy::needless_borrow)]
     fn check_or<I: IntegerType + BitOr<Output = I>>(

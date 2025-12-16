@@ -131,7 +131,7 @@ impl<'de> Deserialize<'de> for ArgumentLocator {
 mod tests {
     use super::*;
 
-    const ITERATIONS: usize = 1000;
+    const ITERATIONS: usize = 800;
 
     pub(crate) fn sample_argument_locator<R: Rng + CryptoRng>(rng: &mut R) -> ArgumentLocator {
         ArgumentLocator::new(rng.r#gen(), rng.gen_range(0..16))

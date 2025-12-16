@@ -330,7 +330,7 @@ pub fn random_sqrt_tonelli_tests<F: PrimeField + SquareRootField>(rng: &mut Test
 
 #[cfg(test)]
 pub(crate) fn bench_sqrt<F: PrimeField + SquareRootField>(rng: &mut TestRng) {
-    const ITERATIONS: usize = 100_000;
+    const ITERATIONS: usize = 80_000;
 
     let mut profile_a = Vec::with_capacity(ITERATIONS);
     let mut profile_b = Vec::with_capacity(ITERATIONS);

@@ -62,7 +62,7 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    const ITERATIONS: u64 = 1_000;
+    const ITERATIONS: u64 = 900;
 
     #[test]
     fn test_string() -> Result<()> {

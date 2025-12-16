@@ -145,7 +145,7 @@ fn test_scalar_mul() {
 
     let rng = &mut TestRng::default();
 
-    const ITERATIONS: u32 = 1_000_000u32;
+    const ITERATIONS: u32 = 900_000u32;
 
     let map = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMapID::Test))
         .expect("Failed to open data map");

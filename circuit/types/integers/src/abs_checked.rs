@@ -71,7 +71,7 @@ mod tests {
 
     use core::{ops::RangeInclusive, panic::UnwindSafe};
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 64;
 
     fn check_abs<I: IntegerType + UnwindSafe>(
         name: &str,

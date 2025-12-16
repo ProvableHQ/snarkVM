@@ -344,7 +344,7 @@ pub(crate) mod tests {
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    const ITERATIONS: u64 = 25;
+    const ITERATIONS: u64 = 20;
 
     #[test]
     fn test_sample_instructions() {

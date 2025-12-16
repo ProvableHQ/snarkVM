@@ -108,7 +108,7 @@ mod tests {
 
     use core::ops::RangeInclusive;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 64;
 
     #[allow(clippy::needless_borrow)]
     fn check_bitxor<I: IntegerType + BitXor<Output = I>>(

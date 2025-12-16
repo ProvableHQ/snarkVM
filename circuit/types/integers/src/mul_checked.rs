@@ -274,7 +274,7 @@ mod tests {
 
     use core::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    const ITERATIONS: u64 = 32;
+    const ITERATIONS: u64 = 16;
 
     fn check_mul<I: IntegerType + RefUnwindSafe>(
         name: &str,

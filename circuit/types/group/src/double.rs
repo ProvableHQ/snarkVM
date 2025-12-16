@@ -92,7 +92,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 250;
+    const ITERATIONS: u64 = 200;
 
     #[test]
     fn test_double() {

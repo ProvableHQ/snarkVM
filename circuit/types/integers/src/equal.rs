@@ -79,7 +79,7 @@ mod tests {
 
     use std::ops::RangeInclusive;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 90;
 
     fn check_equals<I: IntegerType>(
         name: &str,

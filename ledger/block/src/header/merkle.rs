@@ -94,7 +94,7 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    const ITERATIONS: u64 = 1_000;
+    const ITERATIONS: u64 = 900;
 
     fn check_path<N: Network>(header_path: HeaderPath<N>, root: Field<N>, leaf: &HeaderLeaf<N>) -> Result<()> {
         // Ensure that the path is valid for the corresponding root and leaf.

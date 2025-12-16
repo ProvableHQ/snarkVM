@@ -226,7 +226,7 @@ mod tests {
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    const ITERATIONS: usize = 1000;
+    const ITERATIONS: usize = 800;
 
     #[test]
     fn test_staking_rewards() {

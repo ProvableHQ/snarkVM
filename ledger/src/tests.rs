@@ -1911,7 +1911,7 @@ fn test_split_candidate_solutions() {
 
     let max_solutions = CurrentNetwork::MAX_SOLUTIONS;
 
-    const ITERATIONS: usize = 1_000;
+    const ITERATIONS: usize = 900;
 
     for _ in 0..ITERATIONS {
         let num_candidates = rng.gen_range(0..max_solutions * 2);

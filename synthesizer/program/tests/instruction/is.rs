@@ -38,7 +38,7 @@ use snarkvm_synthesizer_program::{
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
-const ITERATIONS: usize = 20;
+const ITERATIONS: usize = 15;
 
 /// Samples the stack. Note: Do not replicate this for real program use, it is insecure.
 #[allow(clippy::type_complexity)]

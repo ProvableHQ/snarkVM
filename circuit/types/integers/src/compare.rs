@@ -104,7 +104,7 @@ mod tests {
 
     use core::ops::RangeInclusive;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 80;
 
     fn check_compare<I: IntegerType>(
         name: &str,

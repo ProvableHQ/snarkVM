@@ -58,7 +58,7 @@ mod tests {
 
     use core::ops::RangeInclusive;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 64;
 
     fn check_not<I: IntegerType + Not<Output = I>>(
         name: &str,

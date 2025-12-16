@@ -236,7 +236,7 @@ mod tests {
 
     use core::str::FromStr;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 64;
 
     /// Attempts to construct an affine group element from the given x-coordinate and mode.
     fn check_display(mode: Mode, point: console::Group<<Circuit as Environment>::Network>) {

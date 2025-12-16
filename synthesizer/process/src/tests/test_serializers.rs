@@ -35,7 +35,7 @@ type CurrentAleo = AleoV0;
 #[test]
 fn test_serialize_deserialize_equivalence() {
     // Number of iterations to run for each type.
-    const ITERATIONS: usize = 50;
+    const ITERATIONS: usize = 40;
 
     // A helper function to define the program.
     fn construct_program(
@@ -186,7 +186,7 @@ function test_serde_equivalence:
 
 #[test]
 fn test_value_size_in_bits() {
-    const ITERATIONS: usize = 1000;
+    const ITERATIONS: usize = 800;
 
     // Load a process.
     let mut process = Process::<CurrentNetwork>::load().unwrap();

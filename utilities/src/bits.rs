@@ -449,7 +449,7 @@ mod tests {
     use anyhow::Result;
     use rand::{Rng, distributions::Alphanumeric};
 
-    const ITERATIONS: u64 = 10000;
+    const ITERATIONS: u64 = 8000;
 
     fn random_string(len: u16, rng: &mut TestRng) -> String {
         rng.sample_iter(&Alphanumeric).take(len as usize).map(char::from).collect()

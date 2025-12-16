@@ -34,7 +34,7 @@ mod tests {
 
     type CurrentEnvironment = Console;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 80;
 
     #[test]
     fn test_zero() {

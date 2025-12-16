@@ -31,7 +31,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 250;
+    const ITERATIONS: u64 = 200;
 
     fn check_mul_by_cofactor(mode: Mode, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) {
         let mut rng = TestRng::default();

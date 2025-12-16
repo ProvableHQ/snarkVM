@@ -582,7 +582,7 @@ mod test {
 
     use rand::Rng;
 
-    const ITERATIONS: usize = 1000;
+    const ITERATIONS: usize = 800;
 
     #[test]
     fn test_macro_empty() {

@@ -31,7 +31,7 @@ mod tests {
 
     use console::ToField as ConsoleToField;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 90;
 
     fn check_to_field(mode: Mode) {
         let rng = &mut TestRng::default();

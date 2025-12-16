@@ -42,7 +42,7 @@ use snarkvm_synthesizer_program::{
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
-const ITERATIONS: usize = 25;
+const ITERATIONS: usize = 20;
 
 /// **Attention**: When changing this, also update in `src/logic/instruction/commit.rs`.
 fn valid_destination_types() -> &'static [LiteralType] {

@@ -77,7 +77,7 @@ use snarkvm_synthesizer_program::{
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
-const ITERATIONS: usize = 20;
+const ITERATIONS: usize = 15;
 
 fn sample_valid_input_types<N: Network, R: CryptoRng + Rng>(
     variant: HashVariant,

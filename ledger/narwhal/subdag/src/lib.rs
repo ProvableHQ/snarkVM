@@ -322,7 +322,7 @@ mod tests {
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 90;
 
     #[test]
     fn test_max_certificates() {

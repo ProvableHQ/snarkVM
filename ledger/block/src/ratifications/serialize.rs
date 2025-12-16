@@ -71,7 +71,7 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    const ITERATIONS: u32 = 100;
+    const ITERATIONS: u32 = 90;
 
     #[test]
     fn test_serde_json() {

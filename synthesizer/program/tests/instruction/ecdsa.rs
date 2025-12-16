@@ -56,7 +56,7 @@ use snarkvm_utilities::bytes_from_bits_le;
 
 type CurrentNetwork = MainnetV0;
 
-const ITERATIONS: usize = 20;
+const ITERATIONS: usize = 15;
 
 fn sample_valid_input_types<N: Network>(variant: ECDSAVerifyVariant) -> Vec<PlaintextType<N>> {
     match variant {

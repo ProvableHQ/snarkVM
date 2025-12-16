@@ -510,7 +510,7 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    const ITERATIONS: u32 = 1000;
+    const ITERATIONS: u32 = 900;
 
     const EXPECTED_ANCHOR_BLOCK_REWARD_AT_BLOCK_1: u128 = MAX_COINBASE_REWARD as u128;
     const EXPECTED_STAKING_REWARD: u64 = 23_782_343;

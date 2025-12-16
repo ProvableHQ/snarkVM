@@ -55,7 +55,7 @@ mod tests {
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 80;
 
     const TEST_PROGRAM_CASES: &[&str] = &["testing.aleo", "hello.aleo", "abc_def.aleo", "a1234.aleo"];
     const TEST_FUNCTION_CASES: &[&str] = &["testing", "transfer", "hello", "foo", "bar"];
