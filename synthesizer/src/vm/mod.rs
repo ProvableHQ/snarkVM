@@ -644,25 +644,6 @@ pub(crate) mod test_helpers {
         base.join("snarkvm").join("genesis_cache").join("mainnetv0_genesis.bin")
     }
 
-    pub(crate) fn load_or_build_genesis_block(
-        vm: &crate::vm::VM<CurrentNetwork, LedgerType>,
-        caller_private_key: &PrivateKey<CurrentNetwork>,
-        rng: &mut TestRng,
-    ) -> anyhow::Result<Block<CurrentNetwork>> {
-        let path = default_genesis_cache_path();
-        if let Ok(block) = try_read_genesis(&path) {
-            return Ok(block);
-        }
-
-        // Build it once (this is the expensive part).
-        let block = vm.genesis_beacon(caller_private_key, rng)?;
-
-        // Best-effort write (don’t fail tests if caching fails).
-        let _ = write_genesis_atomic(&path, &block);
-
-        Ok(block)
-    }
-
     fn try_read_genesis(path: &Path) -> io::Result<Block<CurrentNetwork>> {
         let bytes = fs::read(path)?;
         if !bytes.starts_with(GENESIS_CACHE_MAGIC) {
@@ -683,10 +664,54 @@ pub(crate) mod test_helpers {
         buf.extend_from_slice(GENESIS_CACHE_MAGIC);
         block.write_le(&mut buf).map_err(|e| io::Error::other(format!("encode: {e}")))?;
 
-        let tmp = path.with_extension("tmp");
-        fs::write(&tmp, &buf)?;
-        fs::rename(&tmp, path)?;
-        Ok(())
+        // Unique tmp per process to avoid nextest multi-process races.
+        let pid = std::process::id();
+        let tmp = path.with_extension(format!("tmp.{pid}"));
+
+        {
+            let mut f = fs::File::create(&tmp)?;
+            f.write_all(&buf)?;
+            f.sync_all()?;
+        }
+
+        // Atomic publish. On Unix rename replaces; on Windows it may fail if target exists.
+        match fs::rename(&tmp, path) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                // If someone else won the race and the final file exists, treat as success.
+                if path.exists() {
+                    let _ = fs::remove_file(&tmp);
+                    Ok(())
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
+    pub(crate) fn load_or_build_genesis_block(
+        vm: &crate::vm::VM<CurrentNetwork, LedgerType>,
+        caller_private_key: &PrivateKey<CurrentNetwork>,
+        rng: &mut TestRng,
+    ) -> anyhow::Result<Block<CurrentNetwork>> {
+        let path = default_genesis_cache_path();
+
+        // Fast path
+        if let Ok(block) = try_read_genesis(&path) {
+            return Ok(block);
+        }
+
+        // Slow path (expensive)
+        let block = vm.genesis_beacon(caller_private_key, rng)?;
+
+        // If someone else wrote it while we were computing, use theirs.
+        if let Ok(block2) = try_read_genesis(&path) {
+            return Ok(block2);
+        }
+
+        // Best-effort cache write.
+        let _ = write_genesis_atomic(&path, &block);
+        Ok(block)
     }
 
     pub(crate) fn deterministic_rng() -> TestRng {
