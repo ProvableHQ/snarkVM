@@ -1502,12 +1502,65 @@ mod tests {
     use rand::distributions::DistString;
 
     use once_cell::sync::Lazy;
+    use snarkvm_utilities::{FromBytes, ToBytes};
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
     #[cfg(not(feature = "rocks"))]
     type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
     #[cfg(feature = "rocks")]
     type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+
+    struct BaseFinalizeFixture {
+        program_id: String,
+        genesis_bytes: Vec<u8>,
+        blocks: Vec<Vec<u8>>, // deployment + splits
+    }
+
+    static BASE_FINALIZE_FIXTURE: Lazy<BaseFinalizeFixture> = Lazy::new(|| {
+        let rng = &mut TestRng::default();
+
+        let private_key = PrivateKey::new(rng).unwrap();
+        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+
+        let genesis =
+            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+
+        let genesis_bytes = genesis.to_bytes_le().unwrap();
+
+        // Build on top of *this* genesis.
+        let mut unspent_records = genesis
+            .transitions()
+            .cloned()
+            .flat_map(Transition::into_records)
+            .map(|(_, record)| record)
+            .collect::<Vec<_>>();
+
+        let (program_id, deployment_block) =
+            new_program_deployment(&vm, &private_key, &genesis, &mut unspent_records, rng).unwrap();
+
+        vm.add_next_block(&deployment_block).unwrap();
+
+        let mut last_block = deployment_block;
+
+        let mut unspent_records = last_block
+            .transitions()
+            .flat_map(|t| t.clone().into_records())
+            .map(|(_, record)| record)
+            .collect::<Vec<_>>();
+
+        let mut blocks = Vec::new();
+        blocks.push(last_block.to_bytes_le().unwrap());
+
+        for _ in 0..2 {
+            let split_block = generate_splits(&vm, &private_key, &last_block, &mut unspent_records, rng).unwrap();
+
+            vm.add_next_block(&split_block).unwrap();
+            last_block = split_block;
+            blocks.push(last_block.to_bytes_le().unwrap());
+        }
+
+        BaseFinalizeFixture { program_id, genesis_bytes, blocks }
+    });
 
     static FINALIZE_STATE_1: Lazy<FinalizeGlobalState> = Lazy::new(|| sample_finalize_state(1));
 
@@ -2167,40 +2220,39 @@ finalize transfer_public:
         let recipient_private_key = PrivateKey::new(rng).unwrap();
         let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
-        // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+        let fixture = &*BASE_FINALIZE_FIXTURE;
 
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        let mut s = fixture.genesis_bytes.as_slice();
+        let genesis = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
 
-        // Get the unspent records.
-        let mut unspent_records = genesis
+        let vm = sample_vm();
+        vm.add_next_block(&genesis).unwrap();
+
+        // Replay cached blocks into *this* vm.
+        let mut last_block = genesis.clone();
+        for b in fixture.blocks.iter() {
+            let mut s = b.as_slice();
+            let blk = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
+            vm.add_next_block(&blk).unwrap();
+            last_block = blk;
+        }
+
+        // program_id: borrow/clone (assuming String in fixture)
+        let program_id = fixture.program_id.clone(); // or: let program_id = fixture.program_id.as_str();
+
+        // IMPORTANT: records should come from the current tip, not genesis
+        let mut unspent_records = last_block
             .transitions()
             .cloned()
             .flat_map(Transition::into_records)
             .map(|(_, record)| record)
             .collect::<Vec<_>>();
 
-        // Construct the deployment block.
-        let (program_id, deployment_block) =
-            new_program_deployment(&vm, &caller_private_key, &genesis, &mut unspent_records, rng).unwrap();
-
-        // Add the deployment block to the VM.
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Generate more records to use for the next block.
-        let splits_block =
-            generate_splits(&vm, &caller_private_key, &deployment_block, &mut unspent_records, rng).unwrap();
-
-        // Add the splits block to the VM.
-        vm.add_next_block(&splits_block).unwrap();
-
         // Construct the initial mint.
         let initial_mint =
             sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 20, &mut unspent_records, rng);
         let initial_mint_block =
-            sample_next_block(&vm, &caller_private_key, &[initial_mint], &splits_block, &mut unspent_records, rng)
+            sample_next_block(&vm, &caller_private_key, &[initial_mint], &last_block, &mut unspent_records, rng)
                 .unwrap();
 
         // Add the block to the vm.
