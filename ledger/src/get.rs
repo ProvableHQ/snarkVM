@@ -15,6 +15,8 @@
 
 use super::*;
 
+use crate::store::TransactionType;
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the committee for the given `block height`.
     pub fn get_committee(&self, block_height: u32) -> Result<Option<Committee<N>>> {
@@ -378,4 +380,96 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             _ => bail!("Invalid bond_state in finalize storage."),
         }
     }
+
+    /// Returns a tuple containing the number of all the input records and all the output records.
+    pub fn get_record_count(&self) -> RecordCount {
+        let transition_store = self.vm.block_store().transition_store();
+        let num_input_records = transition_store.input_store().record_map().len_confirmed();
+        let num_output_records = transition_store.output_store().record_map().len_confirmed();
+        RecordCount { input: num_input_records, output: num_output_records }
+    }
+
+    /// Returns the list of input and output records applicable to the given block height.
+    pub fn get_num_block_records(&self, height: u32) -> Result<RecordCount> {
+        let block_store = self.vm.block_store();
+        let block_hash = match block_store.get_block_hash(height)? {
+            Some(block_hash) => block_hash,
+            None => bail!("Block {height} does not exist in storage"),
+        };
+
+        let Some(block_transaction_ids) = block_store.transactions_map().get_confirmed(&block_hash)? else {
+            return Ok(Default::default());
+        };
+
+        let transaction_store = block_store.transaction_store();
+        let mut transaction_ids_with_type = Vec::with_capacity(block_transaction_ids.len());
+        for tx_id in block_transaction_ids.iter() {
+            let Some(tx_ty) = transaction_store.id_map().get_confirmed(tx_id)? else {
+                bail!("Missing type for transaction {tx_id}");
+            };
+            transaction_ids_with_type.push((*tx_id, tx_ty));
+        }
+
+        let transition_store = transaction_store.transition_store();
+        let execution_store = transaction_store.execution_store();
+        let fee_store = transaction_store.fee_store();
+        let input_store = transition_store.input_store();
+        let output_store = transition_store.output_store();
+
+        let mut num_input_records = 0usize;
+        let mut num_output_records = 0usize;
+
+        let mut process_transition_ids = |transition_ids: &[N::TransitionID]| -> Result<()> {
+            for transition_id in transition_ids {
+                let input_ids = transition_store.get_input_ids(transition_id)?;
+                let output_ids = transition_store.get_output_ids(transition_id)?;
+
+                for id in input_ids {
+                    if input_store.record_map().contains_key_confirmed(&id)? {
+                        num_input_records += 1;
+                    }
+                }
+                for id in output_ids {
+                    if output_store.record_map().contains_key_confirmed(&id)? {
+                        num_output_records += 1;
+                    }
+                }
+            }
+
+            Ok(())
+        };
+
+        for (tx_id, tx_ty) in transaction_ids_with_type {
+            match *tx_ty {
+                TransactionType::Deploy => {
+                    continue;
+                }
+                TransactionType::Execute => {
+                    let Some(transition_ids_w_fee) = execution_store.id_map().get_confirmed(&tx_id)? else {
+                        continue;
+                    };
+                    let (transition_ids, _fee) = &*transition_ids_w_fee;
+
+                    process_transition_ids(transition_ids)?;
+                }
+                TransactionType::Fee => {
+                    let Some(transition_id_w_root_and_proof) = fee_store.fee_map().get_confirmed(&tx_id)? else {
+                        continue;
+                    };
+                    let (transition_id, _root, _proof) = &*transition_id_w_root_and_proof;
+
+                    process_transition_ids(&[*transition_id])?;
+                }
+            }
+        }
+
+        Ok(RecordCount { input: num_input_records, output: num_output_records })
+    }
+}
+
+/// An object representing the number of input and output records.
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize, serde::Serialize)]
+pub struct RecordCount {
+    pub input: usize,
+    pub output: usize,
 }

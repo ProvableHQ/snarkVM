@@ -384,6 +384,11 @@ impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
     pub fn storage_mode(&self) -> &StorageMode {
         self.storage.storage_mode()
     }
+
+    /// Returns a reference to the map of the records.
+    pub fn record_map(&self) -> &I::RecordMap {
+        &self.record
+    }
 }
 
 impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
