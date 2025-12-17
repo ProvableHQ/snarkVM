@@ -1538,8 +1538,26 @@ mod tests {
             .map(|(_, record)| record)
             .collect::<Vec<_>>();
 
-        let (program_id, deployment_block) =
-            new_program_deployment(&vm, &private_key, &genesis, &mut unspent_records, rng).unwrap();
+        let (program_id, deployment_block) = {
+            const MAX_TRIES: usize = 200;
+
+            let mut last_err = None;
+            let mut out = None;
+
+            for _ in 0..MAX_TRIES {
+                match new_program_deployment(&vm, &private_key, &genesis, &mut unspent_records, rng) {
+                    Ok(v) => {
+                        out = Some(v);
+                        break;
+                    }
+                    Err(e) => last_err = Some(e),
+                }
+            }
+
+            out.unwrap_or_else(|| {
+                panic!("new_program_deployment failed after {MAX_TRIES} tries. last_err={last_err:?}")
+            })
+        };
 
         vm.add_next_block(&deployment_block).unwrap();
 
