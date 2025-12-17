@@ -2218,6 +2218,7 @@ finalize transfer_public:
 
         // Sample a private key and address for the caller.
         let caller_private_key = fixture.private_key;
+        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
         // Sample a private key and address for the recipient.
@@ -2247,7 +2248,11 @@ finalize transfer_public:
             .cloned()
             .flat_map(Transition::into_records)
             .map(|(_, record)| record)
+            // keep only records that decrypt with caller_view_key
+            .filter(|record| record.decrypt(&caller_view_key).is_ok())
             .collect::<Vec<_>>();
+
+        assert!(!unspent_records.is_empty(), "no decryptable records for caller in last_block");
 
         // Construct the initial mint.
         let initial_mint =
