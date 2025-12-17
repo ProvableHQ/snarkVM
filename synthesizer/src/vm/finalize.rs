@@ -1511,6 +1511,8 @@ mod tests {
     type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     struct BaseFinalizeFixture {
+        private_key: PrivateKey<CurrentNetwork>,
+
         program_id: String,
         genesis_bytes: Vec<u8>,
         blocks: Vec<Vec<u8>>, // deployment + splits
@@ -1559,7 +1561,7 @@ mod tests {
             blocks.push(last_block.to_bytes_le().unwrap());
         }
 
-        BaseFinalizeFixture { program_id, genesis_bytes, blocks }
+        BaseFinalizeFixture { private_key, program_id, genesis_bytes, blocks }
     });
 
     static FINALIZE_STATE_1: Lazy<FinalizeGlobalState> = Lazy::new(|| sample_finalize_state(1));
@@ -2212,15 +2214,15 @@ finalize transfer_public:
     fn test_atomic_finalize_many() {
         let rng = &mut TestRng::default();
 
+        let fixture = &*BASE_FINALIZE_FIXTURE;
+
         // Sample a private key and address for the caller.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let caller_private_key = fixture.private_key;
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
         // Sample a private key and address for the recipient.
         let recipient_private_key = PrivateKey::new(rng).unwrap();
         let recipient_address = Address::try_from(&recipient_private_key).unwrap();
-
-        let fixture = &*BASE_FINALIZE_FIXTURE;
 
         let mut s = fixture.genesis_bytes.as_slice();
         let genesis = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
@@ -2240,7 +2242,6 @@ finalize transfer_public:
         // program_id: borrow/clone (assuming String in fixture)
         let program_id = fixture.program_id.clone(); // or: let program_id = fixture.program_id.as_str();
 
-        // IMPORTANT: records should come from the current tip, not genesis
         let mut unspent_records = last_block
             .transitions()
             .cloned()
