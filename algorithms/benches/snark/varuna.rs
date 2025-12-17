@@ -408,7 +408,7 @@ fn snark_certificate_verify(c: &mut Criterion) {
 criterion_group! {
     name = varuna_snark;
     config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_prove_large_lagrange_vs_monomial, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
+    targets = snark_prove_large_lagrange_vs_monomial // snark_universal_setup, snark_circuit_setup, snark_prove, snark_prove_large_lagrange_vs_monomial, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
 }
 
 criterion_main!(varuna_snark);
