@@ -1501,11 +1501,15 @@ mod tests {
 
     use rand::distributions::DistString;
 
+    use once_cell::sync::Lazy;
+
     type CurrentNetwork = test_helpers::CurrentNetwork;
     #[cfg(not(feature = "rocks"))]
     type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
     #[cfg(feature = "rocks")]
     type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+
+    static FINALIZE_STATE_1: Lazy<FinalizeGlobalState> = Lazy::new(|| sample_finalize_state(1));
 
     /// Sample a new program and deploy it to the VM. Returns the program name.
     fn new_program_deployment<R: Rng + CryptoRng>(
@@ -1867,7 +1871,7 @@ finalize transfer_public:
         // Prepare the confirmed transactions.
         let (ratifications, confirmed_transactions, aborted_transaction_ids, _) = vm
             .speculate(
-                sample_finalize_state(1),
+                *FINALIZE_STATE_1,
                 CurrentNetwork::BLOCK_TIME as i64,
                 None,
                 vec![],
@@ -1883,27 +1887,22 @@ finalize transfer_public:
         assert!(!vm.contains_program(&program_id));
 
         // Finalize the transaction.
-        assert!(vm.finalize(sample_finalize_state(1), &ratifications, &None.into(), &confirmed_transactions).is_ok());
+        assert!(vm.finalize(*FINALIZE_STATE_1, &ratifications, &None.into(), &confirmed_transactions).is_ok());
 
         // Ensure the VM contains this program.
         assert!(vm.contains_program(&program_id));
 
         // Ensure the VM can't redeploy the same transaction.
-        assert!(vm.finalize(sample_finalize_state(1), &ratifications, &None.into(), &confirmed_transactions).is_err());
+        assert!(vm.finalize(*FINALIZE_STATE_1, &ratifications, &None.into(), &confirmed_transactions).is_err());
 
         // Ensure the VM contains this program.
         assert!(vm.contains_program(&program_id));
 
         // Ensure the dry run of the redeployment will cause a reject transaction to be created.
         let (_, candidate_transactions, aborted_transaction_ids, _) = vm
-            .atomic_speculate(
-                sample_finalize_state(1),
-                CurrentNetwork::BLOCK_TIME as i64,
-                None,
-                vec![],
-                None.into(),
-                vec![deployment_transaction],
-            )
+            .atomic_speculate(*FINALIZE_STATE_1, CurrentNetwork::BLOCK_TIME as i64, None, vec![], None.into(), vec![
+                deployment_transaction,
+            ])
             .unwrap();
         assert_eq!(candidate_transactions.len(), 1);
         assert!(matches!(candidate_transactions[0], ConfirmedTransaction::RejectedDeploy(..)));
@@ -1993,7 +1992,7 @@ finalize transfer_public:
         let transactions = vec![bond_validator_transaction.clone()];
         let (_, confirmed_transactions, _, _) = vm
             .atomic_speculate(
-                sample_finalize_state(1),
+                *FINALIZE_STATE_1,
                 CurrentNetwork::BLOCK_TIME as i64,
                 None,
                 vec![],
@@ -2119,7 +2118,7 @@ finalize transfer_public:
         let transactions = vec![bond_validator_transaction.clone()];
         let (_, confirmed_transactions, _, _) = vm
             .atomic_speculate(
-                sample_finalize_state(1),
+                *FINALIZE_STATE_1,
                 CurrentNetwork::BLOCK_TIME as i64,
                 None,
                 vec![],
@@ -2250,7 +2249,7 @@ finalize transfer_public:
             let transactions = vec![mint_10.clone(), transfer_10.clone(), transfer_20.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    *FINALIZE_STATE_1,
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2278,7 +2277,7 @@ finalize transfer_public:
             let transactions = vec![transfer_20.clone(), mint_10.clone(), mint_20.clone(), transfer_30.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    *FINALIZE_STATE_1,
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2306,7 +2305,7 @@ finalize transfer_public:
             let transactions = vec![transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    *FINALIZE_STATE_1,
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2338,7 +2337,7 @@ finalize transfer_public:
             let transactions = vec![mint_20.clone(), transfer_30.clone(), transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    sample_finalize_state(1),
+                    *FINALIZE_STATE_1,
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2445,7 +2444,7 @@ function ped_hash:
             // Speculatively execute the transaction. Ensure that this call does not panic and returns a rejected transaction.
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .speculate(
-                    sample_finalize_state(1),
+                    *FINALIZE_STATE_1,
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
