@@ -1501,6 +1501,7 @@ mod tests {
 
     use rand::distributions::DistString;
 
+    use aleo_std::StorageMode;
     use once_cell::sync::Lazy;
     use snarkvm_utilities::{FromBytes, ToBytes};
 
@@ -1523,14 +1524,16 @@ mod tests {
         let rng = &mut TestRng::default();
 
         let private_key = PrivateKey::new(rng).unwrap();
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
 
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+        // Build a VM with a genesis generated from *this* private_key.
+        let vm = VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
+
+        let genesis = vm.genesis_beacon(&private_key, rng).unwrap();
+        vm.add_next_block(&genesis).unwrap();
 
         let genesis_bytes = genesis.to_bytes_le().unwrap();
 
-        // Build on top of *this* genesis.
+        // Now records in genesis are decryptable by private_key.
         let mut unspent_records = genesis
             .transitions()
             .cloned()
@@ -1664,7 +1667,11 @@ finalize transfer_public:
 
         // Prepare the additional fee.
         let view_key = ViewKey::<CurrentNetwork>::try_from(private_key)?;
-        let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key)?);
+        let i = unspent_records
+            .iter()
+            .position(|r| r.decrypt(&view_key).is_ok())
+            .expect("expected at least one record decryptable by deployment key");
+        let credits = Some(unspent_records.swap_remove(i).decrypt(&view_key)?);
 
         // Deploy.
         let transaction = vm.deploy(private_key, &program, credits, 10, None, rng)?;
