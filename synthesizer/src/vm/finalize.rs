@@ -1516,6 +1516,7 @@ mod tests {
         program_id: String,
         genesis_bytes: Vec<u8>,
         blocks: Vec<Vec<u8>>, // deployment + splits
+        unspent_records_bytes: Vec<Vec<u8>>,
     }
 
     static BASE_FINALIZE_FIXTURE: Lazy<BaseFinalizeFixture> = Lazy::new(|| {
@@ -1550,18 +1551,25 @@ mod tests {
             .map(|(_, record)| record)
             .collect::<Vec<_>>();
 
+        let caller_view_key = ViewKey::<CurrentNetwork>::try_from(private_key).unwrap();
+
         let mut blocks = Vec::new();
         blocks.push(last_block.to_bytes_le().unwrap());
 
         for _ in 0..2 {
             let split_block = generate_splits(&vm, &private_key, &last_block, &mut unspent_records, rng).unwrap();
+            unspent_records.retain(|r| r.decrypt(&caller_view_key).is_ok());
 
             vm.add_next_block(&split_block).unwrap();
             last_block = split_block;
             blocks.push(last_block.to_bytes_le().unwrap());
         }
 
-        BaseFinalizeFixture { private_key, program_id, genesis_bytes, blocks }
+        assert!(!unspent_records.is_empty(), "fixture has no caller-owned unspent records after splits");
+
+        let unspent_records_bytes = unspent_records.iter().map(|r| r.to_bytes_le().unwrap()).collect::<Vec<_>>();
+
+        BaseFinalizeFixture { private_key, program_id, genesis_bytes, blocks, unspent_records_bytes }
     });
 
     static FINALIZE_STATE_1: Lazy<FinalizeGlobalState> = Lazy::new(|| sample_finalize_state(1));
@@ -2218,7 +2226,6 @@ finalize transfer_public:
 
         // Sample a private key and address for the caller.
         let caller_private_key = fixture.private_key;
-        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
         // Sample a private key and address for the recipient.
@@ -2240,23 +2247,20 @@ finalize transfer_public:
             last_block = blk;
         }
 
-        // program_id: borrow/clone (assuming String in fixture)
-        let program_id = fixture.program_id.clone(); // or: let program_id = fixture.program_id.as_str();
+        let program_id: &str = fixture.program_id.as_str();
 
-        let mut unspent_records = last_block
-            .transitions()
-            .cloned()
-            .flat_map(Transition::into_records)
-            .map(|(_, record)| record)
-            // keep only records that decrypt with caller_view_key
-            .filter(|record| record.decrypt(&caller_view_key).is_ok())
+        let mut unspent_records = fixture
+            .unspent_records_bytes
+            .iter()
+            .map(|b| {
+                let mut s = b.as_slice();
+                Record::<CurrentNetwork, Ciphertext<CurrentNetwork>>::read_le(&mut s).unwrap()
+            })
             .collect::<Vec<_>>();
-
-        assert!(!unspent_records.is_empty(), "no decryptable records for caller in last_block");
 
         // Construct the initial mint.
         let initial_mint =
-            sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 20, &mut unspent_records, rng);
+            sample_mint_public(&vm, caller_private_key, program_id, caller_address, 20, &mut unspent_records, rng);
         let initial_mint_block =
             sample_next_block(&vm, &caller_private_key, &[initial_mint], &last_block, &mut unspent_records, rng)
                 .unwrap();
@@ -2266,13 +2270,13 @@ finalize transfer_public:
 
         // Construct a mint and a transfer.
         let mint_10 =
-            sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 10, &mut unspent_records, rng);
+            sample_mint_public(&vm, caller_private_key, program_id, caller_address, 10, &mut unspent_records, rng);
         let mint_20 =
-            sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 20, &mut unspent_records, rng);
+            sample_mint_public(&vm, caller_private_key, program_id, caller_address, 20, &mut unspent_records, rng);
         let transfer_10 = sample_transfer_public(
             &vm,
             caller_private_key,
-            &program_id,
+            program_id,
             recipient_address,
             10,
             &mut unspent_records,
@@ -2281,7 +2285,7 @@ finalize transfer_public:
         let transfer_20 = sample_transfer_public(
             &vm,
             caller_private_key,
-            &program_id,
+            program_id,
             recipient_address,
             20,
             &mut unspent_records,
@@ -2290,7 +2294,7 @@ finalize transfer_public:
         let transfer_30 = sample_transfer_public(
             &vm,
             caller_private_key,
-            &program_id,
+            program_id,
             recipient_address,
             30,
             &mut unspent_records,
