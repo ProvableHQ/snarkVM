@@ -1569,19 +1569,34 @@ mod tests {
             .map(|(_, record)| record)
             .collect::<Vec<_>>();
 
+        const MIN_UNSPENT: usize = 8;
+        const MAX_SPLITS: usize = 12;
+
         let caller_view_key = ViewKey::<CurrentNetwork>::try_from(private_key).unwrap();
 
         let mut blocks = Vec::new();
         blocks.push(last_block.to_bytes_le().unwrap());
 
-        for _ in 0..2 {
+        let mut splits_done = 0;
+        while unspent_records.len() < MIN_UNSPENT && splits_done < MAX_SPLITS {
             let split_block = generate_splits(&vm, &private_key, &last_block, &mut unspent_records, rng).unwrap();
+
+            // Keep only records decryptable by the fixture key (critical).
             unspent_records.retain(|r| r.decrypt(&caller_view_key).is_ok());
 
             vm.add_next_block(&split_block).unwrap();
             last_block = split_block;
             blocks.push(last_block.to_bytes_le().unwrap());
+
+            splits_done += 1;
         }
+
+        // This should be >= 2 at absolute minimum; better to require MIN_UNSPENT.
+        assert!(
+            unspent_records.len() >= 2,
+            "fixture does not have enough unspent decryptable records: {}",
+            unspent_records.len()
+        );
 
         assert!(!unspent_records.is_empty(), "fixture has no caller-owned unspent records after splits");
 
