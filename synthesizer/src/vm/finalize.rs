@@ -1498,6 +1498,10 @@ mod tests {
     use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
     use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_VALIDATOR_STAKE};
     use snarkvm_synthesizer_program::Program;
+    use std::{
+        io::{Read, Write},
+        path::PathBuf,
+    };
 
     use rand::distributions::DistString;
 
@@ -1520,10 +1524,44 @@ mod tests {
         unspent_records_bytes: Vec<Vec<u8>>,
     }
 
-    use std::{
-        io::{Read, Write},
-        path::PathBuf,
-    };
+    struct BaseFinalizeRuntime {
+        vm: VM<CurrentNetwork, LedgerType>,
+        last_block: Block<CurrentNetwork>,
+        program_id: String,
+        unspent_records: Vec<Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
+    }
+
+    fn load_base_finalize_runtime() -> BaseFinalizeRuntime {
+        let fixture = &*BASE_FINALIZE_FIXTURE;
+
+        let vm = sample_vm();
+
+        // Load genesis
+        let mut s = fixture.genesis_bytes.as_slice();
+        let genesis = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
+        vm.add_next_block(&genesis).unwrap();
+
+        // Replay cached blocks
+        let mut last_block = genesis;
+        for b in fixture.blocks.iter() {
+            let mut s = b.as_slice();
+            let blk = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
+            vm.add_next_block(&blk).unwrap();
+            last_block = blk;
+        }
+
+        // Rehydrate records directly from bytes (these were captured from the fixture VM and already filtered there)
+        let unspent_records = fixture
+            .unspent_records_bytes
+            .iter()
+            .map(|bytes| {
+                let mut s = bytes.as_slice();
+                Record::<CurrentNetwork, Ciphertext<CurrentNetwork>>::read_le(&mut s).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        BaseFinalizeRuntime { vm, last_block, program_id: fixture.program_id.clone(), unspent_records }
+    }
 
     fn finalize_fixture_cache_path() -> PathBuf {
         // Use workspace target dir if set; otherwise <workspace>/target.
@@ -2849,44 +2887,15 @@ finalize compute:
     fn test_excess_transactions_should_be_aborted() {
         let rng = &mut TestRng::default();
 
-        // Sample a private key.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
+        let rt = load_base_finalize_runtime();
+
+        let caller_private_key = BASE_FINALIZE_FIXTURE.private_key; // Copy
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-        // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
-
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
-
-        // Get the unspent records.
-        let mut unspent_records = genesis
-            .transitions()
-            .cloned()
-            .flat_map(Transition::into_records)
-            .map(|(_, record)| record)
-            .collect::<Vec<_>>();
-
-        // Construct the deployment block.
-        let (program_id, deployment_block) =
-            new_program_deployment(&vm, &caller_private_key, &genesis, &mut unspent_records, rng).unwrap();
-
-        // Add the deployment block to the VM.
-        vm.add_next_block(&deployment_block).unwrap();
-
-        // Generate more records to use for the next block.
-        let splits_block =
-            generate_splits(&vm, &caller_private_key, &deployment_block, &mut unspent_records, rng).unwrap();
-
-        // Add the splits block to the VM.
-        vm.add_next_block(&splits_block).unwrap();
-
-        // Generate more records to use for the next block.
-        let splits_block = generate_splits(&vm, &caller_private_key, &splits_block, &mut unspent_records, rng).unwrap();
-
-        // Add the splits block to the VM.
-        vm.add_next_block(&splits_block).unwrap();
+        let mut unspent_records = rt.unspent_records.clone(); // (or move if you don’t need rt.unspent_records later)
+        let last_block = rt.last_block.clone();
+        let program_id = rt.program_id.clone();
+        let vm = rt.vm.clone();
 
         // Generate the transactions.
         let mut transactions = Vec::new();
@@ -2905,8 +2914,7 @@ finalize compute:
 
         // Construct the next block.
         let next_block =
-            sample_next_block(&vm, &caller_private_key, &transactions, &splits_block, &mut unspent_records, rng)
-                .unwrap();
+            sample_next_block(&vm, &caller_private_key, &transactions, &last_block, &mut unspent_records, rng).unwrap();
 
         // Ensure that the excess transactions were aborted.
         assert_eq!(next_block.aborted_transaction_ids(), &excess_transaction_ids);
