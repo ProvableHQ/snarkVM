@@ -1520,7 +1520,138 @@ mod tests {
         unspent_records_bytes: Vec<Vec<u8>>,
     }
 
+    use std::{
+        io::{Read, Write},
+        path::PathBuf,
+    };
+
+    fn finalize_fixture_cache_path() -> PathBuf {
+        // Use workspace target dir if set; otherwise <workspace>/target.
+        let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("target"));
+
+        let dir = target_dir.join("test-cache");
+        let _ = std::fs::create_dir_all(&dir);
+
+        // Bump this when fixture format changes.
+        let format_version = 1u32;
+
+        dir.join(format!("snarkvm-synthesizer_finalize_fixture_v{}_{}.bin", format_version, env!("CARGO_PKG_VERSION"),))
+    }
+
+    fn read_u64_le(mut r: impl Read) -> std::io::Result<u64> {
+        let mut b = [0u8; 8];
+        r.read_exact(&mut b)?;
+        Ok(u64::from_le_bytes(b))
+    }
+    fn write_u64_le(mut w: impl Write, v: u64) -> std::io::Result<()> {
+        w.write_all(&v.to_le_bytes())
+    }
+
+    impl BaseFinalizeFixture {
+        fn try_read_from_disk() -> Option<Self> {
+            let path = finalize_fixture_cache_path();
+            let mut f = std::fs::File::open(&path).ok()?;
+
+            // Simple header to avoid decoding garbage / partial writes.
+            let mut magic = [0u8; 8];
+            f.read_exact(&mut magic).ok()?;
+            if &magic != b"FINFIX\0\0" {
+                return None;
+            }
+
+            // program_id as UTF-8
+            let program_len = usize::try_from(read_u64_le(&mut f).ok()?).ok()?;
+            let mut program_bytes = vec![0u8; program_len];
+            f.read_exact(&mut program_bytes).ok()?;
+            let program_id = String::from_utf8(program_bytes).ok()?;
+
+            // private_key + genesis
+            let private_key = PrivateKey::<CurrentNetwork>::read_le(&mut f).ok()?;
+
+            let genesis_len = usize::try_from(read_u64_le(&mut f).ok()?).ok()?;
+            let mut genesis_bytes = vec![0u8; genesis_len];
+            f.read_exact(&mut genesis_bytes).ok()?;
+
+            // blocks
+            let blocks_n = usize::try_from(read_u64_le(&mut f).ok()?).ok()?;
+            let mut blocks = Vec::with_capacity(blocks_n);
+            for _ in 0..blocks_n {
+                let len = usize::try_from(read_u64_le(&mut f).ok()?).ok()?;
+                let mut b = vec![0u8; len];
+                f.read_exact(&mut b).ok()?;
+                blocks.push(b);
+            }
+
+            // unspent_records_bytes
+            let rec_n = usize::try_from(read_u64_le(&mut f).ok()?).ok()?;
+            let mut unspent_records_bytes = Vec::with_capacity(rec_n);
+            for _ in 0..rec_n {
+                let len = usize::try_from(read_u64_le(&mut f).ok()?).ok()?;
+                let mut b = vec![0u8; len];
+                f.read_exact(&mut b).ok()?;
+                unspent_records_bytes.push(b);
+            }
+
+            Some(Self { private_key, program_id, genesis_bytes, blocks, unspent_records_bytes })
+        }
+
+        fn write_to_disk(&self) {
+            let path = finalize_fixture_cache_path();
+            let dir = path.parent().expect("fixture cache file has parent dir");
+            let _ = std::fs::create_dir_all(dir);
+
+            // Unique tmp per process to avoid nextest races.
+            let pid = std::process::id();
+            let tmp = path.with_extension(format!("tmp.{pid}"));
+
+            let mut f = std::fs::File::create(&tmp).expect("create tmp finalize fixture cache");
+
+            // Header
+            f.write_all(b"FINFIX\0\0").expect("write fixture magic");
+
+            // program_id
+            write_u64_le(&mut f, self.program_id.len() as u64).expect("write program_id len");
+            f.write_all(self.program_id.as_bytes()).expect("write program_id");
+
+            // private_key
+            self.private_key.write_le(&mut f).expect("write private key");
+
+            // genesis
+            write_u64_le(&mut f, self.genesis_bytes.len() as u64).expect("write genesis len");
+            f.write_all(&self.genesis_bytes).expect("write genesis bytes");
+
+            // blocks
+            write_u64_le(&mut f, self.blocks.len() as u64).expect("write blocks count");
+            for b in &self.blocks {
+                write_u64_le(&mut f, b.len() as u64).expect("write block len");
+                f.write_all(b).expect("write block bytes");
+            }
+
+            // records
+            write_u64_le(&mut f, self.unspent_records_bytes.len() as u64).expect("write records count");
+            for b in &self.unspent_records_bytes {
+                write_u64_le(&mut f, b.len() as u64).expect("write record len");
+                f.write_all(b).expect("write record bytes");
+            }
+
+            let _ = f.sync_all();
+            drop(f);
+
+            // Atomic publish.
+            // If another process won, ignore errors.
+            if std::fs::rename(&tmp, &path).is_err() {
+                let _ = std::fs::remove_file(&tmp);
+            }
+        }
+    }
+
     static BASE_FINALIZE_FIXTURE: Lazy<BaseFinalizeFixture> = Lazy::new(|| {
+        if let Some(f) = BaseFinalizeFixture::try_read_from_disk() {
+            return f;
+        }
+
         let rng = &mut TestRng::default();
 
         let private_key = PrivateKey::new(rng).unwrap();
@@ -1605,7 +1736,18 @@ mod tests {
 
         let unspent_records_bytes = unspent_records.iter().map(|r| r.to_bytes_le().unwrap()).collect::<Vec<_>>();
 
-        BaseFinalizeFixture { private_key, program_id, genesis_bytes, blocks, unspent_records_bytes }
+        let fixture = BaseFinalizeFixture {
+            private_key,
+            program_id: program_id.to_string(), // keep it as String in the fixture
+            genesis_bytes,
+            blocks,
+            unspent_records_bytes,
+        };
+
+        // Publish for other nextest processes.
+        fixture.write_to_disk();
+
+        fixture
     });
 
     static FINALIZE_STATE_1: Lazy<FinalizeGlobalState> = Lazy::new(|| sample_finalize_state(1));
