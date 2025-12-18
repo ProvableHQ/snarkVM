@@ -2934,7 +2934,7 @@ finalize compute:
         let mut transactions = Vec::new();
         let mut excess_transaction_ids = Vec::new();
 
-        let target = Transactions::<CurrentNetwork>::MAX_TRANSACTIONS + 20;
+        let target = Transactions::<CurrentNetwork>::MAX_TRANSACTIONS;
         top_up_records(&vm, caller_private_key, &mut last_block, &mut unspent_records, rng, target);
 
         for _ in 0..VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS + 1 {
