@@ -1526,22 +1526,23 @@ mod tests {
 
     struct BaseFinalizeRuntime {
         vm: VM<CurrentNetwork, LedgerType>,
-        last_block: Block<CurrentNetwork>,
         program_id: String,
+        last_block: Block<CurrentNetwork>,
         unspent_records: Vec<Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
     }
 
-    fn load_base_finalize_runtime() -> BaseFinalizeRuntime {
+    fn base_finalize_runtime() -> BaseFinalizeRuntime {
         let fixture = &*BASE_FINALIZE_FIXTURE;
 
+        // Fresh store per test.
         let vm = sample_vm();
 
-        // Load genesis
+        // Replay genesis.
         let mut s = fixture.genesis_bytes.as_slice();
         let genesis = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
         vm.add_next_block(&genesis).unwrap();
 
-        // Replay cached blocks
+        // Replay cached blocks.
         let mut last_block = genesis;
         for b in fixture.blocks.iter() {
             let mut s = b.as_slice();
@@ -1550,8 +1551,8 @@ mod tests {
             last_block = blk;
         }
 
-        // Rehydrate records directly from bytes (these were captured from the fixture VM and already filtered there)
-        let unspent_records = fixture
+        // Rehydrate unspent records from bytes.
+        let mut unspent_records = fixture
             .unspent_records_bytes
             .iter()
             .map(|bytes| {
@@ -1560,7 +1561,11 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        BaseFinalizeRuntime { vm, last_block, program_id: fixture.program_id.clone(), unspent_records }
+        // Only keep records decryptable by the fixture key.
+        let vk = ViewKey::<CurrentNetwork>::try_from(fixture.private_key).unwrap();
+        unspent_records.retain(|r| r.decrypt(&vk).is_ok());
+
+        BaseFinalizeRuntime { vm, program_id: fixture.program_id.clone(), last_block, unspent_records }
     }
 
     fn finalize_fixture_cache_path() -> PathBuf {
@@ -2920,15 +2925,15 @@ finalize compute:
     fn test_excess_transactions_should_be_aborted() {
         let rng = &mut TestRng::default();
 
-        let rt = load_base_finalize_runtime();
+        let rt = base_finalize_runtime();
 
         let caller_private_key = BASE_FINALIZE_FIXTURE.private_key; // Copy
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-        let mut unspent_records = rt.unspent_records.clone(); // (or move if you don’t need rt.unspent_records later)
-        let mut last_block = rt.last_block.clone();
-        let program_id = rt.program_id.clone();
-        let vm = rt.vm.clone();
+        let vm = rt.vm;
+        let program_id = rt.program_id;
+        let mut last_block = rt.last_block;
+        let mut unspent_records = rt.unspent_records;
 
         // Generate the transactions.
         let mut transactions = Vec::new();
