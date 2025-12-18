@@ -1973,6 +1973,37 @@ finalize transfer_public:
         sample_next_block(vm, private_key, &transactions, previous_block, unspent_records, rng)
     }
 
+    fn top_up_records(
+        vm: &VM<CurrentNetwork, LedgerType>,
+        caller_private_key: PrivateKey<CurrentNetwork>,
+        last_block: &mut Block<CurrentNetwork>,
+        unspent_records: &mut Vec<Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
+        rng: &mut TestRng,
+        min_records: usize,
+    ) {
+        let view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+
+        while unspent_records.len() < min_records {
+            let split_block = generate_splits(vm, &caller_private_key, last_block, unspent_records, rng).unwrap();
+
+            // Keep only records decryptable by the caller (so create_execution can decrypt)
+            unspent_records.retain(|r| r.decrypt(&view_key).is_ok());
+
+            vm.add_next_block(&split_block).unwrap();
+            *last_block = split_block;
+
+            // Defensive: also harvest any records from the new block
+            let mut harvested = last_block
+                .transitions()
+                .cloned()
+                .flat_map(Transition::into_records)
+                .map(|(_, r)| r)
+                .collect::<Vec<_>>();
+            harvested.retain(|r| r.decrypt(&view_key).is_ok());
+            unspent_records.extend(harvested);
+        }
+    }
+
     /// Create an execution transaction.
     fn create_execution(
         vm: &VM<CurrentNetwork, LedgerType>,
@@ -1987,7 +2018,9 @@ finalize transfer_public:
 
         // Prepare the additional fee.
         let view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
-        let unspent_record = unspent_records.pop().unwrap();
+        let unspent_record = unspent_records.pop()
+            .expect("create_execution: unspent_records exhausted (need more splits/records in fixture or top-up before generating txs)");
+
         let credits = Some(unspent_record.decrypt(&view_key).unwrap());
 
         // Execute.
@@ -2893,13 +2926,16 @@ finalize compute:
         let caller_address = Address::try_from(&caller_private_key).unwrap();
 
         let mut unspent_records = rt.unspent_records.clone(); // (or move if you don’t need rt.unspent_records later)
-        let last_block = rt.last_block.clone();
+        let mut last_block = rt.last_block.clone();
         let program_id = rt.program_id.clone();
         let vm = rt.vm.clone();
 
         // Generate the transactions.
         let mut transactions = Vec::new();
         let mut excess_transaction_ids = Vec::new();
+
+        let target = Transactions::<CurrentNetwork>::MAX_TRANSACTIONS + 20;
+        top_up_records(&vm, caller_private_key, &mut last_block, &mut unspent_records, rng, target);
 
         for _ in 0..VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS + 1 {
             let transaction =
