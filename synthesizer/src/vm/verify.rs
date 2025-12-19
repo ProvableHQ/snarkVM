@@ -713,7 +713,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Compute once.
-        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        let genesis = crate::vm::test_helpers::sample_genesis_block_disk_cached();
 
         let deployment_tx = crate::vm::test_helpers::sample_deployment_transaction(rng);
         let exec_private_fee_tx = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
@@ -777,10 +777,11 @@ mod tests {
     #[test]
     fn test_verify() {
         let rng = &mut TestRng::default();
-        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = crate::vm::test_helpers::sample_vm();
+        vm.add_next_block(&cached_genesis()).unwrap();
 
         // Fetch a deployment transaction.
-        let deployment_transaction = crate::vm::test_helpers::sample_deployment_transaction(rng);
+        let deployment_transaction = cached_deployment_tx();
         let cache_key = create_cache_key(&vm, &deployment_transaction);
         // Ensure the transaction verifies.
         vm.check_transaction(&deployment_transaction, None, rng).unwrap();
@@ -788,7 +789,7 @@ mod tests {
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch an execution transaction.
-        let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
+        let execution_transaction = cached_exec_private_fee_tx();
         let cache_key = create_cache_key(&vm, &execution_transaction);
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
@@ -796,7 +797,7 @@ mod tests {
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch an execution transaction.
-        let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
+        let execution_transaction = cached_exec_public_fee_tx();
         let cache_key = create_cache_key(&vm, &execution_transaction);
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
@@ -833,14 +834,11 @@ mod tests {
 
     #[test]
     fn test_verify_execution() {
-        let rng = &mut TestRng::default();
-        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = crate::vm::test_helpers::sample_vm();
+        vm.add_next_block(&cached_genesis()).unwrap();
 
         // Fetch execution transactions.
-        let transactions = [
-            crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng),
-            crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng),
-        ];
+        let transactions = [cached_exec_private_fee_tx(), cached_exec_public_fee_tx()];
 
         // Get the cache size.
         let cache_size = vm.partially_verified_transactions.read().len();
@@ -870,14 +868,10 @@ mod tests {
 
     #[test]
     fn test_verify_fee() {
-        let rng = &mut TestRng::default();
-        let vm = crate::vm::test_helpers::sample_vm_with_genesis_block(rng);
+        let vm = crate::vm::test_helpers::sample_vm();
+        vm.add_next_block(&cached_genesis()).unwrap();
 
-        // Fetch execution transactions.
-        let transactions = [
-            crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng),
-            crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng),
-        ];
+        let transactions = [cached_exec_private_fee_tx(), cached_exec_public_fee_tx()];
 
         // Get the cache size.
         let cache_size = vm.partially_verified_transactions.read().len();
