@@ -1537,9 +1537,7 @@ mod tests {
     }
 
     struct AtomicFinalizeManyFixture {
-        /// A block that mints the initial 20 credits into `account[self.caller]` in the program mapping.
-        /// This is the "starting balance = 20" step in test_atomic_finalize_many.
-        initial_mint_block_bytes: Vec<u8>,
+        initial_mint_tx_bytes: Vec<u8>,
 
         /// Serialized transactions in this exact order:
         /// [mint_10, mint_20, transfer_10, transfer_20, transfer_30]
@@ -1600,19 +1598,18 @@ mod tests {
             let path = atomic_finalize_many_fixture_cache_path();
             let mut f = std::fs::File::open(&path).ok()?;
 
-            // Header to avoid decoding garbage / partial writes.
             let mut magic = [0u8; 8];
             f.read_exact(&mut magic).ok()?;
-            if &magic != b"ATMFIX\0\0" {
+            if &magic != b"ATMFIXA\0" {
                 return None;
             }
 
-            // initial mint block
-            let mint_block_len = usize::try_from(read_u64_le(&mut f).ok()?).ok()?;
-            let mut initial_mint_block_bytes = vec![0u8; mint_block_len];
-            f.read_exact(&mut initial_mint_block_bytes).ok()?;
+            // initial mint tx
+            let mint_tx_len = usize::try_from(read_u64_le(&mut f).ok()?).ok()?;
+            let mut initial_mint_tx_bytes = vec![0u8; mint_tx_len];
+            f.read_exact(&mut initial_mint_tx_bytes).ok()?;
 
-            // txs
+            // tx list
             let tx_n = usize::try_from(read_u64_le(&mut f).ok()?).ok()?;
             let mut txs_bytes = Vec::with_capacity(tx_n);
             for _ in 0..tx_n {
@@ -1622,33 +1619,31 @@ mod tests {
                 txs_bytes.push(b);
             }
 
-            // Basic sanity (we expect exactly 5).
             if txs_bytes.len() != 5 {
                 return None;
             }
 
-            Some(Self { initial_mint_block_bytes, txs_bytes })
+            Some(Self { initial_mint_tx_bytes, txs_bytes })
         }
 
         fn write_to_disk(&self) {
             let path = atomic_finalize_many_fixture_cache_path();
-            let dir = path.parent().expect("fixture cache file has parent dir");
+            let dir = path.parent().expect("atomic fixture file has parent dir");
             let _ = std::fs::create_dir_all(dir);
 
-            // Unique tmp per process to avoid nextest races.
             let pid = std::process::id();
             let tmp = path.with_extension(format!("tmp.{pid}"));
 
             let mut f = std::fs::File::create(&tmp).expect("create tmp atomic fixture cache");
 
-            // Header
-            f.write_all(b"ATMFIX\0\0").expect("write atomic fixture magic");
+            // header
+            f.write_all(b"ATMFIXA\0").expect("write magic");
 
-            // initial mint block
-            write_u64_le(&mut f, self.initial_mint_block_bytes.len() as u64).expect("write mint block len");
-            f.write_all(&self.initial_mint_block_bytes).expect("write mint block bytes");
+            // initial mint tx
+            write_u64_le(&mut f, self.initial_mint_tx_bytes.len() as u64).expect("write mint tx len");
+            f.write_all(&self.initial_mint_tx_bytes).expect("write mint tx bytes");
 
-            // txs
+            // tx list
             write_u64_le(&mut f, self.txs_bytes.len() as u64).expect("write tx count");
             for b in &self.txs_bytes {
                 write_u64_le(&mut f, b.len() as u64).expect("write tx len");
@@ -1658,8 +1653,7 @@ mod tests {
             let _ = f.sync_all();
             drop(f);
 
-            // Atomic publish.
-            // If another process won, ignore errors.
+            // atomic publish; if another process won, ignore.
             if std::fs::rename(&tmp, &path).is_err() {
                 let _ = std::fs::remove_file(&tmp);
             }
@@ -1671,32 +1665,28 @@ mod tests {
             return f;
         }
 
-        // Build it by replaying the base fixture into a fresh VM, then creating the artifacts once.
+        // Build this once by replaying the base fixture into a fresh VM.
         let mut rt = base_finalize_runtime();
-
         let rng = &mut TestRng::default();
 
-        // This test will build:
-        // - 1 initial mint tx (then turned into a block)
-        // - 5 execution txs afterwards
-        // Each execution consumes 1 fee record in create_execution(), so ensure we have enough.
+        // Ensure we have enough fee records while building these txs.
         top_up_records(
             &rt.vm,
             rt.caller_private_key,
             &mut rt.last_block,
             &mut rt.unspent_records,
             rng,
-            16, // conservative
+            32, // conservative
         );
 
         let program_id: &str = rt.program_id.as_str();
 
-        // Deterministic within the fixture file (first writer wins); other processes reuse from disk.
+        // Recipient can be arbitrary; it becomes “fixed” by the first writer, and reused via disk cache.
         let recipient_private_key = PrivateKey::new(rng).unwrap();
         let recipient_address = Address::try_from(&recipient_private_key).unwrap();
 
-        // Construct the initial mint + the block that applies it.
-        let initial_mint = sample_mint_public(
+        // Build the initial mint transaction (TIP-INDEPENDENT).
+        let initial_mint_tx = sample_mint_public(
             &rt.vm,
             rt.caller_private_key,
             program_id,
@@ -1706,24 +1696,7 @@ mod tests {
             rng,
         );
 
-        let initial_mint_block = sample_next_block(
-            &rt.vm,
-            &rt.caller_private_key,
-            &[initial_mint],
-            &rt.last_block,
-            &mut rt.unspent_records,
-            rng,
-        )
-        .unwrap();
-
-        // Apply it so subsequent txs are built against the correct chain state.
-        rt.vm.add_next_block(&initial_mint_block).unwrap();
-        rt.last_block = initial_mint_block.clone();
-
-        // Ensure we still have enough fee records after producing the block.
-        top_up_records(&rt.vm, rt.caller_private_key, &mut rt.last_block, &mut rt.unspent_records, rng, 16);
-
-        // Now build the txs used by the test.
+        // Now build the 5 txs used for atomic_speculate.
         let mint_10 = sample_mint_public(
             &rt.vm,
             rt.caller_private_key,
@@ -1742,6 +1715,7 @@ mod tests {
             &mut rt.unspent_records,
             rng,
         );
+
         let transfer_10 = sample_transfer_public(
             &rt.vm,
             rt.caller_private_key,
@@ -1771,21 +1745,19 @@ mod tests {
         );
 
         let fixture = AtomicFinalizeManyFixture {
-            initial_mint_block_bytes: initial_mint_block.to_bytes_le().unwrap(),
+            initial_mint_tx_bytes: initial_mint_tx.to_bytes_le().unwrap(),
             txs_bytes: vec![mint_10, mint_20, transfer_10, transfer_20, transfer_30]
                 .into_iter()
                 .map(|tx| tx.to_bytes_le().unwrap())
                 .collect(),
         };
 
-        // Publish for other nextest processes.
         fixture.write_to_disk();
-
         fixture
     });
 
     fn atomic_finalize_many_fixture_cache_path() -> PathBuf {
-        // Use workspace target dir if set; otherwise <workspace>/target.
+        // Keep in target/test-cache so CircleCI caching of `target/` preserves it.
         let target_dir = std::env::var_os("CARGO_TARGET_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("target"));
@@ -1793,14 +1765,10 @@ mod tests {
         let dir = target_dir.join("test-cache");
         let _ = std::fs::create_dir_all(&dir);
 
-        // Bump this when fixture format changes.
-        let format_version = 1u32;
+        // Bump when format changes.
+        let format_version = 2u32;
 
-        dir.join(format!(
-            "snarkvm-synthesizer_atomic_finalize_many_fixture_v{}_{}.bin",
-            format_version,
-            env!("CARGO_PKG_VERSION"),
-        ))
+        dir.join(format!("snarkvm_atomic_finalize_many_fixture_v{}_{}.bin", format_version, env!("CARGO_PKG_VERSION")))
     }
 
     fn finalize_fixture_cache_path() -> PathBuf {
@@ -2716,28 +2684,47 @@ finalize transfer_public:
         let fixture = &*BASE_FINALIZE_FIXTURE;
         let atomic = &*ATOMIC_FINALIZE_MANY_FIXTURE;
 
-        // Replay base chain state into a fresh VM.
+        let rng = &mut TestRng::default();
+
         let mut s = fixture.genesis_bytes.as_slice();
         let genesis = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
 
         let vm = sample_vm();
         vm.add_next_block(&genesis).unwrap();
 
+        let mut last_block = genesis.clone();
+
         // Replay cached blocks (deploy + splits).
         for b in fixture.blocks.iter() {
             let mut s = b.as_slice();
             let blk = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
             vm.add_next_block(&blk).unwrap();
+            last_block = blk;
         }
 
-        // Apply the cached "initial mint block" (starting balance = 20).
-        let mut s = atomic.initial_mint_block_bytes.as_slice();
-        let initial_mint_block = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
-        vm.add_next_block(&initial_mint_block).unwrap();
-        let last_block = initial_mint_block;
+        // Reconstruct unspent records.
+        let mut unspent_records = fixture
+            .unspent_records_bytes
+            .iter()
+            .map(|rb| {
+                let mut s = rb.as_slice();
+                Record::<CurrentNetwork, Ciphertext<CurrentNetwork>>::read_le(&mut s).unwrap()
+            })
+            .collect::<Vec<_>>();
 
-        let next_height = last_block.height() + 1;
-        let finalize_state = sample_finalize_state(next_height);
+        // Deserialize cached initial mint transaction.
+        let mut s = atomic.initial_mint_tx_bytes.as_slice();
+        let initial_mint_tx = Transaction::<CurrentNetwork>::read_le(&mut s).unwrap();
+
+        let initial_mint_block =
+            sample_next_block(&vm, &fixture.private_key, &[initial_mint_tx], &last_block, &mut unspent_records, rng)
+                .unwrap();
+
+        vm.add_next_block(&initial_mint_block).unwrap();
+        last_block = initial_mint_block;
+
+        // finalize state must match the next height
+        let finalize_state = sample_finalize_state(last_block.height() + 1);
 
         // Deserialize the cached transactions.
         let txs = atomic
@@ -2755,10 +2742,7 @@ finalize transfer_public:
         let transfer_20 = txs[3].clone();
         let transfer_30 = txs[4].clone();
 
-        // Starting Balance = 20
-        // Mint_10 -> Balance = 20 + 10  = 30
-        // Transfer_10 -> Balance = 30 - 10 = 20
-        // Transfer_20 -> Balance = 20 - 20 = 0
+        // Case 1
         {
             let transactions = vec![mint_10.clone(), transfer_10.clone(), transfer_20.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
@@ -2773,7 +2757,7 @@ finalize transfer_public:
                 .unwrap();
 
             assert_eq!(confirmed_transactions.len(), 3);
-            confirmed_transactions.iter().for_each(|confirmed_tx| assert!(confirmed_tx.is_accepted()));
+            confirmed_transactions.iter().for_each(|t| assert!(t.is_accepted()));
             assert!(aborted_transaction_ids.is_empty());
 
             assert_eq!(confirmed_transactions[0].transaction(), &mint_10);
@@ -2781,11 +2765,7 @@ finalize transfer_public:
             assert_eq!(confirmed_transactions[2].transaction(), &transfer_20);
         }
 
-        // Starting Balance = 20
-        // Transfer_20 -> Balance = 20 - 20 = 0
-        // Mint_10 -> Balance = 0 + 10 = 10
-        // Mint_20 -> Balance = 10 + 20 = 30
-        // Transfer_30 -> Balance = 30 - 30 = 0
+        // Case 2
         {
             let transactions = vec![transfer_20.clone(), mint_10.clone(), mint_20.clone(), transfer_30.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
@@ -2800,7 +2780,7 @@ finalize transfer_public:
                 .unwrap();
 
             assert_eq!(confirmed_transactions.len(), 4);
-            confirmed_transactions.iter().for_each(|confirmed_tx| assert!(confirmed_tx.is_accepted()));
+            confirmed_transactions.iter().for_each(|t| assert!(t.is_accepted()));
             assert!(aborted_transaction_ids.is_empty());
 
             assert_eq!(confirmed_transactions[0].transaction(), &transfer_20);
@@ -2809,9 +2789,7 @@ finalize transfer_public:
             assert_eq!(confirmed_transactions[3].transaction(), &transfer_30);
         }
 
-        // Starting Balance = 20
-        // Transfer_20 -> Balance = 20 - 20 = 0
-        // Transfer_10 -> Balance = 0 - 10 = -10 (should be rejected)
+        // Case 3
         {
             let transactions = vec![transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
@@ -2838,11 +2816,7 @@ finalize transfer_public:
             );
         }
 
-        // Starting Balance = 20
-        // Mint_20 -> Balance = 20 + 20
-        // Transfer_30 -> Balance = 40 - 30 = 10
-        // Transfer_20 -> Balance = 10 - 20 = -10 (should be rejected)
-        // Transfer_10 -> Balance = 10 - 10 = 0
+        // Case 4
         {
             let transactions = vec![mint_20.clone(), transfer_30.clone(), transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
@@ -2872,8 +2846,6 @@ finalize transfer_public:
             );
             assert_eq!(confirmed_transactions[3].transaction(), &transfer_10);
         }
-
-        let _ = last_block;
     }
 
     #[test]
