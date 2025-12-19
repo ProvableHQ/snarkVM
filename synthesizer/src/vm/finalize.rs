@@ -2805,35 +2805,23 @@ function ped_hash:
     fn test_rejected_transaction_should_not_update_storage() {
         let rng = &mut TestRng::default();
 
-        // Sample a private key.
-        let private_key = test_helpers::sample_genesis_private_key(rng);
+        // Use the cached base runtime (genesis + bootstrap blocks + lots of records).
+        let rt = base_finalize_runtime();
+
+        let vm = rt.vm;
+        let private_key = rt.caller_private_key;
+        let view_key = rt.caller_view_key;
+
         let address = Address::try_from(&private_key).unwrap();
 
-        // Initialize the vm.
-        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+        let mut last_block = rt.last_block;
+        let mut unspent_records = rt.unspent_records;
 
-        // Deploy a new program.
-        let genesis =
-            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
-
-        // Get the unspent records.
-        let mut unspent_records = genesis
-            .transitions()
-            .cloned()
-            .flat_map(Transition::into_records)
-            .map(|(_, record)| record)
-            .collect::<Vec<_>>();
-
-        // Generate more records to use for the next block.
-        let splits_block = generate_splits(&vm, &private_key, &genesis, &mut unspent_records, rng).unwrap();
-
-        // Add the splits block to the VM.
-        vm.add_next_block(&splits_block).unwrap();
-
-        // Construct the deployment block.
-        let deployment_block = {
-            let program = Program::<CurrentNetwork>::from_str(
-                "
+        // ----------------------------
+        // Deploy the program under test
+        // ----------------------------
+        let program = Program::<CurrentNetwork>::from_str(
+            "
 program testing.aleo;
 
 mapping entries:
@@ -2855,44 +2843,47 @@ finalize compute:
     add r4 r1 into r5;
     set r5 into entries[r0];
 ",
-            )
-            .unwrap();
+        )
+        .unwrap();
 
-            // Prepare the additional fee.
-            let view_key = ViewKey::<CurrentNetwork>::try_from(private_key).unwrap();
-            let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
+        // Make sure we have enough fee records before deployment.
+        top_up_records(&vm, private_key, &mut last_block, &mut unspent_records, rng, 8);
 
-            // Deploy.
-            let transaction = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
+        // Prepare the additional fee record for deployment.
+        let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
 
-            // Construct the new block.
-            sample_next_block(&vm, &private_key, &[transaction], &splits_block, &mut unspent_records, rng).unwrap()
-        };
+        // Deploy.
+        let deployment_tx = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
 
-        // Add the deployment block to the VM.
+        // Construct and add the deployment block.
+        let deployment_block =
+            sample_next_block(&vm, &private_key, &[deployment_tx], &last_block, &mut unspent_records, rng).unwrap();
         vm.add_next_block(&deployment_block).unwrap();
+        last_block = deployment_block;
 
-        // Generate more records to use for the next block.
-        let splits_block = generate_splits(&vm, &private_key, &deployment_block, &mut unspent_records, rng).unwrap();
+        // ----------------------------
+        // Case 1: rejected tx in its own block must NOT update storage
+        // ----------------------------
+        // Ensure we have enough fee records for the next block(s).
+        top_up_records(&vm, private_key, &mut last_block, &mut unspent_records, rng, 8);
 
-        // Add the splits block to the VM.
-        vm.add_next_block(&splits_block).unwrap();
-
-        // Create an execution transaction, that will be rejected.
+        // Create an execution transaction that will be rejected.
         let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
-        let first = create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
+        let rejected_tx =
+            create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
 
-        // Construct the next block.
-        let next_block =
-            sample_next_block(&vm, &private_key, &[first], &splits_block, &mut unspent_records, rng).unwrap();
+        // Construct the next block containing the rejected tx.
+        let rejected_block =
+            sample_next_block(&vm, &private_key, &[rejected_tx], &last_block, &mut unspent_records, rng).unwrap();
 
         // Check that the transaction was rejected.
-        assert!(next_block.transactions().iter().next().unwrap().is_rejected());
+        assert!(rejected_block.transactions().iter().next().unwrap().is_rejected());
 
-        // Add the next block to the VM.
-        vm.add_next_block(&next_block).unwrap();
+        // Add the block.
+        vm.add_next_block(&rejected_block).unwrap();
+        last_block = rejected_block;
 
-        // Check that the storage was not updated.
+        // Confirm storage was not updated.
         let program_id = ProgramID::from_str("testing.aleo").unwrap();
         let mapping_name = Identifier::from_str("entries").unwrap();
         assert!(
@@ -2901,25 +2892,29 @@ finalize compute:
                 .unwrap()
         );
 
-        // Create an execution transaction, that will be rejected.
+        // ----------------------------
+        // Case 2: rejected then accepted in the same block => storage updates only from accepted
+        // ----------------------------
+        top_up_records(&vm, private_key, &mut last_block, &mut unspent_records, rng, 8);
+
+        // Rejected execution again.
         let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
         let first = create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
 
-        // Create an execution transaction, that will be accepted.
+        // Accepted execution.
         let r0 = Value::<CurrentNetwork>::from_str("1u8").unwrap();
         let second = create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
 
-        // Construct the next block.
+        // Build and add the block.
         let next_block =
-            sample_next_block(&vm, &private_key, &[first, second], &next_block, &mut unspent_records, rng).unwrap();
+            sample_next_block(&vm, &private_key, &[first, second], &last_block, &mut unspent_records, rng).unwrap();
 
-        // Check that the first transaction was rejected.
+        // First must be rejected.
         assert!(next_block.transactions().iter().next().unwrap().is_rejected());
 
-        // Add the next block to the VM.
         vm.add_next_block(&next_block).unwrap();
 
-        // Check that the storage was updated correctly.
+        // Check storage updated correctly.
         let value = vm
             .finalize_store()
             .get_value_speculative(program_id, mapping_name, &Plaintext::from(Literal::Address(address)))
