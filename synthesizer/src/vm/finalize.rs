@@ -1529,10 +1529,19 @@ mod tests {
         program_id: String,
         last_block: Block<CurrentNetwork>,
         unspent_records: Vec<Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
+        caller_private_key: PrivateKey<CurrentNetwork>,
+        caller_view_key: ViewKey<CurrentNetwork>,
+
+        #[allow(dead_code)]
+        caller_address: Address<CurrentNetwork>,
     }
 
     fn base_finalize_runtime() -> BaseFinalizeRuntime {
         let fixture = &*BASE_FINALIZE_FIXTURE;
+
+        let caller_private_key = fixture.private_key;
+        let caller_address = Address::try_from(&caller_private_key).unwrap();
+        let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
         // Fresh store per test.
         let vm = sample_vm();
@@ -1565,7 +1574,15 @@ mod tests {
         let vk = ViewKey::<CurrentNetwork>::try_from(fixture.private_key).unwrap();
         unspent_records.retain(|r| r.decrypt(&vk).is_ok());
 
-        BaseFinalizeRuntime { vm, program_id: fixture.program_id.clone(), last_block, unspent_records }
+        BaseFinalizeRuntime {
+            vm,
+            program_id: fixture.program_id.clone(),
+            last_block,
+            unspent_records,
+            caller_private_key,
+            caller_address,
+            caller_view_key,
+        }
     }
 
     fn finalize_fixture_cache_path() -> PathBuf {
@@ -2689,10 +2706,6 @@ finalize transfer_public:
     fn test_finalize_catch_halt() {
         let rng = &mut TestRng::default();
 
-        // Sample a private key, view key, and address for the caller.
-        let caller_private_key = test_helpers::sample_genesis_private_key(rng);
-        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
-
         for finalize_logic in &[
             "finalize ped_hash:
     input r0 as u128.public;
@@ -2702,20 +2715,15 @@ finalize transfer_public:
     input r0 as u128.public;
     div r0 0u128 into r1;",
         ] {
-            // Initialize the vm.
-            let vm = test_helpers::sample_vm_with_genesis_block(rng);
+            let rt = base_finalize_runtime();
+            let caller_private_key = rt.caller_private_key;
+            let caller_view_key = rt.caller_view_key;
+
+            let vm = rt.vm;
 
             // Deploy a new program.
-            let genesis =
-                vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
-
-            // Get the unspent records.
-            let mut unspent_records = genesis
-                .transitions()
-                .cloned()
-                .flat_map(Transition::into_records)
-                .map(|(_, record)| record)
-                .collect::<Vec<_>>();
+            let mut unspent_records = rt.unspent_records;
+            let last_block = rt.last_block;
 
             // Create a program that will always cause a E::halt in the finalize execution.
             let program_id = "testing.aleo";
@@ -2747,7 +2755,7 @@ function ped_hash:
                 &vm,
                 &caller_private_key,
                 &[deployment_transaction],
-                &genesis,
+                &last_block,
                 &mut unspent_records,
                 rng,
             )
