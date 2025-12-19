@@ -18,21 +18,26 @@ use crate::{
     ConfirmedTxType,
     TransactionStore,
     TransitionStore,
-    helpers::rocksdb::{
-        BlockMap,
-        MapID,
-        TransactionDB,
-        TransitionDB,
-        internal::{self, DataMap, Database},
+    helpers::{
+        rocksdb::{
+            BlockMap,
+            MapID,
+            TransactionDB,
+            TransitionDB,
+            internal::{self, DataMap, Database},
+        },
+        traits::MapRead,
     },
 };
-use console::{prelude::*, types::Field};
+use console::{prelude::*, program::BlockTree, types::Field};
 use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Header, Ratifications, Rejected, Solutions};
 use snarkvm_ledger_puzzle::SolutionID;
 use snarkvm_synthesizer_program::FinalizeOperation;
 
-use aleo_std_storage::StorageMode;
+use aleo_std_storage::{StorageMode, aleo_ledger_dir};
+use std::fs;
+use tracing::debug;
 
 /// A RocksDB block storage.
 #[derive(Clone)]
@@ -219,9 +224,47 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
         &self.transaction_store
     }
 
+    /// Stores a database backup at the given location.
     #[cfg(feature = "rocks")]
     fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String> {
         // Any map can be used to retrieve the common RocksDB instance.
         self.id_map().backup_database(path)
+    }
+
+    /// Creates the block tree based on the contents of the storage.
+    fn create_block_tree(&self) -> Result<BlockTree<N>> {
+        fn construct_from_scratch<N: Network>(storage: &BlockDB<N>) -> Result<BlockTree<N>> {
+            // Prepare an iterator over the block heights and prepare the leaves of the block tree.
+            let hashes = storage
+                .id_map()
+                .iter_confirmed()
+                .sorted_unstable_by(|(h1, _), (h2, _)| h1.cmp(h2))
+                .map(|(_, hash)| hash.to_bits_le())
+                .collect::<Vec<Vec<bool>>>();
+
+            // Construct the block tree.
+            N::merkle_tree_bhp(&hashes)
+        }
+
+        let mut path = aleo_ledger_dir(N::ID, self.storage_mode());
+        path.push("block_tree");
+
+        if let Ok(serialized_tree) = fs::read(&path) {
+            debug!("Loading the cached block tree from {}", path.display());
+
+            // Deserialize a ready block tree.
+            let ret = bincode::deserialize(&serialized_tree).or_else(|e| {
+                tracing::error!("Failed to deserialize the block tree ({e}), constructing from scratch");
+                construct_from_scratch(self)
+            });
+
+            // Ensure that an old cached tree is not reused.
+            let _ = fs::remove_file(path);
+
+            ret
+        } else {
+            debug!("Creating the block tree from scratch");
+            construct_from_scratch(self)
+        }
     }
 }

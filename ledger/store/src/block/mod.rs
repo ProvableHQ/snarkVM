@@ -48,13 +48,16 @@ use snarkvm_ledger_puzzle::{Solution, SolutionID};
 use snarkvm_synthesizer_program::{FinalizeOperation, Program};
 
 use aleo_std_storage::StorageMode;
+#[cfg(feature = "rocks")]
+use aleo_std_storage::aleo_ledger_dir;
 use anyhow::{Context, Result};
 #[cfg(feature = "locktick")]
 use locktick::{LockGuard, parking_lot::RwLock};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::{borrow::Cow, sync::Arc};
-use tracing::debug;
+#[cfg(feature = "rocks")]
+use std::{fs, io::BufWriter};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -991,6 +994,8 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
 
     #[cfg(feature = "rocks")]
     fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String>;
+
+    fn create_block_tree(&self) -> Result<BlockTree<N>>;
 }
 
 /// The `BlockStore` is the user facing API that either uses `BlockMemory` or `BlockDB` as its storae backend.
@@ -1009,17 +1014,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         let storage = B::open(storage)?;
 
-        // Prepare an iterator over the block heights and prepare the leaves of the block tree.
-        let hashes = storage
-            .id_map()
-            .iter_confirmed()
-            .sorted_unstable_by(|(h1, _), (h2, _)| h1.cmp(h2))
-            .map(|(_, hash)| hash.to_bits_le())
-            .collect::<Vec<Vec<bool>>>();
-
-        // Construct the block tree.
-        debug!("Found {} blocks on disk", hashes.len());
-        let tree = N::merkle_tree_bhp(&hashes)?;
+        let tree = storage.create_block_tree()?;
 
         let mut initial_cache = Vec::new();
         let cache_end_height = u32::try_from(tree.number_of_leaves())?;
@@ -1032,10 +1027,12 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             }
 
             // Get the hash for the next block to add to the cache.
-            let hash = storage
-                .id_map()
-                .get_confirmed(&height)?
-                .with_context(|| format!("Block {height} exists in tree but not in storage"))?;
+            let hash = storage.id_map().get_confirmed(&height)?.with_context(|| {
+                format!(
+                    "Block {height} exists in tree but not in storage;\
+                    perhaps you used a wrong block tree cache file?"
+                )
+            })?;
 
             initial_cache.push(
                 storage.get_block(&hash)?.with_context(|| format!("Block {hash} exists in tree but not in storage"))?,
@@ -1200,9 +1197,39 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         self.storage.unpause_atomic_writes::<DISCARD_BATCH>()
     }
 
+    /// Stores a database backup at the given location.
     #[cfg(feature = "rocks")]
     pub fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String> {
         self.storage.backup_database(path)
+    }
+
+    /// Serializes and persists the current block tree.
+    #[cfg(feature = "rocks")]
+    pub fn cache_block_tree(&self) -> Result<()> {
+        // Prepare the path for the target file.
+        let mut path = aleo_ledger_dir(N::ID, self.storage.storage_mode());
+        path.push("block_tree");
+
+        // Create the target file.
+        let file = fs::File::create(path)?;
+        // The block tree can become quite large, so use a BufWriter in order to
+        // not have to keep the entire serialized tree in memory, and to reduce
+        // the number of syscalls involved with disk writes. 1MiB should provide
+        // a good balance between the CPU cache and maximum disk throughput.
+        let mut writer = BufWriter::with_capacity(1024 * 1024, file);
+        bincode::serialize_into(&mut writer, &&*self.tree.read())?;
+        writer.flush()?;
+        // TODO(ljedrz): this operation can already take ~2.5s, so we may want
+        // to perform chunking and parallel serialization. This may be useful
+        // for other applications, so it should be implemented as a common
+        // utility.
+
+        Ok(())
+    }
+
+    /// Returns the root of the block tree.
+    pub fn get_block_tree_root(&self) -> Field<N> {
+        *self.tree.read().root()
     }
 }
 

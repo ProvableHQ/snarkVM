@@ -31,6 +31,9 @@ workspace = true
 [dependencies.rayon]
 workspace = true
 
+[dependencies.serde]
+workspace = true
+
 [dev-dependencies.snarkvm-console-network]
 path = "../network"
 
