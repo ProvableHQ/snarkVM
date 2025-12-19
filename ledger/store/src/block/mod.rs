@@ -995,7 +995,17 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     #[cfg(feature = "rocks")]
     fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String>;
 
-    fn create_block_tree(&self) -> Result<BlockTree<N>>;
+    fn create_block_tree(&self) -> Result<BlockTree<N>> {
+        let hashes = self
+            .id_map()
+            .iter_confirmed()
+            .sorted_unstable_by(|(h1, _), (h2, _)| h1.cmp(h2))
+            .map(|(_, hash)| hash.to_bits_le())
+            .collect::<Vec<Vec<bool>>>();
+
+        // Construct the block tree.
+        N::merkle_tree_bhp(&hashes)
+    }
 }
 
 /// The `BlockStore` is the user facing API that either uses `BlockMemory` or `BlockDB` as its storae backend.
