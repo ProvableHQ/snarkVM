@@ -996,6 +996,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String>;
 
     fn create_block_tree(&self) -> Result<BlockTree<N>> {
+        // Fixes semver
         let hashes = self
             .id_map()
             .iter_confirmed()
