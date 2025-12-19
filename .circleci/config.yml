@@ -283,6 +283,18 @@ commands:
               FILTER_EXPR='test(/test_command_parse/)+test(/test_instruction_parse/)+test(/test_process_execute/)+test(/test_program_parse/)+test(/test_vm_execute_and_finalize/)'
             fi
 
+            if [ "$WSM" = "snarkvm-synthesizer" ] && [ "${SYNTHESIZER_HEAVY:-0}" = "1" ]; then
+              FILTER_EXPR='
+                test(/vm::finalize::tests::test_atomic_finalize_many/) or
+                test(/vm::finalize::tests::test_excess_transactions_should_be_aborted/) or
+                test(/vm::finalize::tests::test_finalize_catch_halt/) or
+                test(/vm::finalize::tests::test_rejected_transaction_should_not_update_storage/) or
+                test(/vm::test_helpers::test_load_deployments_with_imports/) or
+                test(/vm::test_helpers::test_multiple_deployments_and_multiple_executions/) or
+                test(/vm::verify::tests::test_verify_deploy_and_execute/)
+              '
+            fi
+
             # Build nextest filter expression from any --skip <pattern> arguments
             if [ -z "$FILTER_EXPR" ] && [ -n "$RIGHT_OF_SEP" ]; then
               SKIPS="$(printf '%s\n' "$RIGHT_OF_SEP" \
@@ -889,6 +901,19 @@ jobs:
           cache_key_suffix: -test2
           timeout: 25m
 
+  synthesizer-heavy:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.twoxlarge >>
+    environment:
+      SYNTHESIZER_HEAVY: "1"
+    steps:
+      - run_test:
+          workspace_member: snarkvm-synthesizer
+          flags: --lib --bins --features test -- --test-threads 1
+          cache_key_suffix: -heavy
+          timeout: 30m
+          no_output_timeout: 20m
+
   synthesizer-integration:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
@@ -1229,6 +1254,7 @@ workflows:
       - synthesizer
       - synthesizer-test-partition1
       - synthesizer-test-partition2
+      - synthesizer-heavy
       - synthesizer-integration
       - synthesizer-process
       - synthesizer-process-with-rocksdb

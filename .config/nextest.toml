@@ -10,8 +10,12 @@ ledger-heavy = { max-threads = 1 }    # run these tests strictly one at a time
 # 2) Default profile (used locally unless you specify another)
 [profile.default]
 
-# Mark specific slow tests as part of the ledger-heavy group.
-# Use filterset DSL: test("<substring>") matches tests whose names contain that substring.
+[profile.default.junit]
+# This ends up as: target/nextest/default/junit.xml
+path = "junit.xml"
+report-name = "nextest-run"
+store-success-output = false
+store-failure-output = true
 
 [[profile.default.overrides]]
 # snarkvm-ledger tests::test_execute_duplicate_input_ids
@@ -97,3 +101,7 @@ test-group = "ledger-heavy"
 [[profile.ci.overrides]]
 filter = 'test("test_block_cache_eviction")'
 test-group = "ledger-heavy"
+
+[[profile.ci.overrides]]
+filter = "test(/^snarkvm-synthesizer::vm::finalize::tests::test_/) or test(/^snarkvm-synthesizer::vm::verify::tests::test_/)"
+threads-required = 8
