@@ -284,15 +284,7 @@ commands:
             fi
 
             if [ "$WSM" = "snarkvm-synthesizer" ] && [ "${SYNTHESIZER_HEAVY:-0}" = "1" ]; then
-              FILTER_EXPR='
-                test(/vm::finalize::tests::test_atomic_finalize_many/) or
-                test(/vm::finalize::tests::test_excess_transactions_should_be_aborted/) or
-                test(/vm::finalize::tests::test_finalize_catch_halt/) or
-                test(/vm::finalize::tests::test_rejected_transaction_should_not_update_storage/) or
-                test(/vm::test_helpers::test_load_deployments_with_imports/) or
-                test(/vm::test_helpers::test_multiple_deployments_and_multiple_executions/) or
-                test(/vm::verify::tests::test_verify_deploy_and_execute/)
-              '
+              FILTER_EXPR='test(/vm::finalize::tests::test_atomic_finalize_many/) or test(/vm::finalize::tests::test_excess_transactions_should_be_aborted/) or test(/vm::finalize::tests::test_finalize_catch_halt/) or test(/vm::finalize::tests::test_rejected_transaction_should_not_update_storage/) or test(/vm::test_helpers::test_load_deployments_with_imports/) or test(/vm::test_helpers::test_multiple_deployments_and_multiple_executions/) or test(/vm::verify::tests::test_verify_deploy_and_execute/)'
             fi
 
             # Build nextest filter expression from any --skip <pattern> arguments
