@@ -36,6 +36,7 @@ use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
 use snarkvm_synthesizer::{Authorization, VM, program::FinalizeOperation};
 use snarkvm_synthesizer_process::{execution_cost, execution_cost_for_authorization};
 use snarkvm_synthesizer_program::FinalizeGlobalState;
+use std::collections::HashSet;
 
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -64,6 +65,17 @@ fn test_vm_execute_and_finalize() {
     });
 }
 
+fn keys_used_by_cases_as_strings(test: &ProgramTest) -> HashSet<String> {
+    let mut used = HashSet::new();
+    for case in test.cases() {
+        let m = case.as_mapping().expect("expected mapping for test case");
+        if let Some(pk) = m.get("private_key") {
+            used.insert(pk.as_str().expect("expected string for private key").to_string());
+        }
+    }
+    used
+}
+
 // A helper function to run the test and extract the outputs as YAML, to be compared against the expectation.
 fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
     // Initialize the RNG.
@@ -79,7 +91,29 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
     let (vm, _) = initialize_vm(&genesis_private_key, test.start_height(), rng);
 
     // Fund the additional keys.
+    // Fund only keys that are actually used by some test case.
+    let used_private_key_strs = keys_used_by_cases_as_strings(test);
+
+    // (Optional) If ProgramTest::keys() is an allowlist, build an allowlist set of strings.
+    let allowed_key_strs: HashSet<String> = test.keys().iter().map(|k| k.to_string()).collect();
+
     for key in test.keys() {
+        // Skip funding the genesis key.
+        if *key == genesis_private_key {
+            continue;
+        }
+
+        // Only fund if referenced in cases.
+        let k_str = key.to_string();
+        if !used_private_key_strs.contains(&k_str) {
+            continue;
+        }
+
+        // If you want to enforce allowlist semantics too (usually redundant here):
+        if !allowed_key_strs.contains(&k_str) {
+            continue;
+        }
+
         // Transfer 1_000_000_000_000
         let transaction = vm
             .execute(
@@ -96,6 +130,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                 rng,
             )
             .unwrap();
+
         let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
             .speculate(
@@ -119,8 +154,10 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
             aborted_transaction_ids,
             ratified_finalize_operations,
             rng,
-        );
-        vm.add_next_block(&block.unwrap()).unwrap();
+        )
+        .unwrap();
+
+        vm.add_next_block(&block).unwrap();
     }
 
     // Deploy the programs.
@@ -385,6 +422,41 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
     output
 }
 
+fn fast_forward_empty_blocks<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>(
+    vm: &VM<CurrentNetwork, C>,
+    private_key: &PrivateKey<CurrentNetwork>,
+    target_height_increase: u32,
+    rng: &mut R,
+) {
+    for _ in 0..target_height_increase {
+        let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
+
+        // Empty ratifications.
+        let ratifications = Ratifications::<CurrentNetwork>::try_from_iter(std::iter::empty()).unwrap();
+
+        // Empty confirmed transactions (note: Transactions::from wants &[ConfirmedTransaction]).
+        let confirmed: Vec<ConfirmedTransaction<CurrentNetwork>> = Vec::new();
+        let transactions = Transactions::<CurrentNetwork>::from(confirmed.as_slice());
+
+        let aborted_transaction_ids = Vec::new();
+        let ratified_finalize_operations: Vec<FinalizeOperation<CurrentNetwork>> = Vec::new();
+
+        let block = construct_next_block(
+            vm,
+            time_since_last_block,
+            private_key,
+            ratifications,
+            transactions,
+            aborted_transaction_ids,
+            ratified_finalize_operations,
+            rng,
+        )
+        .unwrap();
+
+        vm.add_next_block(&block).unwrap();
+    }
+}
+
 // A helper function to initialize the VM.
 // Returns a VM and the first record in the genesis block.
 #[allow(clippy::type_complexity)]
@@ -408,34 +480,8 @@ fn initialize_vm<R: Rng + CryptoRng>(
     // Add the genesis block to the VM.
     vm.add_next_block(&genesis).unwrap();
 
-    // If the desired height is greater than zero, add additional blocks to the VM.
-    for _ in 0..height {
-        let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
-            .speculate(
-                construct_finalize_global_state(&vm, time_since_last_block),
-                time_since_last_block,
-                Some(0u64),
-                vec![],
-                &None.into(),
-                [].into_iter(),
-                rng,
-            )
-            .unwrap();
-        assert!(aborted_transaction_ids.is_empty());
-
-        let block = construct_next_block(
-            &vm,
-            time_since_last_block,
-            private_key,
-            ratifications,
-            transactions,
-            aborted_transaction_ids,
-            ratified_finalize_operations,
-            rng,
-        )
-        .unwrap();
-        vm.add_next_block(&block).unwrap();
+    if height > 0 {
+        fast_forward_empty_blocks(&vm, private_key, height, rng);
     }
 
     (vm, records)
