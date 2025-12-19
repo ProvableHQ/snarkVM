@@ -2724,18 +2724,20 @@ finalize transfer_public:
         vm.add_next_block(&genesis).unwrap();
 
         // Replay cached blocks (deploy + splits).
-        let mut last_block = genesis.clone();
         for b in fixture.blocks.iter() {
             let mut s = b.as_slice();
             let blk = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
             vm.add_next_block(&blk).unwrap();
-            last_block = blk;
         }
 
         // Apply the cached "initial mint block" (starting balance = 20).
         let mut s = atomic.initial_mint_block_bytes.as_slice();
         let initial_mint_block = Block::<CurrentNetwork>::read_le(&mut s).unwrap();
         vm.add_next_block(&initial_mint_block).unwrap();
+        let last_block = initial_mint_block;
+
+        let next_height = last_block.height() + 1;
+        let finalize_state = sample_finalize_state(next_height);
 
         // Deserialize the cached transactions.
         let txs = atomic
@@ -2761,7 +2763,7 @@ finalize transfer_public:
             let transactions = vec![mint_10.clone(), transfer_10.clone(), transfer_20.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    *FINALIZE_STATE_1,
+                    finalize_state,
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2788,7 +2790,7 @@ finalize transfer_public:
             let transactions = vec![transfer_20.clone(), mint_10.clone(), mint_20.clone(), transfer_30.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    *FINALIZE_STATE_1,
+                    finalize_state,
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2814,7 +2816,7 @@ finalize transfer_public:
             let transactions = vec![transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    *FINALIZE_STATE_1,
+                    finalize_state,
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
@@ -2845,7 +2847,7 @@ finalize transfer_public:
             let transactions = vec![mint_20.clone(), transfer_30.clone(), transfer_20.clone(), transfer_10.clone()];
             let (_, confirmed_transactions, aborted_transaction_ids, _) = vm
                 .atomic_speculate(
-                    *FINALIZE_STATE_1,
+                    finalize_state,
                     CurrentNetwork::BLOCK_TIME as i64,
                     None,
                     vec![],
