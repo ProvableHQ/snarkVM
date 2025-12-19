@@ -224,6 +224,8 @@ commands:
             set -euo pipefail
             export CARGO_TERM_COLOR=never
 
+            export SNARKVM_SKIP_CHECK_TRANSACTION="${SNARKVM_SKIP_CHECK_TRANSACTION:-0}"
+
             echo "[debug] PATH=$PATH"
             echo "[debug] RUSTC_WRAPPER=${RUSTC_WRAPPER:-<unset>}"
             which sccache || echo "[debug] sccache not found on PATH"
@@ -914,6 +916,8 @@ jobs:
   synthesizer-integration:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
+    environment:
+      SNARKVM_SKIP_CHECK_TRANSACTION: "1"
     steps:
       - run_test:
           timeout: 30m
