@@ -422,41 +422,6 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
     output
 }
 
-fn fast_forward_empty_blocks<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>(
-    vm: &VM<CurrentNetwork, C>,
-    private_key: &PrivateKey<CurrentNetwork>,
-    target_height_increase: u32,
-    rng: &mut R,
-) {
-    for _ in 0..target_height_increase {
-        let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
-
-        // Empty ratifications.
-        let ratifications = Ratifications::<CurrentNetwork>::try_from_iter(std::iter::empty()).unwrap();
-
-        // Empty confirmed transactions (note: Transactions::from wants &[ConfirmedTransaction]).
-        let confirmed: Vec<ConfirmedTransaction<CurrentNetwork>> = Vec::new();
-        let transactions = Transactions::<CurrentNetwork>::from(confirmed.as_slice());
-
-        let aborted_transaction_ids = Vec::new();
-        let ratified_finalize_operations: Vec<FinalizeOperation<CurrentNetwork>> = Vec::new();
-
-        let block = construct_next_block(
-            vm,
-            time_since_last_block,
-            private_key,
-            ratifications,
-            transactions,
-            aborted_transaction_ids,
-            ratified_finalize_operations,
-            rng,
-        )
-        .unwrap();
-
-        vm.add_next_block(&block).unwrap();
-    }
-}
-
 // A helper function to initialize the VM.
 // Returns a VM and the first record in the genesis block.
 #[allow(clippy::type_complexity)]
@@ -480,8 +445,35 @@ fn initialize_vm<R: Rng + CryptoRng>(
     // Add the genesis block to the VM.
     vm.add_next_block(&genesis).unwrap();
 
-    if height > 0 {
-        fast_forward_empty_blocks(&vm, private_key, height, rng);
+    // If the desired height is greater than zero, add additional blocks to the VM.
+    for _ in 0..height {
+        let time_since_last_block = CurrentNetwork::BLOCK_TIME as i64;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
+            .speculate(
+                construct_finalize_global_state(&vm, time_since_last_block),
+                time_since_last_block,
+                Some(0u64),
+                vec![],
+                &None.into(),
+                [].into_iter(),
+                rng,
+            )
+            .unwrap();
+        assert!(aborted_transaction_ids.is_empty());
+
+        let block = construct_next_block(
+            &vm,
+            time_since_last_block,
+            private_key,
+            ratifications,
+            transactions,
+            aborted_transaction_ids,
+            ratified_finalize_operations,
+            rng,
+        )
+        .unwrap();
+
+        vm.add_next_block(&block).unwrap();
     }
 
     (vm, records)
