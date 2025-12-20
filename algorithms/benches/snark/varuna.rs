@@ -162,6 +162,12 @@ fn snark_prove_large_lagrange_vs_monomial(c: &mut Criterion) {
     let varuna_version = VarunaVersion::V2;
 
     let (pk_lagrange, _vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+    // Note: Even with Lagrange bases available, the "prove_lagrange" benchmark will still
+    // perform some monomial-basis commitments. Specifically, the `g_1` polynomial in round 3
+    // has a degree bound (variable_domain_size - 2) and must use monomial basis because
+    // degree bounds are enforced via shifted powers in the SRS, which only work with monomial
+    // basis. See `poly_for_commit` in varuna.rs for the logic that preserves degree-bounded
+    // polynomials in monomial form.
     let pk_monomial = {
         // Reuse the proving key, but remove Lagrange bases from the committer key to force
         // monomial-basis commitments throughout proving.
