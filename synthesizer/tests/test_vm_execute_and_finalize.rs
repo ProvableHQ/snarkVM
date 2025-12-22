@@ -49,20 +49,33 @@ type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<Current
 type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
 #[test]
-fn test_vm_execute_and_finalize() {
-    // Load the tests.
+fn test_vm_execute_and_finalize_group1() {
+    run_group(0, 4);
+}
+#[test]
+fn test_vm_execute_and_finalize_group2() {
+    run_group(1, 4);
+}
+#[test]
+fn test_vm_execute_and_finalize_group3() {
+    run_group(2, 4);
+}
+#[test]
+fn test_vm_execute_and_finalize_group4() {
+    run_group(3, 4);
+}
+
+fn run_group(idx: usize, total: usize) {
     let tests =
         load_tests::<_, ProgramTest>("./tests/vm/execute_and_finalize", "./expectations/vm/execute_and_finalize");
-
-    // Run each test and compare it against its corresponding expectation.
-    tests.iter().for_each(|test| {
-        // Run the test.
+    for (i, test) in tests.iter().enumerate() {
+        if i % total != idx {
+            continue;
+        }
         let output = run_test(test);
-        // Check against the expected output.
         test.check(&output).unwrap();
-        // Save the output.
         test.save(&output).unwrap();
-    });
+    }
 }
 
 fn keys_used_by_cases_as_strings(test: &ProgramTest) -> HashSet<String> {
