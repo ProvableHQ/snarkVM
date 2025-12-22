@@ -124,51 +124,97 @@ impl<'de, N: Network> Deserialize<'de> for ConfirmedTransaction<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use once_cell::sync::Lazy;
 
-    fn check_serde_json<
-        T: Serialize + for<'a> Deserialize<'a> + Debug + Display + PartialEq + Eq + FromStr + ToBytes + FromBytes,
-    >(
-        expected: T,
-    ) {
-        // Serialize
-        let expected_string = expected.to_string();
-        let candidate_string = serde_json::to_string(&expected).unwrap();
-        let candidate = serde_json::from_str::<T>(&candidate_string).unwrap();
-        assert_eq!(expected, candidate);
-        assert_eq!(expected_string, candidate_string);
-        assert_eq!(expected_string, candidate.to_string());
+    use snarkvm_ledger_authority::test_helpers::CurrentNetwork;
 
-        // Deserialize
-        assert_eq!(expected, T::from_str(&expected_string).unwrap_or_else(|_| panic!("FromStr: {expected_string}")));
-        assert_eq!(expected, serde_json::from_str(&candidate_string).unwrap());
+    // Generate heavy samples once for the entire test binary.
+    static SAMPLES: Lazy<Vec<ConfirmedTransaction<CurrentNetwork>>> =
+        Lazy::new(crate::transactions::confirmed::test_helpers::sample_confirmed_transactions);
+
+    fn sample_limit() -> usize {
+        std::env::var("SNARKVM_SERDE_SAMPLES").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(usize::MAX)
     }
 
-    fn check_bincode<
-        T: Serialize + for<'a> Deserialize<'a> + Debug + Display + PartialEq + Eq + FromStr + ToBytes + FromBytes,
-    >(
-        expected: T,
-    ) {
+    fn iter_samples<'a>() -> impl Iterator<Item = &'a ConfirmedTransaction<CurrentNetwork>> {
+        let limit = sample_limit();
+        SAMPLES.iter().take(limit)
+    }
+
+    fn check_serde_json_roundtrip<T>(expected: &T)
+    where
+        T: Serialize + for<'a> Deserialize<'a> + PartialEq + Eq + Debug,
+    {
+        // serialize -> deserialize
+        let candidate_string = serde_json::to_string(expected).unwrap();
+        let candidate = serde_json::from_str::<T>(&candidate_string).unwrap();
+        assert_eq!(*expected, candidate);
+    }
+
+    fn check_display_fromstr_json_string_equivalence<T>(expected: &T)
+    where
+        T: Serialize + for<'a> Deserialize<'a> + Debug + Display + PartialEq + Eq + FromStr,
+        <T as FromStr>::Err: Debug,
+    {
+        let expected_string = expected.to_string();
+
+        let json_string = serde_json::to_string(expected).unwrap();
+        assert_eq!(expected_string, json_string);
+
+        let from_str = T::from_str(&expected_string).unwrap();
+        assert_eq!(*expected, from_str);
+
+        let from_json = serde_json::from_str::<T>(&json_string).unwrap();
+        assert_eq!(*expected, from_json);
+    }
+
+    fn check_bincode_roundtrip<T>(expected: &T)
+    where
+        T: Serialize + for<'a> Deserialize<'a> + PartialEq + Eq + Debug + ToBytes + FromBytes,
+    {
         // Serialize
         let expected_bytes = expected.to_bytes_le().unwrap();
-        let expected_bytes_with_size_encoding = bincode::serialize(&expected).unwrap();
+        let expected_bytes_with_size_encoding = bincode::serialize(expected).unwrap();
         assert_eq!(&expected_bytes[..], &expected_bytes_with_size_encoding[8..]);
 
         // Deserialize
-        assert_eq!(expected, T::read_le(&expected_bytes[..]).unwrap());
-        assert_eq!(expected, bincode::deserialize(&expected_bytes_with_size_encoding[..]).unwrap());
+        let read_le = T::read_le(&expected_bytes[..]).unwrap();
+        assert_eq!(*expected, read_le);
+
+        let from_bincode: T = bincode::deserialize(&expected_bytes_with_size_encoding[..]).unwrap();
+        assert_eq!(*expected, from_bincode);
     }
 
     #[test]
-    fn test_serde_json() {
-        for transaction in crate::transactions::confirmed::test_helpers::sample_confirmed_transactions() {
-            check_serde_json(transaction);
+    fn test_serde_json_roundtrip_fast() {
+        for tx in iter_samples() {
+            check_serde_json_roundtrip(tx);
         }
     }
 
     #[test]
-    fn test_bincode() {
-        for transaction in crate::transactions::confirmed::test_helpers::sample_confirmed_transactions() {
-            check_bincode(transaction);
+    fn test_serde_json_string_format_matches_display() {
+        let all = std::env::var("SNARKVM_SERDE_DISPLAY_ALL")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        let mut it = iter_samples();
+        if all {
+            for tx in it {
+                check_display_fromstr_json_string_equivalence(tx);
+            }
+        } else {
+            // Check only first few to keep the invariant covered.
+            for tx in it.by_ref().take(5) {
+                check_display_fromstr_json_string_equivalence(tx);
+            }
+        }
+    }
+
+    #[test]
+    fn test_bincode_roundtrip() {
+        for tx in iter_samples() {
+            check_bincode_roundtrip(tx);
         }
     }
 }

@@ -117,3 +117,6 @@ path = "../store"
 
 [dev-dependencies.snarkvm-synthesizer-process]
 path = "../../synthesizer/process"
+
+[dependencies]
+once_cell = "1.19"
