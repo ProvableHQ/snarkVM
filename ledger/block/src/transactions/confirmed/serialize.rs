@@ -126,7 +126,7 @@ mod tests {
     use super::*;
     use once_cell::sync::Lazy;
 
-    use snarkvm_ledger_authority::test_helpers::CurrentNetwork;
+    type CurrentNetwork = MainnetV0;
 
     // Generate heavy samples once for the entire test binary.
     static SAMPLES: Lazy<Vec<ConfirmedTransaction<CurrentNetwork>>> =
