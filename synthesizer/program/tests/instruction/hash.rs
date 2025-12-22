@@ -21,6 +21,7 @@ use console::{
     prelude::*,
     program::{ArrayType, Identifier, LiteralType, Plaintext, PlaintextType, Register, U32, Value},
 };
+use once_cell::sync::Lazy;
 use snarkvm_synthesizer_process::{Process, Stack};
 use snarkvm_synthesizer_program::{
     HashBHP256,
@@ -78,6 +79,8 @@ type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
 const ITERATIONS: usize = 10;
+
+static PROCESS: Lazy<Process<CurrentNetwork>> = Lazy::new(|| Process::load().unwrap());
 
 fn sample_valid_input_types<N: Network, R: CryptoRng + Rng>(
     variant: HashVariant,
@@ -230,7 +233,7 @@ fn sample_stack(
     let operands = vec![Operand::Register(r0)];
 
     // Initialize the stack.
-    let stack = Stack::new(&Process::load()?, &program)?;
+    let stack = Stack::new(&*PROCESS, &program)?;
 
     Ok((stack, operands, r1))
 }

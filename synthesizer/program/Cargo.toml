@@ -88,3 +88,6 @@ workspace = true
 [dev-dependencies.snarkvm-synthesizer-process]
 path = "../process"
 features = [ "test" ]
+
+[dependencies]
+once_cell = "1.19"
