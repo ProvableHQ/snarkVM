@@ -410,17 +410,27 @@ pub mod test_helpers {
         is_fee_private: bool,
         rng: &mut TestRng,
     ) -> ConfirmedTransaction<CurrentNetwork> {
-        // Sample a fee transaction.
-        let fee_transaction = match is_fee_private {
-            true => crate::transaction::test_helpers::sample_private_fee_transaction(rng),
-            false => crate::transaction::test_helpers::sample_fee_public_transaction(rng),
-        };
+        // 1) Build a deployment transaction first (this guarantees deployment has an owner).
+        let deployment_tx =
+            crate::transaction::test_helpers::sample_deployment_transaction(version, edition, is_fee_private, rng);
 
-        // Extract the rejected deployment.
-        let rejected = crate::rejected::test_helpers::sample_rejected_deployment(version, edition, is_fee_private, rng);
+        let owner =
+            *deployment_tx.owner().expect("sample_deployment_transaction must produce a deploy tx with an owner");
+        let deployment = deployment_tx
+            .deployment()
+            .expect("sample_deployment_transaction must produce a deploy tx with a deployment")
+            .clone();
 
-        // Return the confirmed transaction.
-        ConfirmedTransaction::rejected_deploy(index, fee_transaction, rejected, vec![]).unwrap()
+        // 2) Build a Rejected deployment that matches the deployment's owner.
+        let rejected = Rejected::new_deployment(owner, deployment);
+
+        // 3) The confirmed rejected-deploy stores the *fee transaction* (not the original deploy tx).
+        // Use the fee transition from the deployment tx to make the fee tx consistent.
+        let fee_transition = deployment_tx.fee_transition().expect("deployment tx must contain a fee transition");
+        let fee_tx = Transaction::from_fee(fee_transition).unwrap();
+
+        // 4) Done.
+        ConfirmedTransaction::rejected_deploy(index, fee_tx, rejected, vec![]).unwrap()
     }
 
     /// Samples a rejected execute transaction at the given index.
