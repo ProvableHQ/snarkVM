@@ -964,7 +964,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: keccak -- --test-threads=4
+          flags: keccak
           timeout: 30m
           no_output_timeout: 20m
           cache_key_suffix: -integration-keccak

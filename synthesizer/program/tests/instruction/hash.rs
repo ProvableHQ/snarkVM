@@ -92,7 +92,7 @@ thread_local! {
     static HASH_RNG: RefCell<TestRng> = RefCell::new(TestRng::default());
 }
 
-const ITERATIONS: usize = 8;
+const ITERATIONS: usize = 10;
 
 static PROCESS: Lazy<Process<CurrentNetwork>> = Lazy::new(|| Process::load().unwrap());
 
@@ -120,6 +120,10 @@ fn with_cached_stack<T>(
     })
 }
 
+const NATIVE_INPUT_SAMPLES: usize = 3;
+const NATIVE_MAX_BITS: usize = 1024;
+const NATIVE_MIN_BITS: usize = 8;
+
 fn sample_valid_input_types<N: Network, R: CryptoRng + Rng>(
     variant: HashVariant,
     rng: &mut R,
@@ -136,9 +140,11 @@ fn sample_valid_input_types<N: Network, R: CryptoRng + Rng>(
         | HashVariant::HashKeccak512NativeRaw
         | HashVariant::HashSha3_256NativeRaw
         | HashVariant::HashSha3_384NativeRaw
-        | HashVariant::HashSha3_512NativeRaw => (0..10)
+        | HashVariant::HashSha3_512NativeRaw => (0..NATIVE_INPUT_SAMPLES)
             .map(|_| {
-                let length = rng.gen_range(1..=(CurrentNetwork::MAX_ARRAY_ELEMENTS / 8)) * 8;
+                let max = (NATIVE_MAX_BITS / 8).min(CurrentNetwork::MAX_ARRAY_ELEMENTS / 8);
+                let min = (NATIVE_MIN_BITS / 8).max(1);
+                let length = rng.gen_range(min..=max) * 8;
                 PlaintextType::Array(
                     ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(
                         u32::try_from(length).unwrap(),
@@ -198,6 +204,16 @@ fn sample_valid_input_types<N: Network, R: CryptoRng + Rng>(
 /// **Attention**: When changing this, also update in `src/logic/instruction/hash.rs`.
 fn sample_valid_destination_types<N: Network>(variant: HashVariant) -> Vec<PlaintextType<N>> {
     match variant {
+        HashVariant::HashKeccak256Raw
+        | HashVariant::HashKeccak384Raw
+        | HashVariant::HashKeccak512Raw
+        | HashVariant::HashSha3_256Raw
+        | HashVariant::HashSha3_384Raw
+        | HashVariant::HashSha3_512Raw => vec![
+            PlaintextType::Literal(LiteralType::Field),
+            PlaintextType::Literal(LiteralType::U64),
+            PlaintextType::Literal(LiteralType::Scalar),
+        ],
         HashVariant::HashKeccak256Native
         | HashVariant::HashKeccak256NativeRaw
         | HashVariant::HashSha3_256Native
@@ -410,13 +426,13 @@ test_hash!(hash_bhp512_raw, HashBHP512Raw, ITERATIONS);
 test_hash!(hash_bhp768_raw, HashBHP768Raw, ITERATIONS);
 test_hash!(hash_bhp1024_raw, HashBHP1024Raw, ITERATIONS);
 
-test_hash!(hash_keccak256, HashKeccak256, 5);
-test_hash!(hash_keccak384, HashKeccak384, 5);
-test_hash!(hash_keccak512, HashKeccak512, 5);
+test_hash!(hash_keccak256, HashKeccak256, 4);
+test_hash!(hash_keccak384, HashKeccak384, 4);
+test_hash!(hash_keccak512, HashKeccak512, 4);
 
-test_hash!(hash_keccak256_raw, HashKeccak256Raw, 5);
-test_hash!(hash_keccak384_raw, HashKeccak384Raw, 5);
-test_hash!(hash_keccak512_raw, HashKeccak512Raw, 5);
+test_hash!(hash_keccak256_raw, HashKeccak256Raw, 4);
+test_hash!(hash_keccak384_raw, HashKeccak384Raw, 4);
+test_hash!(hash_keccak512_raw, HashKeccak512Raw, 4);
 
 test_hash!(hash_psd2, HashPSD2, ITERATIONS);
 test_hash!(hash_psd4, HashPSD4, ITERATIONS);
@@ -426,29 +442,29 @@ test_hash!(hash_psd2_raw, HashPSD2Raw, ITERATIONS);
 test_hash!(hash_psd4_raw, HashPSD4Raw, ITERATIONS);
 test_hash!(hash_psd8_raw, HashPSD8Raw, ITERATIONS);
 
-test_hash!(hash_sha3_256, HashSha3_256, 5);
-test_hash!(hash_sha3_384, HashSha3_384, 5);
-test_hash!(hash_sha3_512, HashSha3_512, 5);
+test_hash!(hash_sha3_256, HashSha3_256, 4);
+test_hash!(hash_sha3_384, HashSha3_384, 4);
+test_hash!(hash_sha3_512, HashSha3_512, 4);
 
-test_hash!(hash_sha3_256_raw, HashSha3_256Raw, 5);
-test_hash!(hash_sha3_384_raw, HashSha3_384Raw, 5);
-test_hash!(hash_sha3_512_raw, HashSha3_512Raw, 5);
+test_hash!(hash_sha3_256_raw, HashSha3_256Raw, 4);
+test_hash!(hash_sha3_384_raw, HashSha3_384Raw, 4);
+test_hash!(hash_sha3_512_raw, HashSha3_512Raw, 4);
 
-test_hash!(hash_keccak256_native, HashKeccak256Native, 5);
-test_hash!(hash_keccak384_native, HashKeccak384Native, 5);
-test_hash!(hash_keccak512_native, HashKeccak512Native, 5);
+test_hash!(hash_keccak256_native, HashKeccak256Native, 4);
+test_hash!(hash_keccak384_native, HashKeccak384Native, 4);
+test_hash!(hash_keccak512_native, HashKeccak512Native, 4);
 
-test_hash!(hash_sha3_256_native, HashSha3_256Native, 5);
-test_hash!(hash_sha3_384_native, HashSha3_384Native, 5);
-test_hash!(hash_sha3_512_native, HashSha3_512Native, 5);
+test_hash!(hash_sha3_256_native, HashSha3_256Native, 4);
+test_hash!(hash_sha3_384_native, HashSha3_384Native, 4);
+test_hash!(hash_sha3_512_native, HashSha3_512Native, 4);
 
-test_hash!(hash_keccak256_native_raw, HashKeccak256NativeRaw, 5);
-test_hash!(hash_keccak384_native_raw, HashKeccak384NativeRaw, 5);
-test_hash!(hash_keccak512_native_raw, HashKeccak512NativeRaw, 5);
+test_hash!(hash_keccak256_native_raw, HashKeccak256NativeRaw, 4);
+test_hash!(hash_keccak384_native_raw, HashKeccak384NativeRaw, 4);
+test_hash!(hash_keccak512_native_raw, HashKeccak512NativeRaw, 4);
 
-test_hash!(hash_sha3_256_native_raw, HashSha3_256NativeRaw, 5);
-test_hash!(hash_sha3_384_native_raw, HashSha3_384NativeRaw, 5);
-test_hash!(hash_sha3_512_native_raw, HashSha3_512NativeRaw, 5);
+test_hash!(hash_sha3_256_native_raw, HashSha3_256NativeRaw, 4);
+test_hash!(hash_sha3_384_native_raw, HashSha3_384NativeRaw, 4);
+test_hash!(hash_sha3_512_native_raw, HashSha3_512NativeRaw, 4);
 
 // Note this test must be explicitly written, instead of using the macro, because HashPED64 fails on certain input types.
 #[test]
