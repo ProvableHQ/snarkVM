@@ -75,12 +75,50 @@ use snarkvm_synthesizer_program::{
     RegistersTrait as _,
 };
 
+use std::{cell::RefCell, collections::HashMap};
+
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
+
+type StackKey = (String, String, circuit::Mode, String);
+
+type CachedStack = (Stack<CurrentNetwork>, Vec<Operand<CurrentNetwork>>, Register<CurrentNetwork>);
+
+thread_local! {
+    static STACK_CACHE: RefCell<HashMap<StackKey, CachedStack>> = RefCell::new(HashMap::new());
+}
+
+thread_local! {
+    static HASH_RNG: RefCell<TestRng> = RefCell::new(TestRng::default());
+}
 
 const ITERATIONS: usize = 10;
 
 static PROCESS: Lazy<Process<CurrentNetwork>> = Lazy::new(|| Process::load().unwrap());
+
+fn with_cached_stack<T>(
+    opcode: Opcode,
+    input_type: &PlaintextType<CurrentNetwork>,
+    mode: circuit::Mode,
+    destination_type: &PlaintextType<CurrentNetwork>,
+    f: impl FnOnce(&Stack<CurrentNetwork>, Vec<Operand<CurrentNetwork>>, Register<CurrentNetwork>) -> T,
+) -> T {
+    let key: StackKey = (opcode.to_string(), input_type.to_string(), mode, destination_type.to_string());
+
+    STACK_CACHE.with(|cache| {
+        // Ensure entry exists.
+        if !cache.borrow().contains_key(&key) {
+            let (stack, operands, destination) = sample_stack(opcode, input_type, mode, destination_type).unwrap();
+            cache.borrow_mut().insert(key.clone(), (stack, operands, destination));
+        }
+
+        // Borrow and clone the small parts out. We only borrow `&Stack`.
+        let cache_ref = cache.borrow();
+        let (stack, operands, destination) = cache_ref.get(&key).expect("cache entry missing");
+
+        f(stack, operands.clone(), destination.clone())
+    })
+}
 
 fn sample_valid_input_types<N: Network, R: CryptoRng + Rng>(
     variant: HashVariant,
@@ -249,90 +287,81 @@ fn check_hash<const VARIANT: u8>(
     mode: &circuit::Mode,
     destination_type: &PlaintextType<CurrentNetwork>,
 ) {
-    println!("Checking '{opcode}' for '{input_type}.{mode}'");
-
-    // Initialize the stack.
-    let (stack, operands, destination) = sample_stack(opcode, input_type, *mode, destination_type).unwrap();
-
-    // Sample the input.
-    let input = stack.sample_plaintext(input_type, &mut TestRng::default()).unwrap();
-
-    // Initialize the operation.
-    let operation = operation(operands, destination.clone(), destination_type.clone());
-    // Initialize the function name.
-    let function_name = Identifier::from_str("run").unwrap();
-    // Initialize a destination operand.
-    let destination_operand = Operand::Register(destination);
-
-    // Attempt to evaluate the valid operand case.
-    let mut evaluate_registers =
-        sample_registers(&stack, &function_name, &[(Value::Plaintext(input.clone()), None)]).unwrap();
-    let result_a = operation.evaluate(&stack, &mut evaluate_registers);
-
-    // Attempt to execute the valid operand case.
-    let mut execute_registers =
-        sample_registers(&stack, &function_name, &[(Value::Plaintext(input.clone()), Some(*mode))]).unwrap();
-    let result_b = operation.execute::<CurrentAleo>(&stack, &mut execute_registers);
-
-    // Attempt to finalize the valid operand case.
-    let mut finalize_registers = sample_finalize_registers(&stack, &function_name, &[input]).unwrap();
-    let result_c = operation.finalize(&stack, &mut finalize_registers);
-
-    // Check that either all operations failed, or all operations succeeded.
-    let all_failed = result_a.is_err() && result_b.is_err() && result_c.is_err();
-    let all_succeeded = result_a.is_ok() && result_b.is_ok() && result_c.is_ok();
-    assert!(
-        all_failed || all_succeeded,
-        "The results of the evaluation, execution, and finalization should either all succeed or all fail"
-    );
-
-    // If all operations succeeded, check that the outputs are consistent.
-    if all_succeeded {
-        // Retrieve the output of evaluation.
-        let output_a = evaluate_registers.load(&stack, &destination_operand).unwrap();
-
-        // Retrieve the output of execution.
-        let output_b = execute_registers.load_circuit(&stack, &destination_operand).unwrap();
-
-        // Retrieve the output of finalization.
-        let output_c = finalize_registers.load(&stack, &destination_operand).unwrap();
-
-        // Check that the outputs are consistent.
-        assert_eq!(output_a, output_b.eject_value(), "The results of the evaluation and execution are inconsistent");
-        assert_eq!(output_a, output_c, "The results of the evaluation and finalization are inconsistent");
-
-        // Check that the output type is consistent with the declared type.
-        match (VARIANT, output_a) {
-            (0..=32, Value::Plaintext(Plaintext::Literal(literal, _))) => {
-                assert_eq!(
-                    &PlaintextType::Literal(literal.to_type()),
-                    destination_type,
-                    "The output type is inconsistent with the declared type"
-                );
-            }
-            (33..=44, Value::Plaintext(plaintext)) => {
-                // Check that the plaintext is a bit array.
-                let Ok(bit_array) = plaintext.as_bit_array() else {
-                    panic!("The output type is inconsistent with the declared type");
-                };
-                // Get the destination type.
-                let PlaintextType::Array(array_type) = &destination_type else {
-                    panic!("The output type is inconsistent with the declared type");
-                };
-                // Check that the lengths match.
-                assert_eq!(
-                    bit_array.len(),
-                    **array_type.length() as usize,
-                    "The output type is inconsistent with the declared type"
-                );
-            }
-
-            _ => unreachable!("The output type is inconsistent with the declared type"),
-        }
+    if std::env::var("SNARKVM_HASH_TEST_LOG").is_ok() {
+        println!("Checking '{opcode}' for '{input_type}.{mode}'");
     }
 
-    // Reset the circuit.
-    <CurrentAleo as circuit::Environment>::reset();
+    with_cached_stack(opcode, input_type, *mode, destination_type, |stack, operands, destination| {
+        // Sample the input.
+        let input = HASH_RNG.with(|r| stack.sample_plaintext(input_type, &mut *r.borrow_mut()).unwrap());
+
+        // Initialize the operation.
+        let operation = operation(operands, destination.clone(), destination_type.clone());
+
+        // Function name + destination operand.
+        let function_name = Identifier::from_str("run").unwrap();
+        let destination_operand = Operand::Register(destination);
+
+        // Evaluate.
+        let mut evaluate_registers =
+            sample_registers(stack, &function_name, &[(Value::Plaintext(input.clone()), None)]).unwrap();
+        let result_a = operation.evaluate(stack, &mut evaluate_registers);
+
+        // Execute.
+        let mut execute_registers =
+            sample_registers(stack, &function_name, &[(Value::Plaintext(input.clone()), Some(*mode))]).unwrap();
+        let result_b = operation.execute::<CurrentAleo>(stack, &mut execute_registers);
+
+        // Finalize.
+        let mut finalize_registers = sample_finalize_registers(stack, &function_name, &[input]).unwrap();
+        let result_c = operation.finalize(stack, &mut finalize_registers);
+
+        let all_failed = result_a.is_err() && result_b.is_err() && result_c.is_err();
+        let all_succeeded = result_a.is_ok() && result_b.is_ok() && result_c.is_ok();
+        assert!(
+            all_failed || all_succeeded,
+            "The results of the evaluation, execution, and finalization should either all succeed or all fail"
+        );
+
+        if all_succeeded {
+            let output_a = evaluate_registers.load(stack, &destination_operand).unwrap();
+            let output_b = execute_registers.load_circuit(stack, &destination_operand).unwrap();
+            let output_c = finalize_registers.load(stack, &destination_operand).unwrap();
+
+            assert_eq!(
+                output_a,
+                output_b.eject_value(),
+                "The results of the evaluation and execution are inconsistent"
+            );
+            assert_eq!(output_a, output_c, "The results of the evaluation and finalization are inconsistent");
+
+            match (VARIANT, output_a) {
+                (0..=32, Value::Plaintext(Plaintext::Literal(literal, _))) => {
+                    assert_eq!(
+                        &PlaintextType::Literal(literal.to_type()),
+                        destination_type,
+                        "The output type is inconsistent with the declared type"
+                    );
+                }
+                (33..=44, Value::Plaintext(plaintext)) => {
+                    let Ok(bit_array) = plaintext.as_bit_array() else {
+                        panic!("The output type is inconsistent with the declared type");
+                    };
+                    let PlaintextType::Array(array_type) = &destination_type else {
+                        panic!("The output type is inconsistent with the declared type");
+                    };
+                    assert_eq!(
+                        bit_array.len(),
+                        **array_type.length() as usize,
+                        "The output type is inconsistent with the declared type"
+                    );
+                }
+                _ => unreachable!("The output type is inconsistent with the declared type"),
+            }
+        }
+
+        <CurrentAleo as circuit::Environment>::reset();
+    });
 }
 
 macro_rules! test_hash {
