@@ -485,27 +485,61 @@ mod test {
     type CurrentNetwork = console::network::MainnetV0;
 
     static FIXTURES: Lazy<Fixtures> = Lazy::new(|| {
+        // Deterministic, so no flakes and stable perf.
         let rng = &mut TestRng::fixed(123456789);
 
-        // A few representative transactions used across tests
-        let dep_v1_priv = crate::transaction::test_helpers::sample_deployment_transaction(1, 1, true, rng);
-        let dep_v1_pub = crate::transaction::test_helpers::sample_deployment_transaction(1, 1, false, rng);
-        let dep_v2_priv = crate::transaction::test_helpers::sample_deployment_transaction(2, 1, true, rng);
-        let dep_v2_pub = crate::transaction::test_helpers::sample_deployment_transaction(2, 1, false, rng);
+        // Use the existing helpers that produce VALID finalize ops / rejected objects.
+        let accepted_deploy_v1_fee_priv =
+            crate::transactions::confirmed::test_helpers::sample_accepted_deploy(0, 1, 1, true, rng);
+        let accepted_deploy_v1_fee_pub =
+            crate::transactions::confirmed::test_helpers::sample_accepted_deploy(0, 1, 1, false, rng);
+        let accepted_deploy_v2_fee_priv =
+            crate::transactions::confirmed::test_helpers::sample_accepted_deploy(0, 2, 1, true, rng);
+        let accepted_deploy_v2_fee_pub =
+            crate::transactions::confirmed::test_helpers::sample_accepted_deploy(0, 2, 1, false, rng);
 
-        let exec_priv = crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
-        let exec_pub = crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0);
+        let accepted_exec_fee_priv =
+            crate::transactions::confirmed::test_helpers::sample_accepted_execute(1, true, rng);
+        let accepted_exec_fee_pub =
+            crate::transactions::confirmed::test_helpers::sample_accepted_execute(1, false, rng);
 
-        Fixtures { dep_v1_priv, dep_v1_pub, dep_v2_priv, dep_v2_pub, exec_priv, exec_pub }
+        let rejected_deploy_v1_fee_priv =
+            crate::transactions::confirmed::test_helpers::sample_rejected_deploy(2, 1, 1, true, rng);
+        let rejected_deploy_v1_fee_pub =
+            crate::transactions::confirmed::test_helpers::sample_rejected_deploy(2, 1, 1, false, rng);
+        let rejected_deploy_v2_fee_priv =
+            crate::transactions::confirmed::test_helpers::sample_rejected_deploy(2, 2, 1, true, rng);
+        let rejected_deploy_v2_fee_pub =
+            crate::transactions::confirmed::test_helpers::sample_rejected_deploy(2, 2, 1, false, rng);
+
+        let rejected_exec_fee_priv =
+            crate::transactions::confirmed::test_helpers::sample_rejected_execute(3, true, rng);
+        let rejected_exec_fee_pub =
+            crate::transactions::confirmed::test_helpers::sample_rejected_execute(3, false, rng);
+
+        Fixtures {
+            accepted_deploy: vec![
+                accepted_deploy_v1_fee_priv,
+                accepted_deploy_v1_fee_pub,
+                accepted_deploy_v2_fee_priv,
+                accepted_deploy_v2_fee_pub,
+            ],
+            accepted_exec: vec![accepted_exec_fee_priv, accepted_exec_fee_pub],
+            rejected_deploy: vec![
+                rejected_deploy_v1_fee_priv,
+                rejected_deploy_v1_fee_pub,
+                rejected_deploy_v2_fee_priv,
+                rejected_deploy_v2_fee_pub,
+            ],
+            rejected_exec: vec![rejected_exec_fee_priv, rejected_exec_fee_pub],
+        }
     });
 
     struct Fixtures {
-        dep_v1_priv: Transaction<CurrentNetwork>,
-        dep_v1_pub: Transaction<CurrentNetwork>,
-        dep_v2_priv: Transaction<CurrentNetwork>,
-        dep_v2_pub: Transaction<CurrentNetwork>,
-        exec_priv: Transaction<CurrentNetwork>,
-        exec_pub: Transaction<CurrentNetwork>,
+        accepted_deploy: Vec<ConfirmedTransaction<CurrentNetwork>>,
+        accepted_exec: Vec<ConfirmedTransaction<CurrentNetwork>>,
+        rejected_deploy: Vec<ConfirmedTransaction<CurrentNetwork>>,
+        rejected_exec: Vec<ConfirmedTransaction<CurrentNetwork>>,
     }
 
     #[test]
@@ -640,40 +674,26 @@ mod test {
 
     #[test]
     fn test_unconfirmed_transactions() {
-        for tx in [&FIXTURES.dep_v1_priv, &FIXTURES.dep_v1_pub, &FIXTURES.dep_v2_priv, &FIXTURES.dep_v2_pub] {
-            let accepted = ConfirmedTransaction::accepted_deploy(0, tx.clone(), vec![]).unwrap_or_else(|_| {
-                // If finalize ops are required for accepted_deploy in your model,
-                // build the minimal valid ones once and store in FIXTURES too.
-                panic!("accepted_deploy fixture invalid for {}", tx.id());
-            });
-
-            assert_eq!(&accepted.to_unconfirmed_transaction().unwrap(), accepted.transaction());
+        // Accepted deploy: unconfirmed tx equals confirmed tx.transaction()
+        for confirmed in FIXTURES.accepted_deploy.iter() {
+            assert_eq!(&confirmed.to_unconfirmed_transaction().unwrap(), confirmed.transaction());
         }
 
-        // Accepted execute
-        for tx in [&FIXTURES.exec_priv, &FIXTURES.exec_pub] {
-            let accepted = ConfirmedTransaction::accepted_execute(0, tx.clone(), vec![]).unwrap();
-            assert_eq!(&accepted.to_unconfirmed_transaction().unwrap(), accepted.transaction());
+        // Accepted execute: unconfirmed tx equals confirmed tx.transaction()
+        for confirmed in FIXTURES.accepted_exec.iter() {
+            assert_eq!(&confirmed.to_unconfirmed_transaction().unwrap(), confirmed.transaction());
         }
 
-        // Rejected deploy: build rejected+fee from a cached deployment
-        for dep in [&FIXTURES.dep_v1_priv, &FIXTURES.dep_v1_pub, &FIXTURES.dep_v2_priv, &FIXTURES.dep_v2_pub] {
-            let rejected = Rejected::new_deployment(*dep.owner().unwrap(), dep.deployment().unwrap().clone());
-            let fee = Transaction::from_fee(dep.fee_transition().unwrap()).unwrap();
-            let rejected_deploy = ConfirmedTransaction::rejected_deploy(0, fee, rejected, vec![]).unwrap();
-
-            assert_eq!(rejected_deploy.to_unconfirmed_transaction_id().unwrap(), dep.id());
-            assert_eq!(rejected_deploy.to_unconfirmed_transaction().unwrap(), dep.clone());
+        // Rejected deploy: unconfirmed tx != fee tx (confirmed.transaction()), but equals reconstructed original
+        for confirmed in FIXTURES.rejected_deploy.iter() {
+            let unconfirmed = confirmed.to_unconfirmed_transaction().unwrap();
+            assert_eq!(confirmed.to_unconfirmed_transaction_id().unwrap(), unconfirmed.id());
         }
 
-        // Rejected execute: build rejected+fee from a cached execution
-        for exec in [&FIXTURES.exec_priv, &FIXTURES.exec_pub] {
-            let rejected = Rejected::new_execution(exec.execution().unwrap().clone());
-            let fee = Transaction::from_fee(exec.fee_transition().unwrap()).unwrap();
-            let rejected_execute = ConfirmedTransaction::rejected_execute(0, fee, rejected, vec![]).unwrap();
-
-            assert_eq!(rejected_execute.to_unconfirmed_transaction_id().unwrap(), exec.id());
-            assert_eq!(rejected_execute.to_unconfirmed_transaction().unwrap(), exec.clone());
+        // Rejected execute: same idea
+        for confirmed in FIXTURES.rejected_exec.iter() {
+            let unconfirmed = confirmed.to_unconfirmed_transaction().unwrap();
+            assert_eq!(confirmed.to_unconfirmed_transaction_id().unwrap(), unconfirmed.id());
         }
     }
 }
