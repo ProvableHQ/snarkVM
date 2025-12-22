@@ -50,36 +50,28 @@ type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNet
 
 #[test]
 fn test_vm_execute_and_finalize_group1() {
-    run_group(0, 8);
+    run_group(0, 6);
 }
 #[test]
 fn test_vm_execute_and_finalize_group2() {
-    run_group(1, 8);
+    run_group(1, 6);
 }
 #[test]
 fn test_vm_execute_and_finalize_group3() {
-    run_group(2, 8);
+    run_group(2, 6);
 }
 #[test]
 fn test_vm_execute_and_finalize_group4() {
-    run_group(3, 8);
+    run_group(3, 6);
 }
 
 #[test]
 fn test_vm_execute_and_finalize_group5() {
-    run_group(4, 8);
+    run_group(4, 6);
 }
 #[test]
 fn test_vm_execute_and_finalize_group6() {
-    run_group(5, 8);
-}
-#[test]
-fn test_vm_execute_and_finalize_group7() {
-    run_group(6, 8);
-}
-#[test]
-fn test_vm_execute_and_finalize_group8() {
-    run_group(7, 8);
+    run_group(5, 6);
 }
 
 fn run_group(idx: usize, total: usize) {
