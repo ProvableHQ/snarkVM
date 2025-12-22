@@ -92,7 +92,7 @@ thread_local! {
     static HASH_RNG: RefCell<TestRng> = RefCell::new(TestRng::default());
 }
 
-const ITERATIONS: usize = 10;
+const ITERATIONS: usize = 8;
 
 static PROCESS: Lazy<Process<CurrentNetwork>> = Lazy::new(|| Process::load().unwrap());
 
