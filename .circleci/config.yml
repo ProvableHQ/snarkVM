@@ -265,9 +265,7 @@ commands:
 
             # Remove any --test target flags,they cause nextest build errors
             BUILD_FLAGS_SANITIZED="$(printf '%s' "$BUILD_FLAGS" \
-              | sed -E "s/(^|[[:space:]])--test[[:space:]]+'[^']*'([[:space:]]|$)/ /g" \
-              | sed -E 's/(^|[[:space:]])--test[[:space:]]+\"[^\"]*\"([[:space:]]|$)/ /g' \
-              | sed -E 's/(^|[[:space:]])--test[[:space:]]+[^[:space:]]+([[:space:]]|$)/ /g' \
+              | sed -E "s/(^|[[:space:]])--test[[:space:]]+('\*'|\"\*\"|\*)([[:space:]]|$)/ /g" \
               | tr -s ' ' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
             )"
 
@@ -282,7 +280,7 @@ commands:
 
             WSM="<< parameters.workspace_member >>"
             if [ "$WSM" = "snarkvm-synthesizer" ] && [ "$HAS_TEST_WILDCARD" -eq 1 ]; then
-              FILTER_EXPR='test(/test_command_parse/)+test(/test_instruction_parse/)+test(/test_process_execute/)+test(/test_program_parse/)+test(/test_vm_execute_and_finalize/)'
+              FILTER_EXPR='test(/test_command_parse/)+test(/test_instruction_parse/)+test(/test_process_execute/)+test(/test_program_parse/)'
             fi
 
             HEAVY_EXPR='test(/vm::finalize::tests::test_atomic_finalize_many/) or test(/vm::finalize::tests::test_excess_transactions_should_be_aborted/) or test(/vm::finalize::tests::test_finalize_catch_halt/) or test(/vm::finalize::tests::test_rejected_transaction_should_not_update_storage/) or test(/vm::test_helpers::test_load_deployments_with_imports/) or test(/vm::test_helpers::test_multiple_deployments_and_multiple_executions/) or test(/vm::verify::tests::test_verify_deploy_and_execute/)'
@@ -924,7 +922,7 @@ jobs:
           # test_vm_execute_and_finalize can take over 10 minutes in the current setup
           no_output_timeout: 20m
           workspace_member: snarkvm-synthesizer
-          flags: --test '*' --features test -- --test-threads=4
+          flags: --test test_vm_execute_and_finalize --features test -- --test-threads=4
           cache_key_suffix: -integration
 
   synthesizer-process:
