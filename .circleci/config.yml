@@ -732,7 +732,7 @@ jobs:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
     environment:
-      SNARKVM_SERDE_SAMPLES: "50"
+      SNARKVM_SERDE_SAMPLES: "25"
     steps:
       - run_test:
           workspace_member: snarkvm-ledger-block

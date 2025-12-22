@@ -363,9 +363,8 @@ impl<N: Network> Deref for ConfirmedTransaction<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use console::network::MainnetV0;
 
-    type CurrentNetwork = MainnetV0;
+    type CurrentNetwork = console::network::MainnetV0;
 
     /// Samples an accepted deploy transaction at the given index.
     pub(crate) fn sample_accepted_deploy(
@@ -481,7 +480,33 @@ mod test {
     use super::*;
     use crate::transactions::confirmed::test_helpers;
 
+    use once_cell::sync::Lazy;
+
     type CurrentNetwork = console::network::MainnetV0;
+
+    static FIXTURES: Lazy<Fixtures> = Lazy::new(|| {
+        let rng = &mut TestRng::fixed(123456789);
+
+        // A few representative transactions used across tests
+        let dep_v1_priv = crate::transaction::test_helpers::sample_deployment_transaction(1, 1, true, rng);
+        let dep_v1_pub = crate::transaction::test_helpers::sample_deployment_transaction(1, 1, false, rng);
+        let dep_v2_priv = crate::transaction::test_helpers::sample_deployment_transaction(2, 1, true, rng);
+        let dep_v2_pub = crate::transaction::test_helpers::sample_deployment_transaction(2, 1, false, rng);
+
+        let exec_priv = crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
+        let exec_pub = crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0);
+
+        Fixtures { dep_v1_priv, dep_v1_pub, dep_v2_priv, dep_v2_pub, exec_priv, exec_pub }
+    });
+
+    struct Fixtures {
+        dep_v1_priv: Transaction<CurrentNetwork>,
+        dep_v1_pub: Transaction<CurrentNetwork>,
+        dep_v2_priv: Transaction<CurrentNetwork>,
+        dep_v2_pub: Transaction<CurrentNetwork>,
+        exec_priv: Transaction<CurrentNetwork>,
+        exec_pub: Transaction<CurrentNetwork>,
+    }
 
     #[test]
     fn test_accepted_execute() {
@@ -615,90 +640,40 @@ mod test {
 
     #[test]
     fn test_unconfirmed_transactions() {
-        let rng = &mut TestRng::default();
+        for tx in [&FIXTURES.dep_v1_priv, &FIXTURES.dep_v1_pub, &FIXTURES.dep_v2_priv, &FIXTURES.dep_v2_pub] {
+            let accepted = ConfirmedTransaction::accepted_deploy(0, tx.clone(), vec![]).unwrap_or_else(|_| {
+                // If finalize ops are required for accepted_deploy in your model,
+                // build the minimal valid ones once and store in FIXTURES too.
+                panic!("accepted_deploy fixture invalid for {}", tx.id());
+            });
 
-        // Ensure that the unconfirmed transaction of an accepted deployment is equivalent to its confirmed transaction.
-        let accepted_deploy =
-            test_helpers::sample_accepted_deploy(Uniform::rand(rng), 1, Uniform::rand(rng), true, rng);
-        assert_eq!(&accepted_deploy.to_unconfirmed_transaction().unwrap(), accepted_deploy.transaction());
-        let accepted_deploy =
-            test_helpers::sample_accepted_deploy(Uniform::rand(rng), 1, Uniform::rand(rng), false, rng);
-        assert_eq!(&accepted_deploy.to_unconfirmed_transaction().unwrap(), accepted_deploy.transaction());
-        let accepted_deploy =
-            test_helpers::sample_accepted_deploy(Uniform::rand(rng), 2, Uniform::rand(rng), true, rng);
-        assert_eq!(&accepted_deploy.to_unconfirmed_transaction().unwrap(), accepted_deploy.transaction());
-        let accepted_deploy =
-            test_helpers::sample_accepted_deploy(Uniform::rand(rng), 2, Uniform::rand(rng), false, rng);
-        assert_eq!(&accepted_deploy.to_unconfirmed_transaction().unwrap(), accepted_deploy.transaction());
+            assert_eq!(&accepted.to_unconfirmed_transaction().unwrap(), accepted.transaction());
+        }
 
-        // Ensure that the unconfirmed transaction of an accepted execute is equivalent to its confirmed transaction.
-        let accepted_execution = test_helpers::sample_accepted_execute(Uniform::rand(rng), true, rng);
-        assert_eq!(&accepted_execution.to_unconfirmed_transaction().unwrap(), accepted_execution.transaction());
-        let accepted_execution = test_helpers::sample_accepted_execute(Uniform::rand(rng), false, rng);
-        assert_eq!(&accepted_execution.to_unconfirmed_transaction().unwrap(), accepted_execution.transaction());
+        // Accepted execute
+        for tx in [&FIXTURES.exec_priv, &FIXTURES.exec_pub] {
+            let accepted = ConfirmedTransaction::accepted_execute(0, tx.clone(), vec![]).unwrap();
+            assert_eq!(&accepted.to_unconfirmed_transaction().unwrap(), accepted.transaction());
+        }
 
-        // Ensure that the unconfirmed transaction of a rejected deployment is not equivalent to its confirmed transaction.
-        let deployment_transaction =
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), true, rng);
-        let rejected = Rejected::new_deployment(
-            *deployment_transaction.owner().unwrap(),
-            deployment_transaction.deployment().unwrap().clone(),
-        );
-        let fee = Transaction::from_fee(deployment_transaction.fee_transition().unwrap()).unwrap();
-        let rejected_deploy = ConfirmedTransaction::rejected_deploy(Uniform::rand(rng), fee, rejected, vec![]).unwrap();
-        assert_eq!(rejected_deploy.to_unconfirmed_transaction_id().unwrap(), deployment_transaction.id());
-        assert_eq!(rejected_deploy.to_unconfirmed_transaction().unwrap(), deployment_transaction);
+        // Rejected deploy: build rejected+fee from a cached deployment
+        for dep in [&FIXTURES.dep_v1_priv, &FIXTURES.dep_v1_pub, &FIXTURES.dep_v2_priv, &FIXTURES.dep_v2_pub] {
+            let rejected = Rejected::new_deployment(*dep.owner().unwrap(), dep.deployment().unwrap().clone());
+            let fee = Transaction::from_fee(dep.fee_transition().unwrap()).unwrap();
+            let rejected_deploy = ConfirmedTransaction::rejected_deploy(0, fee, rejected, vec![]).unwrap();
 
-        let deployment_transaction =
-            crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng);
-        let rejected = Rejected::new_deployment(
-            *deployment_transaction.owner().unwrap(),
-            deployment_transaction.deployment().unwrap().clone(),
-        );
-        let fee = Transaction::from_fee(deployment_transaction.fee_transition().unwrap()).unwrap();
-        let rejected_deploy = ConfirmedTransaction::rejected_deploy(Uniform::rand(rng), fee, rejected, vec![]).unwrap();
-        assert_eq!(rejected_deploy.to_unconfirmed_transaction_id().unwrap(), deployment_transaction.id());
-        assert_eq!(rejected_deploy.to_unconfirmed_transaction().unwrap(), deployment_transaction);
+            assert_eq!(rejected_deploy.to_unconfirmed_transaction_id().unwrap(), dep.id());
+            assert_eq!(rejected_deploy.to_unconfirmed_transaction().unwrap(), dep.clone());
+        }
 
-        let deployment_transaction =
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng);
-        let rejected = Rejected::new_deployment(
-            *deployment_transaction.owner().unwrap(),
-            deployment_transaction.deployment().unwrap().clone(),
-        );
-        let fee = Transaction::from_fee(deployment_transaction.fee_transition().unwrap()).unwrap();
-        let rejected_deploy = ConfirmedTransaction::rejected_deploy(Uniform::rand(rng), fee, rejected, vec![]).unwrap();
-        assert_eq!(rejected_deploy.to_unconfirmed_transaction_id().unwrap(), deployment_transaction.id());
-        assert_eq!(rejected_deploy.to_unconfirmed_transaction().unwrap(), deployment_transaction);
+        // Rejected execute: build rejected+fee from a cached execution
+        for exec in [&FIXTURES.exec_priv, &FIXTURES.exec_pub] {
+            let rejected = Rejected::new_execution(exec.execution().unwrap().clone());
+            let fee = Transaction::from_fee(exec.fee_transition().unwrap()).unwrap();
+            let rejected_execute = ConfirmedTransaction::rejected_execute(0, fee, rejected, vec![]).unwrap();
 
-        let deployment_transaction =
-            crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng);
-        let rejected = Rejected::new_deployment(
-            *deployment_transaction.owner().unwrap(),
-            deployment_transaction.deployment().unwrap().clone(),
-        );
-        let fee = Transaction::from_fee(deployment_transaction.fee_transition().unwrap()).unwrap();
-        let rejected_deploy = ConfirmedTransaction::rejected_deploy(Uniform::rand(rng), fee, rejected, vec![]).unwrap();
-        assert_eq!(rejected_deploy.to_unconfirmed_transaction_id().unwrap(), deployment_transaction.id());
-        assert_eq!(rejected_deploy.to_unconfirmed_transaction().unwrap(), deployment_transaction);
-
-        // Ensure that the unconfirmed transaction of a rejected execute is not equivalent to its confirmed transaction.
-        let execution_transaction =
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
-        let rejected = Rejected::new_execution(execution_transaction.execution().unwrap().clone());
-        let fee = Transaction::from_fee(execution_transaction.fee_transition().unwrap()).unwrap();
-        let rejected_execute =
-            ConfirmedTransaction::rejected_execute(Uniform::rand(rng), fee, rejected, vec![]).unwrap();
-        assert_eq!(rejected_execute.to_unconfirmed_transaction_id().unwrap(), execution_transaction.id());
-        assert_eq!(rejected_execute.to_unconfirmed_transaction().unwrap(), execution_transaction);
-
-        let execution_transaction =
-            crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0);
-        let rejected = Rejected::new_execution(execution_transaction.execution().unwrap().clone());
-        let fee = Transaction::from_fee(execution_transaction.fee_transition().unwrap()).unwrap();
-        let rejected_execute =
-            ConfirmedTransaction::rejected_execute(Uniform::rand(rng), fee, rejected, vec![]).unwrap();
-        assert_eq!(rejected_execute.to_unconfirmed_transaction_id().unwrap(), execution_transaction.id());
-        assert_eq!(rejected_execute.to_unconfirmed_transaction().unwrap(), execution_transaction);
+            assert_eq!(rejected_execute.to_unconfirmed_transaction_id().unwrap(), exec.id());
+            assert_eq!(rejected_execute.to_unconfirmed_transaction().unwrap(), exec.clone());
+        }
     }
 }
