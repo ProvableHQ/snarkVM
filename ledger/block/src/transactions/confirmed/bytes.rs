@@ -18,94 +18,57 @@ use super::*;
 impl<N: Network> FromBytes for ConfirmedTransaction<N> {
     /// Reads the confirmed transaction from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+        fn read_finalize_ops<N: Network, R: Read>(
+            mut reader: R,
+            num_finalize: NumFinalizeSize,
+        ) -> IoResult<Vec<FinalizeOperation<N>>> {
+            // Ensure the number of finalize operations is within bounds.
+            if num_finalize as usize > N::MAX_COMMANDS {
+                return Err(error(format!(
+                    "ConfirmedTransaction (from 'read_le') has too many finalize operations ({} > {})",
+                    num_finalize,
+                    N::MAX_COMMANDS
+                )));
+            }
+
+            let n = num_finalize as usize;
+            let mut finalize = Vec::with_capacity(n);
+            for _ in 0..n {
+                finalize.push(FinalizeOperation::<N>::read_le(&mut reader)?);
+            }
+            Ok(finalize)
+        }
+
         let variant = u8::read_le(&mut reader)?;
         match variant {
             0 => {
-                // Read the index.
                 let index = u32::read_le(&mut reader)?;
-                // Read the transaction.
                 let transaction = Transaction::<N>::read_le(&mut reader)?;
-                // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
-                // Ensure the number of finalize operations is within bounds.
-                if num_finalize as usize > N::MAX_COMMANDS {
-                    return Err(error(format!(
-                        "ConfirmedTransaction (from 'read_le') has too many finalize operations ({} > {})",
-                        num_finalize,
-                        N::MAX_COMMANDS
-                    )));
-                }
-                // Read the finalize operations.
-                let finalize =
-                    (0..num_finalize).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
-                // Return the confirmed transaction.
+                let finalize = read_finalize_ops::<N, _>(&mut reader, num_finalize)?;
                 Self::accepted_deploy(index, transaction, finalize).map_err(error)
             }
             1 => {
-                // Read the index.
                 let index = u32::read_le(&mut reader)?;
-                // Read the transaction.
                 let transaction = Transaction::<N>::read_le(&mut reader)?;
-                // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
-                // Ensure the number of finalize operations is within bounds.
-                if num_finalize as usize > N::MAX_COMMANDS {
-                    return Err(error(format!(
-                        "ConfirmedTransaction (from 'read_le') has too many finalize operations ({} > {})",
-                        num_finalize,
-                        N::MAX_COMMANDS
-                    )));
-                }
-                // Read the finalize operations.
-                let finalize =
-                    (0..num_finalize).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
-                // Return the confirmed transaction.
+                let finalize = read_finalize_ops::<N, _>(&mut reader, num_finalize)?;
                 Self::accepted_execute(index, transaction, finalize).map_err(error)
             }
             2 => {
-                // Read the index.
                 let index = u32::read_le(&mut reader)?;
-                // Read the transaction.
                 let transaction = Transaction::<N>::read_le(&mut reader)?;
-                // Read the rejected deployment.
                 let rejected = Rejected::<N>::read_le(&mut reader)?;
-                // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
-                // Ensure the number of finalize operations is within bounds.
-                if num_finalize as usize > N::MAX_COMMANDS {
-                    return Err(error(format!(
-                        "ConfirmedTransaction (from 'read_le') has too many finalize operations ({} > {})",
-                        num_finalize,
-                        N::MAX_COMMANDS
-                    )));
-                }
-                // Read the finalize operations.
-                let finalize =
-                    (0..num_finalize).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
-                // Return the confirmed transaction.
+                let finalize = read_finalize_ops::<N, _>(&mut reader, num_finalize)?;
                 Self::rejected_deploy(index, transaction, rejected, finalize).map_err(error)
             }
             3 => {
-                // Read the index.
                 let index = u32::read_le(&mut reader)?;
-                // Read the transaction.
                 let transaction = Transaction::<N>::read_le(&mut reader)?;
-                // Read the rejected execution.
                 let rejected = Rejected::<N>::read_le(&mut reader)?;
-                // Read the number of finalize operations.
                 let num_finalize = NumFinalizeSize::read_le(&mut reader)?;
-                // Ensure the number of finalize operations is within bounds.
-                if num_finalize as usize > N::MAX_COMMANDS {
-                    return Err(error(format!(
-                        "ConfirmedTransaction (from 'read_le') has too many finalize operations ({} > {})",
-                        num_finalize,
-                        N::MAX_COMMANDS
-                    )));
-                }
-                // Read the finalize operations.
-                let finalize =
-                    (0..num_finalize).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
-                // Return the confirmed transaction.
+                let finalize = read_finalize_ops::<N, _>(&mut reader, num_finalize)?;
                 Self::rejected_execute(index, transaction, rejected, finalize).map_err(error)
             }
             4.. => Err(error(format!("Failed to decode confirmed transaction variant {variant}"))),
@@ -176,13 +139,32 @@ impl<N: Network> ToBytes for ConfirmedTransaction<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use console::network::MainnetV0;
+    use once_cell::sync::Lazy;
+
+    type CurrentNetwork = MainnetV0;
+
+    // Heavy fixtures built once per test-binary.
+    static SAMPLES: Lazy<Vec<ConfirmedTransaction<CurrentNetwork>>> =
+        Lazy::new(crate::transactions::confirmed::test_helpers::sample_confirmed_transactions);
+
+    // Precompute bytes once too.
+    static SAMPLE_BYTES: Lazy<Vec<Vec<u8>>> =
+        Lazy::new(|| SAMPLES.iter().map(|tx| tx.to_bytes_le().expect("to_bytes_le")).collect());
+
+    fn sample_limit() -> usize {
+        std::env::var("SNARKVM_BYTES_SAMPLES").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(usize::MAX)
+    }
+
+    fn iter_bytes<'a>() -> impl Iterator<Item = (&'a ConfirmedTransaction<CurrentNetwork>, &'a [u8])> {
+        let lim = sample_limit();
+        SAMPLES.iter().zip(SAMPLE_BYTES.iter().map(|v| v.as_slice())).take(lim)
+    }
 
     #[test]
     fn test_bytes() {
-        for expected in crate::transactions::confirmed::test_helpers::sample_confirmed_transactions() {
-            // Check the byte representation.
-            let expected_bytes = expected.to_bytes_le().unwrap();
-            assert_eq!(expected, ConfirmedTransaction::read_le(&expected_bytes[..]).unwrap());
+        for (expected, expected_bytes) in iter_bytes() {
+            assert_eq!(*expected, ConfirmedTransaction::read_le(expected_bytes).unwrap());
         }
     }
 }
