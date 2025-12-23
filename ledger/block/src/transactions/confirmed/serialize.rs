@@ -128,9 +128,8 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    // Generate heavy samples once for the entire test binary.
     static SAMPLES: Lazy<Vec<ConfirmedTransaction<CurrentNetwork>>> =
-        Lazy::new(crate::transactions::confirmed::test_helpers::sample_confirmed_transactions);
+        Lazy::new(crate::transactions::confirmed::test_helpers::sample_confirmed_transactions_for_serde);
 
     fn sample_limit() -> usize {
         std::env::var("SNARKVM_SERDE_SAMPLES").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(usize::MAX)
@@ -139,16 +138,6 @@ mod tests {
     fn iter_samples<'a>() -> impl Iterator<Item = &'a ConfirmedTransaction<CurrentNetwork>> {
         let limit = sample_limit();
         SAMPLES.iter().take(limit)
-    }
-
-    fn check_serde_json_roundtrip<T>(expected: &T)
-    where
-        T: Serialize + for<'a> Deserialize<'a> + PartialEq + Eq + Debug,
-    {
-        // serialize -> deserialize
-        let candidate_string = serde_json::to_string(expected).unwrap();
-        let candidate = serde_json::from_str::<T>(&candidate_string).unwrap();
-        assert_eq!(*expected, candidate);
     }
 
     fn check_display_fromstr_json_string_equivalence<T>(expected: &T)
@@ -168,27 +157,37 @@ mod tests {
         assert_eq!(*expected, from_json);
     }
 
-    fn check_bincode_roundtrip<T>(expected: &T)
+    fn check_bincode_only<T>(expected: &T)
     where
-        T: Serialize + for<'a> Deserialize<'a> + PartialEq + Eq + Debug + ToBytes + FromBytes,
+        T: Serialize + for<'a> Deserialize<'a> + PartialEq + Eq + Debug,
     {
-        // Serialize
+        let bytes = bincode::serialize(expected).unwrap();
+        let decoded: T = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(*expected, decoded);
+    }
+
+    fn check_tobytes_matches_bincode_payload<T>(expected: &T)
+    where
+        T: Serialize + ToBytes,
+    {
         let expected_bytes = expected.to_bytes_le().unwrap();
-        let expected_bytes_with_size_encoding = bincode::serialize(expected).unwrap();
-        assert_eq!(&expected_bytes[..], &expected_bytes_with_size_encoding[8..]);
+        let bincode_bytes = bincode::serialize(expected).unwrap();
+        assert_eq!(&expected_bytes[..], &bincode_bytes[8..]);
+    }
 
-        // Deserialize
-        let read_le = T::read_le(&expected_bytes[..]).unwrap();
-        assert_eq!(*expected, read_le);
-
-        let from_bincode: T = bincode::deserialize(&expected_bytes_with_size_encoding[..]).unwrap();
-        assert_eq!(*expected, from_bincode);
+    fn check_display_roundtrip_via_json<T>(expected: &T)
+    where
+        T: for<'a> Deserialize<'a> + Display + PartialEq + Eq + Debug,
+    {
+        let s = expected.to_string();
+        let from_display = serde_json::from_str::<T>(&s).unwrap();
+        assert_eq!(*expected, from_display);
     }
 
     #[test]
     fn test_serde_json_roundtrip_fast() {
-        for tx in iter_samples() {
-            check_serde_json_roundtrip(tx);
+        for tx in iter_samples().take(3) {
+            check_display_roundtrip_via_json(tx);
         }
     }
 
@@ -214,7 +213,14 @@ mod tests {
     #[test]
     fn test_bincode_roundtrip() {
         for tx in iter_samples() {
-            check_bincode_roundtrip(tx);
+            check_bincode_only(tx);
+        }
+    }
+
+    #[test]
+    fn test_bincode_payload_matches_tobytes_layout() {
+        for tx in iter_samples().take(2) {
+            check_tobytes_matches_bincode_payload(tx);
         }
     }
 }

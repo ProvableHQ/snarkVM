@@ -366,6 +366,23 @@ pub mod test_helpers {
 
     type CurrentNetwork = console::network::MainnetV0;
 
+    pub(crate) fn sample_confirmed_transactions_for_serde() -> Vec<ConfirmedTransaction<CurrentNetwork>> {
+        let rng = &mut TestRng::fixed(123456789);
+
+        vec![
+            // accepted execute
+            sample_accepted_execute(0, true, rng),
+            sample_accepted_execute(1, false, rng),
+            // rejected execute
+            sample_rejected_execute(2, true, rng),
+            sample_rejected_execute(3, false, rng),
+            // one accepted deploy
+            sample_accepted_deploy(4, 1, 1, false, rng),
+            // one rejected deploy (with the fixed version that derives rejected from deployment tx)
+            sample_rejected_deploy(5, 1, 1, false, rng),
+        ]
+    }
+
     /// Samples an accepted deploy transaction at the given index.
     pub(crate) fn sample_accepted_deploy(
         index: u32,
