@@ -381,7 +381,7 @@ constructor:
         // we just assert that execute() does not produce an accepted tx in the next block.
         let res = vm.execute(
             &caller_private_key,
-            ("test_ecdsa_keccak256_eth.aleo", "verify_message"),
+            ("test_ecdsa_keccas256_eth.aleo", "verify_message"),
             vec![
                 Value::Plaintext(signature_plaintext),
                 Value::Plaintext(address_plaintext),
