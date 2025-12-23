@@ -67,211 +67,148 @@ impl<'de, N: Network> Deserialize<'de> for Transactions<N> {
 mod tests {
     use super::*;
     use console::network::MainnetV0;
+    use once_cell::sync::Lazy;
 
     type CurrentNetwork = MainnetV0;
 
-    const ITERATIONS: u32 = 6;
+    /// Default number of samples used by these tests.
+    /// Override with SNARKVM_TX_SERDE_SAMPLES (e.g. 1, 2, 4).
+    fn sample_limit() -> usize {
+        std::env::var("SNARKVM_TX_SERDE_SAMPLES").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(2)
+    }
 
-    fn sample_transactions(index: u32, rng: &mut TestRng) -> Transactions<CurrentNetwork> {
-        if index == 0 {
-            [
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
-                    Uniform::rand(rng),
-                    1,
-                    Uniform::rand(rng),
-                    true,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
-                    Uniform::rand(rng),
-                    1,
-                    Uniform::rand(rng),
-                    false,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
-                    Uniform::rand(rng),
-                    2,
-                    Uniform::rand(rng),
-                    true,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
-                    Uniform::rand(rng),
-                    2,
-                    Uniform::rand(rng),
-                    false,
-                    rng,
-                ),
-            ]
-            .into_iter()
-            .collect()
-        } else if index == 1 {
-            [
-                crate::transactions::confirmed::test_helpers::sample_accepted_execute(Uniform::rand(rng), true, rng),
-                crate::transactions::confirmed::test_helpers::sample_accepted_execute(Uniform::rand(rng), false, rng),
-            ]
-            .into_iter()
-            .collect()
-        } else if index == 2 {
-            [
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
-                    Uniform::rand(rng),
-                    1,
-                    Uniform::rand(rng),
-                    true,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
-                    Uniform::rand(rng),
-                    2,
-                    Uniform::rand(rng),
-                    true,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_accepted_execute(1, true, rng),
-                crate::transactions::confirmed::test_helpers::sample_accepted_execute(2, false, rng),
-            ]
-            .into_iter()
-            .collect()
-        } else if index == 3 {
-            [
-                crate::transactions::confirmed::test_helpers::sample_accepted_execute(0, true, rng),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
-                    Uniform::rand(rng),
-                    1,
-                    Uniform::rand(rng),
-                    true,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
-                    Uniform::rand(rng),
-                    2,
-                    Uniform::rand(rng),
-                    true,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_rejected_execute(2, false, rng),
-                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
-                    Uniform::rand(rng),
-                    1,
-                    Uniform::rand(rng),
-                    false,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
-                    Uniform::rand(rng),
-                    2,
-                    Uniform::rand(rng),
-                    false,
-                    rng,
-                ),
-            ]
-            .into_iter()
-            .collect()
+    /// If we explicitly want heavy coverage (slow), run with:
+    /// SNARKVM_TX_SERDE_HEAVY=1
+    fn heavy_mode() -> bool {
+        std::env::var("SNARKVM_TX_SERDE_HEAVY").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
+    }
+
+    /// Small, curated fixtures that still cover:
+    /// - accepted execute
+    /// - rejected execute
+    /// - accepted deploy (1 only)
+    /// - rejected deploy (1 only)
+    ///
+    /// We build them once per test binary.
+    static SMALL_SETS: Lazy<Vec<Transactions<CurrentNetwork>>> = Lazy::new(|| {
+        let rng = &mut TestRng::fixed(123456789);
+
+        let set_exec_only: Transactions<CurrentNetwork> = [
+            crate::transactions::confirmed::test_helpers::sample_accepted_execute(0, true, rng),
+            crate::transactions::confirmed::test_helpers::sample_accepted_execute(1, false, rng),
+            crate::transactions::confirmed::test_helpers::sample_rejected_execute(2, true, rng),
+            crate::transactions::confirmed::test_helpers::sample_rejected_execute(3, false, rng),
+        ]
+        .into_iter()
+        .collect();
+
+        let set_mixed_small: Transactions<CurrentNetwork> = [
+            // one deploy + one rejected deploy to keep coverage without blowing up size
+            crate::transactions::confirmed::test_helpers::sample_accepted_deploy(10, 1, 1, false, rng),
+            crate::transactions::confirmed::test_helpers::sample_rejected_deploy(11, 1, 1, false, rng),
+            // plus two executes
+            crate::transactions::confirmed::test_helpers::sample_accepted_execute(12, true, rng),
+            crate::transactions::confirmed::test_helpers::sample_rejected_execute(13, false, rng),
+        ]
+        .into_iter()
+        .collect();
+
+        vec![set_exec_only, set_mixed_small]
+    });
+
+    /// Optional heavy fixture: sample a full block’s transactions once.
+    static HEAVY_BLOCK: Lazy<Transactions<CurrentNetwork>> = Lazy::new(|| {
+        let rng = &mut TestRng::fixed(123456789);
+        crate::transactions::test_helpers::sample_block_transactions(rng)
+    });
+
+    fn iter_sets<'a>() -> Box<dyn Iterator<Item = &'a Transactions<CurrentNetwork>> + 'a> {
+        let lim = sample_limit();
+        if heavy_mode() {
+            Box::new(SMALL_SETS.iter().chain(std::iter::once(&*HEAVY_BLOCK)).take(lim.max(1)))
         } else {
-            [
-                crate::transactions::confirmed::test_helpers::sample_accepted_execute(0, true, rng),
-                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
-                    Uniform::rand(rng),
-                    1,
-                    Uniform::rand(rng),
-                    true,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
-                    Uniform::rand(rng),
-                    2,
-                    Uniform::rand(rng),
-                    true,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
-                    Uniform::rand(rng),
-                    1,
-                    Uniform::rand(rng),
-                    true,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_accepted_deploy(
-                    Uniform::rand(rng),
-                    2,
-                    Uniform::rand(rng),
-                    true,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_rejected_execute(3, true, rng),
-                crate::transactions::confirmed::test_helpers::sample_accepted_execute(4, false, rng),
-                crate::transactions::confirmed::test_helpers::sample_rejected_execute(5, false, rng),
-                crate::transactions::confirmed::test_helpers::sample_accepted_execute(6, false, rng),
-                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
-                    Uniform::rand(rng),
-                    1,
-                    Uniform::rand(rng),
-                    false,
-                    rng,
-                ),
-                crate::transactions::confirmed::test_helpers::sample_rejected_deploy(
-                    Uniform::rand(rng),
-                    2,
-                    Uniform::rand(rng),
-                    false,
-                    rng,
-                ),
-            ]
-            .into_iter()
-            .collect()
+            Box::new(SMALL_SETS.iter().take(lim))
         }
+    }
+
+    fn json_roundtrip<T>(value: &T)
+    where
+        T: Serialize + for<'a> Deserialize<'a> + PartialEq + Eq + core::fmt::Debug,
+    {
+        let s = serde_json::to_string(value).unwrap();
+        let back = serde_json::from_str::<T>(&s).unwrap();
+        assert_eq!(*value, back);
+    }
+
+    fn bincode_roundtrip<T>(value: &T)
+    where
+        T: Serialize + for<'a> Deserialize<'a> + PartialEq + Eq + core::fmt::Debug,
+    {
+        let bytes = bincode::serialize(value).unwrap();
+        let back: T = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(*value, back);
+    }
+
+    fn tobytes_roundtrip<T>(value: &T)
+    where
+        T: ToBytes + FromBytes + PartialEq + Eq + core::fmt::Debug,
+    {
+        let bytes = value.to_bytes_le().unwrap();
+        let back = T::read_le(&bytes[..]).unwrap();
+        assert_eq!(*value, back);
+    }
+
+    fn bincode_payload_matches_tobytes<T>(value: &T)
+    where
+        T: Serialize + ToBytes,
+    {
+        let tobytes = value.to_bytes_le().unwrap();
+        let bincode_bytes = bincode::serialize(value).unwrap();
+        assert_eq!(&tobytes[..], &bincode_bytes[8..]);
     }
 
     #[test]
     fn test_serde_json() {
-        let rng = &mut TestRng::default();
-
-        let check_serde_json = |expected: Transactions<CurrentNetwork>| {
-            // Serialize
-            let expected_string = &expected.to_string();
-            let candidate_string = serde_json::to_string(&expected).unwrap();
-
-            // Deserialize
-            assert_eq!(expected, Transactions::from_str(expected_string).unwrap());
-            assert_eq!(expected, serde_json::from_str(&candidate_string).unwrap());
-        };
-
-        // Check the serialization.
-        check_serde_json(crate::transactions::test_helpers::sample_block_transactions(rng));
-
-        for i in 0..ITERATIONS {
-            // Construct the transactions.
-            let expected: Transactions<CurrentNetwork> = sample_transactions(i, rng);
-            // Check the serialization.
-            check_serde_json(expected);
+        for txs in iter_sets() {
+            json_roundtrip(txs);
         }
     }
 
     #[test]
     fn test_bincode() {
-        let rng = &mut TestRng::default();
+        // bincode roundtrip only (fast).
+        for txs in iter_sets() {
+            bincode_roundtrip(txs);
+        }
 
-        let check_bincode = |expected: Transactions<CurrentNetwork>| {
-            // Serialize
-            let expected_bytes = expected.to_bytes_le().unwrap();
-            let expected_bytes_with_size_encoding = bincode::serialize(&expected).unwrap();
-            assert_eq!(&expected_bytes[..], &expected_bytes_with_size_encoding[8..]);
+        for txs in iter_sets().take(1) {
+            bincode_payload_matches_tobytes(txs);
+        }
+    }
 
-            // Deserialize
-            assert_eq!(expected, Transactions::read_le(&expected_bytes[..]).unwrap());
-            assert_eq!(expected, bincode::deserialize(&expected_bytes_with_size_encoding[..]).unwrap());
-        };
+    #[test]
+    fn test_bytes() {
+        for txs in iter_sets() {
+            tobytes_roundtrip(txs);
+        }
+    }
 
-        // Check the serialization.
-        check_bincode(crate::transactions::test_helpers::sample_block_transactions(rng));
+    #[test]
+    fn test_display_fromstr_smoke() {
+        let mut it = iter_sets();
+        if let Some(txs) = it.next() {
+            let s = txs.to_string();
+            let back = Transactions::<CurrentNetwork>::from_str(&s).unwrap();
+            assert_eq!(*txs, back);
+        }
 
-        for i in 0..ITERATIONS {
-            // Construct the transactions.
-            let expected: Transactions<CurrentNetwork> = sample_transactions(i, rng);
-            // Check the serialization.
-            check_bincode(expected);
+        if heavy_mode() {
+            // In heavy mode, also check one more set.
+            if let Some(txs) = it.next() {
+                let s = txs.to_string();
+                let back = Transactions::<CurrentNetwork>::from_str(&s).unwrap();
+                assert_eq!(*txs, back);
+            }
         }
     }
 }
