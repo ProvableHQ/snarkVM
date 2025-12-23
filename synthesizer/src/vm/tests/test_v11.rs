@@ -196,7 +196,7 @@ fn test_ecdsa_keccak256_eth() {
         ),
     ];
 
-    // A helper function to pase a hex string into a `Plaintext`.
+    // A helper function to parse a hex string into a `Plaintext`.
     let parse_hex_to_plaintext = |hex_str: &str| -> Plaintext<CurrentNetwork> {
         let bytes = hex::decode(hex_str.trim_start_matches("0x")).unwrap();
         Plaintext::Array(
@@ -252,7 +252,7 @@ constructor:
     let v11_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V11).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(v11_height, rng);
 
-    // Deploy the program.
+    // Deploy the program (one block).
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
@@ -260,55 +260,60 @@ constructor:
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block).unwrap();
 
-    // Parse the invalid address.
+    // Parse the invalid address (plaintext) once.
     let inval_address = "0x589d3e40069df16c429522acab02c9dafd955834";
     let inval_address_plaintext = parse_hex_to_plaintext(inval_address);
 
-    // For each message test vector, check that the message hashes to the expected hash.
+    //
+    // 1) All message->hash checks in ONE block.
+    //
+    let mut execs = Vec::with_capacity(message_test_vectors.len());
     for (i, (message, hash)) in message_test_vectors.iter().enumerate() {
         println!("Testing message vector {}/{}", i + 1, message_test_vectors.len());
 
-        // Parse the inputs.
         let message_plaintext = parse_hex_to_plaintext(message);
         let hash_plaintext = parse_hex_to_plaintext(hash);
 
-        // Execute the `check_message_and_hash` function to ensure the message hashes correctly.
         let execution = vm
             .execute(
                 &caller_private_key,
                 ("test_ecdsa_keccak256_eth.aleo", "check_message_and_hash"),
-                vec![Value::Plaintext(message_plaintext.clone()), Value::Plaintext(hash_plaintext)].into_iter(),
+                vec![Value::Plaintext(message_plaintext), Value::Plaintext(hash_plaintext)].into_iter(),
                 None,
                 0,
                 None,
                 rng,
             )
             .unwrap();
-        let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
-        assert_eq!(block.transactions().num_accepted(), 1);
-        assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
-        vm.add_next_block(&block).unwrap();
+
+        execs.push(execution);
     }
 
-    // For each valid test vector check that the signature verification behaves as expected.
+    let block = sample_next_block(&vm, &caller_private_key, &execs, rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), execs.len());
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    //
+    // 2) All VALID signature verifications in ONE block (should all be accepted).
+    //
+    let mut execs = Vec::with_capacity(valid_test_vectors.len());
     for (i, (message, signature, valid_address)) in valid_test_vectors.iter().enumerate() {
         println!("Testing valid vector {}/{}", i + 1, valid_test_vectors.len());
 
-        // Parse the inputs.
         let message_plaintext = parse_hex_to_plaintext(message);
         let signature_plaintext = parse_hex_to_plaintext(signature);
         let valid_address_plaintext = parse_hex_to_plaintext(valid_address);
 
-        // Execute the `verify_message` function to check the signature verification.
         let execution = vm
             .execute(
                 &caller_private_key,
                 ("test_ecdsa_keccak256_eth.aleo", "verify_message"),
                 vec![
-                    Value::Plaintext(signature_plaintext.clone()),
-                    Value::Plaintext(valid_address_plaintext.clone()),
-                    Value::Plaintext(message_plaintext.clone()),
+                    Value::Plaintext(signature_plaintext),
+                    Value::Plaintext(valid_address_plaintext),
+                    Value::Plaintext(message_plaintext),
                     Value::Plaintext(Plaintext::from(Literal::Boolean(Boolean::new(true)))),
                 ]
                 .into_iter(),
@@ -318,19 +323,32 @@ constructor:
                 rng,
             )
             .unwrap();
-        let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
-        assert_eq!(block.transactions().num_accepted(), 1);
-        assert_eq!(block.transactions().num_rejected(), 0);
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
-        vm.add_next_block(&block).unwrap();
 
-        // Execute the `verify_message` function to check the signature verification with an invalid address.
+        execs.push(execution);
+    }
+
+    let block = sample_next_block(&vm, &caller_private_key, &execs, rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), execs.len());
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    //
+    // 3) Same signatures/messages but INVALID address in ONE block (should all be rejected).
+    //
+    let mut execs = Vec::with_capacity(valid_test_vectors.len());
+    for (i, (message, signature, _valid_address)) in valid_test_vectors.iter().enumerate() {
+        println!("Testing invalid-address case {}/{}", i + 1, valid_test_vectors.len());
+
+        let message_plaintext = parse_hex_to_plaintext(message);
+        let signature_plaintext = parse_hex_to_plaintext(signature);
+
         let execution = vm
             .execute(
                 &caller_private_key,
                 ("test_ecdsa_keccak256_eth.aleo", "verify_message"),
                 vec![
-                    Value::Plaintext(signature_plaintext.clone()),
+                    Value::Plaintext(signature_plaintext),
                     Value::Plaintext(inval_address_plaintext.clone()),
                     Value::Plaintext(message_plaintext),
                     Value::Plaintext(Plaintext::from(Literal::Boolean(Boolean::new(true)))),
@@ -342,48 +360,49 @@ constructor:
                 rng,
             )
             .unwrap();
-        let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
-        assert_eq!(block.transactions().num_accepted(), 0);
-        assert_eq!(block.transactions().num_rejected(), 1);
-        assert_eq!(block.aborted_transaction_ids().len(), 0);
-        vm.add_next_block(&block).unwrap();
+
+        execs.push(execution);
     }
 
-    // For all invalid test vectors, check that signature verification fails.
+    let block = sample_next_block(&vm, &caller_private_key, &execs, rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), execs.len());
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
     for (i, (message, signature, address)) in invalid_test_vectors.iter().enumerate() {
         println!("Testing invalid vector {}/{}", i + 1, invalid_test_vectors.len());
 
-        // Parse the inputs.
         let message_plaintext = parse_hex_to_plaintext(message);
         let signature_plaintext = parse_hex_to_plaintext(signature);
-        let valid_address_plaintext = parse_hex_to_plaintext(address);
+        let address_plaintext = parse_hex_to_plaintext(address);
 
-        // Execute the `verify_message` function to check the signature verification.
-        let execution = vm
-            .execute(
-                &caller_private_key,
-                ("test_ecdsa_keccas256_eth.aleo", "verify_message"),
-                vec![
-                    Value::Plaintext(signature_plaintext.clone()),
-                    Value::Plaintext(valid_address_plaintext.clone()),
-                    Value::Plaintext(message_plaintext.clone()),
-                    Value::Plaintext(Plaintext::from(Literal::Boolean(Boolean::new(false)))),
-                ]
-                .into_iter(),
-                None,
-                0,
-                None,
-                rng,
-            )
-            .and_then(|execution| {
-                // Create a block and fail if the number of accepted transactions is zero.
+        // This should FAIL (i.e. be rejected / not accepted), so keep it cheap:
+        // we just assert that execute() does not produce an accepted tx in the next block.
+        let res = vm.execute(
+            &caller_private_key,
+            ("test_ecdsa_keccak256_eth.aleo", "verify_message"),
+            vec![
+                Value::Plaintext(signature_plaintext),
+                Value::Plaintext(address_plaintext),
+                Value::Plaintext(message_plaintext),
+                Value::Plaintext(Plaintext::from(Literal::Boolean(Boolean::new(false)))),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        );
+
+        match res {
+            Err(_) => { /* ok */ }
+            Ok(execution) => {
                 let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
-                if block.transactions().num_accepted() == 0 {
-                    Err(anyhow::anyhow!("The transaction was not accepted"))
-                } else {
-                    Ok(())
-                }
-            });
-        assert!(execution.is_err(), "The execution should fail");
+                assert_eq!(block.transactions().num_accepted(), 0);
+                assert!(block.transactions().num_rejected() == 1 || block.aborted_transaction_ids().len() == 1);
+                vm.add_next_block(&block).unwrap();
+            }
+        }
     }
 }
