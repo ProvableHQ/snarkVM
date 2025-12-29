@@ -147,7 +147,7 @@ impl<F: PrimeField> R1CS<F> {
                                 let (index, _value) = index_value.as_ref();
                                 let gadget = converter.public.get(index).unwrap();
                                 assert_eq!(
-                                    snarkvm_algorithms::r1cs::Index::Public((index + 1) as usize),
+                                    snarkvm_algorithms::r1cs::Index::Public(*index as usize),
                                     gadget.get_unchecked(),
                                     "Failed during constraint translation. The public variable in the second system must match the first system (with an off-by-1 for the public case)"
                                 );
