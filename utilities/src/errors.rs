@@ -150,7 +150,8 @@ pub fn try_vm_runtime<R, F: FnMut() -> R>(f: F) -> Result<R, Box<dyn Any + Send>
 
     if result.is_err() {
         // Get the stored panic and backtrace from the thread-local variable.
-        let (msg, _) = PANIC_INFO.with(|info| info.take()).expect("No panic information stored?");
+        let msg =
+            PANIC_INFO.with(|info| info.take()).map(|(msg, _)| msg).unwrap_or("no panic information found".to_string());
 
         #[cfg(debug_assertions)]
         {
