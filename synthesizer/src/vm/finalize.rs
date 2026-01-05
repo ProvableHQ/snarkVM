@@ -969,10 +969,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // If the transaction is a deployment, ensure that it is not another deployment in the block from the same public fee payer.
         if let Transaction::Deploy(_, _, _, _, fee) = transaction {
             // If any public deployment payer has already deployed in this block, abort the transaction.
-            if let Some(payer) = fee.payer() {
-                if deployment_payers.contains(&payer) {
-                    return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
-                }
+            if let Some(payer) = fee.payer()
+                && deployment_payers.contains(&payer)
+            {
+                return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
             }
         }
 
@@ -3515,7 +3515,7 @@ finalize compute:
 
         // Generate the next block.
         let next_block =
-            sample_next_block(&vm, validators.keys().next().unwrap(), &vec![transaction], &block, &mut vec![], rng)
+            sample_next_block(&vm, validators.keys().next().unwrap(), &[transaction], &block, &mut vec![], rng)
                 .unwrap();
 
         // Add the next block.
@@ -3553,15 +3553,9 @@ finalize compute:
             .unwrap();
 
         // Generate the next block.
-        let next_block = sample_next_block(
-            &vm,
-            validators.keys().next().unwrap(),
-            &vec![transaction],
-            &next_block,
-            &mut vec![],
-            rng,
-        )
-        .unwrap();
+        let next_block =
+            sample_next_block(&vm, validators.keys().next().unwrap(), &[transaction], &next_block, &mut vec![], rng)
+                .unwrap();
 
         // Add the next block.
         vm.add_next_block(&next_block).unwrap();

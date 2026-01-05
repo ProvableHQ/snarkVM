@@ -50,14 +50,14 @@ impl<N: Network> Transaction<N> {
             }
             Self::Execute(_, _, execution, fee) => {
                 // Check if the ID is the transition ID for the fee.
-                if let Some(fee) = fee {
-                    if *id == **fee.id() {
-                        // Return the transaction leaf.
-                        return Ok(TransactionLeaf::new_execution(
-                            u16::try_from(execution.len())?, // The last index.
-                            *id,
-                        ));
-                    }
+                if let Some(fee) = fee
+                    && *id == **fee.id()
+                {
+                    // Return the transaction leaf.
+                    return Ok(TransactionLeaf::new_execution(
+                        u16::try_from(execution.len())?, // The last index.
+                        *id,
+                    ));
                 }
 
                 // Iterate through the transitions in the execution.

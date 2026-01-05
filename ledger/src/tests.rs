@@ -2175,7 +2175,7 @@ fn test_max_committee_limit_with_bonds() {
         .execute(
             &first_private_key,
             ("credits.aleo", "bond_validator"),
-            vec![
+            [
                 Value::<CurrentNetwork>::from_str(&first_withdrawal_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str(&format!("{MIN_VALIDATOR_STAKE}u64")).unwrap(),
                 Value::<CurrentNetwork>::from_str("10u8").unwrap(),
@@ -2219,7 +2219,7 @@ fn test_max_committee_limit_with_bonds() {
         .execute(
             &second_private_key,
             ("credits.aleo", "bond_validator"),
-            vec![
+            [
                 Value::<CurrentNetwork>::from_str(&second_withdrawal_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str(&format!("{MIN_VALIDATOR_STAKE}u64")).unwrap(),
                 Value::<CurrentNetwork>::from_str("10u8").unwrap(),
@@ -2267,7 +2267,7 @@ fn test_max_committee_limit_with_bonds() {
         .execute(
             &first_withdrawal_private_key,
             ("credits.aleo", "unbond_public"),
-            vec![
+            [
                 Value::<CurrentNetwork>::from_str(&first_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str(&format!("{MIN_VALIDATOR_STAKE}u64")).unwrap(),
             ]
@@ -2285,7 +2285,7 @@ fn test_max_committee_limit_with_bonds() {
         .execute(
             &second_private_key,
             ("credits.aleo", "bond_validator"),
-            vec![
+            [
                 Value::<CurrentNetwork>::from_str(&second_withdrawal_address.to_string()).unwrap(),
                 Value::<CurrentNetwork>::from_str(&format!("{MIN_VALIDATOR_STAKE}u64")).unwrap(),
                 Value::<CurrentNetwork>::from_str("10u8").unwrap(),
@@ -2474,7 +2474,7 @@ finalize foo:
         let mut confirmed_transaction_ids = transactions.iter().map(Transaction::id).collect::<Vec<_>>();
 
         // Randomly insert the aborted transactions.
-        let mut aborted_transactions = vec![aborted_transfer.clone(), aborted_deployment.clone()];
+        let mut aborted_transactions = [aborted_transfer.clone(), aborted_deployment.clone()];
         aborted_transactions.shuffle(rng);
 
         // Randomly insert the aborted transactions.
@@ -3954,7 +3954,7 @@ function create_and_consume:
     let record = block.records().collect_vec().last().unwrap().1.decrypt(&view_key).unwrap();
     let transaction = ledger
         .vm()
-        .execute(&private_key, ("child.aleo", "burn"), vec![Value::Record(record)].iter(), None, 0, None, rng)
+        .execute(&private_key, ("child.aleo", "burn"), [Value::Record(record)].iter(), None, 0, None, rng)
         .unwrap();
     let block =
         ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();
@@ -4003,7 +4003,7 @@ function create_and_consume:
         .execute(
             &private_key,
             ("parent.aleo", "consume_without_call"),
-            vec![Value::Record(mint_record.clone())].iter(),
+            [Value::Record(mint_record.clone())].iter(),
             None,
             0,
             None,
@@ -4027,7 +4027,7 @@ function create_and_consume:
     // Call the `consume` function.
     let transaction = ledger
         .vm()
-        .execute(&private_key, ("parent.aleo", "consume"), vec![Value::Record(mint_record)].iter(), None, 0, None, rng)
+        .execute(&private_key, ("parent.aleo", "consume"), [Value::Record(mint_record)].iter(), None, 0, None, rng)
         .unwrap();
     let block =
         ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![transaction], rng).unwrap();

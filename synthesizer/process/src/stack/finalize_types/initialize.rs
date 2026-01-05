@@ -193,10 +193,10 @@ impl<N: Network> FinalizeTypes<N> {
             // ensure that the program ID is imported by the current program.
             match operand {
                 Operand::Checksum(program_id) | Operand::Edition(program_id) | Operand::ProgramOwner(program_id) => {
-                    if let Some(program_id) = program_id {
-                        if stack.get_external_stack(program_id).is_err() {
-                            bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
-                        }
+                    if let Some(program_id) = program_id
+                        && stack.get_external_stack(program_id).is_err()
+                    {
+                        bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
                     }
                 }
                 _ => {}

@@ -272,13 +272,13 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
                 self.reverse_id_map().remove(&output_id)?;
 
                 // If the output is a record, remove the record nonce and record sender.
-                if let Some(record) = self.record_map().get_confirmed(&output_id)? {
-                    if let Some(record) = &record.1 {
-                        // Remove the record nonce.
-                        self.record_nonce_map().remove(record.nonce())?;
-                        // Remove the record sender, if it exists.
-                        self.record_sender_map().remove(record.nonce())?;
-                    }
+                if let Some(record) = self.record_map().get_confirmed(&output_id)?
+                    && let Some(record) = &record.1
+                {
+                    // Remove the record nonce.
+                    self.record_nonce_map().remove(record.nonce())?;
+                    // Remove the record sender, if it exists.
+                    self.record_sender_map().remove(record.nonce())?;
                 }
 
                 // Remove the output.

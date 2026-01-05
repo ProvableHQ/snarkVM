@@ -440,12 +440,12 @@ impl<E: PairingEngine> KZG10<E> {
             if enforced_degree_bounds.binary_search(&bound).is_err() {
                 Err(PCError::UnsupportedDegreeBound(bound))
             } else if bound < p.degree() || bound > max_degree {
-                return Err(PCError::IncorrectDegreeBound {
+                Err(PCError::IncorrectDegreeBound {
                     poly_degree: p.degree(),
                     degree_bound: p.degree_bound().unwrap(),
                     max_degree,
                     label: p.label().to_string(),
-                });
+                })
             } else {
                 Ok(())
             }

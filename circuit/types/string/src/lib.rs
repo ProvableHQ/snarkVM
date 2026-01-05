@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #![forbid(unsafe_code)]
+#![allow(mismatched_lifetime_syntaxes)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 
 extern crate snarkvm_console_types_string as console;

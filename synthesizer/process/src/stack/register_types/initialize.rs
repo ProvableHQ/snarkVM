@@ -184,16 +184,16 @@ impl<N: Network> RegisterTypes<N> {
                 future_registers.pop();
                 // Check only the register operands that are `future` types.
                 for operand in async_.operands() {
-                    if let Operand::Register(register) = operand {
-                        if matches!(
+                    if let Operand::Register(register) = operand
+                        && matches!(
                             register_types.get_type(stack, register)?,
                             RegisterType::Future(_) | RegisterType::DynamicFuture
-                        ) {
-                            ensure!(
-                                future_registers.swap_remove(&register.clone()),
-                                "Could not find future register '{register}' produced before the 'async' instruction.",
-                            );
-                        }
+                        )
+                    {
+                        ensure!(
+                            future_registers.swap_remove(&register.clone()),
+                            "Could not find future register '{register}' produced before the 'async' instruction.",
+                        );
                     }
                 }
                 // Ensure that all the futures created are consumed in the async call.
