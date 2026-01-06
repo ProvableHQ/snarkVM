@@ -40,6 +40,8 @@
         border-color: transparent;
         cursor: pointer;
         text-align: center;
+        padding: 6px 12px;
+        border-radius: 4px;
       }
       button:hover {
         background-color: #2793da;
@@ -58,6 +60,130 @@
       }
       .header-label {
         margin-right: 4px;
+      }
+      .header-item {
+        margin-bottom: 4px;
+      }
+      .time-range-filter {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 8px 16px 10px 16px;
+        background-color: #f5f5f5;
+        border-top: 1px solid #ddd;
+        box-shadow: 0 -2px 8px rgba(0,0,0,0.1);
+        z-index: 100;
+      }
+      body {
+        padding-bottom: 80px;
+      }
+      .filter-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+      }
+      .filter-header label {
+        font-weight: 600;
+      }
+      .filter-info {
+        font-size: 0.85rem;
+        color: #666;
+      }
+      .range-slider-container {
+        position: relative;
+        height: 30px;
+        margin: 12px 10px 4px 10px;
+      }
+      .range-track {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: #ddd;
+        border-radius: 3px;
+        transform: translateY(-50%);
+      }
+      .range-notches {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        height: 14px;
+        transform: translateY(-50%);
+        pointer-events: none;
+      }
+      .range-notch {
+        position: absolute;
+        width: 1px;
+        height: 8px;
+        background: #bbb;
+        transform: translateX(-50%);
+        top: 50%;
+        margin-top: -4px;
+      }
+      .range-notch.year {
+        height: 12px;
+        margin-top: -6px;
+        background: #888;
+      }
+      .range-notch-label {
+        position: absolute;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 0.6rem;
+        color: #888;
+        white-space: nowrap;
+      }
+      .range-selected {
+        position: absolute;
+        top: 50%;
+        height: 6px;
+        background: #3298dc;
+        border-radius: 3px;
+        transform: translateY(-50%);
+      }
+      .range-handle {
+        position: absolute;
+        top: 50%;
+        width: 16px;
+        height: 16px;
+        background: #3298dc;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        cursor: grab;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        z-index: 2;
+      }
+      .range-handle:hover {
+        background: #2793da;
+        transform: translate(-50%, -50%) scale(1.15);
+      }
+      .range-handle:active {
+        cursor: grabbing;
+      }
+      .range-handle-label {
+        position: absolute;
+        top: -22px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 0.7rem;
+        white-space: nowrap;
+        background: #333;
+        color: #fff;
+        padding: 2px 5px;
+        border-radius: 3px;
+      }
+      .range-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.7rem;
+        color: #888;
+        margin-top: 2px;
       }
       .benchmark-set {
         margin: 8px 0;
@@ -82,11 +208,57 @@
       .benchmark-chart {
         max-width: 95%;
       }
+      .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease;
+      }
+      .loading-overlay.visible {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .loading-spinner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #ddd;
+        border-top-color: #3298dc;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      .loading-text {
+        color: #4a4a4a;
+        font-weight: 500;
+      }
     </style>
     <title>Benchmarks</title>
   </head>
 
   <body>
+    <div class="loading-overlay" id="loading-overlay">
+      <div class="loading-spinner">
+        <div class="spinner"></div>
+        <span class="loading-text">Updating charts...</span>
+      </div>
+    </div>
     <header id="header">
       <div class="header-item">
         <strong class="header-label">Last Update:</strong>
@@ -104,12 +276,33 @@
       <div class="small">Powered by <a rel="noopener" href="https://github.com/marketplace/actions/continuous-benchmark">github-action-benchmark</a></div>
     </footer>
 
+    <div class="time-range-filter">
+      <div class="filter-header">
+        <label>Time Range</label>
+        <span class="filter-info" id="filter-info"></span>
+      </div>
+      <div class="range-slider-container" id="range-slider">
+        <div class="range-track"></div>
+        <div class="range-notches" id="range-notches"></div>
+        <div class="range-selected" id="range-selected"></div>
+        <div class="range-handle" id="handle-start">
+          <span class="range-handle-label" id="label-start"></span>
+        </div>
+        <div class="range-handle" id="handle-end">
+          <span class="range-handle-label" id="label-end"></span>
+        </div>
+      </div>
+      <div class="range-labels">
+        <span id="range-min-label"></span>
+        <span id="range-max-label"></span>
+      </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.2/dist/Chart.min.js"></script>
     <script src="data.js"></script>
     <script id="main-script">
       'use strict';
       (function() {
-        // Colors from https://github.com/github/linguist/blob/master/lib/linguist/languages.yml
         const toolColors = {
           cargo: '#dea584',
           go: '#00add8',
@@ -126,33 +319,214 @@
           _: '#333333'
         };
 
-        function init() {
-          function collectBenchesPerTestCase(entries) {
-            const map = new Map();
-            for (const entry of entries) {
-              const {commit, date, tool, benches} = entry;
-              for (const bench of benches) {
-                const result = { commit, date, tool, bench };
-                const arr = map.get(bench.name);
-                if (arr === undefined) {
-                  map.set(bench.name, [result]);
-                } else {
-                  arr.push(result);
-                }
+        const data = window.BENCHMARK_DATA;
+        let charts = [];
+        let minDate, maxDate;
+        let currentStart, currentEnd;
+        let isDragging = null;
+        let renderTimeout = null;
+
+        function showLoading() {
+          document.getElementById('loading-overlay').classList.add('visible');
+        }
+
+        function hideLoading() {
+          document.getElementById('loading-overlay').classList.remove('visible');
+        }
+
+        function getDateBounds() {
+          const entries = Object.values(data.entries)[0] || [];
+          if (entries.length === 0) return { min: new Date(), max: new Date() };
+          
+          const dates = entries.map(e => new Date(e.commit.timestamp).getTime());
+          return {
+            min: new Date(Math.min(...dates)),
+            max: new Date(Math.max(...dates))
+          };
+        }
+
+        function formatDate(date) {
+          return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
+        function formatShortDate(date) {
+          return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+        }
+
+        function generateMonthNotches() {
+          const notchesContainer = document.getElementById('range-notches');
+          notchesContainer.innerHTML = '';
+          
+          // Start from the first day of the month after minDate
+          const current = new Date(minDate);
+          current.setUTCDate(1);
+          current.setUTCHours(0, 0, 0, 0);
+          if (current < minDate) {
+            current.setUTCMonth(current.getUTCMonth() + 1);
+          }
+          
+          while (current <= maxDate) {
+            const percent = dateToPercent(current);
+            if (percent >= 0 && percent <= 100) {
+              const notch = document.createElement('div');
+              const isJanuary = current.getUTCMonth() === 0;
+              notch.className = 'range-notch' + (isJanuary ? ' year' : '');
+              notch.style.left = percent + '%';
+              
+              // Add year label for January
+              if (isJanuary) {
+                const label = document.createElement('span');
+                label.className = 'range-notch-label';
+                label.textContent = current.getUTCFullYear();
+                notch.appendChild(label);
               }
+              
+              notchesContainer.appendChild(notch);
             }
-            return map;
+            
+            current.setUTCMonth(current.getUTCMonth() + 1);
+          }
+        }
+
+        function dateToPercent(date) {
+          const range = maxDate.getTime() - minDate.getTime();
+          if (range === 0) return 50;
+          return ((date.getTime() - minDate.getTime()) / range) * 100;
+        }
+
+        function percentToDate(percent) {
+          const range = maxDate.getTime() - minDate.getTime();
+          return new Date(minDate.getTime() + (percent / 100) * range);
+        }
+
+        function updateSliderUI() {
+          const startPercent = dateToPercent(currentStart);
+          const endPercent = dateToPercent(currentEnd);
+          
+          document.getElementById('handle-start').style.left = startPercent + '%';
+          document.getElementById('handle-end').style.left = endPercent + '%';
+          document.getElementById('range-selected').style.left = startPercent + '%';
+          document.getElementById('range-selected').style.width = (endPercent - startPercent) + '%';
+          
+          document.getElementById('label-start').textContent = formatShortDate(currentStart);
+          document.getElementById('label-end').textContent = formatShortDate(currentEnd);
+        }
+
+        function setupSlider() {
+          const bounds = getDateBounds();
+          minDate = bounds.min;
+          maxDate = bounds.max;
+          
+          // Default to last 12 months
+          const twelveMonthsAgo = new Date(maxDate);
+          twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+          currentStart = twelveMonthsAgo < minDate ? minDate : twelveMonthsAgo;
+          currentEnd = maxDate;
+
+          document.getElementById('range-min-label').textContent = formatDate(minDate);
+          document.getElementById('range-max-label').textContent = formatDate(maxDate);
+
+          generateMonthNotches();
+          updateSliderUI();
+
+          const slider = document.getElementById('range-slider');
+          const handleStart = document.getElementById('handle-start');
+          const handleEnd = document.getElementById('handle-end');
+
+          function getPercentFromEvent(e) {
+            const rect = slider.getBoundingClientRect();
+            const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+            return Math.max(0, Math.min(100, (x / rect.width) * 100));
           }
 
-          const data = window.BENCHMARK_DATA;
+          function onMove(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            
+            const percent = getPercentFromEvent(e);
+            const newDate = percentToDate(percent);
+            
+            if (isDragging === 'start') {
+              if (newDate < currentEnd) {
+                currentStart = newDate;
+              }
+            } else {
+              if (newDate > currentStart) {
+                currentEnd = newDate;
+              }
+            }
+            
+            updateSliderUI();
+            showLoading();
+            
+            // Debounce rendering
+            clearTimeout(renderTimeout);
+            renderTimeout = setTimeout(() => {
+              renderCharts();
+              hideLoading();
+            }, 150);
+          }
 
-          // Render header
+          function onEnd() {
+            isDragging = null;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onEnd);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+          }
+
+          function onStart(handle) {
+            return function(e) {
+              e.preventDefault();
+              isDragging = handle;
+              document.addEventListener('mousemove', onMove);
+              document.addEventListener('mouseup', onEnd);
+              document.addEventListener('touchmove', onMove, { passive: false });
+              document.addEventListener('touchend', onEnd);
+            };
+          }
+
+          handleStart.addEventListener('mousedown', onStart('start'));
+          handleStart.addEventListener('touchstart', onStart('start'), { passive: false });
+          handleEnd.addEventListener('mousedown', onStart('end'));
+          handleEnd.addEventListener('touchstart', onStart('end'), { passive: false });
+        }
+
+        function filterEntriesByDateRange(entries) {
+          return entries.filter(entry => {
+            const commitDate = new Date(entry.commit.timestamp);
+            return commitDate >= currentStart && commitDate <= currentEnd;
+          });
+        }
+
+        function collectBenchesPerTestCase(entries) {
+          const map = new Map();
+          for (const entry of entries) {
+            const {commit, date, tool, benches} = entry;
+            for (const bench of benches) {
+              const result = { commit, date, tool, bench };
+              const arr = map.get(bench.name);
+              if (arr === undefined) {
+                map.set(bench.name, [result]);
+              } else {
+                arr.push(result);
+              }
+            }
+          }
+          return map;
+        }
+
+        function updateFilterInfo(totalEntries, filteredEntries) {
+          const info = document.getElementById('filter-info');
+          info.textContent = `${filteredEntries} of ${totalEntries} entries`;
+        }
+
+        function initHeader() {
           document.getElementById('last-update').textContent = new Date(data.lastUpdate).toString();
           const repoLink = document.getElementById('repository-link');
           repoLink.href = data.repoUrl;
           repoLink.textContent = data.repoUrl;
 
-          // Render footer
           document.getElementById('dl-button').onclick = () => {
             const dataUrl = 'data:,' + JSON.stringify(data, null, 2);
             const a = document.createElement('a');
@@ -160,16 +534,29 @@
             a.download = 'benchmark_data.json';
             a.click();
           };
-
-          // Prepare data points for charts
-          return Object.keys(data.entries).map(name => ({
-            name,
-            dataSet: collectBenchesPerTestCase(data.entries[name]),
-          }));
         }
 
-        function renderAllChars(dataSets) {
+        function renderCharts() {
+          charts.forEach(chart => chart.destroy());
+          charts = [];
 
+          const main = document.getElementById('main');
+          main.innerHTML = '';
+
+          const dataSets = Object.keys(data.entries).map(name => {
+            const allEntries = data.entries[name];
+            const filteredEntries = filterEntriesByDateRange(allEntries);
+            updateFilterInfo(allEntries.length, filteredEntries.length);
+            return {
+              name,
+              dataSet: collectBenchesPerTestCase(filteredEntries),
+            };
+          });
+
+          renderAllCharts(dataSets);
+        }
+
+        function renderAllCharts(dataSets) {
           function renderGraph(parent, name, dataset) {
             let header = document.createElement('h3');
             header.textContent = name;
@@ -180,14 +567,14 @@
             parent.appendChild(canvas);
 
             const color = toolColors[dataset.length > 0 ? dataset[0].tool : '_'];
-            const data = {
+            const chartData = {
               labels: dataset.map(d => d.commit.id.slice(0, 7)),
               datasets: [
                 {
                   label: name,
                   data: dataset.map(d => d.bench.value),
                   borderColor: color,
-                  backgroundColor: color + '60', // Add alpha for #rrggbbaa
+                  backgroundColor: color + '60',
                 }
               ],
             };
@@ -239,18 +626,18 @@
                 if (activeElems.length === 0) {
                   return;
                 }
-                // XXX: Undocumented. How can we know the index?
                 const index = activeElems[0]._index;
                 const url = dataset[index].commit.url;
                 window.open(url, '_blank');
               },
             };
 
-            new Chart(canvas, {
+            const chart = new Chart(canvas, {
               type: 'line',
-              data,
+              data: chartData,
               options,
             });
+            charts.push(chart);
           }
 
           function renderBenchSet(name, benchSet, main) {
@@ -278,7 +665,10 @@
           }
         }
 
-        renderAllChars(init()); // Start
+        // Initialize and render
+        initHeader();
+        setupSlider();
+        renderCharts();
       })();
     </script>
   </body>
