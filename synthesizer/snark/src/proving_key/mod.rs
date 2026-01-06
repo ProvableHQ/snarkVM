@@ -85,6 +85,16 @@ impl<N: Network> ProvingKey<N> {
         let fiat_shamir = N::varuna_fs_parameters();
 
         // Compute the proof.
+        #[cfg(feature = "cuda")]
+        let batch_proof = Proof::new(varuna::ahp::prover::cuVaruna::prove_batch_cuda(
+            universal_prover,
+            fiat_shamir,
+            varuna_version,
+            &instances,
+            rng,
+        )?);
+
+        #[cfg(not(feature = "cuda"))]
         let batch_proof =
             Proof::new(Varuna::<N>::prove_batch(universal_prover, fiat_shamir, varuna_version, &instances, rng)?);
 

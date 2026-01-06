@@ -32,7 +32,7 @@ locktick = [
   "snarkvm-synthesizer-process/locktick"
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
-cuda = [ "snarkvm-algorithms/cuda" ]
+cuda = [ "snarkvm-algorithms/cuda", "snarkvm-synthesizer-snark/cuda" ]
 history = [ "snarkvm-ledger-store/history", "snarkvm-synthesizer-process/history" ]
 history-staking-rewards = [ "snarkvm-ledger-store/history-staking-rewards" ]
 slipstream-plugins = [ "snarkvm-ledger-store/slipstream-plugins" ]

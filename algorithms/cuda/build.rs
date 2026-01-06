@@ -69,10 +69,18 @@ fn main() {
     };
 
     if nvcc.is_ok() {
+        // Clear CXXFLAGS environment variables to avoid conflicts with CUDA compilation
+        // (the global CXXFLAGS "-include cstdint" causes header redefinitions in nvcc)
+        env::remove_var("CXXFLAGS");
+        env::remove_var("HOST_CXXFLAGS");
+        env::remove_var("CXXFLAGS_x86_64_unknown_linux_gnu");
+        env::remove_var("CXXFLAGS_x86_64-unknown-linux-gnu");
+
         let mut nvcc = cc::Build::new();
-        nvcc.cuda(true);
-        nvcc.flag("-g");
-        nvcc.flag("-arch=sm_70");
+        nvcc.cuda(true).flag("-ccbin").flag("/usr/bin/g++-12");
+        // nvcc.flag("-g");
+        nvcc.flag("-O3");
+        nvcc.flag("-arch=sm_80");
         nvcc.flag("-maxrregcount=255");
         nvcc.flag("-Xcompiler").flag("-Wno-unused-function");
         nvcc.flag("-Xcompiler").flag("-Wno-subobject-linkage");
@@ -91,6 +99,7 @@ fn main() {
 
         println!("cargo:rustc-cfg=feature=\"cuda\"");
         println!("cargo:rerun-if-changed=cuda");
+        println!("cargo:rerun-if-changed=../src/snark/varuna/ahp/prover/cuVaruna/cuda");
         println!("cargo:rerun-if-env-changed=CXXFLAGS");
     } else {
         println!("nvcc must be in the path. Consider adding /usr/local/cuda/bin.");

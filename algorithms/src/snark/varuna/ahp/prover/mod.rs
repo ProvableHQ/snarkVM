@@ -28,3 +28,6 @@ mod round_functions;
 
 mod state;
 use state::*;
+
+#[cfg(feature = "cuda")]
+pub mod cuVaruna;
