@@ -357,7 +357,7 @@ jobs:
       - name: Install cargo-nextest
         run: cargo install cargo-nextest --locked --version 0.9.114
       - name: Run Tests
-        run: cargo nextest run -p snarkvm-circuit-types-integers --profile ci -- --ignored
+        run: cargo nextest run -p snarkvm-circuit-types-integers --profile ci --run-ignored ignored-only
 
   circuit-types-scalar:
     runs-on: ubuntu-latest
