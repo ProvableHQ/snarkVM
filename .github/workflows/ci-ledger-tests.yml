@@ -1,0 +1,455 @@
+name: CI - Ledger Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - staging
+  workflow_dispatch:
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  RUST_MIN_STACK: 67108864
+
+jobs:
+  ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger --profile ci
+
+  ledger-with-rocksdb-partition1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-rocks-p1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-rocks-p1-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger --profile ci --release --features=rocks --partition count:1/2 --test-threads=10
+
+  ledger-with-rocksdb-partition2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-rocks-p2-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-rocks-p2-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger --profile ci --release --features=rocks --partition count:2/2 --test-threads=10
+
+  ledger-with-valid-solutions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-valid-solutions-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-valid-solutions-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger --profile ci --features=test --filter-expr 'test(valid_solutions)'
+
+  ledger-authority:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-authority-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-authority-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-authority --profile ci
+
+  ledger-block:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-block-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-block-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-block --profile ci
+
+  ledger-committee:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-committee-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-committee-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-committee --profile ci
+
+  ledger-narwhal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-narwhal-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-narwhal-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-narwhal --profile ci
+
+  ledger-narwhal-batch-certificate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-narwhal-batch-certificate-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-narwhal-batch-certificate-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-narwhal-batch-certificate --profile ci
+
+  ledger-narwhal-batch-header:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-narwhal-batch-header-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-narwhal-batch-header-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-narwhal-batch-header --profile ci
+
+  ledger-narwhal-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-narwhal-data-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-narwhal-data-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-narwhal-data --profile ci
+
+  ledger-narwhal-subdag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-narwhal-subdag-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-narwhal-subdag-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-narwhal-subdag --profile ci
+
+  ledger-narwhal-transmission:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-narwhal-transmission-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-narwhal-transmission-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-narwhal-transmission --profile ci
+
+  ledger-narwhal-transmission-id:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-narwhal-transmission-id-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-narwhal-transmission-id-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-narwhal-transmission-id --profile ci
+
+  ledger-puzzle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-puzzle-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-puzzle-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-puzzle --profile ci
+
+  ledger-puzzle-epoch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-puzzle-epoch-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-puzzle-epoch-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-puzzle-epoch --profile ci
+
+  ledger-query:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-query-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-query-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-query --profile ci
+
+  ledger-store:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-store-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-store-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-store --profile ci --features=rocks
+
+  ledger-test-helpers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ledger-test-helpers-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ledger-test-helpers-
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked --version 0.9.114
+      - name: Run Tests
+        run: cargo nextest run -p snarkvm-ledger-test-helpers --profile ci

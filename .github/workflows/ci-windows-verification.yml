@@ -1,0 +1,54 @@
+name: CI - Windows Verification
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - staging
+  workflow_dispatch:
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+jobs:
+  verify-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace_member:
+          - algorithms
+          - circuit
+          - console
+          - curves
+          - fields
+          - ledger
+          - parameters
+          - synthesizer
+          - utilities
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.88.0
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.workspace_member }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.workspace_member }}-
+            ${{ runner.os }}-cargo-
+
+      - name: Run cargo check
+        run: |
+          cd ${{ matrix.workspace_member }}
+          cargo check --examples --benches --tests
