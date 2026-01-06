@@ -15,7 +15,14 @@
 
 use colored::Colorize;
 
-use std::{any::Any, backtrace::Backtrace, borrow::Borrow, cell::Cell, panic};
+use std::{
+    any::Any,
+    backtrace::Backtrace,
+    borrow::Borrow,
+    cell::Cell,
+    panic,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 thread_local! {
 /// The message backtrace of the last panic on this thread (if any).
@@ -24,6 +31,9 @@ thread_local! {
 /// For example, one thread may execute a program where panics should *not* cause the entire process to terminate, while in another thread there is a panic due to a bug.
 static PANIC_INFO: Cell<Option<(String, Backtrace)>> = const { Cell::new(None) };
 }
+
+/// Keeps track of whether a panic hook was installed already.
+static PANIC_HOOK_INSTALLED: AtomicBool = const { AtomicBool::new(false) };
 
 /// Generates an `io::Error` from the given string.
 #[inline]
@@ -89,13 +99,26 @@ pub trait PrettyUnwrap {
     fn pretty_expect<S: ToString>(self, context: S) -> Self::Inner;
 }
 
-/// Set the global panic hook for process. Should be called exactly once.
+/// Set the global panic hook for the process.
+///
+/// This function should be called once at startup. Subsequent calls to it have no effect.
 pub fn set_panic_hook() {
+    // Check if the hook was already installed.
+    // Note, that this allows for a small race condition, where the hook is installed by another thread after the check, but before the load.
+    // However, that is safe as the installed hook will be indentical, and this check merely exists for performance reasons.
+    if PANIC_HOOK_INSTALLED.load(Ordering::Acquire) {
+        return;
+    }
+
+    // Install the hook.
     std::panic::set_hook(Box::new(|err| {
         let msg = err.to_string();
         let trace = Backtrace::force_capture();
         PANIC_INFO.with(move |info| info.set(Some((msg, trace))));
     }));
+
+    // Mark the hook as installed.
+    PANIC_HOOK_INSTALLED.store(true, Ordering::Release);
 }
 
 /// Helper for `PrettyUnwrap`:
