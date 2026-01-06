@@ -155,7 +155,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run Semver Checks
-        run: bash ./.circleci/semver-checks.sh
+        run: bash ./.github/scripts/semver-checks.sh
 
   check-all-targets:
     runs-on: ubuntu-latest
