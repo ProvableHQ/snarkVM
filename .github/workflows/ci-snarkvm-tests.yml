@@ -173,6 +173,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-parameters-large-
       - name: Run Tests (no-run)
+        # Uses cargo test instead of nextest because --no-run only builds without running tests
         run: cargo test -p snarkvm-parameters --no-run --features large_params
 
   parameters-uncached:
@@ -188,6 +189,7 @@ jobs:
       - name: Install cargo-nextest
         run: cargo install cargo-nextest --locked --version 0.9.114
       - name: Run Tests
+        # Runs only ignored tests matching the filter expression
         run: cargo nextest run -p snarkvm-parameters --profile ci --test-threads=2 --run-ignored ignored-only --filter-expr 'test(/test_load_bytes_mini/)'
 
   utilities:
