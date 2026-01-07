@@ -8,6 +8,10 @@ on:
       - staging
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
@@ -15,7 +19,7 @@ env:
 
 jobs:
   ledger:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
@@ -38,7 +42,7 @@ jobs:
         run: cargo nextest run -p snarkvm-ledger --profile ci
 
   ledger-with-rocksdb-partition1:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +66,7 @@ jobs:
         run: cargo nextest run -p snarkvm-ledger --profile ci --release --features=rocks --partition count:1/2 --test-threads=10
 
   ledger-with-rocksdb-partition2:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +90,7 @@ jobs:
         run: cargo nextest run -p snarkvm-ledger --profile ci --release --features=rocks --partition count:2/2 --test-threads=10
 
   ledger-with-valid-solutions:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
@@ -132,7 +136,7 @@ jobs:
         run: cargo nextest run -p snarkvm-ledger-authority --profile ci
 
   ledger-block:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -409,7 +413,7 @@ jobs:
         run: cargo nextest run -p snarkvm-ledger-query --profile ci
 
   ledger-store:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0

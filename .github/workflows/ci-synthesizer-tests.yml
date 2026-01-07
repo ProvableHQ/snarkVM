@@ -8,6 +8,10 @@ on:
       - staging
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
@@ -15,7 +19,7 @@ env:
 
 jobs:
   synthesizer:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +43,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer --profile ci --lib --bins --test-threads 16
 
   synthesizer-test-partition1:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +67,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer --profile ci --lib --bins --features test --partition count:1/2 --test-threads 8
 
   synthesizer-test-partition2:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -87,7 +91,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer --profile ci --lib --bins --features test --partition count:2/2 --test-threads 8
 
   synthesizer-integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -111,7 +115,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer --profile ci --test '*' --features test --test-threads=4 --filter-expr 'test(/test_command_parse/)+test(/test_instruction_parse/)+test(/test_process_execute/)+test(/test_program_parse/)+test(/test_vm_execute_and_finalize/)'
 
   synthesizer-process:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
@@ -134,7 +138,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer-process --profile ci
 
   synthesizer-process-with-rocksdb:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
@@ -157,7 +161,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer-process --profile ci --features=rocks --test-threads=4
 
   synthesizer-program:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
@@ -180,7 +184,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer-program --profile ci --lib --bins
 
   synthesizer-program-integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
@@ -203,7 +207,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer-program --profile ci --test-threads=8 --filter-expr 'not (test(/keccak/) or test(/psd/) or test(/sha/) or test(/instruction::is/) or test(/instruction::equal/) or test(/instruction::commit/))'
 
   synthesizer-program-integration-keccak:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -227,7 +231,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer-program --profile ci --filter-expr 'test(/keccak/)'
 
   synthesizer-program-integration-psd:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
@@ -250,7 +254,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer-program --profile ci --filter-expr 'test(/psd/)'
 
   synthesizer-program-integration-sha:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -274,7 +278,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer-program --profile ci --filter-expr 'test(/sha/)'
 
   synthesizer-program-integration-instruction-is:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
@@ -320,7 +324,7 @@ jobs:
         run: cargo nextest run -p snarkvm-synthesizer-program --profile ci --filter-expr 'test(/instruction::equal/)'
 
   synthesizer-program-integration-instruction-commit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0

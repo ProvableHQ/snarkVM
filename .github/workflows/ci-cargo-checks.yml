@@ -8,6 +8,10 @@ on:
       - staging
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
@@ -29,7 +33,7 @@ jobs:
         run: cargo +nightly fmt --all -- --check
 
   check-clippy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -127,7 +131,7 @@ jobs:
         run: cargo audit -D warnings
 
   check-cargo-semver-checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     steps:
       - name: Checkout
         uses: actions/checkout@v4
