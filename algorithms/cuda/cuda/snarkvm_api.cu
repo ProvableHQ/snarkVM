@@ -17,6 +17,9 @@
 
 #include "snarkvm.cu"
 
+// Include cuVaruna CUDA implementations
+#include "../../src/snark/varuna/ahp/prover/cuVaruna/cuda/api.cu"
+
 #ifndef __CUDA_ARCH__
 
 // Lazy instantiation of snarkvm_t
