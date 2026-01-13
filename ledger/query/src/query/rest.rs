@@ -33,19 +33,12 @@ use std::str::FromStr;
 #[derive(Clone)]
 pub struct RestQuery<N: Network> {
     base_url: http::Uri,
-    /// `true` if the api version is already contained in the base URL.
-    has_api_version: bool,
     _marker: std::marker::PhantomData<N>,
 }
 
 impl<N: Network> From<http::Uri> for RestQuery<N> {
     fn from(base_url: http::Uri) -> Self {
-        // Avoid trailing slash when checking the version
-        let path = base_url.path().strip_suffix('/').unwrap_or(base_url.path());
-
-        let has_api_version = path.ends_with(Self::API_V1) || path.ends_with(Self::API_V2);
-
-        Self { base_url, has_api_version, _marker: Default::default() }
+        Self { base_url, _marker: Default::default() }
     }
 }
 
@@ -161,9 +154,6 @@ impl<N: Network> QueryTrait<N> for RestQuery<N> {
 }
 
 impl<N: Network> RestQuery<N> {
-    const API_V1: &str = "v1";
-    const API_V2: &str = "v2";
-
     /// Returns the transaction for the given transaction ID.
     pub fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Transaction<N>> {
         self.get_request(&format!("transaction/{transaction_id}"))
@@ -195,15 +185,12 @@ impl<N: Network> RestQuery<N> {
         // This function is only called internally but check for additional sanity.
         ensure!(!route.starts_with('/'), "path cannot start with a slash");
 
-        // Add the API version if it is not already contained in the base URL.
-        let api_version = if self.has_api_version { "" } else { "v2/" };
-
         // Work around a bug in the `http` crate where empty paths will be set to '/' but other paths are not appended with a slash.
         // See [this issue](https://github.com/hyperium/http/issues/507).
         let path = if self.base_url.path().ends_with('/') {
-            format!("{base_url}{api_version}{network}/{route}", base_url = self.base_url, network = N::SHORT_NAME)
+            format!("{base_url}{network}/{route}", base_url = self.base_url, network = N::SHORT_NAME)
         } else {
-            format!("{base_url}/{api_version}{network}/{route}", base_url = self.base_url, network = N::SHORT_NAME)
+            format!("{base_url}/{network}/{route}", base_url = self.base_url, network = N::SHORT_NAME)
         };
 
         Ok(path)
@@ -224,23 +211,29 @@ impl<N: Network> RestQuery<N> {
             .with_context(|| format!("Failed to fetch from {endpoint}"))?;
 
         if response.status().is_success() {
-            response.body_mut().read_json().with_context(|| "Failed to parse JSON response")
+            response.body_mut().read_json().with_context(|| format!("Failed to parse JSON response from {endpoint}"))
         } else {
-            let content_type = response
+            // v2 will return the error in JSON format.
+            let is_json = response
                 .headers()
-                .get("Content-Type")
-                .ok_or_else(|| anyhow!("Endpoint return error without ContentType"))?
-                .to_str()
-                .with_context(|| "Endpoint returned invalid ContentType")?;
+                .get(http::header::CONTENT_TYPE)
+                .and_then(|ct| ct.to_str().ok())
+                .map(|ct| ct.contains("json"))
+                .unwrap_or(false);
 
             // Convert returned error into an `anyhow::Error`.
             // Depending on the API version, the error is either encoded as a string or as a JSON.
-            if content_type.contains("json") {
-                let error: RestError =
-                    response.body_mut().read_json().with_context(|| "Failed to parse JSON error response")?;
+            if is_json {
+                let error: RestError = response
+                    .body_mut()
+                    .read_json()
+                    .with_context(|| format!("Failed to parse JSON error response from {endpoint}"))?;
                 Err(error.parse().context(format!("Failed to fetch from {endpoint}")))
             } else {
-                let error = response.body_mut().read_to_string().with_context(|| "Failed to read error message")?;
+                let error = response
+                    .body_mut()
+                    .read_to_string()
+                    .with_context(|| format!("Failed to read error message {endpoint}"))?;
                 Err(anyhow!(error).context(format!("Failed to fetch from {endpoint}")))
             }
         }
@@ -256,11 +249,28 @@ impl<N: Network> RestQuery<N> {
         let response = reqwest::get(&endpoint).await.with_context(|| format!("Failed to fetch from {endpoint}"))?;
 
         if response.status().is_success() {
-            response.json().await.with_context(|| "Failed to parse JSON response")
+            response.json().await.with_context(|| format!("Failed to parse JSON response from {endpoint}"))
         } else {
-            // Convert returned error into an `anyhow::Error`.
-            let error: RestError = response.json().await.with_context(|| "Failed to parse JSON error response")?;
-            Err(error.parse().context(format!("Failed to fetch from {endpoint}")))
+            // v2 will return the error in JSON format.
+            let is_json = response
+                .headers()
+                .get(http::header::CONTENT_TYPE)
+                .and_then(|ct| ct.to_str().ok())
+                .map(|ct| ct.contains("json"))
+                .unwrap_or(false);
+
+            if is_json {
+                // Convert returned error into an `anyhow::Error`.
+                let error: RestError = response
+                    .json()
+                    .await
+                    .with_context(|| format!("Failed to parse JSON error response from {endpoint}"))?;
+                Err(error.parse().context(format!("Failed to fetch from {endpoint}")))
+            } else {
+                let error =
+                    response.text().await.with_context(|| format!("Failed to read error message {endpoint}"))?;
+                Err(anyhow!(error).context(format!("Failed to fetch from {endpoint}")))
+            }
         }
     }
 }
@@ -292,13 +302,13 @@ mod tests {
         let Query::REST(rest) = query else { panic!() };
         assert_eq!(rest.base_url.path_and_query().unwrap().to_string(), "/");
         assert_eq!(rest.base_url.to_string(), withslash);
-        assert_eq!(rest.build_endpoint(route)?, format!("{noslash}/v2/testnet/{route}"));
+        assert_eq!(rest.build_endpoint(route)?, format!("{noslash}/testnet/{route}"));
 
         let query = withslash.parse::<CurrentQuery>().unwrap();
         let Query::REST(rest) = query else { panic!() };
         assert_eq!(rest.base_url.path_and_query().unwrap().to_string(), "/");
         assert_eq!(rest.base_url.to_string(), withslash);
-        assert_eq!(rest.build_endpoint(route)?, format!("{noslash}/v2/testnet/{route}"));
+        assert_eq!(rest.build_endpoint(route)?, format!("{noslash}/testnet/{route}"));
 
         Ok(())
     }
@@ -315,34 +325,19 @@ mod tests {
 
     #[test]
     fn test_rest_url_parse_with_suffix() -> Result<()> {
-        let base = "http://localhost:3030/a/prefix";
+        let base = "http://localhost:3030/a/prefix/v2";
         let route = "a/route";
-        let query = base.parse::<CurrentQuery>().unwrap();
-        let Query::REST(rest_query) = &query else { panic!() };
-        assert!(!rest_query.has_api_version);
 
         // Test without trailing slash.
+        let query = base.parse::<CurrentQuery>().unwrap();
         let Query::REST(rest) = query else { panic!() };
-        assert_eq!(rest.build_endpoint(route)?, format!("{base}/v2/testnet/{route}"));
+        assert_eq!(rest.build_endpoint(route)?, format!("{base}/testnet/{route}"));
 
         // Set again with trailing slash.
         let query = format!("{base}/").parse::<CurrentQuery>().unwrap();
         let Query::REST(rest) = query else { panic!() };
-        assert_eq!(rest.build_endpoint(route)?, format!("{base}/v2/testnet/{route}"));
+        assert_eq!(rest.build_endpoint(route)?, format!("{base}/testnet/{route}"));
 
         Ok(())
-    }
-
-    #[test]
-    fn test_rest_url_parse_with_api_version() {
-        let base = "http://localhost:3030/a/prefix/v1";
-        let query = base.parse::<CurrentQuery>().unwrap();
-        let Query::REST(rest_query) = &query else { panic!() };
-        assert!(rest_query.has_api_version);
-
-        let base = "http://localhost:3030/a/prefix/v2/";
-        let query = base.parse::<CurrentQuery>().unwrap();
-        let Query::REST(rest_query) = &query else { panic!() };
-        assert!(rest_query.has_api_version);
     }
 }

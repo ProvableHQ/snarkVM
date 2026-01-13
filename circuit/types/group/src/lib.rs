@@ -92,7 +92,7 @@ impl<E: Environment> Group<E> {
         let third = (a * x2) - Field::one();
 
         // Ensure y^2 * (dx^2 - 1) = (ax^2 - 1).
-        E::enforce(|| (first, second, third));
+        E::enforce(|| (first, second, third)).expect("Group enforce_on_curve constraint unsatisfied");
     }
 }
 

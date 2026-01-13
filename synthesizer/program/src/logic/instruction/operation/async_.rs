@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, Result, StackTrait};
+use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, Result, StackTrait, types_equivalent};
 
 use circuit::{Inject, Mode};
 use console::{
@@ -58,6 +58,12 @@ impl<N: Network> Async<N> {
     #[inline]
     pub fn destinations(&self) -> Vec<Register<N>> {
         vec![self.destination.clone()]
+    }
+
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
     }
 }
 
@@ -159,7 +165,7 @@ impl<N: Network> Async<N> {
             match (input_type, finalize_type) {
                 (RegisterType::Plaintext(input_type), FinalizeType::Plaintext(finalize_type)) => {
                     ensure!(
-                        input_type == &finalize_type,
+                        types_equivalent(stack, input_type, stack, &finalize_type)?,
                         "'{}/{}' finalize expects a '{}' argument, found a '{}' argument",
                         stack.program_id(),
                         self.function_name(),

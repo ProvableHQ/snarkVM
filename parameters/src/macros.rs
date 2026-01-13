@@ -83,6 +83,10 @@ macro_rules! impl_store_and_remote_fetch {
 
                 easy.progress(true)?;
                 easy.progress_function(|total_download, current_download, _, _| {
+                    // avoid division by zero.
+                    if total_download == 0.0 {
+                        return true;
+                    }
                     let percent = (current_download / total_download) * 100.0;
                     let size_in_megabytes = total_download as u64 / 1_048_576;
                     let output =
@@ -165,7 +169,7 @@ macro_rules! impl_load_bytes_logic_local {
 }
 
 macro_rules! impl_load_bytes_logic_remote {
-    ($remote_url: expr, $local_dir: expr, $filename: expr, $metadata: expr, $expected_checksum: expr, $expected_size: expr) => {
+    ($remote_urls: expr, $local_dir: expr, $filename: expr, $metadata: expr, $expected_checksum: expr, $expected_size: expr) => {
         cfg_if::cfg_if! {
             if #[cfg(all(feature = "filesystem", not(feature="wasm")))] {
                 // Compose the correct file path for the parameter file.
@@ -191,14 +195,52 @@ macro_rules! impl_load_bytes_logic_remote {
                     // Load remote file
                     cfg_if::cfg_if!{
                         if #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))] {
-                            let url = format!("{}/{}", $remote_url, $filename);
+                            // Try each URL in order, falling back to the next if one fails.
+                            let remote_urls: &[&str] = &$remote_urls;
                             let mut buffer = vec![];
-                            Self::remote_fetch(&mut buffer, &url)?;
+                            let mut last_error: Option<($crate::errors::ParameterError, &str)> = None;
 
-                            // Ensure the checksum matches.
-                            let candidate_checksum = checksum!(&buffer);
-                            if $expected_checksum != candidate_checksum {
-                                return checksum_error!($expected_checksum, candidate_checksum)
+                            for base_url in remote_urls.iter() {
+                                // Remove the previous error (if any).
+                                cfg_if::cfg_if!{
+                                    if #[cfg(feature = "no_std_out")] {
+                                        last_error = None;
+                                    } else {
+                                        use colored::Colorize;
+                                        // If this is a retry, print the previous error as warning.
+                                        if let Some((err, url)) = last_error.take() {
+                                            eprintln!("{:>15} - {err}", "Warning".yellow());
+                                            eprintln!("{:>15} - Failed to fetch from \"{url}\". Trying next source...", "Warning".yellow());
+                                         }
+                                    }
+                                }
+
+                                let url = format!("{}/{}", base_url, $filename);
+                                buffer.clear();
+
+                                match Self::remote_fetch(&mut buffer, &url) {
+                                    Ok(()) => {
+                                        // Ensure the checksum matches.
+                                        let candidate_checksum = checksum!(&buffer);
+                                        if $expected_checksum == candidate_checksum {
+                                            // Success - break out of the loop
+                                            break;
+                                        } else {
+                                            last_error = Some(($crate::errors::ParameterError::ChecksumMismatch(
+                                                $expected_checksum.to_string(),
+                                                candidate_checksum,
+                                            ), base_url));
+                                        }
+                                    }
+                                    Err(err) => {
+                                        last_error = Some((err, base_url));
+                                    }
+                                }
+                            }
+
+                            // If all URLs failed, return the last error.
+                            if let Some((err, _)) = last_error {
+                                return Err(err);
                             }
 
                             match Self::store_bytes(&buffer, &file_path) {
@@ -232,19 +274,43 @@ macro_rules! impl_load_bytes_logic_remote {
             } else {
                 cfg_if::cfg_if! {
                     if #[cfg(feature = "wasm")] {
-                        let url = format!("{}/{}", $remote_url, $filename);
-                        let buffer = Self::remote_fetch(&url)?;
+                        // Try each URL in order, falling back to the next if one fails.
+                        let remote_urls: &[&str] = &$remote_urls;
+                        let mut buffer = vec![];
+                        let mut last_error: Option<$crate::errors::ParameterError> = None;
+
+                        for base_url in remote_urls.iter() {
+                            let url = format!("{}/{}", base_url, $filename);
+
+                            match Self::remote_fetch(&url) {
+                                Ok(fetched_buffer) => {
+                                    // Ensure the checksum matches.
+                                    let candidate_checksum = checksum!(&fetched_buffer);
+                                    if $expected_checksum == candidate_checksum {
+                                        buffer = fetched_buffer;
+                                        last_error = None;
+                                        break;
+                                    } else {
+                                        last_error = Some($crate::errors::ParameterError::ChecksumMismatch(
+                                            $expected_checksum.to_string(),
+                                            candidate_checksum,
+                                        ));
+                                    }
+                                }
+                                Err(e) => {
+                                    last_error = Some(e);
+                                }
+                            }
+                        }
+
+                        // If all URLs failed, return the last error.
+                        if let Some(e) = last_error {
+                            return Err(e);
+                        }
 
                         // Ensure the size matches.
                         if $expected_size != buffer.len() {
-                            remove_file!(file_path);
                             return Err($crate::errors::ParameterError::SizeMismatch($expected_size, buffer.len()));
-                        }
-
-                        // Ensure the checksum matches.
-                        let candidate_checksum = checksum!(&buffer);
-                        if $expected_checksum != candidate_checksum {
-                            return checksum_error!($expected_checksum, candidate_checksum)
                         }
 
                         return Ok(buffer)
@@ -282,7 +348,10 @@ macro_rules! impl_local {
             #[cfg(test)]
             #[test]
             fn [< test_ $fname _usrs >]() {
-                assert!($name::load_bytes().is_ok());
+                // Print error messages if loading fails. This can be simplified once assert_matches! is stable.
+                if let Err(err) = $name::load_bytes() {
+                    panic!("Failed to load bytes: {err}");
+                }
             }
         }
     };
@@ -311,7 +380,9 @@ macro_rules! impl_local {
             #[cfg(test)]
             #[test]
             fn [< test_ $credits_version _ $fname _ $ftype >]() {
-                assert!($name::load_bytes().is_ok());
+                if let Err(err) = $name::load_bytes() {
+                    panic!("Failed to load bytes: {err}");
+                }
             }
         }
     };
@@ -400,7 +471,9 @@ macro_rules! impl_remote {
             #[cfg(test)]
             #[test]
             fn [< test_ $credits_version _ $fname _ $ftype >]() {
-                assert!($name::load_bytes().is_ok());
+                if let Err(err) = $name::load_bytes() {
+                    panic!("Failed to load bytes: {err}");
+                }
             }
         }
     };

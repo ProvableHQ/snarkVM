@@ -16,6 +16,9 @@
 mod helpers;
 pub use helpers::*;
 
+mod error;
+pub use error::*;
+
 mod authorize;
 mod deploy;
 mod execute;
@@ -29,19 +32,7 @@ use crate::{Restrictions, cast_mut_ref, cast_ref, convert, process};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
-    program::{
-        Argument,
-        Identifier,
-        Literal,
-        Locator,
-        Plaintext,
-        ProgramID,
-        ProgramOwner,
-        Record,
-        Response,
-        Value,
-        ValueType,
-    },
+    program::{Argument, Identifier, Literal, Locator, Plaintext, ProgramID, ProgramOwner, Record, Response, Value},
     types::{Field, Group, U16, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -1463,7 +1454,7 @@ function call_fee_public:
 finalize call_fee_public:
     input r0 as credits.aleo/fee_public.future;
     await r0;
-    
+
 function call_fee_private:
     input r0 as credits.aleo/credits.record;
     input r1 as u64.private;

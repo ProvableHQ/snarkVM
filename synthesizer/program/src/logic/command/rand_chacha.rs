@@ -65,6 +65,12 @@ impl<N: Network> RandChaCha<N> {
     pub const fn destination_type(&self) -> LiteralType {
         self.destination_type
     }
+
+    /// Returns whether this command refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network> RandChaCha<N> {

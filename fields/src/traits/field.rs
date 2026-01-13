@@ -119,11 +119,8 @@ pub trait Field:
     /// Squares `self` in place.
     fn square_in_place(&mut self) -> &mut Self;
 
-    fn sum_of_products<'a>(
-        a: impl Iterator<Item = &'a Self> + Clone,
-        b: impl Iterator<Item = &'a Self> + Clone,
-    ) -> Self {
-        a.zip(b).map(|(a, b)| *a * b).sum::<Self>()
+    fn sum_of_products<'a>(a: &'a [Self], b: &'a [Self]) -> Self {
+        a.iter().zip(b).map(|(a, b)| *a * b).sum::<Self>()
     }
 
     /// Computes the multiplicative inverse of `self` if `self` is nonzero.

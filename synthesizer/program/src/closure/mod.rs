@@ -70,6 +70,18 @@ impl<N: Network> ClosureCore<N> {
         &self.outputs
     }
 
+    /// Returns the closure output types.
+    pub fn output_types(&self) -> Vec<RegisterType<N>> {
+        self.outputs.iter().map(|output| output.register_type()).cloned().collect()
+    }
+
+    /// Returns whether the closure refers to an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        self.inputs.iter().any(|input| input.register_type().contains_external_struct())
+            || self.outputs.iter().any(|output| output.register_type().contains_external_struct())
+            || self.instructions.iter().any(|instruction| instruction.contains_external_struct())
+    }
+
     /// Returns `true` if the closure instructions contain a string type.
     /// Note that input and output types don't have to be checked if we are sure the broader function doesn't contain a string type.
     pub fn contains_string_type(&self) -> bool {

@@ -20,26 +20,41 @@ use super::*;
 impl<N: Network> FinalizeType<N> {
     /// Returns the number of bits of a finalize type.
     /// Note. The plaintext variant is assumed to be an argument of a `Future` and this does not have a "raw" serialization.
-    pub fn future_size_in_bits<F0, F1>(locator: &Locator<N>, get_struct: &F0, get_future: &F1) -> Result<usize>
+    pub fn future_size_in_bits<F0, F1, F2>(
+        locator: &Locator<N>,
+        get_struct: &F0,
+        get_external_struct: &F1,
+        get_future: &F2,
+    ) -> Result<usize>
     where
         F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
-        F1: Fn(&Locator<N>) -> Result<Vec<FinalizeType<N>>>,
+        F1: Fn(&Locator<N>) -> Result<StructType<N>>,
+        F2: Fn(&Locator<N>) -> Result<Vec<FinalizeType<N>>>,
     {
-        FinalizeType::Future(*locator).size_in_bits_internal(get_struct, get_future, 0)
+        FinalizeType::Future(*locator).size_in_bits_internal(get_struct, get_external_struct, get_future, 0)
     }
 
     /// A helper function to determine the number of bits of a plaintext type, while tracking the depth of the data.
     /// Note. The plaintext variant is assumed to be an argument of a `Future` and thus does not have a "raw" serialization.
-    fn size_in_bits_internal<F0, F1>(&self, get_struct: &F0, get_future: &F1, depth: usize) -> Result<usize>
+    fn size_in_bits_internal<F0, F1, F2>(
+        &self,
+        get_struct: &F0,
+        get_external_struct: &F1,
+        get_future: &F2,
+        depth: usize,
+    ) -> Result<usize>
     where
         F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
-        F1: Fn(&Locator<N>) -> Result<Vec<FinalizeType<N>>>,
+        F1: Fn(&Locator<N>) -> Result<StructType<N>>,
+        F2: Fn(&Locator<N>) -> Result<Vec<FinalizeType<N>>>,
     {
         // Ensure that the depth is within the maximum limit.
         ensure!(depth <= N::MAX_DATA_DEPTH, "Finalize type depth exceeds maximum limit: {}", N::MAX_DATA_DEPTH);
 
         match self {
-            Self::Plaintext(plaintext_type) => plaintext_type.size_in_bits_internal(get_struct, depth),
+            Self::Plaintext(plaintext_type) => {
+                plaintext_type.size_in_bits_internal(get_struct, get_external_struct, depth)
+            }
             Self::Future(locator) => {
                 // Initialize the size in bits.
                 let mut size = 0usize;
@@ -79,7 +94,12 @@ impl<N: Network> FinalizeType<N> {
 
                     // Account for the argument bits.
                     size = size
-                        .checked_add(argument.size_in_bits_internal(get_struct, get_future, depth + 1)?)
+                        .checked_add(argument.size_in_bits_internal(
+                            get_struct,
+                            get_external_struct,
+                            get_future,
+                            depth + 1,
+                        )?)
                         .ok_or(anyhow!("`size_in_bits` overflowed"))?;
                 }
 
@@ -89,11 +109,17 @@ impl<N: Network> FinalizeType<N> {
     }
 
     /// Returns the number of raw bits of a finlaize type.
-    pub fn future_size_in_bits_raw<F0, F1>(locator: &Locator<N>, get_struct: &F0, get_future: &F1) -> Result<usize>
+    pub fn future_size_in_bits_raw<F0, F1, F2>(
+        locator: &Locator<N>,
+        get_struct: &F0,
+        get_external_struct: &F1,
+        get_future: &F2,
+    ) -> Result<usize>
     where
         F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
-        F1: Fn(&Locator<N>) -> Result<Vec<FinalizeType<N>>>,
+        F1: Fn(&Locator<N>) -> Result<StructType<N>>,
+        F2: Fn(&Locator<N>) -> Result<Vec<FinalizeType<N>>>,
     {
-        Self::future_size_in_bits(locator, get_struct, get_future)
+        Self::future_size_in_bits(locator, get_struct, get_external_struct, get_future)
     }
 }

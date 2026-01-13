@@ -16,7 +16,7 @@
 use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
 use console::{
     network::prelude::*,
-    program::{ArrayType, Identifier, LiteralType, Plaintext, PlaintextType, Register, RegisterType, Value},
+    program::{ArrayType, Identifier, LiteralType, Locator, Plaintext, PlaintextType, Register, RegisterType, Value},
 };
 
 /// Serializes the bits of the input.
@@ -157,6 +157,12 @@ impl<N: Network, const VARIANT: u8> SerializeInstruction<N, VARIANT> {
     #[inline]
     pub const fn destination_type(&self) -> &ArrayType<N> {
         &self.destination_type
+    }
+
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        self.operand_type.contains_external_struct()
     }
 }
 
@@ -299,10 +305,15 @@ impl<N: Network, const VARIANT: u8> SerializeInstruction<N, VARIANT> {
         // A helper to get a struct declaration.
         let get_struct = |identifier: &Identifier<N>| stack.program().get_struct(identifier).cloned();
 
+        // A helper to get an external struct declaration.
+        let get_external_struct = |locator: &Locator<N>| {
+            stack.get_external_stack(locator.program_id())?.program().get_struct(locator.resource()).cloned()
+        };
+
         // Get the size in bits of the operand.
         let size_in_bits = match VARIANT {
-            0 => self.operand_type.size_in_bits(&get_struct)?,
-            1 => self.operand_type.size_in_bits_raw(&get_struct)?,
+            0 => self.operand_type.size_in_bits(&get_struct, &get_external_struct)?,
+            1 => self.operand_type.size_in_bits_raw(&get_struct, &get_external_struct)?,
             variant => bail!("Invalid `serialize` variant '{variant}'"),
         };
 

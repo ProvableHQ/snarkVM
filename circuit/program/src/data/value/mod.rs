@@ -68,3 +68,24 @@ impl<A: Aleo> Eject for Value<A> {
         }
     }
 }
+
+impl<A: Aleo> From<Plaintext<A>> for Value<A> {
+    /// Initializes the value from a plaintext.
+    fn from(plaintext: Plaintext<A>) -> Self {
+        Self::Plaintext(plaintext)
+    }
+}
+
+impl<A: Aleo> From<Record<A, Plaintext<A>>> for Value<A> {
+    /// Initializes the value from a record.
+    fn from(record: Record<A, Plaintext<A>>) -> Self {
+        Self::Record(record)
+    }
+}
+
+impl<A: Aleo> From<Future<A>> for Value<A> {
+    /// Initializes the value from a future.
+    fn from(future: Future<A>) -> Self {
+        Self::Future(future)
+    }
+}

@@ -48,13 +48,14 @@ impl<E: Environment> Double for Group<E> {
             // x3 * (ax^2 + y^2) = 2xy
             let ax2_plus_y2 = &ax2 + &y2;
             let two_xy = xy.double();
-            E::enforce(|| (&x3, &ax2_plus_y2, two_xy));
+            E::enforce(|| (&x3, &ax2_plus_y2, two_xy)).expect("Group double x3 constraint unsatisfied");
 
             // Ensure y3 is well-formed.
             // y3 * (2 - (ax^2 + y^2)) = y^2 - ax^2
             let y2_minus_a_x2 = y2 - ax2;
             let two_minus_ax2_minus_y2 = two - ax2_plus_y2;
-            E::enforce(|| (&y3, two_minus_ax2_minus_y2, y2_minus_a_x2));
+            E::enforce(|| (&y3, two_minus_ax2_minus_y2, y2_minus_a_x2))
+                .expect("Group double y3 constraint unsatisfied");
 
             Group { x: x3, y: y3 }
         }
@@ -77,13 +78,14 @@ impl<E: Environment> Group<E> {
         // double.x * (ax^2 + y^2) = 2xy
         let ax2_plus_y2 = &ax2 + &y2;
         let two_xy = xy.double();
-        E::enforce(|| (&double.x, &ax2_plus_y2, two_xy));
+        E::enforce(|| (&double.x, &ax2_plus_y2, two_xy)).expect("Group enforce_double x constraint unsatisfied");
 
         // Ensure double.y is the ordinate of the double of self.
         // double.y * (2 - (ax^2 + y^2)) = y^2 - ax^2
         let y2_minus_a_x2 = y2 - ax2;
         let two_minus_ax2_minus_y2 = two - ax2_plus_y2;
-        E::enforce(|| (&double.y, two_minus_ax2_minus_y2, y2_minus_a_x2));
+        E::enforce(|| (&double.y, two_minus_ax2_minus_y2, y2_minus_a_x2))
+            .expect("Group enforce_double y constraint unsatisfied");
     }
 }
 

@@ -59,7 +59,7 @@ impl<'de, N: Network> Deserialize<'de> for Authority<N> {
                     _ => Err(de::Error::custom(error("Invalid authority type"))),
                 }
             }
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "authority"),
+            false => FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "authority"),
         }
     }
 }

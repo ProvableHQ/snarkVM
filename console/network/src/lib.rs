@@ -129,6 +129,16 @@ pub trait Network:
 
     /// The starting supply of Aleo credits.
     const STARTING_SUPPLY: u64 = 1_500_000_000_000_000; // 1.5B credits
+    /// The maximum supply of Aleo credits.
+    /// This value represents the absolute upper bound on all ALEO created over the lifetime of the network.
+    const MAX_SUPPLY: u64 = 5_000_000_000_000_000; // 5B credits
+    /// The block height that upper bounds the total supply of Aleo credits to 5 billion.
+    #[cfg(not(feature = "test"))]
+    const MAX_SUPPLY_LIMIT_HEIGHT: u32 = 263_527_685;
+    /// The block height that upper bounds the total supply of Aleo credits to 5 billion.
+    /// This is deliberately set to a low value for testing purposes only.
+    #[cfg(feature = "test")]
+    const MAX_SUPPLY_LIMIT_HEIGHT: u32 = 5;
     /// The cost in microcredits per byte for the deployment transaction.
     const DEPLOYMENT_FEE_MULTIPLIER: u64 = 1_000; // 1 millicredit per byte
     /// The multiplier in microcredits for each command in the constructor.
@@ -159,7 +169,12 @@ pub trait Network:
     /// The expected time per block in seconds.
     const BLOCK_TIME: u16 = 10;
     /// The number of blocks per epoch.
+    #[cfg(not(feature = "test"))]
     const NUM_BLOCKS_PER_EPOCH: u32 = 3600 / Self::BLOCK_TIME as u32; // 360 blocks == ~1 hour
+    /// The number of blocks per epoch.
+    /// This is deliberately set to a low value for testing purposes only.
+    #[cfg(feature = "test")]
+    const NUM_BLOCKS_PER_EPOCH: u32 = 10;
 
     /// The maximum number of entries in data.
     const MAX_DATA_ENTRIES: usize = 32;
@@ -186,7 +201,7 @@ pub trait Network:
     const MAX_RECORD_ENTRIES: usize = Self::MIN_RECORD_ENTRIES.saturating_add(Self::MAX_DATA_ENTRIES);
 
     /// The maximum program size by number of characters.
-    const MAX_PROGRAM_SIZE: usize = 100_000; // 100 KB
+    const MAX_PROGRAM_SIZE: usize = 100_000; // 100 kB
 
     /// The maximum number of mappings in a program.
     const MAX_MAPPINGS: usize = 31;

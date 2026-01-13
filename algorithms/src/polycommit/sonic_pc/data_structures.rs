@@ -686,6 +686,11 @@ impl<E: PairingEngine> FromBytes for BatchLCProof<E> {
         CanonicalDeserialize::deserialize_compressed(&mut reader)
             .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize struct")))
     }
+
+    fn read_le_unchecked<R: Read>(mut reader: R) -> io::Result<Self> {
+        CanonicalDeserialize::deserialize_compressed_unchecked(&mut reader)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize struct")))
+    }
 }
 
 impl<E: PairingEngine> ToBytes for BatchLCProof<E> {

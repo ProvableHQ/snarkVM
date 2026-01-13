@@ -55,6 +55,10 @@ impl<N: Network> Mapping<N> {
         &self.value
     }
 
+    pub fn contains_external_struct(&self) -> bool {
+        self.key.plaintext_type().contains_external_struct() || self.value.plaintext_type().contains_external_struct()
+    }
+
     /// Returns `true` if the mapping contains a string type.
     pub fn contains_string_type(&self) -> bool {
         self.key.plaintext_type().contains_string_type() || self.value.plaintext_type().contains_string_type()

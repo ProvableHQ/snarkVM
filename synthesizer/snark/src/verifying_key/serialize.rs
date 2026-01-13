@@ -30,7 +30,9 @@ impl<'de, N: Network> Deserialize<'de> for VerifyingKey<N> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         match deserializer.is_human_readable() {
             true => FromStr::from_str(&String::deserialize(deserializer)?).map_err(de::Error::custom),
-            false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "verifying key"),
+            false => {
+                FromBytesUncheckedDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "verifying key")
+            }
         }
     }
 }

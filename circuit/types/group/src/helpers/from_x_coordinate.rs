@@ -48,7 +48,7 @@ impl<E: Environment> Group<E> {
 
         // Compute y^2 = (a * x^2 - 1) / (d * x^2 - 1), i.e. solve the curve equation for y^2.
         let yy: Field<E> = witness!(|a_xx_minus_1, d_xx_minus_1| { a_xx_minus_1 / d_xx_minus_1 });
-        E::enforce(|| (&yy, &d_xx_minus_1, &a_xx_minus_1));
+        E::enforce(|| (&yy, &d_xx_minus_1, &a_xx_minus_1)).expect("Group from_x_coordinate y^2 constraint unsatisfied");
 
         // Compute both square roots of y^2, with a flag indicating whether y^2 is a square or not.
         // Note that there is **no** ordering on the square roots in the circuit computation.

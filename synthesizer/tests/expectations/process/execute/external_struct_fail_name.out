@@ -1,0 +1,3 @@
+errors:
+- 'Output ''r0'' does not match the expected output operand type: expected ''external_struct_fail_parent.aleo/S'', found ''T'''
+outputs: []

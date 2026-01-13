@@ -64,10 +64,18 @@ impl<N: Network> Stack<N> {
     ) -> Result<()> {
         let timer = timer!("Stack::verify_deployment");
 
+        // NOTE: As developer, you will likely still want to confirm that your
+        // deployment is within R1CS constraint and variable limits using
+        // targeted and parallelized synthesis.
+        if cfg!(all(feature = "dev_skip_checks", feature = "test_consensus_heights")) {
+            return Ok(());
+        }
+
         // Sanity Checks //
 
         // Ensure the deployment is ordered.
         deployment.check_is_ordered()?;
+
         // Ensure the program in the stack and deployment matches.
         ensure!(&self.program == deployment.program(), "The stack program does not match the deployment program");
         // If the deployment contains a checksum, ensure it matches the one computed by the stack.

@@ -4,17 +4,17 @@ outputs:
   execute:
     mint_and_split.aleo/mint:
       outputs:
-      - '{"type":"record","id":"5898098359644339489980647496154970311713759309041371583031047480221727223251field","checksum":"312810819787290395427742889101853232069808539782308428719173160853661204237field","value":"record1qvqspn3eznqf4jtnl9eay4zwpk9ggpnurl48lyxlgwuxpagltacmshgwqyxx66trwfhkxun9v35hguerqqpqzq8fghpyfpg9usjqefpzrs6lkr6d7f0psmzwjs5y5mcghj02dmvtzq9h0ctqka4394hp9safmzz3w2as3snyzt235jqk3tmqs5l8mf53y5sfvjn","sender_ciphertext":"1460600701325398404099547811401718906320424445889635034253656913920448055298field"}'
+      - '{"type":"record","id":"7865458630259473530791443645577679927056602271613862773325129658896194608589field","checksum":"8131285656035677426461208132807852464954434074683211897659654497163722610574field","value":"record1qvqspxyqvg78vha07pvrjr2g38l293g37kkcqae639hf85jgpzltqpswqyxx66trwfhkxun9v35hguerqqpqzqzm49p304eels57ts5q0vnldd3738vdrhxpkq9x6tz45spjvntvzxdfm0d83vc6a3ftur6ch02u3cs6zwcl0087x66m8suumcfamsws5e7vl4v","sender_ciphertext":"2339965272671686553993307597769607379125399168441113999718859480379254091680field"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - execute: Commitment '1266307482263846358970326041806201638141701138269282465033372005968041137990field' does not exist
-- execute: Input record for 'mint_and_split.aleo' must belong to the signer
+- execute: 'Authorization failed: Process authorization failed: Stack authorization failed: Input record for ''mint_and_split.aleo'' must belong to the signer'
 - execute: Commitment '5664701406562067552828344114098303767897965604026128467062564698122653063423field' does not exist
 additional:
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"4586639778642070695318011090170197778266871957567848251502398491280581469406field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo19e6k5ferx3k8a9k79xtj4uuaztt2jl4eza7k43pygsu977yazypqqwdmw6,\n    1479u64\n  ]\n}"}'
+      - '{"type":"future","id":"447891032749324216348904255397414568643688189608095694927752481174107363525field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo19e6k5ferx3k8a9k79xtj4uuaztt2jl4eza7k43pygsu977yazypqqwdmw6,\n    1479u64\n  ]\n}"}'
 - {}
 - {}
 - {}

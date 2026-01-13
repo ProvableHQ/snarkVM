@@ -41,7 +41,7 @@ impl<E: Environment> Inverse for Field<E> {
         });
 
         // Ensure `self` * `self^(-1)` == 1.
-        E::enforce(|| (self, &inverse, E::one()));
+        E::enforce(|| (self, &inverse, E::one())).expect("Field inverse constraint unsatisfied");
 
         inverse
     }

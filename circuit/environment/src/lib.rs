@@ -29,6 +29,9 @@ pub use circuit::*;
 pub mod environment;
 pub use environment::*;
 
+pub mod error;
+pub use error::*;
+
 pub mod helpers;
 pub use helpers::*;
 
@@ -45,6 +48,7 @@ pub use traits::*;
 pub mod prelude {
     pub use crate::{
         CircuitType,
+        ConstraintUnsatisfied,
         Count,
         Environment,
         LinearCombination,

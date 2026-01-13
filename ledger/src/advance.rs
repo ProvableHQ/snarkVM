@@ -19,7 +19,8 @@ use anyhow::Context;
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns a candidate for the next block in the ledger, using a committed subdag and its transmissions.
-    ///    
+    /// This candidate can then be passed to [`Ledger::advance_to_next_block`] to be added to the ledger.
+    ///
     /// # Panics
     /// This function panics if called from an async context.
     pub fn prepare_advance_to_next_quorum_block<R: Rng + CryptoRng>(
@@ -36,9 +37,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Currently, we do not support ratifications from the memory pool.
         ensure!(ratifications.is_empty(), "Ratifications are currently unsupported from the memory pool");
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = self
-            .construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)
-            .with_context(|| "Failed to construct block template")?;
+        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) =
+            self.construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)?;
 
         // Construct the new quorum block.
         Block::new_quorum(
@@ -54,6 +54,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns a candidate for the next block in the ledger.
+    /// This candidate can then be passed to [`Ledger::advance_to_next_block`] to be added to the ledger.
+    ///
+    /// Note, that beacon blocks are only used for testing purposes.
+    /// Production code will most likely used `[Ledger::prepare_advance_to_next_quorum_block`] instead.
     ///
     /// # Panics
     /// This function panics if called from an async context.
@@ -80,8 +84,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 candidate_solutions,
                 candidate_transactions,
                 rng,
-            )
-            .with_context(|| "Failed to construct block template")?;
+            )?;
 
         // Construct the new beacon block.
         Block::new_beacon(
@@ -98,6 +101,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Adds the given block as the next block in the ledger.
+    ///
+    /// This function expects a valid block, that either was created by a trusted source, or successfully passed
+    /// the blocks checks (e.g. [`Ledger::check_next_block`]).
+    /// Note, that it is still possible that this function returns an error for a valid block, if there are concurrent tasks
+    /// updating the ledger.
     ///
     /// # Panics
     /// This function panics if called from an async context.
@@ -144,7 +152,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                     error!("Failed to update the current epoch hash at block {}", block.height());
                 }
             }
-            // Clear the epoch provers cache.
+            // Clear the epoch provers cache. This is done because once the ledger enters a new epoch,
+            // all solutions from the previous epoch are no longer relevant.
+            // Note: solutions that land on exactly the epoch boundary are still considered part of the previous epoch,
+            // because they were created prior to the advancement to the new epoch (using the previous epoch's puzzle).
             self.epoch_provers_cache.write().clear();
         } else {
             // If the block is not part of a new epoch, add the new provers to the epoch prover cache.

@@ -566,12 +566,32 @@ impl<N: Network> ProgramCore<N> {
                         bail!("'{member_identifier}' in struct '{struct_name}' is not defined.")
                     }
                 }
+                PlaintextType::ExternalStruct(locator) => {
+                    if !self.imports.contains_key(locator.program_id()) {
+                        bail!(
+                            "External program {} referenced in struct '{struct_name}' does not exist",
+                            locator.program_id()
+                        );
+                    }
+                }
                 PlaintextType::Array(array_type) => {
-                    if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
+                    match array_type.base_element_type() {
+                        PlaintextType::Struct(struct_name) =>
                         // Ensure the member struct name exists in the program.
-                        if !self.structs.contains_key(struct_name) {
-                            bail!("'{struct_name}' in array '{array_type}' is not defined.")
+                        {
+                            if !self.structs.contains_key(struct_name) {
+                                bail!("'{struct_name}' in array '{array_type}' is not defined.")
+                            }
                         }
+                        PlaintextType::ExternalStruct(locator) => {
+                            if !self.imports.contains_key(locator.program_id()) {
+                                bail!(
+                                    "External program {} in array '{array_type}' does not exist",
+                                    locator.program_id()
+                                );
+                            }
+                        }
+                        PlaintextType::Array(..) | PlaintextType::Literal(..) => {}
                     }
                 }
             }
@@ -623,12 +643,32 @@ impl<N: Network> ProgramCore<N> {
                         bail!("Struct '{identifier}' in record '{record_name}' is not defined.")
                     }
                 }
+                PlaintextType::ExternalStruct(locator) => {
+                    if !self.imports.contains_key(locator.program_id()) {
+                        bail!(
+                            "External program {} referenced in record '{record_name}' does not exist",
+                            locator.program_id()
+                        );
+                    }
+                }
                 PlaintextType::Array(array_type) => {
-                    if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
+                    match array_type.base_element_type() {
+                        PlaintextType::Struct(struct_name) =>
                         // Ensure the member struct name exists in the program.
-                        if !self.structs.contains_key(struct_name) {
-                            bail!("'{struct_name}' in array '{array_type}' is not defined.")
+                        {
+                            if !self.structs.contains_key(struct_name) {
+                                bail!("'{struct_name}' in array '{array_type}' is not defined.")
+                            }
                         }
+                        PlaintextType::ExternalStruct(locator) => {
+                            if !self.imports.contains_key(locator.program_id()) {
+                                bail!(
+                                    "External program {} in array '{array_type}' does not exist",
+                                    locator.program_id()
+                                );
+                            }
+                        }
+                        PlaintextType::Array(..) | PlaintextType::Literal(..) => {}
                     }
                 }
             }
@@ -911,6 +951,27 @@ impl<N: Network> ProgramCore<N> {
         }
         // Return `false` since no V9 syntax was found.
         false
+    }
+
+    /// Returns whether this program explicitly refers to an external struct, like `other_program.aleo/StructType`?
+    ///
+    /// This function exists to check if programs to be deployed use external structs so they can be gated
+    /// by consensus version.
+    pub fn contains_external_struct(&self) -> bool {
+        self.mappings.values().any(|mapping| mapping.contains_external_struct())
+            || self
+                .structs
+                .values()
+                .flat_map(|struct_| struct_.members().values())
+                .any(|plaintext_type| plaintext_type.contains_external_struct())
+            || self
+                .records
+                .values()
+                .flat_map(|record| record.entries().values())
+                .any(|entry| entry.plaintext_type().contains_external_struct())
+            || self.closures.values().any(|closure| closure.contains_external_struct())
+            || self.functions.values().any(|function| function.contains_external_struct())
+            || self.constructor.iter().any(|constructor| constructor.contains_external_struct())
     }
 
     /// Returns `true` if the program contains an array type with a size that exceeds the given maximum.

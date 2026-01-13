@@ -33,7 +33,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Transaction<N>> {
+    ) -> Result<Transaction<N>, VmExecError> {
         let (execution, _) = self.execute_with_response(
             private_key,
             (program_id, function_name),
@@ -61,7 +61,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<(Transaction<N>, Response<N>)> {
+    ) -> Result<(Transaction<N>, Response<N>), VmExecError> {
         // Get a default query if one is not provided.
         let query = match query {
             Some(q) => q,
@@ -157,7 +157,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Fee<N>> {
+    ) -> Result<Fee<N>, VmExecError> {
         debug_assert!(authorization.is_fee_private() || authorization.is_fee_public(), "Expected a fee authorization");
         // Get a default query if one is not provided.
         let query = match query {
@@ -177,7 +177,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: &dyn QueryTrait<N>,
         rng: &mut R,
-    ) -> Result<(Execution<N>, Response<N>)> {
+    ) -> Result<(Execution<N>, Response<N>), VmExecError> {
         let timer = timer!("VM::execute_authorization_raw");
 
         // Construct the locator of the main function.
@@ -232,7 +232,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: &dyn QueryTrait<N>,
         rng: &mut R,
-    ) -> Result<Fee<N>> {
+    ) -> Result<Fee<N>, VmExecError> {
         let timer = timer!("VM::execute_fee_authorization_raw");
 
         // Determine the consensus version.

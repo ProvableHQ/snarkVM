@@ -57,7 +57,7 @@ impl<E: Environment> ToUpperBits for Field<E> {
 
         // Ensure value * 1 == (2^n * b_n + ... + 2^{n-k} * b_{n-k})
         // and ensures that b_{n-k-1}, ..., b_0 are all equal to zero.
-        E::assert_eq(self, accumulator);
+        E::assert_eq(self, accumulator).expect("Field to_upper_bits constraint unsatisfied");
 
         bits
     }

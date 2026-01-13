@@ -95,7 +95,7 @@ impl<E: Environment> BitOrAssign<&Boolean<E>> for Boolean<E> {
 
                 // Ensure (1 - `self`) * (1 - `other`) = (1 - `output`)
                 // `output` is `1` iff `self` OR `other` is `1`.
-                E::enforce(|| (E::one() - &self.0, E::one() - &other.0, E::one() - &output.0));
+                E::enforce(|| (E::one() - &self.0, E::one() - &other.0, E::one() - &output.0)).expect("Boolean OR constraint unsatisfied");
 
                 output
             }

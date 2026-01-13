@@ -78,6 +78,18 @@ impl<N: Network> Parser for ProgramCore<N> {
                 return map_res(take(0usize), Err)(string);
             }
         };
+
+        // Add the imports (if any) to the program.
+        for import in imports {
+            match program.add_import(import) {
+                Ok(_) => (),
+                Err(error) => {
+                    eprintln!("{error}");
+                    return map_res(take(0usize), Err)(string);
+                }
+            }
+        }
+
         // Construct the program with the parsed components.
         for component in components {
             let result = match component {
@@ -90,16 +102,6 @@ impl<N: Network> Parser for ProgramCore<N> {
             };
 
             match result {
-                Ok(_) => (),
-                Err(error) => {
-                    eprintln!("{error}");
-                    return map_res(take(0usize), Err)(string);
-                }
-            }
-        }
-        // Lastly, add the imports (if any) to the program.
-        for import in imports {
-            match program.add_import(import) {
                 Ok(_) => (),
                 Err(error) => {
                     eprintln!("{error}");

@@ -206,7 +206,7 @@ commands:
 
             export PATH="$HOME/.cargo/bin:$PATH"
             if ! command -v cargo-nextest >/dev/null 2>&1; then
-              cargo install cargo-nextest --locked
+              cargo install cargo-nextest --locked --version "0.9.114"
             fi
 
       - run:
@@ -1091,7 +1091,10 @@ jobs:
           name: Check for unused dependencies
           no_output_timeout: 10m
           command: |
-            cargo install cargo-machete@0.7.0
+            set -euo pipefail
+            if ! command -v cargo-machete >/dev/null 2>&1; then
+              cargo install cargo-machete@0.7.0 --locked
+            fi
             cargo machete
       - clear_environment:
           cache_key: v4.2.0-rust-1.88.0-machete-cache
@@ -1107,7 +1110,7 @@ jobs:
           name:  Check for security vulnerabilities
           no_output_timeout: 10m
           command: |
-            cargo install cargo-audit@0.21.2 --locked
+            cargo install cargo-audit@0.22.0 --locked
             cargo audit -D warnings
       - clear_environment:
           cache_key: v4.2.0-rust-1.88.0-cargo-audit-cache
@@ -1116,7 +1119,8 @@ jobs:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
-      - checkout
+      - checkout:
+          method: full
       - setup_environment:
           cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
       - run:

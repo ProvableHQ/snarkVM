@@ -66,7 +66,7 @@ impl<E: Environment> MulAssign<&Field<E>> for Field<E> {
                 let product = witness!(|self, other| self * other);
 
                 // Ensure self * other == product.
-                E::enforce(|| (&*self, other, &product));
+                E::enforce(|| (&*self, other, &product)).expect("Field multiplication constraint unsatisfied");
 
                 *self = product;
             }

@@ -29,6 +29,19 @@ impl<N: Network> FromBytes for Proof<N> {
         // Return the proof.
         Ok(Self { proof })
     }
+
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the version.
+        let version = u8::read_le(&mut reader)?;
+        // Ensure the version is valid.
+        if version != 1 {
+            return Err(error("Invalid proof version"));
+        }
+        // Read the proof.
+        let proof = FromBytes::read_le_unchecked(&mut reader)?;
+        // Return the proof.
+        Ok(Self { proof })
+    }
 }
 
 impl<N: Network> ToBytes for Proof<N> {

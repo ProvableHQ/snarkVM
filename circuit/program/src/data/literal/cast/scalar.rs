@@ -37,7 +37,7 @@ impl<E: Environment> Cast<Boolean<E>> for Scalar<E> {
     #[inline]
     fn cast(&self) -> Boolean<E> {
         let is_one = self.is_one();
-        E::assert(self.is_zero().bitor(&is_one));
+        E::assert(self.is_zero().bitor(&is_one)).expect("Scalar must be zero or one to cast to Boolean");
         is_one
     }
 }

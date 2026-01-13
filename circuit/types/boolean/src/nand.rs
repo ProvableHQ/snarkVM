@@ -49,7 +49,7 @@ impl<E: Environment> Nand<Self> for Boolean<E> {
 
             // Ensure `self` * `other` = (1 - `output`)
             // `output` is `1` iff `self` or `other` is `0`, otherwise `output` is `0`.
-            E::enforce(|| (self, other, E::one() - &output.0));
+            E::enforce(|| (self, other, E::one() - &output.0)).expect("Boolean NAND constraint unsatisfied");
 
             output
         }

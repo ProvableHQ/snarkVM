@@ -18,21 +18,49 @@ mod parse;
 mod serialize;
 mod size_in_bits;
 
-use crate::{ArrayType, Identifier, LiteralType, StructType};
+use crate::{ArrayType, Identifier, LiteralType, Locator, ProgramID, StructType};
 use snarkvm_console_network::prelude::*;
 
-/// A `PlaintextType` defines the type parameter for a literal, struct, or array.
+/// A `PlaintextType` defines the type parameter for a literal, struct, array, or external struct.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum PlaintextType<N: Network> {
     /// A literal type contains its type name.
     /// The format of the type is `<type_name>`.
     Literal(LiteralType),
-    /// An struct type contains its identifier.
+    /// A struct type contains its identifier.
     /// The format of the type is `<identifier>`.
     Struct(Identifier<N>),
     /// An array type contains its element type and length.
     /// The format of the type is `[<element_type>; <length>]`.
     Array(ArrayType<N>),
+    /// An external struct type contains its locator.
+    /// The format of the type is `<program_id>/<identifier>`.
+    ExternalStruct(Locator<N>),
+}
+
+impl<N: Network> PlaintextType<N> {
+    /// Returns whether this type refers to an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        use PlaintextType::*;
+
+        match self {
+            Literal(..) | Struct(..) => false,
+            ExternalStruct(..) => true,
+            Array(array_type) => array_type.base_element_type().contains_external_struct(),
+        }
+    }
+
+    // Make unqualified structs into external ones with the given `id`.
+    pub fn qualify(self, id: ProgramID<N>) -> Self {
+        match self {
+            PlaintextType::ExternalStruct(..) | PlaintextType::Literal(..) => self,
+            PlaintextType::Struct(name) => PlaintextType::ExternalStruct(Locator::new(id, name)),
+            PlaintextType::Array(array_type) => {
+                let element_type = array_type.next_element_type().clone().qualify(id);
+                PlaintextType::Array(ArrayType::new(element_type, vec![*array_type.length()]).unwrap())
+            }
+        }
+    }
 }
 
 impl<N: Network> From<LiteralType> for PlaintextType<N> {
@@ -46,6 +74,13 @@ impl<N: Network> From<Identifier<N>> for PlaintextType<N> {
     /// Initializes a plaintext type from a struct type.
     fn from(struct_: Identifier<N>) -> Self {
         PlaintextType::Struct(struct_)
+    }
+}
+
+impl<N: Network> From<Locator<N>> for PlaintextType<N> {
+    /// Initializes a plaintext type from an external struct type.
+    fn from(locator: Locator<N>) -> Self {
+        PlaintextType::ExternalStruct(locator)
     }
 }
 
@@ -76,7 +111,7 @@ impl<N: Network> PlaintextType<N> {
     /// Returns `true` if the `PlaintextType` is an array and the size exceeds the given maximum.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
         match self {
-            Self::Literal(_) | Self::Struct(_) => false,
+            Self::Literal(_) | Self::Struct(_) | Self::ExternalStruct(_) => false,
             Self::Array(array_type) => array_type.exceeds_max_array_size(max_array_size),
         }
     }

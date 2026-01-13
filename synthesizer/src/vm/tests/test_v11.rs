@@ -379,7 +379,7 @@ constructor:
                 // Create a block and fail if the number of accepted transactions is zero.
                 let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
                 if block.transactions().num_accepted() == 0 {
-                    Err(anyhow::anyhow!("The transaction was not accepted"))
+                    Err(anyhow::anyhow!("The transaction was not accepted").into())
                 } else {
                     Ok(())
                 }

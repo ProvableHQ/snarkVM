@@ -44,4 +44,9 @@ impl<E: PairingEngine> FromBytes for Certificate<E> {
         Self::deserialize_compressed(&mut r)
             .map_err(|err| into_io_error(anyhow::Error::from(err).context("Failed to deserialize certificate")))
     }
+
+    fn read_le_unchecked<R: Read>(mut r: R) -> io::Result<Self> {
+        Self::deserialize_compressed_unchecked(&mut r)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("Failed to deserialize certificate")))
+    }
 }

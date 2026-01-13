@@ -44,7 +44,7 @@ impl<E: Environment> ToLowerBits for Field<E> {
 
         // Ensure value * 1 == (2^k * b_k + ... + 2^0 * b_0)
         // and ensures that b_n, ..., b_{n-k} are all equal to zero.
-        E::assert_eq(self, accumulator);
+        E::assert_eq(self, accumulator).expect("Field to_lower_bits constraint unsatisfied");
 
         bits
     }

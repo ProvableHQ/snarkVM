@@ -254,9 +254,7 @@ impl<N: Network> RegisterTypes<N> {
     fn check_input(&mut self, stack: &Stack<N>, register: &Register<N>, register_type: &RegisterType<N>) -> Result<()> {
         // Ensure the register type is defined in the program.
         match register_type {
-            RegisterType::Plaintext(PlaintextType::Literal(..)) => (),
-            RegisterType::Plaintext(PlaintextType::Struct(struct_name)) => Self::check_struct(stack, struct_name)?,
-            RegisterType::Plaintext(PlaintextType::Array(array_type)) => Self::check_array(stack, array_type)?,
+            RegisterType::Plaintext(plaintext_type) => Self::check_plaintext_type(stack, plaintext_type)?,
             RegisterType::Record(identifier) => {
                 // Ensure the record type is defined in the program.
                 if !stack.program().contains_record(identifier) {
@@ -285,7 +283,6 @@ impl<N: Network> RegisterTypes<N> {
     }
 
     /// Ensure the given output register is well-formed.
-    #[inline]
     fn check_output(&self, stack: &Stack<N>, operand: &Operand<N>, register_type: &RegisterType<N>) -> Result<()> {
         match operand {
             // Inform the user the output operand is an input register, to ensure this is intended behavior.
@@ -305,9 +302,7 @@ impl<N: Network> RegisterTypes<N> {
 
         // Ensure the register type is defined in the program.
         match register_type {
-            RegisterType::Plaintext(PlaintextType::Literal(..)) => (),
-            RegisterType::Plaintext(PlaintextType::Struct(struct_name)) => Self::check_struct(stack, struct_name)?,
-            RegisterType::Plaintext(PlaintextType::Array(array_type)) => Self::check_array(stack, array_type)?,
+            RegisterType::Plaintext(plaintext_type) => Self::check_plaintext_type(stack, plaintext_type)?,
             RegisterType::Record(identifier) => {
                 // Ensure the record type is defined in the program.
                 if !stack.program().contains_record(identifier) {
@@ -334,11 +329,10 @@ impl<N: Network> RegisterTypes<N> {
         };
 
         // Ensure the operand type and the output type match.
-        if *register_type != self.get_type_from_operand(stack, operand)? {
+        let operand_type = self.get_type_from_operand(stack, operand)?;
+        if !register_types_equivalent(stack, register_type, stack, &operand_type)? {
             bail!(
-                "Output '{operand}' does not match the expected output operand type: expected '{}', found '{}'",
-                self.get_type_from_operand(stack, operand)?,
-                register_type
+                "Output '{operand}' does not match the expected output operand type: expected '{operand_type}', found '{register_type}'",
             )
         }
         Ok(())
@@ -380,7 +374,6 @@ impl<N: Network> RegisterTypes<N> {
 
     /// Ensures the opcode is a valid opcode and corresponds to the correct instruction.
     /// This method is called when adding a new closure or function to the program.
-    #[inline]
     fn check_instruction_opcode(
         &self,
         stack: &Stack<N>,
@@ -512,19 +505,27 @@ impl<N: Network> RegisterTypes<N> {
                         | CastType::Plaintext(PlaintextType::Literal(..)) => {
                             ensure!(instruction.operands().len() == 1, "Expected 1 operand.");
                         }
-                        CastType::Plaintext(PlaintextType::Struct(struct_name)) => {
-                            // Ensure the struct name exists in the program.
-                            if !stack.program().contains_struct(struct_name) {
-                                bail!("Struct '{struct_name}' is not defined.")
-                            }
+                        CastType::Plaintext(plaintext @ PlaintextType::Struct(struct_name)) => {
+                            // Ensure the type is valid.
+                            Self::check_plaintext_type(stack, plaintext)?;
                             // Retrieve the struct.
                             let struct_ = stack.program().get_struct(struct_name)?;
                             // Ensure the operand types match the struct.
-                            self.matches_struct(stack, instruction.operands(), struct_)?;
+                            self.matches_struct(stack, stack, instruction.operands(), struct_)?;
                         }
-                        CastType::Plaintext(PlaintextType::Array(array_type)) => {
-                            // Ensure that the array type is valid.
-                            RegisterTypes::check_array(stack, array_type)?;
+                        CastType::Plaintext(plaintext @ PlaintextType::ExternalStruct(locator)) => {
+                            // Ensure the type is valid.
+                            Self::check_plaintext_type(stack, plaintext)?;
+                            let external_stack = stack.get_external_stack(locator.program_id())?;
+                            let struct_name = locator.resource();
+                            // Retrieve the struct.
+                            let struct_ = external_stack.program().get_struct(struct_name)?;
+                            // Ensure the operand types match the struct.
+                            self.matches_struct(stack, &*external_stack, instruction.operands(), struct_)?;
+                        }
+                        CastType::Plaintext(plaintext @ PlaintextType::Array(array_type)) => {
+                            // Ensure the type is valid.
+                            Self::check_plaintext_type(stack, plaintext)?;
                             // Ensure the operand types match the element type.
                             self.matches_array(stack, instruction.operands(), array_type)?;
                         }
@@ -647,34 +648,24 @@ impl<N: Network> RegisterTypes<N> {
     //     Ok(())
     // }
 
-    /// Ensures the struct exists in the program, and recursively-checks for array members.
-    pub(crate) fn check_struct(stack: &Stack<N>, struct_name: &Identifier<N>) -> Result<()> {
-        // Retrieve the struct from the program.
-        let Ok(struct_) = stack.program().get_struct(struct_name) else {
-            bail!("Struct '{struct_name}' in '{}' is not defined.", stack.program_id())
-        };
-
-        // If the struct contains arrays, ensure their base element types are defined in the program.
-        for member in struct_.members().values() {
-            match member {
-                PlaintextType::Literal(..) => (),
-                PlaintextType::Struct(struct_name) => Self::check_struct(stack, struct_name)?,
-                PlaintextType::Array(array_type) => Self::check_array(stack, array_type)?,
+    /// Ensure any struct referenced directly or otherwise exists.
+    pub fn check_plaintext_type(stack: &Stack<N>, type_: &PlaintextType<N>) -> Result<()> {
+        match type_ {
+            PlaintextType::Literal(..) => Ok(()),
+            PlaintextType::Struct(struct_name) => {
+                // Retrieve the struct from the program.
+                let Ok(struct_) = stack.program().get_struct(struct_name) else {
+                    bail!("Struct '{struct_name}' in '{}' is not defined.", stack.program_id())
+                };
+                struct_.members().values().try_for_each(|member| Self::check_plaintext_type(stack, member))
             }
-        }
-        Ok(())
-    }
-
-    /// Ensure the base element type of the array is defined in the program.
-    pub(crate) fn check_array(stack: &Stack<N>, array_type: &ArrayType<N>) -> Result<()> {
-        // If the base element type is a struct, check that it is defined in the program.
-        if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
-            // Ensure the struct is defined in the program.
-            if !stack.program().contains_struct(struct_name) {
-                bail!("Struct '{struct_name}' in '{}' is not defined.", stack.program_id())
+            PlaintextType::ExternalStruct(locator) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                let struct_type = PlaintextType::Struct(*locator.resource());
+                Self::check_plaintext_type(&*external_stack, &struct_type)
             }
+            PlaintextType::Array(array_type) => Self::check_plaintext_type(stack, array_type.base_element_type()),
         }
-        Ok(())
     }
 
     /// Ensures the opcode is a valid opcode and corresponds to the `commit` instruction.

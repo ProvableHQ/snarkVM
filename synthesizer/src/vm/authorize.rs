@@ -25,7 +25,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         function_name: impl TryInto<Identifier<N>>,
         inputs: impl IntoIterator<IntoIter = impl ExactSizeIterator<Item = impl TryInto<Value<N>>>>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, VmAuthError> {
         let timer = timer!("VM::authorize");
 
         // Prepare the program ID.
@@ -128,7 +128,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         function_name: Identifier<N>,
         inputs: Vec<Value<N>>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, VmAuthError> {
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
                 // Compute the authorization.

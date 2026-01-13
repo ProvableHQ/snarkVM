@@ -31,6 +31,21 @@ impl<N: Network> FromBytes for VerifyingKey<N> {
         // Return the verifying key.
         Ok(Self { verifying_key, num_variables })
     }
+
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the version.
+        let version = u8::read_le(&mut reader)?;
+        // Ensure the version is valid.
+        if version != 1 {
+            return Err(error("Invalid verifying key version"));
+        }
+        // Read the verifying key.
+        let verifying_key = Arc::new(FromBytes::read_le_unchecked(&mut reader)?);
+        // Read the number of variables.
+        let num_variables = u64::read_le(&mut reader)?;
+        // Return the verifying key.
+        Ok(Self { verifying_key, num_variables })
+    }
 }
 
 impl<N: Network> ToBytes for VerifyingKey<N> {

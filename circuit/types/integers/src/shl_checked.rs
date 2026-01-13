@@ -100,7 +100,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShlChecked<Integer<E, M>> for
                     let result = Self { bits_le: lower_bits_le.to_vec(), phantom: Default::default() };
                     // Ensure that the sign of the first I::BITS upper bits match the sign of the result.
                     for bit in &upper_bits_le[..(I::BITS as usize)] {
-                        E::assert_eq(bit, result.msb());
+                        E::assert_eq(bit, result.msb()).expect("Signed shift left overflow check failed");
                     }
                     // Return the result.
                     result

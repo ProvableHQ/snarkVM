@@ -41,7 +41,7 @@ impl<E: Environment> DivUnchecked<Field<E>> for Field<E> {
 
                 // Ensure the quotient is correct by enforcing:
                 // `quotient * other == self`.
-                E::enforce(|| (&quotient, other, self));
+                E::enforce(|| (&quotient, other, self)).expect("Field division constraint unsatisfied");
 
                 // Return the quotient.
                 quotient

@@ -23,7 +23,7 @@ impl<A: Aleo> Record<A, Ciphertext<A>> {
         // Decrypt the record.
         let record = self.decrypt_symmetric_unchecked(record_view_key);
         // Ensure the view key corresponds to the record owner.
-        A::assert_eq(view_key.to_address(), record.owner().deref());
+        A::assert_eq(view_key.to_address(), record.owner().deref()).expect("View key must match record owner");
         // Return the decrypted record.
         record
     }

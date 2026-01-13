@@ -495,7 +495,7 @@ pub fn field_test<F: Field>(a: F, b: F, rng: &mut TestRng) {
         for _ in 0..len {
             a.push(F::rand(rng));
             b.push(F::rand(rng));
-            assert_eq!(F::sum_of_products(a.iter(), b.iter()), a.iter().zip(b.iter()).map(|(x, y)| *x * y).sum());
+            assert_eq!(F::sum_of_products(&a, &b), a.iter().zip(b.iter()).map(|(x, y)| *x * y).sum());
         }
     }
 

@@ -53,6 +53,7 @@ use snarkvm_synthesizer_program::{
     Remove,
     Set,
     StackTrait,
+    types_equivalent,
 };
 
 use indexmap::IndexMap;
@@ -158,6 +159,17 @@ impl<N: Network> FinalizeTypes<N> {
                         None => bail!("'{identifier}' does not exist in struct '{struct_name}'"),
                     }
                 }
+                // Access the member on the path to output the register type.
+                (FinalizeType::Plaintext(PlaintextType::ExternalStruct(locator)), Access::Member(identifier)) => {
+                    // Retrieve the member type from the struct and check that it exists.
+                    let external_stack = stack.get_external_stack(locator.program_id())?;
+                    match external_stack.program().get_struct(locator.resource())?.members().get(identifier) {
+                        // Retrieve the member and update `finalize_type` for the next iteration.
+                        Some(member_type) => finalize_type = FinalizeType::Plaintext(member_type.clone()),
+                        // Halts if the member does not exist.
+                        None => bail!("'{identifier}' does not exist in struct '{locator}'"),
+                    }
+                }
                 // Access the member on the path to output the register type and check that it is in bounds.
                 (FinalizeType::Plaintext(PlaintextType::Array(array_type)), Access::Index(index)) => {
                     match index < array_type.length() {
@@ -194,7 +206,10 @@ impl<N: Network> FinalizeTypes<N> {
                         None => bail!("Index out of bounds"),
                     }
                 }
-                (FinalizeType::Plaintext(PlaintextType::Struct(..)), Access::Index(..))
+                (
+                    FinalizeType::Plaintext(PlaintextType::Struct(..) | PlaintextType::ExternalStruct(..)),
+                    Access::Index(..),
+                )
                 | (FinalizeType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
                 | (FinalizeType::Future(..), Access::Member(..)) => {
                     bail!("Invalid access `{access}`")
@@ -204,5 +219,20 @@ impl<N: Network> FinalizeTypes<N> {
 
         // Return the output type.
         Ok(finalize_type)
+    }
+}
+
+pub fn finalize_types_equivalent<N: Network>(
+    stack0: &impl StackTrait<N>,
+    type0: &FinalizeType<N>,
+    stack1: &impl StackTrait<N>,
+    type1: &FinalizeType<N>,
+) -> Result<bool> {
+    match (type0, type1) {
+        (FinalizeType::Plaintext(plaintext0), FinalizeType::Plaintext(plaintext1)) => {
+            types_equivalent(stack0, plaintext0, stack1, plaintext1)
+        }
+        (FinalizeType::Future(future0), FinalizeType::Future(future1)) => Ok(future0 == future1),
+        _ => Ok(false),
     }
 }

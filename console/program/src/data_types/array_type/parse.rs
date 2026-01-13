@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use crate::{Identifier, LiteralType};
+use crate::{Identifier, LiteralType, Locator};
 
 impl<N: Network> Parser for ArrayType<N> {
     /// Parses a string into a literal type.
@@ -22,7 +22,12 @@ impl<N: Network> Parser for ArrayType<N> {
     fn parse(string: &str) -> ParserResult<Self> {
         // A helper function to parse the innermost element type.
         fn parse_inner_element_type<N: Network>(string: &str) -> ParserResult<PlaintextType<N>> {
-            alt((map(LiteralType::parse, PlaintextType::from), map(Identifier::parse, PlaintextType::from)))(string)
+            // Order matters - we shouldn't try to parse Identifier before Locator.
+            alt((
+                map(Locator::parse, PlaintextType::from),
+                map(LiteralType::parse, PlaintextType::from),
+                map(Identifier::parse, PlaintextType::from),
+            ))(string)
         }
 
         // A helper function to parse the length of each dimension.

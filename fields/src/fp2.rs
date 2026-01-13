@@ -402,8 +402,8 @@ impl<P: Fp2Parameters> MulAssign<&'_ Self> for Fp2<P> {
     #[allow(clippy::suspicious_op_assign_impl)]
     fn mul_assign(&mut self, other: &Self) {
         *self = Self::new(
-            P::Fp::sum_of_products([self.c0, P::mul_fp_by_nonresidue(&self.c1)].iter(), [other.c0, other.c1].iter()),
-            P::Fp::sum_of_products([self.c0, self.c1].iter(), [other.c1, other.c0].iter()),
+            P::Fp::sum_of_products(&[self.c0, P::mul_fp_by_nonresidue(&self.c1)], &[other.c0, other.c1]),
+            P::Fp::sum_of_products(&[self.c0, self.c1], &[other.c1, other.c0]),
         )
     }
 }

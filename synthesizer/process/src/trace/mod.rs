@@ -237,7 +237,7 @@ impl<N: Network> Trace<N> {
         verifier_inputs: Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>,
         execution: &Execution<N>,
     ) -> Result<()> {
-        if cfg!(feature = "dev_skip_checks") {
+        if cfg!(all(feature = "dev_skip_checks", feature = "test_consensus_heights")) {
             return Ok(());
         }
         // Retrieve the global state root.
@@ -271,7 +271,7 @@ impl<N: Network> Trace<N> {
         verifier_inputs: (VerifyingKey<N>, Vec<Vec<N::Field>>),
         fee: &Fee<N>,
     ) -> Result<()> {
-        if cfg!(feature = "dev_skip_checks") {
+        if cfg!(all(feature = "dev_skip_checks", feature = "test_consensus_heights")) {
             return Ok(());
         }
         // Retrieve the global state root.

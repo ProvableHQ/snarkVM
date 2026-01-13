@@ -18,3 +18,4 @@ extern crate snarkvm_console as console;
 
 mod helpers;
 mod instruction;
+mod types;

@@ -379,6 +379,11 @@ impl<E: PairingEngine> FromBytes for Proof<E> {
         Self::deserialize_compressed(&mut r)
             .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize Proof")))
     }
+
+    fn read_le_unchecked<R: Read>(mut r: R) -> io::Result<Self> {
+        Self::deserialize_compressed_unchecked(&mut r)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize Proof")))
+    }
 }
 
 /// Computes the size in bytes of a Varuna proof as produced by

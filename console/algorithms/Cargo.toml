@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-algorithms"
-version = "4.3.0"
+version = "4.4.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Console algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -54,6 +54,10 @@ version = "0.13"
 features = [ "digest", "ecdsa" ]
 default-features = false
 
+[dependencies.serde]
+workspace = true
+features = ["rc"]
+
 [dependencies.smallvec]
 workspace = true
 features = [ "const_generics", "const_new" ]
@@ -75,9 +79,6 @@ workspace = true
 workspace = true
 
 [dev-dependencies.hex]
-workspace = true
-
-[dev-dependencies.serde]
 workspace = true
 
 [dev-dependencies.serde_json]

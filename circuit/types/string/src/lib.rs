@@ -59,7 +59,8 @@ impl<E: Environment> Inject for StringType<E> {
             false => Field::new(Mode::Private, num_bytes),
         };
         // Ensure the witness matches the constant.
-        E::assert_eq(&expected_size_in_bytes, &size_in_bytes);
+        E::assert_eq(&expected_size_in_bytes, &size_in_bytes)
+            .expect("String size witness does not match expected size");
 
         Self {
             mode,

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Mode, helpers::Constraint, *};
+use crate::{ConstraintUnsatisfied, Mode, helpers::Constraint, *};
 
 use core::{
     cell::{Cell, RefCell},
@@ -122,7 +122,7 @@ impl Environment for TestnetCircuit {
     }
 
     /// Adds one constraint enforcing that `(A * B) == C`.
-    fn enforce<Fn, A, B, C>(constraint: Fn)
+    fn enforce<Fn, A, B, C>(constraint: Fn) -> Result<(), ConstraintUnsatisfied>
     where
         Fn: FnOnce() -> (A, B, C),
         A: Into<LinearCombination<Self::BaseField>>,
@@ -149,19 +149,13 @@ impl Environment for TestnetCircuit {
                     match a.is_constant() && b.is_constant() && c.is_constant() {
                         true => {
                             // Evaluate the constant constraint.
-                            assert_eq!(
-                                a.value() * b.value(),
-                                c.value(),
-                                "Constant constraint failed: ({a} * {b}) =?= {c}"
-                            );
-
-                            // match self.counter.scope().is_empty() {
-                            //     true => println!("Enforced constraint with constant terms: ({} * {}) =?= {}", a, b, c),
-                            //     false => println!(
-                            //         "Enforced constraint with constant terms ({}): ({} * {}) =?= {}",
-                            //         self.counter.scope(), a, b, c
-                            //     ),
-                            // }
+                            if a.value() * b.value() != c.value() {
+                                return Err(ConstraintUnsatisfied {
+                                    a: a.to_string(),
+                                    b: b.to_string(),
+                                    c: c.to_string(),
+                                });
+                            }
                         }
                         false => {
                             // Construct the constraint object.
@@ -170,7 +164,8 @@ impl Environment for TestnetCircuit {
                             circuit.borrow_mut().enforce(constraint)
                         }
                     }
-                });
+                    Ok(())
+                })
             } else {
                 Self::halt("Tried to add a new constraint in witness mode")
             }

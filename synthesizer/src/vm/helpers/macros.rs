@@ -71,7 +71,7 @@ macro_rules! convert {
                 // Process the logic.
                 $logic!(console::network::CanaryV0, circuit::AleoCanaryV0)
             }
-            _ => bail!("Unsupported VM configuration for network: {}", N::ID),
+            _ => return Err(anyhow!("Unsupported VM configuration for network: {}", N::ID).into()),
         }
     }};
 }
@@ -106,7 +106,7 @@ macro_rules! process {
                 // Process the logic.
                 $logic!(process.read(), console::network::CanaryV0, circuit::AleoCanaryV0)
             }
-            _ => bail!("Unsupported VM configuration for network: {}", N::ID),
+            _ => return Err(anyhow!("Unsupported VM configuration for network: {}", N::ID).into()),
         }
     }};
 }

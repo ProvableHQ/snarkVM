@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-collections"
-version = "4.3.0"
+version = "4.4.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Collections for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -29,6 +29,9 @@ features = [ "field", "integers" ]
 workspace = true
 
 [dependencies.rayon]
+workspace = true
+
+[dependencies.serde]
 workspace = true
 
 [dev-dependencies.snarkvm-console-network]

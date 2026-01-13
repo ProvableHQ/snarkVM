@@ -59,6 +59,12 @@ impl<N: Network> Set<N> {
     pub const fn value(&self) -> &Operand<N> {
         &self.operands[1]
     }
+
+    /// Returns whether this command refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network> Set<N> {

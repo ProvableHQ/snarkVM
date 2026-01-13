@@ -76,12 +76,12 @@ impl<N: Network> InclusionV0Assignment<N> {
         let candidate_serial_number =
             circuit::Record::<A, circuit::Plaintext<A>>::serial_number_from_gamma(&gamma, commitment.clone());
         // Enforce that the candidate serial number is equal to the serial number.
-        A::assert_eq(candidate_serial_number, serial_number);
+        A::assert_eq(candidate_serial_number, serial_number)?;
 
         // Enforce the starting leaf is the claimed commitment.
-        A::assert_eq(state_path.transition_leaf().id(), commitment);
+        A::assert_eq(state_path.transition_leaf().id(), commitment)?;
         // Enforce the state path from leaf to root is correct.
-        A::assert(state_path.verify(&is_global, &local_state_root));
+        A::assert(state_path.verify(&is_global, &local_state_root))?;
 
         Stack::log_circuit::<A>(format_args!("State Path for {}", self.serial_number));
 

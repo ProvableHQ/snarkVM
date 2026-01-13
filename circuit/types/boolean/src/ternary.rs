@@ -70,7 +70,8 @@ impl<E: Environment> Ternary for Boolean<E> {
             //
             // See `Field::ternary()` for the proof of correctness.
             //
-            E::enforce(|| (condition, (&first.0 - &second.0), (&output.0 - &second.0)));
+            E::enforce(|| (condition, (&first.0 - &second.0), (&output.0 - &second.0)))
+                .expect("Boolean ternary constraint unsatisfied");
 
             output
         }

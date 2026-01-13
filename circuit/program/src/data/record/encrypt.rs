@@ -26,7 +26,8 @@ impl<A: Aleo> Record<A, Plaintext<A>> {
     /// and returns the encrypted record alongside the record view key.
     pub fn encrypt_symmetric(&self, randomizer: &Scalar<A>) -> (Record<A, Ciphertext<A>>, Field<A>) {
         // Ensure the randomizer corresponds to the record nonce.
-        A::assert_eq(&self.nonce, A::g_scalar_multiply(randomizer));
+        A::assert_eq(&self.nonce, A::g_scalar_multiply(randomizer))
+            .expect("Randomizer must correspond to record nonce");
         // Compute the record view key.
         let record_view_key = ((*self.owner).to_group() * randomizer).to_x_coordinate();
         // Encrypt the record.

@@ -23,7 +23,7 @@ impl<E: Environment> Elligator2<E> {
         debug_assert!(console::Group::<E::Network>::EDWARDS_D.legendre().is_qnr());
 
         // Ensure the input is nonzero.
-        E::assert_neq(input, Field::<E>::zero());
+        E::assert_neq(input, Field::<E>::zero()).expect("Elligator2 input must be nonzero");
 
         // Define `1` as a constant.
         let one = Field::one();
@@ -55,7 +55,8 @@ impl<E: Environment> Elligator2<E> {
             let ur2 = edwards_d * input.square();
             let one_plus_ur2 = &one + &ur2;
             // Verify A^2 * ur^2 != B(1 + ur^2)^2.
-            E::assert_neq(a.square() * &ur2, &b * one_plus_ur2.square());
+            E::assert_neq(a.square() * &ur2, &b * one_plus_ur2.square())
+                .expect("Elligator2 mapping constraint unsatisfied");
 
             // Let v = -A / (1 + ur^2).
             let v = -&a / one_plus_ur2;
@@ -90,16 +91,16 @@ impl<E: Environment> Elligator2<E> {
             });
             // Verify that the square root is even.
             // Note that the unwrap is safe since the number of bits is always greater than zero,
-            E::assert(!rhs_square_root.to_bits_be().last().unwrap());
+            E::assert(!rhs_square_root.to_bits_be().last().unwrap()).expect("Elligator2 square root must be even");
 
             let y = -&e * rhs_square_root;
 
             // Ensure v * e * x * y != 0.
-            E::assert_neq(&v * &e * &x * &y, Field::<E>::zero());
+            E::assert_neq(&v * &e * &x * &y, Field::<E>::zero()).expect("Elligator2 v*e*x*y must be nonzero");
 
             // Ensure (x, y) is a valid Weierstrass element on: y^2 == x^3 + A * x^2 + B * x.
             let y2 = y.square();
-            E::assert_eq(&y2, rhs);
+            E::assert_eq(&y2, rhs).expect("Elligator2 Weierstrass constraint unsatisfied");
 
             // Convert the Weierstrass element (x, y) to Montgomery element (u, v).
             let u = x * &montgomery_b;
@@ -109,7 +110,7 @@ impl<E: Environment> Elligator2<E> {
             let u2 = &x2 * &montgomery_b2;
             let u3 = &x3 * &montgomery_b3;
             let v2 = &y2 * &montgomery_b3;
-            E::assert_eq(v2, u3 + (montgomery_a * u2) + &u);
+            E::assert_eq(v2, u3 + (montgomery_a * u2) + &u).expect("Elligator2 Montgomery constraint unsatisfied");
 
             (u, v)
         };

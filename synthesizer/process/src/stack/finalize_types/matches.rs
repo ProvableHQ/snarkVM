@@ -45,6 +45,7 @@ impl<N: Network> FinalizeTypes<N> {
                 // Ensure the literal type matches the member type.
                 Operand::Literal(literal) => {
                     ensure!(
+                        // No need to call `types_equivalent`, since it can't be a struct.
                         &PlaintextType::Literal(literal.to_type()) == member_type,
                         "Struct member '{struct_name}.{member_name}' expects a {member_type}, but found '{operand}' in the operand.",
                     )
@@ -60,7 +61,7 @@ impl<N: Network> FinalizeTypes<N> {
                     };
                     // Ensure the register type matches the member type.
                     ensure!(
-                        &plaintext_type == member_type,
+                        types_equivalent(stack, &plaintext_type, stack, member_type)?,
                         "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{plaintext_type}' in the operand '{operand}'.",
                     )
                 }
@@ -80,6 +81,7 @@ impl<N: Network> FinalizeTypes<N> {
                     };
                     // Ensure the operand type matches the member type.
                     ensure!(
+                        // No need to call `types_equivalent`, since `program_ref_type` cannot be a struct.
                         &program_ref_type == member_type,
                         "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{program_ref_type}' in the operand '{operand}'.",
                     )
@@ -121,6 +123,7 @@ impl<N: Network> FinalizeTypes<N> {
                 // Ensure the literal type matches the element type.
                 Operand::Literal(literal) => {
                     ensure!(
+                        // No need to call `types_equivalent`, since it can't be a struct.
                         &PlaintextType::Literal(literal.to_type()) == array_type.next_element_type(),
                         "Array element expects {}, but found '{operand}' in the operand.",
                         array_type.next_element_type()
@@ -137,7 +140,7 @@ impl<N: Network> FinalizeTypes<N> {
                     };
                     // Ensure the register type matches the element type.
                     ensure!(
-                        &plaintext_type == array_type.next_element_type(),
+                        types_equivalent(stack, &plaintext_type, stack, array_type.next_element_type())?,
                         "Array element expects {}, but found '{plaintext_type}' in the operand '{operand}'.",
                         array_type.next_element_type()
                     )
@@ -156,6 +159,7 @@ impl<N: Network> FinalizeTypes<N> {
                     };
                     // Ensure the operand type matches the element type.
                     ensure!(
+                        // No need to call `types_equivalent`, since `program_ref_type` cannot be a struct.
                         &program_ref_type == array_type.next_element_type(),
                         "Array element expects {}, but found '{program_ref_type}' in the operand '{operand}'.",
                         array_type.next_element_type()

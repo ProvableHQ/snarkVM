@@ -29,6 +29,19 @@ impl<N: Network> FromBytes for Certificate<N> {
         // Return the certificate.
         Ok(Self { certificate })
     }
+
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the version.
+        let version = u8::read_le(&mut reader)?;
+        // Ensure the version is valid.
+        if version != 1 {
+            return Err(error("Invalid certificate version"));
+        }
+        // Read the certificate.
+        let certificate = FromBytes::read_le_unchecked(&mut reader)?;
+        // Return the certificate.
+        Ok(Self { certificate })
+    }
 }
 
 impl<N: Network> ToBytes for Certificate<N> {

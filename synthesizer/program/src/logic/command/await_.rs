@@ -49,6 +49,12 @@ impl<N: Network> Await<N> {
         // Return the register.
         register
     }
+
+    /// Returns whether this command refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network> Parser for Await<N> {

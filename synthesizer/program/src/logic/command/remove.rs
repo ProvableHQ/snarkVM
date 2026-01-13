@@ -50,6 +50,12 @@ impl<N: Network> Remove<N> {
     pub const fn key(&self) -> &Operand<N> {
         &self.operands[0]
     }
+
+    /// Returns whether this command refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network> Remove<N> {

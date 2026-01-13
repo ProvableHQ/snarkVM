@@ -164,10 +164,7 @@ impl<P: Fp256Parameters> Field for Fp256<P> {
         Self::from_bigint(two_inv).unwrap() // Guaranteed to be valid.
     }
 
-    fn sum_of_products<'a>(
-        a: impl Iterator<Item = &'a Self> + Clone,
-        b: impl Iterator<Item = &'a Self> + Clone,
-    ) -> Self {
+    fn sum_of_products<'a>(a: &'a [Self], b: &'a [Self]) -> Self {
         // For a single `a x b` multiplication, operand scanning (schoolbook) takes each
         // limb of `a` in turn, and multiplies it by all of the limbs of `b` to compute
         // the result as a double-width intermediate representation, which is then fully
@@ -188,7 +185,7 @@ impl<P: Fp256Parameters> Field for Fp256<P> {
             // Algorithm 2, line 3
             // For each pair in the overall sum of products:
             let (t0, t1, t2, t3, mut t4) =
-                a.clone().zip(b.clone()).fold((u0, u1, u2, u3, 0), |(t0, t1, t2, t3, mut t4), (a, b)| {
+                a.iter().zip(b).fold((u0, u1, u2, u3, 0), |(t0, t1, t2, t3, mut t4), (a, b)| {
                     // Compute digit_j x row and accumulate into `u`.
                     let mut carry = 0;
                     let t0 = fa::mac_with_carry(t0, a.0.0[j], b.0.0[0], &mut carry);

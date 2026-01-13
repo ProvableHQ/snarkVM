@@ -69,6 +69,12 @@ impl<N: Network, const VARIANT: u8> Branch<N, VARIANT> {
     pub const fn position(&self) -> &Identifier<N> {
         &self.position
     }
+
+    /// Returns whether this command refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network, const VARIANT: u8> Parser for Branch<N, VARIANT> {

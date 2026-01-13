@@ -97,11 +97,12 @@ impl<E: Environment, I: IntegerType> SubChecked<Self> for Integer<E, I> {
                 true => {
                     let is_different_signs = self.msb().is_not_equal(other.msb());
                     let is_underflow = is_different_signs & difference.msb().is_equal(other.msb());
-                    E::assert_eq(is_underflow, E::zero());
+                    E::assert_eq(is_underflow, E::zero())
                 }
                 // For unsigned subtraction, ensure the carry bit is one.
                 false => E::assert_eq(carry, E::one()),
             }
+            .expect("Integer subtraction constraint unsatisfied");
 
             // Return the difference of `self` and `other`.
             difference

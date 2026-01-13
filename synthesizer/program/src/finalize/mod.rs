@@ -80,6 +80,12 @@ impl<N: Network> FinalizeCore<N> {
         &self.positions
     }
 
+    pub fn contains_external_struct(&self) -> bool {
+        self.commands
+            .iter()
+            .any(|command| matches!(command, Command::Instruction(inst) if inst.contains_external_struct()))
+    }
+
     /// Returns `true` if the finalize scope contains a string type.
     pub fn contains_string_type(&self) -> bool {
         self.input_types().iter().any(|input_type| {

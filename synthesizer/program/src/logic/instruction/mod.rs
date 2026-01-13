@@ -13,6 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod error;
+pub use error::*;
+
 mod opcode;
 pub use opcode::*;
 
@@ -558,25 +561,39 @@ impl<N: Network> Instruction<N> {
     }
 
     /// Evaluates the instruction.
+    // Temporary until all instruction evaluate methods return EvalError (#2941, #3055).
+    #[allow(clippy::useless_conversion)]
     #[inline]
-    pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersSigner<N>) -> Result<()> {
-        instruction!(self, |instruction| instruction.evaluate(stack, registers))
+    pub fn evaluate(
+        &self,
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersSigner<N>,
+    ) -> Result<(), EvalError> {
+        instruction!(self, |instruction| instruction.evaluate(stack, registers).map_err(Into::into))
     }
 
     /// Executes the instruction.
+    // Temporary until all instruction execute methods return ExecError (#2941, #3055).
+    #[allow(clippy::useless_conversion)]
     #[inline]
     pub fn execute<A: circuit::Aleo<Network = N>>(
         &self,
         stack: &impl StackTrait<N>,
         registers: &mut impl RegistersCircuit<N, A>,
-    ) -> Result<()> {
-        instruction!(self, |instruction| instruction.execute::<A>(stack, registers))
+    ) -> Result<(), ExecError> {
+        instruction!(self, |instruction| instruction.execute::<A>(stack, registers).map_err(Into::into))
     }
 
     /// Finalizes the instruction.
+    // Temporary until all instruction finalize methods return FinalizeError (#2941, #3055).
+    #[allow(clippy::useless_conversion)]
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
-        instruction!(self, |instruction| instruction.finalize(stack, registers))
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersTrait<N>,
+    ) -> Result<(), FinalizeError> {
+        instruction!(self, |instruction| instruction.finalize(stack, registers).map_err(Into::into))
     }
 
     /// Returns the output type from the given input types.
@@ -587,6 +604,11 @@ impl<N: Network> Instruction<N> {
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
         instruction!(self, |instruction| instruction.output_types(stack, input_types))
+    }
+
+    /// Returns whether this instruction refers to an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        instruction!(self, |instruction| instruction.contains_external_struct())
     }
 
     /// Returns `true` if the instruction contains a literal string type.

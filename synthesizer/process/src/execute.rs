@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use crate::error::ProcessExecError;
 
 impl<N: Network> Process<N> {
     /// Executes the given authorization.
@@ -22,7 +23,7 @@ impl<N: Network> Process<N> {
         &self,
         authorization: Authorization<N>,
         rng: &mut R,
-    ) -> Result<(Response<N>, Trace<N>)> {
+    ) -> Result<(Response<N>, Trace<N>), ProcessExecError> {
         let timer = timer!("Process::execute");
 
         // Retrieve the main request (without popping it).
@@ -51,7 +52,9 @@ impl<N: Network> Process<N> {
         // Extract the trace.
         let trace = Arc::try_unwrap(trace).unwrap().into_inner();
         // Ensure the trace is not empty.
-        ensure!(!trace.transitions().is_empty(), "Execution of '{locator}' is empty");
+        if trace.transitions().is_empty() {
+            return Err(anyhow!("Execution of '{locator}' is empty").into());
+        }
 
         finish!(timer);
         Ok((response, trace))

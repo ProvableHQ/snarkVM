@@ -84,7 +84,7 @@ impl<E: Environment, I: IntegerType> RemChecked<Self> for Integer<E, I> {
                     let min = Integer::constant(console::Integer::MIN);
                     let neg_one = Integer::constant(-console::Integer::one());
                     let overflows = self.is_equal(&min) & other.is_equal(&neg_one);
-                    E::assert(!overflows);
+                    E::assert(!overflows).expect("Signed integer remainder overflow check failed");
 
                     // Divide the absolute value of `self` and `other` in the base field.
                     let unsigned_dividend = self.abs_wrapped().cast_as_dual();

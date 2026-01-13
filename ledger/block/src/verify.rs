@@ -26,7 +26,11 @@ use std::collections::HashSet;
 use rayon::prelude::*;
 
 impl<N: Network> Block<N> {
-    /// Ensures the block is correct.
+    /// Ensures the block is well-formed and consistent with the previous block.
+    ///
+    /// # Returns
+    /// - On success, the sets of transaction and solution IDs that existed in this subDAG but were already included in the previous block.
+    /// - On failure, the error that caused verification to fail, e.g., invalid block hash, invalid block authority, or invalid transmissions.
     pub fn verify(
         &self,
         previous_block: &Block<N>,

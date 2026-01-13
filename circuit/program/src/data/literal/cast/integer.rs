@@ -37,7 +37,7 @@ impl<E: Environment, I: IntegerType> Cast<Boolean<E>> for Integer<E, I> {
     #[inline]
     fn cast(&self) -> Boolean<E> {
         let is_one = self.is_one();
-        E::assert(self.is_zero().bitor(&is_one));
+        E::assert(self.is_zero().bitor(&is_one)).expect("Integer must be zero or one to cast to Boolean");
         is_one
     }
 }
@@ -88,7 +88,8 @@ impl<E: Environment, I0: IntegerType, I1: IntegerType> Cast<Integer<E, I1>> for 
                 // If the source type is smaller than or equal to the destination type, check that the most significant bit is zero.
                 // Then instantiate the new integer from the lower bits.
                 true => {
-                    E::assert(!&bits_le[I0::BITS.saturating_sub(1) as usize]);
+                    E::assert(!&bits_le[I0::BITS.saturating_sub(1) as usize])
+                        .expect("Signed integer MSB must be zero to cast to unsigned");
                     Integer::<E, I1>::from_bits_le(&bits_le)
                 }
                 // If the source type is larger than the destination type, check that the upper bits are zero.
@@ -117,7 +118,7 @@ impl<E: Environment, I0: IntegerType, I1: IntegerType> Cast<Integer<E, I1>> for 
                     // Check that the upper bits match the most significant bit.
                     let upper_bits = bits_le.iter().skip(I1::BITS.saturating_sub(1) as usize);
                     for bit in upper_bits {
-                        E::assert_eq(&msb, bit);
+                        E::assert_eq(&msb, bit).expect("Signed integer upper bits must match MSB for cast");
                     }
                     // Instantiate the new integer from the lower bits and the most significant bit.
                     let mut lower_bits: Vec<_> =

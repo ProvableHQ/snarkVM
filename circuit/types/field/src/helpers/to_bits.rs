@@ -78,7 +78,7 @@ impl<E: Environment> Field<E> {
         }
 
         // Ensure value * 1 == (2^i * b_i + ... + 2^0 * b_0)
-        E::assert_eq(self, accumulator);
+        E::assert_eq(self, accumulator).expect("Field to_bits constraint unsatisfied");
 
         bits_le
     }

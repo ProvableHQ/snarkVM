@@ -23,6 +23,6 @@ impl<E: Environment> Boolean<E> {
         for bit in bits_le {
             sum += &**bit;
         }
-        E::assert_eq(sum, E::zero());
+        E::assert_eq(sum, E::zero()).expect("bits_are_zero assertion failed");
     }
 }

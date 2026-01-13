@@ -171,7 +171,9 @@ impl<N: Network> Command<N> {
     ) -> Result<Option<FinalizeOperation<N>>> {
         match self {
             // Finalize the instruction, and return no finalize operation.
-            Command::Instruction(instruction) => instruction.finalize(stack, registers).map(|_| None),
+            Command::Instruction(instruction) => {
+                instruction.finalize(stack, registers).map_err(Into::into).map(|_| None)
+            }
             // `await` commands are processed by the caller of this method.
             Command::Await(_) => bail!("`await` commands cannot be finalized directly."),
             // Finalize the 'contains' command, and return no finalize operation.
@@ -192,6 +194,23 @@ impl<N: Network> Command<N> {
             }
             // Finalize the `position` command, and return no finalize operation.
             Command::Position(position) => position.finalize().map(|_| None),
+        }
+    }
+
+    /// Returns whether this commands refers to an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        match self {
+            Command::Instruction(c) => c.contains_external_struct(),
+            Command::Await(c) => c.contains_external_struct(),
+            Command::Contains(c) => c.contains_external_struct(),
+            Command::Get(c) => c.contains_external_struct(),
+            Command::GetOrUse(c) => c.contains_external_struct(),
+            Command::RandChaCha(c) => c.contains_external_struct(),
+            Command::Remove(c) => c.contains_external_struct(),
+            Command::Set(c) => c.contains_external_struct(),
+            Command::BranchEq(c) => c.contains_external_struct(),
+            Command::BranchNeq(c) => c.contains_external_struct(),
+            Command::Position(c) => c.contains_external_struct(),
         }
     }
 

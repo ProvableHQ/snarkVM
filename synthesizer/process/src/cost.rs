@@ -432,6 +432,10 @@ fn plaintext_size_in_bytes<N: Network>(stack: &Stack<N>, plaintext_type: &Plaint
             // Return the size of the struct.
             Ok(size_of_name.saturating_add(size_of_members))
         }
+        PlaintextType::ExternalStruct(locator) => {
+            let external_stack = stack.get_external_stack(locator.program_id())?;
+            plaintext_size_in_bytes(&*external_stack, &PlaintextType::Struct(*locator.resource()))
+        }
         PlaintextType::Array(array_type) => {
             // Retrieve the number of elements in the array.
             let num_elements = **array_type.length() as u64;
@@ -548,7 +552,9 @@ pub fn cost_per_command<N: Network>(
                 FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Field)) => Ok(1_500),
                 FinalizeType::Plaintext(PlaintextType::Literal(_)) => Ok(500),
                 FinalizeType::Plaintext(PlaintextType::Array(_)) => bail!("'div' does not support arrays"),
-                FinalizeType::Plaintext(PlaintextType::Struct(_)) => bail!("'div' does not support structs"),
+                FinalizeType::Plaintext(PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_)) => {
+                    bail!("'div' does not support structs")
+                }
                 FinalizeType::Future(_) => bail!("'div' does not support futures"),
             }
         }
@@ -762,7 +768,9 @@ pub fn cost_per_command<N: Network>(
                 FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Scalar)) => Ok(10_000),
                 FinalizeType::Plaintext(PlaintextType::Literal(_)) => Ok(500),
                 FinalizeType::Plaintext(PlaintextType::Array(_)) => bail!("'mul' does not support arrays"),
-                FinalizeType::Plaintext(PlaintextType::Struct(_)) => bail!("'mul' does not support structs"),
+                FinalizeType::Plaintext(PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_)) => {
+                    bail!("'mul' does not support structs")
+                }
                 FinalizeType::Future(_) => bail!("'mul' does not support futures"),
             }
         }
@@ -780,7 +788,9 @@ pub fn cost_per_command<N: Network>(
                 FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Field)) => Ok(1_500),
                 FinalizeType::Plaintext(PlaintextType::Literal(_)) => Ok(500),
                 FinalizeType::Plaintext(PlaintextType::Array(_)) => bail!("'pow' does not support arrays"),
-                FinalizeType::Plaintext(PlaintextType::Struct(_)) => bail!("'pow' does not support structs"),
+                FinalizeType::Plaintext(PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_)) => {
+                    bail!("'pow' does not support structs")
+                }
                 FinalizeType::Future(_) => bail!("'pow' does not support futures"),
             }
         }

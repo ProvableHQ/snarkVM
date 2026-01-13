@@ -13,7 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    AssertError,
+    EvalError,
+    ExecError,
+    FinalizeError,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+    register_types_equivalent,
+};
 use console::{
     network::prelude::*,
     program::{Register, RegisterType},
@@ -70,14 +81,29 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
     pub fn destinations(&self) -> Vec<Register<N>> {
         vec![]
     }
+
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
     /// Evaluates the instruction.
-    pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn evaluate(
+        &self,
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersTrait<N>,
+    ) -> Result<(), EvalError> {
         // Ensure the number of operands is correct.
         if self.operands.len() != 2 {
-            bail!("Instruction '{}' expects 2 operands, found {} operands", Self::opcode(), self.operands.len())
+            return Err(anyhow!(
+                "Instruction '{}' expects 2 operands, found {} operands",
+                Self::opcode(),
+                self.operands.len()
+            )
+            .into());
         }
 
         // Retrieve the inputs.
@@ -88,15 +114,15 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
         match VARIANT {
             0 => {
                 if input_a != input_b {
-                    bail!("'{}' failed: '{input_a}' is not equal to '{input_b}' (should be equal)", Self::opcode())
+                    return Err(AssertError::Eq { lhs: format!("{input_a}"), rhs: format!("{input_b}") }.into());
                 }
             }
             1 => {
                 if input_a == input_b {
-                    bail!("'{}' failed: '{input_a}' is equal to '{input_b}' (should not be equal)", Self::opcode())
+                    return Err(AssertError::Neq { lhs: format!("{input_a}"), rhs: format!("{input_b}") }.into());
                 }
             }
-            _ => bail!("Invalid 'assert' variant: {VARIANT}"),
+            _ => return Err(AssertError::Invalid { variant: VARIANT }.into()),
         }
         Ok(())
     }
@@ -106,10 +132,15 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
         &self,
         stack: &impl StackTrait<N>,
         registers: &mut impl RegistersCircuit<N, A>,
-    ) -> Result<()> {
+    ) -> Result<(), ExecError> {
         // Ensure the number of operands is correct.
         if self.operands.len() != 2 {
-            bail!("Instruction '{}' expects 2 operands, found {} operands", Self::opcode(), self.operands.len())
+            return Err(anyhow!(
+                "Instruction '{}' expects 2 operands, found {} operands",
+                Self::opcode(),
+                self.operands.len()
+            )
+            .into());
         }
 
         // Retrieve the inputs.
@@ -118,33 +149,38 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
 
         // Assert the inputs.
         match VARIANT {
-            0 => A::assert(input_a.is_equal(&input_b)),
-            1 => A::assert(input_a.is_not_equal(&input_b)),
-            _ => bail!("Invalid 'assert' variant: {VARIANT}"),
+            0 => A::assert(input_a.is_equal(&input_b))?,
+            1 => A::assert(input_a.is_not_equal(&input_b))?,
+            _ => return Err(anyhow!("Invalid 'assert' variant: {VARIANT}").into()),
         }
         Ok(())
     }
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
-        self.evaluate(stack, registers)
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersTrait<N>,
+    ) -> Result<(), FinalizeError> {
+        self.evaluate(stack, registers)?;
+        Ok(())
     }
 
     /// Returns the output type from the given program and input types.
     pub fn output_types(
         &self,
-        _stack: &impl StackTrait<N>,
+        stack: &impl StackTrait<N>,
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
         // Ensure the number of input types is correct.
         if input_types.len() != 2 {
             bail!("Instruction '{}' expects 2 inputs, found {} inputs", Self::opcode(), input_types.len())
         }
-        // Ensure the operands are of the same type.
-        if input_types[0] != input_types[1] {
+        // Ensure the operands have equivalent types.
+        if !register_types_equivalent(stack, &input_types[0], stack, &input_types[1])? {
             bail!(
-                "Instruction '{}' expects inputs of the same type. Found inputs of type '{}' and '{}'",
+                "Instruction '{}' expects inputs of equivalent types. Found inputs of type '{}' and '{}'",
                 Self::opcode(),
                 input_types[0],
                 input_types[1]

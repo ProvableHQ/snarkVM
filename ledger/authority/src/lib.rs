@@ -34,7 +34,7 @@ use console::{
         Error,
         Formatter,
         FromBytes,
-        FromBytesDeserializer,
+        FromBytesUncheckedDeserializer,
         FromStr,
         IoResult,
         Read,

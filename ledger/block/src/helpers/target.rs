@@ -29,6 +29,7 @@ const V2_MIN_BLOCK_INTERVAL: i64 = 1; // 1 second.
 const SECONDS_IN_A_YEAR: u32 = 60 * 60 * 24 * 365;
 
 /// Calculate the block reward based on the network’s consensus version, determined by the given block height.
+/// If the block height is at or beyond the max supply limit height, the block reward is zero.
 pub fn block_reward<N: Network>(
     block_height: u32,
     total_supply: u64,
@@ -37,6 +38,11 @@ pub fn block_reward<N: Network>(
     coinbase_reward: u64,
     transaction_fees: u64,
 ) -> Result<u64> {
+    // If the height is at or beyond the max supply limit height, set rewards to zero.
+    if block_height >= N::MAX_SUPPLY_LIMIT_HEIGHT {
+        return Ok(0);
+    }
+
     // Determine which block reward version to use.
     let consensus_version = N::CONSENSUS_VERSION(block_height)?;
     match consensus_version == ConsensusVersion::V1 {
@@ -96,6 +102,7 @@ pub const fn puzzle_reward(coinbase_reward: u64) -> u64 {
 }
 
 /// Calculate the coinbase reward based on the network’s consensus version, determined by the given block height.
+/// If the block height is at or beyond the max supply limit height, the coinbase reward is zero.
 pub fn coinbase_reward<N: Network>(
     block_height: u32,
     block_timestamp: i64,
@@ -108,6 +115,11 @@ pub fn coinbase_reward<N: Network>(
     cumulative_proof_target: u64,
     coinbase_target: u64,
 ) -> Result<u64> {
+    // If the height is at or beyond the max supply limit height, set rewards to zero.
+    if block_height >= N::MAX_SUPPLY_LIMIT_HEIGHT {
+        return Ok(0);
+    }
+
     // Determine which coinbase reward version to use.
     let consensus_version = N::CONSENSUS_VERSION(block_height)?;
     if consensus_version == ConsensusVersion::V1 {
@@ -795,8 +807,9 @@ mod tests {
             assert_eq!(consensus_v1_reward, expected_reward);
 
             // Check that the block reward is correct for the second consensus version.
-            let consensus_v2_height =
-                rng.gen_range(TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap()..u32::MAX);
+            let consensus_v2_height = rng.gen_range(
+                TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap()..TestnetV0::MAX_SUPPLY_LIMIT_HEIGHT,
+            );
             let time_since_last_block = rng.gen_range(1..=V2_MAX_BLOCK_INTERVAL);
             let consensus_v2_reward = block_reward::<TestnetV0>(
                 consensus_v2_height,
@@ -809,6 +822,19 @@ mod tests {
             .unwrap();
             let expected_reward = block_reward_v2(TestnetV0::STARTING_SUPPLY, time_since_last_block, 0, 0);
             assert_eq!(consensus_v2_reward, expected_reward);
+
+            // Check that the block reward is 0 after the max supply limit height.
+            let after_max_supply_limit_height = rng.gen_range(TestnetV0::MAX_SUPPLY_LIMIT_HEIGHT..u32::MAX);
+            let block_reward = block_reward::<TestnetV0>(
+                after_max_supply_limit_height,
+                TestnetV0::STARTING_SUPPLY,
+                TestnetV0::BLOCK_TIME,
+                time_since_last_block,
+                0,
+                0,
+            )
+            .unwrap();
+            assert_eq!(block_reward, 0);
         }
     }
 
@@ -968,8 +994,9 @@ mod tests {
             assert_eq!(consensus_v1_reward, expected_reward);
 
             // Check that the block reward is correct for the second consensus version.
-            let consensus_v2_height =
-                rng.gen_range(TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap()..u32::MAX);
+            let consensus_v2_height = rng.gen_range(
+                TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap()..TestnetV0::MAX_SUPPLY_LIMIT_HEIGHT,
+            );
             let block_timestamp = TestnetV0::GENESIS_TIMESTAMP
                 .saturating_add(consensus_v2_height.saturating_mul(TestnetV0::BLOCK_TIME as u32) as i64);
             let consensus_v2_reward = coinbase_reward::<TestnetV0>(
@@ -996,6 +1023,23 @@ mod tests {
             )
             .unwrap();
             assert_eq!(consensus_v2_reward, expected_reward);
+
+            // Check that the coinbase reward is 0 after the max supply limit height.
+            let after_max_supply_limit_height = rng.gen_range(TestnetV0::MAX_SUPPLY_LIMIT_HEIGHT..u32::MAX);
+            let coinbase_reward = coinbase_reward::<TestnetV0>(
+                after_max_supply_limit_height,
+                block_timestamp,
+                TestnetV0::GENESIS_TIMESTAMP,
+                TestnetV0::STARTING_SUPPLY,
+                TestnetV0::ANCHOR_TIME,
+                TestnetV0::ANCHOR_HEIGHT,
+                TestnetV0::BLOCK_TIME,
+                1,
+                0,
+                1,
+            )
+            .unwrap();
+            assert_eq!(coinbase_reward, 0);
         }
     }
 
@@ -1503,6 +1547,69 @@ mod tests {
             .unwrap();
             assert!(reward <= 19_025_874);
         }
+    }
+
+    fn check_total_supply_cap<N: Network>() {
+        const AVG_BLOCK_TIME: i64 = 3;
+
+        let blocks_per_year = block_height_at_year(AVG_BLOCK_TIME as u16, 1);
+
+        // The tracking state for the simluation
+        let mut total_supply = N::STARTING_SUPPLY;
+        let mut total_block_rewards = 0u64;
+        let mut total_coinbase_rewards = 0u64;
+        let mut block_height = 1u32;
+        let mut latest_timetamp = 0;
+
+        // Iterate until we reach 5 billion credits
+        while total_supply < N::MAX_SUPPLY {
+            // Calculate the block reward.
+            let block_reward =
+                block_reward::<N>(block_height, N::STARTING_SUPPLY, N::BLOCK_TIME, AVG_BLOCK_TIME, 0, 0).unwrap();
+
+            // Calculate the coinbase reward.
+            let timestamp = N::GENESIS_TIMESTAMP + (block_height as i64 * AVG_BLOCK_TIME);
+            let coinbase_reward = coinbase_reward::<N>(
+                block_height,
+                timestamp,
+                N::GENESIS_TIMESTAMP,
+                N::STARTING_SUPPLY,
+                N::ANCHOR_TIME,
+                N::ANCHOR_HEIGHT,
+                N::BLOCK_TIME,
+                1,
+                0,
+                1,
+            )
+            .unwrap();
+
+            // Calculate the average expected coinbase reward per block based on the retargeting interval.
+            // This is the upper bound, because we consider hitting 50% of the coinbase target eligible for retargeting.
+            let avg_coinbase_reward_per_block = coinbase_reward * AVG_BLOCK_TIME as u64 / N::ANCHOR_TIME as u64;
+
+            // Update the trackers.
+            block_height += 1;
+            total_block_rewards += block_reward;
+            total_coinbase_rewards += avg_coinbase_reward_per_block;
+            total_supply += block_reward + avg_coinbase_reward_per_block;
+            latest_timetamp = timestamp;
+        }
+
+        println!(
+            "At block height {block_height} (year {}, timestamp: {latest_timetamp}), total block rewards is {total_block_rewards}, total coinbase rewards is {total_coinbase_rewards}, total supply is {total_supply} credits",
+            block_height / blocks_per_year
+        );
+
+        // Check that block height matches the expected max supply limit height.
+        assert_eq!(block_height, N::MAX_SUPPLY_LIMIT_HEIGHT);
+        assert_eq!(N::MAX_SUPPLY_LIMIT_HEIGHT, 263_527_685);
+    }
+
+    #[test]
+    fn test_total_supply_cap() {
+        check_total_supply_cap::<CanaryV0>();
+        check_total_supply_cap::<TestnetV0>();
+        check_total_supply_cap::<MainnetV0>();
     }
 
     #[test]

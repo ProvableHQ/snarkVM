@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, Registers, Stack, stack::Address};
+use crate::{CallStack, Registers, Stack, error::*, stack::Address};
 use aleo_std::prelude::{finish, lap, timer};
 use console::{
     account::Field,
@@ -38,7 +38,7 @@ pub trait CallTrait<N: Network> {
         stack: &Stack<N>,
         registers: &mut Registers<N, A>,
         rng: &mut R,
-    ) -> Result<()>;
+    ) -> Result<(), CallEvalError>;
 
     /// Executes the instruction.
     fn execute<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
@@ -46,7 +46,7 @@ pub trait CallTrait<N: Network> {
         stack: &Stack<N>,
         registers: &mut Registers<N, A>,
         rng: &mut R,
-    ) -> Result<()>;
+    ) -> Result<(), CallExecError>;
 }
 
 impl<N: Network> CallTrait<N> for Call<N> {
@@ -57,7 +57,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         stack: &Stack<N>,
         registers: &mut Registers<N, A>,
         rng: &mut R,
-    ) -> Result<()> {
+    ) -> Result<(), CallEvalError> {
         let timer = timer!("Call::evaluate");
 
         // Load the operands values.
@@ -74,7 +74,9 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 //  But there are legitimate uses for passing a record through to an internal function.
                 //  We could invoke the internal function without a state transition, but need to match visibility.
                 if stack.program().contains_function(resource) {
-                    bail!("Cannot call '{resource}'. Use a closure ('closure {resource}:') instead.")
+                    return Err(
+                        anyhow!("Cannot call '{resource}'. Use a closure ('closure {resource}:') instead.").into()
+                    );
                 }
                 (None, resource)
             }
@@ -90,7 +92,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         let outputs = if let Ok(closure) = substack.program().get_closure(resource) {
             // Ensure the number of inputs matches the number of input statements.
             if closure.inputs().len() != inputs.len() {
-                bail!("Expected {} inputs, found {}", closure.inputs().len(), inputs.len())
+                return Err(anyhow!("Expected {} inputs, found {}", closure.inputs().len(), inputs.len()).into());
             }
             // Evaluate the closure, and load the outputs.
             substack.evaluate_closure::<A>(
@@ -106,7 +108,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         else if let Ok(function) = substack.program().get_function(resource) {
             // Ensure the number of inputs matches the number of input statements.
             if function.inputs().len() != inputs.len() {
-                bail!("Expected {} inputs, found {}", function.inputs().len(), inputs.len())
+                return Err(anyhow!("Expected {} inputs, found {}", function.inputs().len(), inputs.len()).into());
             }
 
             // Get the 'root_tvk'.
@@ -121,7 +123,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 let is_root = false;
                 // Ensure that we have a private key to sign the new request.
                 let Some(private_key) = private_key else {
-                    bail!("Cannot authorize a new function call without a private key.")
+                    return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
                 };
                 // Retrieve the program checksum, if the program has a constructor.
                 let program_checksum = match substack.program().contains_constructor() {
@@ -155,7 +157,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         }
         // Else, throw an error.
         else {
-            bail!("Call operator '{}' is invalid or unsupported.", self.operator())
+            return Err(anyhow!("Call operator '{}' is invalid or unsupported.", self.operator()).into());
         };
         lap!(timer, "Computed outputs");
 
@@ -176,7 +178,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         stack: &Stack<N>,
         registers: &mut Registers<N, A>,
         rng: &mut R,
-    ) -> Result<()> {
+    ) -> Result<(), CallExecError> {
         let timer = timer!("Call::execute");
 
         // Load the operands values.
@@ -195,7 +197,10 @@ impl<N: Network> CallTrait<N> for Call<N> {
 
                 // Ensure the external call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
                 if is_credits_program && (is_fee_private || is_fee_public) {
-                    bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
+                    return Err(anyhow!(
+                        "Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'."
+                    )
+                    .into());
                 } else {
                     (Some(stack.get_external_stack(locator.program_id())?), locator.resource())
                 }
@@ -205,7 +210,9 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 //  But there are legitimate uses for passing a record through to an internal function.
                 //  We could invoke the internal function without a state transition, but need to match visibility.
                 if stack.program().contains_function(resource) {
-                    bail!("Cannot call '{resource}'. Use a closure ('closure {resource}:') instead.")
+                    return Err(
+                        anyhow!("Cannot call '{resource}'. Use a closure ('closure {resource}:') instead.").into()
+                    );
                 }
                 (None, resource)
             }
@@ -246,7 +253,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             let num_inputs = function.inputs().len();
             // Ensure the number of inputs matches the number of input statements.
             if num_inputs != inputs.len() {
-                bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
+                return Err(anyhow!("Expected {} inputs, found {}", num_inputs, inputs.len()).into());
             }
 
             // Retrieve the number of public variables in the circuit.
@@ -272,7 +279,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     CallStack::Authorize(_, private_key, authorization) => {
                         // Ensure that we have a private key to sign the new request.
                         let Some(private_key) = private_key else {
-                            bail!("Cannot authorize a new function call without a private key.")
+                            return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
                         };
                         // Compute the request.
                         let request = Request::sign(
@@ -425,7 +432,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     }
                     // If the circuit is in evaluate mode, then throw an error.
                     CallStack::Evaluate(..) => {
-                        bail!("Cannot 'execute' a function in 'evaluate' mode.")
+                        return Err(anyhow!("Cannot 'execute' a function in 'evaluate' mode.").into());
                     }
                     // If the circuit is in execute mode, then evaluate and execute the instructions.
                     CallStack::Execute(authorization, ..) => {
@@ -450,7 +457,11 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         // Ensure the values are equal.
                         if console_response.outputs() != response.outputs() {
                             dev_eprintln!("\n{:#?} != {:#?}\n", console_response.outputs(), response.outputs());
-                            bail!("Function '{}' outputs do not match in a 'call' instruction.", function.name())
+                            return Err(anyhow!(
+                                "Function '{}' outputs do not match in a 'call' instruction.",
+                                function.name()
+                            )
+                            .into());
                         }
                         // Return the request and response.
                         (request, response)
@@ -472,7 +483,9 @@ impl<N: Network> CallTrait<N> for Call<N> {
             let function_name = circuit::Identifier::constant(*function.name());
 
             // Ensure the number of public variables remains the same.
-            ensure!(A::num_public() == num_public, "Forbidden: 'call' injected excess public variables");
+            if A::num_public() != num_public {
+                return Err(anyhow!("Forbidden: 'call' injected excess public variables").into());
+            }
 
             // Inject the `signer` (from the request) as `Mode::Private`.
             let signer = circuit::Address::new(circuit::Mode::Private, *request.signer());
@@ -485,7 +498,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Compute the transition commitment as `Hash(tvk)`.
             let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
             // Ensure the transition commitment matches the computed transition commitment.
-            A::assert_eq(&tcm, candidate_tcm);
+            A::assert_eq(&tcm, candidate_tcm)?;
             // Inject the input IDs (from the request) as `Mode::Public`.
             let input_ids = request
                 .input_ids()
@@ -507,7 +520,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 &tcm,
                 None,
             );
-            A::assert(check_input_ids);
+            A::assert(check_input_ids)?;
             lap!(timer, "Checked the input ids");
 
             // Retrieve the output registers.
@@ -538,7 +551,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         }
         // Else, throw an error.
         else {
-            bail!("Call operator '{}' is invalid or unsupported.", self.operator())
+            return Err(anyhow!("Call operator '{}' is invalid or unsupported.", self.operator()).into());
         };
 
         // Assign the outputs to the destination registers.

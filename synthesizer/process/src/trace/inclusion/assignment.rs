@@ -104,12 +104,12 @@ impl<N: Network> InclusionAssignment<N> {
         let candidate_serial_number =
             circuit::Record::<A, circuit::Plaintext<A>>::serial_number_from_gamma(&gamma, commitment.clone());
         // Enforce that the candidate serial number is equal to the serial number.
-        A::assert_eq(candidate_serial_number, serial_number);
+        A::assert_eq(candidate_serial_number, serial_number)?;
 
         // Enforce the starting leaf is the claimed commitment.
-        A::assert_eq(state_path.transition_leaf().id(), commitment);
+        A::assert_eq(state_path.transition_leaf().id(), commitment)?;
         // Enforce the state path from leaf to root is correct.
-        A::assert(state_path.verify(&is_global, &local_state_root));
+        A::assert(state_path.verify(&is_global, &local_state_root))?;
 
         // Fetch the record block height from the state path.
         let record_block_height = U32::<A>::from_bits_le(&state_path.block_path().leaf_index().to_bits_le());
@@ -120,7 +120,7 @@ impl<N: Network> InclusionAssignment<N> {
         let is_block_height_check_valid =
             is_record_block_height_reached.is_equal(&is_record_block_height_past_upgrade_block_height);
         // Check that the height is valid if the record is from a global state path.
-        A::assert(is_global.not().bitor(is_block_height_check_valid));
+        A::assert(is_global.not().bitor(is_block_height_check_valid))?;
 
         Stack::log_circuit::<A>(format_args!("State Path for {}", self.serial_number));
 

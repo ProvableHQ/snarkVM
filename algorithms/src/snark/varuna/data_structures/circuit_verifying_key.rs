@@ -43,6 +43,11 @@ impl<E: PairingEngine> FromBytes for CircuitVerifyingKey<E> {
         Self::deserialize_compressed(r)
             .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize CircuitVerifyingKey")))
     }
+
+    fn read_le_unchecked<R: Read>(r: R) -> io::Result<Self> {
+        Self::deserialize_compressed_unchecked(r)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize CircuitVerifyingKey")))
+    }
 }
 
 impl<E: PairingEngine> ToBytes for CircuitVerifyingKey<E> {

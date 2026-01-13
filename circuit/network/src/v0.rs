@@ -423,7 +423,7 @@ impl Environment for AleoV0 {
     }
 
     /// Adds one constraint enforcing that `(A * B) == C`.
-    fn enforce<Fn, A, B, C>(constraint: Fn)
+    fn enforce<Fn, A, B, C>(constraint: Fn) -> Result<(), ConstraintUnsatisfied>
     where
         Fn: FnOnce() -> (A, B, C),
         A: Into<LinearCombination<Self::BaseField>>,

@@ -126,8 +126,9 @@ impl<E: Environment, const RATE: usize, const CAPACITY: usize> PoseidonSponge<E,
     #[inline]
     fn apply_mds(&mut self) {
         let mut new_state = State::default();
+        let curr_state: Vec<<E as Environment>::Field> = self.state.iter().map(|e| *e.deref()).collect::<Vec<_>>();
         new_state.iter_mut().zip(&self.parameters.mds).for_each(|(new_elem, mds_row)| {
-            *new_elem = Field::new(E::Field::sum_of_products(self.state.iter().map(|e| e.deref()), mds_row.iter()));
+            *new_elem = Field::new(E::Field::sum_of_products(curr_state.as_slice(), mds_row));
         });
         self.state = new_state;
     }

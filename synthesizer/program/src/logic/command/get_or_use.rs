@@ -68,6 +68,12 @@ impl<N: Network> GetOrUse<N> {
     pub const fn destination(&self) -> &Register<N> {
         &self.destination
     }
+
+    /// Returns whether this command refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network> GetOrUse<N> {

@@ -188,6 +188,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 );
                 // Verify the signature corresponds to the transaction ID.
                 ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
+
                 // If the `CONSENSUS_VERSION` is less than `V8`, ensure that
                 //   - the deployment edition is zero.
                 // If the `CONSENSUS_VERSION` is less than `V9` ensure that
@@ -253,6 +254,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         !deployment.program().contains_string_type(),
                         "Invalid deployment transaction '{id}' - program uses string type after `ConsensusVersion::V12`"
                     );
+                }
+
+                // If the `CONSENSUS_VERSION` is less than `V13`, then verify that:
+                //   - the program does not use the external struct syntax `some_program.aleo/StructT`
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V13`, then verify that:
+                //   - the program's mappings do not use non-existent structs.
+                if consensus_version < ConsensusVersion::V13 {
+                    ensure!(
+                        !deployment.program().contains_external_struct(),
+                        "Invalid deployment transaction '{id}' - external structs may only be used beginning with `ConsensusVersion::V13`"
+                    );
+                }
+
+                if consensus_version >= ConsensusVersion::V13 {
+                    self.process.read().mapping_types_exist(deployment.program())?;
                 }
 
                 // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.
@@ -350,24 +366,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 );
                                 // If the consensus version is V10 or greater, then check that each function's **record** output registers match the existing program.
                                 if consensus_version >= ConsensusVersion::V10 {
-                                    for (id, function) in existing_program.functions() {
-                                        // Get the corresponding function in the new program.
-                                        let Ok(new_function) = deployment.program().get_function(id) else {
-                                            bail!("Invalid deployment transaction '{id}' - missing function '{id}'")
-                                        };
-                                        // Ensure the record output registers match.
-                                        let existing_output_registers = function
-                                            .outputs()
-                                            .iter()
-                                            .filter(|output| matches!(output.value_type(), ValueType::Record(_)));
-                                        let new_output_registers = new_function
-                                            .outputs()
-                                            .iter()
-                                            .filter(|output| matches!(output.value_type(), ValueType::Record(_)));
-                                        ensure!(
-                                            existing_output_registers.eq(new_output_registers),
-                                            "Invalid deployment transaction '{id}' - function '{id}' has mismatched record output registers"
-                                        );
+                                    if let Err(e) =
+                                        check_output_register_indices_unchanged(existing_program, deployment.program())
+                                    {
+                                        bail!("Invalid deployment transaction '{id}' - {e}")
                                     }
                                 }
                             }

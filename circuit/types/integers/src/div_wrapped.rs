@@ -70,15 +70,17 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
 
         if 2 * I::BITS < E::BaseField::size_in_data_bits() as u64 {
             // Ensure that Euclidean division holds for these values in the base field.
-            E::assert_eq(self.to_field(), quotient.to_field() * other.to_field() + remainder.to_field());
+            E::assert_eq(self.to_field(), quotient.to_field() * other.to_field() + remainder.to_field())
+                .expect("Division Euclidean constraint unsatisfied");
         } else {
             // Ensure that Euclidean division holds for these values as integers.
-            E::assert_eq(self, quotient.mul_checked(other).add_checked(&remainder));
+            E::assert_eq(self, quotient.mul_checked(other).add_checked(&remainder))
+                .expect("Division Euclidean constraint unsatisfied");
         }
 
         // Ensure that the remainder is less than the divisor.
         // Note that if this check is satisfied and `other` is an unsigned integer, then `other` is not zero.
-        E::assert(remainder.is_less_than(other));
+        E::assert(remainder.is_less_than(other)).expect("Division remainder constraint unsatisfied");
 
         // Return the quotient and remainder of `self` and `other`.
         (quotient, remainder)

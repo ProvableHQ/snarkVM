@@ -121,10 +121,10 @@ impl<E: Environment> Equal<Self> for Field<E> {
                 let is_eq = !is_neq.clone();
 
                 // Check 1: (a - b) * multiplier = is_neq
-                E::enforce(|| (&delta, &multiplier, &is_neq));
+                E::enforce(|| (&delta, &multiplier, &is_neq)).expect("Field equality check 1 failed");
 
                 // Check 2: (a - b) * not(is_neq) = 0
-                E::enforce(|| (delta, is_eq, E::zero()));
+                E::enforce(|| (delta, is_eq, E::zero())).expect("Field equality check 2 failed");
 
                 // Return `is_neq`.
                 is_neq
@@ -305,10 +305,10 @@ mod tests {
             let is_eq = !is_neq.clone();
 
             // Check 1: (a - b) * multiplier = is_neq
-            Circuit::enforce(|| (delta.clone(), multiplier, is_neq.clone()));
+            Circuit::enforce(|| (delta.clone(), multiplier, is_neq.clone())).unwrap();
 
             // Check 2: (a - b) * not(is_neq) = 0
-            Circuit::enforce(|| (delta, is_eq, Circuit::zero()));
+            Circuit::enforce(|| (delta, is_eq, Circuit::zero())).unwrap();
         };
 
         //

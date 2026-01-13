@@ -457,6 +457,11 @@ impl<N: Network> Stack<N> {
                 // If `plaintext` is an array, this is a mismatch.
                 Plaintext::Array(..) => bail!("'{plaintext_type}' is invalid: expected literal, found array"),
             },
+            PlaintextType::ExternalStruct(locator) => {
+                let external_stack = self.get_external_stack(locator.program_id())?;
+                let new_type = PlaintextType::Struct(*locator.resource());
+                external_stack.matches_plaintext_internal(plaintext, &new_type, depth)
+            }
             PlaintextType::Struct(struct_name) => {
                 // Ensure the struct name is valid.
                 ensure!(!Program::is_reserved_keyword(struct_name), "Struct '{struct_name}' is reserved");

@@ -84,7 +84,8 @@ impl<E: Environment> Ternary for Field<E> {
             //       a - b = 0
             // => if a != b, as LHS != RHS, the witness is incorrect.
             //
-            E::enforce(|| ((first - second), condition, (&witness - second)));
+            E::enforce(|| ((first - second), condition, (&witness - second)))
+                .expect("Field ternary constraint unsatisfied");
 
             witness
         }

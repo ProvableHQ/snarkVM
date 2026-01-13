@@ -30,11 +30,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Transaction<N>> {
+    ) -> Result<Transaction<N>, VmDeployError> {
         // Compute the deployment.
         let mut deployment = self.deploy_raw(program, rng)?;
         // Ensure the transaction is not empty.
-        ensure!(!deployment.program().functions().is_empty(), "Attempted to create an empty transaction deployment");
+        if deployment.program().functions().is_empty() {
+            return Err(anyhow!("Attempted to create an empty transaction deployment").into());
+        }
         // Get a default query if one is not provided.
         let query = match query {
             Some(q) => q,
@@ -78,14 +80,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let fee = self.execute_fee_authorization(fee_authorization, Some(query), rng)?;
 
         // Return the deploy transaction.
-        Transaction::from_deployment(owner, deployment, fee)
+        Ok(Transaction::from_deployment(owner, deployment, fee)?)
     }
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns a deployment for the given program.
     #[inline]
-    pub(super) fn deploy_raw<R: Rng + CryptoRng>(&self, program: &Program<N>, rng: &mut R) -> Result<Deployment<N>> {
+    pub(super) fn deploy_raw<R: Rng + CryptoRng>(
+        &self,
+        program: &Program<N>,
+        rng: &mut R,
+    ) -> Result<Deployment<N>, VmDeployError> {
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
                 // Prepare the program.
