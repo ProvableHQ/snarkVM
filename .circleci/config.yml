@@ -263,9 +263,7 @@ commands:
 
             # Remove any --test target flags,they cause nextest build errors
             BUILD_FLAGS_SANITIZED="$(printf '%s' "$BUILD_FLAGS" \
-              | sed -E "s/(^|[[:space:]])--test[[:space:]]+'[^']*'([[:space:]]|$)/ /g" \
-              | sed -E 's/(^|[[:space:]])--test[[:space:]]+\"[^\"]*\"([[:space:]]|$)/ /g' \
-              | sed -E 's/(^|[[:space:]])--test[[:space:]]+[^[:space:]]+([[:space:]]|$)/ /g' \
+              | sed -E "s/(^|[[:space:]])--test[[:space:]]+('\*'|\"\*\"|\*)([[:space:]]|$)/ /g" \
               | tr -s ' ' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
             )"
 
@@ -280,7 +278,14 @@ commands:
 
             WSM="<< parameters.workspace_member >>"
             if [ "$WSM" = "snarkvm-synthesizer" ] && [ "$HAS_TEST_WILDCARD" -eq 1 ]; then
-              FILTER_EXPR='test(/test_command_parse/)+test(/test_instruction_parse/)+test(/test_process_execute/)+test(/test_program_parse/)+test(/test_vm_execute_and_finalize/)'
+              FILTER_EXPR='test(/test_command_parse/)+test(/test_instruction_parse/)+test(/test_process_execute/)+test(/test_program_parse/)'
+            fi
+            HEAVY_EXPR='test(/vm::finalize::tests::test_atomic_finalize_many/) or test(/vm::finalize::tests::test_excess_transactions_should_be_aborted/) or test(/vm::finalize::tests::test_finalize_catch_halt/) or test(/vm::finalize::tests::test_rejected_transaction_should_not_update_storage/) or test(/vm::test_helpers::test_load_deployments_with_imports/) or test(/vm::test_helpers::test_multiple_deployments_and_multiple_executions/) or test(/vm::verify::tests::test_verify_deploy_and_execute/)'
+            if [ "$WSM" = "snarkvm-synthesizer" ] && [ "${SYNTHESIZER_HEAVY:-0}" = "1" ]; then
+              FILTER_EXPR="$HEAVY_EXPR"
+            fi
+            if [ "$WSM" = "snarkvm-synthesizer" ] && [ "${SYNTHESIZER_HEAVY:-0}" != "1" ] && [ "$HAS_TEST_WILDCARD" -ne 1 ]; then
+              FILTER_EXPR="not ($HEAVY_EXPR)"
             fi
 
             # Build nextest filter expression from any --skip <pattern> arguments
@@ -334,16 +339,17 @@ commands:
             TMPD="$(mktemp -d)"
             if [ -f ".config/nextest.toml" ]; then
               CFG_ARGS+=(--config-file ".config/nextest.toml")
+            else
+              {
+                printf '%s\n' '[profile.ci]'
+                printf '%s\n' 'fail-fast = false'
+                printf '%s\n' "slow-timeout = \"${SLOW_PERIOD}\""
+                printf '%s\n' ''
+                printf '%s\n' '[profile.ci.junit]'
+                printf '%s\n' 'path = "junit.xml"'
+              } > "$TMPD/nextest-override.toml"
+              CFG_ARGS+=(--config-file "$TMPD/nextest-override.toml")
             fi
-            {
-              printf '%s\n' '[profile.ci]'
-              printf '%s\n' 'fail-fast = false'
-              printf '%s\n' "slow-timeout = \"${SLOW_PERIOD}\""
-              printf '%s\n' ''
-              printf '%s\n' '[profile.ci.junit]'
-              printf '%s\n' 'path = "junit.xml"'
-            } > "$TMPD/nextest-override.toml"
-            CFG_ARGS+=(--config-file "$TMPD/nextest-override.toml")
 
             # Print configuration summary for debugging
             echo "==> nextest package: << parameters.workspace_member >>"
@@ -675,12 +681,21 @@ jobs:
       - run_test:
           workspace_member: snarkvm-fields
 
-  ledger:
+  ledger-partition1:
     executor: rust-docker
     resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
+          flags: --partition count:1/2
+
+  ledger-partition2:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.xlarge >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-ledger
+          flags: --partition count:2/2
 
   ledger-with-rocksdb-partition1:
     executor: rust-docker
@@ -688,7 +703,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
-          flags: --release --features=rocks --partition count:1/2 -- --test-threads=10
+          flags: --release --features=rocks --partition count:1/2 -- --test-threads=8
           no_output_timeout: 20m
           timeout: 30m
 
@@ -698,7 +713,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
-          flags: --release --features=rocks --partition count:2/2 -- --test-threads=10
+          flags: --release --features=rocks --partition count:2/2 -- --test-threads=8
           no_output_timeout: 20m
           timeout: 30m
 
@@ -861,6 +876,19 @@ jobs:
           no_output_timeout: 20m
           timeout: 30m
 
+  synthesizer-heavy:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.twoxlarge >>
+    environment:
+      SYNTHESIZER_HEAVY: "1"
+    steps:
+      - run_test:
+          workspace_member: snarkvm-synthesizer
+          flags: --lib --bins --features test -- --test-threads 1
+          cache_key_suffix: -heavy
+          timeout: 30m
+          no_output_timeout: 20m
+
   synthesizer-test-partition1:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
@@ -897,7 +925,7 @@ jobs:
           # test_vm_execute_and_finalize can take over 10 minutes in the current setup
           no_output_timeout: 20m
           workspace_member: snarkvm-synthesizer
-          flags: --test '*' --features test -- --test-threads=4
+          flags: --test test_vm_execute_and_finalize --features test -- --test-threads=6
           cache_key_suffix: -integration
 
   synthesizer-process:
@@ -1199,7 +1227,8 @@ workflows:
 
   ledger-workflow:
     jobs:
-      - ledger
+      - ledger-partition1
+      - ledger-partition2
       - ledger-with-rocksdb-partition1
       - ledger-with-rocksdb-partition2
       - ledger-with-valid-solutions
@@ -1224,6 +1253,7 @@ workflows:
       - synthesizer
       - synthesizer-test-partition1
       - synthesizer-test-partition2
+      - synthesizer-heavy
       - synthesizer-integration
       - synthesizer-process
       - synthesizer-process-with-rocksdb

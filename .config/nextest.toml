@@ -1,0 +1,107 @@
+# Make sure nextest is at least this version.
+nextest-version = "0.9.48"
+
+# 1) Define test groups at the TOP LEVEL (not inside a profile)
+# Each group has a max-threads concurrency.
+[test-groups]
+ledger-heavy = { max-threads = 1 }    # run these tests strictly one at a time
+
+
+# 2) Default profile (used locally unless you specify another)
+[profile.default]
+
+[profile.default.junit]
+# This ends up as: target/nextest/default/junit.xml
+path = "junit.xml"
+report-name = "nextest-run"
+store-success-output = false
+store-failure-output = true
+
+[[profile.default.overrides]]
+# snarkvm-ledger tests::test_execute_duplicate_input_ids
+filter = 'test("tests::test_execute_duplicate_input_ids")'
+test-group = "ledger-heavy"
+
+[[profile.default.overrides]]
+# snarkvm-ledger tests::test_insufficient_finalize_fees
+filter = 'test("tests::test_insufficient_finalize_fees")'
+test-group = "ledger-heavy"
+
+[[profile.default.overrides]]
+# snarkvm-ledger tests::test_insufficient_private_fees
+filter = 'test("tests::test_insufficient_private_fees")'
+test-group = "ledger-heavy"
+
+[[profile.default.overrides]]
+# snarkvm-ledger tests::test_rejected_execution
+filter = 'test("tests::test_rejected_execution")'
+test-group = "ledger-heavy"
+
+[[profile.default.overrides]]
+# snarkvm-ledger tests::test_subdag_with_gc_length
+filter = 'test("tests::test_subdag_with_gc_length")'
+test-group = "ledger-heavy"
+
+[[profile.default.overrides]]
+# snarkvm-ledger tests::test_subdag_with_long_branch
+filter = 'test("tests::test_subdag_with_long_branch")'
+test-group = "ledger-heavy"
+
+[[profile.default.overrides]]
+# snarkvm-ledger tests::test_transaction_ordering
+filter = 'test("tests::test_transaction_ordering")'
+test-group = "ledger-heavy"
+
+[[profile.default.overrides]]
+# snarkvm-ledger::block-cache test_block_cache_during_advancement
+filter = 'test("test_block_cache_during_advancement")'
+test-group = "ledger-heavy"
+
+[[profile.default.overrides]]
+# snarkvm-ledger::block-cache test_block_cache_eviction
+filter = 'test("test_block_cache_eviction")'
+test-group = "ledger-heavy"
+
+
+# 3) CI profile: same overrides as default, just duplicated (no inheritance feature)
+[profile.ci]
+
+[[profile.ci.overrides]]
+filter = 'test("tests::test_execute_duplicate_input_ids")'
+test-group = "ledger-heavy"
+
+[[profile.ci.overrides]]
+filter = 'test("tests::test_insufficient_finalize_fees")'
+test-group = "ledger-heavy"
+
+[[profile.ci.overrides]]
+filter = 'test("tests::test_insufficient_private_fees")'
+test-group = "ledger-heavy"
+
+[[profile.ci.overrides]]
+filter = 'test("tests::test_rejected_execution")'
+test-group = "ledger-heavy"
+
+[[profile.ci.overrides]]
+filter = 'test("tests::test_subdag_with_gc_length")'
+test-group = "ledger-heavy"
+
+[[profile.ci.overrides]]
+filter = 'test("tests::test_subdag_with_long_branch")'
+test-group = "ledger-heavy"
+
+[[profile.ci.overrides]]
+filter = 'test("tests::test_transaction_ordering")'
+test-group = "ledger-heavy"
+
+[[profile.ci.overrides]]
+filter = 'test("test_block_cache_during_advancement")'
+test-group = "ledger-heavy"
+
+[[profile.ci.overrides]]
+filter = 'test("test_block_cache_eviction")'
+test-group = "ledger-heavy"
+
+[[profile.ci.overrides]]
+filter = "test(/^snarkvm-synthesizer::vm::finalize::tests::test_/) or test(/^snarkvm-synthesizer::vm::verify::tests::test_/)"
+threads-required = 4
