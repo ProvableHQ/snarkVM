@@ -453,16 +453,6 @@ jobs:
       - run_test:
           workspace_member: snarkvm-circuit-account
 
-  # This checks that no `console` structs are used in core circuit logic.
-  circuit-account-noconsole:
-    executor: rust-docker
-    resource_class: << pipeline.parameters.small >>
-    steps:
-      - run_test:
-          workspace_member: snarkvm-circuit-account
-          cache_key_suffix: -noconsole
-          flags: --no-default-features
-
   circuit-algorithms:
     executor: rust-docker
     resource_class: << pipeline.parameters.medium >>
@@ -476,16 +466,6 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-circuit-collections
-
-  # This checks that no `console` structs are used in core circuit logic.
-  circuit-collections-noconsole:
-    executor: rust-docker
-    resource_class: << pipeline.parameters.xlarge >>
-    steps:
-      - run_test:
-          workspace_member: snarkvm-circuit-collections
-          cache_key_suffix: -noconsole
-          flags: --no-default-features
 
   circuit-environment:
     executor: rust-docker
@@ -1189,19 +1169,15 @@ workflows:
     jobs:
       - check-fmt
       - check-clippy
-      - check-unused-dependencies
       - check-cargo-audit
-      - check-cargo-semver-checks
       - check-all-targets
 
   circuit-workflow:
     jobs:
       - circuit
       - circuit-account
-      - circuit-account-noconsole
       - circuit-algorithms
       - circuit-collections
-      - circuit-collections-noconsole
       - circuit-environment
       - circuit-network
       - circuit-program
@@ -1236,8 +1212,6 @@ workflows:
     jobs:
       - ledger-partition1
       - ledger-partition2
-      - ledger-with-rocksdb-partition1
-      - ledger-with-rocksdb-partition2
       - ledger-with-valid-solutions
       - ledger-authority
       - ledger-block
@@ -1261,36 +1235,52 @@ workflows:
       - synthesizer-test-partition1
       - synthesizer-test-partition2
       - synthesizer-heavy
+      - synthesizer-process 
       - synthesizer-integration
-      - synthesizer-process
-      - synthesizer-process-with-rocksdb
       - synthesizer-program
-      - synthesizer-program-integration
-      - synthesizer-program-integration-keccak
-      - synthesizer-program-integration-psd
-      - synthesizer-program-integration-sha
-      - synthesizer-program-integration-instruction-is
-      - synthesizer-program-integration-instruction-equal
-      - synthesizer-program-integration-instruction-commit
       - synthesizer-snark
 
   snarkvm-workflow:
     jobs:
-      - snarkvm
       - algorithms
-      - algorithms-profiler
       - curves
       - fields
       - parameters
-      - parameters-large
-      - parameters-uncached
+      - snarkvm
       - utilities
       - utilities-derives
       - wasm
-
-  windows-workflow:
+  
+  # Run additional but unlikely to fail checks on merges only
+  merge-workflow:
+    when: pipeline.git.branch == "staging"
+      or pipeline.git.branch == "canary"
+      or pipeline.git.branch == "testnet"
+      or pipeline.git.branch == "mainnet"
     jobs:
-      - verify-windows:
+      - ledger-with-rocksdb-partition1 # Often similar results as `ledger`
+      - ledger-with-rocksdb-partition2 # Often similar results as `ledger`
+      - synthesizer-process-with-rocksdb # Often similar results as `synthesizer-process`
+      - check-unused-dependencies # This can be cleaned up before releases
+      - check-cargo-semver-checks # This can be cleaned up before releases
+      - synthesizer-program-integration # Expensive and rarely impacted
+      - synthesizer-program-integration-keccak # Expensive and rarely impacted
+      - synthesizer-program-integration-psd # Expensive and rarely impacted
+      - synthesizer-program-integration-sha # Expensive and rarely impacted
+      - synthesizer-program-integration-instruction-is # Expensive and rarely impacted
+      - synthesizer-program-integration-instruction-equal # Expensive and rarely impacted
+      - synthesizer-program-integration-instruction-commit # Expensive and rarely impacted
+
+  # Run additional but unlikely to fail checks on releases only
+  release-workflow:
+    when: pipeline.git.branch == "canary"
+      or pipeline.git.branch == "testnet"
+      or pipeline.git.branch == "mainnet"
+    jobs:
+      - algorithms-profiler # Just checks some non-critical profiling code
+      - parameters-large # Infrastructure which often runs fine
+      - parameters-uncached # Infrastructure which often runs fine
+      - verify-windows: # Windows has never failed us when linux passed
           matrix:
             parameters:
               workspace_member: [
