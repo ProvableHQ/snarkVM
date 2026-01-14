@@ -15,37 +15,15 @@
 
 use serde::{Deserialize, Serialize};
 
-use aleo_std::{StorageMode, aleo_ledger_dir};
+#[cfg(feature = "rocks")]
+use snarkvm_ledger_store::helpers::rocksdb::{internal::{DataMap, HistoryMap, MapID}, Database as RocksDatabase};
 
+use aleo_std::StorageMode;
 use anyhow::Result;
 use serde_json;
-use std::{
-    fmt::{Display, Formatter},
-    path::PathBuf,
-};
+use std::fmt::{Display, Formatter};
 
-/// Returns the path where a `history` directory may be stored.
-pub fn history_directory_path(network: u16, storage_mode: &StorageMode) -> PathBuf {
-    const HISTORY_DIRECTORY_NAME: &str = "history";
-
-    // Create the name of the history directory.
-    let directory_name = match &storage_mode {
-        StorageMode::Development(id) => format!(".{HISTORY_DIRECTORY_NAME}-{network}-{id}"),
-        StorageMode::Production | StorageMode::Custom(_) => format!("{HISTORY_DIRECTORY_NAME}-{network}"),
-        StorageMode::Test(_) => unimplemented!(),
-    };
-
-    // Obtain the path to the ledger.
-    let mut path = aleo_ledger_dir(network, storage_mode);
-    // Go to the folder right above the ledger.
-    path.pop();
-    // Append the history directory's name.
-    path.push(directory_name);
-
-    path
-}
-
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum MappingName {
     /// The `bonded` mapping.
@@ -72,60 +50,53 @@ impl Display for MappingName {
     }
 }
 
+#[cfg(feature = "rocks")]
 pub struct History {
-    /// The path to the history directory.
-    path: PathBuf,
+    /// The RocksDB DataMap for storing mapping data indexed by (block height, mapping name).
+    mapping_data: DataMap<(u32, MappingName), Vec<u8>>,
 }
 
+#[cfg(feature = "rocks")]
 impl History {
     /// Initializes a new instance of `History`.
-    pub fn new(network: u16, storage_mode: &StorageMode) -> Self {
-        Self { path: history_directory_path(network, storage_mode) }
+    pub fn new(network: u16, storage_mode: &StorageMode) -> Result<Self> {
+        // Open the DataMap for history storage
+        let mapping_data = snarkvm_ledger_store::helpers::rocksdb::internal::RocksDB::open_map(
+            network,
+            storage_mode.clone(),
+            MapID::History(HistoryMap::MappingData),
+        )?;
+
+        Ok(Self { mapping_data })
     }
 
-    /// Stores a mapping from a given block in the history directory as JSON.
+    /// Stores a mapping from a given block in the history storage as serialized bytes.
     pub fn store_mapping<T>(&self, height: u32, mapping: MappingName, data: &T) -> Result<()>
     where
         T: Serialize + ?Sized,
     {
-        // Get the path to the block directory.
-        let path = self.block_path(height);
-        // Create the block directory if it does not exist.
-        if !path.exists() {
-            std::fs::create_dir_all(&path)?;
-        }
-
-        // Write the entry to the block directory.
-        let path = path.join(format!("block-{height}-{mapping}.json"));
-        std::fs::write(path, serde_json::to_string_pretty(data)?)?;
+        use snarkvm_ledger_store::helpers::Map;
+        
+        // Serialize the data to JSON for backwards compatibility and readability
+        let json_data = serde_json::to_vec(data)?;
+        
+        // Store in RocksDB with composite key (height, mapping)
+        self.mapping_data.insert((height, mapping), json_data)?;
 
         Ok(())
     }
 
-    /// Loads the JSON string for a mapping from a given block from the history directory.
+    /// Loads the JSON string for a mapping from a given block from the history storage.
     pub fn load_mapping(&self, height: u32, mapping: MappingName) -> Result<String> {
-        // Get the path to the block directory.
-        let path = self.block_path(height);
-        // Get the path to the block file.
-        let path = path.join(format!("block-{height}-{mapping}.json"));
-
-        // Read the file.
-        let data = std::fs::read_to_string(path)?;
-
-        Ok(data)
-    }
-
-    // A helper function to get the path to the block directory.
-    fn block_path(&self, height: u32) -> PathBuf {
-        // Get the path the directory group.
-        let group = Self::group(height);
-        let path = self.path.join(format!("group-{group}"));
-        // Get the path to the block directory.
-        path.join(format!("block-{height}"))
-    }
-
-    // A helper function to calculate the group number for a given block height.
-    fn group(height: u32) -> u32 {
-        height.saturating_div(u16::MAX as u32)
+        use snarkvm_ledger_store::helpers::MapRead;
+        
+        // Retrieve the serialized data from RocksDB
+        let json_bytes = self.mapping_data.get_confirmed(&(height, mapping))?
+            .ok_or_else(|| anyhow::anyhow!("Mapping data not found for block {} and mapping {}", height, mapping))?;
+        
+        // Convert bytes to string
+        let json_string = String::from_utf8(json_bytes.into_owned())?;
+        
+        Ok(json_string)
     }
 }

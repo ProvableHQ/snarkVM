@@ -29,6 +29,8 @@ pub enum MapID {
     TransitionInput(TransitionInputMap),
     TransitionOutput(TransitionOutputMap),
     Program(ProgramMap),
+    #[cfg(feature = "history")]
+    History(HistoryMap),
     #[cfg(test)]
     Test(TestMap),
 }
@@ -47,6 +49,8 @@ impl From<MapID> for u16 {
             MapID::TransitionInput(id) => id as u16,
             MapID::TransitionOutput(id) => id as u16,
             MapID::Program(id) => id as u16,
+            #[cfg(feature = "history")]
+            MapID::History(id) => id as u16,
             #[cfg(test)]
             MapID::Test(id) => id as u16,
         }
@@ -204,6 +208,16 @@ pub enum ProgramMap {
     KeyValueID = DataID::KeyValueMap as u16,
 }
 
+/// The RocksDB map prefix for history-related entries.
+// Note: the order of these variants can be changed at any point in time,
+// as long as the corresponding DataID values remain the same.
+#[cfg(feature = "history")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum HistoryMap {
+    MappingData = DataID::HistoryMappingDataMap as u16,
+}
+
 /// The RocksDB map prefix for test-related entries.
 // Note: the order of these variants can be changed at any point in time.
 #[cfg(test)]
@@ -303,6 +317,10 @@ enum DataID {
     IDEditionMap,
     // Track deployments that contain an optional checksum
     DeploymentChecksumMap,
+
+    // History
+    #[cfg(feature = "history")]
+    HistoryMappingDataMap,
 
     // Testing
     #[cfg(test)]
