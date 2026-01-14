@@ -89,8 +89,12 @@ impl History {
     /// Loads the JSON string for a mapping from a given block from the history storage.
     pub fn load_mapping(&self, height: u32, mapping: MappingName) -> Result<String> {
         // Retrieve the serialized data from RocksDB
-        let json_bytes = self.mapping_data.get_confirmed(&(height, mapping))?
-            .with_context(|| format!("History data not found for block {} and '{}' mapping", height, mapping))?;
+        let json_bytes = self.mapping_data.get_confirmed(&(height, mapping))?;
+        
+        let json_bytes = match json_bytes {
+            Some(bytes) => bytes,
+            None => anyhow::bail!("History data not found for block {} and '{}' mapping", height, mapping),
+        };
         
         // Convert bytes to string
         let json_string = String::from_utf8(json_bytes.into_owned())
