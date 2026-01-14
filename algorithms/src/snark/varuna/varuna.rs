@@ -46,12 +46,13 @@ use crate::{
 use rand::RngCore;
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
-use snarkvm_utilities::{ToBytes, dev_eprintln, dev_println, to_bytes_le};
+use snarkvm_utilities::{CanonicalSerialize, ToBytes, dev_eprintln, dev_println, to_bytes_le};
 
 use anyhow::{Result, anyhow, bail, ensure};
 use core::marker::PhantomData;
 use itertools::Itertools;
 use rand::{CryptoRng, Rng};
+use sha2::Digest;
 use std::{borrow::Borrow, collections::BTreeMap, ops::Deref, sync::Arc};
 
 use crate::srs::UniversalProver;
@@ -66,6 +67,20 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
     /// The personalization string for this protocol.
     /// Used to personalize the Fiat-Shamir RNG.
     pub const PROTOCOL_NAME: &'static [u8] = b"VARUNA-2023";
+
+    /// Hash batches in advance for the purposes of `Self::init_sponge`.
+    fn hash_batches(inputs_and_batch_sizes: &BTreeMap<CircuitId, (usize, &[Vec<E::Fr>])>) -> Result<[u8; 32]> {
+        let mut hash = blake2::Blake2s256::new();
+
+        for (batch_size, inputs) in inputs_and_batch_sizes.values() {
+            (*batch_size as u64).serialize_uncompressed(&mut hash)?;
+            for input in *inputs {
+                input.serialize_uncompressed(&mut hash)?;
+            }
+        }
+
+        Ok(hash.finalize().into())
+    }
 
     // TODO: implement optimizations resulting from batching
     //       (e.g. computing a common set of Lagrange powers, FFT precomputations,
@@ -137,17 +152,12 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
 
     fn init_sponge(
         fs_parameters: &FS::Parameters,
-        inputs_and_batch_sizes: &BTreeMap<CircuitId, (usize, &[Vec<E::Fr>])>,
+        hashed_batches: [u8; 32],
         circuit_commitments_hashes: Vec<E::Fq>,
     ) -> FS {
         let mut sponge = FS::new_with_parameters(fs_parameters);
         sponge.absorb_bytes(Self::PROTOCOL_NAME);
-        for (batch_size, inputs) in inputs_and_batch_sizes.values() {
-            sponge.absorb_bytes(&(*batch_size as u64).to_le_bytes());
-            for input in inputs.iter() {
-                sponge.absorb_nonnative_field_elements(input.iter().copied());
-            }
-        }
+        sponge.absorb_bytes(&hashed_batches);
         sponge.absorb_native_field_elements(&circuit_commitments_hashes);
         sponge
     }
@@ -398,7 +408,8 @@ where
             .copied()
             .collect();
 
-        let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments_hashes);
+        let hashed_batches = Self::hash_batches(&inputs_and_batch_sizes)?;
+        let mut sponge = Self::init_sponge(fs_parameters, hashed_batches, circuit_commitments_hashes);
 
         // --------------------------------------------------------------------
         // First round
@@ -867,7 +878,9 @@ where
             .map(|vk| vk.get_or_calculate_circuit_commitments_hash::<FS>(fs_parameters))
             .copied()
             .collect();
-        let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments_hashes);
+
+        let hashed_batches = Self::hash_batches(&inputs_and_batch_sizes)?;
+        let mut sponge = Self::init_sponge(fs_parameters, hashed_batches, circuit_commitments_hashes);
 
         // --------------------------------------------------------------------
         // First round
