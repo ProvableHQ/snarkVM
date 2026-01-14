@@ -3646,4 +3646,95 @@ finalize compute:
             assert!(expected_withdraw.contains(entry));
         }
     }
+
+    #[test]
+    fn test_rejection_reason_storage() {
+        let rng = &mut TestRng::default();
+
+        // Sample a private key.
+        let private_key = test_helpers::sample_genesis_private_key(rng);
+        let address = Address::try_from(&private_key).unwrap();
+
+        // Initialize the vm.
+        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+
+        // Deploy a new program.
+        let genesis =
+            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+
+        // Get the unspent records.
+        let mut unspent_records = genesis
+            .transitions()
+            .cloned()
+            .flat_map(Transition::into_records)
+            .map(|(_, record)| record)
+            .collect::<Vec<_>>();
+
+        // Construct the deployment block.
+        let deployment_block = {
+            let program = Program::<CurrentNetwork>::from_str(
+                "
+program testing.aleo;
+
+mapping entries:
+    key as address.public;
+    value as u8.public;
+
+function compute:
+    input r0 as u8.public;
+    async compute self.caller r0 into r1;
+    output r1 as testing.aleo/compute.future;
+
+finalize compute:
+    input r0 as address.public;
+    input r1 as u8.public;
+    get.or_use entries[r0] r1 into r2;
+    add r1 r2 into r3;
+    set r3 into entries[r0];
+    get entries[r0] into r4;
+    add r4 r1 into r5;
+    set r5 into entries[r0];
+",
+            )
+            .unwrap();
+
+            // Prepare the additional fee.
+            let view_key = ViewKey::<CurrentNetwork>::try_from(private_key).unwrap();
+            let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
+
+            // Deploy.
+            let transaction = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
+
+            // Construct the new block.
+            sample_next_block(&vm, &private_key, &[transaction], &genesis, &mut unspent_records, rng).unwrap()
+        };
+
+        // Add the deployment block to the VM.
+        vm.add_next_block(&deployment_block).unwrap();
+
+        // Create an execution transaction, that will be rejected.
+        let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
+        let rejected_tx =
+            create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
+
+        // Construct the next block with the rejected transaction.
+        let next_block =
+            sample_next_block(&vm, &private_key, &[rejected_tx], &deployment_block, &mut unspent_records, rng)
+                .unwrap();
+
+        // Check that the transaction was rejected.
+        assert_eq!(next_block.transactions().len(), 1);
+        let rejected_transaction = next_block.transactions().iter().next().unwrap();
+        assert!(rejected_transaction.is_rejected());
+
+        // Add the next block to the VM.
+        vm.add_next_block(&next_block).unwrap();
+
+        // Check that the rejection reason was stored.
+        let tx_id = *rejected_transaction.id();
+        let rejection_reason = vm.finalize_store().get_rejection_reason(&tx_id).unwrap();
+        assert!(rejection_reason.is_some(), "Rejection reason should be stored");
+        let reason_str = rejection_reason.unwrap();
+        assert!(reason_str.contains("Failed to finalize execution"), "Rejection reason should contain error message");
+    }
 }
