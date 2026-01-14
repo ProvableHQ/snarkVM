@@ -76,6 +76,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     type ProgramIDMap: for<'a> Map<'a, ProgramID<N>, IndexSet<Identifier<N>>>;
     /// The mapping of `(program ID, mapping name)` to `[(key, value)]`.
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    /// The mapping of `transaction ID` to `rejection reason`.
+    type RejectionReasonMap: for<'a> Map<'a, Field<N>, String>;
 
     /// Initializes the program state storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -86,6 +88,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     fn program_id_map(&self) -> &Self::ProgramIDMap;
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap;
+    /// Returns the rejection reason map.
+    fn rejection_reason_map(&self) -> &Self::RejectionReasonMap;
 
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode;
@@ -95,6 +99,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().start_atomic();
         self.program_id_map().start_atomic();
         self.key_value_map().start_atomic();
+        self.rejection_reason_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
@@ -102,6 +107,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().is_atomic_in_progress()
             || self.program_id_map().is_atomic_in_progress()
             || self.key_value_map().is_atomic_in_progress()
+            || self.rejection_reason_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -109,6 +115,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_checkpoint();
         self.program_id_map().atomic_checkpoint();
         self.key_value_map().atomic_checkpoint();
+        self.rejection_reason_map().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
@@ -116,6 +123,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().clear_latest_checkpoint();
         self.program_id_map().clear_latest_checkpoint();
         self.key_value_map().clear_latest_checkpoint();
+        self.rejection_reason_map().clear_latest_checkpoint();
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
@@ -123,6 +131,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_rewind();
         self.program_id_map().atomic_rewind();
         self.key_value_map().atomic_rewind();
+        self.rejection_reason_map().atomic_rewind();
     }
 
     /// Aborts an atomic batch write operation.
@@ -130,13 +139,15 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().abort_atomic();
         self.program_id_map().abort_atomic();
         self.key_value_map().abort_atomic();
+        self.rejection_reason_map().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
     fn finish_atomic(&self) -> Result<()> {
         self.committee_store().finish_atomic()?;
         self.program_id_map().finish_atomic()?;
-        self.key_value_map().finish_atomic()
+        self.key_value_map().finish_atomic()?;
+        self.rejection_reason_map().finish_atomic()
     }
 
     /// Initializes the given `program ID` and `mapping name` in storage.
@@ -749,6 +760,26 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Returns the confirmed checksum of the finalize store.
     pub fn get_checksum_confirmed(&self) -> Result<Field<N>> {
         self.storage.get_checksum_confirmed()
+    }
+}
+
+impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
+    /// Stores the rejection reason for the given transaction ID.
+    pub fn insert_rejection_reason(&self, transaction_id: Field<N>, reason: String) -> Result<()> {
+        self.storage.rejection_reason_map().insert(transaction_id, reason)
+    }
+
+    /// Returns the rejection reason for the given transaction ID.
+    pub fn get_rejection_reason(&self, transaction_id: &Field<N>) -> Result<Option<String>> {
+        match self.storage.rejection_reason_map().get_speculative(transaction_id)? {
+            Some(reason) => Ok(Some(reason.into_owned())),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns `true` if a rejection reason exists for the given transaction ID.
+    pub fn contains_rejection_reason(&self, transaction_id: &Field<N>) -> Result<bool> {
+        self.storage.rejection_reason_map().contains_key_speculative(transaction_id)
     }
 }
 

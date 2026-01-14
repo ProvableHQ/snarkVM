@@ -202,6 +202,7 @@ pub enum TransitionMap {
 pub enum ProgramMap {
     ProgramID = DataID::ProgramIDMap as u16,
     KeyValueID = DataID::KeyValueMap as u16,
+    RejectionReason = DataID::RejectionReasonMap as u16,
 }
 
 /// The RocksDB map prefix for test-related entries.
@@ -303,6 +304,8 @@ enum DataID {
     IDEditionMap,
     // Track deployments that contain an optional checksum
     DeploymentChecksumMap,
+    // Track rejection reasons for rejected transactions
+    RejectionReasonMap,
 
     // Testing
     #[cfg(test)]

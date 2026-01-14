@@ -24,6 +24,7 @@ use crate::{
 use console::{
     prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
+    types::Field,
 };
 use snarkvm_ledger_committee::Committee;
 
@@ -39,6 +40,8 @@ pub struct FinalizeDB<N: Network> {
     program_id_map: DataMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
     key_value_map: NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
+    /// The rejection reason map.
+    rejection_reason_map: DataMap<Field<N>, String>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -48,6 +51,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type CommitteeStorage = CommitteeDB<N>;
     type ProgramIDMap = DataMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    type RejectionReasonMap = DataMap<Field<N>, String>;
 
     /// Initializes the finalize storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -59,6 +63,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             committee_store,
             program_id_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::ProgramID))?,
             key_value_map: rocksdb::RocksDB::open_nested_map(N::ID, storage.clone(), MapID::Program(ProgramMap::KeyValueID))?,
+            rejection_reason_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::RejectionReason))?,
             storage_mode: storage,
         })
     }
@@ -76,6 +81,11 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap {
         &self.key_value_map
+    }
+
+    /// Returns the rejection reason map.
+    fn rejection_reason_map(&self) -> &Self::RejectionReasonMap {
+        &self.rejection_reason_map
     }
 
     /// Returns the storage mode.

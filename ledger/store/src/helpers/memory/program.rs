@@ -24,6 +24,7 @@ use crate::{
 use console::{
     prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
+    types::Field,
 };
 use snarkvm_ledger_committee::Committee;
 
@@ -39,6 +40,8 @@ pub struct FinalizeMemory<N: Network> {
     program_id_map: MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
     key_value_map: NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
+    /// The rejection reason map.
+    rejection_reason_map: MemoryMap<Field<N>, String>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -48,6 +51,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type CommitteeStorage = CommitteeMemory<N>;
     type ProgramIDMap = MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    type RejectionReasonMap = MemoryMap<Field<N>, String>;
 
     /// Initializes the finalize storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -59,6 +63,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             committee_store,
             program_id_map: MemoryMap::default(),
             key_value_map: NestedMemoryMap::default(),
+            rejection_reason_map: MemoryMap::default(),
             storage_mode: storage,
         })
     }
@@ -76,6 +81,11 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap {
         &self.key_value_map
+    }
+
+    /// Returns the rejection reason map.
+    fn rejection_reason_map(&self) -> &Self::RejectionReasonMap {
+        &self.rejection_reason_map
     }
 
     /// Returns the storage mode.
