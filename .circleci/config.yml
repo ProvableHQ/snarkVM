@@ -111,12 +111,6 @@ commands:
             # Use sccache for *all* Rust compile commands
             echo 'export RUSTC_WRAPPER="sccache"' >> "$BASH_ENV"
 
-            #mkdir -p .cargo
-            #printf '%s\n' \
-            #  '[build]' \
-            #  'rustc-wrapper = "/home/circleci/project/.bin/sccache"' \
-            #  > .cargo/config.toml
-
       - run:
           name: Install sccache
           command: |
@@ -195,7 +189,6 @@ commands:
       - setup_environment:
           cache_key: v4.2.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
 
-
       - run:
           name: Install cargo-nextest
           command: |
@@ -239,17 +232,14 @@ commands:
             # Create artifact + nextest output directories
             mkdir -p artifacts target/nextest/ci
 
-            # Create artifact + nextest output directories
             OUT="artifacts/<< parameters.workspace_member >>-nextest.txt"
             CSV="artifacts/<< parameters.workspace_member >>-test-times.csv"
             TOP="artifacts/<< parameters.workspace_member >>-slow-tests-top30.csv"
             JUNIT="target/nextest/ci/junit.xml"
 
-            # Extract and trim flags from parameters
             FLAGS_FULL="<< parameters.flags >>"
             FLAGS_TRIM="$(printf '%s' "$FLAGS_FULL" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 
-            # Split flags into cargo build flags (before --) and libtest args (after --)
             RIGHT_OF_SEP=""
             if printf '%s' "$FLAGS_TRIM" | grep -q ' -- '; then
               BUILD_FLAGS="${FLAGS_TRIM%% -- *}"
@@ -261,7 +251,6 @@ commands:
               BUILD_FLAGS="$FLAGS_TRIM"
             fi
 
-            # Remove any --test target flags,they cause nextest build errors
             BUILD_FLAGS_SANITIZED="$(printf '%s' "$BUILD_FLAGS" \
               | sed -E "s/(^|[[:space:]])--test[[:space:]]+'[^']*'([[:space:]]|$)/ /g" \
               | sed -E 's/(^|[[:space:]])--test[[:space:]]+\"[^\"]*\"([[:space:]]|$)/ /g' \
@@ -269,13 +258,11 @@ commands:
               | tr -s ' ' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
             )"
 
-            # Detect wildcard integration selection: `--test '*'` (with or without quotes)
             HAS_TEST_WILDCARD=0
             if printf '%s\n' "$BUILD_FLAGS" | grep -Eq -- '--test[[:space:]]+("\*"|'\''\*'\''|\*)'; then
               HAS_TEST_WILDCARD=1
             fi
 
-            # Build nextest filter expression from any --skip <pattern> arguments
             FILTER_EXPR=""
 
             WSM="<< parameters.workspace_member >>"
@@ -283,7 +270,6 @@ commands:
               FILTER_EXPR='test(/test_command_parse/)+test(/test_instruction_parse/)+test(/test_process_execute/)+test(/test_program_parse/)+test(/test_vm_execute_and_finalize/)'
             fi
 
-            # Build nextest filter expression from any --skip <pattern> arguments
             if [ -z "$FILTER_EXPR" ] && [ -n "$RIGHT_OF_SEP" ]; then
               SKIPS="$(printf '%s\n' "$RIGHT_OF_SEP" \
                 | sed -E 's/[[:space:]]+/ /g' \
@@ -296,7 +282,7 @@ commands:
                   pat="${line#--skip }"
                   pat="${pat%\"}"; pat="${pat#\"}"
                   pat="${pat%\'}"; pat="${pat#\'}"
-                  pat_rx="${pat//\//\\/}"  # escape forward slashes for regex
+                  pat_rx="${pat//\//\\/}"
                   if [ -z "$EXPRS" ]; then
                     EXPRS="test(/$pat_rx/)"
                   else
@@ -310,13 +296,10 @@ commands:
               fi
             fi
 
-            # Detect and extract --test-threads value (used to set JOBS)
             TEST_THREADS=""
             if [ -n "$RIGHT_OF_SEP" ]; then
-              # form: --test-threads=8
               TEST_THREADS="$(printf '%s\n' "$RIGHT_OF_SEP" | sed -nE 's/.*--test-threads=([0-9]+).*/\1/p' | head -n1)"
               if [ -z "$TEST_THREADS" ]; then
-                # form: --test-threads 8
                 TEST_THREADS="$(printf '%s\n' "$RIGHT_OF_SEP" | sed -nE 's/.*--test-threads[[:space:]]+([0-9]+).*/\1/p' | head -n1)"
               fi
             fi
@@ -328,7 +311,6 @@ commands:
               JOBS="$TEST_THREADS"
             fi
 
-            # Create nextest config (disable fail-fast, add slow-timeout + JUnit output)
             SLOW_PERIOD="${NEXTEST_SLOW_PERIOD:-60s}"
             CFG_ARGS=()
             TMPD="$(mktemp -d)"
@@ -345,15 +327,12 @@ commands:
             } > "$TMPD/nextest-override.toml"
             CFG_ARGS+=(--config-file "$TMPD/nextest-override.toml")
 
-            # Print configuration summary for debugging
             echo "==> nextest package: << parameters.workspace_member >>"
             echo "==> build flags (sanitized): '${BUILD_FLAGS_SANITIZED}'"
             echo "==> filter-expr: ${FILTER_EXPR:-<none>}  (right-of-sep: ${RIGHT_OF_SEP:-<none>})"
             echo "==> test-threads override: ${TEST_THREADS:-<none>}"
             echo "==> jobs: ${JOBS}"
 
-            # Use plain cargo test if --no-run was requested
-            # Otherwise, run tests with cargo nextest
             if printf '%s' " $BUILD_FLAGS_SANITIZED " | grep -q ' --no-run '; then
               RUST_MIN_STACK=67108864 cargo test --package="<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED | tee "$OUT"
               : > "$CSV"; : > "$TOP"
@@ -367,7 +346,6 @@ commands:
                 ${FILTER_EXPR:+--filter-expr "$FILTER_EXPR"} \
                 2>&1 | tee "$OUT"
 
-              # Parse junit.xml to extract test timings
               if [ -f "$JUNIT" ]; then
                 awk -v RS='<testcase ' '
                   NR>1 {
@@ -379,12 +357,16 @@ commands:
                   }
                 ' "$JUNIT" > "$CSV" || true
 
-                # Sort and store top 30 slowest tests
                 sort -t, -k2,2nr "$CSV" | head -n 30 > "$TOP" || true
               else
                 echo "WARN: $JUNIT not found; no timings extracted." >&2
                 : > "$CSV"; : > "$TOP"
               fi
+            fi
+
+            # Make sure junit is present as a downloadable artifact.
+            if [ -f "$JUNIT" ]; then
+              cp "$JUNIT" "artifacts/<< parameters.workspace_member >>-junit.xml"
             fi
 
             echo "[sccache stats AFTER nextest]"
@@ -396,9 +378,25 @@ commands:
       - store_test_results:
           path: target/nextest/ci
 
+      - run:
+          name: Persist JUnit for dup collector
+          command: |
+            set -euo pipefail
+            mkdir -p /tmp/dup_payload/junit
+            if [ -f "artifacts/<< parameters.workspace_member >>-junit.xml" ]; then
+              cp "artifacts/<< parameters.workspace_member >>-junit.xml" \
+                 "/tmp/dup_payload/junit/<< parameters.workspace_member >>-junit.xml"
+            fi
+            echo "ok" > "/tmp/dup_payload/<< parameters.workspace_member >>.done"
+
+      - persist_to_workspace:
+          root: /tmp/dup_payload
+          paths:
+            - "junit/*.xml"
+            - "*.done"
+
       - clear_environment:
           cache_key: v4.2.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
-
 
   install_rust_nightly:
     description: "Install Rust nightly toolchain"
@@ -406,6 +404,54 @@ commands:
       - run: rustup toolchain install nightly-x86_64-unknown-linux-gnu
 
 jobs:
+  collect-dup-tests:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.small >>
+    steps:
+      - attach_workspace:
+          at: /tmp/dup_payload
+      - run:
+          name: Build duplicate-tests CSV from workspace JUnit XMLs
+          command: |
+            set -euo pipefail
+            python3 - \<<'PY'
+            import os, csv, glob
+            import xml.etree.ElementTree as ET
+
+            junit_dir = "/tmp/dup_payload/junit"
+            xmls = sorted(glob.glob(os.path.join(junit_dir, "*.xml")))
+
+            tests = {}  # test_name -> set(job_or_pkg)
+
+            for path in xmls:
+              base = os.path.basename(path)
+              job_name = base.replace("-junit.xml", "")
+              data = open(path, "rb").read()
+              root = ET.fromstring(data)
+
+              for tc in root.iter("testcase"):
+                classname = tc.attrib.get("classname", "")
+                name = tc.attrib.get("name", "")
+                if not name:
+                  continue
+                test_name = f"{classname}::{name}" if classname else name
+                tests.setdefault(test_name, set()).add(job_name)
+
+            os.makedirs("artifacts", exist_ok=True)
+            out_path = "artifacts/duplicate-tests.csv"
+            with open(out_path, "w", newline="") as f:
+              w = csv.writer(f)
+              w.writerow(["test_name", "number_of_runs_between_jobs", "list_of_jobs_it_was_ran_in"])
+              for test_name in sorted(tests):
+                jobs = sorted(tests[test_name])
+                w.writerow([test_name, len(jobs), ";".join(jobs)])
+
+            print(f"Wrote {out_path} from {len(xmls)} junit files; {len(tests)} unique tests")
+            PY
+      - store_artifacts:
+          path: artifacts/duplicate-tests.csv
+          destination: dup-tests/duplicate-tests.csv
+
   snarkvm:
     executor: rust-docker
     resource_class: << pipeline.parameters.large >>
@@ -816,7 +862,6 @@ jobs:
           workspace_member: snarkvm-parameters
           flags: --no-run --features large_params
           cache_key_suffix: -large
-          # Compilation can take very long and produce no output for a while.
           no_output_timeout: 20m
           timeout: 30m
 
@@ -847,7 +892,6 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer
-          # nextest args before `--`, libtest args after `--`
           flags: >
             --lib --bins --features test
             --partition count:1/2
@@ -874,7 +918,6 @@ jobs:
     steps:
       - run_test:
           timeout: 30m
-          # test_vm_execute_and_finalize can take over 10 minutes in the current setup
           no_output_timeout: 20m
           workspace_member: snarkvm-synthesizer
           flags: --test '*' --features test -- --test-threads=4
@@ -1002,17 +1045,10 @@ jobs:
       - run:
           no_output_timeout: 30m
           command: |
-            # The commands required to install current Node.js come from https://nodejs.org/en/download
-            # The versions of nvm and Node.js may need to be periodically updated
-            # Download and install nvm
             curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-            # Add nvm to the path
             source /home/circleci/.profile
-            # Download and install Node.js
             nvm install 22
-            # Install wasm-pack
             curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-            # Run the tests
             cd wasm && wasm-pack test --node
       - clear_environment:
           cache_key: v4.2.0-rust-1.88.0-snarkvm-wasm-cache
@@ -1031,58 +1067,6 @@ jobs:
           command: cargo +nightly fmt --all -- --check
       - clear_environment:
           cache_key: v4.2.0-rust-1.88.0-snarkvm-fmt-cache
-
-  check-unused-dependencies:
-    executor: rust-docker
-    resource_class: << pipeline.parameters.medium >>
-    steps:
-      - checkout
-      - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-machete-cache
-      - run:
-          name: Check for unused dependencies
-          no_output_timeout: 10m
-          command: |
-            set -euo pipefail
-            if ! command -v cargo-machete >/dev/null 2>&1; then
-              cargo install cargo-machete@0.7.0 --locked
-            fi
-            cargo machete
-      - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-machete-cache
-
-  check-cargo-audit:
-    executor: rust-docker
-    resource_class: << pipeline.parameters.medium >>
-    steps:
-      - checkout
-      - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-cargo-audit-cache
-      - run:
-          name:  Check for security vulnerabilities
-          no_output_timeout: 10m
-          command: |
-            cargo install cargo-audit@0.22.0 --locked
-            cargo audit -D warnings
-      - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-cargo-audit-cache
-
-  check-cargo-semver-checks:
-    executor: rust-docker
-    resource_class: << pipeline.parameters.twoxlarge >>
-    steps:
-      - checkout:
-          method: full
-      - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
-      - run:
-          name: Check for semver violations
-          no_output_timeout: 15m
-          command: |
-            bash ./.circleci/semver-checks.sh
-
-      - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
 
   check-clippy:
     executor: rust-docker
@@ -1104,6 +1088,22 @@ jobs:
       - clear_environment:
           cache_key: v4.2.0-rust-1.88.0-snarkvm-clippy-cache
 
+  check-cargo-audit:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.medium >>
+    steps:
+      - checkout
+      - setup_environment:
+          cache_key: v4.2.0-rust-1.88.0-cargo-audit-cache
+      - run:
+          name: Check for security vulnerabilities
+          no_output_timeout: 10m
+          command: |
+            cargo install cargo-audit@0.22.0 --locked
+            cargo audit -D warnings
+      - clear_environment:
+          cache_key: v4.2.0-rust-1.88.0-cargo-audit-cache
+
   check-all-targets:
     executor: rust-docker
     resource_class: << pipeline.parameters.small >>
@@ -1117,6 +1117,41 @@ jobs:
           command: cargo check --release --workspace --all-targets
       - clear_environment:
           cache_key: v4.2.0-rust-1.88.0-snarkvm-all-targets-cache
+
+  check-unused-dependencies:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.medium >>
+    steps:
+      - checkout
+      - setup_environment:
+          cache_key: v4.2.0-rust-1.88.0-machete-cache
+      - run:
+          name: Check for unused dependencies
+          no_output_timeout: 10m
+          command: |
+            set -euo pipefail
+            if ! command -v cargo-machete >/dev/null 2>&1; then
+              cargo install cargo-machete@0.7.0 --locked
+            fi
+            cargo machete
+      - clear_environment:
+          cache_key: v4.2.0-rust-1.88.0-machete-cache
+
+  check-cargo-semver-checks:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.twoxlarge >>
+    steps:
+      - checkout:
+          method: full
+      - setup_environment:
+          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
+      - run:
+          name: Check for semver violations
+          no_output_timeout: 15m
+          command: |
+            bash ./.circleci/semver-checks.sh
+      - clear_environment:
+          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
 
   verify-windows:
     executor:
@@ -1134,15 +1169,13 @@ jobs:
 workflows:
   version: 2
 
-  cargo-workflow:
+  all-tests-with-dup-collector:
     jobs:
       - check-fmt
       - check-clippy
       - check-cargo-audit
       - check-all-targets
 
-  circuit-workflow:
-    jobs:
       - circuit
       - circuit-account
       - circuit-algorithms
@@ -1159,8 +1192,6 @@ workflows:
       - circuit-types-scalar
       - circuit-types-string
 
-  console-workflow:
-    jobs:
       - console
       - console-account
       - console-algorithms
@@ -1177,8 +1208,6 @@ workflows:
       - console-types-scalar
       - console-types-string
 
-  ledger-workflow:
-    jobs:
       - ledger
       - ledger-with-valid-solutions
       - ledger-authority
@@ -1197,18 +1226,14 @@ workflows:
       - ledger-store
       - ledger-test-helpers
 
-  synthesizer-workflow:
-    jobs:
       - synthesizer
       - synthesizer-test-partition1
       - synthesizer-test-partition2
-      - synthesizer-process 
+      - synthesizer-process
       - synthesizer-integration
       - synthesizer-program
       - synthesizer-snark
 
-  snarkvm-workflow:
-    jobs:
       - algorithms
       - curves
       - fields
@@ -1217,47 +1242,103 @@ workflows:
       - utilities
       - utilities-derives
       - wasm
-  
-  # Run additional but unlikely to fail checks on merges only
-  merge-workflow:
-    when: pipeline.git.branch == "staging"
-      or pipeline.git.branch == "canary"
-      or pipeline.git.branch == "testnet"
-      or pipeline.git.branch == "mainnet"
-    jobs:
-      - ledger-with-rocksdb-partition1 # Often similar results as `ledger`
-      - ledger-with-rocksdb-partition2 # Often similar results as `ledger`
-      - synthesizer-process-with-rocksdb # Often similar results as `synthesizer-process`
-      - check-unused-dependencies # This can be cleaned up before releases
-      - check-cargo-semver-checks # This can be cleaned up before releases
-      - synthesizer-program-integration # Expensive and rarely impacted
-      - synthesizer-program-integration-keccak # Expensive and rarely impacted
-      - synthesizer-program-integration-psd # Expensive and rarely impacted
-      - synthesizer-program-integration-sha # Expensive and rarely impacted
-      - synthesizer-program-integration-instruction-is # Expensive and rarely impacted
-      - synthesizer-program-integration-instruction-equal # Expensive and rarely impacted
-      - synthesizer-program-integration-instruction-commit # Expensive and rarely impacted
 
-  # Run additional but unlikely to fail checks on releases only
-  release-workflow:
-    when: pipeline.git.branch == "canary"
-      or pipeline.git.branch == "testnet"
-      or pipeline.git.branch == "mainnet"
-    jobs:
-      - algorithms-profiler # Just checks some non-critical profiling code
-      - parameters-large # Infrastructure which often runs fine
-      - parameters-uncached # Infrastructure which often runs fine
-      - verify-windows: # Windows has never failed us when linux passed
-          matrix:
-            parameters:
-              workspace_member: [
-                algorithms,
-                circuit,
-                console,
-                curves,
-                fields,
-                ledger,
-                parameters,
-                synthesizer,
-                utilities,
-              ]
+      - ledger-with-rocksdb-partition1
+      - ledger-with-rocksdb-partition2
+      - synthesizer-process-with-rocksdb
+      - check-unused-dependencies
+      - check-cargo-semver-checks
+      - synthesizer-program-integration
+      - synthesizer-program-integration-keccak
+      - synthesizer-program-integration-psd
+      - synthesizer-program-integration-sha
+      - synthesizer-program-integration-instruction-is
+      - synthesizer-program-integration-instruction-equal
+      - synthesizer-program-integration-instruction-commit
+
+      - collect-dup-tests:
+          requires:
+            - check-fmt
+            - check-clippy
+            - check-cargo-audit
+            - check-all-targets
+
+            - circuit
+            - circuit-account
+            - circuit-algorithms
+            - circuit-collections
+            - circuit-environment
+            - circuit-network
+            - circuit-program
+            - circuit-types
+            - circuit-types-address
+            - circuit-types-boolean
+            - circuit-types-field
+            - circuit-types-group
+            - circuit-types-integers
+            - circuit-types-scalar
+            - circuit-types-string
+
+            - console
+            - console-account
+            - console-algorithms
+            - console-collections
+            - console-network
+            - console-network-environment
+            - console-program
+            - console-types
+            - console-types-address
+            - console-types-boolean
+            - console-types-field
+            - console-types-group
+            - console-types-integers
+            - console-types-scalar
+            - console-types-string
+
+            - ledger
+            - ledger-with-valid-solutions
+            - ledger-authority
+            - ledger-block
+            - ledger-committee
+            - ledger-narwhal
+            - ledger-narwhal-batch-certificate
+            - ledger-narwhal-batch-header
+            - ledger-narwhal-data
+            - ledger-narwhal-subdag
+            - ledger-narwhal-transmission
+            - ledger-narwhal-transmission-id
+            - ledger-puzzle
+            - ledger-puzzle-epoch
+            - ledger-query
+            - ledger-store
+            - ledger-test-helpers
+
+            - synthesizer
+            - synthesizer-test-partition1
+            - synthesizer-test-partition2
+            - synthesizer-process
+            - synthesizer-integration
+            - synthesizer-program
+            - synthesizer-snark
+
+            - algorithms
+            - curves
+            - fields
+            - parameters
+            - snarkvm
+            - utilities
+            - utilities-derives
+            - wasm
+
+            - ledger-with-rocksdb-partition1
+            - ledger-with-rocksdb-partition2
+            - synthesizer-process-with-rocksdb
+            - check-unused-dependencies
+            - check-cargo-semver-checks
+            - synthesizer-program-integration
+            - synthesizer-program-integration-keccak
+            - synthesizer-program-integration-psd
+            - synthesizer-program-integration-sha
+            - synthesizer-program-integration-instruction-is
+            - synthesizer-program-integration-instruction-equal
+            - synthesizer-program-integration-instruction-commit
