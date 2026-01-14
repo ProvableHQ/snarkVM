@@ -34,6 +34,7 @@ locktick = [
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "serde" ]
+history-all-mappings = [ "serde", "rocks" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",

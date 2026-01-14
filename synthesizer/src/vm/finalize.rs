@@ -1391,12 +1391,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Insert the next committee into storage.
                     store.committee_store().insert(state.block_height(), next_committee)?;
 
-                    #[cfg(all(feature = "history", feature = "rocks"))]
+                    // Original file-based history feature
+                    #[cfg(all(feature = "history", not(feature = "history-all-mappings")))]
                     {
                         // When finalizing in `FinalizeMode::RealRun`, store the delegated and bonded mappings in history.
                         if IS_FINALIZE {
                             // Load a `History` object.
-                            let history = History::new(N::ID, store.storage_mode())?;
+                            let history = History::new(N::ID, store.storage_mode());
 
                             // Write the delegated mapping as JSON.
                             history.store_mapping(state.block_height(), MappingName::Delegated, &next_delegated_map)?;
@@ -1415,6 +1416,37 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             history.store_mapping(state.block_height(), MappingName::Unbonding, &unbonding_map)?;
 
                             // Write the withdraw mapping as JSON.
+                            let withdraw_mapping = Identifier::from_str("withdraw")?;
+                            let withdraw_map = store.get_mapping_speculative(program_id, withdraw_mapping)?;
+                            history.store_mapping(state.block_height(), MappingName::Withdraw, &withdraw_map)?;
+                        }
+                    }
+
+                    // New RocksDB-based history-all-mappings feature
+                    #[cfg(feature = "history-all-mappings")]
+                    {
+                        // When finalizing in `FinalizeMode::RealRun`, store only changed mappings for credits.aleo
+                        if IS_FINALIZE {
+                            // Load a `History` object.
+                            let history = History::new(N::ID, store.storage_mode())?;
+
+                            // Write the delegated mapping only if changed
+                            history.store_mapping(state.block_height(), MappingName::Delegated, &next_delegated_map)?;
+
+                            // Write the bonded mapping only if changed
+                            history.store_mapping(state.block_height(), MappingName::Bonded, &next_bonded_map)?;
+
+                            // Write the metadata mapping only if changed
+                            let metadata_mapping = Identifier::from_str("metadata")?;
+                            let metadata_map = store.get_mapping_speculative(program_id, metadata_mapping)?;
+                            history.store_mapping(state.block_height(), MappingName::Metadata, &metadata_map)?;
+
+                            // Write the unbonding mapping only if changed
+                            let unbonding_mapping = Identifier::from_str("unbonding")?;
+                            let unbonding_map = store.get_mapping_speculative(program_id, unbonding_mapping)?;
+                            history.store_mapping(state.block_height(), MappingName::Unbonding, &unbonding_map)?;
+
+                            // Write the withdraw mapping only if changed
                             let withdraw_mapping = Identifier::from_str("withdraw")?;
                             let withdraw_map = store.get_mapping_speculative(program_id, withdraw_mapping)?;
                             history.store_mapping(state.block_height(), MappingName::Withdraw, &withdraw_map)?;
