@@ -278,13 +278,16 @@ commands:
 
             WSM="<< parameters.workspace_member >>"
             if [ "$WSM" = "snarkvm-synthesizer" ] && [ "$HAS_TEST_WILDCARD" -eq 1 ]; then
+              # Nextest doesn't support wildcard expression, so what was determined by the wildcard expression in "snarkvm-synthesizer" is set here if it is passed, to preserve the syntax, excluding the heavy tests:
               FILTER_EXPR='test(/test_command_parse/)+test(/test_instruction_parse/)+test(/test_process_execute/)+test(/test_program_parse/)'
             fi
             HEAVY_EXPR='test(/vm::finalize::tests::test_atomic_finalize_many/) or test(/vm::finalize::tests::test_excess_transactions_should_be_aborted/) or test(/vm::finalize::tests::test_finalize_catch_halt/) or test(/vm::finalize::tests::test_rejected_transaction_should_not_update_storage/) or test(/vm::test_helpers::test_load_deployments_with_imports/) or test(/vm::test_helpers::test_multiple_deployments_and_multiple_executions/) or test(/vm::verify::tests::test_verify_deploy_and_execute/)'
             if [ "$WSM" = "snarkvm-synthesizer" ] && [ "${SYNTHESIZER_HEAVY:-0}" = "1" ]; then
+              # If the SYNTHESIZER_HEAVY is set and the workspace is "snarkvm-synthesizer" we set the heavy tests as filter. Tried with config but was not working OK, so it is done manually:
               FILTER_EXPR="$HEAVY_EXPR"
             fi
             if [ "$WSM" = "snarkvm-synthesizer" ] && [ "${SYNTHESIZER_HEAVY:-0}" != "1" ] && [ "$HAS_TEST_WILDCARD" -ne 1 ]; then
+              # If the workspace is "snarkvm-synthesizer" and SYNTHESIZER_HEAVY is not set and the filter is not wildcard, the idea is to execute all the tests, but without the HEAVY ones. This way the heavy ones are executed only in their workflow:
               FILTER_EXPR="not ($HEAVY_EXPR)"
             fi
 
