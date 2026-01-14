@@ -1396,7 +1396,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // When finalizing in `FinalizeMode::RealRun`, store the delegated and bonded mappings in history.
                         if IS_FINALIZE {
                             // Load a `History` object.
-                            let history = History::new(N::ID, store.storage_mode());
+                            let history = History::new(N::ID, store.storage_mode())?;
 
                             // Write the delegated mapping as JSON.
                             history.store_mapping(state.block_height(), MappingName::Delegated, &next_delegated_map)?;
