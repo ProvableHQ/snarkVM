@@ -16,7 +16,7 @@
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "rocks")]
-use snarkvm_ledger_store::helpers::rocksdb::{internal::{DataMap, HistoryMap, MapID}, Database as RocksDatabase};
+use snarkvm_ledger_store::helpers::rocksdb::internal::{DataMap, HistoryMap, MapID};
 
 use aleo_std::StorageMode;
 use anyhow::Result;
@@ -89,10 +89,11 @@ impl History {
     /// Loads the JSON string for a mapping from a given block from the history storage.
     pub fn load_mapping(&self, height: u32, mapping: MappingName) -> Result<String> {
         use snarkvm_ledger_store::helpers::MapRead;
+        use anyhow::Context;
         
         // Retrieve the serialized data from RocksDB
         let json_bytes = self.mapping_data.get_confirmed(&(height, mapping))?
-            .ok_or_else(|| anyhow::anyhow!("Mapping data not found for block {} and mapping {}", height, mapping))?;
+            .with_context(|| format!("Mapping data not found for block {} and mapping {}", height, mapping))?;
         
         // Convert bytes to string
         let json_string = String::from_utf8(json_bytes.into_owned())?;
