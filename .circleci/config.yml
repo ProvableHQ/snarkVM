@@ -383,11 +383,15 @@ commands:
           command: |
             set -euo pipefail
             mkdir -p /tmp/dup_payload/junit
+
+            JOB="${CIRCLE_JOB}"
+
             if [ -f "artifacts/<< parameters.workspace_member >>-junit.xml" ]; then
               cp "artifacts/<< parameters.workspace_member >>-junit.xml" \
-                 "/tmp/dup_payload/junit/<< parameters.workspace_member >>-junit.xml"
+                 "/tmp/dup_payload/junit/${JOB}-junit.xml"
             fi
-            echo "ok" > "/tmp/dup_payload/<< parameters.workspace_member >>.done"
+
+            echo "ok" > "/tmp/dup_payload/${JOB}.done"
 
       - persist_to_workspace:
           root: /tmp/dup_payload
