@@ -197,8 +197,11 @@ impl<N: Network> RegisterTypes<N> {
                     };
                     // Retrieve the entry type from the external record.
                     match external_record.entries().get(path_name) {
-                        // Retrieve the plaintext type.
-                        Some(entry_type) => RegisterAccessType::Plaintext(entry_type.plaintext_type().clone()),
+                        // Qualify local struct references so subsequent accesses use the correct stack.
+                        Some(entry_type) => {
+                            let qualified = entry_type.plaintext_type().clone().qualify(*locator.program_id());
+                            RegisterAccessType::Plaintext(qualified)
+                        }
                         None => bail!("'{path_name}' does not exist in external record '{locator}'"),
                     }
                 }
@@ -225,10 +228,13 @@ impl<N: Network> RegisterTypes<N> {
                 }
                 (RegisterAccessType::Plaintext(PlaintextType::ExternalStruct(locator)), Access::Member(identifier)) => {
                     let external_stack = stack.get_external_stack(locator.program_id())?;
-                    // Retrieve the member type from the struct.
+                    // Retrieve the member type from the external struct.
                     match external_stack.program().get_struct(locator.resource())?.members().get(identifier) {
-                        // Update the member type.
-                        Some(member_type) => register_type = RegisterAccessType::Plaintext(member_type.clone()),
+                        // Qualify local struct references so subsequent accesses use the correct stack.
+                        Some(member_type) => {
+                            let qualified = member_type.clone().qualify(*locator.program_id());
+                            register_type = RegisterAccessType::Plaintext(qualified);
+                        }
                         None => bail!("'{identifier}' does not exist in struct '{locator}'"),
                     }
                 }

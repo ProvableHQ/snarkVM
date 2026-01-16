@@ -188,19 +188,28 @@ impl<N: Network> Stack<N> {
             None => bail!("Function '{locator}' does not have a finalize block"),
         };
 
+        // Sample the arguments using the external stack if the future is from an external program.
         let arguments = inputs
             .into_iter()
             .map(|input| {
                 match input.finalize_type() {
                     FinalizeType::Plaintext(plaintext_type) => {
-                        // Sample the plaintext value.
-                        let plaintext = self.sample_plaintext_internal(plaintext_type, depth + 1, rng)?;
+                        // Sample the plaintext value using the appropriate stack.
+                        let plaintext = match &external_stack {
+                            Some(external_stack) => {
+                                external_stack.sample_plaintext_internal(plaintext_type, depth + 1, rng)?
+                            }
+                            None => self.sample_plaintext_internal(plaintext_type, depth + 1, rng)?,
+                        };
                         // Return the argument.
                         Ok(Argument::Plaintext(plaintext))
                     }
                     FinalizeType::Future(locator) => {
-                        // Sample the future value.
-                        let future = self.sample_future_internal(locator, depth + 1, rng)?;
+                        // Sample the future value using the appropriate stack.
+                        let future = match &external_stack {
+                            Some(external_stack) => external_stack.sample_future_internal(locator, depth + 1, rng)?,
+                            None => self.sample_future_internal(locator, depth + 1, rng)?,
+                        };
                         // Return the argument.
                         Ok(Argument::Future(future))
                     }

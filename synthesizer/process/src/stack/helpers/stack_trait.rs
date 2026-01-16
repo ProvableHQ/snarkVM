@@ -578,14 +578,19 @@ impl<N: Network> Stack<N> {
         ensure!(future.arguments().len() == inputs.len(), "Future arguments do not match");
 
         // Check that the arguments match the inputs.
+        // Use the external stack if the future is from an external program.
         for (argument, input) in future.arguments().iter().zip_eq(inputs.iter()) {
             match (argument, input.finalize_type()) {
-                (Argument::Plaintext(plaintext), FinalizeType::Plaintext(plaintext_type)) => {
-                    self.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?
-                }
-                (Argument::Future(future), FinalizeType::Future(locator)) => {
-                    self.matches_future_internal(future, locator, depth + 1)?
-                }
+                (Argument::Plaintext(plaintext), FinalizeType::Plaintext(plaintext_type)) => match &external_stack {
+                    Some(external_stack) => {
+                        external_stack.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?
+                    }
+                    None => self.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?,
+                },
+                (Argument::Future(future), FinalizeType::Future(locator)) => match &external_stack {
+                    Some(external_stack) => external_stack.matches_future_internal(future, locator, depth + 1)?,
+                    None => self.matches_future_internal(future, locator, depth + 1)?,
+                },
                 (_, input_type) => {
                     bail!("Argument type does not match input type: expected '{input_type}'")
                 }
