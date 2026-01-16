@@ -581,7 +581,8 @@ impl<N: Network> Stack<N> {
         for (argument, input) in future.arguments().iter().zip_eq(inputs.iter()) {
             match (argument, input.finalize_type()) {
                 (Argument::Plaintext(plaintext), FinalizeType::Plaintext(plaintext_type)) => {
-                    self.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?
+                    let stack = external_stack.as_deref().unwrap_or(self);
+                    stack.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?;
                 }
                 (Argument::Future(future), FinalizeType::Future(locator)) => {
                     self.matches_future_internal(future, locator, depth + 1)?
