@@ -1,0 +1,27 @@
+errors: []
+outputs:
+- verified: true
+  execute:
+    parent.aleo/omega_wrapper:
+      outputs:
+      - '{"type":"private","id":"4675793934937298621122062123701739934880742456757637841837013485160807503660field","value":"ciphertext1qyqr3crnpv73xznrluzwdsya70s3l35vsvvrmwnkq0nzc3lx5uv6kygew5nu0"}'
+      - '{"type":"private","id":"3053945501260729000695698196735197946017541733857068475657494865203775312625field","value":"ciphertext1qyq047u9xtuwc0gkdelh2dr4npql08zy726cx4myy0vufa9e5gx2cqq0hrlxk"}'
+      - '{"type":"private","id":"7358934916849303580463983566249605298125048408057681175294434159310772683478field","value":"ciphertext1qyqqqcva4e5n05p0efkv82w7tvghjqvz2llkr34ldj79q8pyx7pgxqsxxhhsa"}'
+      - '{"type":"private","id":"915086399949988356450769098232259338793534430915905502538892997974628284852field","value":"ciphertext1qyqwchrh3v4awmh49hhy8rxtkpqvtsprtrjkx4h96snjkp6882kkgqqgrtlan"}'
+      - '{"type":"future","id":"4541214116906893519210822342586827160679692104186298589997457909010317216073field","value":"{\n  program_id: parent.aleo,\n  function_name: omega_wrapper,\n  arguments: [\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n    {\n      program_id: child.aleo,\n      function_name: create_another_wrapper,\n      arguments: [\n        {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n        {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n        {\n          program_id: grandchild.aleo,\n          function_name: create_wrapper,\n          arguments: [\n            {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n}\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
+  speculate: the execution was accepted
+  add_next_block: succeeded.
+additional:
+- child_outputs:
+    grandchild.aleo/create_wrapper:
+      outputs:
+      - '{"type":"private","id":"4421963093694946765876876069055306684230243590451080632470858991903304294363field","value":"ciphertext1qyqxy47p64m50569akzzhfxpq39gslnse6awf4qrqcf28a8qmevvjpclf2v63"}'
+      - '{"type":"future","id":"5153228234212313646934683033426349428379464704619593800297792975595950783181field","value":"{\n  program_id: grandchild.aleo,\n  function_name: create_wrapper,\n  arguments: [\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n}\n  ]\n}"}'
+    child.aleo/create_another_wrapper:
+      outputs:
+      - '{"type":"private","id":"5358866554580335194002059818190692340704557233388424761977690404171499584623field","value":"ciphertext1qyqrdz7q8z0js6y67h5ky7rgc6mkd9aclk5n37q0f90gwky7hhltqyq90g6mw"}'
+      - '{"type":"private","id":"8030808015996529202648632916535460391554704452891115090147801198769781576309field","value":"ciphertext1qyqpa6e9c9la3w6fxnfpgj3qacsuqzhdnqs37c6upeur2tjydwhhupsaszv7u"}'
+      - '{"type":"future","id":"5589725477753718246269930226510290357600022655326629862906973654067565145618field","value":"{\n  program_id: child.aleo,\n  function_name: create_another_wrapper,\n  arguments: [\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n    {\n      program_id: grandchild.aleo,\n      function_name: create_wrapper,\n      arguments: [\n        {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n}\n      ]\n    }\n  \n  ]\n}"}'
+    credits.aleo/fee_public:
+      outputs:
+      - '{"type":"future","id":"7455094196984727947016319553521560466238140354269735676690602286742356003409field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    3642u64\n  ]\n}"}'

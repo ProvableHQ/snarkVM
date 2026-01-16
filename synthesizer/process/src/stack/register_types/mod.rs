@@ -270,7 +270,12 @@ impl<N: Network> RegisterTypes<N> {
                         Some(input) => {
                             register_type = match input.finalize_type() {
                                 FinalizeType::Plaintext(plaintext_type) => {
-                                    RegisterAccessType::Plaintext(plaintext_type.clone())
+                                    let plaintext = match external_stack {
+                                        Some(ref stack) => plaintext_type.clone().qualify(*stack.program_id()),
+                                        None => plaintext_type.clone(),
+                                    };
+
+                                    RegisterAccessType::Plaintext(plaintext)
                                 }
                                 FinalizeType::Future(locator) => RegisterAccessType::Future(*locator),
                             }
