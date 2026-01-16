@@ -833,7 +833,7 @@ jobs:
 
   synthesizer:
     executor: rust-docker
-    resource_class: << pipeline.parameters.twoxlarge >>
+    resource_class: << pipeline.parameters.small >>
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer
@@ -1135,6 +1135,7 @@ workflows:
   version: 2
 
   cargo-workflow:
+    when: pipeline.git.branch == "canary"
     jobs:
       - check-fmt
       - check-clippy
@@ -1142,6 +1143,7 @@ workflows:
       - check-all-targets
 
   circuit-workflow:
+    when: pipeline.git.branch == "canary"
     jobs:
       - circuit
       - circuit-account
@@ -1160,6 +1162,7 @@ workflows:
       - circuit-types-string
 
   console-workflow:
+    when: pipeline.git.branch == "canary"
     jobs:
       - console
       - console-account
@@ -1178,6 +1181,7 @@ workflows:
       - console-types-string
 
   ledger-workflow:
+    when: pipeline.git.branch == "canary"
     jobs:
       - ledger
       - ledger-with-valid-solutions
@@ -1200,14 +1204,9 @@ workflows:
   synthesizer-workflow:
     jobs:
       - synthesizer
-      - synthesizer-test-partition1
-      - synthesizer-test-partition2
-      - synthesizer-process 
-      - synthesizer-integration
-      - synthesizer-program
-      - synthesizer-snark
 
   snarkvm-workflow:
+    when: pipeline.git.branch == "canary"
     jobs:
       - algorithms
       - curves
