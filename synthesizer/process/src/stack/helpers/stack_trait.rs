@@ -69,7 +69,7 @@ impl<N: Network> StackTrait<N> for Stack<N> {
             bail!("Expected external record '{record_name}', found external record '{}'", record_type.name())
         }
 
-        self.matches_record_internal(record, record_type, 0)
+        external_stack.matches_record_internal(record, record_type, 0)
     }
 
     /// Checks that the given record matches the layout of the record type.

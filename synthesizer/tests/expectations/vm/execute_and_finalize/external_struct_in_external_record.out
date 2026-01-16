@@ -1,0 +1,17 @@
+errors: []
+outputs:
+- verified: true
+  execute:
+    parent.aleo/omega_wrapper:
+      outputs:
+      - '{"type":"external_record","id":"7782460639370601357827224517959964644377683608642233309337355996426880939919field"}'
+  speculate: the execution was accepted
+  add_next_block: succeeded.
+additional:
+- child_outputs:
+    child.aleo/create_another_wrapper:
+      outputs:
+      - '{"type":"record","id":"428824748637879891552200965384806311143702261385469256770183844541599665109field","checksum":"24622741103382436169999555300246398813336935760078646874066994933543155797field","value":"record1qvqsqadqfj3rrh0ct4559hwrws44fqanra7hgjzgxvh7hgpfc8vfewgrqyphwmm0yvqqyqgqx6k9xvt8hlkcstgz35qaw4ef83m8d99xeky5upk4tc0tscsq3yqfyxfkjlukdfzajsd5n7pnu7kl24vpyta5usn4vtyut2urr4k4upsyxj4x9","sender_ciphertext":"6605546081839466942283415683102872639666023321841240562242126304933360138964field"}'
+    credits.aleo/fee_public:
+      outputs:
+      - '{"type":"future","id":"771306712284579065623013398678625321338097537024299213367192653856284418385field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2043u64\n  ]\n}"}'
