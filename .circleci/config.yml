@@ -833,7 +833,7 @@ jobs:
 
   synthesizer:
     executor: rust-docker
-    resource_class: << pipeline.parameters.medium >>
+    resource_class: << pipeline.parameters.large >>
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer
