@@ -25,7 +25,7 @@ fn update_buckets<G: AffineCurve>(
     mut scalar: <G::ScalarField as PrimeField>::BigInteger,
     w_start: usize,
     c: usize,
-    buckets: &mut [G::Projective],
+    buckets: &mut [<G::Projective as ProjectiveCurve>::Bucket],
 ) {
     // We right-shift by w_start, thus getting rid of the lower bits.
     scalar.divn(w_start as u32);
@@ -36,7 +36,7 @@ fn update_buckets<G: AffineCurve>(
     // If the scalar is non-zero, we update the corresponding bucket.
     // (Recall that `buckets` doesn't have a zero bucket.)
     if scalar != 0 {
-        buckets[(scalar - 1) as usize].add_assign_mixed(base);
+        buckets[(scalar - 1) as usize].into().add_assign_mixed(base);
     }
 }
 
@@ -58,7 +58,7 @@ fn standard_window<G: AffineCurve>(
 
     // We don't need the "zero" bucket, so we only have 2^c - 1 buckets
     let window_size = if (w_start % c) != 0 { w_start % c } else { c };
-    let mut buckets = vec![G::Projective::zero(); (1 << window_size) - 1];
+    let mut buckets = vec![G::Projective::zero_bucket(); (1 << window_size) - 1];
     scalars
         .iter()
         .zip(bases)
@@ -66,11 +66,11 @@ fn standard_window<G: AffineCurve>(
         .for_each(|(&scalar, base)| update_buckets(base, scalar, w_start, c, &mut buckets));
     // G::Projective::batch_normalization(&mut buckets);
 
-    for running_sum in buckets.into_iter().rev().scan(G::Projective::zero(), |sum, b| {
-        *sum += b;
+    for running_sum in buckets.into_iter().rev().scan(G::Projective::zero_bucket(), |sum, b| {
+        *sum += &b;
         Some(*sum)
     }) {
-        res += running_sum;
+        res += running_sum.into();
     }
 
     (res, window_size)

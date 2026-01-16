@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    templates::short_weierstrass_jacobian::Affine,
+    templates::short_weierstrass_jacobian::{Affine, Bucket},
     traits::{AffineCurve, ProjectiveCurve, ShortWeierstrassParameters as Parameters},
 };
 use snarkvm_fields::{Field, One, Zero, impl_add_sub_from_field_ref};
@@ -41,6 +41,41 @@ pub struct Projective<P: Parameters> {
 impl<P: Parameters> Projective<P> {
     pub const fn new(x: P::BaseField, y: P::BaseField, z: P::BaseField) -> Self {
         Self { x, y, z }
+    }
+
+    /// TODO
+    pub fn double_to_bucket(&self) -> Bucket<P> {
+        if self.is_zero() {
+            Bucket::zero()
+        } else {
+            // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-xyzz.html#doubling-mdbl-2008-s-1
+            // U = 2*Y1
+            let u = self.y.double();
+            // V = U^2
+            let v = u.square();
+            // W = U*V
+            let w = u * v;
+            // S = X1*V
+            let s = self.x * v;
+            // M = 3*X1^2+a
+            let mut m = self.x.square();
+            m += m.double();
+            if !P::WEIERSTRASS_A.is_zero() {
+                m += P::WEIERSTRASS_A;
+            }
+            // X3 = M^2-2*S
+            let x = m.square() - s.double();
+            // Y3 = M*(S-X3)-W*Y1
+            let y = m * (s - x) - w * self.y;
+            Bucket {
+                x,
+                y,
+                // ZZ3 = V
+                zz: v,
+                // ZZZ3 = W
+                zzz: w,
+            }
+        }
     }
 }
 
@@ -153,7 +188,13 @@ impl<P: Parameters> FromBytes for Projective<P> {
 impl<P: Parameters> ProjectiveCurve for Projective<P> {
     type Affine = Affine<P>;
     type BaseField = P::BaseField;
+    type Bucket = Bucket<P>;
     type ScalarField = P::ScalarField;
+
+    /// TODO
+    fn zero_bucket() -> Self::Bucket {
+        Bucket::<P>::zero()
+    }
 
     #[inline]
     fn prime_subgroup_generator() -> Self {

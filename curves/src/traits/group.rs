@@ -62,6 +62,18 @@ pub trait ProjectiveCurve:
     type Affine: AffineCurve<Projective = Self, ScalarField = Self::ScalarField> + From<Self> + Into<Self>;
     type BaseField: Field;
     type ScalarField: PrimeField + SquareRootField + Into<<Self::ScalarField as PrimeField>::BigInteger>;
+    type Bucket: Default
+        + Copy
+        + Clone
+        + for<'a> AddAssign<&'a Self::Bucket>
+        + for<'a> SubAssign<&'a Self::Bucket>
+        + for<'a> AddAssign<&'a Self>
+        + Send
+        + Sync
+        + Into<Self>;
+
+    /// TODO
+    fn zero_bucket() -> Self::Bucket;
 
     /// Returns a fixed generator of unknown exponent.
     #[must_use]

@@ -22,6 +22,7 @@ use rayon::prelude::*;
 
 #[cfg(target_arch = "x86_64")]
 use crate::{prefetch_slice, prefetch_slice_write};
+use std::ops::AddAssign;
 
 #[derive(Copy, Clone, Debug)]
 pub struct BucketPosition {
@@ -359,14 +360,14 @@ fn batched_window<G: AffineCurve>(
 
     let buckets = batch_add(num_buckets, bases, &mut bucket_positions);
 
-    let mut res = G::Projective::zero();
-    let mut running_sum = G::Projective::zero();
+    let mut res = G::Projective::zero_bucket();
+    let mut running_sum = G::Projective::zero_bucket();
     for b in buckets.into_iter().rev() {
-        running_sum.add_assign_mixed(&b);
+        running_sum.add_assign(&b.to_projective());
         res += &running_sum;
     }
 
-    (res, window_size)
+    (res.into(), window_size)
 }
 
 pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField>::BigInteger]) -> G::Projective {

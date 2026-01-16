@@ -145,7 +145,13 @@ impl<P: Parameters> FromBytes for Projective<P> {
 impl<P: Parameters> ProjectiveCurve for Projective<P> {
     type Affine = Affine<P>;
     type BaseField = P::BaseField;
+    type Bucket = Self;
     type ScalarField = P::ScalarField;
+
+    /// TODO
+    fn zero_bucket() -> Self::Bucket {
+        Self::zero()
+    }
 
     fn prime_subgroup_generator() -> Self {
         Affine::prime_subgroup_generator().into()
