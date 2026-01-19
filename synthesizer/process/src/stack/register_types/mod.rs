@@ -65,8 +65,12 @@ impl<N: Network> RegisterTypes<N> {
     /// Initializes a new instance of `RegisterTypes` for the given closure.
     /// Checks that the given closure is well-formed for the given stack.
     #[inline]
-    pub fn from_closure(stack: &Stack<N>, closure: &Closure<N>) -> Result<Self> {
-        Self::initialize_closure_types(stack, closure)
+    pub fn from_closure(
+        stack: &Stack<N>,
+        closure: &Closure<N>,
+        consensus_version: ConsensusVersion<N>,
+    ) -> Result<Self> {
+        Self::initialize_closure_types(stack, closure, consensus_version)
     }
 
     /// Initializes a new instance of `RegisterTypes` for the given function.

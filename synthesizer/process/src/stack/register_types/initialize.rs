@@ -15,13 +15,25 @@
 
 use super::*;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum InstructionScope {
+    Closure,
+    Function,
+}
+
 impl<N: Network> RegisterTypes<N> {
     /// Initializes a new instance of `RegisterTypes` for the given closure.
     /// Checks that the given closure is well-formed for the given stack.
     #[inline]
-    pub(super) fn initialize_closure_types(stack: &Stack<N>, closure: &Closure<N>) -> Result<Self> {
+    pub(super) fn initialize_closure_types(
+        stack: &Stack<N>,
+        closure: &Closure<N>,
+        consensus_version: ConsensusVersion<N>,
+    ) -> Result<Self> {
         // Initialize a map of registers to their types.
         let mut register_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
+        // Save the closure's name.
+        let closure_name = closure.name();
 
         // Step 1. Check the inputs are well-formed.
         for input in closure.inputs() {
@@ -31,15 +43,32 @@ impl<N: Network> RegisterTypes<N> {
 
         // Step 2. Check the instructions are well-formed.
         for instruction in closure.instructions() {
-            // Ensure the closure contains no async instructions.
-            ensure!(instruction.opcode() != Opcode::Async, "An 'async' instruction is not allowed in closures");
+            // For ConsensusVersion::V14 and later, async read-only instructions are allowed in closures.
+            if consensus_version >= ConsensusVersion::V14 {
+                if let Instruction::Async(async_) = instruction {
+                    // Retrieve the target function.
+                    let function = stack.get_function_ref(async_.function_name())?;
+                    // Retrieve the finalize logic.
+                    let finalize = function
+                        .finalize_logic()
+                        .ok_or_else(|| anyhow!("Could not find finalize block for '{}'", closure_name,))?;
+                    // Ensure the finalize logic contains no forbidden commands.
+                    for command in finalize.commands() {
+                        // NOTE: because a closure cannot make calls, awaits are not possible at this point in time.
+                        ensure!(!command.is_write(), "closure '{}' contains async write commands", closure_name,);
+                    }
+                }
+            // Before ConsensusVersion::V14, async instructions are not allowed in closures.
+            } else {
+                ensure!(instruction.opcode() != Opcode::Async, "An 'async' call is not allowed in closures");
+            }
             // Ensure the closure contains no call instructions.
             ensure!(
                 !matches!(instruction.opcode(), Opcode::Call(_)),
                 "A 'call' instruction is not allowed in closures"
             );
             // Check the instruction opcode, operands, and destinations.
-            register_types.check_instruction(stack, closure.name(), instruction)?;
+            register_types.check_instruction(stack, InstructionScope::Closure, closure.name(), instruction)?;
         }
 
         // Step 3. Check the outputs are well-formed.
@@ -85,7 +114,7 @@ impl<N: Network> RegisterTypes<N> {
         let mut async_ = None;
         for instruction in function.instructions() {
             // Check the instruction opcode, operands, and destinations.
-            register_types.check_instruction(stack, function.name(), instruction)?;
+            register_types.check_instruction(stack, InstructionScope::Function, function.name(), instruction)?;
             // Additional validation.
             match instruction.opcode() {
                 Opcode::Async => {
@@ -358,11 +387,12 @@ impl<N: Network> RegisterTypes<N> {
     fn check_instruction(
         &mut self,
         stack: &Stack<N>,
+        scope: InstructionScope,
         closure_or_function_name: &Identifier<N>,
         instruction: &Instruction<N>,
     ) -> Result<()> {
         // Ensure the opcode is well-formed.
-        self.check_instruction_opcode(stack, closure_or_function_name, instruction)?;
+        self.check_instruction_opcode(stack, scope, closure_or_function_name, instruction)?;
 
         // Initialize a vector to store the register types of the operands.
         let mut operand_types = Vec::with_capacity(instruction.operands().len());
@@ -392,6 +422,7 @@ impl<N: Network> RegisterTypes<N> {
     fn check_instruction_opcode(
         &self,
         stack: &Stack<N>,
+        scope: InstructionScope,
         closure_or_function_name: &Identifier<N>,
         instruction: &Instruction<N>,
     ) -> Result<()> {
@@ -425,11 +456,20 @@ impl<N: Network> RegisterTypes<N> {
                     _ => bail!("Instruction '{instruction}' is not an async operation."),
                 };
 
-                // Ensure the function name matches the one in the operation.
-                ensure!(
-                    async_.function_name() == closure_or_function_name,
-                    "Instruction '{instruction}' does not match the function name '{closure_or_function_name}'."
-                );
+                match scope {
+                    // In a function, the `async` instruction must reference its own finalize block.
+                    InstructionScope::Function => {
+                        ensure!(
+                            async_.function_name() == closure_or_function_name,
+                            "Instruction '{instruction}' does not match the function name '{closure_or_function_name}'."
+                        );
+                    }
+                    // In a closure, allow `async` to target an (internal) function.
+                    InstructionScope::Closure => {
+                        // Ensure the target function exists.
+                        stack.get_function(async_.function_name())?;
+                    }
+                }
             }
             Opcode::Call(_) => {
                 // Validate the call operation.

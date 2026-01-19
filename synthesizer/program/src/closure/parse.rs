@@ -15,6 +15,8 @@
 
 use super::*;
 
+use snarkvm_utilities::dev_eprintln;
+
 impl<N: Network> Parser for ClosureCore<N> {
     /// Parses a string into a closure.
     #[inline]
@@ -40,12 +42,20 @@ impl<N: Network> Parser for ClosureCore<N> {
         let (string, outputs) = many0(Output::parse)(string)?;
 
         map_res(take(0usize), move |_| {
-            // Initialize a new closure.
-            let mut closure = Self::new(name);
-            inputs.iter().cloned().try_for_each(|input| closure.add_input(input))?;
-            instructions.iter().cloned().try_for_each(|instruction| closure.add_instruction(instruction))?;
-            outputs.iter().cloned().try_for_each(|output| closure.add_output(output))?;
-            Ok::<_, Error>(closure)
+            let res: Result<_, Error> = (|| {
+                // Initialize a new closure.
+                let mut closure = Self::new(name);
+                inputs.iter().cloned().try_for_each(|input| closure.add_input(input))?;
+                instructions.iter().cloned().try_for_each(|instruction| closure.add_instruction(instruction))?;
+                outputs.iter().cloned().try_for_each(|output| closure.add_output(output))?;
+                Ok::<_, Error>(closure)
+            })();
+
+            if let Err(_e) = &res {
+                dev_eprintln!("{_e}");
+            }
+
+            res
         })(string)
     }
 }

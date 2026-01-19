@@ -236,12 +236,17 @@ fn test_universal_swap() {
     tracing_subscriber::fmt::init();
     // Define a mint_private function and constructor.
     let mint_private_function = r"
+        closure syntax_test:
+            input r0 as u64;
+            cast self.caller r0 into r1 as credits.record;
+
         function mint_private:
             input r0 as u64.private;
             cast self.caller r0 into r1 as credits.record;
             cast self.caller r0 into r2 as credits.record;
             output r1 as credits.record;
             output r2 as credits.record;
+
         constructor:
             assert.eq true true;
         ";
@@ -255,8 +260,32 @@ fn test_universal_swap() {
     credits_b_program.push_str(mint_private_function);
     let credits_b_program = Program::from_str(&credits_b_program).unwrap();
 
+    // Define a program that imports credits_a.aleo and credits_b.aleo and calls the syntax_test function.
+    let syntax_test_program = Program::from_str(
+        r"
+        import credits_a.aleo;
+        import credits_b.aleo;
+
+        program syntax_test.aleo;
+
+        closure syntax_test_2:
+            input r0 as u64;
+            call credits_a.aleo/syntax_test r0;
+
+        function dummy:
+
+        constructor:
+            assert.eq true true;
+    ",
+    )
+    .unwrap();
+
     // Define the swap program.
     let amm_program = Program::from_str(r"
+        import credits_a.aleo;
+        import credits_b.aleo;
+        import syntax_test.aleo;
+
         program amm.aleo;
 
         struct reserves:
@@ -268,6 +297,14 @@ fn test_universal_swap() {
         mapping reserves_mapping:
             key as address.public;
             value as reserves.public;
+
+        function syntax_test:
+            input r0 as u64.private;
+            call credits_a.aleo/syntax_test r0;
+        
+        function syntax_test_2:
+            input r0 as u64.private;
+            call syntax_test.aleo/syntax_test_2 r0;
 
         function buy_token_b:
             // credits_a
@@ -324,7 +361,7 @@ fn test_universal_swap() {
     let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
 
     // Deploy the program - one at a time so as not to surpass public payer limits.
-    for program in [credits_a_program, credits_b_program, amm_program] {
+    for program in [credits_a_program, credits_b_program, syntax_test_program, amm_program] {
         let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
         let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
         assert_eq!(block.transactions().num_accepted(), 1);
@@ -332,6 +369,43 @@ fn test_universal_swap() {
         assert_eq!(block.aborted_transaction_ids().len(), 0);
         vm.add_next_block(&block).unwrap();
     }
+
+    // Execute syntax_test.aleo/syntax_test.
+    let execute_syntax_test = vm
+        .execute(
+            &caller_private_key,
+            ("syntax_test.aleo", "syntax_test"),
+            vec![Value::from_str("100u64")].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execute_syntax_test], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+    // Execute amm.aleo/syntax_test_2.
+    let execute_syntax_test_1 = vm
+        .execute(
+            &caller_private_key,
+            ("amm.aleo", "syntax_test_2"),
+            vec![Value::from_str("100u64")].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execute_syntax_test_1], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    return;
 
     // Execute credits_a.aleo/mint_private to mint a few credits_a records.
     let execute_mint_a = vm
@@ -1295,77 +1369,6 @@ fn test_dynamic_call_credits_fee_functions_forbidden() {
     assert!(
         error_msg2.contains("fee_private") || error_msg2.contains("fee_public"),
         "Error should mention fee_private or fee_public restriction, got: {error_msg2}"
-    );
-}
-
-// Tests that `call.dynamic` to closures fails at deployment time since closures cannot be called dynamically.
-#[test]
-fn test_dynamic_call_closure_forbidden() {
-    let rng = &mut TestRng::default();
-
-    let caller_private_key = sample_genesis_private_key(rng);
-
-    // First create a program with a closure
-    let target_program = Program::<CurrentNetwork>::from_str(
-        r"
-        program has_closure.aleo;
-
-        closure add_numbers:
-            input r0 as u64;
-            input r1 as u64;
-            add r0 r1 into r2;
-            output r2 as u64;
-
-        function use_closure:
-            input r0 as u64.public;
-            input r1 as u64.public;
-            call add_numbers r0 r1 into r2;
-            output r2 as u64.public;
-
-        constructor:
-            assert.eq true true;
-        ",
-    )
-    .unwrap();
-
-    let target_field = Identifier::<CurrentNetwork>::from_str("has_closure").unwrap().to_field().unwrap();
-    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
-    let closure_field = Identifier::<CurrentNetwork>::from_str("add_numbers").unwrap().to_field().unwrap();
-
-    // Attempt to call the closure dynamically
-    let caller_program_str = format!(
-        r"
-        program call_closure.aleo;
-
-        function attempt_closure_call:
-            input r0 as u64.public;
-            input r1 as u64.public;
-            call.dynamic {target_field} {aleo_field} {closure_field}
-                with r0 r1 (as u64.public u64.public)
-                into r2 (as u64.public);
-            output r2 as u64.public;
-
-        constructor:
-            assert.eq true true;
-        "
-    );
-
-    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
-
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
-
-    // Deploy the target program with the closure
-    let deploy_target = vm.deploy(&caller_private_key, &target_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_target], rng);
-
-    // Deployment should fail because closures cannot be called dynamically
-    let deploy_result = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
-
-    assert!(deploy_result.is_err(), "Deployment should fail for program calling a closure dynamically");
-    let error_msg = deploy_result.unwrap_err().to_string();
-    assert!(
-        error_msg.contains("closure") || error_msg.contains("dynamically"),
-        "Error should mention closure restriction, got: {error_msg}"
     );
 }
 

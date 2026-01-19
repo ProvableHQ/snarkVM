@@ -28,6 +28,9 @@ mod mixed;
 // Tests for the `call.dynamic` instruction with various call patterns.
 mod call_dynamic;
 
+// Tests involving closure behaviour.
+mod closure;
+
 // Tests for `DynamicFuture` behavior including await ordering and conditional execution.
 mod dynamic_futures;
 

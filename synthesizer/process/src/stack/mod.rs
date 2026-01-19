@@ -308,6 +308,9 @@ impl<N: Network> Stack<N> {
         let mut register_types = self.register_types.write();
         let mut finalize_types = self.finalize_types.write();
 
+        let current_height = process.current_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_height)?;
+
         // Clear the existing constructor, closure, and function types.
         constructor_types.take();
         register_types.clear();
@@ -338,7 +341,7 @@ impl<N: Network> Stack<N> {
             // Ensure the closure name is not already added.
             ensure!(!register_types.contains_key(name), "Closure '{name}' already exists");
             // Compute the register types.
-            let types = RegisterTypes::from_closure(self, closure)?;
+            let types = RegisterTypes::from_closure(self, closure, consensus_version)?;
             // Add the closure name and register types to the stack.
             register_types.insert(*name, types);
         }
