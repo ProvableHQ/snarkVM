@@ -16,9 +16,7 @@
 use crate::{
     fft::DensePolynomial,
     snark::varuna::{
-        AHPError,
-        Matrix,
-        SNARKMode,
+        AHPError, Matrix, SNARKMode,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
         prover::{self, MatrixSums, ThirdMessage},
     },
@@ -56,6 +54,21 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
 
         let assignments = Self::calculate_assignments(&mut state)?;
+
+        // Debug output for assignments (CPU baseline)
+        // println!("\n========== CPU PREPARE THIRD ROUND - ASSIGNMENTS ==========");
+        // for (circuit_id, circuit_assignments) in &assignments {
+        //     println!("  circuit_id={}, num_assignments={}", circuit_id, circuit_assignments.len());
+        //     if let Some(first_assignment) = circuit_assignments.first() {
+        //         println!(
+        //             "    assignment[0].degree()={}, coeffs[0..5]={:?}",
+        //             first_assignment.degree(),
+        //             &first_assignment.coeffs[..first_assignment.coeffs.len().min(5)]
+        //         );
+        //     }
+        // }
+        // println!("========== CPU PREPARE THIRD ROUND - ASSIGNMENTS END ==========\n");
+
         let matrix_transposes = Self::calculate_matrix_transpose(&mut state)?;
 
         let msg = Self::calculate_prep_lineval_sumcheck_witness(
@@ -78,6 +91,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>,
         alpha: &F,
     ) -> Result<ThirdMessage<F>> {
+        // println!("\n========== CPU LINEVAL SUMCHECK WITNESS START ==========");
+        // println!("  alpha = {:?}", alpha);
+
         let num_instances = first_round_batch_combiners.values().map(|c| c.instance_combiners.len()).collect_vec();
         let total_instances = num_instances.iter().sum::<usize>();
         let matrix_labels = ["a", "b", "c"];
@@ -116,6 +132,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .zip_eq(assignments.values())
             .zip_eq(matrix_transposes.values())
         {
+            // println!(
+            //     "  Circuit {}: constraint_domain_size={}, variable_domain_size={}",
+            //     circuit.id,
+            //     circuit_specific_state.constraint_domain.size(),
+            //     circuit_specific_state.variable_domain.size()
+            // );
+
+            // DEBUG: Print first 5 Lagrange coefficients for first matrix
+            // let l_at_alpha = circuit_specific_state.constraint_domain.evaluate_all_lagrange_coefficients(*alpha);
+            // println!("    CPU Lagrange[0..5]: {:?}", &l_at_alpha[..5]);
+
             // Iterate for each instance in the batch.
             for assignment in assignments_i {
                 // Iterate for each R1CS matrix corresponding to the circuit and instance.
@@ -143,7 +170,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                             .copied()
                             .unwrap_or_default();
                         let sum = n * (c_0 + c_n);
-                        Ok((circuit, LinevalPrepInstance { z_m_at_alpha, sum }))
+                        Ok((circuit, label, LinevalPrepInstance { z_m_at_alpha, sum }))
                     });
                 }
             }
@@ -152,17 +179,52 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let mut sums = num_instances.iter().map(|n| Vec::with_capacity(*n)).collect_vec();
         let mut circuit_index = 0;
         let mut instances_seen = 0;
-        for (i, ((circuit_a, lineval_a), (circuit_b, lineval_b), (circuit_c, lineval_c))) in
+        let mut instance_idx = 0;
+        for (i, ((circuit_a, label_a, lineval_a), (circuit_b, label_b, lineval_b), (circuit_c, label_c, lineval_c))) in
             job_pool.execute_all().into_iter().collect::<Result<Vec<_>>>()?.into_iter().tuples().enumerate()
         {
             // Sanity check that we're collecting data from the same circuits.
             assert_eq!(circuit_a, circuit_b);
             assert_eq!(circuit_a, circuit_c);
+
+            // Debug output for comparison
+            // println!(
+            //     "    Instance {} matrix {}: sum = {:?}, z_m_at_alpha.degree() = {}",
+            //     instance_idx,
+            //     label_a,
+            //     lineval_a.sum,
+            //     lineval_a.z_m_at_alpha.degree()
+            // );
+            // if lineval_a.z_m_at_alpha.coeffs.len() >= 5 {
+            //     println!("      z_m_at_alpha.coeffs[0..5] = {:?}", &lineval_a.z_m_at_alpha.coeffs[..5]);
+            // }
+            // println!(
+            //     "    Instance {} matrix {}: sum = {:?}, z_m_at_alpha.degree() = {}",
+            //     instance_idx,
+            //     label_b,
+            //     lineval_b.sum,
+            //     lineval_b.z_m_at_alpha.degree()
+            // );
+            // if lineval_b.z_m_at_alpha.coeffs.len() >= 5 {
+            //     println!("      z_m_at_alpha.coeffs[0..5] = {:?}", &lineval_b.z_m_at_alpha.coeffs[..5]);
+            // }
+            // println!(
+            //     "    Instance {} matrix {}: sum = {:?}, z_m_at_alpha.degree() = {}",
+            //     instance_idx,
+            //     label_c,
+            //     lineval_c.sum,
+            //     lineval_c.z_m_at_alpha.degree()
+            // );
+            // if lineval_c.z_m_at_alpha.coeffs.len() >= 5 {
+            //     println!("      z_m_at_alpha.coeffs[0..5] = {:?}", &lineval_c.z_m_at_alpha.coeffs[..5]);
+            // }
+
             sums[circuit_index].push(MatrixSums { sum_a: lineval_a.sum, sum_b: lineval_b.sum, sum_c: lineval_c.sum });
             if 1 + i - instances_seen == num_instances[circuit_index] {
                 instances_seen += num_instances[circuit_index];
                 circuit_index += 1;
             }
+            instance_idx += 1;
 
             // Store the z_m_at_alpha polynomials for use in the next round.
             match &mut state.circuit_specific_states.get_mut(circuit_a).unwrap().z_m_at_alpha_polys {
@@ -185,6 +247,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 }
             }
         }
+
+        // println!("========== CPU LINEVAL SUMCHECK WITNESS END ==========\n");
 
         let msg = ThirdMessage { sums };
 

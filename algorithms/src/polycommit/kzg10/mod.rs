@@ -112,13 +112,77 @@ impl<E: PairingEngine> KZG10<E> {
 
         let mut commitment = match polynomial {
             Polynomial::Dense(polynomial) => {
+                // // DEBUG: Print Montgomery form (raw bytes) BEFORE conversion
+                // if polynomial.coeffs.len() > 0 {
+                //     println!("CPU Montgomery form (raw bytes) first 5:");
+                //     for i in 0..5.min(polynomial.coeffs.len()) {
+                //         let raw_ptr = &polynomial.coeffs[i] as *const _ as *const u8;
+                //         print!("  [{}]: ", i);
+                //         for j in 0..32 {
+                //             print!("{:02x}", unsafe { *raw_ptr.add(j) });
+                //         }
+                //         println!();
+                //     }
+                // }
+
                 let (num_leading_zeros, plain_coeffs) = skip_leading_zeros_and_convert_to_bigints(polynomial);
 
                 let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + plain_coeffs.len())];
 
+                // // DEBUG: Print MSM inputs (standard form after to_bigint)
+                // println!("CPU MSM: num_leading_zeros={}, plain_coeffs.len()={}", num_leading_zeros, plain_coeffs.len());
+                // if !plain_coeffs.is_empty() {
+                //     println!("CPU MSM scalars (standard form, first 5):");
+                //     for i in 0..5.min(plain_coeffs.len()) {
+                //         println!("  [{}]: {:?}", i, plain_coeffs[i]);
+                //     }
+                //     // Print last 5 scalars
+                //     if plain_coeffs.len() >= 5 {
+                //         println!(
+                //             "CPU MSM scalars (standard form, last 5, indices {}-{}):",
+                //             plain_coeffs.len() - 5,
+                //             plain_coeffs.len() - 1
+                //         );
+                //         for i in (plain_coeffs.len() - 5)..plain_coeffs.len() {
+                //             println!("  [{}]: {:?}", i, plain_coeffs[i]);
+                //         }
+                //     }
+                //     println!("CPU MSM: bases.len()={}", bases.len());
+                //     if bases.len() >= 3 {
+                //         // Print FULL 104 bytes of first 3 bases
+                //         println!("CPU MSM bases FULL (first 3, 104 bytes each):");
+                //         for i in 0..3 {
+                //             let base_ptr = &bases[i] as *const _ as *const u8;
+                //             print!("  base[{}]:\n    ", i);
+                //             for j in 0..104 {
+                //                 print!("{:02x}", unsafe { *base_ptr.add(j) });
+                //                 if j == 47 || j == 95 {
+                //                     print!("\n    ");
+                //                 }
+                //             }
+                //             println!();
+                //         }
+                //     }
+                // }
+
+                // DEBUG: Keep first 1000 scalars, zero the rest
+                // let keep_count = 1501usize;
+                // println!(
+                //     "DEBUG: Keeping first {} scalars, zeroing indices {}-{}",
+                //     keep_count,
+                //     keep_count,
+                //     plain_coeffs.len() - 1
+                // );
+                let mut zeroed_coeffs = plain_coeffs.clone();
+                // for i in keep_count..zeroed_coeffs.len() {
+                //     zeroed_coeffs[i] = <E::Fr as PrimeField>::BigInteger::from(0u64);
+                // }
+
                 let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
-                let commitment = VariableBase::msm(bases, &plain_coeffs);
+                let commitment = VariableBase::msm(bases, &zeroed_coeffs);
                 end_timer!(msm_time);
+
+                // println!("CPU MSM commitment: {:?}", commitment);
 
                 commitment
             }

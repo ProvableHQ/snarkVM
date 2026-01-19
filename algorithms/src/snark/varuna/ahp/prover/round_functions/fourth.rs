@@ -15,9 +15,7 @@
 
 use crate::{
     fft::{
-        DensePolynomial,
-        EvaluationDomain,
-        Evaluations as EvaluationsOnDomain,
+        DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain,
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
@@ -81,8 +79,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     ) -> Result<(prover::FourthMessage<F>, prover::FourthOracles<F>, prover::State<'a, F, SM>), AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::FourthRound");
 
+        // println!("\n========== CPU FOURTH ROUND START ==========");
         let verifier::SecondMessage { alpha, .. } = second_message;
         let verifier::ThirdMessage { beta } = third_message;
+        // println!("  CPU alpha = {:?}", alpha);
+        // println!("  CPU beta = {:?}", beta);
 
         let mut pool = ExecutionPool::with_capacity(3 * state.circuit_specific_states.len());
 
@@ -127,6 +128,25 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let (sum_a, lhs_a, g_a, a_poly_a, b_poly_a) = results_a?;
             let (sum_b, lhs_b, g_b, a_poly_b, b_poly_b) = results_b?;
             let (sum_c, lhs_c, g_c, a_poly_c, b_poly_c) = results_c?;
+
+            // Debug: Print sums
+            // println!("  CPU circuit {}: sum_a={:?}", circuit_a.id, sum_a);
+            // println!("  CPU circuit {}: sum_b={:?}", circuit_a.id, sum_b);
+            // println!("  CPU circuit {}: sum_c={:?}", circuit_a.id, sum_c);
+
+            // Debug: Print g polynomial info with coefficients
+            // let g_a_dense = g_a.polynomial().clone().into_dense();
+            // let g_b_dense = g_b.polynomial().clone().into_dense();
+            // let g_c_dense = g_c.polynomial().clone().into_dense();
+            // println!("  CPU circuit {}: g_a.coeffs[0..3]={:?}, degree={}", circuit_a.id, &g_a_dense.coeffs[0..3.min(g_a_dense.coeffs.len())], g_a.degree());
+            // println!("  CPU circuit {}: g_b.coeffs[0..3]={:?}, degree={}", circuit_a.id, &g_b_dense.coeffs[0..3.min(g_b_dense.coeffs.len())], g_b.degree());
+            // println!("  CPU circuit {}: g_c.coeffs[0..3]={:?}, degree={}", circuit_a.id, &g_c_dense.coeffs[0..3.min(g_c_dense.coeffs.len())], g_c.degree());
+
+            // Debug: Print lhs polynomial info
+            // println!("  CPU circuit {}: lhs_a.coeffs[0..3]={:?}, degree={}", circuit_a.id, &lhs_a.coeffs[0..3.min(lhs_a.coeffs.len())], lhs_a.degree());
+            // println!("  CPU circuit {}: lhs_b.coeffs[0..3]={:?}, degree={}", circuit_a.id, &lhs_b.coeffs[0..3.min(lhs_b.coeffs.len())], lhs_b.degree());
+            // println!("  CPU circuit {}: lhs_c.coeffs[0..3]={:?}, degree={}", circuit_a.id, &lhs_c.coeffs[0..3.min(lhs_c.coeffs.len())], lhs_c.degree());
+
             let matrix_sum = prover::message::MatrixSums { sum_a, sum_b, sum_c };
             sums.push(matrix_sum);
             state.circuit_specific_states.get_mut(circuit_a).unwrap().lhs_polynomials = Some([lhs_a, lhs_b, lhs_c]);
@@ -143,6 +163,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             state.circuit_specific_states.keys().map(|c| (c.id, &c.index_info))
         )));
 
+        // println!("========== CPU FOURTH ROUND END ==========\n");
         end_timer!(round_time);
 
         Ok((msg, oracles, state))
@@ -222,14 +243,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         end_timer!(f_poly_time);
         let g = DensePolynomial::from_coefficients_slice(&f.coeffs[1..]);
-        let mut h = &a_poly
-            - &{
-                let mut multiplier = PolyMultiplier::new();
-                multiplier.add_polynomial_ref(&b_poly, "b");
-                multiplier.add_polynomial_ref(&f, "f");
-                multiplier.add_precomputation(fft_precomputation, ifft_precomputation);
-                multiplier.multiply().unwrap()
-            };
+        let bf = {
+            let mut multiplier = PolyMultiplier::new();
+            multiplier.add_polynomial_ref(&b_poly, "b");
+            multiplier.add_polynomial_ref(&f, "f");
+            multiplier.add_precomputation(fft_precomputation, ifft_precomputation);
+            multiplier.multiply().unwrap()
+        };
+        let mut h = &a_poly - &bf;
 
         let combiner = F::one(); // We are applying combiners in the fifth round when summing the witnesses
         let (lhs, remainder) =

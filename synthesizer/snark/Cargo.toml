@@ -10,22 +10,23 @@ keywords = [
   "cryptography",
   "blockchain",
   "decentralized",
-  "zero-knowledge"
+  "zero-knowledge",
 ]
 categories = [
   "compilers",
   "cryptography",
   "mathematics",
   "wasm",
-  "web-programming"
+  "web-programming",
 ]
-include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
+include = ["Cargo.toml", "src", "README.md", "LICENSE.md"]
 license = "Apache-2.0"
 edition = "2024"
 
 [features]
 default = [ ]
 cuda = [ "snarkvm-algorithms/cuda" ]
+cudaprover = [ "snarkvm-algorithms/cuda" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 serial = [ "snarkvm-console/serial", "snarkvm-algorithms/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
@@ -37,7 +38,7 @@ workspace = true
 [dependencies.snarkvm-console]
 workspace = true
 default-features = false
-features = [ "network" ]
+features = ["network"]
 
 [dependencies.snarkvm-algorithms]
 workspace = true
@@ -50,9 +51,9 @@ workspace = true
 
 [dependencies.serde_json]
 workspace = true
-features = [ "preserve_order" ]
+features = ["preserve_order"]
 
 [dev-dependencies.snarkvm-console]
 workspace = true
 default-features = false
-features = [ "types" ]
+features = ["types"]

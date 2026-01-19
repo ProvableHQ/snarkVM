@@ -19,9 +19,7 @@ use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, polynomial::PolyMultiplier},
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        Circuit,
-        CircuitId,
-        SNARKMode,
+        Circuit, CircuitId, SNARKMode,
         ahp::{AHPForR1CS, verifier},
         prover,
         selectors::apply_randomized_selector,
@@ -53,15 +51,30 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         mut state: prover::State<'a, F, SM>,
         _r: &mut R,
     ) -> Result<(prover::SecondOracles<F>, prover::State<'a, F, SM>)> {
+        // println!("\n========== CPU SECOND ROUND START ==========");
         let round_time = start_timer!(|| "AHP::Prover::SecondRound");
 
         let zk_bound = Self::zk_bound();
 
         let max_constraint_domain = state.max_constraint_domain;
+        // println!("CPU Second Round: max_constraint_domain.size()={}", max_constraint_domain.size());
 
         let verifier::FirstMessage { first_round_batch_combiners, .. } = verifier_message;
 
+        // DEBUG: Print batch combiners
+        // for (circuit_id, combiners) in first_round_batch_combiners.iter() {
+        //     println!("CPU Second Round: circuit_id={}, circuit_combiner={:?}", circuit_id, combiners.circuit_combiner);
+        //     println!(
+        //         "CPU Second Round: instance_combiners[0..min(3,len)]={:?}",
+        //         &combiners.instance_combiners[..combiners.instance_combiners.len().min(3)]
+        //     );
+        // }
+
         let h_0 = Self::calculate_rowcheck_witness(&mut state, first_round_batch_combiners)?;
+
+        // println!("CPU Second Round: h_0.degree()={}", h_0.degree());
+        // println!("CPU Second Round: h_0.coeffs[0..5]={:?}", &h_0.coeffs[..h_0.coeffs.len().min(5)]);
+        // println!("CPU Second Round: h_0.coeffs.len()={}", h_0.coeffs.len());
 
         assert!(h_0.degree() <= 2 * max_constraint_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 
@@ -69,6 +82,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(oracles.matches_info(&Self::second_round_polynomial_info()));
 
         end_timer!(round_time);
+        // println!("========== CPU SECOND ROUND END ==========\n");
 
         Ok((oracles, state))
     }
@@ -85,9 +99,19 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let z_b = circuit_specific_state.z_b.take().unwrap();
             let z_c = circuit_specific_state.z_c.take().unwrap();
 
+            // // DEBUG: Print z_a, z_b, z_c inputs
+            // println!("CPU calculate_rowcheck_witness: circuit_id={}", circuit.id);
+            // println!("  z_a.len()={}, z_b.len()={}, z_c.len()={}", z_a.len(), z_b.len(), z_c.len());
+            // if !z_a.is_empty() && !z_a[0].is_empty() {
+            //     println!("  z_a[0][0..5]={:?}", &z_a[0][..z_a[0].len().min(5)]);
+            //     println!("  z_b[0][0..5]={:?}", &z_b[0][..z_b[0].len().min(5)]);
+            //     println!("  z_c[0][0..5]={:?}", &z_c[0][..z_c[0].len().min(5)]);
+            // }
+
             let circuit_combiner = batch_combiners[&circuit.id].circuit_combiner;
             let instance_combiners = batch_combiners[&circuit.id].instance_combiners.clone();
             let constraint_domain = circuit_specific_state.constraint_domain;
+            // println!("  constraint_domain.size()={}", constraint_domain.size());
             let fft_precomputation = &circuit.fft_precomputation;
             let ifft_precomputation = &circuit.ifft_precomputation;
 

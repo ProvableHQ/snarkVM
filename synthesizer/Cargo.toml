@@ -10,16 +10,16 @@ keywords = [
   "cryptography",
   "blockchain",
   "decentralized",
-  "zero-knowledge"
+  "zero-knowledge",
 ]
 categories = [
   "compilers",
   "cryptography",
   "mathematics",
   "wasm",
-  "web-programming"
+  "web-programming",
 ]
-include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
+include = ["Cargo.toml", "src", "README.md", "LICENSE.md"]
 license = "Apache-2.0"
 edition = "2024"
 
@@ -29,10 +29,11 @@ locktick = [
   "snarkvm-ledger-puzzle/locktick",
   "snarkvm-ledger-puzzle-epoch/locktick",
   "snarkvm-ledger-store/locktick",
-  "snarkvm-synthesizer-process/locktick"
+  "snarkvm-synthesizer-process/locktick",
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda", "snarkvm-synthesizer-snark/cuda" ]
+cudaprover = [ "snarkvm-algorithms/cuda", "snarkvm-synthesizer-snark/cudaprover" ]
 history = [ "snarkvm-ledger-store/history", "snarkvm-synthesizer-process/history" ]
 history-staking-rewards = [ "snarkvm-ledger-store/history-staking-rewards" ]
 slipstream-plugins = [ "snarkvm-ledger-store/slipstream-plugins" ]
@@ -45,7 +46,7 @@ serial = [
   "snarkvm-ledger-store/serial",
   "snarkvm-synthesizer-process/serial",
   "snarkvm-synthesizer-program/serial",
-  "snarkvm-synthesizer-snark/serial"
+  "snarkvm-synthesizer-snark/serial",
 ]
 setup = [ ]
 test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
@@ -58,7 +59,7 @@ wasm = [
   "snarkvm-ledger-store/wasm",
   "snarkvm-synthesizer-process/wasm",
   "snarkvm-synthesizer-program/wasm",
-  "snarkvm-synthesizer-snark/wasm"
+  "snarkvm-synthesizer-snark/wasm",
 ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]
@@ -94,11 +95,11 @@ workspace = true
 
 [dependencies.snarkvm-ledger-puzzle-epoch]
 workspace = true
-features = [ "synthesis" ]
+features = ["synthesis"]
 
 [dependencies.snarkvm-ledger-query]
 workspace = true
-features = [ "query" ]
+features = ["query"]
 
 [dependencies.snarkvm-ledger-store]
 workspace = true
@@ -126,14 +127,14 @@ workspace = true
 
 [dependencies.indexmap]
 workspace = true
-features = [ "serde", "rayon" ]
+features = ["serde", "rayon"]
 
 [dependencies.itertools]
 workspace = true
 
 [dependencies.locktick]
 workspace = true
-features = [ "parking_lot" ]
+features = ["parking_lot"]
 optional = true
 
 [dependencies.lru]
@@ -150,11 +151,11 @@ workspace = true
 
 [dependencies.serde_json]
 workspace = true
-features = [ "preserve_order" ]
+features = ["preserve_order"]
 
 [dependencies.tokio]
 version = "1"
-features = [ "sync" ]
+features = ["sync"]
 
 [dependencies.tracing]
 workspace = true
@@ -179,19 +180,19 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "filesystem" ]
+features = ["filesystem"]
 
 [dev-dependencies.snarkvm-ledger-committee]
 workspace = true
-features = [ "test-helpers" ]
+features = ["test-helpers"]
 
 [dev-dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
-features = [ "test-helpers" ]
+features = ["test-helpers"]
 
 [dev-dependencies.snarkvm-synthesizer-process]
 workspace = true
-features = [ "test" ]
+features = ["test"]
 
 [dev-dependencies.snarkvm-synthesizer-snark]
 workspace = true

@@ -631,7 +631,7 @@ finalize test:
 
     #[test]
     fn test_transfer_private_execution() {
-        let rng = &mut TestRng::default();
+        let rng = &mut TestRng::fixed(42);
 
         // Initialize a new caller.
         let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);

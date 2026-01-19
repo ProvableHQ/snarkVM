@@ -15,37 +15,22 @@
 
 use super::Certificate;
 use crate::{
-    AlgebraicSponge,
-    SNARK,
-    SNARKError,
+    AlgebraicSponge, SNARK, SNARKError,
     fft::EvaluationDomain,
     polycommit::sonic_pc::{
-        Commitment,
-        CommitterUnionKey,
-        Evaluations,
-        LabeledCommitment,
-        QuerySet,
-        Randomness,
-        SonicKZG10,
+        Commitment, CommitterUnionKey, Evaluations, LabeledCommitment, QuerySet, Randomness, SonicKZG10,
     },
     r1cs::{ConstraintSynthesizer, SynthesisError},
     snark::varuna::{
-        CircuitProvingKey,
-        CircuitVerifyingKey,
-        Proof,
-        SNARKMode,
-        UniversalSRS,
-        VarunaVersion,
+        CircuitProvingKey, CircuitVerifyingKey, Proof, SNARKMode, UniversalSRS, VarunaVersion,
         ahp::{AHPError, AHPForR1CS, CircuitId, EvaluationsProvider},
-        proof,
-        prover,
-        witness_label,
+        proof, prover, witness_label,
     },
     srs::UniversalVerifier,
 };
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
-use snarkvm_utilities::{ToBytes, dev_eprintln, dev_println, to_bytes_le};
+use snarkvm_utilities::{ToBytes, dev_eprintln, dev_println, rand::TestRng, to_bytes_le};
 
 use anyhow::{Result, anyhow, bail, ensure};
 use core::marker::PhantomData;
@@ -433,6 +418,7 @@ where
 
         // --------------------------------------------------------------------
         // First round
+        println!("\n========== CPU FIRST ROUND START ==========");
 
         let prover_state = AHPForR1CS::<_, SM>::prover_first_round(prover_state, zk_rng)?;
 
@@ -448,6 +434,9 @@ where
         };
         end_timer!(first_round_comm_time);
 
+        println!("CPU first_commitments: {:?}", first_commitments);
+        println!("========== CPU FIRST ROUND END ==========\n");
+
         Self::absorb_labeled(&first_commitments, &mut sponge);
 
         let (verifier_first_message, verifier_state) = AHPForR1CS::<_, SM>::verifier_first_round(
@@ -462,6 +451,7 @@ where
 
         // --------------------------------------------------------------------
         // Second round
+        println!("\n========== CPU SECOND ROUND START ==========");
 
         let (second_oracles, prover_state) =
             AHPForR1CS::<_, SM>::prover_second_round(&verifier_first_message, prover_state, zk_rng)?;
@@ -475,6 +465,9 @@ where
         )?;
         end_timer!(second_round_comm_time);
 
+        println!("CPU second_commitments: {:?}", second_commitments);
+        println!("========== CPU SECOND ROUND END ==========\n");
+
         Self::absorb_labeled(&second_commitments, &mut sponge);
 
         let (verifier_second_msg, verifier_state) =
@@ -483,6 +476,8 @@ where
 
         // --------------------------------------------------------------------
         // Preparation for third round
+
+        // println!("\n========== CPU PREPARE THIRD ROUND START ==========");
 
         let (prover_prepare_third_message, prover_state, verifier_prepare_third_msg, verifier_state) = {
             match varuna_version {
@@ -508,14 +503,29 @@ where
                             &mut sponge,
                         )?;
 
+                    // Print sums for comparison with CUDA path
+                    println!("\n========== CPU PREPARE THIRD MESSAGE SUMS ==========");
+                    for (circuit_idx, circuit_sums) in prover_prepare_third_message.sums.iter().enumerate() {
+                        for (instance_idx, sums) in circuit_sums.iter().enumerate() {
+                            println!(
+                                "  Circuit {} Instance {}: sum_a={:?}, sum_b={:?}, sum_c={:?}",
+                                circuit_idx, instance_idx, sums.sum_a, sums.sum_b, sums.sum_c
+                            );
+                        }
+                    }
+                    // println!("========== CPU PREPARE THIRD MESSAGE SUMS END ==========\n");
+
                     (Some(prover_prepare_third_message), prover_state, Some(verifier_prepare_third_msg), verifier_state)
                 }
             }
         };
+
+        println!("========== CPU PREPARE THIRD ROUND END ==========\n");
         // --------------------------------------------------------------------
 
         // --------------------------------------------------------------------
         // Third round
+        println!("\n========== CPU THIRD ROUND START ==========");
 
         let (prover_third_message, third_oracles, prover_state) = AHPForR1CS::<_, SM>::prover_third_round(
             &verifier_first_message,
@@ -526,14 +536,24 @@ where
             varuna_version,
         )?;
 
+        // println!("  g_1.degree() = {}", third_oracles.g_1.degree());
+        // println!("  h_1.degree() = {}", third_oracles.h_1.degree());
+
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // !!!                    DEBUGGING ONLY - REMOVE ME                     !!!
+        // !!!  Using fixed RNG seed for third round commitment to match CUDA    !!!
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        let mut fixed_rng = TestRng::fixed(12345);
         let third_round_comm_time = start_timer!(|| "Committing to third round polys");
         let (third_commitments, third_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
             third_oracles.iter().map(Into::into),
-            SM::ZK.then_some(zk_rng),
+            SM::ZK.then_some(&mut fixed_rng),
         )?;
         end_timer!(third_round_comm_time);
+
+        println!("CPU third_commitments: {:?}", third_commitments);
 
         match varuna_version {
             VarunaVersion::V1 => {
@@ -564,6 +584,8 @@ where
         }
         .ok_or_else(|| anyhow!("Prover did not contribute sums in the expected round."))?;
 
+        println!("========== CPU THIRD ROUND END ==========\n");
+
         let (verifier_third_msg, verifier_state) =
             AHPForR1CS::<_, SM>::verifier_third_round(verifier_state, &mut sponge)?;
         // --------------------------------------------------------------------
@@ -583,6 +605,8 @@ where
         )?;
         end_timer!(fourth_round_comm_time);
 
+        println!("CPU fourth_commitments: {:?}", fourth_commitments);
+
         Self::absorb_labeled_with_sums(&fourth_commitments, &prover_fourth_message.sums, &mut sponge);
 
         let (verifier_fourth_msg, verifier_state) =
@@ -598,6 +622,7 @@ where
 
         // --------------------------------------------------------------------
         // Fifth round
+        println!("\n========== CPU FIFTH ROUND START ==========");
         let fifth_oracles = AHPForR1CS::<_, SM>::prover_fifth_round(verifier_fourth_msg, prover_state, zk_rng)?;
 
         let fifth_round_comm_time = start_timer!(|| "Committing to fifth round polys");
@@ -610,6 +635,10 @@ where
         end_timer!(fifth_round_comm_time);
 
         Self::absorb_labeled(&fifth_commitments, &mut sponge);
+
+        println!("CPU fifth_commitments: {:?}", fifth_commitments);
+        println!("========== CPU FIFTH ROUND END ==========\n");
+        todo!("TESTING");
 
         let verifier_state = AHPForR1CS::<_, SM>::verifier_fifth_round(verifier_state, &mut sponge)?;
         // --------------------------------------------------------------------

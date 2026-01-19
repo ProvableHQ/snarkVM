@@ -47,6 +47,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     ) -> Result<prover::FifthOracles<F>, AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::FifthRound");
 
+        // println!("  CPU delta_a = {:?}", verifier_message.delta_a);
+        // println!("  CPU delta_b = {:?}", verifier_message.delta_b);
+        // println!("  CPU delta_c = {:?}", verifier_message.delta_c);
+
         let lhs_sum: DensePolynomial<F> = cfg_reduce!(
             cfg_par_bridge!(verifier_message.into_iter().zip_eq(state.lhs_polys_into_iter())).map(
                 |(delta, mut lhs)| {
@@ -62,6 +66,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 a
             }
         );
+
+        // println!("  CPU h_2.degree() = {}", lhs_sum.degree());
+        // if lhs_sum.coeffs().len() >= 3 {
+        //     println!(
+        //         "  CPU h_2.coeffs[0..3] = [{:?}, {:?}, {:?}]",
+        //         lhs_sum.coeffs()[0],
+        //         lhs_sum.coeffs()[1],
+        //         lhs_sum.coeffs()[2]
+        //     );
+        // }
+
         let h_2 = LabeledPolynomial::new("h_2", lhs_sum, None, None);
         let oracles = prover::FifthOracles { h_2 };
         assert!(oracles.matches_info(&Self::fifth_round_polynomial_info()));
