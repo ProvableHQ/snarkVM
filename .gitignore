@@ -23,3 +23,5 @@ artifacts
 !.claude/CLAUDE.md
 !.claude/.gitignore
 !.claude/skills/
+!.claude/commands/
+algorithms/src/snark/varuna/ahp/prover/cuVaruna/
