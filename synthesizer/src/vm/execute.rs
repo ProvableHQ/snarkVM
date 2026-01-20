@@ -641,21 +641,39 @@ finalize test:
         // Prepare the VM and records.
         let (vm, records) = prepare_vm(rng).unwrap();
 
-        // Fetch the unspent record.
-        let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
+        // Get two different records from the genesis block.
+        let mut records_iter = records.values();
+        let record1 = records_iter.next().unwrap().decrypt(&caller_view_key).unwrap();
+        let record2 = records_iter.next().unwrap().decrypt(&caller_view_key).unwrap();
 
-        // Prepare the inputs.
-        let inputs = [
-            Value::<CurrentNetwork>::Record(record),
-            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
-            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
-        ];
+        fn transfer_private(
+            vm: &VM<CurrentNetwork, LedgerType>,
+            caller_private_key: &PrivateKey<CurrentNetwork>,
+            address: &Address<CurrentNetwork>,
+            record: Record<CurrentNetwork, Plaintext<CurrentNetwork>>,
+            rng: &mut TestRng,
+        ) -> bool {
+            let inputs = [
+                Value::<CurrentNetwork>::Record(record),
+                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+            ];
+            let authorization =
+                vm.authorize(&caller_private_key, "credits.aleo", "transfer_private", inputs, rng).unwrap();
+            let transaction = vm.execute_authorization(authorization, None, None, rng).unwrap();
+            assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+            // Verify the execution proof (without fee validation).
+            if let Transaction::Execute(_, _, execution, _) = &transaction {
+                vm.process()
+                    .read()
+                    .verify_execution(ConsensusVersion::V4, VarunaVersion::V2, InclusionVersion::V0, execution)
+                    .unwrap();
+            }
+            true
+        }
 
-        let authorization = vm.authorize(&caller_private_key, "credits.aleo", "transfer_private", inputs, rng).unwrap();
-        let transaction = vm.execute_authorization(authorization, None, None, rng).unwrap();
-
-        // Verify the transaction succeeded.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+        assert!(transfer_private(&vm, &caller_private_key, &address, record1, rng));
+        assert!(transfer_private(&vm, &caller_private_key, &address, record2, rng));
     }
 
     #[test]

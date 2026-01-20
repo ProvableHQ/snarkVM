@@ -638,10 +638,13 @@ where
 
         println!("CPU fifth_commitments: {:?}", fifth_commitments);
         println!("========== CPU FIFTH ROUND END ==========\n");
-        todo!("TESTING");
 
         let verifier_state = AHPForR1CS::<_, SM>::verifier_fifth_round(verifier_state, &mut sponge)?;
         // --------------------------------------------------------------------
+
+        // --------------------------------------------------------------------
+        // Construct proof
+        println!("\n========== CPU PROOF CONSTRUCTION START ==========");
 
         // Gather prover polynomials in one vector.
         let polynomials: Vec<_> = index_a_polys
@@ -727,9 +730,16 @@ where
                 evaluations.insert(label, evaluation);
             }
         }
+        end_timer!(eval_time);
+
+        // Debug: Print evaluations for comparison with CUDA path
+        println!("  CPU evaluations (first 5):");
+        for (i, (label, eval)) in evaluations.iter().take(5).enumerate() {
+            println!("    [{}] {}: {:?}", i, label, eval);
+        }
+        println!("  CPU total evaluations: {}", evaluations.len());
 
         let evaluations = proof::Evaluations::from_map(&evaluations, batch_sizes.clone());
-        end_timer!(eval_time);
 
         sponge.absorb_nonnative_field_elements(evaluations.to_field_elements());
 
@@ -754,7 +764,10 @@ where
         proof.check_batch_sizes()?;
         ensure!(proof.pc_proof.is_hiding() == SM::ZK);
 
+        println!("========== CPU PROOF CONSTRUCTION END ==========\n");
+
         end_timer!(prover_time);
+
         Ok(proof)
     }
 

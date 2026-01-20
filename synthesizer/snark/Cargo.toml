@@ -27,6 +27,7 @@ edition = "2024"
 default = [ ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 cudaprover = [ "snarkvm-algorithms/cuda" ]
+cuvaruna = [ "snarkvm-algorithms/cuda" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 serial = [ "snarkvm-console/serial", "snarkvm-algorithms/serial" ]
 wasm = [ "snarkvm-console/wasm" ]

@@ -454,6 +454,9 @@ version = "1.0.1"
 default-features=false
 version = "1.0.1"
 
+[workspace.dependencies.nvtx]
+version = "1.3"
+
 [workspace.dependencies.anyhow]
 version = "1.0.73"
 features = ["backtrace"]
