@@ -25,14 +25,18 @@ impl<N: Network> FromBytes for Rejected<N> {
                 let program_owner = ProgramOwner::read_le(&mut reader)?;
                 // Read the deployment.
                 let deployment = Deployment::read_le(&mut reader)?;
+                // Read the rejection reason.
+                let rejection_reason = RejectionReason::try_from(u8::read_le(&mut reader)?).map_err(error)?;
                 // Return the rejected deployment.
-                Ok(Self::new_deployment(program_owner, deployment))
+                Ok(Self::new_deployment(program_owner, deployment, rejection_reason))
             }
             1 => {
                 // Read the execution.
                 let execution = Execution::read_le(&mut reader)?;
+                // Read the rejection reason.
+                let rejection_reason = RejectionReason::try_from(u8::read_le(&mut reader)?).map_err(error)?;
                 // Return the rejected execution.
-                Ok(Self::new_execution(execution))
+                Ok(Self::new_execution(execution, rejection_reason))
             }
             2.. => Err(error(format!("Failed to decode rejected transaction variant {variant}"))),
         }
@@ -43,19 +47,23 @@ impl<N: Network> ToBytes for Rejected<N> {
     /// Writes the rejected transaction to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         match self {
-            Self::Deployment(program_owner, deployment) => {
+            Self::Deployment(program_owner, deployment, rejection_reason) => {
                 // Write the variant.
                 0u8.write_le(&mut writer)?;
                 // Write the program owner.
                 program_owner.write_le(&mut writer)?;
                 // Write the deployment.
-                deployment.write_le(&mut writer)
+                deployment.write_le(&mut writer)?;
+                // Write the rejection reason.
+                (*rejection_reason as u8).write_le(&mut writer)
             }
-            Self::Execution(execution) => {
+            Self::Execution(execution, rejection_reason) => {
                 // Write the variant.
                 1u8.write_le(&mut writer)?;
                 // Write the execution.
-                execution.write_le(&mut writer)
+                execution.write_le(&mut writer)?;
+                // Write the rejection reason.
+                (*rejection_reason as u8).write_le(&mut writer)
             }
         }
     }

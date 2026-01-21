@@ -388,7 +388,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Define the closure for processing a rejected deployment.
                         let process_rejected_deployment =
                             |fee: &Fee<N>,
-                             deployment: Deployment<N>|
+                             deployment: Deployment<N>,
+                             reason: RejectionReason|
                              -> Result<Result<ConfirmedTransaction<N>, String>> {
                                 process
                                     .finalize_fee(state, store, fee)
@@ -396,7 +397,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
                                     })
                                     .map(|(fee_tx, finalize)| {
-                                        let rejected = Rejected::new_deployment(*program_owner, deployment);
+                                        let rejected = Rejected::new_deployment(*program_owner, deployment, reason);
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
                                             .map_err(|e| e.to_string())
                                     })
@@ -405,7 +406,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Check if the program has already been deployed in this block.
                         match deployments.contains(deployment.program_id()) {
                             // If the program has already been deployed, construct the rejected deploy transaction.
-                            true => match process_rejected_deployment(fee, *deployment.clone()) {
+                            true => match process_rejected_deployment(
+                                fee,
+                                *deployment.clone(),
+                                RejectionReason::AlreadyDeployedInTheBlock,
+                            ) {
                                 Ok(result) => result,
                                 Err(error) => {
                                     // Note: On failure, skip this transaction, and continue speculation.
@@ -428,7 +433,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 // Construct the rejected deploy transaction.
                                 Err(error) => {
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
-                                    match process_rejected_deployment(fee, *deployment.clone()) {
+                                    match process_rejected_deployment(
+                                        fee,
+                                        *deployment.clone(),
+                                        RejectionReason::FailedToFinalize,
+                                    ) {
                                         Ok(result) => result,
                                         Err(error) => {
                                             // Note: On failure, skip this transaction, and continue speculation.
@@ -466,7 +475,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         }) {
                                             Ok((fee_tx, finalize)) => {
                                                 // Construct the rejected execution.
-                                                let rejected = Rejected::new_execution(*execution.clone());
+                                                let rejected = Rejected::new_execution(
+                                                    *execution.clone(),
+                                                    RejectionReason::FailedToFinalize,
+                                                );
                                                 // Construct the rejected execute transaction.
                                                 ConfirmedTransaction::rejected_execute(
                                                     counter, fee_tx, rejected, finalize,
@@ -1769,7 +1781,7 @@ finalize transfer_public:
             Transaction::Execute(_, _, execution, fee) => ConfirmedTransaction::RejectedExecute(
                 index,
                 Transaction::from_fee(fee.clone().unwrap()).unwrap(),
-                Rejected::new_execution(*execution.clone()),
+                Rejected::new_execution(*execution.clone(), RejectionReason::FailedToFinalize),
                 finalize.to_vec(),
             ),
             _ => panic!("only reject execution transactions"),
@@ -2473,7 +2485,7 @@ function ped_hash:
                 let expected_confirmed_transaction = ConfirmedTransaction::RejectedExecute(
                     0,
                     fee_transaction,
-                    Rejected::new_execution(*execution),
+                    Rejected::new_execution(*execution, RejectionReason::FailedToFinalize),
                     vec![],
                 );
 

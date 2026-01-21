@@ -580,6 +580,10 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     pub fn storage_mode(&self) -> &StorageMode {
         self.storage.storage_mode()
     }
+
+    pub fn rejection_reason_map(&self) -> &P::RejectionReasonMap {
+        self.storage.rejection_reason_map()
+    }
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {

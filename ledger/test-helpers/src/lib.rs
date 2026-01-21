@@ -34,6 +34,7 @@ use snarkvm_ledger_block::{
     Output,
     Ratifications,
     Rejected,
+    RejectionReason,
     Transaction,
     Transactions,
     Transition,
@@ -250,7 +251,7 @@ pub fn sample_rejected_deployment(
     let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
     // Return the rejected deployment.
-    Rejected::new_deployment(program_owner, deployment)
+    Rejected::new_deployment(program_owner, deployment, RejectionReason::FailedToFinalize)
 }
 
 /******************************************* Execution ********************************************/
@@ -278,7 +279,7 @@ pub fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rej
     };
 
     // Return the rejected execution.
-    Rejected::new_execution(*execution)
+    Rejected::new_execution(*execution, RejectionReason::FailedToFinalize)
 }
 
 /********************************************** Fee ***********************************************/

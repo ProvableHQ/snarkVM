@@ -25,19 +25,23 @@ use serde::{Deserialize, Serialize};
 /// A wrapper around the rejected deployment or execution.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Rejected<N: Network> {
-    Deployment(ProgramOwner<N>, Box<Deployment<N>>),
-    Execution(Box<Execution<N>>),
+    Deployment(ProgramOwner<N>, Box<Deployment<N>>, RejectionReason),
+    Execution(Box<Execution<N>>, RejectionReason),
 }
 
 impl<N: Network> Rejected<N> {
     /// Initializes a rejected deployment.
-    pub fn new_deployment(program_owner: ProgramOwner<N>, deployment: Deployment<N>) -> Self {
-        Self::Deployment(program_owner, Box::new(deployment))
+    pub fn new_deployment(
+        program_owner: ProgramOwner<N>,
+        deployment: Deployment<N>,
+        rejection_reason: RejectionReason,
+    ) -> Self {
+        Self::Deployment(program_owner, Box::new(deployment), rejection_reason)
     }
 
     /// Initializes a rejected execution.
-    pub fn new_execution(execution: Execution<N>) -> Self {
-        Self::Execution(Box::new(execution))
+    pub fn new_execution(execution: Execution<N>, rejection_reason: RejectionReason) -> Self {
+        Self::Execution(Box::new(execution), rejection_reason)
     }
 
     /// Returns true if the rejected transaction is a deployment.
@@ -53,32 +57,32 @@ impl<N: Network> Rejected<N> {
     /// Returns the program owner of the rejected deployment.
     pub fn program_owner(&self) -> Option<&ProgramOwner<N>> {
         match self {
-            Self::Deployment(program_owner, _) => Some(program_owner),
-            Self::Execution(_) => None,
+            Self::Deployment(program_owner, ..) => Some(program_owner),
+            Self::Execution(..) => None,
         }
     }
 
     /// Returns the rejected deployment.
     pub fn deployment(&self) -> Option<&Deployment<N>> {
         match self {
-            Self::Deployment(_, deployment) => Some(deployment),
-            Self::Execution(_) => None,
+            Self::Deployment(_, deployment, ..) => Some(deployment),
+            Self::Execution(..) => None,
         }
     }
 
     /// Returns the rejected execution.
     pub fn execution(&self) -> Option<&Execution<N>> {
         match self {
-            Self::Deployment(_, _) => None,
-            Self::Execution(execution) => Some(execution),
+            Self::Deployment(..) => None,
+            Self::Execution(execution, ..) => Some(execution),
         }
     }
 
     /// Returns the rejected ID.
     pub fn to_id(&self) -> Result<Field<N>> {
         match self {
-            Self::Deployment(_, deployment) => deployment.to_deployment_id(),
-            Self::Execution(execution) => execution.to_execution_id(),
+            Self::Deployment(_, deployment, ..) => deployment.to_deployment_id(),
+            Self::Execution(execution, ..) => execution.to_execution_id(),
         }
     }
 
@@ -88,20 +92,32 @@ impl<N: Network> Rejected<N> {
     pub fn to_unconfirmed_id(&self, fee: &Option<Fee<N>>) -> Result<Field<N>> {
         // Compute the deployment or execution tree.
         let tree = match self {
-            Self::Deployment(_, deployment) => Transaction::deployment_tree(deployment)?,
-            Self::Execution(execution) => Transaction::execution_tree(execution)?,
+            Self::Deployment(_, deployment, ..) => Transaction::deployment_tree(deployment)?,
+            Self::Execution(execution, ..) => Transaction::execution_tree(execution)?,
         };
         // Construct the transaction tree and return the unconfirmed transaction ID.
         Ok(*Transaction::transaction_tree(tree, fee.as_ref())?.root())
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum RejectionReason {
-    AlreadyDeployedInThisBlock,
+    AlreadyDeployedInTheBlock = 0,
     FailedToFinalize,
+}
+
+impl TryFrom<u8> for RejectionReason {
+    type Error = String;
+
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
+        match val {
+            0 => Ok(Self::AlreadyDeployedInTheBlock),
+            1 => Ok(Self::FailedToFinalize),
+            _ => Err("Invalid RejectionReason variant: {val}".into()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -135,7 +151,7 @@ pub mod test_helpers {
         let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
         // Return the rejected deployment.
-        Rejected::new_deployment(program_owner, deployment)
+        Rejected::new_deployment(program_owner, deployment, RejectionReason::FailedToFinalize)
     }
 
     /// Samples a rejected execution.
@@ -148,7 +164,7 @@ pub mod test_helpers {
             };
 
         // Return the rejected execution.
-        Rejected::new_execution(*execution)
+        Rejected::new_execution(*execution, RejectionReason::FailedToFinalize)
     }
 
     /// Sample a list of randomly rejected transactions.

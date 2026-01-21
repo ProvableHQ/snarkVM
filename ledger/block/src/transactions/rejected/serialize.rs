@@ -20,17 +20,19 @@ impl<N: Network> Serialize for Rejected<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => match self {
-                Self::Deployment(program_owner, deployment) => {
-                    let mut object = serializer.serialize_struct("Rejected", 3)?;
+                Self::Deployment(program_owner, deployment, rejection_reason) => {
+                    let mut object = serializer.serialize_struct("Rejected", 4)?;
                     object.serialize_field("type", "deployment")?;
                     object.serialize_field("program_owner", program_owner)?;
                     object.serialize_field("deployment", deployment)?;
+                    object.serialize_field("rejection_reason", rejection_reason)?;
                     object.end()
                 }
-                Self::Execution(execution) => {
-                    let mut object = serializer.serialize_struct("Rejected", 2)?;
+                Self::Execution(execution, rejection_reason) => {
+                    let mut object = serializer.serialize_struct("Rejected", 3)?;
                     object.serialize_field("type", "execution")?;
                     object.serialize_field("execution", execution)?;
+                    object.serialize_field("rejection_reason", rejection_reason)?;
                     object.end()
                 }
             },
@@ -59,14 +61,20 @@ impl<'de, N: Network> Deserialize<'de> for Rejected<N> {
                         // Parse the deployment.
                         let deployment: Deployment<N> =
                             DeserializeExt::take_from_value::<D>(&mut object, "deployment")?;
+                        // Parse the rejection reason.
+                        let rejection_reason: RejectionReason =
+                            DeserializeExt::take_from_value::<D>(&mut object, "rejection_reason")?;
                         // Return the rejected deployment.
-                        Ok(Self::new_deployment(program_owner, deployment))
+                        Ok(Self::new_deployment(program_owner, deployment, rejection_reason))
                     }
                     Some("execution") => {
                         // Parse the execution.
                         let execution: Execution<N> = DeserializeExt::take_from_value::<D>(&mut object, "execution")?;
+                        // Parse the rejection reason.
+                        let rejection_reason: RejectionReason =
+                            DeserializeExt::take_from_value::<D>(&mut object, "rejection_reason")?;
                         // Return the rejected execution.
-                        Ok(Self::new_execution(execution))
+                        Ok(Self::new_execution(execution, rejection_reason))
                     }
                     _ => Err(de::Error::custom("Invalid rejected transaction type")),
                 }
