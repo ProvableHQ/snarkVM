@@ -388,8 +388,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Define the closure for processing a rejected deployment.
                         let process_rejected_deployment =
                             |fee: &Fee<N>,
-                             deployment: Deployment<N>,
-                             rejection_reason: RejectionReason|
+                             deployment: Deployment<N>|
                              -> Result<Result<ConfirmedTransaction<N>, String>> {
                                 process
                                     .finalize_fee(state, store, fee)
@@ -399,13 +398,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     .map(|(fee_tx, finalize)| {
                                         let rejected = Rejected::new_deployment(*program_owner, deployment);
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
-                                            .and_then(|confirmed_tx| {
-                                                // Store the rejection reason.
-                                                store
-                                                    .insert_rejection_reason(*confirmed_tx.id(), rejection_reason)
-                                                    .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
-                                                Ok(confirmed_tx)
-                                            })
                                             .map_err(|e| e.to_string())
                                     })
                             };
@@ -413,20 +405,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Check if the program has already been deployed in this block.
                         match deployments.contains(deployment.program_id()) {
                             // If the program has already been deployed, construct the rejected deploy transaction.
-                            true => {
-                                let rejection_reason = RejectionReason::AlreadyDeployedInThisBlock;
-                                match process_rejected_deployment(fee, *deployment.clone(), rejection_reason) {
-                                    Ok(result) => result,
-                                    Err(error) => {
-                                        // Note: On failure, skip this transaction, and continue speculation.
-                                        dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
-                                        // Store the aborted transaction.
-                                        aborted.push((transaction.clone(), error.to_string()));
-                                        // Continue to the next transaction.
-                                        continue 'outer;
-                                    }
+                            true => match process_rejected_deployment(fee, *deployment.clone()) {
+                                Ok(result) => result,
+                                Err(error) => {
+                                    // Note: On failure, skip this transaction, and continue speculation.
+                                    dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                    // Store the aborted transaction.
+                                    aborted.push((transaction.clone(), error.to_string()));
+                                    // Continue to the next transaction.
+                                    continue 'outer;
                                 }
-                            }
+                            },
                             // If the program has not yet been deployed, attempt to deploy it.
                             false => match process.finalize_deployment(state, store, deployment, fee) {
                                 // Construct the accepted deploy transaction.
@@ -439,8 +428,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 // Construct the rejected deploy transaction.
                                 Err(error) => {
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
-                                    let rejection_reason = RejectionReason::FailedToFinalize;
-                                    match process_rejected_deployment(fee, *deployment.clone(), rejection_reason) {
+                                    match process_rejected_deployment(fee, *deployment.clone()) {
                                         Ok(result) => result,
                                         Err(error) => {
                                             // Note: On failure, skip this transaction, and continue speculation.
@@ -470,7 +458,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             // Construct the rejected execute transaction.
                             Err(error) => {
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
-                                let rejection_reason = RejectionReason::FailedToFinalize;
                                 match fee {
                                     // Finalize the fee, to ensure it is valid.
                                     Some(fee) => {
@@ -484,15 +471,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                                 ConfirmedTransaction::rejected_execute(
                                                     counter, fee_tx, rejected, finalize,
                                                 )
-                                                .and_then(|confirmed_tx| {
-                                                    // Store the rejection reason.
-                                                    store
-                                                        .insert_rejection_reason(*confirmed_tx.id(), rejection_reason)
-                                                        .map_err(|e| {
-                                                            anyhow!("Failed to store rejection reason: {e}")
-                                                        })?;
-                                                    Ok(confirmed_tx)
-                                                })
                                                 .map_err(|e| e.to_string())
                                             }
                                             Err(error) => {
@@ -761,7 +739,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         }
                         Ok(())
                     }
-                    ConfirmedTransaction::RejectedDeploy(_, Transaction::Fee(_, fee), rejected, finalize) => {
+                    ConfirmedTransaction::RejectedDeploy(_, Transaction::Fee(fee_tx_id, fee), rejected, finalize) => {
                         // Extract the rejected deployment.
                         let Some(deployment) = rejected.deployment() else {
                             // Note: This will abort the entire atomic batch.
@@ -792,6 +770,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         "Mismatch in finalize operations for a rejected deploy - (found: {finalize_operations:?}, expected: {finalize:?})"
                                     ));
                                 }
+
+                                store.insert_rejection_reason(**fee_tx_id, RejectionReason::FailedToFinalize).map_err(
+                                    |_| "Couldn't store the reason behind a rejected deployment".to_string(),
+                                )?;
                             }
                             // Note: This will abort the entire atomic batch.
                             Err(_e) => {
@@ -800,7 +782,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         }
                         Ok(())
                     }
-                    ConfirmedTransaction::RejectedExecute(_, Transaction::Fee(_, fee), rejected, finalize) => {
+                    ConfirmedTransaction::RejectedExecute(_, Transaction::Fee(fee_tx_id, fee), rejected, finalize) => {
                         // Extract the rejected execution.
                         let Some(execution) = rejected.execution() else {
                             // Note: This will abort the entire atomic batch.
@@ -831,6 +813,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         "Mismatch in finalize operations for a rejected execute - (found: {finalize_operations:?}, expected: {finalize:?})"
                                     ));
                                 }
+
+                                store
+                                    .insert_rejection_reason(**fee_tx_id, RejectionReason::FailedToFinalize)
+                                    .map_err(|_| "Couldn't store the reason behind a rejected execution".to_string())?;
                             }
                             // Note: This will abort the entire atomic batch.
                             Err(_e) => {
@@ -3654,7 +3640,6 @@ finalize compute:
 
         // Sample a private key.
         let private_key = test_helpers::sample_genesis_private_key(rng);
-        let address = Address::try_from(&private_key).unwrap();
 
         // Initialize the vm.
         let vm = test_helpers::sample_vm_with_genesis_block(rng);
@@ -3733,8 +3718,10 @@ finalize compute:
         // Check that the rejection reason was stored.
         let tx_id = *rejected_transaction.id();
         let rejection_reason = vm.finalize_store().get_rejection_reason(&tx_id).unwrap();
-        assert!(rejection_reason.is_some(), "Rejection reason should be stored");
-        let reason_str = rejection_reason.unwrap();
-        assert!(reason_str.contains("Failed to finalize execution"), "Rejection reason should contain error message");
+        assert_eq!(
+            rejection_reason,
+            Some(RejectionReason::FailedToFinalize),
+            "Rejection reason should contain error message"
+        );
     }
 }

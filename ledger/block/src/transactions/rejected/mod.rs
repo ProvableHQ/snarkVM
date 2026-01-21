@@ -96,7 +96,7 @@ impl<N: Network> Rejected<N> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum RejectionReason {
