@@ -26,6 +26,7 @@ use console::{
     program::{Identifier, Plaintext, ProgramID, Value},
     types::Field,
 };
+use snarkvm_ledger_block::RejectionReason;
 use snarkvm_ledger_committee::Committee;
 
 use aleo_std_storage::StorageMode;
@@ -41,7 +42,7 @@ pub struct FinalizeDB<N: Network> {
     /// The key-value map.
     key_value_map: NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
     /// The rejection reason map.
-    rejection_reason_map: DataMap<Field<N>, String>,
+    rejection_reason_map: DataMap<Field<N>, RejectionReason>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -51,7 +52,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type CommitteeStorage = CommitteeDB<N>;
     type ProgramIDMap = DataMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
-    type RejectionReasonMap = DataMap<Field<N>, String>;
+    type RejectionReasonMap = DataMap<Field<N>, RejectionReason>;
 
     /// Initializes the finalize storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {

@@ -80,6 +80,9 @@ features = [ "serde" ]
 [dependencies.rayon]
 workspace = true
 
+[dependencies.serde]
+workspace = true
+
 [dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]

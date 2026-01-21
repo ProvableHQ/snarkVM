@@ -20,6 +20,7 @@ mod string;
 use super::*;
 
 use crate::{Deployment, Execution, Fee};
+use serde::{Deserialize, Serialize};
 
 /// A wrapper around the rejected deployment or execution.
 #[derive(Clone, PartialEq, Eq)]
@@ -93,6 +94,14 @@ impl<N: Network> Rejected<N> {
         // Construct the transaction tree and return the unconfirmed transaction ID.
         Ok(*Transaction::transaction_tree(tree, fee.as_ref())?.root())
     }
+}
+
+#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[repr(u8)]
+#[non_exhaustive]
+pub enum RejectionReason {
+    AlreadyDeployedInThisBlock,
+    FailedToFinalize,
 }
 
 #[cfg(test)]

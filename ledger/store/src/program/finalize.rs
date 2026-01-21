@@ -23,6 +23,7 @@ use console::{
     program::{Identifier, Plaintext, ProgramID, Value},
     types::Field,
 };
+use snarkvm_ledger_block::RejectionReason;
 use snarkvm_synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
 
 use aleo_std_storage::StorageMode;
@@ -77,7 +78,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// The mapping of `(program ID, mapping name)` to `[(key, value)]`.
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     /// The mapping of `transaction ID` to `rejection reason`.
-    type RejectionReasonMap: for<'a> Map<'a, Field<N>, String>;
+    type RejectionReasonMap: for<'a> Map<'a, Field<N>, RejectionReason>;
 
     /// Initializes the program state storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -765,12 +766,12 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Stores the rejection reason for the given transaction ID.
-    pub fn insert_rejection_reason(&self, transaction_id: Field<N>, reason: String) -> Result<()> {
+    pub fn insert_rejection_reason(&self, transaction_id: Field<N>, reason: RejectionReason) -> Result<()> {
         self.storage.rejection_reason_map().insert(transaction_id, reason)
     }
 
     /// Returns the rejection reason for the given transaction ID.
-    pub fn get_rejection_reason(&self, transaction_id: &Field<N>) -> Result<Option<String>> {
+    pub fn get_rejection_reason(&self, transaction_id: &Field<N>) -> Result<Option<RejectionReason>> {
         match self.storage.rejection_reason_map().get_speculative(transaction_id)? {
             Some(reason) => Ok(Some(reason.into_owned())),
             None => Ok(None),
