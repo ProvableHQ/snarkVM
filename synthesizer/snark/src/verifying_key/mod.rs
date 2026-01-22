@@ -103,10 +103,20 @@ impl<N: Network> VerifyingKey<N> {
                     let _elapsed = timer.elapsed().as_millis();
                     dev_println!(" • Verified '{_locator}': {is_valid} (in {_elapsed} ms)");
                 }
-                if is_valid { Ok(()) } else { bail!("'verify_batch' failed") }
+                if is_valid {
+                    Ok(())
+                } else {
+                    eprintln!("verify_batch returned false for locator: {_locator}");
+                    eprintln!("  varuna_version: {:?}", varuna_version);
+                    eprintln!("  num_keys: {}", keys_to_inputs.len());
+                    for (i, (vk, inputs)) in keys_to_inputs.iter().enumerate() {
+                        eprintln!("  key[{}]: circuit_id={}, num_inputs={}", i, vk.id, inputs.len());
+                    }
+                    bail!("'verify_batch' failed for locator: {_locator}")
+                }
             }
             Err(error) => {
-                dev_println!(" • Verifier failed on network {}: {error}", N::NAME);
+                eprintln!(" • Verifier failed on network {}: {error}", N::NAME);
                 bail!(error)
             }
         }

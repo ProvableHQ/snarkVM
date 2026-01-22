@@ -217,6 +217,25 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 {
                     let matrix_transpose = &matrix_transposes_i[label];
                     let combiner = circuit_combiner * instance_combiner * matrix_combiner;
+                    // Full multiplier used in apply_randomized_selector
+                    let multiplier = combiner * variable_domain.size_as_field_element * max_variable_domain.size_inv;
+
+                    // // DEBUG: Print z_m_at_alpha input and multiplier
+                    // if let Some(ref poly) = z_m_at_alpha {
+                    //     println!(
+                    //         "CPU matrix {}: z_m_at_alpha coeffs[0..5] = {:?}",
+                    //         label,
+                    //         &poly.coeffs[..5.min(poly.coeffs.len())]
+                    //     );
+                    //     println!(
+                    //         "CPU matrix {}: multiplier = {:?} (var={}, max={})",
+                    //         label,
+                    //         multiplier,
+                    //         variable_domain.size(),
+                    //         max_variable_domain.size()
+                    //     );
+                    // }
+
                     job_pool.add_job(move || match varuna_version {
                         VarunaVersion::V1 => {
                             let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness(

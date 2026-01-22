@@ -73,8 +73,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let h_0 = Self::calculate_rowcheck_witness(&mut state, first_round_batch_combiners)?;
 
         // println!("CPU Second Round: h_0.degree()={}", h_0.degree());
-        // println!("CPU Second Round: h_0.coeffs[0..5]={:?}", &h_0.coeffs[..h_0.coeffs.len().min(5)]);
         // println!("CPU Second Round: h_0.coeffs.len()={}", h_0.coeffs.len());
+        // if !h_0.coeffs.is_empty() {
+        //     println!("CPU Second Round: h_0.coeffs[0..5]={:?}", &h_0.coeffs[..h_0.coeffs.len().min(5)]);
+        //     // Print last few coefficients too
+        //     let len = h_0.coeffs.len();
+        //     if len > 5 {
+        //         println!("CPU Second Round: h_0.coeffs[last 5]={:?}", &h_0.coeffs[len.saturating_sub(5)..]);
+        //     }
+        // }
 
         assert!(h_0.degree() <= 2 * max_constraint_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 
@@ -99,7 +106,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let z_b = circuit_specific_state.z_b.take().unwrap();
             let z_c = circuit_specific_state.z_c.take().unwrap();
 
-            // // DEBUG: Print z_a, z_b, z_c inputs
+            // DEBUG: Print z_a, z_b, z_c inputs
             // println!("CPU calculate_rowcheck_witness: circuit_id={}", circuit.id);
             // println!("  z_a.len()={}, z_b.len()={}, z_c.len()={}", z_a.len(), z_b.len(), z_c.len());
             // if !z_a.is_empty() && !z_a[0].is_empty() {

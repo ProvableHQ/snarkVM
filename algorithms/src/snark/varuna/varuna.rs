@@ -419,6 +419,31 @@ where
         // --------------------------------------------------------------------
         // First round
         println!("\n========== CPU FIRST ROUND START ==========");
+        // println!("CPU First Round Inputs:");
+        // println!("  total_instances: {}", prover_state.total_instances);
+        // println!("  max_constraint_domain.size(): {}", prover_state.max_constraint_domain.size());
+        // println!("  max_variable_domain.size(): {}", prover_state.max_variable_domain.size());
+        // println!("  max_non_zero_domain.size(): {}", prover_state.max_non_zero_domain.size());
+        // for (circuit, css) in prover_state.circuit_specific_states.iter() {
+        //     println!("  Circuit {}:", circuit.id);
+        //     println!("    batch_size={}", css.batch_size);
+        //     println!("    variable_domain.size(): {}", css.variable_domain_size());
+        //     println!("    input_domain.size(): {}", css.input_domain_size());
+        //     let private_vars = css.private_variables_ref();
+        //     println!("    private_variables.len(): {}", private_vars.len());
+        //     for (j, pv) in private_vars.iter().enumerate() {
+        //         let sample: Vec<_> = pv.iter().take(5).collect();
+        //         println!("    private_variables[{}].len(): {}", j, pv.len());
+        //         println!("    private_variables[{}][0..min(5,len)]: {:?}", j, sample);
+        //     }
+        //     let x_polys = css.x_polys_ref();
+        //     println!("    x_polys.len(): {}", x_polys.len());
+        //     for (j, xp) in x_polys.iter().enumerate() {
+        //         let coeffs: Vec<_> = xp.coeffs.iter().take(5).collect();
+        //         println!("    x_polys[{}].degree(): {}", j, xp.degree());
+        //         println!("    x_polys[{}].coeffs[0..min(5,len)]: {:?}", j, coeffs);
+        //     }
+        // }
 
         let prover_state = AHPForR1CS::<_, SM>::prover_first_round(prover_state, zk_rng)?;
 
@@ -539,17 +564,12 @@ where
         // println!("  g_1.degree() = {}", third_oracles.g_1.degree());
         // println!("  h_1.degree() = {}", third_oracles.h_1.degree());
 
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // !!!                    DEBUGGING ONLY - REMOVE ME                     !!!
-        // !!!  Using fixed RNG seed for third round commitment to match CUDA    !!!
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        let mut fixed_rng = TestRng::fixed(12345);
         let third_round_comm_time = start_timer!(|| "Committing to third round polys");
         let (third_commitments, third_commitment_randomnesses) = SonicKZG10::<E, FS>::commit(
             universal_prover,
             &committer_key,
             third_oracles.iter().map(Into::into),
-            SM::ZK.then_some(&mut fixed_rng),
+            SM::ZK.then_some(zk_rng),
         )?;
         end_timer!(third_round_comm_time);
 
@@ -738,6 +758,36 @@ where
             println!("    [{}] {}: {:?}", i, label, eval);
         }
         println!("  CPU total evaluations: {}", evaluations.len());
+
+        // Debug: Print commitments for comparison
+        println!("  CPU Commitments:");
+        println!("    h_0: {:?}", commitments.h_0);
+        println!("    g_1: {:?}", commitments.g_1);
+        println!("    h_1: {:?}", commitments.h_1);
+        println!("    h_2: {:?}", commitments.h_2);
+        println!("    witness_commitments.len(): {}", commitments.witness_commitments.len());
+        if !commitments.witness_commitments.is_empty() {
+            println!("    witness_commitments[0].w: {:?}", commitments.witness_commitments[0].w);
+        }
+
+        // Debug: Print prover messages
+        println!("  CPU Prover Third Message Sums:");
+        for (i, circuit_sums) in prover_third_message.sums.iter().enumerate() {
+            for (j, sums) in circuit_sums.iter().enumerate() {
+                println!("    Circuit {} Instance {}: sum_a={:?}", i, j, sums.sum_a);
+            }
+        }
+        println!("  CPU Prover Fourth Message Sums:");
+        for (i, sums) in prover_fourth_message.sums.iter().enumerate() {
+            println!("    [{}]: sum_a={:?}", i, sums.sum_a);
+        }
+
+        // Debug: Print key polynomial samples
+        println!("  CPU Key Polynomials (degree, first 3 coeffs):");
+        for (i, poly) in polynomials.iter().take(10).enumerate() {
+            let coeffs_sample: Vec<_> = poly.polynomial().coeffs().take(3).collect();
+            println!("    [{}] {}: deg={}, coeffs={:?}", i, poly.label(), poly.degree(), coeffs_sample);
+        }
 
         let evaluations = proof::Evaluations::from_map(&evaluations, batch_sizes.clone());
 
@@ -1146,7 +1196,15 @@ where
         end_timer!(pc_time);
 
         if !evaluations_are_correct {
+            dev_eprintln!("========== VERIFICATION FAILED ==========");
             dev_eprintln!("SonicKZG10::Check failed using final challenge gamma: {:?}", verifier_state.gamma);
+            dev_eprintln!("proof_has_correct_zk_mode: {}", proof_has_correct_zk_mode);
+            dev_eprintln!("Number of circuits: {}", keys_to_inputs.len());
+            dev_eprintln!("Batch sizes: {:?}", batch_sizes);
+            dev_eprintln!("Number of commitments: {}", commitments.len());
+            dev_eprintln!("Number of evaluations: {}", evaluations.len());
+            dev_eprintln!("Query set size: {}", query_set.to_set().len());
+            dev_eprintln!("=========================================");
         }
 
         end_timer!(verifier_time, || format!(

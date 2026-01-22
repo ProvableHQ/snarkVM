@@ -76,6 +76,28 @@ pub struct CircuitSpecificState<F: PrimeField> {
     pub(super) lhs_polynomials: Option<[DensePolynomial<F>; 3]>,
 }
 
+impl<F: PrimeField> CircuitSpecificState<F> {
+    /// Get reference to private_variables
+    pub fn private_variables_ref(&self) -> &[Vec<F>] {
+        &self.private_variables
+    }
+
+    /// Get reference to x_polys
+    pub fn x_polys_ref(&self) -> &[DensePolynomial<F>] {
+        &self.x_polys
+    }
+
+    /// Get variable domain size
+    pub fn variable_domain_size(&self) -> usize {
+        self.variable_domain.size()
+    }
+
+    /// Get input domain size
+    pub fn input_domain_size(&self) -> usize {
+        self.input_domain.size()
+    }
+}
+
 /// State for the AHP prover.
 pub struct State<'a, F: PrimeField, SM: SNARKMode> {
     /// The state for each circuit in the batch.
