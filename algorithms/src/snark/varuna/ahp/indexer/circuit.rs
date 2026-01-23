@@ -25,9 +25,11 @@ use crate::{
         AHPForR1CS,
         CircuitInfo,
         Matrix,
+        MatrixParametersAll,
         SNARKMode,
         ahp::matrices::MatrixEvals,
-        matrices::MatrixArithmetization,
+        generate_matrix_parameters,
+        matrices::{MatrixArithmetization, transpose},
     },
 };
 use anyhow::{Result, anyhow};
@@ -64,6 +66,8 @@ impl CircuitId {
 /// 2) `{a,b,c}` are the matrices defining the R1CS instance
 /// 3) `{a,b,c}_arith` are structs containing information about the arithmetized
 ///    matrices
+/// 4) `{a,b,c}_trans_parameters` are precomputed parameters for efficient GPU
+///    sparse matrix-vector multiplication
 #[derive(Debug)]
 pub struct Circuit<F: PrimeField, SM: SNARKMode> {
     /// Information about the indexed circuit.
@@ -80,6 +84,12 @@ pub struct Circuit<F: PrimeField, SM: SNARKMode> {
     pub a_arith: MatrixEvals<F>,
     pub b_arith: MatrixEvals<F>,
     pub c_arith: MatrixEvals<F>,
+
+    /// Precomputed transpose parameters for GPU sparse matrix-vector multiplication.
+    /// Columns are categorized into 4 buckets by density for different CUDA kernels.
+    pub a_trans_parameters: MatrixParametersAll<F>,
+    pub b_trans_parameters: MatrixParametersAll<F>,
+    pub c_trans_parameters: MatrixParametersAll<F>,
 
     pub fft_precomputation: FFTPrecomputation<F>,
     pub ifft_precomputation: IFFTPrecomputation<F>,
@@ -161,6 +171,8 @@ impl<F: PrimeField, SM: SNARKMode> Circuit<F, SM> {
 
 impl<F: PrimeField, SM: SNARKMode> CanonicalSerialize for Circuit<F, SM> {
     fn serialize_with_mode<W: Write>(&self, mut writer: W, compress: Compress) -> Result<(), SerializationError> {
+        // Note: *_trans_parameters are NOT serialized - they are computed on-the-fly
+        // during deserialization from the a, b, c matrices to maintain backward compatibility
         self.index_info.serialize_with_mode(&mut writer, compress)?;
         self.a.serialize_with_mode(&mut writer, compress)?;
         self.b.serialize_with_mode(&mut writer, compress)?;
@@ -220,10 +232,25 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
             non_zero_c_domain_size,
         )
         .ok_or(SerializationError::InvalidData)?;
-        let a = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
-        let b = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
-        let c = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
+        let a: Matrix<F> = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
+        let b: Matrix<F> = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
+        let c: Matrix<F> = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
         let id = Self::hash(&index_info, &a, &b, &c)?;
+
+        // Compute trans_parameters on-the-fly (not serialized for backward compatibility)
+        let variable_domain =
+            EvaluationDomain::<F>::new(index_info.num_public_and_private_variables).ok_or(SerializationError::InvalidData)?;
+        let input_domain =
+            EvaluationDomain::<F>::new(index_info.num_public_inputs).ok_or(SerializationError::InvalidData)?;
+
+        let a_trans = transpose(&a, &variable_domain, &input_domain).map_err(|_| SerializationError::InvalidData)?;
+        let b_trans = transpose(&b, &variable_domain, &input_domain).map_err(|_| SerializationError::InvalidData)?;
+        let c_trans = transpose(&c, &variable_domain, &input_domain).map_err(|_| SerializationError::InvalidData)?;
+
+        let a_trans_parameters = generate_matrix_parameters(&a_trans);
+        let b_trans_parameters = generate_matrix_parameters(&b_trans);
+        let c_trans_parameters = generate_matrix_parameters(&c_trans);
+
         Ok(Circuit {
             index_info,
             a,
@@ -232,6 +259,9 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
             a_arith: CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?,
             b_arith: CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?,
             c_arith: CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?,
+            a_trans_parameters,
+            b_trans_parameters,
+            c_trans_parameters,
             fft_precomputation,
             ifft_precomputation,
             _mode: PhantomData,

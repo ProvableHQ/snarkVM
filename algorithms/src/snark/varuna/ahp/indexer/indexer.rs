@@ -23,7 +23,7 @@ use crate::{
             AHPForR1CS,
             indexer::{Circuit, CircuitId, CircuitInfo, ConstraintSystem as IndexerConstraintSystem},
         },
-        matrices::{MatrixEvals, into_matrix_helper, matrix_evals},
+        matrices::{MatrixEvals, into_matrix_helper, matrix_evals, transpose},
         num_non_zero,
     },
 };
@@ -38,7 +38,7 @@ use std::collections::BTreeMap;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
-use super::Matrix;
+use super::{Matrix, MatrixParametersAll, generate_matrix_parameters};
 
 impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     /// Generate the index polynomials for this constraint system.
@@ -46,6 +46,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let IndexerState {
             constraint_domain,
             variable_domain,
+            input_domain,
 
             a,
             non_zero_a_domain,
@@ -75,6 +76,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         .ok_or(anyhow!("The polynomial degree is too large"))?;
         end_timer!(fft_precomp_time);
 
+        // Compute transpose parameters for GPU sparse matrix-vector multiplication
+        let trans_params_time = start_timer!(|| format!("Computing transpose parameters {id}"));
+        let a_trans = transpose(&a, &variable_domain, &input_domain)?;
+        let b_trans = transpose(&b, &variable_domain, &input_domain)?;
+        let c_trans = transpose(&c, &variable_domain, &input_domain)?;
+
+        let a_trans_parameters = generate_matrix_parameters(&a_trans);
+        let b_trans_parameters = generate_matrix_parameters(&b_trans);
+        let c_trans_parameters = generate_matrix_parameters(&c_trans);
+        end_timer!(trans_params_time);
+
         Ok(Circuit {
             index_info,
             a,
@@ -83,6 +95,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             a_arith,
             b_arith,
             c_arith,
+            a_trans_parameters,
+            b_trans_parameters,
+            c_trans_parameters,
             fft_precomputation,
             ifft_precomputation,
             id,
@@ -209,6 +224,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let result = Ok(IndexerState {
             constraint_domain,
             variable_domain,
+            input_domain,
 
             a,
             non_zero_a_domain,
@@ -268,6 +284,8 @@ pub(crate) struct IndexerState<F: PrimeField> {
     constraint_domain: EvaluationDomain<F>,
     // C_i in the Varuna spec
     variable_domain: EvaluationDomain<F>,
+    // C_i[x] in the Varuna spec (input/public domain)
+    input_domain: EvaluationDomain<F>,
 
     a: Matrix<F>,
     non_zero_a_domain: EvaluationDomain<F>,
