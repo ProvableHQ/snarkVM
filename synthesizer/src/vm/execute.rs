@@ -304,6 +304,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     use console::{
         account::{Address, ViewKey},
@@ -660,7 +661,10 @@ finalize test:
             ];
             let authorization =
                 vm.authorize(&caller_private_key, "credits.aleo", "transfer_private", inputs, rng).unwrap();
+            let now = Instant::now();
             let transaction = vm.execute_authorization(authorization, None, None, rng).unwrap();
+            let elapsed = now.elapsed();
+            println!("Execution time: {}ms", elapsed.as_millis());
             assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
             // Verify the execution proof (without fee validation).
             if let Transaction::Execute(_, _, execution, _) = &transaction {
