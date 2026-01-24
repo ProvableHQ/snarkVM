@@ -18,7 +18,7 @@ use crate::{
         EvaluationDomain,
         domain::{FFTPrecomputation, IFFTPrecomputation},
     },
-    polycommit::sonic_pc::{LCTerm, LabeledPolynomial, LinearCombination},
+    polycommit::sonic_pc::{LCTerm, LinearCombination},
     r1cs::SynthesisError,
     snark::varuna::{
         SNARKMode,
@@ -32,7 +32,7 @@ use crate::{
 use anyhow::{Result, anyhow, ensure};
 use snarkvm_fields::{Field, PrimeField};
 
-use core::{borrow::Borrow, marker::PhantomData};
+use core::marker::PhantomData;
 use itertools::Itertools;
 use std::{collections::BTreeMap, fmt::Write};
 
@@ -94,8 +94,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .ok_or(anyhow!("Could not find max_degree"))
     }
 
-    // TODO: what's the difference between these sizes and the degree bounds, if
-    // any?
+    // TODO: Correct and document this abstraction, intermediary polynomials may not
+    // require committing.
     pub fn commitment_degrees(num_constraints: usize, num_variables: usize, num_non_zero: usize) -> Result<Vec<usize>> {
         let zk_bound = Self::zk_bound().unwrap_or(0);
         let constraint_domain_size =
@@ -490,20 +490,37 @@ impl<F: PrimeField> EvaluationsProvider<F> for crate::polycommit::sonic_pc::Eval
     }
 }
 
-/// The `EvaluationsProvider` used by the prover
-impl<F, T> EvaluationsProvider<F> for Vec<T>
-where
-    F: PrimeField,
-    T: Borrow<LabeledPolynomial<F>> + core::fmt::Debug,
+/// The `EvaluationsProvider` used by the prover (monomial polynomials).
+impl<F: PrimeField> EvaluationsProvider<F> for Vec<crate::polycommit::sonic_pc::LabeledPolynomial<F>> {
+    fn get_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> Result<F> {
+        let mut eval = F::zero();
+        for (coeff, term) in lc.iter() {
+            let value = if let LCTerm::PolyLabel(label) = term {
+                self.iter()
+                    .find(|p| p.label() == label)
+                    .ok_or_else(|| AHPError::MissingEval(format!("Missing {} for {}", label, lc.label)))?
+                    .evaluate(point)
+            } else {
+                ensure!(term.is_one());
+                F::one()
+            };
+            eval += &(*coeff * value)
+        }
+        Ok(eval)
+    }
+}
+
+/// The `EvaluationsProvider` used by the prover (monomial or Lagrange basis).
+impl<F: PrimeField> EvaluationsProvider<F>
+    for Vec<crate::polycommit::sonic_pc::LabeledPolynomialWithBasis<'static, F>>
 {
     fn get_lc_eval(&self, lc: &LinearCombination<F>, point: F) -> Result<F> {
         let mut eval = F::zero();
         for (coeff, term) in lc.iter() {
             let value = if let LCTerm::PolyLabel(label) = term {
                 self.iter()
-                    .find(|p| (*p).borrow().label() == label)
+                    .find(|p| p.label() == label)
                     .ok_or_else(|| AHPError::MissingEval(format!("Missing {} for {}", label, lc.label)))?
-                    .borrow()
                     .evaluate(point)
             } else {
                 ensure!(term.is_one());

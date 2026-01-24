@@ -15,7 +15,7 @@
 
 use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, SparsePolynomial},
-    polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
+    polycommit::sonic_pc::{PolynomialInfo, PolynomialLabel},
     snark::varuna::{
         Circuit,
         CircuitId,
@@ -74,10 +74,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
             let v_domain = circuit_state.variable_domain;
             let i_domain = circuit_state.input_domain;
+            let lagrange_domain = state.lagrange_domain;
 
             for (j, (private_vars, x_poly)) in itertools::izip!(private_variables, x_polys).enumerate() {
                 let w_label = witness_label(circuit.id, "w", j);
-                job_pool.add_job(move || Self::calculate_w(w_label, private_vars, x_poly, v_domain, i_domain, circuit));
+                job_pool.add_job(move || {
+                    Self::calculate_w(w_label, private_vars, x_poly, v_domain, i_domain, lagrange_domain, circuit)
+                });
             }
         }
         let mut batches =
@@ -99,7 +102,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         Ok(state)
     }
 
-    fn calculate_mask_poly<R: RngCore>(variable_domain: EvaluationDomain<F>, rng: &mut R) -> LabeledPolynomial<F> {
+    fn calculate_mask_poly<R: RngCore>(
+        variable_domain: EvaluationDomain<F>,
+        rng: &mut R,
+    ) -> prover::ProverPolynomial<F> {
         assert!(SM::ZK);
         let mask_poly_time = start_timer!(|| "Computing mask polynomial");
         // We'll use the masking technique from Lunar (https://eprint.iacr.org/2020/1069.pdf, pgs 20-22).
@@ -121,7 +127,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(mask_poly.degree() <= 2 * variable_domain.size() + 2 * Self::zk_bound().unwrap() - 3);
 
         end_timer!(mask_poly_time);
-        LabeledPolynomial::new("mask_poly".to_string(), mask_poly, None, None)
+        let mask_poly: crate::fft::Polynomial<'_, F> = mask_poly.into();
+        let mask_poly: DensePolynomial<F> = mask_poly.into();
+        // The mask polynomial is extremely sparse, so we don't bother using the
+        // Lagrange basis.
+        prover::to_prover_oracle_poly::<F, SM>("mask_poly", Some(mask_poly), None, None, None, None)
     }
 
     // Compute the shifted witness \overline{w}(X)
@@ -131,6 +141,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         x_poly: DensePolynomial<F>,
         variable_domain: EvaluationDomain<F>,
         input_domain: EvaluationDomain<F>,
+        lagrange_domain: Option<EvaluationDomain<F>>,
         circuit: &Circuit<F, SM>,
     ) -> Witness<F> {
         let mut w_extended = private_variables;
@@ -156,6 +167,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             })
             .collect();
 
+        // if !SM::MONOMIAL {
+        //     prover::to_prover_oracle_poly::<F, SM>(label, None, Some(w_poly_evals),
+        // None, Self::zk_bound(), lagrange_domain) } else {
         // Interpolating \widetilde{z} - \widetilde{x} and dividing by the
         // vanishing polynomial over variable_domain.
         let w_poly = EvaluationsOnDomain::from_vec_and_domain(w_poly_evals, variable_domain)
@@ -165,8 +179,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         assert!(w_poly.degree() < variable_domain.size() - input_domain.size());
         end_timer!(w_poly_time);
-        LabeledPolynomial::new(label, w_poly, None, Self::zk_bound())
+        prover::to_prover_oracle_poly::<F, SM>(label, Some(w_poly), None, None, Self::zk_bound(), None)
+        // }
     }
 }
 
-pub type Witness<F> = LabeledPolynomial<F>;
+pub type Witness<F> = prover::ProverPolynomial<F>;

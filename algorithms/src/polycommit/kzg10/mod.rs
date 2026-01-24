@@ -28,7 +28,7 @@ use crate::{
 };
 use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, PrimeField, Zero};
-use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, rand::Uniform};
+use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, dev_println, rand::Uniform};
 
 use anyhow::{Result, anyhow, ensure};
 use core::{marker::PhantomData, ops::Mul};
@@ -102,7 +102,7 @@ impl<E: PairingEngine> KZG10<E> {
         hiding_bound: Option<usize>,
         rng: Option<&mut dyn RngCore>,
     ) -> Result<(KZGCommitment<E>, KZGRandomness<E>), PCError> {
-        dev_println!("commit: polynomial.degree() = {}, powers.size() = {}", polynomial.degree(), powers.size());
+        println!("commit: polynomial.degree() = {}, powers.size() = {}", polynomial.degree(), powers.size());
         Self::check_degree_is_too_large(polynomial.degree(), powers.size())?;
 
         let commit_time = start_timer!(|| format!(
@@ -164,7 +164,7 @@ impl<E: PairingEngine> KZG10<E> {
         hiding_bound: Option<usize>,
         rng: Option<&mut dyn RngCore>,
     ) -> Result<(KZGCommitment<E>, KZGRandomness<E>), PCError> {
-        dev_println!(
+        println!(
             "commit_lagrange: evaluations.len() = {}, lagrange_basis.size() = {}",
             evaluations.len(),
             lagrange_basis.size()

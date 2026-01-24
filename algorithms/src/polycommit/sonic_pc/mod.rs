@@ -23,12 +23,11 @@ use crate::{
 use hashbrown::HashMap;
 use itertools::Itertools;
 use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
-use snarkvm_fields::{One, Zero};
+use snarkvm_fields::{One, PrimeField, Zero};
 
 use anyhow::{Result, bail, ensure};
 use rand::{RngCore, SeedableRng};
 use std::{
-    borrow::Borrow,
     collections::{BTreeMap, BTreeSet},
     convert::TryInto,
     marker::PhantomData,
@@ -40,6 +39,12 @@ pub use data_structures::*;
 
 mod polynomial;
 pub use polynomial::*;
+
+#[derive(Debug)]
+enum CombinedPolynomial<F: PrimeField> {
+    Monomial(DensePolynomial<F>),
+    Lagrange { domain: crate::fft::EvaluationDomain<F>, evaluations: Vec<F> },
+}
 
 /// Polynomial commitment based on [\[KZG10\]][kzg], with degree enforcement and
 /// batching taken from [[MBKM19, “Sonic”]][sonic] (more precisely, their
@@ -260,13 +265,13 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         Ok((labeled_comms, randomness))
     }
 
-    pub fn combine_for_open<'a>(
+    fn combine_for_open<'a>(
         universal_prover: &UniversalProver<E>,
         ck: &CommitterUnionKey<E>,
-        labeled_polynomials: impl ExactSizeIterator<Item = &'a LabeledPolynomial<E::Fr>>,
+        labeled_polynomials: impl ExactSizeIterator<Item = &'a LabeledPolynomialWithBasis<'static, E::Fr>>,
         rands: impl ExactSizeIterator<Item = &'a Randomness<E>>,
         fs_rng: &mut S,
-    ) -> Result<(DensePolynomial<E::Fr>, Randomness<E>)>
+    ) -> Result<(CombinedPolynomial<E::Fr>, Randomness<E>)>
     where
         Randomness<E>: 'a,
         Commitment<E>: 'a,
@@ -277,12 +282,16 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         for (p, r) in labeled_polynomials.zip_eq(rands) {
             let enforced_degree_bounds: Option<&[usize]> = ck.enforced_degree_bounds.as_deref();
 
-            kzg10::KZG10::<E>::check_degrees_and_bounds(universal_prover.max_degree, enforced_degree_bounds, p)?;
+            kzg10::KZG10::<E>::check_degrees_and_bounds(
+                universal_prover.max_degree,
+                enforced_degree_bounds,
+                p.clone(),
+            )?;
             let challenge = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
-            to_combine.push((challenge, p.polynomial().to_dense(), r));
+            to_combine.push((challenge, p, r));
         }
 
-        Ok(Self::combine_polynomials(to_combine))
+        Ok(Self::combine_polynomials_with_basis(to_combine))
     }
 
     /// On input a list of labeled polynomials and a query set, `open` outputs a
@@ -291,7 +300,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     pub fn batch_open<'a>(
         universal_prover: &UniversalProver<E>,
         ck: &CommitterUnionKey<E>,
-        labeled_polynomials: impl ExactSizeIterator<Item = &'a LabeledPolynomial<E::Fr>>,
+        labeled_polynomials: impl ExactSizeIterator<Item = &'a LabeledPolynomialWithBasis<'static, E::Fr>>,
         query_set: &QuerySet<E::Fr>,
         rands: impl ExactSizeIterator<Item = &'a Randomness<E>>,
         fs_rng: &mut S,
@@ -301,8 +310,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         Commitment<E>: 'a,
     {
         ensure!(labeled_polynomials.len() == rands.len());
-        let poly_rand: HashMap<_, _> =
-            labeled_polynomials.into_iter().zip_eq(rands).map(|(poly, r)| (poly.label(), (poly, r))).collect();
+        let poly_rand: HashMap<String, _> = labeled_polynomials
+            .into_iter()
+            .zip_eq(rands)
+            .map(|(poly, r)| (poly.label().to_owned(), (poly, r)))
+            .collect();
 
         let open_time = start_timer!(|| format!(
             "Opening {} polynomials at query set of size {}",
@@ -335,7 +347,32 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
             pool.add_job(move || {
                 let proof_time = start_timer!(|| "Creating proof");
-                let proof = kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand);
+                let proof = match polynomial {
+                    CombinedPolynomial::Monomial(polynomial) => {
+                        kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)
+                    }
+                    CombinedPolynomial::Lagrange { domain, evaluations } => {
+                        // If the query point lies in the domain, fallback to monomial opening.
+                        if domain.evaluate_vanishing_polynomial(query).is_zero() {
+                            let polynomial =
+                                crate::fft::Evaluations::from_vec_and_domain(evaluations, domain).interpolate();
+                            return kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand);
+                        }
+                        let lagrange_basis =
+                            ck.lagrange_basis(domain).ok_or(PCError::UnsupportedLagrangeBasisSize(domain.size()))?;
+                        let domain_elements = domain.elements().collect::<Vec<_>>();
+                        let evals = crate::fft::Evaluations::from_vec_and_domain(evaluations, domain);
+                        let evaluation_at_point = evals.evaluate(&query);
+                        kzg10::KZG10::open_lagrange(
+                            &lagrange_basis,
+                            &domain_elements,
+                            &evals.evaluations,
+                            query,
+                            evaluation_at_point,
+                        )
+                        .map_err(Into::into)
+                    }
+                };
                 end_timer!(proof_time);
                 proof
             });
@@ -419,7 +456,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         universal_prover: &UniversalProver<E>,
         ck: &CommitterUnionKey<E>,
         linear_combinations: impl IntoIterator<Item = &'a LinearCombination<E::Fr>>,
-        polynomials: impl IntoIterator<Item = LabeledPolynomial<E::Fr>>,
+        polynomials: impl IntoIterator<Item = LabeledPolynomialWithBasis<'static, E::Fr>>,
         rands: impl IntoIterator<Item = &'a Randomness<E>>,
         query_set: &QuerySet<E::Fr>,
         fs_rng: &mut S,
@@ -428,8 +465,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         Randomness<E>: 'a,
         Commitment<E>: 'a,
     {
-        let label_map =
-            polynomials.into_iter().zip_eq(rands).map(|(p, r)| (p.to_label(), (p, r))).collect::<BTreeMap<_, _>>();
+        let label_map = polynomials
+            .into_iter()
+            .zip_eq(rands)
+            .map(|(p, r)| (p.label().to_string(), (p, r)))
+            .collect::<BTreeMap<_, _>>();
 
         let mut lc_polynomials = Vec::new();
         let mut lc_randomness = Vec::new();
@@ -441,6 +481,9 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             let mut randomness = Randomness::empty();
             let mut degree_bound = None;
             let mut hiding_bound = None;
+            let mut can_lagrange = true;
+            let mut lagrange_domain: Option<crate::fft::EvaluationDomain<E::Fr>> = None;
+            let mut lagrange_evals: Option<Vec<E::Fr>> = None;
 
             let num_polys = lc.len();
             // We filter out l.is_one() entries because those constants are not committed to
@@ -449,7 +492,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                 let label: &String = label.try_into().expect("cannot be one!");
                 let (cur_poly, cur_rand) =
                     label_map.get(label as &str).ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
-                if let Some(cur_degree_bound) = cur_poly.degree_bound() {
+                if let Some(cur_degree_bound) = cur_poly.info.degree_bound() {
                     if num_polys != 1 {
                         bail!(PCError::EquationHasDegreeBounds(lc_label));
                     }
@@ -457,16 +500,65 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                     if let Some(old_degree_bound) = degree_bound {
                         assert_eq!(old_degree_bound, cur_degree_bound)
                     } else {
-                        degree_bound = cur_poly.degree_bound();
+                        degree_bound = Some(cur_degree_bound);
                     }
                 }
                 // Some(_) > None, always.
-                hiding_bound = core::cmp::max(hiding_bound, cur_poly.hiding_bound());
-                poly += (*coeff, cur_poly.polynomial());
+                hiding_bound = core::cmp::max(hiding_bound, cur_poly.info.hiding_bound());
+
+                // Keep the LC in Lagrange basis iff all terms are Lagrange on the same domain
+                // and non-hiding.
+                if can_lagrange && **cur_rand == Randomness::<E>::empty() && cur_poly.info.hiding_bound().is_none() {
+                    if let PolynomialWithBasis::Lagrange { evaluations } = &cur_poly.polynomial {
+                        let evals = evaluations.as_ref();
+                        let domain = evals.domain();
+                        if lagrange_domain.is_none() {
+                            lagrange_domain = Some(domain);
+                            lagrange_evals = Some(vec![E::Fr::zero(); domain.size()]);
+                        } else if lagrange_domain != Some(domain) {
+                            can_lagrange = false;
+                        }
+                        if can_lagrange {
+                            let acc = lagrange_evals.as_mut().unwrap();
+                            if coeff.is_one() {
+                                for (a, b) in acc.iter_mut().zip_eq(&evals.evaluations) {
+                                    *a += b;
+                                }
+                            } else {
+                                for (a, b) in acc.iter_mut().zip_eq(&evals.evaluations) {
+                                    *a += *coeff * b;
+                                }
+                            }
+                            continue;
+                        }
+                    } else {
+                        can_lagrange = false;
+                    }
+                } else {
+                    can_lagrange = false;
+                }
+
+                // Fallback: combine in monomial basis.
+                let dense: DensePolynomial<E::Fr> = match &cur_poly.polynomial {
+                    PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().to_dense().into_owned(),
+                    PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
+                };
+                poly += (*coeff, &dense);
                 randomness += (*coeff, *cur_rand);
             }
 
-            let lc_poly = LabeledPolynomial::new(lc_label.clone(), poly, degree_bound, hiding_bound);
+            let lc_poly = if can_lagrange {
+                let domain = lagrange_domain.expect("domain set when can_lagrange");
+                let evals = lagrange_evals.expect("evals set when can_lagrange");
+                let evals = crate::fft::Evaluations::from_vec_and_domain(evals, domain);
+                let info = PolynomialInfo::new(lc_label.clone(), degree_bound, hiding_bound);
+                let polynomial = PolynomialWithBasis::new_lagrange_basis(evals);
+                LabeledPolynomialWithBasis { info, polynomial }
+            } else {
+                let info = PolynomialInfo::new(lc_label.clone(), degree_bound, hiding_bound);
+                let polynomial = PolynomialWithBasis::new_dense_monomial_basis(poly, degree_bound);
+                LabeledPolynomialWithBasis { info, polynomial }
+            };
             lc_polynomials.push(lc_poly);
             lc_randomness.push(randomness);
             lc_info.push((lc_label, degree_bound));
@@ -551,22 +643,81 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 }
 
 impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
-    fn combine_polynomials<'a, B: Borrow<DensePolynomial<E::Fr>>>(
-        coeffs_polys_rands: impl IntoIterator<Item = (E::Fr, B, &'a Randomness<E>)>,
-    ) -> (DensePolynomial<E::Fr>, Randomness<E>) {
-        let mut combined_poly = DensePolynomial::zero();
+    fn combine_polynomials_with_basis<'a>(
+        coeffs_polys_rands: impl IntoIterator<
+            Item = (E::Fr, &'a LabeledPolynomialWithBasis<'static, E::Fr>, &'a Randomness<E>),
+        >,
+    ) -> (CombinedPolynomial<E::Fr>, Randomness<E>) {
+        let empty_rand = Randomness::<E>::empty();
+
         let mut combined_rand = Randomness::empty();
+        let mut combined_dense = DensePolynomial::zero();
+
+        // We can combine in Lagrange basis iff:
+        // - all polynomials are Lagrange basis,
+        // - all are over the same domain,
+        // - and there is no hiding randomness (Lagrange openings are non-hiding).
+        let mut lagrange_domain: Option<crate::fft::EvaluationDomain<E::Fr>> = None;
+        let mut combined_evals: Option<Vec<E::Fr>> = None;
+        let mut can_lagrange = true;
+
         for (coeff, poly, rand) in coeffs_polys_rands {
-            let poly = poly.borrow();
+            if rand != &empty_rand {
+                can_lagrange = false;
+            }
+
+            match &poly.polynomial {
+                PolynomialWithBasis::Lagrange { evaluations } if can_lagrange => {
+                    let evals = evaluations.as_ref();
+                    let domain = evals.domain();
+                    if lagrange_domain.is_none() {
+                        lagrange_domain = Some(domain);
+                        combined_evals = Some(vec![E::Fr::zero(); domain.size()]);
+                    } else if lagrange_domain != Some(domain) {
+                        can_lagrange = false;
+                    }
+
+                    if can_lagrange {
+                        let acc = combined_evals.as_mut().unwrap();
+                        if coeff.is_one() {
+                            for (a, b) in acc.iter_mut().zip_eq(&evals.evaluations) {
+                                *a += b;
+                            }
+                        } else {
+                            for (a, b) in acc.iter_mut().zip_eq(&evals.evaluations) {
+                                *a += coeff * b;
+                            }
+                        }
+                        continue;
+                    }
+                }
+                _ => {
+                    can_lagrange = false;
+                }
+            }
+
+            // Fallback: convert to monomial basis and combine in coefficient form.
+            let dense: DensePolynomial<E::Fr> = match &poly.polynomial {
+                PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().to_dense().into_owned(),
+                PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
+            };
+
             if coeff.is_one() {
-                combined_poly += poly;
+                combined_dense += &dense;
                 combined_rand += rand;
             } else {
-                combined_poly += (coeff, poly);
+                combined_dense += (coeff, &dense);
                 combined_rand += (coeff, rand);
             }
         }
-        (combined_poly, combined_rand)
+
+        if can_lagrange {
+            let domain = lagrange_domain.expect("lagrange_domain set when can_lagrange");
+            let evaluations = combined_evals.expect("combined_evals set when can_lagrange");
+            (CombinedPolynomial::Lagrange { domain, evaluations }, Randomness::empty())
+        } else {
+            (CombinedPolynomial::Monomial(combined_dense), combined_rand)
+        }
     }
 
     /// MSM for `commitments` and `coeffs`

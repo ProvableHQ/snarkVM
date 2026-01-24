@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, polynomial::PolyMultiplier},
-    polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
+    polycommit::sonic_pc::{PolynomialInfo, PolynomialLabel},
     snark::varuna::{
         Circuit,
         CircuitId,
@@ -65,7 +65,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         assert!(h_0.degree() <= 2 * max_constraint_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 
-        let oracles = prover::SecondOracles { h_0: LabeledPolynomial::new("h_0", h_0, None, None) };
+        let h_0 = prover::to_prover_oracle_poly::<F, SM>("h_0", Some(h_0), None, None, None, None);
+        let oracles = prover::SecondOracles { h_0 };
         assert!(oracles.matches_info(&Self::second_round_polynomial_info()));
 
         end_timer!(round_time);

@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     fft::DensePolynomial,
-    polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
+    polycommit::sonic_pc::{PolynomialInfo, PolynomialLabel},
     snark::varuna::{
         SNARKMode,
         ahp::{AHPError, AHPForR1CS, verifier},
@@ -47,6 +47,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     ) -> Result<prover::FifthOracles<F>, AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::FifthRound");
 
+        let lagrange_domain = state.lagrange_domain;
         let lhs_sum: DensePolynomial<F> = cfg_reduce!(
             cfg_par_bridge!(verifier_message.into_iter().zip_eq(state.lhs_polys_into_iter())).map(
                 |(delta, mut lhs)| {
@@ -62,7 +63,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 a
             }
         );
-        let h_2 = LabeledPolynomial::new("h_2", lhs_sum, None, None);
+        let h_2 = prover::to_prover_oracle_poly::<F, SM>("h_2", Some(lhs_sum), None, None, None, None);
         let oracles = prover::FifthOracles { h_2 };
         assert!(oracles.matches_info(&Self::fifth_round_polynomial_info()));
 

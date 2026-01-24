@@ -21,7 +21,7 @@ use crate::{
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
-    polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
+    polycommit::sonic_pc::{PolynomialInfo, PolynomialLabel},
     snark::varuna::{
         SNARKMode,
         ahp::{AHPError, AHPForR1CS, CircuitId, indexer::CircuitInfo, verifier},
@@ -45,9 +45,9 @@ use rayon::prelude::*;
 
 type Sum<F> = F;
 type Lhs<F> = DensePolynomial<F>;
-type Apoly<F> = LabeledPolynomial<F>;
-type Bpoly<F> = LabeledPolynomial<F>;
-type Gpoly<F> = LabeledPolynomial<F>;
+type Apoly<F> = prover::ProverPolynomial<F>;
+type Bpoly<F> = prover::ProverPolynomial<F>;
+type Gpoly<F> = prover::ProverPolynomial<F>;
 
 impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     /// Output the number of oracles sent by the prover in the fourth round.
@@ -90,6 +90,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let mut pool = ExecutionPool::with_capacity(3 * state.circuit_specific_states.len());
 
         let max_non_zero_domain_size = state.max_non_zero_domain;
+        let lagrange_domain = state.lagrange_domain;
         let matrix_labels = ["a", "b", "c"];
         for (&circuit, state_i) in &state.circuit_specific_states {
             let v_R_i_at_alpha = state_i.constraint_domain.evaluate_vanishing_polynomial(*alpha);
@@ -114,6 +115,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         max_non_zero_domain_size,
                         &circuit.fft_precomputation,
                         &circuit.ifft_precomputation,
+                        lagrange_domain,
                     );
                     (circuit, result)
                 });
@@ -165,6 +167,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         max_non_zero_domain: EvaluationDomain<F>,
         fft_precomputation: &FFTPrecomputation<F>,
         ifft_precomputation: &IFFTPrecomputation<F>,
+        lagrange_domain: Option<EvaluationDomain<F>>,
     ) -> Result<(Sum<F>, Lhs<F>, Gpoly<F>, Apoly<F>, Bpoly<F>)> {
         let (row_on_K, col_on_K, row_col_val) =
             (&arithmetization.row, &arithmetization.col, &arithmetization.row_col_val);
@@ -236,9 +239,30 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(remainder.is_none());
 
         let g_label = format!("g_{label}");
-        let g = LabeledPolynomial::new(witness_label(id, &g_label, 0), g, Some(non_zero_domain.size() - 2), None);
-        let a_poly = LabeledPolynomial::new(format!("circuit_{id}_a_poly_{label}"), a_poly, None, None);
-        let b_poly = LabeledPolynomial::new(format!("circuit_{id}_b_poly_{label}"), b_poly, None, None);
+        let g = prover::to_prover_oracle_poly::<F, SM>(
+            witness_label(id, &g_label, 0),
+            Some(g),
+            None,
+            Some(non_zero_domain.size() - 2),
+            None,
+            None,
+        );
+        let a_poly = prover::to_prover_oracle_poly::<F, SM>(
+            format!("circuit_{id}_a_poly_{label}"),
+            Some(a_poly),
+            None,
+            None,
+            None,
+            None,
+        );
+        let b_poly = prover::to_prover_oracle_poly::<F, SM>(
+            format!("circuit_{id}_b_poly_{label}"),
+            Some(b_poly),
+            None,
+            None,
+            None,
+            None,
+        );
 
         assert!(lhs.degree() <= non_zero_domain.size() - 2);
         assert!(g.degree() <= non_zero_domain.size() - 2);

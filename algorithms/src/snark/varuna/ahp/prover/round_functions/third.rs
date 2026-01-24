@@ -21,7 +21,7 @@ use crate::{
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
-    polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
+    polycommit::sonic_pc::{PolynomialInfo, PolynomialLabel, PolynomialWithBasis},
     snark::varuna::{
         AHPError,
         Matrix,
@@ -129,9 +129,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(g_1.degree() <= max_variable_domain.size() - 2);
         assert!(h_1.degree() <= 2 * max_variable_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 
+        let lagrange_domain = state.lagrange_domain;
         let oracles = prover::ThirdOracles {
-            g_1: LabeledPolynomial::new("g_1", g_1, max_variable_domain.size() - 2, zk_bound),
-            h_1: LabeledPolynomial::new("h_1", h_1, None, None),
+            g_1: prover::to_prover_oracle_poly::<F, SM>(
+                "g_1",
+                Some(g_1),
+                None,
+                Some(max_variable_domain.size() - 2),
+                zk_bound,
+                None,
+            ),
+            h_1: prover::to_prover_oracle_poly::<F, SM>("h_1", Some(h_1), None, None, None, None),
         };
         assert!(oracles.matches_info(&Self::third_round_polynomial_info(state.max_variable_domain.size())));
 
@@ -250,7 +258,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let mask_poly = state.first_round_oracles.as_ref().unwrap().mask_poly.as_ref();
         assert_eq!(SM::ZK, mask_poly.is_some());
         assert_eq!(!SM::ZK, mask_poly.is_none());
-        let mask_poly = &mask_poly.map_or(DensePolynomial::zero(), |p| p.polynomial().into_dense());
+        let mask_poly = &mask_poly.map_or(DensePolynomial::zero(), |p| match &p.polynomial {
+            PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().into_dense(),
+            PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
+        });
         let (mut h_1_mask, mut xg_1_mask) = mask_poly.divide_by_vanishing_poly(*max_variable_domain).unwrap();
         h_1_sum += &core::mem::take(&mut h_1_mask);
         xg_1_sum += &core::mem::take(&mut xg_1_mask);
@@ -276,8 +287,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     .enumerate()
                     .map(|(_j, (w_poly, x_poly))| {
                         let z_time = start_timer!(move || format!("Compute z poly for circuit {} {}", circuit.id, _j));
-                        let mut assignment =
-                            w_poly.0.polynomial().as_dense().unwrap().mul_by_vanishing_poly(*input_domain);
+                        let w_dense = match &w_poly.0.polynomial {
+                            PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().into_dense(),
+                            PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
+                        };
+                        let mut assignment = w_dense.mul_by_vanishing_poly(*input_domain);
                         // Zip safety: `x_poly` is smaller than `z_poly`.
                         assignment.coeffs.iter_mut().zip(&x_poly.coeffs).for_each(|(z, x)| *z += x);
                         end_timer!(z_time);

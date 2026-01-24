@@ -114,10 +114,11 @@ pub fn bad_degree_bound_test<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>() -
         println!("Generated query set");
 
         let mut sponge_for_open = S::new();
+        let polynomials_with_basis = polynomials.iter().cloned().map(Into::into).collect_vec();
         let proof = SonicKZG10::batch_open(
             universal_prover,
             &ck,
-            polynomials.iter(),
+            polynomials_with_basis.iter(),
             &query_set,
             rands.iter(),
             &mut sponge_for_open,
@@ -193,7 +194,7 @@ pub fn lagrange_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>()
         let vk = pp.to_universal_verifier().unwrap();
 
         let (comms, rands) =
-            SonicKZG10::<E, S>::commit(universal_prover, &ck, lagrange_polynomials, Some(rng)).unwrap();
+            SonicKZG10::<E, S>::commit(universal_prover, &ck, lagrange_polynomials.iter().cloned(), Some(rng)).unwrap();
 
         // Construct query set
         let mut query_set = QuerySet::new();
@@ -213,7 +214,7 @@ pub fn lagrange_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>()
         let proof = SonicKZG10::batch_open(
             universal_prover,
             &ck,
-            polynomials.iter(),
+            lagrange_polynomials.iter(),
             &query_set,
             rands.iter(),
             &mut sponge_for_open,
@@ -340,10 +341,11 @@ where
         println!("Generated query set");
 
         let mut sponge_for_open = S::new();
+        let polynomials_with_basis = polynomials.iter().cloned().map(Into::into).collect_vec();
         let proof = SonicKZG10::batch_open(
             universal_prover,
             &ck,
-            polynomials.iter(),
+            polynomials_with_basis.iter(),
             &query_set,
             rands.iter(),
             &mut sponge_for_open,
@@ -505,7 +507,7 @@ fn equation_test_template<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>>(
             universal_prover,
             &ck,
             &linear_combinations,
-            polynomials,
+            polynomials.into_iter().map(Into::into),
             &rands,
             &query_set,
             &mut sponge_for_open,

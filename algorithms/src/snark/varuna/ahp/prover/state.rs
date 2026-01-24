@@ -17,7 +17,6 @@ use std::collections::{BTreeMap, VecDeque};
 
 use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain},
-    polycommit::sonic_pc::LabeledPolynomial,
     r1cs::{SynthesisError, SynthesisResult},
     snark::varuna::{AHPError, AHPForR1CS, Circuit, SNARKMode},
 };
@@ -67,10 +66,10 @@ pub struct CircuitSpecificState<F: PrimeField> {
     pub(in crate::snark) z_m_at_alpha_polys: Option<VecDeque<[DensePolynomial<F>; 3]>>,
 
     /// Intermediary polynomials of the matrix sumcheck.
-    pub(in crate::snark) a_polys: Option<[LabeledPolynomial<F>; 3]>,
+    pub(in crate::snark) a_polys: Option<[super::ProverPolynomial<F>; 3]>,
 
     /// Intermediary polynomials of the matrix sumcheck.
-    pub(in crate::snark) b_polys: Option<[LabeledPolynomial<F>; 3]>,
+    pub(in crate::snark) b_polys: Option<[super::ProverPolynomial<F>; 3]>,
 
     /// Intermediary polynomials of the matrix sumcheck.
     pub(super) lhs_polynomials: Option<[DensePolynomial<F>; 3]>,
@@ -91,6 +90,10 @@ pub struct State<'a, F: PrimeField, SM: SNARKMode> {
     pub(in crate::snark) max_variable_domain: EvaluationDomain<F>,
     /// The total number of instances we're proving in the batch.
     pub(in crate::snark) total_instances: usize,
+
+    /// A shared domain used to represent prover oracles in Lagrange basis (when
+    /// `SM::MONOMIAL == false`).
+    pub(in crate::snark) lagrange_domain: Option<EvaluationDomain<F>>,
 }
 
 /// The public inputs for a single instance.
@@ -188,6 +191,23 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
         let max_constraint_domain = EvaluationDomain::new(max_num_constraints).ok_or(SynthesisError::PolyTooLarge)?;
         let max_variable_domain = EvaluationDomain::new(max_num_variables).ok_or(SynthesisError::PolyTooLarge)?;
 
+        // In Lagrange mode, represent all prover polynomials over a single shared
+        // domain. This domain must be large enough to represent (by evaluation)
+        // the largest-degree polynomials in the protocol. For non-hiding
+        // Varuna, `zk_bound = 0`, so the dominant terms are `~2*|R|`
+        // and `~2*|C|`. We pick `max(2*|R|, 2*|C|, |K|)` and rely on
+        // `EvaluationDomain::new` to round to the next supported power-of-two
+        // domain size.
+        let lagrange_domain = (!SM::MONOMIAL)
+            .then(|| {
+                let target_size = core::cmp::max(
+                    core::cmp::max(max_constraint_domain.size() * 2, max_variable_domain.size() * 2),
+                    max_non_zero_domain.size(),
+                );
+                EvaluationDomain::new(target_size).ok_or(SynthesisError::PolyTooLarge)
+            })
+            .transpose()?;
+
         Ok(Self {
             max_constraint_domain,
             max_variable_domain,
@@ -195,6 +215,7 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
             circuit_specific_states,
             total_instances,
             first_round_oracles: None,
+            lagrange_domain,
         })
     }
 

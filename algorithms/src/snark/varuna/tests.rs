@@ -828,9 +828,17 @@ mod varuna_test_vectors {
         let mut prover_state = AHPForR1CS::<_, MM>::prover_first_round(prover_state, rng).unwrap();
         let first_round_oracles = Arc::new(prover_state.first_round_oracles.as_ref().unwrap());
 
+        let poly_coeffs = |p: &crate::polycommit::sonic_pc::LabeledPolynomialWithBasis<'static, Fr>| -> Vec<Fr> {
+            use crate::polycommit::sonic_pc::PolynomialWithBasis;
+            match &p.polynomial {
+                PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().to_dense().into_owned().coeffs,
+                PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref().coeffs,
+            }
+        };
+
         // Get private witness polynomial coefficients.
         let (_, w_poly) = first_round_oracles.batches.iter().next().unwrap();
-        let w_lde = format!("{:?}", w_poly[0].0.coeffs().map(|(_, coeff)| coeff).collect::<Vec<_>>());
+        let w_lde = format!("{:?}", poly_coeffs(&w_poly[0].0));
         if create_test_vectors {
             create_test_vector("polynomials", "w_lde", &w_lde, circuit);
         }
@@ -853,7 +861,7 @@ mod varuna_test_vectors {
             AHPForR1CS::<_, MM>::prover_second_round::<_>(&verifier_first_msg, prover_state, rng).unwrap();
 
         // Get round 2 rowcheck polynomial oracle coefficients.
-        let h_0 = format!("{:?}", second_oracles.h_0.coeffs().map(|(_, coeff)| coeff).collect::<Vec<_>>());
+        let h_0 = format!("{:?}", poly_coeffs(&second_oracles.h_0));
         if create_test_vectors {
             create_test_vector("polynomials", "h_0", &h_0, circuit);
         }
@@ -870,11 +878,11 @@ mod varuna_test_vectors {
         .unwrap();
 
         // Get coefficients round 3 univariate rowcheck polynomial oracles.
-        let g_1 = format!("{:?}", third_oracles.g_1.coeffs().map(|(_, coeff)| coeff).collect::<Vec<_>>());
+        let g_1 = format!("{:?}", poly_coeffs(&third_oracles.g_1));
         if create_test_vectors {
             create_test_vector("polynomials", "g_1", &g_1, circuit);
         }
-        let h_1 = format!("{:?}", third_oracles.h_1.coeffs().map(|(_, coeff)| coeff).collect::<Vec<_>>());
+        let h_1 = format!("{:?}", poly_coeffs(&third_oracles.h_1));
         if create_test_vectors {
             create_test_vector("polynomials", "h_1", &h_1, circuit);
         }
@@ -886,9 +894,9 @@ mod varuna_test_vectors {
 
         // Create round 4 rational sumcheck oracle polynomials.
         let (_, gm_polys) = fourth_oracles.gs.iter().next().unwrap();
-        let g_a = format!("{:?}", gm_polys.g_a.coeffs().map(|(_, coeff)| coeff).collect::<Vec<_>>());
-        let g_b = format!("{:?}", gm_polys.g_b.coeffs().map(|(_, coeff)| coeff).collect::<Vec<_>>());
-        let g_c = format!("{:?}", gm_polys.g_b.coeffs().map(|(_, coeff)| coeff).collect::<Vec<_>>());
+        let g_a = format!("{:?}", poly_coeffs(&gm_polys.g_a));
+        let g_b = format!("{:?}", poly_coeffs(&gm_polys.g_b));
+        let g_c = format!("{:?}", poly_coeffs(&gm_polys.g_c));
         if create_test_vectors {
             create_test_vector("polynomials", "g_a", &g_a, circuit);
             create_test_vector("polynomials", "g_b", &g_b, circuit);
@@ -943,7 +951,7 @@ mod varuna_test_vectors {
         let fifth_oracles = AHPForR1CS::<_, MM>::prover_fifth_round(verifier_fourth_msg, prover_state, rng).unwrap();
 
         // Get coefficients of final oracle polynomial from round 5.
-        let h_2 = format!("{:?}", fifth_oracles.h_2.coeffs().map(|(_, coeff)| coeff).collect::<Vec<_>>());
+        let h_2 = format!("{:?}", poly_coeffs(&fifth_oracles.h_2));
         if create_test_vectors {
             create_test_vector("polynomials", "h_2", &h_2, circuit);
         }

@@ -28,3 +28,38 @@ mod round_functions;
 
 mod state;
 use state::*;
+
+use crate::{
+    fft::{DensePolynomial, EvaluationDomain},
+    polycommit::sonic_pc::{LabeledPolynomialWithBasis, PolynomialInfo, PolynomialWithBasis},
+};
+use snarkvm_fields::PrimeField;
+
+/// Wrap a dense polynomial as a prover oracle, selecting a basis according to
+/// `SM::MONOMIAL`.
+pub(in crate::snark::varuna::ahp::prover) fn to_prover_oracle_poly<
+    F: PrimeField,
+    SM: crate::snark::varuna::SNARKMode,
+>(
+    label: impl Into<String>,
+    polynomial: Option<DensePolynomial<F>>,
+    evals: Option<Vec<F>>,
+    degree_bound: Option<usize>,
+    hiding_bound: Option<usize>,
+    lagrange_domain: Option<EvaluationDomain<F>>,
+) -> LabeledPolynomialWithBasis<'static, F> {
+    let label = label.into();
+    if SM::MONOMIAL || lagrange_domain.is_none() {
+        let info = PolynomialInfo::new(label, degree_bound, hiding_bound);
+        let polynomial = polynomial.expect("Monomial mode requires a polynomial in dense basis");
+        let polynomial = PolynomialWithBasis::new_dense_monomial_basis(polynomial, degree_bound);
+        LabeledPolynomialWithBasis { info, polynomial }
+    } else {
+        let domain = lagrange_domain.expect("Lagrange mode requires a shared lagrange_domain in prover State");
+        let evals = evals.expect("Lagrange mode requires evals in prover State");
+        let info = PolynomialInfo::new(label, degree_bound, hiding_bound);
+        let evals = crate::fft::Evaluations::from_vec_and_domain(evals, domain);
+        let polynomial = PolynomialWithBasis::new_lagrange_basis(evals);
+        LabeledPolynomialWithBasis { info, polynomial }
+    }
+}
