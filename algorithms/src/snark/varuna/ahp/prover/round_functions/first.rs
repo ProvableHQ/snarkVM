@@ -131,7 +131,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let mask_poly: DensePolynomial<F> = mask_poly.into();
         // The mask polynomial is extremely sparse, so we don't bother using the
         // Lagrange basis.
-        prover::to_prover_oracle_poly::<F, SM>("mask_poly", Some(mask_poly), None, None, None, None)
+        prover::to_prover_oracle_poly::<F, SM>("mask_poly", Some(mask_poly), None, None, None)
     }
 
     // Compute the shifted witness \overline{w}(X)
@@ -167,20 +167,20 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             })
             .collect();
 
-        // if !SM::MONOMIAL {
-        //     prover::to_prover_oracle_poly::<F, SM>(label, None, Some(w_poly_evals),
-        // None, Self::zk_bound(), lagrange_domain) } else {
-        // Interpolating \widetilde{z} - \widetilde{x} and dividing by the
-        // vanishing polynomial over variable_domain.
-        let w_poly = EvaluationsOnDomain::from_vec_and_domain(w_poly_evals, variable_domain)
-            .interpolate_with_pc(&circuit.ifft_precomputation);
-        let (w_poly, remainder) = w_poly.divide_by_vanishing_poly(input_domain).unwrap();
-        assert!(remainder.is_zero());
+        if !SM::MONOMIAL {
+            prover::to_prover_oracle_poly::<F, SM>(label, None, Some(w_poly_evals), None, Self::zk_bound()) 
+        } else {
+            // Interpolating \widetilde{z} - \widetilde{x} and dividing by the
+            // vanishing polynomial over variable_domain.
+            let w_poly = EvaluationsOnDomain::from_vec_and_domain(w_poly_evals, variable_domain)
+                .interpolate_with_pc(&circuit.ifft_precomputation);
+            let (w_poly, remainder) = w_poly.divide_by_vanishing_poly(input_domain).unwrap();
+            assert!(remainder.is_zero());
 
-        assert!(w_poly.degree() < variable_domain.size() - input_domain.size());
-        end_timer!(w_poly_time);
-        prover::to_prover_oracle_poly::<F, SM>(label, Some(w_poly), None, None, Self::zk_bound(), None)
-        // }
+            assert!(w_poly.degree() < variable_domain.size() - input_domain.size());
+            end_timer!(w_poly_time);
+            prover::to_prover_oracle_poly::<F, SM>(label, Some(w_poly), None, None, Self::zk_bound())
+        }
     }
 }
 

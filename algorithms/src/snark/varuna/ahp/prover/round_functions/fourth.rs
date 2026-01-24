@@ -245,7 +245,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             None,
             Some(non_zero_domain.size() - 2),
             None,
-            None,
         );
         let a_poly = prover::to_prover_oracle_poly::<F, SM>(
             format!("circuit_{id}_a_poly_{label}"),
@@ -253,12 +252,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             None,
             None,
             None,
-            None,
         );
         let b_poly = prover::to_prover_oracle_poly::<F, SM>(
             format!("circuit_{id}_b_poly_{label}"),
             Some(b_poly),
-            None,
             None,
             None,
             None,

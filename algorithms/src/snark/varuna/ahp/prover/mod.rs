@@ -46,17 +46,17 @@ pub(in crate::snark::varuna::ahp::prover) fn to_prover_oracle_poly<
     evals: Option<Vec<F>>,
     degree_bound: Option<usize>,
     hiding_bound: Option<usize>,
-    lagrange_domain: Option<EvaluationDomain<F>>,
 ) -> LabeledPolynomialWithBasis<'static, F> {
     let label = label.into();
-    if SM::MONOMIAL || lagrange_domain.is_none() {
+    if evals.is_none() { // TODO: make a robust abstraction.
         let info = PolynomialInfo::new(label, degree_bound, hiding_bound);
         let polynomial = polynomial.expect("Monomial mode requires a polynomial in dense basis");
         let polynomial = PolynomialWithBasis::new_dense_monomial_basis(polynomial, degree_bound);
         LabeledPolynomialWithBasis { info, polynomial }
     } else {
-        let domain = lagrange_domain.expect("Lagrange mode requires a shared lagrange_domain in prover State");
         let evals = evals.expect("Lagrange mode requires evals in prover State");
+        let evals_power_of_two = evals.len().next_power_of_two();
+        let domain = EvaluationDomain::new(evals_power_of_two).expect("Lagrange mode requires a domain large enough to hold the evals");
         let info = PolynomialInfo::new(label, degree_bound, hiding_bound);
         let evals = crate::fft::Evaluations::from_vec_and_domain(evals, domain);
         let polynomial = PolynomialWithBasis::new_lagrange_basis(evals);

@@ -63,7 +63,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 a
             }
         );
-        let h_2 = prover::to_prover_oracle_poly::<F, SM>("h_2", Some(lhs_sum), None, None, None, None);
+        let h_2 = prover::to_prover_oracle_poly::<F, SM>("h_2", Some(lhs_sum), None, None, None);
         let oracles = prover::FifthOracles { h_2 };
         assert!(oracles.matches_info(&Self::fifth_round_polynomial_info()));
 
