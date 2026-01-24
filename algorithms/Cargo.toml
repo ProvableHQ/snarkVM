@@ -45,6 +45,11 @@ path = "benches/snark/varuna.rs"
 harness = false
 required-features = [ "test" ]
 
+[[bench]]
+name = "kzg_commit"
+path = "benches/polycommit/kzg_commit.rs"
+harness = false
+
 [dependencies.snarkvm-curves]
 workspace = true
 
