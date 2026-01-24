@@ -87,6 +87,16 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     /// The number of the variables must include the "one" variable. That is, it
     /// must be with respect to the number of formatted public inputs.
     pub fn max_degree(num_constraints: usize, num_variables: usize, num_non_zero: usize) -> Result<usize> {
+        Self::commitment_degrees(num_constraints, num_variables, num_non_zero)?
+            .iter()
+            .max()
+            .copied()
+            .ok_or(anyhow!("Could not find max_degree"))
+    }
+
+    // TODO: what's the difference between these sizes and the degree bounds, if
+    // any?
+    pub fn commitment_degrees(num_constraints: usize, num_variables: usize, num_non_zero: usize) -> Result<Vec<usize>> {
         let zk_bound = Self::zk_bound().unwrap_or(0);
         let constraint_domain_size =
             EvaluationDomain::<F>::compute_size_of_domain(num_constraints).ok_or(AHPError::PolyTooLarge)?;
@@ -96,7 +106,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             EvaluationDomain::<F>::compute_size_of_domain(num_non_zero).ok_or(AHPError::PolyTooLarge)?;
 
         // these should correspond with the bounds set in the <round>.rs files
-        [
+        Ok([
             2 * constraint_domain_size + 2 * zk_bound - 2,
             2 * variable_domain_size + 2 * zk_bound - 2,
             if SM::ZK { variable_domain_size + 3 } else { 0 }, // mask_poly
@@ -104,10 +114,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             constraint_domain_size,
             non_zero_domain_size - 1, // non-zero polynomials
         ]
-        .iter()
-        .max()
-        .copied()
-        .ok_or(anyhow!("Could not find max_degree"))
+        .into_iter()
+        .collect())
     }
 
     /// Get all the strict degree bounds enforced in the AHP.

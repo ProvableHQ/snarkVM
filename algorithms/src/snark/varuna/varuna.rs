@@ -54,7 +54,12 @@ use anyhow::{Result, anyhow, bail, ensure};
 use core::marker::PhantomData;
 use itertools::Itertools;
 use rand::{CryptoRng, Rng};
-use std::{borrow::Borrow, collections::{BTreeMap, BTreeSet}, ops::Deref, sync::Arc};
+use std::{
+    borrow::Borrow,
+    collections::{BTreeMap, BTreeSet},
+    ops::Deref,
+    sync::Arc,
+};
 
 use crate::srs::UniversalProver;
 
@@ -97,30 +102,50 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             //
             // Note: We filter sizes by `universal_srs.max_degree() + 1`, as required by
             // the underlying KZG10 Lagrange basis construction.
-            let max_lagrange_size = universal_srs.max_degree() + 1;
+            // let max_lagrange_size = universal_srs.max_degree() + 1;
             let mut supported_lagrange_sizes = BTreeSet::new();
-            let mut maybe_insert = |size: usize| {
-                if size.is_power_of_two() && size <= max_lagrange_size {
-                    supported_lagrange_sizes.insert(size);
+            // TODO: are we inserting enough such that we only use the lagrange basis?
+            for commit_degree in AHPForR1CS::<E::Fr, SM>::commitment_degrees(
+                indexed_circuit.index_info.num_constraints,
+                indexed_circuit.index_info.num_public_and_private_variables,
+                indexed_circuit
+                    .index_info
+                    .num_non_zero_a
+                    .max(indexed_circuit.index_info.num_non_zero_b)
+                    .max(indexed_circuit.index_info.num_non_zero_c),
+            )? {
+                // TODO: review if actually required and document why.
+                if commit_degree.is_power_of_two() {
+                    supported_lagrange_sizes.insert(commit_degree);
                 }
-            };
-            let info = &indexed_circuit.index_info;
-            let constraint_size = EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_constraints).unwrap();
-            let variable_size =
-                EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_public_and_private_variables).unwrap();
-            let non_zero_a_size = EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_non_zero_a).unwrap();
-            let non_zero_b_size = EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_non_zero_b).unwrap();
-            let non_zero_c_size = EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_non_zero_c).unwrap();
+            }
+            // let mut maybe_insert = |size: usize| {
+            //     if size.is_power_of_two() && size <= max_lagrange_size {
+            //         supported_lagrange_sizes.insert(size);
+            //     }
+            // };
+            // let info = &indexed_circuit.index_info;
+            // let constraint_size =
+            // EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_constraints).
+            // unwrap(); let variable_size =
+            //     EvaluationDomain::<E::Fr>::compute_size_of_domain(info.
+            // num_public_and_private_variables).unwrap(); let non_zero_a_size =
+            // EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_non_zero_a).
+            // unwrap(); let non_zero_b_size =
+            // EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_non_zero_b).
+            // unwrap(); let non_zero_c_size =
+            // EvaluationDomain::<E::Fr>::compute_size_of_domain(info.num_non_zero_c).
+            // unwrap();
 
-            // Round 1 (witness & mask) and round 3 (h_1) can require ~2*|C|.
-            maybe_insert(variable_size);
-            maybe_insert(variable_size.saturating_mul(2));
-            // Round 2 (h_0) can require ~2*|R|.
-            maybe_insert(constraint_size.saturating_mul(2));
-            // Round 5 (h_2) fits within max non-zero domain sizes.
-            maybe_insert(non_zero_a_size);
-            maybe_insert(non_zero_b_size);
-            maybe_insert(non_zero_c_size);
+            // // Round 1 (witness & mask) and round 3 (h_1) can require ~2*|C|.
+            // maybe_insert(variable_size);
+            // maybe_insert(variable_size.saturating_mul(2));
+            // // Round 2 (h_0) can require ~2*|R|.
+            // maybe_insert(constraint_size.saturating_mul(2));
+            // // Round 5 (h_2) fits within max non-zero domain sizes.
+            // maybe_insert(non_zero_a_size);
+            // maybe_insert(non_zero_b_size);
+            // maybe_insert(non_zero_c_size);
 
             let (committer_key, _) = SonicKZG10::<E, FS>::trim(
                 universal_srs,
@@ -229,24 +254,20 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         }
     }
 
-    /// Prepare a polynomial for committing, opportunistically using a supported Lagrange basis.
-    ///
-    /// - Degree-bounded polynomials must remain in monomial form, as degree-bounds are enforced
-    ///   via shifted powers in the SRS.
-    /// - Otherwise, if `ck` supports a Lagrange basis of size at least `poly.degree() + 1`,
-    ///   we commit using Lagrange evaluations on that domain.
-    fn poly_for_commit<'a>(ck: &CommitterUnionKey<E>, poly: &'a LabeledPolynomial<E::Fr>) -> LabeledPolynomialWithBasis<'a, E::Fr> {
-        // Preserve degree bounds (enforced via shifted powers).
-        if poly.degree_bound().is_some() {
-            return poly.into();
-        }
-
+    /// Prepare a polynomial for committing, opportunistically using a supported
+    /// Lagrange basis.
+    fn poly_for_commit<'a>(
+        ck: &CommitterUnionKey<E>,
+        poly: &'a LabeledPolynomial<E::Fr>,
+    ) -> LabeledPolynomialWithBasis<'a, E::Fr> {
         // Choose the smallest supported Lagrange domain size that is large enough.
         let min_size = poly.degree().saturating_add(1);
         let Some((&size, _)) = ck.lagrange_bases_at_beta_g.range(min_size..).next() else {
+            dev_println!("Skipping lagrange basis in commitment: no supported Lagrange basis.");
             return poly.into();
         };
         let Some(domain) = EvaluationDomain::<E::Fr>::new(size) else {
+            dev_println!("Skipping lagrange basis in commitment: no supported domain.");
             return poly.into();
         };
 

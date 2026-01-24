@@ -18,6 +18,7 @@ use core::fmt::Debug;
 /// A trait to specify the SNARK mode.
 pub trait SNARKMode: 'static + Copy + Clone + Debug + PartialEq + Eq + Sync + Send {
     const ZK: bool;
+    const MONOMIAL: bool;
 }
 
 /// This mode produces a hiding SNARK proof.
@@ -25,6 +26,7 @@ pub trait SNARKMode: 'static + Copy + Clone + Debug + PartialEq + Eq + Sync + Se
 pub struct VarunaHidingMode;
 
 impl SNARKMode for VarunaHidingMode {
+    const MONOMIAL: bool = true;
     const ZK: bool = true;
 }
 
@@ -33,6 +35,16 @@ impl SNARKMode for VarunaHidingMode {
 pub struct VarunaNonHidingMode;
 
 impl SNARKMode for VarunaNonHidingMode {
+    const MONOMIAL: bool = true;
+    const ZK: bool = false;
+}
+
+// This mode produces a non-hiding SNARK proof with lagrange basis commitments.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct VarunaNonHidingLagrangeMode;
+
+impl SNARKMode for VarunaNonHidingLagrangeMode {
+    const MONOMIAL: bool = false;
     const ZK: bool = false;
 }
 

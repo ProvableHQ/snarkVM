@@ -102,7 +102,7 @@ impl<E: PairingEngine> KZG10<E> {
         hiding_bound: Option<usize>,
         rng: Option<&mut dyn RngCore>,
     ) -> Result<(KZGCommitment<E>, KZGRandomness<E>), PCError> {
-        println!("commit: polynomial.degree() = {}, powers.size() = {}", polynomial.degree(), powers.size());
+        dev_println!("commit: polynomial.degree() = {}, powers.size() = {}", polynomial.degree(), powers.size());
         Self::check_degree_is_too_large(polynomial.degree(), powers.size())?;
 
         let commit_time = start_timer!(|| format!(
@@ -164,7 +164,11 @@ impl<E: PairingEngine> KZG10<E> {
         hiding_bound: Option<usize>,
         rng: Option<&mut dyn RngCore>,
     ) -> Result<(KZGCommitment<E>, KZGRandomness<E>), PCError> {
-        println!("commit_lagrange: evaluations.len() = {}, lagrange_basis.size() = {}", evaluations.len(), lagrange_basis.size());
+        dev_println!(
+            "commit_lagrange: evaluations.len() = {}, lagrange_basis.size() = {}",
+            evaluations.len(),
+            lagrange_basis.size()
+        );
         Self::check_degree_is_too_large(evaluations.len() - 1, lagrange_basis.size())?;
         assert_eq!(
             evaluations.len().checked_next_power_of_two().ok_or(PCError::LagrangeBasisSizeIsTooLarge)?,
