@@ -18,10 +18,11 @@ use crate::{
         DensePolynomial,
         EvaluationDomain,
         Evaluations,
+        Polynomial,
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
-    polycommit::sonic_pc::{PolynomialInfo, PolynomialLabel, PolynomialWithBasis},
+    polycommit::sonic_pc::{LabeledPolynomialWithBasis, PolynomialInfo, PolynomialLabel, PolynomialWithBasis},
     snark::varuna::{
         AHPError,
         Matrix,
@@ -46,8 +47,8 @@ use std::collections::BTreeMap;
 use rayon::prelude::*;
 
 struct LinevalInstance<F: PrimeField> {
-    h_1_i: DensePolynomial<F>,
-    xg_1_i: DensePolynomial<F>,
+    h_1_i: PolynomialWithBasis<'static, F>,
+    xg_1_i: PolynomialWithBasis<'static, F>,
     sum: F,
 }
 
@@ -106,8 +107,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             varuna_version,
         )?;
 
+        let x_g_1_sum = match &x_g_1_sum {
+            PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().into_dense(),
+            PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
+        };
+
         #[cfg(debug_assertions)]
         {
+            let h_1 = match &h_1 {
+                PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().into_dense(),
+                PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
+            };
             let mut sumcheck_lhs = h_1.mul_by_vanishing_poly(max_variable_domain);
             sumcheck_lhs += &x_g_1_sum;
             debug_assert!(
@@ -124,22 +134,40 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let g_1 = DensePolynomial::from_coefficients_slice(&x_g_1_sum.coeffs[1..]);
 
+        let (g_1, h_1) = match (SM::MONOMIAL, h_1) {
+            (true, PolynomialWithBasis::Monomial { polynomial, .. }) => {
+                let g_1 = Polynomial::from(g_1);
+                let g_1 = LabeledPolynomialWithBasis::new_monomial_basis_owned(
+                    "g_1".into(),
+                    g_1,
+                    Some(max_variable_domain.size() - 2),
+                    Self::zk_bound(),
+                );
+                let h_1 = polynomial.into_owned();
+                let h_1 = LabeledPolynomialWithBasis::new_monomial_basis_owned("h_1".into(), h_1, None, None);
+                (g_1, h_1)
+            }
+            (false, PolynomialWithBasis::Lagrange { evaluations }) => {
+                let g_1 = Polynomial::from(g_1);
+                let g_1 = LabeledPolynomialWithBasis::new_monomial_basis_owned(
+                    "g_1".into(),
+                    g_1,
+                    Some(max_variable_domain.size() - 2),
+                    Self::zk_bound(),
+                );
+                let h_1_evals = evaluations.into_owned();
+                let h_1 = LabeledPolynomialWithBasis::new_lagrange_basis("h_1".into(), h_1_evals, None);
+                (g_1, h_1)
+            }
+            _ => todo!(),
+        };
+
         drop(x_g_1_sum); // Be assured we don't use x_g_1_sum anymore
 
         assert!(g_1.degree() <= max_variable_domain.size() - 2);
         assert!(h_1.degree() <= 2 * max_variable_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 
-        let _lagrange_domain = state.lagrange_domain;
-        let oracles = prover::ThirdOracles {
-            g_1: prover::to_prover_oracle_poly::<F, SM>(
-                "g_1",
-                Some(g_1),
-                None,
-                Some(max_variable_domain.size() - 2),
-                zk_bound,
-            ),
-            h_1: prover::to_prover_oracle_poly::<F, SM>("h_1", Some(h_1), None, None, None),
-        };
+        let oracles = prover::ThirdOracles { g_1, h_1 };
         assert!(oracles.matches_info(&Self::third_round_polynomial_info(state.max_variable_domain.size())));
 
         end_timer!(round_time);
@@ -151,13 +179,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     fn calculate_lineval_sumcheck_witness(
         state: &mut prover::State<F, SM>,
         third_round_batch_combiners: &BTreeMap<CircuitId, verifier::BatchCombiners<F>>,
-        assignments: BTreeMap<CircuitId, Vec<DensePolynomial<F>>>,
+        assignments: BTreeMap<CircuitId, Vec<PolynomialWithBasis<F>>>,
         matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>,
         alpha: &F,
         eta_b: &F,
         eta_c: &F,
         varuna_version: VarunaVersion,
-    ) -> Result<(DensePolynomial<F>, DensePolynomial<F>, ThirdMessage<F>)> {
+    ) -> Result<(PolynomialWithBasis<'static, F>, PolynomialWithBasis<'static, F>, ThirdMessage<F>)> {
         let num_instances = third_round_batch_combiners.values().map(|c| c.instance_combiners.len()).collect_vec();
         let total_instances = num_instances.iter().sum::<usize>();
         let max_variable_domain = &state.max_variable_domain;
@@ -203,23 +231,25 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let combiner = circuit_combiner * instance_combiner * matrix_combiner;
                     job_pool.add_job(move || match varuna_version {
                         VarunaVersion::V1 => {
-                            let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness(
-                                label,
-                                constraint_domain,
-                                variable_domain,
-                                fft_precomputation,
-                                ifft_precomputation,
-                                assignment,
-                                matrix_transpose,
-                                *alpha,
-                            )?;
-                            Self::calculate_lineval_sumcheck_instance_witness_polys(
-                                label,
-                                variable_domain,
-                                max_variable_domain,
-                                combiner,
-                                Some(z_m_at_alpha),
-                            )
+                            todo!()
+                            // let z_m_at_alpha =
+                            // Self::calculate_lineval_sumcheck_instance_witness(
+                            //     label,
+                            //     constraint_domain,
+                            //     variable_domain,
+                            //     fft_precomputation,
+                            //     ifft_precomputation,
+                            //     assignment,
+                            //     matrix_transpose,
+                            //     *alpha,
+                            // )?;
+                            // Self::calculate_lineval_sumcheck_instance_witness_polys(
+                            //     label,
+                            //     variable_domain,
+                            //     max_variable_domain,
+                            //     combiner,
+                            //     Some(z_m_at_alpha),
+                            // )
                         }
                         VarunaVersion::V2 => Self::calculate_lineval_sumcheck_instance_witness_polys(
                             label,
@@ -234,36 +264,110 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
 
         let mut sums = num_instances.iter().map(|n| Vec::with_capacity(*n)).collect_vec();
-        let mut h_1_sum = DensePolynomial::zero();
-        let mut xg_1_sum = DensePolynomial::zero();
         let mut circuit_index = 0;
         let mut instances_seen = 0;
-        for (i, (lineval_a, lineval_b, lineval_c)) in
-            job_pool.execute_all().into_iter().collect::<Result<Vec<_>>>()?.into_iter().tuples().enumerate()
-        {
-            h_1_sum += &lineval_a.h_1_i;
-            h_1_sum += &lineval_b.h_1_i;
-            h_1_sum += &lineval_c.h_1_i;
-            xg_1_sum += &lineval_a.xg_1_i;
-            xg_1_sum += &lineval_b.xg_1_i;
-            xg_1_sum += &lineval_c.xg_1_i;
-            sums[circuit_index].push(MatrixSums { sum_a: lineval_a.sum, sum_b: lineval_b.sum, sum_c: lineval_c.sum });
-            if 1 + i - instances_seen == num_instances[circuit_index] {
-                instances_seen += num_instances[circuit_index];
-                circuit_index += 1;
+        let (h_1_sum, xg_1_sum) = match SM::MONOMIAL {
+            true => {
+                let mut h_1_sum = DensePolynomial::zero();
+                let mut xg_1_sum = DensePolynomial::zero();
+                for (i, (lineval_a, lineval_b, lineval_c)) in
+                    job_pool.execute_all().into_iter().collect::<Result<Vec<_>>>()?.into_iter().tuples().enumerate()
+                {
+                    let PolynomialWithBasis::Monomial { polynomial: lineval_a_h_1_i, .. } = lineval_a.h_1_i else {
+                        todo!()
+                    };
+                    let PolynomialWithBasis::Monomial { polynomial: lineval_b_h_1_i, .. } = lineval_b.h_1_i else {
+                        todo!()
+                    };
+                    let PolynomialWithBasis::Monomial { polynomial: lineval_c_h_1_i, .. } = lineval_c.h_1_i else {
+                        todo!()
+                    };
+                    let PolynomialWithBasis::Monomial { polynomial: lineval_a_xg_1_i, .. } = lineval_a.xg_1_i else {
+                        todo!()
+                    };
+                    let PolynomialWithBasis::Monomial { polynomial: lineval_b_xg_1_i, .. } = lineval_b.xg_1_i else {
+                        todo!()
+                    };
+                    let PolynomialWithBasis::Monomial { polynomial: lineval_c_xg_1_i, .. } = lineval_c.xg_1_i else {
+                        todo!()
+                    };
+                    h_1_sum += &*lineval_a_h_1_i.to_owned();
+                    h_1_sum += &*lineval_b_h_1_i.to_owned();
+                    h_1_sum += &*lineval_c_h_1_i.to_owned();
+                    xg_1_sum += &*lineval_a_xg_1_i.to_owned();
+                    xg_1_sum += &*lineval_b_xg_1_i.to_owned();
+                    xg_1_sum += &*lineval_c_xg_1_i.to_owned();
+                    sums[circuit_index].push(MatrixSums {
+                        sum_a: lineval_a.sum,
+                        sum_b: lineval_b.sum,
+                        sum_c: lineval_c.sum,
+                    });
+                    if 1 + i - instances_seen == num_instances[circuit_index] {
+                        instances_seen += num_instances[circuit_index];
+                        circuit_index += 1;
+                    }
+                }
+                (
+                    PolynomialWithBasis::new_dense_monomial_basis(h_1_sum, None),
+                    PolynomialWithBasis::new_dense_monomial_basis(xg_1_sum, None),
+                )
             }
-        }
-
-        let mask_poly = state.first_round_oracles.as_ref().unwrap().mask_poly.as_ref();
-        assert_eq!(SM::ZK, mask_poly.is_some());
-        assert_eq!(!SM::ZK, mask_poly.is_none());
-        let mask_poly = &mask_poly.map_or(DensePolynomial::zero(), |p| match &p.polynomial {
-            PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().into_dense(),
-            PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
-        });
-        let (mut h_1_mask, mut xg_1_mask) = mask_poly.divide_by_vanishing_poly(*max_variable_domain).unwrap();
-        h_1_sum += &core::mem::take(&mut h_1_mask);
-        xg_1_sum += &core::mem::take(&mut xg_1_mask);
+            false => {
+                let mut h_1_sum = Evaluations::zero(*max_variable_domain);
+                let mut xg_1_sum = Evaluations::zero(*max_variable_domain);
+                for (i, (lineval_a, lineval_b, lineval_c)) in
+                    job_pool.execute_all().into_iter().collect::<Result<Vec<_>>>()?.into_iter().tuples().enumerate()
+                {
+                    let PolynomialWithBasis::Lagrange { evaluations: lineval_a_h_1_i, .. } = lineval_a.h_1_i else {
+                        todo!()
+                    };
+                    let PolynomialWithBasis::Lagrange { evaluations: lineval_b_h_1_i, .. } = lineval_b.h_1_i else {
+                        todo!()
+                    };
+                    let PolynomialWithBasis::Lagrange { evaluations: lineval_c_h_1_i, .. } = lineval_c.h_1_i else {
+                        todo!()
+                    };
+                    let PolynomialWithBasis::Lagrange { evaluations: lineval_a_xg_1_i, .. } = lineval_a.xg_1_i else {
+                        todo!()
+                    };
+                    let PolynomialWithBasis::Lagrange { evaluations: lineval_b_xg_1_i, .. } = lineval_b.xg_1_i else {
+                        todo!()
+                    };
+                    let PolynomialWithBasis::Lagrange { evaluations: lineval_c_xg_1_i, .. } = lineval_c.xg_1_i else {
+                        todo!()
+                    };
+                    h_1_sum += &lineval_a_h_1_i;
+                    h_1_sum += &lineval_b_h_1_i;
+                    h_1_sum += &lineval_c_h_1_i;
+                    xg_1_sum += &lineval_a_xg_1_i;
+                    xg_1_sum += &lineval_b_xg_1_i;
+                    xg_1_sum += &lineval_c_xg_1_i;
+                    sums[circuit_index].push(MatrixSums {
+                        sum_a: lineval_a.sum,
+                        sum_b: lineval_b.sum,
+                        sum_c: lineval_c.sum,
+                    });
+                    if 1 + i - instances_seen == num_instances[circuit_index] {
+                        instances_seen += num_instances[circuit_index];
+                        circuit_index += 1;
+                    }
+                }
+                (PolynomialWithBasis::new_lagrange_basis(h_1_sum), PolynomialWithBasis::new_lagrange_basis(xg_1_sum))
+            }
+        };
+        // let mask_poly =
+        // state.first_round_oracles.as_ref().unwrap().mask_poly.as_ref();
+        // assert_eq!(SM::ZK, mask_poly.is_some());
+        // assert_eq!(!SM::ZK, mask_poly.is_none());
+        // let mask_poly = &mask_poly.map_or(DensePolynomial::zero(), |p| match
+        // &p.polynomial {     PolynomialWithBasis::Monomial { polynomial, .. }
+        // => polynomial.as_ref().into_dense(),
+        //     PolynomialWithBasis::Lagrange { evaluations } =>
+        // evaluations.as_ref().interpolate_by_ref(), });
+        // let (mut h_1_mask, mut xg_1_mask) =
+        // mask_poly.divide_by_vanishing_poly(*max_variable_domain).unwrap();
+        // h_1_sum += &core::mem::take(&mut h_1_mask);
+        // xg_1_sum += &core::mem::take(&mut xg_1_mask);
 
         let msg = ThirdMessage { sums };
 
@@ -272,7 +376,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
     pub(in crate::snark::varuna) fn calculate_assignments(
         state: &mut prover::State<F, SM>,
-    ) -> Result<BTreeMap<CircuitId, Vec<DensePolynomial<F>>>> {
+    ) -> Result<BTreeMap<CircuitId, Vec<PolynomialWithBasis<'static, F>>>> {
         let assignments_time = start_timer!(|| "Calculate assignments");
         let assignments: BTreeMap<_, _> = state
             .circuit_specific_states
@@ -286,9 +390,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     .enumerate()
                     .map(|(_j, (w_poly, x_poly))| {
                         let z_time = start_timer!(move || format!("Compute z poly for circuit {} {}", circuit.id, _j));
-                        let mut w_dense = match &w_poly.0.polynomial {
+                        let w_dense = match &w_poly.0.polynomial {
                             PolynomialWithBasis::Monomial { polynomial, .. } => {
-                                polynomial.as_ref().into_dense().mul_by_vanishing_poly(*input_domain)
+                                let mut poly = polynomial.as_ref().into_dense().mul_by_vanishing_poly(*input_domain);
+                                // Zip safety: `x_poly` is smaller than `z_poly`.
+                                poly.coeffs.iter_mut().zip(&x_poly.coeffs).for_each(|(z, x)| *z += x);
+                                PolynomialWithBasis::new_dense_monomial_basis(poly, None)
                             }
                             PolynomialWithBasis::Lagrange { evaluations } => {
                                 // TODO: make this more efficient and ergonomic.
@@ -296,13 +403,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 for i in 0..input_domain.size() {
                                     evals[i] = F::zero();
                                 }
+                                evals.iter_mut().zip(&x_poly.coeffs).for_each(|(z, x)| *z += x);
                                 let domain_size = evals.len().next_power_of_two();
                                 let domain = EvaluationDomain::new(domain_size).unwrap();
-                                Evaluations::from_vec_and_domain(evals, domain).interpolate_by_ref()
+                                let evals = Evaluations::from_vec_and_domain(evals, domain);
+                                PolynomialWithBasis::new_lagrange_basis(evals)
                             }
                         };
-                        // Zip safety: `x_poly` is smaller than `z_poly`.
-                        w_dense.coeffs.iter_mut().zip(&x_poly.coeffs).for_each(|(z, x)| *z += x);
                         end_timer!(z_time);
                         w_dense
                     })
@@ -349,10 +456,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         variable_domain: &EvaluationDomain<F>,
         fft_precomputation: &FFTPrecomputation<F>,
         ifft_precomputation: &IFFTPrecomputation<F>,
-        assignment: &DensePolynomial<F>,
+        assignment: &PolynomialWithBasis<'static, F>,
         matrix_transpose: &Matrix<F>,
         alpha: F,
-    ) -> Result<DensePolynomial<F>> {
+    ) -> Result<PolynomialWithBasis<'static, F>> {
         // Let C = variable_domain
         // Let R = constraint_domain
         // Let K = non_zero_domain
@@ -370,13 +477,24 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         end_timer!(m_at_alpha_evals_time);
 
         let z_m_at_alpha_time = start_timer!(|| format!("Compute z_m_at_alpha_time for {_matrix_label}"));
-        let m_at_alpha = Evaluations::from_vec_and_domain(m_at_alpha_evals, *variable_domain)
-            .interpolate_with_pc(ifft_precomputation);
-        let mut multiplier = PolyMultiplier::new();
-        multiplier.add_precomputation(fft_precomputation, ifft_precomputation);
-        multiplier.add_polynomial(m_at_alpha, "m_at_alpha");
-        multiplier.add_polynomial_ref(assignment, "assignment");
-        let z_m_at_alpha = multiplier.multiply().unwrap();
+        let z_m_at_alpha = match assignment {
+            PolynomialWithBasis::Monomial { polynomial, degree_bound } => {
+                let m_at_alpha = Evaluations::from_vec_and_domain(m_at_alpha_evals, *variable_domain)
+                    .interpolate_with_pc(ifft_precomputation);
+                let mut multiplier = PolyMultiplier::new();
+                let dense_poly = polynomial.as_ref().into_dense();
+                multiplier.add_precomputation(fft_precomputation, ifft_precomputation);
+                multiplier.add_polynomial(m_at_alpha, "m_at_alpha");
+                multiplier.add_polynomial_ref(&dense_poly, "assignment");
+                let poly = multiplier.multiply().unwrap();
+                PolynomialWithBasis::new_dense_monomial_basis(poly, *degree_bound)
+            }
+            PolynomialWithBasis::Lagrange { evaluations } => {
+                let mut m_at_alpha = Evaluations::from_vec_and_domain(m_at_alpha_evals, *variable_domain);
+                m_at_alpha *= evaluations.as_ref();
+                PolynomialWithBasis::new_lagrange_basis(m_at_alpha)
+            }
+        };
         end_timer!(z_m_at_alpha_time);
 
         Ok(z_m_at_alpha)
@@ -387,26 +505,18 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         variable_domain: &EvaluationDomain<F>,
         max_variable_domain: &EvaluationDomain<F>,
         combiner: F,
-        z_m_at_alpha: Option<DensePolynomial<F>>,
+        z_m_at_alpha: Option<PolynomialWithBasis<'static, F>>,
     ) -> Result<LinevalInstance<F>> {
         let z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
-        let sum = z_m_at_alpha.evaluate_over_domain_by_ref(*variable_domain).evaluations.into_iter().sum::<F>();
-
-        let basis_to_dense = |p: crate::polycommit::sonic_pc::PolynomialWithBasis<'static, F>| match p {
-            crate::polycommit::sonic_pc::PolynomialWithBasis::Monomial { polynomial, .. } => {
-                polynomial.as_ref().to_dense().into_owned()
+        let sum = match &z_m_at_alpha {
+            PolynomialWithBasis::Monomial { polynomial, .. } => {
+                polynomial.into_dense().evaluate_over_domain_by_ref(*variable_domain).evaluations.into_iter().sum::<F>()
             }
-            crate::polycommit::sonic_pc::PolynomialWithBasis::Lagrange { evaluations } => {
-                evaluations.as_ref().interpolate_by_ref()
-            }
+            PolynomialWithBasis::Lagrange { evaluations } => evaluations.evaluations.iter().copied().sum::<F>(),
         };
 
-        let z_m_at_alpha =
-            crate::polycommit::sonic_pc::PolynomialWithBasis::new_dense_monomial_basis(z_m_at_alpha, None);
         let (h_1_i, xg_1_i) =
             apply_randomized_selector(z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;
-        let h_1_i = basis_to_dense(h_1_i);
-        let xg_1_i = xg_1_i.map(basis_to_dense);
         let xg_1_i = xg_1_i.ok_or(anyhow::anyhow!("Expected remainder when applying selector."))?;
 
         Ok(LinevalInstance { h_1_i, xg_1_i, sum })

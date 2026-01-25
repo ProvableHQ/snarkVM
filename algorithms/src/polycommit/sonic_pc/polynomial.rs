@@ -156,6 +156,17 @@ impl<'a, F: PrimeField> LabeledPolynomialWithBasis<'a, F> {
         Self { info, polynomial }
     }
 
+    pub fn new_monomial_basis_owned(
+        label: PolynomialLabel,
+        polynomial: Polynomial<'a, F>,
+        degree_bound: Option<usize>,
+        hiding_bound: Option<usize>,
+    ) -> Self {
+        let polynomial = PolynomialWithBasis::new_monomial_basis(polynomial, degree_bound);
+        let info = PolynomialInfo::new(label, degree_bound, hiding_bound);
+        Self { info, polynomial }
+    }
+
     pub fn new_lagrange_basis(
         label: PolynomialLabel,
         polynomial: EvaluationsOnDomain<F>,

@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain},
+    polycommit::sonic_pc::PolynomialWithBasis,
     r1cs::{SynthesisError, SynthesisResult},
     snark::varuna::{AHPError, AHPForR1CS, Circuit, SNARKMode},
 };
@@ -63,7 +64,7 @@ pub struct CircuitSpecificState<F: PrimeField> {
     pub(super) x_polys: Vec<DensePolynomial<F>>,
 
     /// Intermediary polynomials of the row sumcheck.
-    pub(in crate::snark) z_m_at_alpha_polys: Option<VecDeque<[DensePolynomial<F>; 3]>>,
+    pub(in crate::snark) z_m_at_alpha_polys: Option<VecDeque<[PolynomialWithBasis<'static, F>; 3]>>,
 
     /// Intermediary polynomials of the matrix sumcheck.
     pub(in crate::snark) a_polys: Option<[super::ProverPolynomial<F>; 3]>,

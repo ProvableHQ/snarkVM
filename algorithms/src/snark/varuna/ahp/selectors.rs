@@ -129,10 +129,6 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // In Lagrange mode, we minimize extra transforms by allowing evaluation-form
         // input, but we perform the vanishing-division logic in coefficient
         // form.
-        let mut poly = match poly {
-            PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().to_dense().into_owned(),
-            PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
-        };
 
         // Substituting in s_i, we get that:
         // \sum_i{poly_i}/v_H = \sum{h_i*v_H + x_g_i}
@@ -146,19 +142,74 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         let selector_time = start_timer!(|| "Compute selector with remainder witness");
 
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
-        cfg_iter_mut!(poly.coeffs).for_each(|c| *c *= multiplier);
+        let (h_i, xg_i) = match poly {
+            PolynomialWithBasis::Monomial { polynomial, degree_bound } => {
+                let mut dense_poly = polynomial.as_ref().to_dense().into_owned();
+                cfg_iter_mut!(dense_poly.coeffs).for_each(|c| *c *= multiplier);
+                let (h_i, mut xg_i) = dense_poly.divide_by_vanishing_poly(*src_domain)?;
+                xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
 
-        let (h_i, mut xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;
-        xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
+                let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
+                ensure!(
+                    remainder.is_zero(),
+                    "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
+                );
 
-        let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
-        ensure!(remainder.is_zero(), "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})");
+                (
+                    PolynomialWithBasis::new_dense_monomial_basis(h_i, None),
+                    Some(PolynomialWithBasis::new_dense_monomial_basis(xg_i, None)),
+                )
+            }
+            PolynomialWithBasis::Lagrange { evaluations } => {
+                let mut dense_poly = evaluations.as_ref().interpolate_by_ref();
+                cfg_iter_mut!(dense_poly.coeffs).for_each(|c| *c *= multiplier);
+                let (h_i, mut xg_i) = dense_poly.divide_by_vanishing_poly(*src_domain)?;
+                xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
+
+                let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
+                ensure!(
+                    remainder.is_zero(),
+                    "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
+                );
+
+                let h_i_evals = h_i.evaluate_over_domain(*src_domain);
+                let xg_i_evals = xg_i.evaluate_over_domain(*src_domain);
+
+                (
+                    PolynomialWithBasis::new_lagrange_basis(h_i_evals),
+                    Some(PolynomialWithBasis::new_lagrange_basis(xg_i_evals)),
+                )
+
+                // TODO: research how to do this using evaluations only.
+                // let mut h_i = evaluations.evaluations.clone();
+                // cfg_iter_mut!(h_i).for_each(|e| *e *= multiplier);
+                // let mut xg_i = Vec::with_capacity(src_domain.size());
+                // xg_i.extend_from_slice(&evaluations.evaluations[src_domain.
+                // size()..]); // TODO: parallelize
+                // for i in 0..src_domain.size() {
+                //     h_i[i] = F::zero();
+                // }
+                // for i in 0..target_domain.size() {
+                //     xg_i[i] = F::zero();
+                // }
+                // let (xg_i, _remainder) = xg_i.split_at(src_domain.size());
+                // let h_i_domain_size = h_i.len().next_power_of_two();
+                // let xg_i_domain_size = xg_i.len().next_power_of_two();
+                // let h_i_domain =
+                // EvaluationDomain::new(h_i_domain_size).unwrap();
+                // let xg_i_domain =
+                // EvaluationDomain::new(xg_i_domain_size).unwrap();
+                // let h_i = Evaluations::from_vec_and_domain(h_i, h_i_domain);
+                // let xg_i =
+                // Evaluations::from_vec_and_domain(xg_i.into_iter().copied().
+                // collect(), xg_i_domain);
+                // (PolynomialWithBasis::new_lagrange_basis(h_i),
+                // Some(PolynomialWithBasis::new_lagrange_basis(xg_i)))
+            }
+        };
 
         end_timer!(selector_time);
-        Ok((
-            PolynomialWithBasis::new_dense_monomial_basis(h_i, None),
-            Some(PolynomialWithBasis::new_dense_monomial_basis(xg_i, None)),
-        ))
+        Ok((h_i, xg_i))
     }
 }
 

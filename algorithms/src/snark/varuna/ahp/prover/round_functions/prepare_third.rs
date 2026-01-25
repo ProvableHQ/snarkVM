@@ -15,6 +15,7 @@
 
 use crate::{
     fft::DensePolynomial,
+    polycommit::sonic_pc::PolynomialWithBasis,
     snark::varuna::{
         AHPError,
         Matrix,
@@ -32,7 +33,7 @@ use rand::RngCore;
 use std::collections::{BTreeMap, VecDeque};
 
 struct LinevalPrepInstance<F: PrimeField> {
-    z_m_at_alpha: DensePolynomial<F>,
+    z_m_at_alpha: PolynomialWithBasis<'static, F>,
     sum: F,
 }
 
@@ -74,7 +75,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     fn calculate_prep_lineval_sumcheck_witness(
         state: &mut prover::State<F, SM>,
         first_round_batch_combiners: &BTreeMap<CircuitId, verifier::BatchCombiners<F>>,
-        assignments: BTreeMap<CircuitId, Vec<DensePolynomial<F>>>,
+        assignments: BTreeMap<CircuitId, Vec<PolynomialWithBasis<'static, F>>>,
         matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>,
         alpha: &F,
     ) -> Result<ThirdMessage<F>> {
@@ -114,11 +115,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                             matrix_transpose,
                             *alpha,
                         )?;
-                        let sum = z_m_at_alpha
-                            .evaluate_over_domain_by_ref(circuit_specific_state.variable_domain)
-                            .evaluations
-                            .into_iter()
-                            .sum::<F>();
+                        let sum = match &z_m_at_alpha {
+                            PolynomialWithBasis::Monomial { polynomial, .. } => polynomial
+                                .into_dense()
+                                .evaluate_over_domain_by_ref(circuit_specific_state.variable_domain)
+                                .evaluations
+                                .into_iter()
+                                .sum::<F>(),
+                            PolynomialWithBasis::Lagrange { evaluations } => {
+                                evaluations.evaluations.iter().copied().sum::<F>()
+                            }
+                        };
                         Ok((circuit, LinevalPrepInstance { z_m_at_alpha, sum }))
                     });
                 }
