@@ -164,30 +164,7 @@ fn snark_prove_large_lagrange_vs_monomial(c: &mut Criterion) {
     let fs_parameters = FS::sample_parameters();
     let varuna_version = VarunaVersion::V2;
 
-    // Note: Even with Lagrange bases available, the "prove_lagrange" benchmark will
-    // still perform some monomial-basis commitments. Specifically, the `g_1`
-    // polynomial in round 3 has a degree bound (variable_domain_size - 2) and
-    // must use monomial basis because degree bounds are enforced via shifted
-    // powers in the SRS, which only work with monomial basis. See
-    // `poly_for_commit` in varuna.rs for the logic that preserves degree-bounded
-    // polynomials in monomial form.
     let (pk_monomial, vk_monomial) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
-    let pk_monomial = {
-        // Reuse the proving key, but remove Lagrange bases from the committer key to
-        // force monomial-basis commitments throughout proving.
-        let ck = pk_monomial.committer_key.as_ref();
-        let committer_key = CommitterKey {
-            powers_of_beta_g: ck.powers_of_beta_g.clone(),
-            lagrange_bases_at_beta_g: Default::default(),
-            powers_of_beta_times_gamma_g: ck.powers_of_beta_times_gamma_g.clone(),
-            shifted_powers_of_beta_g: ck.shifted_powers_of_beta_g.clone(),
-            shifted_powers_of_beta_times_gamma_g: ck.shifted_powers_of_beta_times_gamma_g.clone(),
-            enforced_degree_bounds: ck.enforced_degree_bounds.clone(),
-        };
-        let mut pk = pk_monomial.clone();
-        pk.committer_key = Arc::new(committer_key);
-        pk
-    };
 
     let (pk_lagrange, vk_lagrange) = VarunaLagrangeInst::circuit_setup(&universal_srs, &circuit).unwrap();
 
@@ -201,17 +178,18 @@ fn snark_prove_large_lagrange_vs_monomial(c: &mut Criterion) {
         &mut iter_rng,
     )
     .unwrap();
-    VarunaLagrangeInst::verify(
-        universal_verifier,
-        &fs_parameters,
-        &vk_lagrange,
-        varuna_version,
-        public_inputs.as_slice(),
-        &proof,
-    )
-    .unwrap();
-    // VarunaInst::prove(universal_prover, &fs_parameters, &pk_monomial,
-    // varuna_version, &circuit, &mut iter_rng) .unwrap();
+    assert!(
+        VarunaLagrangeInst::verify(
+            universal_verifier,
+            &fs_parameters,
+            &vk_lagrange,
+            varuna_version,
+            public_inputs.as_slice(),
+            &proof,
+        )
+        .unwrap()
+    );
+    VarunaInst::prove(universal_prover, &fs_parameters, &pk_monomial, varuna_version, &circuit, &mut iter_rng).unwrap();
 
     return;
 
