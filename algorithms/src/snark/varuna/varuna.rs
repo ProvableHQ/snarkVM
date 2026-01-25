@@ -422,6 +422,8 @@ where
         // --------------------------------------------------------------------
         // First round
 
+        println!("first round");
+
         let prover_state = AHPForR1CS::<_, SM>::prover_first_round(prover_state, zk_rng)?;
 
         let first_round_comm_time = start_timer!(|| "Committing to first round polys");
@@ -450,6 +452,8 @@ where
 
         // --------------------------------------------------------------------
         // Second round
+
+        println!("second round");
 
         let (second_oracles, prover_state) =
             AHPForR1CS::<_, SM>::prover_second_round(&verifier_first_message, prover_state, zk_rng)?;
@@ -505,6 +509,8 @@ where
         // --------------------------------------------------------------------
         // Third round
 
+        println!("third round");
+
         let (prover_third_message, third_oracles, prover_state) = AHPForR1CS::<_, SM>::prover_third_round(
             &verifier_first_message,
             &verifier_second_msg,
@@ -559,6 +565,8 @@ where
         // --------------------------------------------------------------------
         // Fourth round
 
+        println!("fourth round");
+
         let (prover_fourth_message, fourth_oracles, mut prover_state) =
             AHPForR1CS::<_, SM>::prover_fourth_round(&verifier_second_msg, &verifier_third_msg, prover_state, zk_rng)?;
 
@@ -586,6 +594,9 @@ where
 
         // --------------------------------------------------------------------
         // Fifth round
+
+        println!("fifth round");
+
         let fifth_oracles = AHPForR1CS::<_, SM>::prover_fifth_round(verifier_fourth_msg, prover_state, zk_rng)?;
 
         let fifth_round_comm_time = start_timer!(|| "Committing to fifth round polys");
