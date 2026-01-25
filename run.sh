@@ -33,6 +33,7 @@ case "$1" in
         ;;
     nsys)
         OUTPUT_NAME="${2:-snarkvm_test_profile}"
+        OUTPUT_FILE="${OUTPUT_NAME}.nsys-rep"
         echo "Building with cuvaruna + profiling..."
         cargo test test_transfer_private_execution --package snarkvm-synthesizer --lib --release \
             --features cuvaruna --features cuvaruna-profiling --no-run
@@ -45,7 +46,13 @@ case "$1" in
         fi
         echo "Found binary: $BINARY"
 
-        echo "Running nsys profile (output: ${OUTPUT_NAME}.nsys-rep)..."
+        # if output file already exists, delete it
+        if [ -f "$OUTPUT_FILE" ]; then
+            echo "Output file already exists, deleting it..."
+            rm "$OUTPUT_FILE"
+        fi
+
+        echo "Running nsys profile (output: ${OUTPUT_FILE})..."
         nsys profile --trace=cuda,nvtx,osrt --sample=cpu -o "$OUTPUT_NAME" \
             "$BINARY" test_transfer_private_execution --nocapture
         ;;
