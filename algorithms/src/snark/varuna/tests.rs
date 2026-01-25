@@ -262,9 +262,8 @@ mod varuna {
         // VarunaVersion::V1, &mut rng);
 
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
         SonicPCLagrangeTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
-        // SonicPCPoswTest::test_circuit(num_constraints, num_variables,
-        // pk_size_posw, VarunaVersion::V2, &mut rng);
 
         // SonicPCTest::test_serde_json(num_constraints, num_variables, &mut
         // rng); SonicPCPoswTest::test_serde_json(num_constraints,
