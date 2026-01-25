@@ -47,7 +47,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     ) -> Result<prover::FifthOracles<F>, AHPError> {
         let round_time = start_timer!(|| "AHP::Prover::FifthRound");
 
-        let lagrange_domain = state.lagrange_domain;
+        let _lagrange_domain = state.lagrange_domain;
         let lhs_sum: DensePolynomial<F> = cfg_reduce!(
             cfg_par_bridge!(verifier_message.into_iter().zip_eq(state.lhs_polys_into_iter())).map(
                 |(delta, mut lhs)| {

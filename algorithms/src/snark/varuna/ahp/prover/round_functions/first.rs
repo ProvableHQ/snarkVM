@@ -141,7 +141,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         x_poly: DensePolynomial<F>,
         variable_domain: EvaluationDomain<F>,
         input_domain: EvaluationDomain<F>,
-        lagrange_domain: Option<EvaluationDomain<F>>,
+        _lagrange_domain: Option<EvaluationDomain<F>>,
         circuit: &Circuit<F, SM>,
     ) -> Witness<F> {
         let mut w_extended = private_variables;
@@ -168,7 +168,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .collect();
 
         if !SM::MONOMIAL {
-            prover::to_prover_oracle_poly::<F, SM>(label, None, Some(w_poly_evals), None, Self::zk_bound()) 
+            prover::to_prover_oracle_poly::<F, SM>(label, None, Some(w_poly_evals), None, Self::zk_bound())
         } else {
             // Interpolating \widetilde{z} - \widetilde{x} and dividing by the
             // vanishing polynomial over variable_domain.

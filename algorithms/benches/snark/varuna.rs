@@ -154,12 +154,13 @@ fn snark_prove_large_lagrange_vs_monomial(c: &mut Criterion) {
 
     // Setup once (not benchmarked).
     let mut rng = TestRng::fixed(424242);
-    let (circuit, _public_inputs) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, &mut rng);
+    let (circuit, public_inputs) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, &mut rng);
     let indexed = AHPForR1CS::<Fr, VarunaHidingMode>::index(&circuit).unwrap();
     let max_degree = indexed.max_degree().unwrap();
 
     let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
     let universal_prover = &universal_srs.to_universal_prover().unwrap();
+    let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
     let fs_parameters = FS::sample_parameters();
     let varuna_version = VarunaVersion::V2;
 
@@ -170,7 +171,7 @@ fn snark_prove_large_lagrange_vs_monomial(c: &mut Criterion) {
     // powers in the SRS, which only work with monomial basis. See
     // `poly_for_commit` in varuna.rs for the logic that preserves degree-bounded
     // polynomials in monomial form.
-    let (pk_monomial, _vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+    let (pk_monomial, vk_monomial) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
     let pk_monomial = {
         // Reuse the proving key, but remove Lagrange bases from the committer key to
         // force monomial-basis commitments throughout proving.
@@ -188,7 +189,31 @@ fn snark_prove_large_lagrange_vs_monomial(c: &mut Criterion) {
         pk
     };
 
-    let (pk_lagrange, _vk) = VarunaLagrangeInst::circuit_setup(&universal_srs, &circuit).unwrap();
+    let (pk_lagrange, vk_lagrange) = VarunaLagrangeInst::circuit_setup(&universal_srs, &circuit).unwrap();
+
+    let mut iter_rng = TestRng::fixed(999);
+    let proof = VarunaLagrangeInst::prove(
+        universal_prover,
+        &fs_parameters,
+        &pk_lagrange,
+        varuna_version,
+        &circuit,
+        &mut iter_rng,
+    )
+    .unwrap();
+    VarunaLagrangeInst::verify(
+        universal_verifier,
+        &fs_parameters,
+        &vk_lagrange,
+        varuna_version,
+        public_inputs.as_slice(),
+        &proof,
+    )
+    .unwrap();
+    // VarunaInst::prove(universal_prover, &fs_parameters, &pk_monomial,
+    // varuna_version, &circuit, &mut iter_rng) .unwrap();
+
+    return;
 
     let mut group = c.benchmark_group("snark_prove_large_lagrange_vs_monomial");
     group.measurement_time(Duration::from_secs(20));

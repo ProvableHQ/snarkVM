@@ -44,6 +44,28 @@ pub enum Polynomial<'a, F: Field> {
     Dense(Cow<'a, DensePolynomial<F>>),
 }
 
+impl<'a, F: Field> std::ops::AddAssign<&'a Polynomial<'a, F>> for Polynomial<'a, F> {
+    fn add_assign(&mut self, other: &'a Polynomial<'a, F>) {
+        match (self, other) {
+            (Self::Sparse(_polynomial), Self::Sparse(_other_polynomial)) => {
+                // *polynomial.to_mut() += other_polynomial;
+                todo!()
+            }
+            (Self::Dense(polynomial), Self::Dense(other_polynomial)) => {
+                *polynomial.to_mut() += &*other_polynomial.to_owned();
+            }
+            (Self::Sparse(_polynomial), Self::Dense(_other_polynomial)) => {
+                todo!()
+                // *other_polynomial.to_mut() += polynomial;
+            }
+            (Self::Dense(_polynomial), Self::Sparse(_other_polynomial)) => {
+                todo!()
+                // *polynomial.to_mut() += other_polynomial;
+            }
+        }
+    }
+}
+
 impl<F: Field> CanonicalSerialize for Polynomial<'_, F> {
     fn serialize_with_mode<W: Write>(&self, writer: W, compress: Compress) -> Result<(), SerializationError> {
         match self {

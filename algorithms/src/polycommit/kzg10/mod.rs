@@ -28,7 +28,7 @@ use crate::{
 };
 use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, ProjectiveCurve};
 use snarkvm_fields::{One, PrimeField, Zero};
-use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, dev_println, rand::Uniform};
+use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, rand::Uniform};
 
 use anyhow::{Result, anyhow, ensure};
 use core::{marker::PhantomData, ops::Mul};

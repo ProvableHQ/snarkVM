@@ -249,6 +249,28 @@ pub enum PolynomialWithBasis<'a, F: PrimeField> {
     Lagrange { evaluations: Cow<'a, EvaluationsOnDomain<F>> },
 }
 
+impl<'a, F: PrimeField> std::ops::AddAssign<&'a PolynomialWithBasis<'a, F>> for PolynomialWithBasis<'a, F> {
+    fn add_assign(&mut self, other: &'a PolynomialWithBasis<'a, F>) {
+        match (self, other) {
+            (
+                Self::Monomial { polynomial, degree_bound },
+                Self::Monomial { polynomial: other_polynomial, degree_bound: other_degree_bound },
+            ) => {
+                *polynomial.to_mut() += other_polynomial;
+            }
+            (Self::Lagrange { evaluations }, Self::Lagrange { evaluations: other_evaluations }) => {
+                *evaluations.to_mut() += other_evaluations;
+            }
+            (Self::Monomial { .. }, Self::Lagrange { .. }) => {
+                todo!()
+            }
+            (Self::Lagrange { .. }, Self::Monomial { .. }) => {
+                todo!()
+            }
+        }
+    }
+}
+
 impl<'a, F: PrimeField> PolynomialWithBasis<'a, F> {
     pub fn new_monomial_basis_ref(polynomial: &'a Polynomial<F>, degree_bound: Option<usize>) -> Self {
         Self::Monomial { polynomial: Cow::Borrowed(polynomial), degree_bound }

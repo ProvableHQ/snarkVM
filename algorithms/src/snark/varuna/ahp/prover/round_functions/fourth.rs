@@ -167,7 +167,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         max_non_zero_domain: EvaluationDomain<F>,
         fft_precomputation: &FFTPrecomputation<F>,
         ifft_precomputation: &IFFTPrecomputation<F>,
-        lagrange_domain: Option<EvaluationDomain<F>>,
+        _lagrange_domain: Option<EvaluationDomain<F>>,
     ) -> Result<(Sum<F>, Lhs<F>, Gpoly<F>, Apoly<F>, Bpoly<F>)> {
         let (row_on_K, col_on_K, row_col_val) =
             (&arithmetization.row, &arithmetization.col, &arithmetization.row_col_val);
@@ -224,7 +224,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         end_timer!(f_poly_time);
         let g = DensePolynomial::from_coefficients_slice(&f.coeffs[1..]);
-        let mut h = &a_poly
+        let h = &a_poly
             - &{
                 let mut multiplier = PolyMultiplier::new();
                 multiplier.add_polynomial_ref(&b_poly, "b");
@@ -234,9 +234,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             };
 
         let combiner = F::one(); // We are applying combiners in the fifth round when summing the witnesses
-        let (lhs, remainder) =
-            apply_randomized_selector(&mut h, combiner, &max_non_zero_domain, &non_zero_domain, false)?;
+        let h = crate::polycommit::sonic_pc::PolynomialWithBasis::new_dense_monomial_basis(h, None);
+        let (lhs, remainder) = apply_randomized_selector(h, combiner, &max_non_zero_domain, &non_zero_domain, false)?;
         assert!(remainder.is_none());
+        let lhs = match lhs {
+            crate::polycommit::sonic_pc::PolynomialWithBasis::Monomial { polynomial, .. } => {
+                polynomial.as_ref().to_dense().into_owned()
+            }
+            crate::polycommit::sonic_pc::PolynomialWithBasis::Lagrange { evaluations } => {
+                evaluations.as_ref().interpolate_by_ref()
+            }
+        };
 
         let g_label = format!("g_{label}");
         let g = prover::to_prover_oracle_poly::<F, SM>(

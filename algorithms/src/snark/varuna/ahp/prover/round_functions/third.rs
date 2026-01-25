@@ -129,7 +129,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         assert!(g_1.degree() <= max_variable_domain.size() - 2);
         assert!(h_1.degree() <= 2 * max_variable_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 
-        let lagrange_domain = state.lagrange_domain;
+        let _lagrange_domain = state.lagrange_domain;
         let oracles = prover::ThirdOracles {
             g_1: prover::to_prover_oracle_poly::<F, SM>(
                 "g_1",
@@ -289,16 +289,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         let mut w_dense = match &w_poly.0.polynomial {
                             PolynomialWithBasis::Monomial { polynomial, .. } => {
                                 polynomial.as_ref().into_dense().mul_by_vanishing_poly(*input_domain)
-                            },
+                            }
                             PolynomialWithBasis::Lagrange { evaluations } => {
-                                let mut evals_clone = evaluations.evaluations.clone();
+                                // TODO: make this more efficient and ergonomic.
+                                let mut evals = evaluations.evaluations.clone();
                                 for i in 0..input_domain.size() {
-                                    evals_clone[i] = F::zero();
+                                    evals[i] = F::zero();
                                 }
-                                let domain_size = evals_clone.len().next_power_of_two();
+                                let domain_size = evals.len().next_power_of_two();
                                 let domain = EvaluationDomain::new(domain_size).unwrap();
-                                Evaluations::from_vec_and_domain(evals_clone, domain).interpolate_by_ref()
-                            },
+                                Evaluations::from_vec_and_domain(evals, domain).interpolate_by_ref()
+                            }
                         };
                         // Zip safety: `x_poly` is smaller than `z_poly`.
                         w_dense.coeffs.iter_mut().zip(&x_poly.coeffs).for_each(|(z, x)| *z += x);
@@ -388,11 +389,24 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         combiner: F,
         z_m_at_alpha: Option<DensePolynomial<F>>,
     ) -> Result<LinevalInstance<F>> {
-        let mut z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
+        let z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
         let sum = z_m_at_alpha.evaluate_over_domain_by_ref(*variable_domain).evaluations.into_iter().sum::<F>();
 
+        let basis_to_dense = |p: crate::polycommit::sonic_pc::PolynomialWithBasis<'static, F>| match p {
+            crate::polycommit::sonic_pc::PolynomialWithBasis::Monomial { polynomial, .. } => {
+                polynomial.as_ref().to_dense().into_owned()
+            }
+            crate::polycommit::sonic_pc::PolynomialWithBasis::Lagrange { evaluations } => {
+                evaluations.as_ref().interpolate_by_ref()
+            }
+        };
+
+        let z_m_at_alpha =
+            crate::polycommit::sonic_pc::PolynomialWithBasis::new_dense_monomial_basis(z_m_at_alpha, None);
         let (h_1_i, xg_1_i) =
-            apply_randomized_selector(&mut z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;
+            apply_randomized_selector(z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;
+        let h_1_i = basis_to_dense(h_1_i);
+        let xg_1_i = xg_1_i.map(basis_to_dense);
         let xg_1_i = xg_1_i.ok_or(anyhow::anyhow!("Expected remainder when applying selector."))?;
 
         Ok(LinevalInstance { h_1_i, xg_1_i, sum })

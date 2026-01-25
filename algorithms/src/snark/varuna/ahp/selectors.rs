@@ -14,7 +14,10 @@
 // limitations under the License.
 
 use super::verifier::QueryPoints;
-use crate::fft::{DensePolynomial, EvaluationDomain};
+use crate::{
+    fft::{EvaluationDomain, Evaluations},
+    polycommit::sonic_pc::PolynomialWithBasis,
+};
 use snarkvm_fields::{PrimeField, batch_inversion};
 use snarkvm_utilities::{cfg_into_iter, cfg_iter_mut};
 
@@ -70,12 +73,12 @@ pub(crate) fn precompute_selectors<F: PrimeField>(
 /// selector polynomial. This function applies the random combiner and selector
 /// in an optimized way
 pub(crate) fn apply_randomized_selector<F: PrimeField>(
-    poly: &mut DensePolynomial<F>,
+    poly: PolynomialWithBasis<'static, F>,
     combiner: F,
     target_domain: &EvaluationDomain<F>,
     src_domain: &EvaluationDomain<F>,
     remainder_witness: bool,
-) -> Result<(DensePolynomial<F>, Option<DensePolynomial<F>>)> {
+) -> Result<(PolynomialWithBasis<'static, F>, Option<PolynomialWithBasis<'static, F>>)> {
     // Let H = target_domain;
     // Let H_i = src_domain;
     // Let v_H := H.vanishing_polynomial();
@@ -93,15 +96,44 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // (H_i.size() / H.size());
         let selector_time = start_timer!(|| "Compute selector without remainder witness");
 
-        let (mut h_i, remainder) = poly.divide_by_vanishing_poly(*src_domain)?;
-        ensure!(remainder.is_zero(), "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})");
-
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
-        cfg_iter_mut!(h_i.coeffs).for_each(|c| *c *= multiplier);
 
+        let polys = match poly {
+            PolynomialWithBasis::Monomial { polynomial, .. } => {
+                let mut poly = polynomial.as_ref().to_dense().into_owned();
+                let (mut h_i, remainder) = poly.divide_by_vanishing_poly(*src_domain)?;
+                ensure!(
+                    remainder.is_zero(),
+                    "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
+                );
+
+                cfg_iter_mut!(h_i.coeffs).for_each(|c| *c *= multiplier);
+
+                (PolynomialWithBasis::new_dense_monomial_basis(h_i, None), None)
+            }
+            PolynomialWithBasis::Lagrange { evaluations } => {
+                let mut evals = evaluations.evaluations.clone();
+                for i in 0..src_domain.size() {
+                    evals[i] = F::zero();
+                }
+                evals.iter_mut().for_each(|e| *e *= multiplier);
+                let domain_size = evals.len().next_power_of_two();
+                let domain = EvaluationDomain::new(domain_size).unwrap();
+                let evals = Evaluations::from_vec_and_domain(evals, domain);
+                (PolynomialWithBasis::new_lagrange_basis(evals), None)
+            }
+        };
         end_timer!(selector_time);
-        Ok((h_i, None))
+        Ok(polys)
     } else {
+        // In Lagrange mode, we minimize extra transforms by allowing evaluation-form
+        // input, but we perform the vanishing-division logic in coefficient
+        // form.
+        let mut poly = match poly {
+            PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().to_dense().into_owned(),
+            PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
+        };
+
         // Substituting in s_i, we get that:
         // \sum_i{poly_i}/v_H = \sum{h_i*v_H + x_g_i}
         // \sum_i{c_i*s_i*(poly_i/v_H - x_g_i)} = \sum{h_i*v_H}
@@ -123,7 +155,10 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         ensure!(remainder.is_zero(), "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})");
 
         end_timer!(selector_time);
-        Ok((h_i, Some(xg_i)))
+        Ok((
+            PolynomialWithBasis::new_dense_monomial_basis(h_i, None),
+            Some(PolynomialWithBasis::new_dense_monomial_basis(xg_i, None)),
+        ))
     }
 }
 

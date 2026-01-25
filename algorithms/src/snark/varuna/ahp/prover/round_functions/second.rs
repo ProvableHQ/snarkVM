@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, polynomial::PolyMultiplier},
-    polycommit::sonic_pc::{PolynomialInfo, PolynomialLabel},
+    polycommit::sonic_pc::{LabeledPolynomialWithBasis, PolynomialInfo, PolynomialLabel, PolynomialWithBasis},
     snark::varuna::{
         Circuit,
         CircuitId,
@@ -65,7 +65,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         assert!(h_0.degree() <= 2 * max_constraint_domain.size() + 2 * zk_bound.unwrap_or(0) - 2);
 
-        let h_0 = prover::to_prover_oracle_poly::<F, SM>("h_0", Some(h_0), None, None, None);
+        // let h_0 = prover::to_prover_oracle_poly::<F, SM>("h_0", Some(h_0), None,
+        // None, None);
         let oracles = prover::SecondOracles { h_0 };
         assert!(oracles.matches_info(&Self::second_round_polynomial_info()));
 
@@ -77,7 +78,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     fn calculate_rowcheck_witness(
         state: &mut prover::State<F, SM>,
         batch_combiners: &BTreeMap<CircuitId, verifier::BatchCombiners<F>>,
-    ) -> Result<DensePolynomial<F>> {
+    ) -> Result<LabeledPolynomialWithBasis<'static, F>> {
         let mut job_pool = ExecutionPool::with_capacity(state.circuit_specific_states.len());
         let max_constraint_domain = state.max_constraint_domain;
 
@@ -98,45 +99,88 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 itertools::izip!(instance_combiners, z_a, z_b, z_c).enumerate()
             {
                 job_pool.add_job(move || {
-                    let mut instance_lhs = DensePolynomial::zero();
                     let za_label = witness_label(circuit.id, "z_a", j);
                     let zb_label = witness_label(circuit.id, "z_b", j);
                     let zc_label = witness_label(circuit.id, "z_c", j);
-                    let z_a = Self::calculate_z_m(za_label, z_a, constraint_domain, circuit);
-                    let z_b = Self::calculate_z_m(zb_label, z_b, constraint_domain, circuit);
-                    let z_c = Self::calculate_z_m(zc_label, z_c, constraint_domain, circuit);
-                    let mut multiplier_2 = PolyMultiplier::new();
-                    multiplier_2.add_precomputation(fft_precomputation, ifft_precomputation);
-                    multiplier_2.add_polynomial(z_a, "z_a");
-                    multiplier_2.add_polynomial(z_b, "z_b");
-                    let mut rowcheck = multiplier_2.multiply().unwrap();
-                    cfg_iter_mut!(rowcheck.coeffs).zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
+                    let rowcheck = if SM::MONOMIAL {
+                        // Monomial path (existing): interpolate z_m and multiply in coefficient form.
+                        let z_a = Self::calculate_z_m(za_label, z_a, constraint_domain, circuit);
+                        let z_b = Self::calculate_z_m(zb_label, z_b, constraint_domain, circuit);
+                        let z_c = Self::calculate_z_m(zc_label, z_c, constraint_domain, circuit);
+                        let mut multiplier_2 = PolyMultiplier::new();
+                        multiplier_2.add_precomputation(fft_precomputation, ifft_precomputation);
+                        multiplier_2.add_polynomial(z_a, "z_a");
+                        multiplier_2.add_polynomial(z_b, "z_b");
+                        let mut rowcheck = multiplier_2.multiply().unwrap();
+                        cfg_iter_mut!(rowcheck.coeffs).zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
+                        PolynomialWithBasis::new_dense_monomial_basis(rowcheck, None)
+                    } else {
+                        // Lagrange path: compute rowcheck directly in evaluation form.
+                        // rowcheck[k] = z_a[k] * z_b[k] - z_c[k]
+                        let rowcheck_evals = cfg_into_iter!(z_a)
+                            .zip_eq(z_b)
+                            .zip_eq(z_c)
+                            .map(|((a, b), c)| a * b - c)
+                            .collect::<Vec<_>>();
+                        let evals = EvaluationsOnDomain::from_vec_and_domain(rowcheck_evals, constraint_domain);
+                        PolynomialWithBasis::new_lagrange_basis(evals)
+                    };
 
-                    instance_lhs += &(&rowcheck * instance_combiner);
+                    let rowcheck = match rowcheck {
+                        PolynomialWithBasis::Monomial { polynomial, .. } => {
+                            let mut dense = polynomial.as_ref().to_dense().into_owned();
+                            dense *= instance_combiner;
+                            PolynomialWithBasis::new_dense_monomial_basis(dense, None)
+                        }
+                        PolynomialWithBasis::Lagrange { evaluations } => {
+                            let mut evals = evaluations.as_ref().clone();
+                            evals.evaluations.iter_mut().for_each(|e| *e *= instance_combiner);
+                            PolynomialWithBasis::new_lagrange_basis(evals)
+                        }
+                    };
 
                     let (h_0_i, remainder) = apply_randomized_selector(
-                        &mut instance_lhs,
+                        rowcheck,
                         circuit_combiner,
                         &max_constraint_domain,
                         &constraint_domain,
                         false,
                     )?;
                     assert!(remainder.is_none());
+
                     Ok::<_, anyhow::Error>(h_0_i)
                 });
             }
         }
 
         let h_sum_time = start_timer!(|| "AHP::Prover::SecondRound h_sum");
-        let h_sum: DensePolynomial<F> =
-            cfg_reduce!(cfg_into_iter!(job_pool.execute_all()), || Ok(DensePolynomial::zero()), |a, b| {
-                a.and_then(|a| {
-                    b.map(|mut b| {
-                        b += &a;
-                        b
-                    })
-                })
-            })?;
+        let label = "h_0".into();
+        let degree_bound = None;
+        let hiding_bound = None;
+        let h_sum: LabeledPolynomialWithBasis<F> = match SM::MONOMIAL {
+            true => {
+                let mut result = DensePolynomial::zero();
+                // TODO: consider using cfg_reduce!
+                for poly in job_pool.execute_all() {
+                    let PolynomialWithBasis::Monomial { polynomial, .. } = poly.unwrap() else { todo!() };
+                    result += polynomial.as_ref();
+                }
+                let polynomial = PolynomialWithBasis::new_dense_monomial_basis(result, degree_bound);
+                let info = PolynomialInfo::new(label, degree_bound, hiding_bound);
+                LabeledPolynomialWithBasis { info, polynomial }
+            }
+            false => {
+                let mut result = EvaluationsOnDomain::zero(max_constraint_domain);
+                // TODO: consider using cfg_reduce!
+                for poly in job_pool.execute_all() {
+                    let PolynomialWithBasis::Lagrange { evaluations } = poly.unwrap() else { todo!() };
+                    result += evaluations.as_ref();
+                }
+                let polynomial = PolynomialWithBasis::new_lagrange_basis(result);
+                let info = PolynomialInfo::new(label, degree_bound, hiding_bound);
+                LabeledPolynomialWithBasis { info, polynomial }
+            }
+        };
         end_timer!(h_sum_time);
 
         Ok(h_sum)

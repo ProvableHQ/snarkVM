@@ -38,6 +38,11 @@ pub struct Evaluations<F: PrimeField> {
 }
 
 impl<F: PrimeField> Evaluations<F> {
+    /// Construct `Self` as a zero polynomial over the domain `D`.
+    pub fn zero(domain: EvaluationDomain<F>) -> Self {
+        Self { evaluations: vec![F::zero(); domain.size()], domain }
+    }
+
     /// Construct `Self` from evaluations and a domain.
     pub fn from_vec_and_domain(mut evaluations: Vec<F>, domain: EvaluationDomain<F>) -> Self {
         // Pad evaluations to ensure we can always evaluate
