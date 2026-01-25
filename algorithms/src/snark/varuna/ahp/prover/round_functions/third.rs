@@ -266,7 +266,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let mut sums = num_instances.iter().map(|n| Vec::with_capacity(*n)).collect_vec();
         let mut circuit_index = 0;
         let mut instances_seen = 0;
-        let (h_1_sum, xg_1_sum) = match SM::MONOMIAL {
+        let (mut h_1_sum, mut xg_1_sum) = match SM::MONOMIAL {
             true => {
                 let mut h_1_sum = DensePolynomial::zero();
                 let mut xg_1_sum = DensePolynomial::zero();
@@ -355,19 +355,45 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 (PolynomialWithBasis::new_lagrange_basis(h_1_sum), PolynomialWithBasis::new_lagrange_basis(xg_1_sum))
             }
         };
-        // let mask_poly =
-        // state.first_round_oracles.as_ref().unwrap().mask_poly.as_ref();
-        // assert_eq!(SM::ZK, mask_poly.is_some());
-        // assert_eq!(!SM::ZK, mask_poly.is_none());
-        // let mask_poly = &mask_poly.map_or(DensePolynomial::zero(), |p| match
-        // &p.polynomial {     PolynomialWithBasis::Monomial { polynomial, .. }
-        // => polynomial.as_ref().into_dense(),
-        //     PolynomialWithBasis::Lagrange { evaluations } =>
-        // evaluations.as_ref().interpolate_by_ref(), });
-        // let (mut h_1_mask, mut xg_1_mask) =
-        // mask_poly.divide_by_vanishing_poly(*max_variable_domain).unwrap();
-        // h_1_sum += &core::mem::take(&mut h_1_mask);
-        // xg_1_sum += &core::mem::take(&mut xg_1_mask);
+        let mask_poly = state.first_round_oracles.as_ref().unwrap().mask_poly.as_ref();
+        assert_eq!(SM::ZK, mask_poly.is_some());
+        assert_eq!(!SM::ZK, mask_poly.is_none());
+        let mask_poly = &mask_poly.map_or(DensePolynomial::zero(), |p| match &p.polynomial {
+            PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().into_dense(),
+            PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
+        });
+        let (mut h_1_mask, mut xg_1_mask) = mask_poly.divide_by_vanishing_poly(*max_variable_domain).unwrap();
+        // TODO: support lagrange bases in this
+        let (h_1_sum, xg_1_sum) = match (h_1_sum, xg_1_sum) {
+            (
+                PolynomialWithBasis::Monomial { polynomial: h_1_sum, .. },
+                PolynomialWithBasis::Monomial { polynomial: xg_1_sum, .. },
+            ) => {
+                let mut h_1_sum = h_1_sum.to_owned().into_dense();
+                let mut xg_1_sum = xg_1_sum.to_owned().into_dense();
+                h_1_sum += &h_1_mask;
+                xg_1_sum += &xg_1_mask;
+                let h_1_sum = PolynomialWithBasis::new_dense_monomial_basis(h_1_sum, None);
+                let xg_1_sum = PolynomialWithBasis::new_dense_monomial_basis(xg_1_sum, None);
+                (h_1_sum, xg_1_sum)
+            }
+            (
+                PolynomialWithBasis::Lagrange { evaluations: h_1_sum, .. },
+                PolynomialWithBasis::Lagrange { evaluations: xg_1_sum, .. },
+            ) => {
+                let mut h_1_sum = h_1_sum.into_owned();
+                let mut xg_1_sum = xg_1_sum.into_owned();
+                // TODO: support masking in lagrange basis.
+                // println!("h_1_mask: {:?}", h_1_mask);
+                // println!("xg_1_mask: {:?}", xg_1_mask);
+                // h_1_sum += &h_1_mask;
+                // xg_1_sum += &xg_1_mask;
+                let h_1_sum = PolynomialWithBasis::new_lagrange_basis(h_1_sum);
+                let xg_1_sum = PolynomialWithBasis::new_lagrange_basis(xg_1_sum);
+                (h_1_sum, xg_1_sum)
+            }
+            _ => todo!(),
+        };
 
         let msg = ThirdMessage { sums };
 
