@@ -169,6 +169,20 @@ fn snark_prove_large_lagrange_vs_monomial(c: &mut Criterion) {
     let (pk_lagrange, vk_lagrange) = VarunaLagrangeInst::circuit_setup(&universal_srs, &circuit).unwrap();
 
     let mut iter_rng = TestRng::fixed(999);
+    let proof =
+        VarunaInst::prove(universal_prover, &fs_parameters, &pk_monomial, varuna_version, &circuit, &mut iter_rng)
+            .unwrap();
+    assert!(
+        VarunaInst::verify(
+            universal_verifier,
+            &fs_parameters,
+            &vk_monomial,
+            varuna_version,
+            public_inputs.as_slice(),
+            &proof,
+        )
+        .unwrap()
+    );
     let proof = VarunaLagrangeInst::prove(
         universal_prover,
         &fs_parameters,
@@ -189,7 +203,6 @@ fn snark_prove_large_lagrange_vs_monomial(c: &mut Criterion) {
         )
         .unwrap()
     );
-    VarunaInst::prove(universal_prover, &fs_parameters, &pk_monomial, varuna_version, &circuit, &mut iter_rng).unwrap();
 
     return;
 
