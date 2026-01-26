@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use crate::{
-    fft::DensePolynomial,
     polycommit::sonic_pc::PolynomialWithBasis,
     snark::varuna::{
         AHPError,
@@ -115,6 +114,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                             matrix_transpose,
                             *alpha,
                         )?;
+                        // Compute sum over variable_domain (n points)
                         let sum = match &z_m_at_alpha {
                             PolynomialWithBasis::Monomial { polynomial, .. } => polynomial
                                 .into_dense()
@@ -123,7 +123,19 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 .into_iter()
                                 .sum::<F>(),
                             PolynomialWithBasis::Lagrange { evaluations } => {
-                                evaluations.evaluations.iter().copied().sum::<F>()
+                                // z_m_at_alpha may be on a larger domain (2n) than variable_domain (n).
+                                // We need to evaluate on variable_domain to get the correct sum.
+                                let variable_domain = circuit_specific_state.variable_domain;
+                                if evaluations.domain() == variable_domain {
+                                    evaluations.evaluations.iter().copied().sum::<F>()
+                                } else {
+                                    // Interpolate to get the polynomial, then evaluate on variable_domain
+                                    let poly = evaluations.interpolate_by_ref();
+                                    poly.evaluate_over_domain_by_ref(variable_domain)
+                                        .evaluations
+                                        .into_iter()
+                                        .sum::<F>()
+                                }
                             }
                         };
                         Ok((circuit, LinevalPrepInstance { z_m_at_alpha, sum }))

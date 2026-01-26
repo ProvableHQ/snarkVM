@@ -15,7 +15,7 @@
 
 use super::verifier::QueryPoints;
 use crate::{
-    fft::{EvaluationDomain, Evaluations},
+    fft::EvaluationDomain,
     polycommit::sonic_pc::PolynomialWithBasis,
 };
 use snarkvm_fields::{PrimeField, batch_inversion};
@@ -112,15 +112,17 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
                 (PolynomialWithBasis::new_dense_monomial_basis(h_i, None), None)
             }
             PolynomialWithBasis::Lagrange { evaluations } => {
-                let mut evals = evaluations.evaluations.clone();
-                for i in 0..src_domain.size() {
-                    evals[i] = F::zero();
-                }
-                evals.iter_mut().for_each(|e| *e *= multiplier);
-                let domain_size = evals.len().next_power_of_two();
-                let domain = EvaluationDomain::new(domain_size).unwrap();
-                let evals = Evaluations::from_vec_and_domain(evals, domain);
-                (PolynomialWithBasis::new_lagrange_basis(evals), None)
+                // Interpolate from evaluation form, divide by vanishing poly, convert back
+                let poly = evaluations.as_ref().interpolate_by_ref();
+                let (mut h_i, remainder) = poly.divide_by_vanishing_poly(*src_domain)?;
+                ensure!(
+                    remainder.is_zero(),
+                    "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
+                );
+                cfg_iter_mut!(h_i.coeffs).for_each(|c| *c *= multiplier);
+                // Convert to Lagrange over target_domain for aggregation
+                let h_i_evals = h_i.evaluate_over_domain(*target_domain);
+                (PolynomialWithBasis::new_lagrange_basis(h_i_evals), None)
             }
         };
         end_timer!(selector_time);
@@ -172,8 +174,9 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
                     "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
                 );
 
-                let h_i_evals = h_i.evaluate_over_domain(*src_domain);
-                let xg_i_evals = xg_i.evaluate_over_domain(*src_domain);
+                // Evaluate over target_domain for consistent aggregation
+                let h_i_evals = h_i.evaluate_over_domain(*target_domain);
+                let xg_i_evals = xg_i.evaluate_over_domain(*target_domain);
 
                 (
                     PolynomialWithBasis::new_lagrange_basis(h_i_evals),

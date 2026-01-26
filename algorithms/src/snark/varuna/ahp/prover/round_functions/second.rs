@@ -19,9 +19,7 @@ use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, polynomial::PolyMultiplier},
     polycommit::sonic_pc::{LabeledPolynomialWithBasis, PolynomialInfo, PolynomialLabel, PolynomialWithBasis},
     snark::varuna::{
-        Circuit,
-        CircuitId,
-        SNARKMode,
+        Circuit, CircuitId, SNARKMode,
         ahp::{AHPForR1CS, verifier},
         prover,
         selectors::apply_randomized_selector,
@@ -31,7 +29,7 @@ use crate::{
 use anyhow::Result;
 use rand::RngCore;
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter_mut, cfg_reduce};
+use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter_mut};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -113,15 +111,33 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         cfg_iter_mut!(rowcheck.coeffs).zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
                         PolynomialWithBasis::new_dense_monomial_basis(rowcheck, None)
                     } else {
-                        // Lagrange path: compute rowcheck directly in evaluation form.
-                        // rowcheck[k] = z_a[k] * z_b[k] - z_c[k]
-                        let rowcheck_evals = cfg_into_iter!(z_a)
-                            .zip_eq(z_b)
-                            .zip_eq(z_c)
+                        // Lagrange path: For polynomial multiplication z_a * z_b, we need
+                        // evaluations on 2n points (not n) because the product has degree 2n-2.
+                        let n = constraint_domain.size();
+                        let large_domain = EvaluationDomain::new(2 * n).unwrap();
+
+                        // Interpolate to coefficients, then evaluate on larger domain
+                        let z_a_coeffs = EvaluationsOnDomain::from_vec_and_domain(z_a, constraint_domain)
+                            .interpolate_with_pc(&circuit.ifft_precomputation);
+                        let z_b_coeffs = EvaluationsOnDomain::from_vec_and_domain(z_b, constraint_domain)
+                            .interpolate_with_pc(&circuit.ifft_precomputation);
+                        let z_c_coeffs = EvaluationsOnDomain::from_vec_and_domain(z_c, constraint_domain)
+                            .interpolate_with_pc(&circuit.ifft_precomputation);
+
+                        // Evaluate on 2n domain
+                        let z_a_2n = z_a_coeffs.evaluate_over_domain(large_domain);
+                        let z_b_2n = z_b_coeffs.evaluate_over_domain(large_domain);
+                        let z_c_2n = z_c_coeffs.evaluate_over_domain(large_domain);
+
+                        // Compute rowcheck = z_a * z_b - z_c in evaluation form on 2n points
+                        let rowcheck_evals: Vec<F> = cfg_into_iter!(z_a_2n.evaluations)
+                            .zip_eq(z_b_2n.evaluations)
+                            .zip_eq(z_c_2n.evaluations)
                             .map(|((a, b), c)| a * b - c)
-                            .collect::<Vec<_>>();
-                        let evals = EvaluationsOnDomain::from_vec_and_domain(rowcheck_evals, constraint_domain);
-                        PolynomialWithBasis::new_lagrange_basis(evals)
+                            .collect();
+
+                        let rowcheck = EvaluationsOnDomain::from_vec_and_domain(rowcheck_evals, large_domain);
+                        PolynomialWithBasis::new_lagrange_basis(rowcheck)
                     };
 
                     let rowcheck = match rowcheck {
@@ -145,7 +161,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         false,
                     )?;
                     assert!(remainder.is_none());
-
                     Ok::<_, anyhow::Error>(h_0_i)
                 });
             }

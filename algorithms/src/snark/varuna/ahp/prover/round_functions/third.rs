@@ -15,19 +15,13 @@
 
 use crate::{
     fft::{
-        DensePolynomial,
-        EvaluationDomain,
-        Evaluations,
-        Polynomial,
+        DensePolynomial, EvaluationDomain, Evaluations, Polynomial,
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
     polycommit::sonic_pc::{LabeledPolynomialWithBasis, PolynomialInfo, PolynomialLabel, PolynomialWithBasis},
     snark::varuna::{
-        AHPError,
-        Matrix,
-        SNARKMode,
-        VarunaVersion,
+        AHPError, Matrix, SNARKMode, VarunaVersion,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
         matrices::transpose,
         prover::{self, MatrixSums, ThirdMessage},
@@ -111,6 +105,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             PolynomialWithBasis::Monomial { polynomial, .. } => polynomial.as_ref().into_dense(),
             PolynomialWithBasis::Lagrange { evaluations } => evaluations.as_ref().interpolate_by_ref(),
         };
+
 
         #[cfg(debug_assertions)]
         {
@@ -315,6 +310,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             false => {
                 let mut h_1_sum = Evaluations::zero(*max_variable_domain);
                 let mut xg_1_sum = Evaluations::zero(*max_variable_domain);
+
                 for (i, (lineval_a, lineval_b, lineval_c)) in
                     job_pool.execute_all().into_iter().collect::<Result<Vec<_>>>()?.into_iter().tuples().enumerate()
                 {
@@ -424,15 +420,47 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 PolynomialWithBasis::new_dense_monomial_basis(poly, None)
                             }
                             PolynomialWithBasis::Lagrange { evaluations } => {
-                                // TODO: make this more efficient and ergonomic.
-                                let mut evals = evaluations.evaluations.clone();
-                                for i in 0..input_domain.size() {
-                                    evals[i] = F::zero();
+                                // In Lagrange mode, w_poly stores evaluations of (z - x) / v_X over
+                                // variable_domain. To recover z, we need to:
+                                // 1. Multiply by v_X to get (z - x)
+                                // 2. Add x to get z
+                                let variable_domain = circuit_specific_state.variable_domain;
+                                let input_domain = circuit_specific_state.input_domain;
+
+                                // Compute x_evals from x_poly using FFT
+                                let x_evals = {
+                                    let mut coeffs = x_poly.coeffs.clone();
+                                    coeffs.resize(variable_domain.size(), F::zero());
+                                    variable_domain
+                                        .in_order_fft_in_place_with_pc(&mut coeffs, &circuit.fft_precomputation);
+                                    coeffs
+                                };
+
+                                // w stores (z-x)/v_X, so multiply by v_X to get (z-x)
+                                // v_X(omega^k) = omega^(k*|X|) - 1
+                                // We precompute powers iteratively: omega^|X|, omega^(2*|X|), ...
+                                let input_size = input_domain.size();
+                                let omega = variable_domain.group_gen;
+                                let omega_to_input_size = omega.pow([input_size as u64]); // omega^|X|
+
+                                // Compute (z-x) = w * v_X on variable_domain using iterative powers
+                                let mut omega_k_to_input_size = F::one(); // omega^(k*|X|), starts at k=0
+                                let z_minus_x_evals: Vec<F> = evaluations.evaluations.iter()
+                                    .map(|w_k| {
+                                        let v_X_at_k = omega_k_to_input_size - F::one();
+                                        let result = *w_k * v_X_at_k;
+                                        omega_k_to_input_size *= omega_to_input_size; // prepare for next k
+                                        result
+                                    })
+                                    .collect();
+
+                                // z_evals = (z-x) + x
+                                let mut z_evals = z_minus_x_evals;
+                                for (z, x) in z_evals.iter_mut().zip(&x_evals) {
+                                    *z += *x;
                                 }
-                                evals.iter_mut().zip(&x_poly.coeffs).for_each(|(z, x)| *z += x);
-                                let domain_size = evals.len().next_power_of_two();
-                                let domain = EvaluationDomain::new(domain_size).unwrap();
-                                let evals = Evaluations::from_vec_and_domain(evals, domain);
+
+                                let evals = Evaluations::from_vec_and_domain(z_evals, variable_domain);
                                 PolynomialWithBasis::new_lagrange_basis(evals)
                             }
                         };
@@ -516,9 +544,31 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 PolynomialWithBasis::new_dense_monomial_basis(poly, *degree_bound)
             }
             PolynomialWithBasis::Lagrange { evaluations } => {
-                let mut m_at_alpha = Evaluations::from_vec_and_domain(m_at_alpha_evals, *variable_domain);
-                m_at_alpha *= evaluations.as_ref();
-                PolynomialWithBasis::new_lagrange_basis(m_at_alpha)
+                // For polynomial multiplication, we need 2n points to avoid aliasing.
+                // m_at_alpha has degree n-1, assignment has degree n-1, product has degree 2n-2.
+                let n = variable_domain.size();
+                let large_domain = EvaluationDomain::new(2 * n).unwrap();
+
+                // Interpolate both to coefficient form, evaluate on 2n domain, multiply
+                let m_at_alpha_poly =
+                    Evaluations::from_vec_and_domain(m_at_alpha_evals, *variable_domain).interpolate();
+                let assignment_poly = evaluations.as_ref().interpolate_by_ref();
+
+                let m_at_alpha_2n = m_at_alpha_poly.evaluate_over_domain(large_domain);
+                let assignment_2n = assignment_poly.evaluate_over_domain(large_domain);
+
+                // Element-wise multiplication on 2n points (correct for degree 2n-2)
+                let z_m_at_alpha_evals_2n: Vec<F> = m_at_alpha_2n
+                    .evaluations
+                    .into_iter()
+                    .zip(assignment_2n.evaluations)
+                    .map(|(m, z)| m * z)
+                    .collect();
+
+                // Keep as Lagrange on 2n domain. When apply_randomized_selector interpolates,
+                // it will recover the true degree 2n-2 polynomial.
+                let z_m_at_alpha = Evaluations::from_vec_and_domain(z_m_at_alpha_evals_2n, large_domain);
+                PolynomialWithBasis::new_lagrange_basis(z_m_at_alpha)
             }
         };
         end_timer!(z_m_at_alpha_time);
@@ -534,11 +584,23 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         z_m_at_alpha: Option<PolynomialWithBasis<'static, F>>,
     ) -> Result<LinevalInstance<F>> {
         let z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
+
+        // Compute sum over variable_domain (n points), regardless of how z_m_at_alpha is stored
         let sum = match &z_m_at_alpha {
             PolynomialWithBasis::Monomial { polynomial, .. } => {
                 polynomial.into_dense().evaluate_over_domain_by_ref(*variable_domain).evaluations.into_iter().sum::<F>()
             }
-            PolynomialWithBasis::Lagrange { evaluations } => evaluations.evaluations.iter().copied().sum::<F>(),
+            PolynomialWithBasis::Lagrange { evaluations } => {
+                // z_m_at_alpha may be on a larger domain (2n) than variable_domain (n).
+                // We need to evaluate on variable_domain to get the correct sum.
+                if evaluations.domain() == *variable_domain {
+                    evaluations.evaluations.iter().copied().sum::<F>()
+                } else {
+                    // Interpolate to get the polynomial, then evaluate on variable_domain
+                    let poly = evaluations.interpolate_by_ref();
+                    poly.evaluate_over_domain_by_ref(*variable_domain).evaluations.into_iter().sum::<F>()
+                }
+            }
         };
 
         let (h_1_i, xg_1_i) =

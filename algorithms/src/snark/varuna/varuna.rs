@@ -98,18 +98,26 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
 
             let mut supported_lagrange_sizes = BTreeSet::new();
             if !SM::MONOMIAL {
-                // Provide Lagrange bases for domains used by Varuna.
-                for commit_degree in AHPForR1CS::<E::Fr, SM>::commitment_degrees(
-                    indexed_circuit.index_info.num_constraints,
-                    indexed_circuit.index_info.num_public_and_private_variables,
-                    indexed_circuit
-                        .index_info
-                        .num_non_zero_a
+                // For Lagrange commitment, we only need bases for the actual evaluation
+                // domain sizes (not polynomial degrees). These are:
+                // - variable_domain (for w, g_1)
+                // - constraint_domain (for h_0)
+                // - non_zero_domain (for h_2)
+                let constraint_domain_size = crate::fft::EvaluationDomain::<E::Fr>::compute_size_of_domain(
+                    indexed_circuit.index_info.num_constraints
+                ).unwrap();
+                let variable_domain_size = crate::fft::EvaluationDomain::<E::Fr>::compute_size_of_domain(
+                    indexed_circuit.index_info.num_public_and_private_variables
+                ).unwrap();
+                let non_zero_domain_size = crate::fft::EvaluationDomain::<E::Fr>::compute_size_of_domain(
+                    indexed_circuit.index_info.num_non_zero_a
                         .max(indexed_circuit.index_info.num_non_zero_b)
-                        .max(indexed_circuit.index_info.num_non_zero_c),
-                )? {
-                    supported_lagrange_sizes.insert(commit_degree.next_power_of_two());
-                }
+                        .max(indexed_circuit.index_info.num_non_zero_c)
+                ).unwrap();
+
+                supported_lagrange_sizes.insert(constraint_domain_size);
+                supported_lagrange_sizes.insert(variable_domain_size);
+                supported_lagrange_sizes.insert(non_zero_domain_size);
             }
 
             let (committer_key, _) = SonicKZG10::<E, FS>::trim(

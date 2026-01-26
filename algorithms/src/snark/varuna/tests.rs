@@ -17,16 +17,8 @@
 mod varuna {
     use crate::{
         snark::varuna::{
-            AHPForR1CS,
-            CircuitVerifyingKey,
-            VarunaHidingMode,
-            VarunaNonHidingLagrangeMode,
-            VarunaNonHidingMode,
-            VarunaSNARK,
-            VarunaVersion,
-            mode::SNARKMode,
-            proof::proof_size,
-            test_circuit::TestCircuit,
+            AHPForR1CS, CircuitVerifyingKey, VarunaHidingMode, VarunaNonHidingLagrangeMode, VarunaNonHidingMode,
+            VarunaSNARK, VarunaVersion, mode::SNARKMode, proof::proof_size, test_circuit::TestCircuit,
         },
         traits::{AlgebraicSponge, SNARK},
     };
@@ -35,8 +27,7 @@ mod varuna {
 
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
     use snarkvm_utilities::{
-        CanonicalSerialize,
-        ToBytes,
+        CanonicalSerialize, ToBytes,
         rand::{TestRng, Uniform},
     };
 
@@ -114,13 +105,15 @@ mod varuna {
                             }
                             let unique_instances = constraints.values().map(|instances| &instances[0]).collect::<Vec<_>>();
 
+                            let setup_start = std::time::Instant::now();
                             let index_keys =
                                 $snark_inst::batch_circuit_setup(&universal_srs, unique_instances.as_slice()).unwrap();
-                            println!("Called circuit setup");
+                            println!("Called circuit setup in {} ms", setup_start.elapsed().as_millis());
 
                             let mut pks_to_constraints = BTreeMap::new();
                             let mut vks_to_inputs = BTreeMap::new();
 
+                            let vk_start = std::time::Instant::now();
                             for (index_pk, index_vk) in index_keys.iter() {
                                 let certificate = $snark_inst::prove_vk(universal_prover, &fs_parameters, &index_vk, &index_pk).unwrap();
                                 let circuits = constraints[&index_pk.circuit.id].as_slice();
@@ -128,7 +121,7 @@ mod varuna {
                                 pks_to_constraints.insert(index_pk, circuits);
                                 vks_to_inputs.insert(index_vk, inputs[&index_pk.circuit.id].as_slice());
                             }
-                            println!("verified vks");
+                            println!("verified vks in {} ms", vk_start.elapsed().as_millis());
 
                             let start = std::time::Instant::now();
                             let proof =
@@ -144,11 +137,12 @@ mod varuna {
                                 println!("Compressed size is as expected ({actual_size} B)");
                             }
 
+                            let verify_start = std::time::Instant::now();
                             assert!(
                                 $snark_inst::verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof).unwrap(),
                                 "Batch verification failed with {instance_batch_size} instances and {circuit_batch_size} circuits for circuits: {constraints:?}"
                             );
-                            println!("Called verifier");
+                            println!("Called verifier in {} ms", verify_start.elapsed().as_millis());
                             return;
 
                             eprintln!("\nShould not verify with wrong inputs (i.e. verifier messages should print below):");
@@ -254,16 +248,24 @@ mod varuna {
         let num_variables = (1 << 15) - 10;
         let pk_size_zk = 138547;
         let pk_size_posw = 138209;
-        let mut rng = TestRng::default();
 
         // SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk,
         // VarunaVersion::V1, &mut rng);
         // SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw,
         // VarunaVersion::V1, &mut rng);
 
+        let mut rng = TestRng::fixed(42);
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
+        let mut rng = TestRng::fixed(42);
+        let instant = std::time::Instant::now();
         SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
+        let elapsed = instant.elapsed();
+        println!("Time taken: {:?}", elapsed);
+        let mut rng = TestRng::fixed(42);
+        let instant = std::time::Instant::now();
         SonicPCLagrangeTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
+        let elapsed = instant.elapsed();
+        println!("Time taken: {:?}", elapsed);
 
         // SonicPCTest::test_serde_json(num_constraints, num_variables, &mut
         // rng); SonicPCPoswTest::test_serde_json(num_constraints,
@@ -364,19 +366,14 @@ mod varuna_hiding {
     use crate::{
         crypto_hash::PoseidonSponge,
         snark::varuna::{
-            CircuitVerifyingKey,
-            VarunaHidingMode,
-            VarunaSNARK,
-            VarunaVersion,
-            ahp::AHPForR1CS,
+            CircuitVerifyingKey, VarunaHidingMode, VarunaSNARK, VarunaVersion, ahp::AHPForR1CS,
             test_circuit::TestCircuit,
         },
         traits::{AlgebraicSponge, SNARK},
     };
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
     use snarkvm_utilities::{
-        FromBytes,
-        ToBytes,
+        FromBytes, ToBytes,
         rand::{TestRng, Uniform},
     };
 
