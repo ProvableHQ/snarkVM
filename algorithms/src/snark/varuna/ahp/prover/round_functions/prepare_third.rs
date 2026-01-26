@@ -124,17 +124,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 .sum::<F>(),
                             PolynomialWithBasis::Lagrange { evaluations } => {
                                 // z_m_at_alpha may be on a larger domain (2n) than variable_domain (n).
-                                // We need to evaluate on variable_domain to get the correct sum.
+                                // We need the sum over variable_domain (n points).
                                 let variable_domain = circuit_specific_state.variable_domain;
                                 if evaluations.domain() == variable_domain {
                                     evaluations.evaluations.iter().copied().sum::<F>()
                                 } else {
-                                    // Interpolate to get the polynomial, then evaluate on variable_domain
-                                    let poly = evaluations.interpolate_by_ref();
-                                    poly.evaluate_over_domain_by_ref(variable_domain)
-                                        .evaluations
-                                        .into_iter()
-                                        .sum::<F>()
+                                    // The 2n domain has generator ω_{2n}, and n domain has ω_n = ω_{2n}^2.
+                                    // So the n domain points are the even-indexed points of the 2n domain.
+                                    // Sum of p over n-domain = sum of even-indexed evaluations on 2n domain.
+                                    let ratio = evaluations.domain().size() / variable_domain.size();
+                                    debug_assert_eq!(ratio, 2, "Expected 2n domain for z_m_at_alpha");
+                                    evaluations.evaluations.iter().step_by(ratio).copied().sum::<F>()
                                 }
                             }
                         };

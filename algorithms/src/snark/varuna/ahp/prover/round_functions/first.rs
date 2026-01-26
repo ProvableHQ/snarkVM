@@ -17,12 +17,9 @@ use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, SparsePolynomial},
     polycommit::sonic_pc::{PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        Circuit,
-        CircuitId,
-        SNARKMode,
+        Circuit, CircuitId, SNARKMode,
         ahp::{AHPError, AHPForR1CS},
-        prover,
-        witness_label,
+        prover, witness_label,
     },
 };
 use snarkvm_fields::PrimeField;
@@ -179,7 +176,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             prover::to_prover_oracle_poly::<F, SM>(label, None, Some(w_evals.evaluations), None, Self::zk_bound())
         } else {
             // Interpolating \widetilde{z} - \widetilde{x} and dividing by the
-            // vanishing polynomial over input_domain.
+            // vanishing polynomial over variable_domain.
             let w_poly = EvaluationsOnDomain::from_vec_and_domain(w_poly_evals, variable_domain)
                 .interpolate_with_pc(&circuit.ifft_precomputation);
             let (w_poly, remainder) = w_poly.divide_by_vanishing_poly(input_domain).unwrap();
