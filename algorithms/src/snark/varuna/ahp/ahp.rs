@@ -361,7 +361,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 .add(-batch_lineval_sum, LCTerm::One);
             lineval_sumcheck
         };
-
         assert!(evals.get_lc_eval(&lineval_sumcheck, beta)?.is_zero());
 
         linear_combinations.insert("g_1".into(), g_1);
