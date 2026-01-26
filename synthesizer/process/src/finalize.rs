@@ -31,7 +31,7 @@ impl<N: Network> Process<N> {
         store: &FinalizeStore<N, P>,
         deployment: &Deployment<N>,
         fee: &Fee<N>,
-    ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>)> {
+    ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>), ProcessFinalizeError> {
         let timer = timer!("Process::finalize_deployment");
 
         // Compute the program stack.
@@ -70,7 +70,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Retrieve the mappings to initialize");
 
         // Initialize the mappings, and store their finalize operations.
-        atomic_batch_scope!(store, {
+        let result = atomic_batch_scope!(store, {
             // Initialize a list for the finalize operations.
             let mut finalize_operations = Vec::with_capacity(deployment.program().mappings().len());
 
@@ -104,7 +104,9 @@ impl<N: Network> Process<N> {
             finish!(timer, "Finished finalizing the deployment");
             // Return the stack and finalize operations.
             Ok((stack, finalize_operations))
-        })
+        });
+
+        Ok(result?)
     }
 
     /// Finalizes the execution and fee.

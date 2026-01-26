@@ -37,7 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace};
+use crate::{CallMetrics, Process, Trace, error::*};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -237,7 +237,7 @@ pub struct Stack<N: Network> {
 
 impl<N: Network> Stack<N> {
     /// Initializes a new stack given the process and the program.
-    pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
+    pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self, StackInitError> {
         // Retrieve the program ID.
         let program_id = program.id();
         // Check that the program is well-formed.
@@ -246,16 +246,17 @@ impl<N: Network> Stack<N> {
         // If the program exists in the process, check that the new program is valid.
         if let Ok(existing_stack) = process.get_stack(program_id) {
             // Ensure the program is not `credits.aleo`.
-            ensure!(program_id != &ProgramID::from_str("credits.aleo")?, "Cannot re-initialize the 'credits.aleo'.");
+            if program_id == &ProgramID::from_str("credits.aleo")? {
+                return Err(StackInitError::CreditsReinitialization);
+            }
             // Get the existing program.
             let existing_program = existing_stack.program();
             // If the existing program does not have a constructor, check that the new program matches the existing program.
             // Otherwise, ensure that the upgrade is valid.
             match existing_program.contains_constructor() {
-                false => ensure!(
-                    existing_stack.program() == program,
-                    "Program '{program_id}' already exists with different contents."
-                ),
+                false => if existing_stack.program() != program {
+                    return Err(StackInitError::DifferentProgramAlreadyExists(program_id.to_string()));
+                },
                 true => Self::check_upgrade_is_valid(existing_program, program)?,
             }
         }
@@ -274,7 +275,7 @@ impl<N: Network> Stack<N> {
     }
 
     /// Initializes and checks the register state and well-formedness of the stack, even if it has already been initialized.
-    pub fn initialize_and_check(&self, process: &Process<N>) -> Result<()> {
+    pub fn initialize_and_check(&self, process: &Process<N>) -> Result<(), StackInitError> {
         // Acquire the locks for the constructor, register, and finalize types.
         let mut constructor_types = self.constructor_types.write();
         let mut register_types = self.register_types.write();
@@ -288,10 +289,12 @@ impl<N: Network> Stack<N> {
         // Add all the imports into the stack.
         for import in self.program.imports().keys() {
             // Ensure that the program does not import itself.
-            ensure!(import != self.program.id(), "Program cannot import itself");
+            if import == self.program.id() {
+                return Err(StackInitError::SelfImport);
+            }
             // Ensure the program imports all exist in the process already.
             if !process.contains_program(import) {
-                bail!("Cannot add program '{}' because its import '{import}' must be added first", self.program.id())
+                return Err(StackInitError::MissingImport(import.to_string()));
             }
         }
 
@@ -308,7 +311,9 @@ impl<N: Network> Stack<N> {
             // Retrieve the closure name.
             let name = closure.name();
             // Ensure the closure name is not already added.
-            ensure!(!register_types.contains_key(name), "Closure '{name}' already exists");
+            if register_types.contains_key(name) {
+                return Err(StackInitError::ClosureAlreadyExists(name.to_string()));
+            }
             // Compute the register types.
             let types = RegisterTypes::from_closure(self, closure)?;
             // Add the closure name and register types to the stack.
@@ -320,7 +325,9 @@ impl<N: Network> Stack<N> {
             // Retrieve the function name.
             let name = function.name();
             // Ensure the function name is not already added.
-            ensure!(!register_types.contains_key(name), "Function '{name}' already exists");
+            if register_types.contains_key(name) {
+                return Err(StackInitError::FunctionAlreadyExists(name.to_string()));
+            }
             // Compute the register types.
             let types = RegisterTypes::from_function(self, function)?;
             // Add the function name and register types to the stack.

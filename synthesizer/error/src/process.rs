@@ -59,6 +59,20 @@ pub enum ProcessDeployError {
     /// Stack execution failed during synthesis.
     #[error("Stack synthesis failed: {0}")]
     StackExec(#[from] StackExecError),
+    /// An error occurred during stack creation.
+    #[error("Stack creation failed: {0}")]
+    StackInit(#[from] StackInitError),
+    /// A temporary variant for type-erased anyhow errors.
+    #[error(transparent)]
+    Anyhow(#[from] anyhow::Error),
+}
+
+/// Errors that may occur during process finalization.
+#[derive(Debug, Error)]
+pub enum ProcessFinalizeError {
+    /// An error occurred during stack creation.
+    #[error("Stack creation failed: {0}")]
+    StackInit(#[from] StackInitError),
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
     Anyhow(#[from] anyhow::Error),
@@ -87,6 +101,32 @@ pub enum CallExecError {
     /// A circuit constraint was not satisfied.
     #[error(transparent)]
     Constraint(#[from] ConstraintUnsatisfied),
+    /// A temporary variant for type-erased anyhow errors.
+    #[error(transparent)]
+    Anyhow(#[from] anyhow::Error),
+}
+
+/// Errors that may occur during stack creation.
+#[derive(Debug, Error)]
+pub enum StackInitError {
+    /// A closure already exists in the process.
+    #[error("Closure '{0}' already exists")]
+    ClosureAlreadyExists(String),
+    /// Attempted to create a stack for credits.aleo.
+    #[error("Cannot re-initialize 'credits.aleo'")]
+    CreditsReinitialization,
+    /// The program with the given ID exists, but is not a match.
+    #[error("Program '{0}' already exists with different contents.")]
+    DifferentProgramAlreadyExists(String),
+    /// A function already exists in the process.
+    #[error("Function '{0}' already exists")]
+    FunctionAlreadyExists(String),
+    /// A program attempted to use a dependency that hasn't been imported.
+    #[error("Cannot add program, because its import '{0}' must be added first")]
+    MissingImport(String),
+    /// A program attempted to import itself.
+    #[error("Program cannot import itself")]
+    SelfImport,
     /// A temporary variant for type-erased anyhow errors.
     #[error(transparent)]
     Anyhow(#[from] anyhow::Error),

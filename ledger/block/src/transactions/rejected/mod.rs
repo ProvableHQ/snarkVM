@@ -105,7 +105,7 @@ impl<N: Network> Rejected<N> {
 #[non_exhaustive]
 pub enum RejectionReason {
     AlreadyDeployedInTheBlock = 0,
-    FailedToFinalize,
+    ProcessFinalizeError,
 }
 
 impl TryFrom<u8> for RejectionReason {

@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> Stack<N> {
     /// Initializes a new stack, given the process and program.
     #[inline]
-    pub(crate) fn initialize(process: &Process<N>, program: &Program<N>) -> Result<Self> {
+    pub(crate) fn initialize(process: &Process<N>, program: &Program<N>) -> Result<Self, StackInitError> {
         // Compute the appropriate edition for the stack.
         let edition = match process.contains_program(program.id()) {
             // If the program does not exist in the process, use edition zero.
