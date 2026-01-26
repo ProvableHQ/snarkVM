@@ -206,6 +206,7 @@ impl<N: Network> CallStack<N> {
 
 #[derive(Clone)]
 pub struct Stack<N: Network> {
+    pub get_consensus_version_: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
     /// The program (record types, structs, functions).
     program: Program<N>,
     /// A reference to the global stack map.

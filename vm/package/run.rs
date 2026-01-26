@@ -39,7 +39,7 @@ impl<N: Network> Package<N> {
         dev_println!("🚀 Running '{}'...\n", _locator.to_string());
 
         // Construct the process.
-        let process = self.get_process()?;
+        let process = self.get_process(Arc::new(|| Ok(ConsensusVersion::latest())))?;
         // Authorize the function call.
         let authorization = process.authorize::<A, R>(private_key, program_id, function_name, inputs.iter(), rng)?;
 

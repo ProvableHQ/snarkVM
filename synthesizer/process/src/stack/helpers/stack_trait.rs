@@ -16,6 +16,10 @@
 use super::*;
 
 impl<N: Network> StackTrait<N> for Stack<N> {
+    fn get_consensus_version(&self) -> anyhow::Result<ConsensusVersion> {
+        (self.get_consensus_version_)()
+    }
+
     /// Checks that the given value matches the layout of the value type.
     fn matches_value_type(&self, value: &Value<N>, value_type: &ValueType<N>) -> Result<()> {
         // Ensure the value matches the declared value type in the register.
@@ -69,7 +73,11 @@ impl<N: Network> StackTrait<N> for Stack<N> {
             bail!("Expected external record '{record_name}', found external record '{}'", record_type.name())
         }
 
-        external_stack.matches_record_internal(record, record_type, 0)
+        if self.get_consensus_version()? >= ConsensusVersion::V13 {
+            external_stack.matches_record_internal(record, record_type, 0)
+        } else {
+            self.matches_record_internal(record, record_type, 0)
+        }
     }
 
     /// Checks that the given record matches the layout of the record type.
@@ -579,18 +587,22 @@ impl<N: Network> Stack<N> {
 
         // Check that the arguments match the inputs.
         // Use the external stack if the future is from an external program.
+        let stack: &Stack<N> = if self.get_consensus_version()? >= ConsensusVersion::V13 {
+            external_stack.as_deref().unwrap_or(self)
+        } else {
+            self
+        };
+
         for (argument, input) in future.arguments().iter().zip_eq(inputs.iter()) {
             match (argument, input.finalize_type()) {
-                (Argument::Plaintext(plaintext), FinalizeType::Plaintext(plaintext_type)) => match &external_stack {
-                    Some(external_stack) => {
-                        external_stack.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?
-                    }
-                    None => self.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?,
-                },
-                (Argument::Future(future), FinalizeType::Future(locator)) => match &external_stack {
-                    Some(external_stack) => external_stack.matches_future_internal(future, locator, depth + 1)?,
-                    None => self.matches_future_internal(future, locator, depth + 1)?,
-                },
+                (Argument::Plaintext(plaintext), FinalizeType::Plaintext(plaintext_type)) => {
+                    stack.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?;
+                }
+
+                (Argument::Future(future), FinalizeType::Future(locator)) => {
+                    stack.matches_future_internal(future, locator, depth + 1)?;
+                }
+
                 (_, input_type) => {
                     bail!("Argument type does not match input type: expected '{input_type}'")
                 }

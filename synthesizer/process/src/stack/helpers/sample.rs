@@ -189,30 +189,23 @@ impl<N: Network> Stack<N> {
         };
 
         // Sample the arguments using the external stack if the future is from an external program.
+        let stack: &Stack<N> = if self.get_consensus_version()? >= ConsensusVersion::V13 {
+            external_stack.as_deref().unwrap_or(self)
+        } else {
+            self
+        };
+
         let arguments = inputs
             .into_iter()
-            .map(|input| {
-                match input.finalize_type() {
-                    FinalizeType::Plaintext(plaintext_type) => {
-                        // Sample the plaintext value using the appropriate stack.
-                        let plaintext = match &external_stack {
-                            Some(external_stack) => {
-                                external_stack.sample_plaintext_internal(plaintext_type, depth + 1, rng)?
-                            }
-                            None => self.sample_plaintext_internal(plaintext_type, depth + 1, rng)?,
-                        };
-                        // Return the argument.
-                        Ok(Argument::Plaintext(plaintext))
-                    }
-                    FinalizeType::Future(locator) => {
-                        // Sample the future value using the appropriate stack.
-                        let future = match &external_stack {
-                            Some(external_stack) => external_stack.sample_future_internal(locator, depth + 1, rng)?,
-                            None => self.sample_future_internal(locator, depth + 1, rng)?,
-                        };
-                        // Return the argument.
-                        Ok(Argument::Future(future))
-                    }
+            .map(|input| match input.finalize_type() {
+                FinalizeType::Plaintext(plaintext_type) => {
+                    let plaintext = stack.sample_plaintext_internal(plaintext_type, depth + 1, rng)?;
+                    Ok(Argument::Plaintext(plaintext))
+                }
+
+                FinalizeType::Future(locator) => {
+                    let future = stack.sample_future_internal(locator, depth + 1, rng)?;
+                    Ok(Argument::Future(future))
                 }
             })
             .collect::<Result<Vec<_>>>()?;

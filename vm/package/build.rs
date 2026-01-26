@@ -38,7 +38,7 @@ impl<N: Network> Package<N> {
         }
 
         // Construct the process.
-        let process = self.get_process()?;
+        let process = self.get_process(Arc::new(|| Ok(ConsensusVersion::latest())))?;
 
         // Synthesize each proving and verifying key.
         for function_name in program.functions().keys() {

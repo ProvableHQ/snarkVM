@@ -591,7 +591,7 @@ fn print_operations(ops: &[Operation]) {
 fn test_random_operations() {
     loop {
         let mut rng = TestRng::default();
-        let process = Process::<MainnetV0>::load().unwrap();
+        let process = Process::<MainnetV0>::load_v_latest().unwrap();
         let (store, _) = sample_finalize_store!();
         let mut state = State::new(8, &store, &mut rng);
 

@@ -104,7 +104,7 @@ function synthesize:
         let program = Program::from_str(&program_string)?;
 
         // Initialize a new process.
-        let process = Process::<N>::load()?;
+        let process = Process::<N>::load_v_latest()?; // TODO: can this use the latest consensus version?
         // Initialize the stack with the synthesis challenge program.
         let stack = Stack::new(&process, &program)?;
 

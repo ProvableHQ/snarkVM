@@ -19,7 +19,7 @@ use crate::{FinalizeGlobalState, Function, Operand, Program};
 use console::{
     account::Group,
     network::Network,
-    prelude::{Result, bail},
+    prelude::{ConsensusVersion, Result, bail},
     program::{
         Future,
         Identifier,
@@ -44,6 +44,8 @@ use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 ///
 /// We make it a trait only to avoid circular dependencies.
 pub trait StackTrait<N: Network> {
+    fn get_consensus_version(&self) -> anyhow::Result<ConsensusVersion>;
+
     /// Returns `true` if the proving key for the given function name exists.
     fn contains_proving_key(&self, function_name: &Identifier<N>) -> bool;
 

@@ -47,6 +47,7 @@ impl<N: Network> Stack<N> {
     pub(crate) fn create_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
         // Construct the stack for the program.
         let stack = Self {
+            get_consensus_version_: Arc::clone(&process.get_consensus_version),
             program: program.clone(),
             stacks: Arc::downgrade(&process.stacks),
             constructor_types: Default::default(),

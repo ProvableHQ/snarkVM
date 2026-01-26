@@ -46,7 +46,10 @@ use crate::{
 use anyhow::{Result, bail, ensure};
 use core::str::FromStr;
 use rand::{CryptoRng, Rng};
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 pub struct Package<N: Network> {
     /// The program ID.
@@ -150,9 +153,12 @@ impl<N: Network> Package<N> {
     }
 
     /// Returns a new process for the package.
-    pub fn get_process(&self) -> Result<Process<N>> {
+    pub fn get_process(
+        &self,
+        get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
+    ) -> Result<Process<N>> {
         // Load the default process.
-        let mut process = Process::load()?;
+        let mut process = Process::load(get_consensus_version)?;
         // Get the imported programs.
         let imports_directory = self.imports_directory();
         let mut programs = self
@@ -580,7 +586,7 @@ mod tests {
         let (directory, package) = crate::package::test_helpers::sample_token_package();
 
         // Get the program process and check all instructions.
-        assert!(package.get_process().is_ok());
+        assert!(package.get_process(Arc::new(|| Ok(ConsensusVersion::latest()))).is_ok());
 
         // Proactively remove the temporary directory (to conserve space).
         std::fs::remove_dir_all(directory).unwrap();

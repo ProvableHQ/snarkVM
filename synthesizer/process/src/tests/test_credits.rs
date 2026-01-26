@@ -459,7 +459,7 @@ fn test_bond_validator_simple() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -514,7 +514,7 @@ fn test_bond_public_with_minimum_bond() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -608,7 +608,7 @@ fn test_bond_validator_below_min_stake_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -644,7 +644,7 @@ fn test_bond_validator_same_withdrawal_address_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -680,7 +680,7 @@ fn test_bond_validator_with_insufficient_funds_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -717,7 +717,7 @@ fn test_bond_validator_different_commission_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -785,7 +785,7 @@ fn test_bond_validator_multiple_bonds() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -845,7 +845,7 @@ fn test_bond_validator_to_other_validator_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -931,7 +931,7 @@ fn test_bond_delegator_simple() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -993,7 +993,7 @@ fn test_bond_delegator_below_min_stake_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -1060,7 +1060,7 @@ fn test_bond_delegator_with_insufficient_funds_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -1127,7 +1127,7 @@ fn test_bond_delegator_multiple_bonds() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -1222,7 +1222,7 @@ fn test_bond_validator_and_delegator_multiple_times() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let finalize_store = FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1354,7 +1354,7 @@ fn test_bond_delegator_to_multiple_validators_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -1497,7 +1497,7 @@ fn test_unbond_validator() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -1641,7 +1641,7 @@ fn test_bond_validator_fails_if_unbonding_state() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -1728,7 +1728,7 @@ fn test_unbond_validator_fails_if_unbonding_beyond_their_stake() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -1826,7 +1826,7 @@ fn test_unbond_validator_continues_if_there_is_a_delegator() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -1907,7 +1907,7 @@ fn test_unbond_delegator() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -2065,7 +2065,7 @@ fn test_unbond_delegator_without_validator() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -2109,7 +2109,7 @@ fn test_unbond_delegator_removes_validator_with_insufficient_stake() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
 
@@ -2183,7 +2183,7 @@ fn test_unbond_delegator_as_validator() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let finalize_store = FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2268,7 +2268,7 @@ fn test_claim_unbond() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let finalize_store = FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2325,7 +2325,7 @@ fn test_set_validator_state() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let finalize_store = FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2362,7 +2362,7 @@ fn test_set_validator_state_for_non_validator_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let finalize_store = FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2381,7 +2381,7 @@ fn test_bonding_existing_stakers_to_closed_validator() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let finalize_store = FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2518,7 +2518,7 @@ fn test_bonding_new_staker_to_closed_validator_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let finalize_store = FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2562,7 +2562,7 @@ fn test_claim_unbond_public_to_withdrawal_address() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
@@ -2649,7 +2649,7 @@ fn test_bonding_multiple_stakers_to_same_withdrawal_address() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
@@ -2680,7 +2680,7 @@ fn test_claim_unbond_public_removes_withdraw_mapping() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
@@ -2738,7 +2738,7 @@ fn test_bond_validator_to_different_withdraw_address_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
@@ -2776,7 +2776,7 @@ fn test_bond_validator_with_different_commission_fails() {
     let rng = &mut TestRng::default();
 
     // Construct the process.
-    let process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
     // Initialize a new finalize store.
     let store = sample_finalize_store!();
@@ -2883,7 +2883,7 @@ mod sanity_checks {
         let caller = Address::try_from(&private_key).unwrap();
 
         // Construct a new process.
-        let process = Process::load().unwrap();
+        let process = Process::load_v_latest().unwrap();
         // Retrieve the stack.
         let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
@@ -2916,7 +2916,7 @@ mod sanity_checks {
         let caller = Address::try_from(&private_key).unwrap();
 
         // Construct a new process.
-        let process = Process::load().unwrap();
+        let process = Process::load_v_latest().unwrap();
         // Retrieve the stack.
         let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
@@ -2944,7 +2944,7 @@ mod sanity_checks {
         let signer = Address::try_from(&private_key).unwrap();
 
         // Construct a new process.
-        let process = Process::load().unwrap();
+        let process = Process::load_v_latest().unwrap();
         // Retrieve the stack.
         let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
@@ -2972,7 +2972,7 @@ mod sanity_checks {
         let caller = Address::try_from(&private_key).unwrap();
 
         // Construct a new process.
-        let process = Process::load().unwrap();
+        let process = Process::load_v_latest().unwrap();
         // Retrieve the stack.
         let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
@@ -3005,7 +3005,7 @@ mod sanity_checks {
         let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
         // Construct a new process.
-        let process = Process::load().unwrap();
+        let process = Process::load_v_latest().unwrap();
         // Retrieve the stack.
         let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 

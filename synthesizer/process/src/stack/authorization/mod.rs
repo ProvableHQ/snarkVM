@@ -375,7 +375,7 @@ pub(crate) mod test_helpers {
     /// Returns a sample authorization.
     pub fn sample_authorization(rng: &mut TestRng) -> Authorization<CurrentNetwork> {
         // Initialize the process.
-        let process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
@@ -408,7 +408,7 @@ pub(crate) mod test_helpers {
         let private_key = PrivateKey::new(rng).unwrap();
 
         // Initialize the process.
-        let process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
         // Specify the program ID
         let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();

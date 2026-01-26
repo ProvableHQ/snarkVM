@@ -2840,7 +2840,7 @@ function baz:
 
     // Generate the deployments.
     // Note that we are attempting to upgrade twice with consecutive editions.
-    let mut process = Process::load().unwrap();
+    let mut process = Process::load_v_latest().unwrap();
     process.add_program(&program_v0).unwrap();
     let mut deployment_v1 = process.deploy::<CurrentAleo, _>(&program_v1, rng).unwrap();
     deployment_v1.set_program_checksum_raw(Some(deployment_v1.program().to_checksum()));

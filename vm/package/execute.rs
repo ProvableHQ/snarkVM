@@ -51,7 +51,8 @@ impl<N: Network> Package<N> {
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
 
         // Construct the process.
-        let process = self.get_process()?;
+        let get_consensus_version = Arc::new(move || Ok(consensus_version));
+        let process = self.get_process(get_consensus_version)?;
         // Authorize the function call.
         let authorization = process.authorize::<A, R>(private_key, program_id, function_name, inputs.iter(), rng)?;
 

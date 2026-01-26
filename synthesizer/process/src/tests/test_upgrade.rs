@@ -24,7 +24,7 @@ type CurrentNetwork = MainnetV0;
 
 // A helper function to sample the default process.
 fn sample_process() -> Result<Process<CurrentNetwork>, Error> {
-    let mut process = Process::load()?;
+    let mut process = Process::load_v_latest()?;
     // Add the default program to the process.
     let default_program = Program::from_str(
         r"
@@ -42,7 +42,7 @@ constructor:
 #[test]
 fn test_add_simple_program() -> Result<()> {
     // Sample the default process.
-    let mut process = Process::<CurrentNetwork>::load()?;
+    let mut process = Process::<CurrentNetwork>::load_v_latest()?;
     // Add a simple program to the process.
     let initial_program = Program::from_str(
         r"
@@ -63,7 +63,7 @@ function foo:
 #[test]
 fn test_upgrade_without_constructor() -> Result<()> {
     // Sample the default process.
-    let mut process = Process::<CurrentNetwork>::load()?;
+    let mut process = Process::<CurrentNetwork>::load_v_latest()?;
     // Add a program without a constructor to the process.
     let initial_program = Program::from_str(
         r"

@@ -145,6 +145,8 @@ impl<N: Network> RegisterTypes<N> {
         // A literal address type.
         let literal_address_type = PlaintextType::Literal(LiteralType::Address);
 
+        let consensus_version = stack.get_consensus_version()?;
+
         // Because the register is an access, the accessed type must be a plaintext type.
         // We perform a single access, if the register type is a record.
         // This is done to minimize the number of `clone` operations and simplify the code.
@@ -196,11 +198,16 @@ impl<N: Network> RegisterTypes<N> {
                         Access::Index(_) => bail!("Attempted to index into an external record"),
                     };
                     // Retrieve the entry type from the external record.
+
                     match external_record.entries().get(path_name) {
                         // Qualify local struct references so subsequent accesses use the correct stack.
                         Some(entry_type) => {
-                            let qualified = entry_type.plaintext_type().clone().qualify(*locator.program_id());
-                            RegisterAccessType::Plaintext(qualified)
+                            if consensus_version >= crate::ConsensusVersion::V13 {
+                                let qualified = entry_type.plaintext_type().clone().qualify(*locator.program_id());
+                                RegisterAccessType::Plaintext(qualified)
+                            } else {
+                                RegisterAccessType::Plaintext(entry_type.plaintext_type().clone())
+                            }
                         }
                         None => bail!("'{path_name}' does not exist in external record '{locator}'"),
                     }
@@ -229,11 +236,16 @@ impl<N: Network> RegisterTypes<N> {
                 (RegisterAccessType::Plaintext(PlaintextType::ExternalStruct(locator)), Access::Member(identifier)) => {
                     let external_stack = stack.get_external_stack(locator.program_id())?;
                     // Retrieve the member type from the external struct.
+
                     match external_stack.program().get_struct(locator.resource())?.members().get(identifier) {
                         // Qualify local struct references so subsequent accesses use the correct stack.
                         Some(member_type) => {
-                            let qualified = member_type.clone().qualify(*locator.program_id());
-                            register_type = RegisterAccessType::Plaintext(qualified);
+                            if consensus_version >= crate::ConsensusVersion::V13 {
+                                let qualified = member_type.clone().qualify(*locator.program_id());
+                                register_type = RegisterAccessType::Plaintext(qualified);
+                            } else {
+                                register_type = RegisterAccessType::Plaintext(member_type.clone());
+                            }
                         }
                         None => bail!("'{identifier}' does not exist in struct '{locator}'"),
                     }
@@ -270,16 +282,20 @@ impl<N: Network> RegisterTypes<N> {
                         Some(input) => {
                             register_type = match input.finalize_type() {
                                 FinalizeType::Plaintext(plaintext_type) => {
-                                    let plaintext = match external_stack {
-                                        Some(ref stack) => plaintext_type.clone().qualify(*stack.program_id()),
-                                        None => plaintext_type.clone(),
+                                    let qualified_plaintext = if let Some(ref stack) = external_stack
+                                        && consensus_version >= crate::ConsensusVersion::V13
+                                    {
+                                        plaintext_type.clone().qualify(*stack.program_id())
+                                    } else {
+                                        plaintext_type.clone()
                                     };
 
-                                    RegisterAccessType::Plaintext(plaintext)
+                                    RegisterAccessType::Plaintext(qualified_plaintext)
                                 }
                                 FinalizeType::Future(locator) => RegisterAccessType::Future(*locator),
                             }
                         }
+
                         // Halts if the index is out of bounds.
                         None => bail!("Index out of bounds"),
                     }

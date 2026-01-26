@@ -86,6 +86,7 @@ use std::{collections::HashMap, sync::Arc};
 
 #[derive(Clone)]
 pub struct Process<N: Network> {
+    get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
     /// The universal SRS.
     universal_srs: UniversalSRS<N>,
     /// The mapping of program IDs to stacks.
@@ -97,12 +98,20 @@ pub struct Process<N: Network> {
 impl<N: Network> Process<N> {
     /// Initializes a new process.
     #[inline]
-    pub fn setup<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(rng: &mut R) -> Result<Self> {
+    pub fn setup<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
+        rng: &mut R,
+    ) -> Result<Self> {
         let timer = timer!("Process:setup");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let mut process = Self {
+            get_consensus_version,
+            universal_srs: UniversalSRS::load()?,
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+        };
+
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -224,12 +233,18 @@ impl<N: Network> Process<N> {
 impl<N: Network> Process<N> {
     /// Initializes a new process.
     #[inline]
-    pub fn load() -> Result<Self> {
+    pub fn load(
+        get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
+    ) -> Result<Self> {
         let timer = timer!("Process::load");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let mut process = Self {
+            get_consensus_version,
+            universal_srs: UniversalSRS::load()?,
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+        };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -262,14 +277,26 @@ impl<N: Network> Process<N> {
         Ok(process)
     }
 
+    #[inline]
+    pub fn load_v_latest() -> Result<Self> {
+        Self::load(Arc::new(|| Ok(ConsensusVersion::latest())))
+    }
+
     /// Initializes a new process with the V0 credits.aleo verifiying keys.
     #[inline]
-    pub fn load_v0() -> Result<Self> {
+    pub fn load_v0(
+        get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
+    ) -> Result<Self> {
         let timer = timer!("Process::load_v0");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let mut process = Self {
+            get_consensus_version,
+            universal_srs: UniversalSRS::load()?,
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+        };
+
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -305,10 +332,16 @@ impl<N: Network> Process<N> {
     /// Initializes a new process without downloading the 'credits.aleo' circuit keys (for web contexts).
     #[inline]
     #[cfg(feature = "wasm")]
-    pub fn load_web() -> Result<Self> {
+    pub fn load_web(
+        get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
+    ) -> Result<Self> {
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let mut process = Self {
+            get_consensus_version,
+            universal_srs: UniversalSRS::load()?,
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+        };
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
@@ -657,7 +690,7 @@ function compute:
     /// Initializes a new process with the given program.
     pub(crate) fn sample_process(program: &Program<CurrentNetwork>) -> Process<CurrentNetwork> {
         // Construct a new process.
-        let mut process = Process::load().unwrap();
+        let mut process = Process::load_v_latest().unwrap();
         // Add the program to the process.
         process.add_program(program).unwrap();
         // Return the process.

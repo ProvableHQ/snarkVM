@@ -164,7 +164,7 @@ function compute:
             .unwrap();
             assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
             // Construct the process.
-            let process = Process::load().unwrap();
+            let process = Process::load_v_latest().unwrap();
             // Compute the deployment.
             let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Unset the checksum.
@@ -208,7 +208,7 @@ function compute:
             .unwrap();
             assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
             // Construct the process.
-            let process = Process::load().unwrap();
+            let process = Process::load_v_latest().unwrap();
             // Compute the deployment.
             let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Set the program checksum.
@@ -310,7 +310,7 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
     let priority_fee_in_microcredits = 1_000;
 
     // Initialize the process.
-    let process = Process::load().unwrap();
+    let process = Process::load_v_latest().unwrap();
     // Authorize the fee.
     let authorization = process
         .authorize_fee_private::<CurrentAleo, _>(
@@ -364,7 +364,7 @@ pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng:
     let priority_fee_in_microcredits = 1_000;
 
     // Initialize the process.
-    let process = Process::load().unwrap();
+    let process = Process::load_v_latest().unwrap();
     // Authorize the fee.
     let authorization = process
         .authorize_fee_public::<CurrentAleo, _>(
@@ -500,7 +500,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             let program = large_transaction_program();
 
             // Construct the process.
-            let mut process = snarkvm_synthesizer_process::Process::load().unwrap();
+            let mut process = snarkvm_synthesizer_process::Process::load_v_latest().unwrap();
             // Add the program.
             process.add_program(&program).unwrap();
 
@@ -624,7 +624,7 @@ pub fn sample_genesis_block_and_components_uncached(
     let inputs = [address.to_string(), format!("{amount}_u64")];
 
     // Initialize the process.
-    let process = Process::load().unwrap();
+    let process = Process::load_v_latest().unwrap();
     // Create the transactions.
     let transactions = {
         Transactions::from_iter((0..2).map(|_| {

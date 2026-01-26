@@ -89,7 +89,7 @@ fn transfer_private(c: &mut Criterion) {
     let caller = Address::try_from(&private_key).unwrap();
 
     // Construct a new process.
-    let process = Process::load().unwrap();
+    let process = Process::load_v_latest().unwrap();
     // Retrieve the stack.
     let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
@@ -117,7 +117,7 @@ fn transfer_public(c: &mut Criterion) {
     let caller = Address::try_from(&private_key).unwrap();
 
     // Construct a new process.
-    let process = Process::load().unwrap();
+    let process = Process::load_v_latest().unwrap();
     // Retrieve the stack.
     let stack = process.get_stack(ProgramID::from_str("credits.aleo").unwrap()).unwrap();
 
@@ -138,7 +138,7 @@ fn large_program(c: &mut Criterion) {
     let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
     // Construct a new process.
-    let process = Process::load().unwrap();
+    let process = Process::load_v_latest().unwrap();
     // Create the program.
     let program = Program::from_str(
         r"

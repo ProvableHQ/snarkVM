@@ -3697,6 +3697,7 @@ name = "snarkvm-synthesizer-process"
 version = "4.4.0"
 dependencies = [
  "aleo-std",
+ "anyhow",
  "bincode",
  "colored 3.0.0",
  "criterion",
@@ -3725,6 +3726,7 @@ dependencies = [
 name = "snarkvm-synthesizer-program"
 version = "4.4.0"
 dependencies = [
+ "anyhow",
  "bincode",
  "criterion",
  "enum-iterator",

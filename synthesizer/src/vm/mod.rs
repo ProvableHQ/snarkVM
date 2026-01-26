@@ -144,22 +144,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Retrieve the block store.
         let block_store = store.block_store();
 
-        #[cfg(not(any(test, feature = "test")))]
-        let mut process = {
-            // Determine the latest block height.
-            let latest_block_height = block_store.current_block_height();
-            // Determine the consensus version.
-            let consensus_version = N::CONSENSUS_VERSION(latest_block_height)?; // TODO (raychu86): Record Commitment - Select the proper consensus version.
-            // Initialize a new process based on the consensus version.
-            if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
-                Process::load_v0()?
-            } else {
-                Process::load()?
-            }
+        let get_consensus_version = {
+            let block_store = block_store.clone();
+            Arc::new(move || N::CONSENSUS_VERSION(block_store.current_block_height()))
         };
-        #[cfg(any(test, feature = "test"))]
-        // Initialize a new process.
-        let mut process = Process::load()?;
+
+        let mut process = Process::load(get_consensus_version)?;
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
@@ -3196,7 +3186,7 @@ function check:
         assert!(vm.contains_program(&ProgramID::from_str("grandparent_program.aleo").unwrap()));
 
         // Initialize the process.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        let mut process = Process::<CurrentNetwork>::load_v_latest().unwrap();
 
         // Load the child and parent program
         process.add_program(&child_program_1).unwrap();
