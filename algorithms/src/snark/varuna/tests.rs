@@ -277,6 +277,34 @@ mod varuna {
     }
 
     #[test]
+    #[ignore] // Run with: cargo test --release benchmark_monomial_vs_lagrange -- --ignored --nocapture
+    fn benchmark_monomial_vs_lagrange() {
+        println!("\n{}", "=".repeat(80));
+        println!("BENCHMARK: Monomial vs Lagrange Mode");
+        println!("{}\n", "=".repeat(80));
+
+        // Test sizes from 2^20 to 2^24 (2^25 might be too large for memory)
+        let sizes: Vec<usize> =
+            vec![(1 << 20) - 1000, (1 << 21) - 1000, (1 << 22) - 1000, (1 << 23) - 1000, (1 << 24) - 1000];
+
+        for size in sizes {
+            let num_constraints = size;
+            let num_variables = size;
+            let pk_size = 0; // We don't check pk size for this benchmark
+
+            println!("\nTesting size: 2^{} - 1000 = {}", (size + 1000).ilog2(), size);
+
+            // Monomial mode
+            let mut rng = TestRng::fixed(42);
+            SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size, VarunaVersion::V2, &mut rng);
+
+            // Lagrange mode
+            let mut rng = TestRng::fixed(42);
+            SonicPCLagrangeTest::test_circuit(num_constraints, num_variables, pk_size, VarunaVersion::V2, &mut rng);
+        }
+    }
+
+    #[test]
     fn prove_and_verify_with_tall_matrix_small() {
         let num_constraints = 26;
         let num_variables = 25;

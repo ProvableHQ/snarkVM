@@ -63,6 +63,9 @@ pub struct CircuitSpecificState<F: PrimeField> {
     /// length of this list must be equal to the batch size.
     pub(super) x_polys: Vec<DensePolynomial<F>>,
 
+    /// For Lagrange mode: precomputed evaluations of x_polys on variable_domain.
+    pub(super) x_evals: Option<Vec<Vec<F>>>,
+
     /// Intermediary polynomials of the row sumcheck.
     pub(in crate::snark) z_m_at_alpha_polys: Option<VecDeque<[PolynomialWithBasis<'static, F>; 3]>>,
 
@@ -165,6 +168,15 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
                     private_variables.push(private_input);
                 }
 
+                // For Lagrange mode, precompute x_evals on variable_domain
+                let x_evals = if !SM::MONOMIAL {
+                    Some(x_polys.iter().map(|x_poly| {
+                        x_poly.evaluate_over_domain_by_ref(variable_domain).evaluations
+                    }).collect())
+                } else {
+                    None
+                };
+
                 let state = CircuitSpecificState {
                     input_domain,
                     variable_domain,
@@ -175,6 +187,7 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
                     batch_size,
                     padded_public_variables,
                     x_polys,
+                    x_evals,
                     private_variables,
                     z_a: Some(z_as),
                     z_b: Some(z_bs),

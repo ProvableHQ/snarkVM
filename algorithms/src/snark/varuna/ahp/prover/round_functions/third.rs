@@ -427,14 +427,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 let variable_domain = circuit_specific_state.variable_domain;
                                 let input_domain = circuit_specific_state.input_domain;
 
-                                // Compute x_evals from x_poly using FFT
-                                let x_evals = {
-                                    let mut coeffs = x_poly.coeffs.clone();
-                                    coeffs.resize(variable_domain.size(), F::zero());
-                                    variable_domain
-                                        .in_order_fft_in_place_with_pc(&mut coeffs, &circuit.fft_precomputation);
-                                    coeffs
-                                };
+                                // Use precomputed x_evals
+                                let x_evals = &circuit_specific_state.x_evals.as_ref().unwrap()[_j];
 
                                 // w stores (z-x)/v_X, so multiply by v_X to get (z-x)
                                 // v_X(omega^k) = omega^(k*|X|) - 1
@@ -456,7 +450,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
                                 // z_evals = (z-x) + x
                                 let mut z_evals = z_minus_x_evals;
-                                for (z, x) in z_evals.iter_mut().zip(&x_evals) {
+                                for (z, x) in z_evals.iter_mut().zip(x_evals) {
                                     *z += *x;
                                 }
 
