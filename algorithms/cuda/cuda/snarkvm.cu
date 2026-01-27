@@ -15,6 +15,9 @@
 
 #include <cuda.h>
 
+// Include sppark GPU utilities (provides ngpus, select_gpu, gpu_props)
+#include <util/all_gpus.cpp>
+
 #if defined(FEATURE_BLS12_381)
 #include <ff/bls12-381.hpp>
 #elif defined(FEATURE_BLS12_377)

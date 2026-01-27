@@ -80,7 +80,17 @@ fn main() {
         nvcc.cuda(true).flag("-ccbin").flag("/usr/bin/g++-12");
         // nvcc.flag("-g");
         nvcc.flag("-O3");
-        nvcc.flag("-arch=sm_80");
+
+        // Support multiple GPU architectures via CUDA_ARCH env var or compile for both A100 (sm_80) and H100 (sm_90)
+        let cuda_arch = env::var("CUDA_ARCH").unwrap_or_default();
+        if !cuda_arch.is_empty() {
+            nvcc.flag(&format!("-arch={}", cuda_arch));
+        } else {
+            // Generate code for both A100 (sm_80) and H100 (sm_90)
+            nvcc.flag("-gencode=arch=compute_80,code=sm_80");
+            nvcc.flag("-gencode=arch=compute_90,code=sm_90");
+        }
+
         nvcc.flag("-maxrregcount=255");
         nvcc.flag("-Xcompiler").flag("-Wno-unused-function");
         nvcc.flag("-Xcompiler").flag("-Wno-subobject-linkage");
@@ -96,6 +106,20 @@ fn main() {
             nvcc.include(include);
         }
         nvcc.file("cuda/snarkvm_api.cu").compile("snarkvm_algorithms_cuda");
+
+        // // Link CUDA runtime library
+        // println!("cargo:rustc-link-lib=cudart");
+
+        // // Add CUDA library search path
+        // if let Ok(cuda_path) = env::var("CUDA_HOME") {
+        //     println!("cargo:rustc-link-search={}/lib64", cuda_path);
+        // } else if let Ok(cuda_path) = env::var("CUDA_PATH") {
+        //     println!("cargo:rustc-link-search={}/lib64", cuda_path);
+        // } else {
+        //     // Default CUDA installation paths
+        //     println!("cargo:rustc-link-search=/usr/local/cuda/lib64");
+        //     println!("cargo:rustc-link-search=/usr/lib/x86_64-linux-gnu");
+        // }
 
         println!("cargo:rustc-cfg=feature=\"cuda\"");
         println!("cargo:rerun-if-changed=cuda");

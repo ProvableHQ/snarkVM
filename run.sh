@@ -6,6 +6,10 @@ BASE_CMD="cargo test test_transfer_private_execution --package snarkvm-synthesiz
 SUFFIX="-- --nocapture"
 
 case "$1" in
+    cpu)
+        echo "Running CPU only (no CUDA)..."
+        $BASE_CMD $SUFFIX
+        ;;
     base)
         echo "Running baseline (cuda only)..."
         $BASE_CMD --features cuda $SUFFIX
@@ -58,6 +62,7 @@ case "$1" in
         ;;
     *)
         echo "Usage:"
+        echo "  ./run.sh cpu               - Run CPU only (no CUDA)"
         echo "  ./run.sh base              - Run baseline (cuda feature only)"
         echo "  ./run.sh cu                - Run cuVaruna"
         echo "  ./run.sh cu debug          - Run cuVaruna with debug output"

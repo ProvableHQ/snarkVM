@@ -36,6 +36,10 @@ public:
   }
   bool ok() {
     if (!failed && snarkvm == nullptr) {
+      if (ngpus() == 0) {
+        failed = true;
+        return false;
+      }
       // SNP TODO: max domain size?
       snarkvm = new snarkvm_t(17);
       if (snarkvm == nullptr) {
