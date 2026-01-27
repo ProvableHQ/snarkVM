@@ -95,7 +95,11 @@ use rand::{SeedableRng, rngs::StdRng};
 use std::{
     collections::HashSet,
     num::NonZeroUsize,
-    sync::{Arc, mpsc},
+    sync::{
+        Arc,
+        atomic::{AtomicU16, Ordering},
+        mpsc,
+    },
     thread,
 };
 
@@ -115,6 +119,8 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     puzzle: Puzzle<N>,
     /// The VM store.
     store: ConsensusStore<N, C>,
+    /// Consensus version of the latest block
+    consensus_version: Arc<AtomicU16>,
     /// A cache containing the list of recent partially-verified transactions.
     partially_verified_transactions: Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>>,
     /// The restrictions list.
@@ -144,12 +150,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Retrieve the block store.
         let block_store = store.block_store();
 
-        let get_consensus_version = {
-            let block_store = block_store.clone();
-            Arc::new(move || N::CONSENSUS_VERSION(block_store.current_block_height()))
-        };
+        let consensus_version = N::CONSENSUS_VERSION(block_store.current_block_height())?;
+        let consensus_version_atomic = Arc::new(AtomicU16::new(consensus_version.to_u16()));
 
-        let mut process = Process::load(get_consensus_version)?;
+        #[cfg(not(any(test, feature = "test")))]
+        let mut process = {
+            // Initialize a new process based on the consensus version.
+            if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
+                Process::load_v0(Arc::clone(&consensus_version_atomic))?
+            } else {
+                Process::load(Arc::clone(&consensus_version_atomic))?
+            }
+        };
+        #[cfg(any(test, feature = "test"))]
+        // Initialize a new process.
+        let mut process = Process::load(Arc::clone(&consensus_version_atomic))?;
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
@@ -206,6 +221,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             process: Arc::new(RwLock::new(process)),
             puzzle: Self::new_puzzle()?,
             store,
+            consensus_version: consensus_version_atomic,
             partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
                 NonZeroUsize::new(Transactions::<N>::MAX_TRANSACTIONS).unwrap(),
             ))),
@@ -282,6 +298,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub fn transition_store(&self) -> &TransitionStore<N, C::TransitionStorage> {
         self.store.transition_store()
+    }
+
+    #[inline]
+    pub fn consensus_version(&self) -> anyhow::Result<ConsensusVersion> {
+        let raw = self.consensus_version.load(Ordering::Acquire);
+        ConsensusVersion::try_from(raw)
     }
 }
 
@@ -504,6 +526,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
                     self.update_credits_verifying_keys()?;
                 }
+
+                let new_version = N::CONSENSUS_VERSION(block.height())?;
+                self.consensus_version.store(new_version.to_u16(), Ordering::Release);
+
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
                 self.block_store().unpause_atomic_writes::<false>()?;

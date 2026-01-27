@@ -17,7 +17,12 @@ use super::*;
 
 impl<N: Network> StackTrait<N> for Stack<N> {
     fn get_consensus_version(&self) -> anyhow::Result<ConsensusVersion> {
-        (self.get_consensus_version_)()
+        let atomic = self
+            .consensus_version
+            .upgrade()
+            .ok_or_else(|| anyhow::anyhow!("Consensus version context no longer exists"))?;
+        let raw = atomic.load(std::sync::atomic::Ordering::Acquire);
+        ConsensusVersion::try_from(raw)
     }
 
     /// Checks that the given value matches the layout of the value type.

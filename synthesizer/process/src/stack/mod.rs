@@ -88,7 +88,7 @@ use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rand::{CryptoRng, Rng};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Weak, atomic::AtomicU16};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -206,7 +206,7 @@ impl<N: Network> CallStack<N> {
 
 #[derive(Clone)]
 pub struct Stack<N: Network> {
-    pub get_consensus_version_: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
+    consensus_version: Weak<AtomicU16>,
     /// The program (record types, structs, functions).
     program: Program<N>,
     /// A reference to the global stack map.

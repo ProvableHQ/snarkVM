@@ -2485,7 +2485,9 @@ fn test_process_deploy_credits_program() {
 
     // Initialize an empty process without the `credits` program.
     let empty_process = Process {
-        get_consensus_version: Arc::new(|| Ok(ConsensusVersion::latest())),
+        consensus_version: Arc::downgrade(&Arc::new(std::sync::atomic::AtomicU16::new(
+            ConsensusVersion::latest().to_u16(),
+        ))),
         universal_srs: UniversalSRS::<CurrentNetwork>::load().unwrap(),
         stacks: Default::default(),
         old_stacks: Default::default(),

@@ -82,11 +82,14 @@ use indexmap::IndexMap;
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Weak, atomic::AtomicU16},
+};
 
 #[derive(Clone)]
 pub struct Process<N: Network> {
-    get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
+    consensus_version: Weak<AtomicU16>,
     /// The universal SRS.
     universal_srs: UniversalSRS<N>,
     /// The mapping of program IDs to stacks.
@@ -99,14 +102,14 @@ impl<N: Network> Process<N> {
     /// Initializes a new process.
     #[inline]
     pub fn setup<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
-        get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
+        consensus_version: Arc<AtomicU16>,
         rng: &mut R,
     ) -> Result<Self> {
         let timer = timer!("Process:setup");
 
         // Initialize the process.
         let mut process = Self {
-            get_consensus_version,
+            consensus_version: Arc::downgrade(&consensus_version),
             universal_srs: UniversalSRS::load()?,
             stacks: Default::default(),
             old_stacks: Default::default(),
@@ -233,14 +236,12 @@ impl<N: Network> Process<N> {
 impl<N: Network> Process<N> {
     /// Initializes a new process.
     #[inline]
-    pub fn load(
-        get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
-    ) -> Result<Self> {
+    pub fn load(consensus_version: Arc<AtomicU16>) -> Result<Self> {
         let timer = timer!("Process::load");
 
         // Initialize the process.
         let mut process = Self {
-            get_consensus_version,
+            consensus_version: Arc::downgrade(&consensus_version),
             universal_srs: UniversalSRS::load()?,
             stacks: Default::default(),
             old_stacks: Default::default(),
@@ -277,21 +278,18 @@ impl<N: Network> Process<N> {
         Ok(process)
     }
 
-    #[inline]
     pub fn load_v_latest() -> Result<Self> {
-        Self::load(Arc::new(|| Ok(ConsensusVersion::latest())))
+        Self::load(Arc::new(AtomicU16::new(ConsensusVersion::latest().to_u16())))
     }
 
     /// Initializes a new process with the V0 credits.aleo verifiying keys.
     #[inline]
-    pub fn load_v0(
-        get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
-    ) -> Result<Self> {
+    pub fn load_v0(consensus_version: Arc<AtomicU16>) -> Result<Self> {
         let timer = timer!("Process::load_v0");
 
         // Initialize the process.
         let mut process = Self {
-            get_consensus_version,
+            consensus_version: Arc::downgrade(&consensus_version),
             universal_srs: UniversalSRS::load()?,
             stacks: Default::default(),
             old_stacks: Default::default(),
@@ -332,12 +330,10 @@ impl<N: Network> Process<N> {
     /// Initializes a new process without downloading the 'credits.aleo' circuit keys (for web contexts).
     #[inline]
     #[cfg(feature = "wasm")]
-    pub fn load_web(
-        get_consensus_version: Arc<dyn Fn() -> anyhow::Result<ConsensusVersion> + Send + Sync>,
-    ) -> Result<Self> {
+    pub fn load_web(consensus_version: Arc<AtomicU16>) -> Result<Self> {
         // Initialize the process.
         let mut process = Self {
-            get_consensus_version,
+            consensus_version: Arc::downgrade(&consensus_version),
             universal_srs: UniversalSRS::load()?,
             stacks: Default::default(),
             old_stacks: Default::default(),

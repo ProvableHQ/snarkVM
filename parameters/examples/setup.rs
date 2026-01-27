@@ -31,6 +31,7 @@ use std::{
     fs::File,
     io::{BufWriter, Read, Write},
     path::PathBuf,
+    sync::{Arc, atomic::AtomicU16},
 };
 
 fn checksum(bytes: &[u8]) -> String {
@@ -95,7 +96,7 @@ pub fn credits_program<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     // Initialize an RNG.
     let rng = &mut snarkvm_utilities::TestRng::fixed(1245897092);
     // Initialize the process.
-    let process = Process::setup::<A, _>(std::sync::Arc::new(|| Ok(ConsensusVersion::latest())), rng)?;
+    let process = Process::setup::<A, _>(Arc::clone(&Arc::new(AtomicU16::new(ConsensusVersion::latest().to_u16()))), rng)?;
     // Initialize the program.
     let program = Program::<N>::credits()?;
     let program_id = program.id();
