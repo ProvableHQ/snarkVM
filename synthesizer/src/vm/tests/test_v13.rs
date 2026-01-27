@@ -22,6 +22,89 @@ use snarkvm_synthesizer_program::Program;
 use console::network::ConsensusVersion;
 use snarkvm_utilities::TestRng;
 
+/// Tests that deploying a program using an external struct in an external record
+/// fails on consensus version V11.
+#[test]
+fn test_deploy_external_struct_in_external_record_v11() {
+    // Use V11 rather than V12 to make sure we still won't be on V13
+    // when deploying the second program.
+    assert!(deploy_etxernal_struct_in_external_record_programs(ConsensusVersion::V11).is_err());
+}
+
+/// Tests that deploying a program using an external struct in an external record
+/// succeeds on consensus version V13.
+#[test]
+fn test_deploy_external_struct_in_external_record_v13() {
+    assert!(deploy_etxernal_struct_in_external_record_programs(ConsensusVersion::V13).is_ok());
+}
+
+/// Deploys two programs to test external structs in external records.
+/// Returns the result of deploying the second program, which may fail
+/// or succeed depending on the consensus version.
+fn deploy_etxernal_struct_in_external_record_programs(
+    consensus_version: ConsensusVersion,
+) -> Result<snarkvm_ledger_block::Transaction<CurrentNetwork>> {
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    // Initialize the VM at the correct height.
+    let height = CurrentNetwork::CONSENSUS_HEIGHT(consensus_version).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(height, rng);
+
+    // Define the first program with a record that uses a local struct
+    let program_one = Program::from_str(
+        r"
+program child.aleo;
+
+struct Woo:
+    a as u32;
+    b as u32;
+
+record BooHoo:
+    owner as address.private;
+    woo as Woo.private;
+
+function foo:
+    cast 1u32 2u32 into r0 as Woo;
+    cast self.signer r0 into r1 as BooHoo.record;
+    output r1 as BooHoo.record;
+
+constructor:
+    assert.eq edition 0u16;
+",
+    )
+    .unwrap();
+
+    // Define the second program which refers to the external record type.
+    let program_two = Program::from_str(
+        r"
+import child.aleo;
+program parent.aleo;
+
+function omega_wrapper:
+    call child.aleo/foo into r0;
+    output r0 as child.aleo/BooHoo.record;
+
+constructor:
+    assert.eq edition 0u16;
+",
+    )
+    .unwrap();
+
+    // Deploy the first program.
+    let deployment_one = vm.deploy(&caller_private_key, &program_one, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment_one], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Deploy the second program.
+    vm.deploy(&caller_private_key, &program_two, None, 0, None, rng)
+}
+
 // This test verifies that a program with external structs cannot be deployed on
 // consensus version 12.
 #[test]

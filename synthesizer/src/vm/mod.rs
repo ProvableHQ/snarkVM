@@ -696,6 +696,8 @@ pub(crate) mod test_helpers {
             let block = sample_next_block(vm, &genesis_private_key, &[], rng).unwrap();
             vm.add_next_block(&block).unwrap();
         }
+
+        vm.consensus_version = Arc::new(AtomicU16::new(CurrentNetwork::CONSENSUS_VERSION(height).unwrap().to_u16()));
     }
 
     pub(crate) fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
