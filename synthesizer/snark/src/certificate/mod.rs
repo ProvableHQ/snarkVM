@@ -41,11 +41,12 @@ impl<N: Network> Certificate<N> {
         let timer = std::time::Instant::now();
 
         // Retrieve the proving parameters.
-        let universal_prover = N::varuna_universal_prover();
+        let degree_info = proving_key.circuit.index_info.degree_info::<N::Field, varuna::VarunaHidingMode>()?;
+        let universal_prover = N::varuna_universal_prover(degree_info);
         let fiat_shamir = N::varuna_fs_parameters();
 
         // Compute the certificate.
-        let certificate = Varuna::<N>::prove_vk(universal_prover, fiat_shamir, verifying_key, proving_key)?;
+        let certificate = Varuna::<N>::prove_vk(&universal_prover, fiat_shamir, verifying_key, proving_key)?;
 
         #[cfg(feature = "dev-print")]
         {

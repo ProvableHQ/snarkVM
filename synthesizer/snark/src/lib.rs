@@ -21,7 +21,7 @@ extern crate snarkvm_circuit as circuit;
 extern crate snarkvm_console as console;
 
 use console::network::{FiatShamir, prelude::*};
-use snarkvm_algorithms::{snark::varuna, traits::SNARK};
+use snarkvm_algorithms::{polycommit::kzg10::DegreeInfo, snark::varuna, traits::SNARK};
 use snarkvm_utilities::dev_println;
 
 use std::sync::{Arc, OnceLock};

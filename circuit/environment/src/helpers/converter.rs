@@ -265,13 +265,14 @@ mod tests {
 
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(200, 200, 300).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
-        let universal_prover = &universal_srs.to_universal_prover().unwrap();
         let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
         let fs_pp = FS::sample_parameters();
 
         let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &Circuit).unwrap();
         let varuna_version = VarunaVersion::V2;
         println!("Called circuit setup");
+        let degree_info = index_pk.circuit.index_info.degree_info::<Fr, VarunaHidingMode>().unwrap();
+        let universal_prover = &universal_srs.to_universal_prover(degree_info).unwrap();
 
         let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, varuna_version, &Circuit, rng).unwrap();
         println!("Called prover");

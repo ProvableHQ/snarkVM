@@ -83,6 +83,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let verifier::SecondMessage { alpha, .. } = second_message;
         let verifier::ThirdMessage { beta } = third_message;
+        let fft_precomp = state.fft_precomputation;
+        let ifft_precomp = state.ifft_precomputation;
 
         let mut pool = ExecutionPool::with_capacity(3 * state.circuit_specific_states.len());
 
@@ -109,8 +111,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         *beta,
                         v_R_i_alpha_v_C_i_beta,
                         max_non_zero_domain_size,
-                        &circuit.fft_precomputation,
-                        &circuit.ifft_precomputation,
+                        fft_precomp,
+                        ifft_precomp,
                     );
                     (circuit, result)
                 });

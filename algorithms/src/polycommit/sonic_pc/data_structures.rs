@@ -275,44 +275,11 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
 }
 
 impl<E: PairingEngine> CommitterKey<E> {
-    fn len(&self) -> usize {
-        if self.shifted_powers_of_beta_g.is_some() { self.shifted_powers_of_beta_g.as_ref().unwrap().len() } else { 0 }
-    }
-}
-
-/// `CommitterUnionKey` is a union of `CommitterKey`s, useful for multi-circuit
-/// batch proofs.
-#[derive(Debug)]
-pub struct CommitterUnionKey<'a, E: PairingEngine> {
-    /// The key used to commit to polynomials.
-    pub powers_of_beta_g: Option<&'a Vec<E::G1Affine>>,
-
-    /// The key used to commit to polynomials in Lagrange basis.
-    pub lagrange_bases_at_beta_g: BTreeMap<usize, &'a Vec<E::G1Affine>>,
-
-    /// The key used to commit to hiding polynomials.
-    pub powers_of_beta_times_gamma_g: Option<&'a Vec<E::G1Affine>>,
-
-    /// The powers used to commit to shifted polynomials.
-    /// This is `None` if `self` does not support enforcing any degree bounds.
-    pub shifted_powers_of_beta_g: Option<&'a Vec<E::G1Affine>>,
-
-    /// The powers used to commit to shifted hiding polynomials.
-    /// This is `None` if `self` does not support enforcing any degree bounds.
-    pub shifted_powers_of_beta_times_gamma_g: Option<BTreeMap<usize, &'a Vec<E::G1Affine>>>,
-
-    /// The degree bounds that are supported by `self`.
-    /// Sorted in ascending order from smallest bound to largest bound.
-    /// This is `None` if `self` does not support enforcing any degree bounds.
-    pub enforced_degree_bounds: Option<Vec<usize>>,
-}
-
-impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
     /// Obtain powers for the underlying KZG10 construction
     pub fn powers(&self) -> kzg10::Powers<E> {
         kzg10::Powers {
-            powers_of_beta_g: self.powers_of_beta_g.unwrap().as_slice().into(),
-            powers_of_beta_times_gamma_g: self.powers_of_beta_times_gamma_g.unwrap().as_slice().into(),
+            powers_of_beta_g: self.powers_of_beta_g.as_slice().into(),
+            powers_of_beta_times_gamma_g: self.powers_of_beta_times_gamma_g.as_slice().into(),
         }
     }
 
@@ -345,54 +312,9 @@ impl<'a, E: PairingEngine> CommitterUnionKey<'a, E> {
     pub fn lagrange_basis(&self, domain: EvaluationDomain<E::Fr>) -> Option<kzg10::LagrangeBasis<E>> {
         self.lagrange_bases_at_beta_g.get(&domain.size()).map(|basis| kzg10::LagrangeBasis {
             lagrange_basis_at_beta_g: Cow::Borrowed(basis),
-            powers_of_beta_times_gamma_g: Cow::Borrowed(self.powers_of_beta_times_gamma_g.unwrap()),
+            powers_of_beta_times_gamma_g: Cow::Borrowed(&self.powers_of_beta_times_gamma_g),
             domain,
         })
-    }
-
-    pub fn union<T: IntoIterator<Item = &'a CommitterKey<E>>>(committer_keys: T) -> Self {
-        let mut ck_union = CommitterUnionKey::<E> {
-            powers_of_beta_g: None,
-            lagrange_bases_at_beta_g: BTreeMap::new(),
-            powers_of_beta_times_gamma_g: None,
-            shifted_powers_of_beta_g: None,
-            shifted_powers_of_beta_times_gamma_g: None,
-            enforced_degree_bounds: None,
-        };
-        let mut enforced_degree_bounds = vec![];
-        let mut biggest_ck: Option<&CommitterKey<E>> = None;
-        let mut shifted_powers_of_beta_times_gamma_g = BTreeMap::new();
-        for ck in committer_keys {
-            if biggest_ck.is_none() || biggest_ck.unwrap().len() < ck.len() {
-                biggest_ck = Some(ck);
-            }
-            let lagrange_bases = &ck.lagrange_bases_at_beta_g;
-            for (bound_base, bases) in lagrange_bases.iter() {
-                ck_union.lagrange_bases_at_beta_g.entry(*bound_base).or_insert(bases);
-            }
-            if let Some(shifted_powers) = ck.shifted_powers_of_beta_times_gamma_g.as_ref() {
-                for (bound_power, powers) in shifted_powers.iter() {
-                    shifted_powers_of_beta_times_gamma_g.entry(*bound_power).or_insert(powers);
-                }
-            }
-            if let Some(degree_bounds) = &ck.enforced_degree_bounds {
-                enforced_degree_bounds.append(&mut degree_bounds.clone());
-            }
-        }
-
-        let biggest_ck = biggest_ck.unwrap();
-        ck_union.powers_of_beta_g = Some(&biggest_ck.powers_of_beta_g);
-        ck_union.powers_of_beta_times_gamma_g = Some(&biggest_ck.powers_of_beta_times_gamma_g);
-        ck_union.shifted_powers_of_beta_g = biggest_ck.shifted_powers_of_beta_g.as_ref();
-
-        if !enforced_degree_bounds.is_empty() {
-            enforced_degree_bounds.sort();
-            enforced_degree_bounds.dedup();
-            ck_union.enforced_degree_bounds = Some(enforced_degree_bounds);
-            ck_union.shifted_powers_of_beta_times_gamma_g = Some(shifted_powers_of_beta_times_gamma_g);
-        }
-
-        ck_union
     }
 }
 

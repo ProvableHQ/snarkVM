@@ -20,6 +20,7 @@ use snarkvm_algorithms::{
     AlgebraicSponge,
     SNARK,
     crypto_hash::PoseidonSponge,
+    polycommit::kzg10::DegreeInfo,
     snark::varuna::{CircuitVerifyingKey, TestCircuit, VarunaHidingMode, VarunaSNARK, VarunaVersion, ahp::AHPForR1CS},
 };
 use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
@@ -67,25 +68,22 @@ fn snark_prove(c: &mut Criterion) {
 
     let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(1000, 1000, 1000).unwrap();
     let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
-    let universal_prover = &universal_srs.to_universal_prover().unwrap();
     let fs_parameters = FS::sample_parameters();
 
     let (circuit, _) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, rng);
 
-    let params = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+    let (pk, _) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+    let degree_info = pk.circuit.index_info.degree_info::<Fr, VarunaHidingMode>().unwrap();
+    let universal_prover = &universal_srs.to_universal_prover(degree_info).unwrap();
 
     c.bench_function("snark_prove_v1", |b| {
         let varuna_version = VarunaVersion::V1;
-        b.iter(|| {
-            VarunaInst::prove(universal_prover, &fs_parameters, &params.0, varuna_version, &circuit, rng).unwrap()
-        })
+        b.iter(|| VarunaInst::prove(universal_prover, &fs_parameters, &pk, varuna_version, &circuit, rng).unwrap())
     });
 
     c.bench_function("snark_prove_v2", |b| {
         let varuna_version = VarunaVersion::V2;
-        b.iter(|| {
-            VarunaInst::prove(universal_prover, &fs_parameters, &params.0, varuna_version, &circuit, rng).unwrap()
-        })
+        b.iter(|| VarunaInst::prove(universal_prover, &fs_parameters, &pk, varuna_version, &circuit, rng).unwrap())
     });
 }
 
@@ -99,7 +97,6 @@ fn snark_batch_prove(c: &mut Criterion) {
 
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(1000000, 1000000, 1000000).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
-        let universal_prover = &universal_srs.to_universal_prover().unwrap();
         let fs_parameters = FS::sample_parameters();
 
         let circuit_batch_size = 5;
@@ -108,6 +105,8 @@ fn snark_batch_prove(c: &mut Criterion) {
         let mut pks = Vec::with_capacity(circuit_batch_size);
         let mut all_circuits = Vec::with_capacity(circuit_batch_size);
         let mut keys_to_constraints = BTreeMap::new();
+
+        let mut degree_info = None;
 
         for i in 0..circuit_batch_size {
             let num_constraints = num_constraints_base + i;
@@ -120,13 +119,16 @@ fn snark_batch_prove(c: &mut Criterion) {
                 circuits.push(circuit);
             }
             let (pk, _) = VarunaInst::circuit_setup(&universal_srs, &circuits[0]).unwrap();
-            pks.push(pk);
             all_circuits.push(circuits);
+            let degree_info_i = pk.circuit.index_info.degree_info::<Fr, VarunaHidingMode>().unwrap();
+            degree_info = degree_info.map(|i: DegreeInfo| i.union(&degree_info_i)).or(Some(degree_info_i));
+            pks.push(pk);
         }
 
         for i in 0..circuit_batch_size {
             keys_to_constraints.insert(&pks[i], all_circuits[i].as_slice());
         }
+        let universal_prover = &universal_srs.to_universal_prover(degree_info.unwrap()).unwrap();
 
         let varuna_version = VarunaVersion::V2;
         b.iter(|| {
@@ -146,13 +148,14 @@ fn snark_verify(c: &mut Criterion) {
 
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 100, 100).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
-        let universal_prover = &universal_srs.to_universal_prover().unwrap();
         let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
         let fs_parameters = FS::sample_parameters();
 
         let (circuit, public_inputs) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, rng);
 
         let (pk, vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+        let degree_info = pk.circuit.index_info.degree_info::<Fr, VarunaHidingMode>().unwrap();
+        let universal_prover = &universal_srs.to_universal_prover(degree_info).unwrap();
 
         let varuna_version = VarunaVersion::V2;
         let proof = VarunaInst::prove(universal_prover, &fs_parameters, &pk, varuna_version, &circuit, rng).unwrap();
@@ -180,12 +183,13 @@ fn snark_batch_verify(c: &mut Criterion) {
 
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(1000, 1000, 100).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
-        let universal_prover = &universal_srs.to_universal_prover().unwrap();
         let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
         let fs_parameters = FS::sample_parameters();
 
         let circuit_batch_size = 5;
         let instance_batch_size = 5;
+
+        let mut degree_info = None;
 
         let mut pks = Vec::with_capacity(circuit_batch_size);
         let mut vks = Vec::with_capacity(circuit_batch_size);
@@ -205,16 +209,19 @@ fn snark_batch_verify(c: &mut Criterion) {
                 inputs.push(public_inputs);
             }
             let (pk, vk) = VarunaInst::circuit_setup(&universal_srs, &circuits[0]).unwrap();
-            pks.push(pk);
-            vks.push(vk);
             all_circuits.push(circuits);
             all_inputs.push(inputs);
+            let degree_info_i = pk.circuit.index_info.degree_info::<Fr, VarunaHidingMode>().unwrap();
+            degree_info = degree_info.map(|i: DegreeInfo| i.union(&degree_info_i)).or(Some(degree_info_i));
+            pks.push(pk);
+            vks.push(vk);
         }
 
         for i in 0..circuit_batch_size {
             keys_to_constraints.insert(&pks[i], all_circuits[i].as_slice());
             keys_to_inputs.insert(&vks[i], all_inputs[i].as_slice());
         }
+        let universal_prover = &universal_srs.to_universal_prover(degree_info.unwrap()).unwrap();
 
         let varuna_version = VarunaVersion::V2;
         let proof =
@@ -300,7 +307,6 @@ fn snark_certificate_prove(c: &mut Criterion) {
 
     let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100000, 100000, 100000).unwrap();
     let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
-    let universal_prover = &universal_srs.to_universal_prover().unwrap();
     let fs_parameters = FS::sample_parameters();
     let fs_p = &fs_parameters;
 
@@ -310,6 +316,8 @@ fn snark_certificate_prove(c: &mut Criterion) {
         let mul_depth = 1;
         let (circuit, _) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, rng);
         let (pk, vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+        let degree_info = pk.circuit.index_info.degree_info::<Fr, VarunaHidingMode>().unwrap();
+        let universal_prover = &universal_srs.to_universal_prover(degree_info).unwrap();
 
         c.bench_function(&format!("snark_certificate_prove_{size}"), |b| {
             b.iter(|| VarunaInst::prove_vk(universal_prover, fs_p, &vk, &pk).unwrap())
@@ -322,7 +330,6 @@ fn snark_certificate_verify(c: &mut Criterion) {
 
     let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100_000, 100_000, 100_000).unwrap();
     let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
-    let universal_prover = &universal_srs.to_universal_prover().unwrap();
     let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
     let fs_parameters = FS::sample_parameters();
     let fs_p = &fs_parameters;
@@ -333,6 +340,8 @@ fn snark_certificate_verify(c: &mut Criterion) {
         let mul_depth = 1;
         let (circuit, _) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, rng);
         let (pk, vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+        let degree_info = pk.circuit.index_info.degree_info::<Fr, VarunaHidingMode>().unwrap();
+        let universal_prover = &universal_srs.to_universal_prover(degree_info).unwrap();
         let certificate = VarunaInst::prove_vk(universal_prover, fs_p, &vk, &pk).unwrap();
 
         c.bench_function(&format!("snark_certificate_verify_{size}"), |b| {

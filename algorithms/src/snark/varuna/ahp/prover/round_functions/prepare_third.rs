@@ -82,11 +82,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let total_instances = num_instances.iter().sum::<usize>();
         let matrix_labels = ["a", "b", "c"];
 
-        let fft_precomputations = state
-            .circuit_specific_states
-            .keys()
-            .map(|circuit| (circuit.fft_precomputation.clone(), circuit.ifft_precomputation.clone()))
-            .collect_vec();
+        let fft_precomputation = &state.fft_precomputation;
+        let ifft_precomputation = &state.ifft_precomputation;
+
+        let fft_precomputations =
+            state.circuit_specific_states.keys().map(|_| (fft_precomputation, ifft_precomputation)).collect_vec();
 
         // Compute lineval sumcheck witnesses
         let mut job_pool = ExecutionPool::with_capacity(total_instances * 3);
@@ -108,8 +108,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                             label,
                             &circuit_specific_state.constraint_domain,
                             &circuit_specific_state.variable_domain,
-                            &precomp.0,
-                            &precomp.1,
+                            precomp.0,
+                            precomp.1,
                             assignment,
                             matrix_transpose,
                             *alpha,

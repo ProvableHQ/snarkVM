@@ -13,7 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::snark::varuna::{SNARKMode, ahp::AHPForR1CS};
+use crate::{
+    fft::EvaluationDomain,
+    polycommit::kzg10::DegreeInfo,
+    snark::varuna::{SNARKMode, ahp::AHPForR1CS},
+};
 use anyhow::Result;
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{ToBytes, serialize::*};
@@ -44,11 +48,50 @@ pub struct CircuitInfo {
 }
 
 impl CircuitInfo {
+    /// The max degrees and bounds required to represent polynomials of this
+    /// circuit.
+    pub fn degree_info<F: PrimeField, SM: SNARKMode>(&self) -> Result<DegreeInfo> {
+        let max_degree = self.max_degree::<F, SM>()?;
+        let max_fft_size = self.max_fft_size::<F>();
+        let degree_bounds = Some(self.degree_bounds::<F>().into_iter().collect());
+        let hiding_bound = AHPForR1CS::<F, SM>::zk_bound().unwrap_or(0);
+        Ok(DegreeInfo::new(max_degree, max_fft_size, degree_bounds, hiding_bound, None))
+    }
+
     /// The maximum degree of polynomial required to represent this index in the
     /// AHP.
     pub fn max_degree<F: PrimeField, SM: SNARKMode>(&self) -> Result<usize> {
         let max_non_zero = self.num_non_zero_a.max(self.num_non_zero_b).max(self.num_non_zero_c);
         AHPForR1CS::<F, SM>::max_degree(self.num_constraints, self.num_public_and_private_variables, max_non_zero)
+    }
+
+    /// The maximum size of polynomials we need to do (i)fft for
+    pub fn max_fft_size<F: PrimeField>(&self) -> usize {
+        let size = [
+            2 * self.num_constraints,                  // zerocheck poly degree
+            2 * self.num_public_and_private_variables, // lineval sumcheck poly degree
+            2 * self.num_non_zero_a,                   // matrix sumcheck poly degree
+            2 * self.num_non_zero_b,                   // matrix sumcheck poly degree
+            2 * self.num_non_zero_c,                   // matrix sumcheck poly degree
+        ]
+        .into_iter()
+        .max()
+        .unwrap();
+        crate::fft::EvaluationDomain::<F>::compute_size_of_domain(size).unwrap()
+    }
+
+    /// Get all the strict degree bounds enforced in the AHP.
+    pub fn degree_bounds<F: PrimeField>(&self) -> [usize; 4] {
+        [
+            // The degree bound for g_1
+            EvaluationDomain::<F>::compute_size_of_domain(self.num_public_and_private_variables).unwrap() - 2,
+            // The degree bound for g_A
+            EvaluationDomain::<F>::compute_size_of_domain(self.num_non_zero_a).unwrap() - 2,
+            // The degree bound for g_B
+            EvaluationDomain::<F>::compute_size_of_domain(self.num_non_zero_b).unwrap() - 2,
+            // The degree bound for g_C
+            EvaluationDomain::<F>::compute_size_of_domain(self.num_non_zero_c).unwrap() - 2,
+        ]
     }
 }
 

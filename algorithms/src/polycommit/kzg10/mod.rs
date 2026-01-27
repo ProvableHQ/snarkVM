@@ -41,6 +41,9 @@ use rayon::prelude::*;
 mod data_structures;
 pub use data_structures::*;
 
+mod degree_info;
+pub use degree_info::*;
+
 use super::sonic_pc::LabeledPolynomialWithBasis;
 
 #[derive(Debug, PartialEq, Eq)]

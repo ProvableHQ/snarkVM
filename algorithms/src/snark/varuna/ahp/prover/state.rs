@@ -16,7 +16,12 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::{
-    fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain},
+    fft::{
+        DensePolynomial,
+        EvaluationDomain,
+        Evaluations as EvaluationsOnDomain,
+        domain::{FFTPrecomputation, IFFTPrecomputation},
+    },
     polycommit::sonic_pc::LabeledPolynomial,
     r1cs::{SynthesisError, SynthesisResult},
     snark::varuna::{AHPError, AHPForR1CS, Circuit, SNARKMode},
@@ -91,6 +96,10 @@ pub struct State<'a, F: PrimeField, SM: SNARKMode> {
     pub(in crate::snark) max_variable_domain: EvaluationDomain<F>,
     /// The total number of instances we're proving in the batch.
     pub(in crate::snark) total_instances: usize,
+    /// The precomputed roots for calculating FFTs.
+    pub fft_precomputation: &'a FFTPrecomputation<F>,
+    /// The precomputed inverse roots for calculating inverse FFTs.
+    pub ifft_precomputation: &'a IFFTPrecomputation<F>,
 }
 
 /// The public inputs for a single instance.
@@ -116,6 +125,8 @@ pub(super) struct Assignments<F>(
 impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
     pub(super) fn initialize(
         indices_and_assignments: BTreeMap<&'a Circuit<F, SM>, Vec<Assignments<F>>>,
+        fft_precomputation: &'a FFTPrecomputation<F>,
+        ifft_precomputation: &'a IFFTPrecomputation<F>,
     ) -> Result<Self, AHPError> {
         let mut max_non_zero_domain: Option<EvaluationDomain<F>> = None;
         let mut max_num_constraints = 0;
@@ -195,6 +206,8 @@ impl<'a, F: PrimeField, SM: SNARKMode> State<'a, F, SM> {
             circuit_specific_states,
             total_instances,
             first_round_oracles: None,
+            fft_precomputation,
+            ifft_precomputation,
         })
     }
 

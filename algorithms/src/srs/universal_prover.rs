@@ -13,13 +13,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::{
+    fft::domain::{FFTPrecomputation, IFFTPrecomputation},
+    polycommit::sonic_pc::CommitterKey,
+};
 use snarkvm_curves::PairingEngine;
 
 /// `UniversalProver` is used to compute evaluation proofs for a given
 /// commitment.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct UniversalProver<E: PairingEngine> {
+    /// The committer key for the underlying KZG10 scheme.
+    pub committer_key: CommitterKey<E>,
+    /// The precomputed roots for calculating FFTs.
+    pub fft_precomputation: FFTPrecomputation<E::Fr>,
+    /// The precomputed inverse roots for calculating inverse FFTs.
+    pub ifft_precomputation: IFFTPrecomputation<E::Fr>,
     /// The maximum degree supported by the universal SRS.
     pub max_degree: usize,
-    pub _unused: Option<E>,
 }

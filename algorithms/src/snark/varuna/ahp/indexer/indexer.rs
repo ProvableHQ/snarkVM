@@ -43,51 +43,10 @@ use super::Matrix;
 impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     /// Generate the index polynomials for this constraint system.
     pub fn index<C: ConstraintSynthesizer<F>>(c: &C) -> Result<Circuit<F, SM>> {
-        let IndexerState {
-            constraint_domain,
-            variable_domain,
+        let IndexerState { a, a_arith, b, b_arith, c, c_arith, index_info, id, .. } =
+            Self::index_helper(c).map_err(|e| anyhow!("{e:?}"))?;
 
-            a,
-            non_zero_a_domain,
-            a_arith,
-
-            b,
-            non_zero_b_domain,
-            b_arith,
-
-            c,
-            non_zero_c_domain,
-            c_arith,
-
-            index_info,
-            id,
-        } = Self::index_helper(c).map_err(|e| anyhow!("{e:?}"))?;
-
-        let fft_precomp_time = start_timer!(|| format!("Precomputing roots of unity {id}"));
-
-        let (fft_precomputation, ifft_precomputation) = Self::fft_precomputation(
-            constraint_domain.size(),
-            variable_domain.size(),
-            non_zero_a_domain.size(),
-            non_zero_b_domain.size(),
-            non_zero_c_domain.size(),
-        )
-        .ok_or(anyhow!("The polynomial degree is too large"))?;
-        end_timer!(fft_precomp_time);
-
-        Ok(Circuit {
-            index_info,
-            a,
-            b,
-            c,
-            a_arith,
-            b_arith,
-            c_arith,
-            fft_precomputation,
-            ifft_precomputation,
-            id,
-            _mode: PhantomData,
-        })
+        Ok(Circuit { index_info, a, b, c, a_arith, b_arith, c_arith, id, _mode: PhantomData })
     }
 
     pub fn index_polynomial_info<'a>(
@@ -207,9 +166,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let id = Circuit::<F, SM>::hash(&index_info, &a, &b, &c)?;
 
         let result = Ok(IndexerState {
-            constraint_domain,
-            variable_domain,
-
             a,
             non_zero_a_domain,
             a_arith,
@@ -264,11 +220,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 }
 
 pub(crate) struct IndexerState<F: PrimeField> {
-    // R_i in the Varuna spec
-    constraint_domain: EvaluationDomain<F>,
-    // C_i in the Varuna spec
-    variable_domain: EvaluationDomain<F>,
-
     a: Matrix<F>,
     non_zero_a_domain: EvaluationDomain<F>,
     a_arith: MatrixEvals<F>,
