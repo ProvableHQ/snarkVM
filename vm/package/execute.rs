@@ -51,7 +51,7 @@ impl<N: Network> Package<N> {
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
 
         // Construct the process.
-        let process = self.get_process(Arc::new(AtomicU16::new(consensus_version.to_u16())))?;
+        let process = self.get_process_with_consensus_version(Arc::new(AtomicU16::new(consensus_version.to_u16())))?;
         // Authorize the function call.
         let authorization = process.authorize::<A, R>(private_key, program_id, function_name, inputs.iter(), rng)?;
 

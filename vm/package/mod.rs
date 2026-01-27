@@ -152,14 +152,15 @@ impl<N: Network> Package<N> {
         self.directory.join("imports")
     }
 
-    pub fn get_process_v_latest(&self) -> Result<Process<N>> {
-        self.get_process(Arc::new(AtomicU16::new(ConsensusVersion::latest().to_u16())))
+    /// Returns a new process for the package.
+    pub fn get_process(&self) -> Result<Process<N>> {
+        self.get_process_with_consensus_version(Arc::new(AtomicU16::new(ConsensusVersion::latest().to_u16())))
     }
 
     /// Returns a new process for the package.
-    pub fn get_process(&self, consensus_version: Arc<AtomicU16>) -> Result<Process<N>> {
+    pub fn get_process_with_consensus_version(&self, consensus_version: Arc<AtomicU16>) -> Result<Process<N>> {
         // Load the default process.
-        let mut process = Process::load(consensus_version)?;
+        let mut process = Process::load_with_consensus_version(consensus_version)?;
         // Get the imported programs.
         let imports_directory = self.imports_directory();
         let mut programs = self
@@ -587,7 +588,7 @@ mod tests {
         let (directory, package) = crate::package::test_helpers::sample_token_package();
 
         // Get the program process and check all instructions.
-        assert!(package.get_process_v_latest().is_ok());
+        assert!(package.get_process().is_ok());
 
         // Proactively remove the temporary directory (to conserve space).
         std::fs::remove_dir_all(directory).unwrap();

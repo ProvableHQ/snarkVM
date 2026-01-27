@@ -281,7 +281,7 @@ function compute:
                 .unwrap();
                 assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
                 // Construct the process.
-                let process = Process::load_v_latest().unwrap();
+                let process = Process::load().unwrap();
                 // Compute the deployment.
                 let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
                 // Unset the checksum.
@@ -326,7 +326,7 @@ function compute:
                 .unwrap();
                 assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
                 // Construct the process.
-                let process = Process::load_v_latest().unwrap();
+                let process = Process::load().unwrap();
                 // Compute the deployment.
                 let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
                 // Set the program checksum.

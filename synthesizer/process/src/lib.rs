@@ -236,7 +236,7 @@ impl<N: Network> Process<N> {
 impl<N: Network> Process<N> {
     /// Initializes a new process.
     #[inline]
-    pub fn load(consensus_version: Arc<AtomicU16>) -> Result<Self> {
+    pub fn load_with_consensus_version(consensus_version: Arc<AtomicU16>) -> Result<Self> {
         let timer = timer!("Process::load");
 
         // Initialize the process.
@@ -278,13 +278,15 @@ impl<N: Network> Process<N> {
         Ok(process)
     }
 
-    pub fn load_v_latest() -> Result<Self> {
-        Self::load(Arc::new(AtomicU16::new(ConsensusVersion::latest().to_u16())))
+    /// Initializes a new process.
+    #[inline]
+    pub fn load() -> Result<Self> {
+        Self::load_with_consensus_version(Arc::new(AtomicU16::new(ConsensusVersion::latest().to_u16())))
     }
 
     /// Initializes a new process with the V0 credits.aleo verifiying keys.
     #[inline]
-    pub fn load_v0(consensus_version: Arc<AtomicU16>) -> Result<Self> {
+    pub fn load_v0_with_consensus_version(consensus_version: Arc<AtomicU16>) -> Result<Self> {
         let timer = timer!("Process::load_v0");
 
         // Initialize the process.
@@ -327,10 +329,15 @@ impl<N: Network> Process<N> {
         Ok(process)
     }
 
+    #[inline]
+    pub fn load_v0() -> Result<Self> {
+        Self::load_v0_with_consensus_version(Arc::new(AtomicU16::new(ConsensusVersion::latest().to_u16())))
+    }
+
     /// Initializes a new process without downloading the 'credits.aleo' circuit keys (for web contexts).
     #[inline]
     #[cfg(feature = "wasm")]
-    pub fn load_web(consensus_version: Arc<AtomicU16>) -> Result<Self> {
+    pub fn load_web_with_consensus_version(consensus_version: Arc<AtomicU16>) -> Result<Self> {
         // Initialize the process.
         let mut process = Self {
             consensus_version: Arc::downgrade(&consensus_version),
@@ -350,6 +357,12 @@ impl<N: Network> Process<N> {
 
         // Return the process.
         Ok(process)
+    }
+
+    #[inline]
+    #[cfg(feature = "wasm")]
+    pub fn load_web() -> Result<Self> {
+        Self::load_web_with_consensus_version(Arc::new(AtomicU16::new(ConsensusVersion::latest().to_u16())))
     }
 
     /// Adds a new program to the process, verifying that it is a valid addition.
@@ -686,7 +699,7 @@ function compute:
     /// Initializes a new process with the given program.
     pub(crate) fn sample_process(program: &Program<CurrentNetwork>) -> Process<CurrentNetwork> {
         // Construct a new process.
-        let mut process = Process::load_v_latest().unwrap();
+        let mut process = Process::load().unwrap();
         // Add the program to the process.
         process.add_program(program).unwrap();
         // Return the process.

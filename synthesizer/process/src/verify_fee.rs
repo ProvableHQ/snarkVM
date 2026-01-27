@@ -281,7 +281,7 @@ mod tests {
         ];
 
         // Construct a new process.
-        let process = Process::load_v_latest().unwrap();
+        let process = Process::load().unwrap();
 
         for transaction in transactions {
             match transaction {

@@ -69,7 +69,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Initialize the process.
-        let process = Process::load_v_latest()?;
+        let process = Process::load()?;
 
         // Fetch the large program to deploy.
         let large_program = Program::from_str(include_str!("./resources/large_functions.aleo"))?;

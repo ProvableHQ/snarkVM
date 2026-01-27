@@ -157,14 +157,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut process = {
             // Initialize a new process based on the consensus version.
             if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
-                Process::load_v0(Arc::clone(&consensus_version_atomic))?
+                Process::load_v0_with_consensus_version(Arc::clone(&consensus_version_atomic))?
             } else {
-                Process::load(Arc::clone(&consensus_version_atomic))?
+                Process::load_with_consensus_version(Arc::clone(&consensus_version_atomic))?
             }
         };
         #[cfg(any(test, feature = "test"))]
         // Initialize a new process.
-        let mut process = Process::load(Arc::clone(&consensus_version_atomic))?;
+        let mut process = Process::load_with_consensus_version(Arc::clone(&consensus_version_atomic))?;
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
@@ -300,6 +300,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.store.transition_store()
     }
 
+    /// Returns the current consensus version.
     #[inline]
     pub fn consensus_version(&self) -> anyhow::Result<ConsensusVersion> {
         let raw = self.consensus_version.load(Ordering::Acquire);
@@ -474,6 +475,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             bail!("Already shutting down");
         };
 
+        // Update the consensus version if needed.
+        let new_consensus_version = N::CONSENSUS_VERSION(block.height())?.to_u16();
+        let current_consensus_version = self.consensus_version.load(Ordering::Acquire);
+        if current_consensus_version != new_consensus_version {
+            self.consensus_version.store(new_consensus_version, Ordering::Release);
+        }
+
         ret
     }
 
@@ -527,8 +535,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     self.update_credits_verifying_keys()?;
                 }
 
-                let new_version = N::CONSENSUS_VERSION(block.height())?;
-                self.consensus_version.store(new_version.to_u16(), Ordering::Release);
+                // Update the consensus version if needed.
+                let new_consensus_version = N::CONSENSUS_VERSION(block.height())?.to_u16();
+                let current_consensus_version = self.consensus_version.load(Ordering::Acquire);
+                if current_consensus_version != new_consensus_version {
+                    self.consensus_version.store(new_consensus_version, Ordering::Release);
+                }
 
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
@@ -3212,7 +3224,7 @@ function check:
         assert!(vm.contains_program(&ProgramID::from_str("grandparent_program.aleo").unwrap()));
 
         // Initialize the process.
-        let mut process = Process::<CurrentNetwork>::load_v_latest().unwrap();
+        let mut process = Process::<CurrentNetwork>::load().unwrap();
 
         // Load the child and parent program
         process.add_program(&child_program_1).unwrap();

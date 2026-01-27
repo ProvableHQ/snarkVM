@@ -672,7 +672,7 @@ pub mod test_helpers {
         let inputs = [address.to_string(), format!("{amount}_u64")];
 
         // Initialize the process.
-        let process = Process::load_v_latest().unwrap();
+        let process = Process::load().unwrap();
         // Authorize the function.
         let authorization =
             process.authorize::<CurrentAleo, _>(&private_key, locator.0, locator.1, inputs.iter(), rng).unwrap();

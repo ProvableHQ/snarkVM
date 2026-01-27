@@ -157,7 +157,7 @@ mod tests {
         let (directory, package) = crate::package::test_helpers::sample_token_package();
 
         // Generate the process with the appropriate imports.
-        let process = package.get_process_v_latest().unwrap();
+        let process = package.get_process().unwrap();
 
         // Deploy the package.
         let deployment = package.deploy::<CurrentAleo>(&process, None).unwrap();
@@ -179,7 +179,7 @@ mod tests {
         let (directory, package) = crate::package::test_helpers::sample_wallet_package();
 
         // Generate the process with the appropriate imports.
-        let process = package.get_process_v_latest().unwrap();
+        let process = package.get_process().unwrap();
 
         // Deploy the package.
         let deployment = package.deploy::<CurrentAleo>(&process, None).unwrap();

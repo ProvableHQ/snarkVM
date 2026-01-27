@@ -160,7 +160,7 @@ fn sample_stack(
     let operands = vec![Operand::Register(r0), Operand::Register(r1), Operand::Register(r2)];
 
     // Initialize the stack.
-    let stack = Stack::new(&Process::load_v_latest()?, &program)?;
+    let stack = Stack::new(&Process::load()?, &program)?;
 
     Ok((stack, operands, r3))
 }

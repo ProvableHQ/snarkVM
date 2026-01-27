@@ -511,7 +511,7 @@ fn test_process_execute_transfer_public_to_private() {
     let r1 = Value::<CurrentNetwork>::from_str("99_000_000_000_000_u64").unwrap();
 
     // Construct the process.
-    let process = Process::load_v_latest().unwrap();
+    let process = Process::load().unwrap();
 
     // Authorize the function call.
     let authorization = process
@@ -560,7 +560,7 @@ fn test_process_execute_transfer_public_to_private() {
     // Check that the sender ciphertext is well-formed.
     {
         // Construct a new process.
-        let process = Process::load_v_latest().unwrap();
+        let process = Process::load().unwrap();
         // Initialize a new block store.
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         // Prepare the trace.
@@ -1306,7 +1306,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load_v_latest().unwrap();
+    let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1424,7 +1424,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load_v_latest().unwrap();
+    let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1557,7 +1557,7 @@ finalize mint_public:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load_v_latest().unwrap();
+    let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1692,7 +1692,7 @@ finalize mint_public:
     process.synthesize_key::<CurrentAleo, _>(program0.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load_v_latest().unwrap();
+    let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1856,7 +1856,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load_v_latest().unwrap();
+    let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2303,7 +2303,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load_v_latest().unwrap();
+    let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2494,7 +2494,7 @@ fn test_process_deploy_credits_program() {
     };
 
     // Construct the process.
-    let process = Process::load_v_latest().unwrap();
+    let process = Process::load().unwrap();
 
     // Fetch the credits program
     let program = Program::credits().unwrap();
@@ -2548,7 +2548,7 @@ function {function_name}:
     .unwrap();
 
     // Reset the process.
-    let mut process = Process::load_v_latest().unwrap();
+    let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2713,7 +2713,7 @@ fn test_long_import_chain_with_calls() {
 #[test]
 fn test_max_imports() {
     // Construct the process.
-    let mut process = Process::<CurrentNetwork>::load_v_latest().unwrap();
+    let mut process = Process::<CurrentNetwork>::load().unwrap();
 
     // Add `MAX_IMPORTS` programs to the process.
     for i in 0..CurrentNetwork::MAX_IMPORTS {
@@ -2765,7 +2765,7 @@ fn test_program_exceeding_transaction_spend_limit() {
     .unwrap();
 
     // Initialize a `Process`.
-    let process = Process::<CurrentNetwork>::load_v_latest().unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
 
     // Attempt to deploy the program, which should succeed.
     let rng = &mut TestRng::default();

@@ -1026,7 +1026,7 @@ function over_five_thousand:
         let threshold = MainnetV0::EXECUTION_STORAGE_PENALTY_THRESHOLD;
 
         // Test the cost of an execution.
-        let mut process = Process::load_v_latest().unwrap();
+        let mut process = Process::load().unwrap();
 
         // Get the program.
         let program = Program::from_str(SIZE_BOUNDARY_PROGRAM).unwrap();
@@ -1058,7 +1058,7 @@ function over_five_thousand:
     fn test_deployment_cost_with_constructors() {
         // A helper to run the test.
         fn run_test<N: Network, A: Aleo<Network = N>>() {
-            let process = Process::<N>::load_v_latest().unwrap();
+            let process = Process::<N>::load().unwrap();
             let rng = &mut TestRng::default();
 
             // Define the programs.
