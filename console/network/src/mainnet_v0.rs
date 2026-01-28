@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use snarkvm_algorithms::polycommit::kzg10::DegreeInfo;
 use snarkvm_console_algorithms::{
     BHP256,
     BHP512,
@@ -349,14 +348,6 @@ impl Network for MainnetV0 {
                 false => None,
             })
             .sum()
-    }
-
-    /// Returns the Varuna universal prover.
-    fn varuna_universal_prover(degree_info: DegreeInfo) -> UniversalProver<Self::PairingCurve> {
-        snarkvm_algorithms::polycommit::kzg10::UniversalParams::load()
-            .expect("Failed to load universal SRS (KZG10).")
-            .to_universal_prover(degree_info)
-            .expect("Failed to convert universal SRS (KZG10) to the prover.")
     }
 
     /// Returns the Varuna universal verifier.

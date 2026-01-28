@@ -158,7 +158,7 @@ function test_serde_equivalence:
             let eval_is_ok = res_eval.is_ok();
 
             // Execute the function.
-            let trace = Trace::new();
+            let trace = Trace::new(process.universal_srs.clone(), process.universal_prover.clone());
             let res_exec = stack.execute_function::<CurrentAleo, _>(
                 CallStack::execute(authorization.replicate(), Arc::new(RwLock::new(trace))).unwrap(),
                 None,

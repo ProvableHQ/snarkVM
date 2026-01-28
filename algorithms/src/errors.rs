@@ -44,6 +44,9 @@ pub enum SNARKError {
 
     #[error("Public input size was different from the circuit")]
     PublicInputSizeMismatch,
+
+    #[error("FFT precomputation not found")]
+    FFTPrecompNotFound,
 }
 
 impl From<AHPError> for SNARKError {

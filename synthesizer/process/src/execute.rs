@@ -38,7 +38,7 @@ impl<N: Network> Process<N> {
         // The root request does not have to pass on another request's root_tvk.
         let root_tvk = None;
         // Initialize the trace.
-        let trace = Arc::new(RwLock::new(Trace::new()));
+        let trace = Arc::new(RwLock::new(Trace::new(self.universal_srs.clone(), Arc::clone(&self.universal_prover))));
         // Initialize the call stack.
         let call_stack = CallStack::execute(authorization, trace.clone())?;
         lap!(timer, "Initialize call stack");

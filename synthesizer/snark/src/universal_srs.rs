@@ -15,10 +15,21 @@
 
 use super::*;
 
-#[derive(Clone)]
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
+
+#[derive(Clone, Debug)]
 pub struct UniversalSRS<N: Network> {
-    /// The universal SRS parameter.
+    /// The universal SRS parameters.
     srs: Arc<OnceLock<varuna::UniversalSRS<N::PairingCurve>>>,
+}
+
+impl<N: Network> Default for UniversalSRS<N> {
+    fn default() -> Self {
+        Self { srs: Arc::new(OnceLock::new()) }
+    }
 }
 
 impl<N: Network> UniversalSRS<N> {
@@ -30,13 +41,16 @@ impl<N: Network> UniversalSRS<N> {
     /// Returns the circuit proving and verifying key.
     pub fn to_circuit_key(
         &self,
+        universal_prover: &RwLock<UniversalProver<N>>,
         _function_name: &str,
         assignment: &circuit::Assignment<N::Field>,
     ) -> Result<(ProvingKey<N>, VerifyingKey<N>)> {
         #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
 
-        let (proving_key, verifying_key) = Varuna::<N>::circuit_setup(self, assignment)?;
+        // Locks the universal_prover.
+        let (proving_key, verifying_key) =
+            Varuna::<N>::circuit_setup(self.deref(), &mut universal_prover.write(), assignment)?;
 
         #[cfg(feature = "dev-print")]
         {
@@ -87,5 +101,38 @@ impl<N: Network> Deref for UniversalSRS<N> {
 
             universal_srs
         })
+    }
+}
+
+#[derive(Debug)]
+pub struct UniversalProver<N: Network> {
+    /// The universal prover - trimmed from the SRS
+    universal_prover: varuna::UniversalProver<N::PairingCurve>,
+}
+
+impl<N: Network> Default for UniversalProver<N> {
+    fn default() -> Self {
+        Self { universal_prover: varuna::UniversalProver::default() }
+    }
+}
+
+impl<N: Network> UniversalProver<N> {
+    /// Initializes the universal Prover.
+    pub fn load() -> Result<Self> {
+        Ok(Self { universal_prover: varuna::UniversalProver::default() })
+    }
+}
+
+impl<N: Network> DerefMut for UniversalProver<N> {
+    fn deref_mut(&mut self) -> &mut varuna::UniversalProver<N::PairingCurve> {
+        &mut self.universal_prover
+    }
+}
+
+impl<N: Network> Deref for UniversalProver<N> {
+    type Target = varuna::UniversalProver<N::PairingCurve>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.universal_prover
     }
 }

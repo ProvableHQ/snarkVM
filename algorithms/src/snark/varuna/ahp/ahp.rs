@@ -79,8 +79,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         Self::num_formatted_public_inputs_is_admissible(input.len())
     }
 
-    /// The maximum degree of polynomials produced by the indexer and prover
-    /// of this protocol.
+    /// The maximum degree of polynomials the indexer or prover commits to.
     /// The number of the variables must include the "one" variable. That is, it
     /// must be with respect to the number of formatted public inputs.
     pub fn max_degree(num_constraints: usize, num_variables: usize, num_non_zero: usize) -> Result<usize> {
@@ -94,12 +93,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         // these should correspond with the bounds set in the <round>.rs files
         [
-            2 * constraint_domain_size + 2 * zk_bound - 2,
-            2 * variable_domain_size + 2 * zk_bound - 2,
+            2 * constraint_domain_size + 2 * zk_bound - 2,     // h_0
+            2 * variable_domain_size + 2 * zk_bound - 2,       // h_1
             if SM::ZK { variable_domain_size + 3 } else { 0 }, // mask_poly
-            variable_domain_size,
-            constraint_domain_size,
-            non_zero_domain_size - 1, // non-zero polynomials
+            variable_domain_size,                              // g_1
+            non_zero_domain_size,                              // g_M, h_M
         ]
         .iter()
         .max()

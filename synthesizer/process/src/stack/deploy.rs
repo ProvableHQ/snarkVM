@@ -41,7 +41,13 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Retrieve the keys for {function_name}");
 
             // Certify the circuit.
-            let certificate = Certificate::certify(&function_name.to_string(), &proving_key, &verifying_key)?;
+            let certificate = Certificate::certify(
+                &self.universal_srs,
+                &self.universal_prover,
+                &function_name.to_string(),
+                &proving_key,
+                &verifying_key,
+            )?;
             lap!(timer, "Certify the circuit");
 
             // Add the verifying key and certificate to the bundle.

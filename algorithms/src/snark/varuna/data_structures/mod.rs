@@ -44,3 +44,6 @@ pub mod test_exports {
 
 /// The Varuna universal SRS.
 pub type UniversalSRS<E> = crate::polycommit::sonic_pc::UniversalParams<E>;
+
+/// The Varuna universal prover.
+pub type UniversalProver<E> = crate::srs::UniversalProver<E>;

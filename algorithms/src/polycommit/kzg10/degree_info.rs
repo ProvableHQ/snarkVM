@@ -13,21 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct DegreeInfo {
     /// The maximum degree of the required SRS to commit to the polynomials.
     pub max_degree: usize,
     /// The maximum IOP poly degree used for (i)fft_precomputation.
     pub max_fft_size: usize,
-    /// TODO (howardwu): This should never be happening... Use a BTreeSet.
     /// The degree bounds on IOP polynomials.
-    pub degree_bounds: Option<HashSet<usize>>,
+    pub degree_bounds: Option<BTreeSet<usize>>,
     /// The hiding bound for polynomial queries.
     pub hiding_bound: usize,
     /// The supported sizes for the lagrange-basis SRS.
-    pub lagrange_sizes: Option<HashSet<usize>>,
+    pub lagrange_sizes: Option<BTreeSet<usize>>,
 }
 
 impl DegreeInfo {
@@ -35,9 +34,9 @@ impl DegreeInfo {
     pub const fn new(
         max_degree: usize,
         max_fft_size: usize,
-        degree_bounds: Option<HashSet<usize>>,
+        degree_bounds: Option<BTreeSet<usize>>,
         hiding_bound: usize,
-        lagrange_sizes: Option<HashSet<usize>>,
+        lagrange_sizes: Option<BTreeSet<usize>>,
     ) -> Self {
         Self { max_degree, max_fft_size, degree_bounds, hiding_bound, lagrange_sizes }
     }

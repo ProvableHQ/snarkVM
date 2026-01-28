@@ -79,7 +79,7 @@ use snarkvm_synthesizer_program::{
     RegistersTrait,
     StackTrait,
 };
-use snarkvm_synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
+use snarkvm_synthesizer_snark::{Certificate, ProvingKey, UniversalProver, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
@@ -221,6 +221,8 @@ pub struct Stack<N: Network> {
     finalize_types: Arc<RwLock<IndexMap<Identifier<N>, FinalizeTypes<N>>>>,
     /// The universal SRS.
     universal_srs: UniversalSRS<N>,
+    /// The universal prover.
+    universal_prover: Arc<RwLock<UniversalProver<N>>>,
     /// The mapping of function name to proving key.
     proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
     /// The mapping of function name to verifying key.

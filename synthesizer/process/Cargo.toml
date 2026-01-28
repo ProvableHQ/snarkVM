@@ -26,7 +26,12 @@ edition = "2024"
 [features]
 default = [ "indexmap/rayon", "rayon" ]
 async = [ "snarkvm-ledger-query/async" ]
-locktick = [ "dep:locktick", "snarkvm-ledger-store/locktick" ]
+locktick = [
+  "dep:locktick",
+  "snarkvm-ledger-store/locktick",
+  "snarkvm-synthesizer-program/locktick",
+  "snarkvm-synthesizer-snark/locktick"
+]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",

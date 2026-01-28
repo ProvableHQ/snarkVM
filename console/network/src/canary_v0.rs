@@ -15,7 +15,6 @@
 
 use super::*;
 use crate::TRANSACTION_PREFIX;
-use snarkvm_algorithms::polycommit::kzg10::DegreeInfo;
 use snarkvm_console_algorithms::{
     BHP256,
     BHP512,
@@ -344,11 +343,6 @@ impl Network for CanaryV0 {
                 false => None,
             })
             .sum()
-    }
-
-    /// Returns the Varuna universal prover.
-    fn varuna_universal_prover(degree_info: DegreeInfo) -> UniversalProver<Self::PairingCurve> {
-        MainnetV0::varuna_universal_prover(degree_info)
     }
 
     /// Returns the Varuna universal verifier.

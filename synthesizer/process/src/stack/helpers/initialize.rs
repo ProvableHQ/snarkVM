@@ -53,6 +53,7 @@ impl<N: Network> Stack<N> {
             register_types: Default::default(),
             finalize_types: Default::default(),
             universal_srs: process.universal_srs().clone(),
+            universal_prover: process.universal_prover().clone(),
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
             program_address: program.id().to_address()?,

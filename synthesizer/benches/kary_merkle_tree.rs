@@ -27,9 +27,13 @@ use snarkvm_console::{
     },
     types::Field,
 };
-use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS};
+use snarkvm_synthesizer_snark::{ProvingKey, UniversalProver, UniversalSRS};
 
 use criterion::Criterion;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
 
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
@@ -125,8 +129,13 @@ fn batch_prove(c: &mut Criterion) {
 
     // Load the universal srs.
     let universal_srs = UniversalSRS::<CurrentNetwork>::load().unwrap();
+
+    // Load the universal prover.
+    let universal_prover = RwLock::new(UniversalProver::<CurrentNetwork>::load().unwrap());
+
     // Construct the proving key.
-    let (proving_key, _) = universal_srs.to_circuit_key("KaryMerklePathVerification", &assignment).unwrap();
+    let (proving_key, _) =
+        universal_srs.to_circuit_key(&universal_prover, "KaryMerklePathVerification", &assignment).unwrap();
 
     // Log the current time elapsed.
     println!(" • Generated the proving key in: {} ms", timer.elapsed().as_millis());
@@ -149,8 +158,15 @@ fn batch_prove(c: &mut Criterion) {
         let varuna_version = VarunaVersion::V2;
         c.bench_function(&format!("KaryMerkleTree batch prove {num_assignments} assignments"), |b| {
             b.iter(|| {
-                let _proof =
-                    ProvingKey::prove_batch("ProveKaryMerkleTree", varuna_version, &assignments, &mut rng).unwrap();
+                let _proof = ProvingKey::prove_batch(
+                    &universal_srs,
+                    &universal_prover,
+                    "ProveKaryMerkleTree",
+                    varuna_version,
+                    &assignments,
+                    &mut rng,
+                )
+                .unwrap();
             })
         });
     }

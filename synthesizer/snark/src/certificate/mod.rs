@@ -19,6 +19,11 @@ mod bytes;
 mod parse;
 mod serialize;
 
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Certificate<N: Network> {
     /// The certificate.
@@ -33,6 +38,8 @@ impl<N: Network> Certificate<N> {
 
     /// Returns the certificate from the proving and verifying key.
     pub fn certify(
+        srs: &UniversalSRS<N>,
+        universal_prover: &RwLock<UniversalProver<N>>,
         _function_name: &str,
         proving_key: &ProvingKey<N>,
         verifying_key: &VerifyingKey<N>,
@@ -42,11 +49,12 @@ impl<N: Network> Certificate<N> {
 
         // Retrieve the proving parameters.
         let degree_info = proving_key.circuit.index_info.degree_info::<N::Field, varuna::VarunaHidingMode>()?;
-        let universal_prover = N::varuna_universal_prover(degree_info);
         let fiat_shamir = N::varuna_fs_parameters();
 
+        universal_prover.write().update(srs, degree_info)?;
+
         // Compute the certificate.
-        let certificate = Varuna::<N>::prove_vk(&universal_prover, fiat_shamir, verifying_key, proving_key)?;
+        let certificate = Varuna::<N>::prove_vk(&universal_prover.read(), fiat_shamir, verifying_key, proving_key)?;
 
         #[cfg(feature = "dev-print")]
         {

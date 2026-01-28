@@ -610,7 +610,7 @@ mod tests {
         let lagrange_sizes = Some([lagrange_size(supported_degree)].into_iter().collect());
         let degree_info = DegreeInfo::new(supported_degree, supported_degree, None, hiding_bound, lagrange_sizes);
 
-        let ck = pp.to_committer_key(&degree_info).unwrap();
+        let ck = pp.to_universal_prover(degree_info).unwrap().committer_key;
 
         let ck_bytes = ck.to_bytes_le().unwrap();
         let ck_recovered: CommitterKey<Bls12_377> = FromBytes::read_le(&ck_bytes[..]).unwrap();

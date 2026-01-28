@@ -76,7 +76,7 @@ use snarkvm_synthesizer_program::{
     Program,
     StackTrait,
 };
-use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
+use snarkvm_synthesizer_snark::{ProvingKey, UniversalProver, UniversalSRS, VerifyingKey};
 use snarkvm_utilities::{defer, dev_println};
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -91,6 +91,8 @@ use std::{collections::HashMap, sync::Arc};
 pub struct Process<N: Network> {
     /// The universal SRS.
     universal_srs: UniversalSRS<N>,
+    /// The universal prover.
+    universal_prover: Arc<RwLock<UniversalProver<N>>>,
     /// The mapping of program IDs to stacks.
     stacks: Arc<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
     /// The mapping of program IDs to old stacks.
@@ -104,8 +106,12 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process:setup");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let mut process = Self {
+            universal_srs: UniversalSRS::load()?,
+            universal_prover: Arc::new(RwLock::new(UniversalProver::load()?)),
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+        };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -231,8 +237,12 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let mut process = Self {
+            universal_srs: UniversalSRS::load()?,
+            universal_prover: Arc::new(RwLock::new(UniversalProver::load()?)),
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+        };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -271,8 +281,12 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load_v0");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let mut process = Self {
+            universal_srs: UniversalSRS::load()?,
+            universal_prover: Arc::new(RwLock::new(UniversalProver::load()?)),
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+        };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -310,8 +324,12 @@ impl<N: Network> Process<N> {
     #[cfg(feature = "wasm")]
     pub fn load_web() -> Result<Self> {
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let mut process = Self {
+            universal_srs: UniversalSRS::load()?,
+            universal_prover: Arc::new(RwLock::new(UniversalProver::load()?)),
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+        };
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
@@ -390,6 +408,12 @@ impl<N: Network> Process<N> {
     #[inline]
     pub const fn universal_srs(&self) -> &UniversalSRS<N> {
         &self.universal_srs
+    }
+
+    /// Returns the universal prover.
+    #[inline]
+    pub const fn universal_prover(&self) -> &Arc<RwLock<UniversalProver<N>>> {
+        &self.universal_prover
     }
 
     /// Returns `true` if the process contains the program with the given ID.

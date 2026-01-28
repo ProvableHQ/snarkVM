@@ -29,7 +29,9 @@ locktick = [
   "snarkvm-ledger-puzzle/locktick",
   "snarkvm-ledger-puzzle-epoch/locktick",
   "snarkvm-ledger-store/locktick",
-  "snarkvm-synthesizer-process/locktick"
+  "snarkvm-synthesizer-process/locktick",
+  "snarkvm-synthesizer-program/locktick",
+  "snarkvm-synthesizer-snark/locktick"
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]

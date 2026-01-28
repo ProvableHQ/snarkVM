@@ -27,9 +27,16 @@ use console::{
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Execution, Fee, Transition};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_synthesizer_snark::{Proof, ProvingKey, VerifyingKey};
+use snarkvm_synthesizer_snark::{Proof, ProvingKey, UniversalProver, UniversalSRS, VerifyingKey};
 
-use std::{collections::HashMap, sync::OnceLock};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+};
 
 use crate::Authorization;
 
@@ -48,11 +55,16 @@ pub struct Trace<N: Network> {
     inclusion_assignments: OnceLock<Vec<InclusionAssignmentWrapper<N>>>,
     /// A tracker for the global state root.
     global_state_root: OnceLock<N::StateRoot>,
+
+    /// The Universal SRS
+    srs: UniversalSRS<N>,
+    /// The Universal Prover
+    universal_prover: Arc<RwLock<UniversalProver<N>>>,
 }
 
 impl<N: Network> Trace<N> {
     /// Initializes a new trace.
-    pub fn new() -> Self {
+    pub fn new(srs: UniversalSRS<N>, universal_prover: Arc<RwLock<UniversalProver<N>>>) -> Self {
         Self {
             transitions: Vec::new(),
             transition_tasks: HashMap::new(),
@@ -60,6 +72,8 @@ impl<N: Network> Trace<N> {
             inclusion_assignments: OnceLock::new(),
             global_state_root: OnceLock::new(),
             call_metrics: Vec::new(),
+            srs,
+            universal_prover,
         }
     }
 
@@ -179,6 +193,8 @@ impl<N: Network> Trace<N> {
         let proving_tasks = self.transition_tasks.values().cloned().collect();
         // Compute the proof.
         let (global_state_root, proof) = Self::prove_batch::<A, R>(
+            &self.srs,
+            &self.universal_prover,
             locator,
             varuna_version,
             proving_tasks,
@@ -217,6 +233,8 @@ impl<N: Network> Trace<N> {
         let proving_tasks = self.transition_tasks.values().cloned().collect();
         // Compute the proof.
         let (global_state_root, proof) = Self::prove_batch::<A, R>(
+            &self.srs,
+            &self.universal_prover,
             "credits.aleo/fee (private or public)",
             varuna_version,
             proving_tasks,
@@ -301,6 +319,8 @@ impl<N: Network> Trace<N> {
 impl<N: Network> Trace<N> {
     /// Returns the global state root and proof for the given assignments.
     fn prove_batch<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        srs: &UniversalSRS<N>,
+        universal_prover: &RwLock<UniversalProver<N>>,
         locator: &str,
         varuna_version: VarunaVersion,
         mut proving_tasks: Vec<(ProvingKey<N>, Vec<Assignment<N::Field>>)>,
@@ -369,7 +389,7 @@ impl<N: Network> Trace<N> {
         }
 
         // Compute the proof.
-        let proof = ProvingKey::prove_batch(locator, varuna_version, &proving_tasks, rng)?;
+        let proof = ProvingKey::prove_batch(srs, universal_prover, locator, varuna_version, &proving_tasks, rng)?;
         // Return the global state root and proof.
         Ok((global_state_root, proof))
     }

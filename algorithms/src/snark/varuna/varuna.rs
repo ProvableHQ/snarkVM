@@ -66,7 +66,8 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
     /// We commit to each circuit's index polys separately
     /// Performing a single batch commitment can be a future optimization
     pub fn batch_circuit_setup<C: ConstraintSynthesizer<E::Fr>>(
-        universal_srs: &UniversalSRS<E>,
+        srs: &UniversalSRS<E>,
+        universal_prover: &mut UniversalProver<E>,
         circuits: &[&C],
     ) -> Result<Vec<(CircuitProvingKey<E, SM>, CircuitVerifyingKey<E>)>> {
         ensure!(!circuits.is_empty());
@@ -86,11 +87,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         }
         let degree_info = degree_info.unwrap();
 
-        universal_srs
-            .download_powers_for(0..degree_info.max_degree)
-            .map_err(|e| anyhow!("Failed to download powers for degree {}: {e}", degree_info.max_degree))?;
-
-        let universal_prover = universal_srs.to_universal_prover(degree_info)?;
+        universal_prover.update(srs, degree_info)?;
 
         let mut circuit_keys = Vec::with_capacity(circuits.len());
         for mut indexed_circuit in indexed_circuits {
@@ -98,7 +95,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             let setup_rng = None::<&mut dyn RngCore>; // We do not randomize the commitments
 
             let (mut circuit_commitments, commitment_randomnesses): (_, _) = SonicKZG10::<E, FS>::commit(
-                &universal_prover,
+                universal_prover,
                 indexed_circuit.interpolate_matrix_evals()?.map(Into::into),
                 setup_rng,
             )?;
@@ -220,10 +217,11 @@ where
     /// Generates the circuit proving and verifying keys.
     /// This is a deterministic algorithm that anyone can rerun.
     fn circuit_setup<C: ConstraintSynthesizer<E::Fr>>(
-        universal_srs: &Self::UniversalSRS,
+        srs: &Self::UniversalSRS,
+        universal_prover: &mut Self::UniversalProver,
         circuit: &C,
     ) -> Result<(Self::ProvingKey, Self::VerifyingKey)> {
-        let mut circuit_keys = Self::batch_circuit_setup::<C>(universal_srs, &[circuit])?;
+        let mut circuit_keys = Self::batch_circuit_setup::<C>(srs, universal_prover, &[circuit])?;
         ensure!(circuit_keys.len() == 1);
         Ok(circuit_keys.pop().unwrap())
     }
@@ -354,10 +352,13 @@ where
         for (pk, constraints) in keys_to_constraints {
             circuits_to_constraints.insert(pk.circuit.deref(), *constraints);
         }
-        let fft_precomp = &universal_prover.fft_precomputation;
-        let ifft_precomp = &universal_prover.ifft_precomputation;
-        let prover_state =
-            AHPForR1CS::<_, SM>::init_prover(&circuits_to_constraints, fft_precomp, ifft_precomp, zk_rng)?;
+
+        let prover_state = match (&universal_prover.fft_precomputation, &universal_prover.ifft_precomputation) {
+            (Some(fft_precomp), Some(ifft_precomp)) => {
+                AHPForR1CS::<_, SM>::init_prover(&circuits_to_constraints, fft_precomp, ifft_precomp, zk_rng)?
+            }
+            _ => return Err(SNARKError::FFTPrecompNotFound.into()),
+        };
 
         // extract information from the prover key and state to consume in further
         // calculations

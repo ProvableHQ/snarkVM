@@ -32,7 +32,7 @@ use snarkvm_ledger_store::{
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackTrait};
-use snarkvm_synthesizer_snark::UniversalSRS;
+use snarkvm_synthesizer_snark::{UniversalProver, UniversalSRS};
 
 use aleo_std::StorageMode;
 #[cfg(feature = "locktick")]
@@ -405,7 +405,7 @@ output r4 as field.private;",
     assert_eq!(authorization.len(), 1);
 
     // Re-run to ensure state continues to work.
-    let trace = Arc::new(RwLock::new(Trace::new()));
+    let trace = Arc::new(RwLock::new(Trace::new(process.universal_srs.clone(), process.universal_prover.clone())));
     let call_stack = CallStack::execute(authorization, trace).unwrap();
     let response = stack.execute_function::<CurrentAleo, _>(call_stack, None, None, rng).unwrap();
     let candidate = response.outputs();
@@ -2486,6 +2486,7 @@ fn test_process_deploy_credits_program() {
     // Initialize an empty process without the `credits` program.
     let empty_process = Process {
         universal_srs: UniversalSRS::<CurrentNetwork>::load().unwrap(),
+        universal_prover: Arc::new(RwLock::new(UniversalProver::<CurrentNetwork>::load().unwrap())),
         stacks: Default::default(),
         old_stacks: Default::default(),
     };

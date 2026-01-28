@@ -60,6 +60,7 @@ pub trait SNARK {
 
     fn circuit_setup<C: ConstraintSynthesizer<Self::ScalarField>>(
         srs: &Self::UniversalSRS,
+        universal_prover: &mut Self::UniversalProver,
         circuit: &C,
     ) -> Result<(Self::ProvingKey, Self::VerifyingKey)>;
 

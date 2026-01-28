@@ -201,7 +201,12 @@ impl<F: PrimeField> R1CS<F> {
 
 #[cfg(test)]
 mod tests {
-    use snarkvm_algorithms::{AlgebraicSponge, SNARK, r1cs::ConstraintSynthesizer, snark::varuna::VarunaVersion};
+    use snarkvm_algorithms::{
+        AlgebraicSponge,
+        SNARK,
+        r1cs::ConstraintSynthesizer,
+        snark::varuna::{UniversalProver, VarunaVersion},
+    };
     use snarkvm_circuit::prelude::*;
     use snarkvm_curves::bls12_377::Fr;
 
@@ -268,13 +273,11 @@ mod tests {
         let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
         let fs_pp = FS::sample_parameters();
 
-        let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &Circuit).unwrap();
+        let mut universal_prover = UniversalProver::default();
+        let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &mut universal_prover, &Circuit).unwrap();
         let varuna_version = VarunaVersion::V2;
         println!("Called circuit setup");
-        let degree_info = index_pk.circuit.index_info.degree_info::<Fr, VarunaHidingMode>().unwrap();
-        let universal_prover = &universal_srs.to_universal_prover(degree_info).unwrap();
-
-        let proof = VarunaInst::prove(universal_prover, &fs_pp, &index_pk, varuna_version, &Circuit, rng).unwrap();
+        let proof = VarunaInst::prove(&universal_prover, &fs_pp, &index_pk, varuna_version, &Circuit, rng).unwrap();
         println!("Called prover");
 
         assert!(

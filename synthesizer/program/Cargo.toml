@@ -25,6 +25,10 @@ edition = "2024"
 
 [features]
 default = [ ]
+locktick = [
+  "snarkvm-synthesizer-process/locktick",
+  "snarkvm-synthesizer-snark/locktick",
+]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 

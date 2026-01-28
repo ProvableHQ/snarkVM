@@ -38,7 +38,7 @@ mod proving_key;
 pub use proving_key::ProvingKey;
 
 mod universal_srs;
-pub use universal_srs::UniversalSRS;
+pub use universal_srs::{UniversalProver, UniversalSRS};
 
 mod verifying_key;
 pub use verifying_key::VerifyingKey;
@@ -46,6 +46,7 @@ pub use verifying_key::VerifyingKey;
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
+    use crate::universal_srs::UniversalProver;
     use circuit::{
         environment::{Assignment, Circuit, Eject, Environment, Inject, Mode, One},
         types::Field,
@@ -53,6 +54,10 @@ pub(crate) mod test_helpers {
     use console::{network::MainnetV0, prelude::One as _};
     use snarkvm_algorithms::snark::varuna::VarunaVersion;
 
+    #[cfg(feature = "locktick")]
+    use locktick::parking_lot::RwLock;
+    #[cfg(not(feature = "locktick"))]
+    use parking_lot::RwLock;
     use std::sync::OnceLock;
 
     type CurrentNetwork = MainnetV0;
@@ -104,8 +109,8 @@ pub(crate) mod test_helpers {
             .get_or_init(|| {
                 let assignment = sample_assignment();
                 let srs = UniversalSRS::load().unwrap();
-                let (proving_key, verifying_key) = srs.to_circuit_key("test", &assignment).unwrap();
-                (proving_key, verifying_key)
+                let universal_prover = RwLock::new(UniversalProver::<CurrentNetwork>::load().unwrap());
+                srs.to_circuit_key(&universal_prover, "test", &assignment).unwrap()
             })
             .clone()
     }
@@ -117,7 +122,12 @@ pub(crate) mod test_helpers {
             .get_or_init(|| {
                 let assignment = sample_assignment();
                 let (proving_key, _) = sample_keys();
-                proving_key.prove("test", VarunaVersion::V2, &assignment, &mut TestRng::default()).unwrap()
+                let srs = UniversalSRS::<CurrentNetwork>::load().unwrap();
+                let universal_prover = RwLock::new(UniversalProver::<CurrentNetwork>::load().unwrap());
+
+                proving_key
+                    .prove(&srs, &universal_prover, "test", VarunaVersion::V2, &assignment, &mut TestRng::default())
+                    .unwrap()
             })
             .clone()
     }
@@ -128,8 +138,10 @@ pub(crate) mod test_helpers {
         INSTANCE
             .get_or_init(|| {
                 let (proving_key, verifying_key) = sample_keys();
+                let srs = UniversalSRS::<CurrentNetwork>::load().unwrap();
+                let universal_prover = RwLock::new(UniversalProver::<CurrentNetwork>::load().unwrap());
                 // Return the certificate.
-                Certificate::certify("test", &proving_key, &verifying_key).unwrap()
+                Certificate::certify(&srs, &universal_prover, "test", &proving_key, &verifying_key).unwrap()
             })
             .clone()
     }
@@ -138,9 +150,15 @@ pub(crate) mod test_helpers {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::universal_srs::UniversalProver;
     use circuit::environment::{Circuit, Environment};
     use console::network::MainnetV0;
     use snarkvm_algorithms::snark::varuna::VarunaVersion;
+
+    #[cfg(feature = "locktick")]
+    use locktick::parking_lot::RwLock;
+    #[cfg(not(feature = "locktick"))]
+    use parking_lot::RwLock;
 
     type CurrentNetwork = MainnetV0;
 
@@ -150,11 +168,14 @@ mod test {
 
         // Varuna setup, prove, and verify.
         let srs = UniversalSRS::<CurrentNetwork>::load().unwrap();
-        let (proving_key, verifying_key) = srs.to_circuit_key("test", &assignment).unwrap();
+        let universal_prover = RwLock::new(UniversalProver::<CurrentNetwork>::load().unwrap());
+        let (proving_key, verifying_key) = srs.to_circuit_key(&universal_prover, "test", &assignment).unwrap();
         let varuna_version = VarunaVersion::V2;
         println!("Called circuit setup");
 
-        let proof = proving_key.prove("test", varuna_version, &assignment, &mut TestRng::default()).unwrap();
+        let proof = proving_key
+            .prove(&srs, &universal_prover, "test", varuna_version, &assignment, &mut TestRng::default())
+            .unwrap();
         println!("Called prover");
 
         let one = <Circuit as Environment>::BaseField::one();
@@ -194,11 +215,14 @@ mod test {
         assert_eq!(assignment.num_private(), 3);
 
         let srs = UniversalSRS::<CurrentNetwork>::load().unwrap();
-        let (proving_key, verifying_key) = srs.to_circuit_key("test", &assignment).unwrap();
+        let universal_prover = RwLock::new(UniversalProver::<CurrentNetwork>::load().unwrap());
+        let (proving_key, verifying_key) = srs.to_circuit_key(&universal_prover, "test", &assignment).unwrap();
         let varuna_version = VarunaVersion::V2;
         println!("Called circuit setup");
 
-        let proof = proving_key.prove("test", varuna_version, &assignment, &mut TestRng::default()).unwrap();
+        let proof = proving_key
+            .prove(&srs, &universal_prover, "test", varuna_version, &assignment, &mut TestRng::default())
+            .unwrap();
         println!("Called prover");
 
         // Should pass.

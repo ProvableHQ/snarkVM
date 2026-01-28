@@ -33,10 +33,14 @@ type LedgerType<N> = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<N>;
 use snarkvm_synthesizer::{
     VM,
     process::{InclusionAssignment, InclusionV0Assignment},
-    snark::UniversalSRS,
+    snark::{UniversalProver, UniversalSRS},
 };
 
 use anyhow::{Result, anyhow};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
 use rand::thread_rng;
 use serde_json::{Value, json};
 use std::{
@@ -171,17 +175,27 @@ pub fn inclusion<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     // Load the universal SRS.
     let universal_srs = UniversalSRS::<N>::load()?;
 
+    // Load the universal prover.
+    let universal_prover = RwLock::new(UniversalProver::<N>::load()?);
+
     // Sample the assignment for the inclusion circuit.
     let (assignment, state_path, serial_number, is_record_block_height_reached, upgrade_block_height) =
         sample_assignment::<N, A>()?;
 
     // Synthesize the proving and verifying key.
     let inclusion_function_name = N::INCLUSION_FUNCTION_NAME;
-    let (proving_key, verifying_key) = universal_srs.to_circuit_key(inclusion_function_name, &assignment)?;
+    let (proving_key, verifying_key) = universal_srs.to_circuit_key(&universal_prover, inclusion_function_name, &assignment)?;
 
     for varuna_version in [VarunaVersion::V1, VarunaVersion::V2] {
         // Ensure the proving key and verifying keys are valid.
-        let proof = proving_key.prove(inclusion_function_name, varuna_version, &assignment, &mut thread_rng())?;
+        let proof = proving_key.prove(
+            &universal_srs,
+            &universal_prover,
+            inclusion_function_name,
+            varuna_version,
+            &assignment,
+            &mut thread_rng(),
+        )?;
         assert!(verifying_key.verify(
             inclusion_function_name,
             varuna_version,

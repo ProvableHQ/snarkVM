@@ -19,6 +19,10 @@ mod bytes;
 mod parse;
 mod serialize;
 
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::RwLock;
 use std::collections::BTreeMap;
 
 #[derive(Clone)]
@@ -36,6 +40,8 @@ impl<N: Network> ProvingKey<N> {
     /// Returns a proof for the given assignment on the circuit.
     pub fn prove<R: Rng + CryptoRng>(
         &self,
+        srs: &UniversalSRS<N>,
+        universal_prover: &RwLock<UniversalProver<N>>,
         _function_name: &str,
         varuna_version: varuna::VarunaVersion,
         assignment: &circuit::Assignment<N::Field>,
@@ -46,12 +52,20 @@ impl<N: Network> ProvingKey<N> {
 
         // Retrieve the proving parameters.
         let degree_info = self.circuit.index_info.degree_info::<N::Field, varuna::VarunaHidingMode>()?;
-        let universal_prover = N::varuna_universal_prover(degree_info);
         let fiat_shamir = N::varuna_fs_parameters();
 
+        // Update the universal_prover and prevent other threads from writing to it.
+        universal_prover.write().update(srs, degree_info)?;
+
         // Compute the proof.
-        let proof =
-            Proof::new(Varuna::<N>::prove(&universal_prover, fiat_shamir, self, varuna_version, assignment, rng)?);
+        let proof = Proof::new(Varuna::<N>::prove(
+            &universal_prover.read(),
+            fiat_shamir,
+            self,
+            varuna_version,
+            assignment,
+            rng,
+        )?);
 
         #[cfg(feature = "dev-print")]
         {
@@ -65,6 +79,8 @@ impl<N: Network> ProvingKey<N> {
     /// Returns a proof for the given batch of proving keys and assignments.
     #[allow(clippy::type_complexity)]
     pub fn prove_batch<R: Rng + CryptoRng>(
+        srs: &UniversalSRS<N>,
+        universal_prover: &RwLock<UniversalProver<N>>,
         _locator: &str,
         varuna_version: varuna::VarunaVersion,
         assignments: &[(ProvingKey<N>, Vec<circuit::Assignment<N::Field>>)],
@@ -93,12 +109,19 @@ impl<N: Network> ProvingKey<N> {
                 None => Some(degree_info_i),
             };
         }
-        let universal_prover = N::varuna_universal_prover(degree_info.unwrap());
         let fiat_shamir = N::varuna_fs_parameters();
 
+        // Update the universal_prover and prevent other threads from writing to it
+        universal_prover.write().update(srs, degree_info.unwrap())?;
+
         // Compute the proof.
-        let batch_proof =
-            Proof::new(Varuna::<N>::prove_batch(&universal_prover, fiat_shamir, varuna_version, &instances, rng)?);
+        let batch_proof = Proof::new(Varuna::<N>::prove_batch(
+            &universal_prover.read(),
+            fiat_shamir,
+            varuna_version,
+            &instances,
+            rng,
+        )?);
 
         #[cfg(feature = "dev-print")]
         {
