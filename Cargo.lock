@@ -3753,6 +3753,8 @@ name = "snarkvm-synthesizer-snark"
 version = "4.4.0"
 dependencies = [
  "bincode",
+ "locktick",
+ "parking_lot",
  "serde_json",
  "snarkvm-algorithms",
  "snarkvm-circuit",
