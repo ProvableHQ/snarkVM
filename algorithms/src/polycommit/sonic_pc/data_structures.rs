@@ -34,6 +34,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
     io,
+    mem,
     ops::{AddAssign, MulAssign, SubAssign},
 };
 
@@ -54,8 +55,8 @@ pub struct CommitterKey<E: PairingEngine> {
     pub powers_of_beta_g: Vec<E::G1Affine>,
 
     /// The key used to commit to polynomials in Lagrange basis.
-    /// This is `None` if `self` does not support lagrange bases
-    pub lagrange_bases_at_beta_g: Option<BTreeMap<usize, Vec<E::G1Affine>>>,
+    /// This is empty if `self` does not support lagrange bases
+    pub lagrange_bases_at_beta_g: BTreeMap<usize, Vec<E::G1Affine>>,
 
     /// The key used to commit to hiding polynomials.
     pub powers_of_beta_times_gamma_g: Vec<E::G1Affine>,
@@ -72,6 +73,19 @@ pub struct CommitterKey<E: PairingEngine> {
     /// Sorted in ascending order from smallest bound to largest bound.
     /// This is `None` if `self` does not support enforcing any degree bounds.
     pub enforced_degree_bounds: Option<Vec<usize>>,
+}
+
+impl<E: PairingEngine> Default for CommitterKey<E> {
+    fn default() -> Self {
+        Self {
+            powers_of_beta_g: Vec::new(),
+            lagrange_bases_at_beta_g: Default::default(),
+            powers_of_beta_times_gamma_g: Vec::new(),
+            shifted_powers_of_beta_g: None,
+            shifted_powers_of_beta_times_gamma_g: None,
+            enforced_degree_bounds: None,
+        }
+    }
 }
 
 impl<E: PairingEngine> FromBytes for CommitterKey<E> {
@@ -91,26 +105,17 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
         }
 
         // Deserialize `lagrange_basis_at_beta`.
-        let has_lagrange_bases = bool::read_le(&mut reader);
-        let lagrange_bases_at_beta_g = match has_lagrange_bases {
-            Ok(true) => {
-                let lagrange_bases_at_beta_len: u32 = FromBytes::read_le(&mut reader)?;
-                let mut lagrange_bases_at_beta_g = BTreeMap::new();
-                for _ in 0..lagrange_bases_at_beta_len {
-                    let size: u32 = FromBytes::read_le(&mut reader)?;
-                    let mut basis = Vec::with_capacity(size as usize);
-                    for _ in 0..size {
-                        let power: E::G1Affine = FromBytes::read_le(&mut reader)?;
-                        basis.push(power);
-                    }
-                    lagrange_bases_at_beta_g.insert(size as usize, basis);
-                }
-                Some(lagrange_bases_at_beta_g)
+        let lagrange_bases_at_beta_len: u32 = FromBytes::read_le(&mut reader)?;
+        let mut lagrange_bases_at_beta_g = BTreeMap::new();
+        for _ in 0..lagrange_bases_at_beta_len {
+            let size: u32 = FromBytes::read_le(&mut reader)?;
+            let mut basis = Vec::with_capacity(size as usize);
+            for _ in 0..size {
+                let power: E::G1Affine = FromBytes::read_le(&mut reader)?;
+                basis.push(power);
             }
-            Ok(false) => None,
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => None,
-            Err(e) => return Err(e),
-        };
+            lagrange_bases_at_beta_g.insert(size as usize, basis);
+        }
 
         // Deserialize `powers_of_beta_times_gamma_g`.
         let powers_of_beta_times_gamma_g_len: u32 = FromBytes::read_le(&mut reader)?;
@@ -223,14 +228,11 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
         }
 
         // Serialize `lagrange_bases_at_beta_g`.
-        self.lagrange_bases_at_beta_g.is_some().write_le(&mut writer)?;
-        if let Some(lagrange_bases_at_beta_g) = &self.lagrange_bases_at_beta_g {
-            (lagrange_bases_at_beta_g.len() as u32).write_le(&mut writer)?;
-            for (size, powers) in lagrange_bases_at_beta_g.iter() {
-                (*size as u32).write_le(&mut writer)?;
-                for power in powers {
-                    power.write_le(&mut writer)?;
-                }
+        (self.lagrange_bases_at_beta_g.len() as u32).write_le(&mut writer)?;
+        for (size, powers) in &self.lagrange_bases_at_beta_g {
+            (*size as u32).write_le(&mut writer)?;
+            for power in powers {
+                power.write_le(&mut writer)?;
             }
         }
 
@@ -425,7 +427,7 @@ impl<E: PairingEngine> CommitterKey<E> {
         // Update lagrange_bases_at_beta_g
         let mut lagrange_bases_at_beta_g = BTreeMap::new();
         if let Some(supported_lagrange_sizes) = degree_info.lagrange_sizes.as_ref() {
-            let mut old_lagrange_bases_at_beta_g = self.lagrange_bases_at_beta_g.take().unwrap_or_default();
+            let mut old_lagrange_bases_at_beta_g = mem::take(&mut self.lagrange_bases_at_beta_g);
             for size in supported_lagrange_sizes {
                 let domain = EvaluationDomain::new(*size).unwrap();
                 match old_lagrange_bases_at_beta_g.remove(&domain.size()) {
@@ -450,7 +452,7 @@ impl<E: PairingEngine> CommitterKey<E> {
                     }
                 }
             }
-            self.lagrange_bases_at_beta_g = Some(lagrange_bases_at_beta_g);
+            self.lagrange_bases_at_beta_g = lagrange_bases_at_beta_g;
         }
         end_timer!(trim_time);
         Ok(())
@@ -491,14 +493,11 @@ impl<E: PairingEngine> CommitterKey<E> {
     /// Obtain elements of the SRS in the lagrange basis powers, for use with
     /// the underlying KZG10 construction.
     pub fn lagrange_basis(&self, domain: EvaluationDomain<E::Fr>) -> Option<kzg10::LagrangeBasis<E>> {
-        if let Some(lagrange_bases) = self.lagrange_bases_at_beta_g.as_ref() {
-            return lagrange_bases.get(&domain.size()).map(|basis| kzg10::LagrangeBasis {
-                lagrange_basis_at_beta_g: Cow::Borrowed(basis),
-                powers_of_beta_times_gamma_g: Cow::Borrowed(&self.powers_of_beta_times_gamma_g),
-                domain,
-            });
-        }
-        None
+        self.lagrange_bases_at_beta_g.get(&domain.size()).map(|basis| kzg10::LagrangeBasis {
+            lagrange_basis_at_beta_g: Cow::Borrowed(basis),
+            powers_of_beta_times_gamma_g: Cow::Borrowed(&self.powers_of_beta_times_gamma_g),
+            domain,
+        })
     }
 }
 

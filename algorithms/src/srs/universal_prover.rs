@@ -43,7 +43,7 @@ impl<E: PairingEngine> Default for UniversalProver<E> {
     fn default() -> Self {
         let committer_key = CommitterKey {
             powers_of_beta_g: Vec::new(),
-            lagrange_bases_at_beta_g: None,
+            lagrange_bases_at_beta_g: Default::default(),
             powers_of_beta_times_gamma_g: Vec::new(),
             shifted_powers_of_beta_g: None,
             shifted_powers_of_beta_times_gamma_g: None,
