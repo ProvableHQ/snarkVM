@@ -114,6 +114,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             let circuit_proving_key = CircuitProvingKey {
                 circuit_verifying_key: circuit_verifying_key.clone(),
                 circuit: Arc::new(indexed_circuit),
+                committer_key: None,
             };
             circuit_keys.push((circuit_proving_key, circuit_verifying_key));
         }

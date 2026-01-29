@@ -91,9 +91,9 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
         }
 
         // Deserialize `lagrange_basis_at_beta`.
-        let has_lagrange_bases: bool = FromBytes::read_le(&mut reader)?;
+        let has_lagrange_bases = bool::read_le(&mut reader);
         let lagrange_bases_at_beta_g = match has_lagrange_bases {
-            true => {
+            Ok(true) => {
                 let lagrange_bases_at_beta_len: u32 = FromBytes::read_le(&mut reader)?;
                 let mut lagrange_bases_at_beta_g = BTreeMap::new();
                 for _ in 0..lagrange_bases_at_beta_len {
@@ -107,7 +107,9 @@ impl<E: PairingEngine> FromBytes for CommitterKey<E> {
                 }
                 Some(lagrange_bases_at_beta_g)
             }
-            false => None,
+            Ok(false) => None,
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => None,
+            Err(e) => return Err(e),
         };
 
         // Deserialize `powers_of_beta_times_gamma_g`.
