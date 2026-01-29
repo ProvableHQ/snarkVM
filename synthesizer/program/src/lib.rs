@@ -1064,24 +1064,20 @@ impl<N: Network> ProgramCore<N> {
 
     /// Checks that the program writes size does not exceed the maximum allowed size for the given block height.
     pub fn check_program_writes(&self, block_height: u32) -> Result<()> {
-        // Determine the maximum allowed program size for the current consensus version.
+        // Determine the maximum allowed writes for the current consensus version.
         let max_num_writes = consensus_config_value!(N, MAX_WRITES, block_height)
-            .ok_or(anyhow!("Failed to fetch maximum program size"))?;
+            .ok_or(anyhow!("Failed to fetch maximum number of writes"))?;
 
         // Check if the constructor exceeds the maximum number of writes.
-        let constructor_exceeds =
-            self.constructor().is_some_and(|constructor| constructor.num_writes() > max_num_writes);
+        if self.constructor().is_some_and(|constructor| constructor.num_writes() > max_num_writes) {
+            bail!("'constructor' exceeds the maximum allowed writes of {max_num_writes}");
+        }
 
         // Check if any finalize logic exceeds the maximum number of writes.
-        let finalize_exceeds = cfg_iter!(self.functions()).any(|(_, function)| {
-            function.finalize_logic().is_some_and(|finalize| finalize.num_writes() > max_num_writes)
-        });
-
-        if constructor_exceeds || finalize_exceeds {
-            bail!(
-                "Program writes exceed the maximum allowed writes of {max_num_writes} for the current height {block_height} (consensus version {}).",
-                N::CONSENSUS_VERSION(block_height)?
-            );
+        for (name, function) in self.functions().iter() {
+            if function.finalize_logic().is_some_and(|finalize| finalize.num_writes() > max_num_writes) {
+                bail!("'{name}' exceeds the maximum allowed writes of {max_num_writes}");
+            }
         }
 
         Ok(())

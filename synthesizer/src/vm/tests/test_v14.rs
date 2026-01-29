@@ -27,9 +27,11 @@ fn test_deploy_large_program_v14() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
 
-    let large_program = Program::from_str(include_str!("./resources/large_program.aleo")).unwrap();
+    // Generate a program that exceeds the V13 limit (100 kB) but fits within V14 (512 kB).
+    let large_program_str = generate_large_program(110_000);
+    let large_program = Program::from_str(&large_program_str).unwrap();
 
-    println!("Large program size (string size): {}", large_program.to_string().len());
+    println!("Large program size (string size): {}", large_program_str.len());
 
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
@@ -64,8 +66,8 @@ fn test_deploy_large_program_v14() {
     assert_eq!(block.aborted_transaction_ids().len(), 0);
 }
 
-/// Generates a large program string that exceeds the V13 size limit (100KB) but fits within V14 (512KB).
-fn generate_large_program() -> String {
+/// Generates a large program string of approximately the given target size in bytes.
+fn generate_large_program(target_size: usize) -> String {
     let mut program = String::from(
         "program large_program_generated.aleo;
 
@@ -80,7 +82,7 @@ function compute:
     // Generate cast instructions to create large arrays.
     // Each cast with 32 elements is ~200+ bytes, so we need fewer instructions.
     let mut reg = 1u32;
-    while program.len() < 110_000 {
+    while program.len() < target_size {
         // Create a 32-element array from r0.
         program.push_str(&format!(
             "    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{reg} as [u64; 32u32];\n"
@@ -97,7 +99,8 @@ fn test_deploy_large_program_v14_serialization() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
 
-    let large_program_str = generate_large_program();
+    // Generate a program that exceeds the V13 limit (100 kB) but fits within V14 (512 kB).
+    let large_program_str = generate_large_program(110_000);
     let large_program = Program::from_str(&large_program_str).unwrap();
 
     println!("Generated large program size: {} bytes", large_program_str.len());
@@ -388,6 +391,23 @@ finalize compute:
     let next_block = sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
     vm.add_next_block(&next_block).unwrap();
 
-    // Ensure that the valid transaction was accepted and the invalid one was rejected.
+    // Ensure that the deployment was accepted.
     assert_eq!(next_block.transactions().num_accepted(), 1);
+
+    // Execute the function that performs 32 unique writes.
+    let inputs = [Value::<CurrentNetwork>::from_str("1u64").unwrap()];
+    let execution =
+        vm.execute(&private_key, ("test_max_writes.aleo", "compute"), inputs.into_iter(), None, 0, None, rng).unwrap();
+
+    // Verify the execution transaction is valid.
+    assert!(vm.check_transaction(&execution, None, rng).is_ok());
+
+    // Create a block with the execution and verify it is accepted.
+    let next_block = sample_next_block(&vm, &private_key, &[execution], rng).unwrap();
+    assert_eq!(next_block.transactions().num_accepted(), 1);
+    assert_eq!(next_block.transactions().num_rejected(), 0);
+    assert_eq!(next_block.aborted_transaction_ids().len(), 0);
+
+    // Add the block to the VM.
+    vm.add_next_block(&next_block).unwrap();
 }
