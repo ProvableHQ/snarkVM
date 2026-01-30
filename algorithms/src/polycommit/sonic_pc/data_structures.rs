@@ -54,7 +54,7 @@ pub struct CommitterKey<E: PairingEngine> {
     pub powers_of_beta_g: Vec<E::G1Affine>,
 
     /// The key used to commit to polynomials in Lagrange basis.
-    /// This is `None` if `self` does not support lagrange bases
+    /// This is `None` if `self` does not support lagrange bases.
     pub lagrange_bases_at_beta_g: Option<BTreeMap<usize, Vec<E::G1Affine>>>,
 
     /// The key used to commit to hiding polynomials.
@@ -296,14 +296,14 @@ impl<E: PairingEngine> ToBytes for CommitterKey<E> {
 }
 
 impl<E: PairingEngine> CommitterKey<E> {
-    /// Update the committer_key
+    /// Update the committer_key.
     /// The `powers_of_beta_g` and `shifted_powers_of_beta_g` may grow or shrink
-    /// as per the new supported_degree The `enforced_degree_bounds` and
+    /// as per the new supported_degree. The `enforced_degree_bounds` and
     /// `shifted_powers_of_beta_times_gamma_g` will adjust to the new
-    /// degree_bounds The `lagrange_bases_at_beta_g` will optionally adjust
-    /// to the new degree_bounds The `powers_of_beta_times_gamma_g` is only
-    /// dependent on the `hiding_bound` so doesn't change This only works if
-    /// the SRS max_degree is fixed across specializations Note that this
+    /// degree_bounds. The `lagrange_bases_at_beta_g` will optionally adjust
+    /// to the new degree_bounds. The `powers_of_beta_times_gamma_g` is only
+    /// dependent on the `hiding_bound` so doesn't change. This only works if
+    /// the SRS max_degree is fixed across specializations. Note that this
     /// implementation is not atomic. If specialize fails halfway through,
     pub fn update(&mut self, srs: &UniversalParams<E>, degree_info: &DegreeInfo) -> Result<()> {
         let trim_time = start_timer!(|| "Trimming public parameters");
@@ -456,7 +456,7 @@ impl<E: PairingEngine> CommitterKey<E> {
         Ok(())
     }
 
-    /// Obtain powers for the underlying KZG10 construction
+    /// Obtain powers for the underlying KZG10 construction.
     pub fn powers(&self) -> kzg10::Powers<E> {
         kzg10::Powers {
             powers_of_beta_g: self.powers_of_beta_g.as_slice().into(),
@@ -585,7 +585,7 @@ impl fmt::Debug for LCTerm {
 }
 
 impl LCTerm {
-    /// Returns `true` if `self == LCTerm::One`
+    /// Returns `true` if `self == LCTerm::One`.
     #[inline]
     pub fn is_one(&self) -> bool {
         matches!(self, LCTerm::One)
