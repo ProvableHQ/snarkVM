@@ -62,9 +62,9 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
     /// Used to personalize the Fiat-Shamir RNG.
     pub const PROTOCOL_NAME: &'static [u8] = b"VARUNA-2023";
 
-    /// Creates a set of proving and verifying keys for a set of circuits
-    /// We commit to each circuit's index polys separately
-    /// Performing a single batch commitment can be a future optimization
+    /// Creates a set of proving and verifying keys for a set of circuits.
+    /// We commit to each circuit's index polys separately.
+    /// Performing a single batch commitment can be a future optimization.
     pub fn batch_circuit_setup<C: ConstraintSynthesizer<E::Fr>>(
         srs: &UniversalSRS<E>,
         universal_prover: &mut UniversalProver<E>,
@@ -228,7 +228,7 @@ where
     }
 
     /// Prove that the verifying key commitments commit to the indexed circuit's
-    /// polynomials
+    /// polynomials.
     fn prove_vk(
         universal_prover: &Self::UniversalProver,
         fs_parameters: &Self::FSParameters,
@@ -273,8 +273,8 @@ where
     }
 
     /// Verify that the verifying key commitments commit to the indexed
-    /// circuit's polynomials Verify that the verifying key's circuit_info
-    /// is correct
+    /// circuit's polynomials. Verify that the verifying key's circuit_info
+    /// is correct.
     fn verify_vk<C: ConstraintSynthesizer<Self::ScalarField>>(
         universal_verifier: &Self::UniversalVerifier,
         fs_parameters: &Self::FSParameters,
