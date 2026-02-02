@@ -3344,6 +3344,7 @@ dependencies = [
  "snarkvm-ledger-store",
  "snarkvm-ledger-test-helpers",
  "snarkvm-synthesizer",
+ "snarkvm-synthesizer-error",
  "snarkvm-utilities",
  "thiserror 2.0.17",
  "time",
@@ -3683,6 +3684,7 @@ dependencies = [
  "snarkvm-ledger-query",
  "snarkvm-ledger-store",
  "snarkvm-ledger-test-helpers",
+ "snarkvm-synthesizer-error",
  "snarkvm-synthesizer-process",
  "snarkvm-synthesizer-program",
  "snarkvm-synthesizer-snark",
@@ -3692,6 +3694,16 @@ dependencies = [
  "tokio",
  "tracing",
  "walkdir",
+]
+
+[[package]]
+name = "snarkvm-synthesizer-error"
+version = "4.4.0"
+dependencies = [
+ "anyhow",
+ "snarkvm-circuit-environment",
+ "snarkvm-console-network",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -3718,6 +3730,7 @@ dependencies = [
  "snarkvm-ledger-query",
  "snarkvm-ledger-store",
  "snarkvm-ledger-test-helpers",
+ "snarkvm-synthesizer-error",
  "snarkvm-synthesizer-program",
  "snarkvm-synthesizer-snark",
  "snarkvm-utilities",
@@ -3741,6 +3754,7 @@ dependencies = [
  "serde_json",
  "snarkvm-circuit",
  "snarkvm-console",
+ "snarkvm-synthesizer-error",
  "snarkvm-synthesizer-process",
  "snarkvm-synthesizer-snark",
  "snarkvm-utilities",

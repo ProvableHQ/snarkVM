@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_synthesizer_process::{ProcessAuthError, ProcessDeployError, ProcessExecError};
+use crate::{ProcessAuthError, ProcessDeployError, ProcessExecError};
 use thiserror::Error;
 
 // NOTE: Many errors in this module temporarily contain `Anyhow` variants.

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,8 +15,8 @@
 
 //! Errors for instruction operations.
 
-use circuit::environment::ConstraintUnsatisfied;
-use console::network::prelude::Error as AnyhowError;
+use snarkvm_circuit_environment::ConstraintUnsatisfied;
+use snarkvm_console_network::prelude::Error as AnyhowError;
 use thiserror::Error;
 
 // NOTE: Many errors in this module temporarily contain `Anyhow` variants.

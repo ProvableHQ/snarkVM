@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,7 +44,7 @@ impl<N: Network> FromBytes for Block<N> {
         // Read the number of aborted solution IDs.
         let num_aborted_solutions = u32::read_le(&mut reader)?;
         // Ensure the number of aborted solutions IDs is within bounds (this is an early safety check).
-        if num_aborted_solutions as usize > Solutions::<N>::max_aborted_solutions().map_err(error)? {
+        if num_aborted_solutions as usize > Solutions::<N>::max_aborted_solutions() {
             return Err(error("Invalid number of aborted solutions IDs in the block"));
         }
         // Read the aborted solution IDs.
@@ -59,7 +59,7 @@ impl<N: Network> FromBytes for Block<N> {
         // Read the number of aborted transaction IDs.
         let num_aborted_transactions = u32::read_le(&mut reader)?;
         // Ensure the number of aborted transaction IDs is within bounds (this is an early safety check).
-        if num_aborted_transactions as usize > Transactions::<N>::max_aborted_transactions().map_err(error)? {
+        if num_aborted_transactions as usize > Transactions::<N>::max_aborted_transactions() {
             return Err(error("Invalid number of aborted transaction IDs in the block"));
         }
         // Read the aborted transaction IDs.

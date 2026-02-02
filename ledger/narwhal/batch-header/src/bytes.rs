@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,7 +55,7 @@ impl<N: Network> FromBytes for BatchHeader<N> {
         // Read the number of previous certificate IDs.
         let num_previous_certificate_ids = u16::read_le(&mut reader)?;
         // Ensure the number of previous certificate IDs is within bounds.
-        if num_previous_certificate_ids > N::LATEST_MAX_CERTIFICATES().map_err(io_error)? {
+        if num_previous_certificate_ids > N::LATEST_MAX_CERTIFICATES() {
             return Err(error(format!(
                 "Number of previous certificate IDs ({num_previous_certificate_ids}) exceeds the maximum.",
             )));

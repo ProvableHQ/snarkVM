@@ -99,6 +99,9 @@ features = [ "query" ]
 [dependencies.snarkvm-ledger-store]
 workspace = true
 
+[dependencies.snarkvm-synthesizer-error]
+workspace = true
+
 [dependencies.snarkvm-synthesizer-process]
 workspace = true
 

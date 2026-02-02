@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,22 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    AssertError,
-    EvalError,
-    ExecError,
-    FinalizeError,
-    Opcode,
-    Operand,
-    RegistersCircuit,
-    RegistersTrait,
-    StackTrait,
-    register_types_equivalent,
-};
+use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait, register_types_equivalent};
 use console::{
     network::prelude::*,
     program::{Register, RegisterType},
 };
+use snarkvm_synthesizer_error::*;
 
 /// Asserts two operands are equal to each other.
 pub type AssertEq<N> = AssertInstruction<N, { Variant::AssertEq as u8 }>;

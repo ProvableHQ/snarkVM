@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,10 +16,8 @@
 use super::*;
 
 use crate::vm::test_helpers::*;
-
-use snarkvm_synthesizer_program::Program;
-
 use console::network::ConsensusVersion;
+use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
 // This test verifies that a program with external structs cannot be deployed on

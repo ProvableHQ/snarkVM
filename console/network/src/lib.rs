@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -201,8 +201,10 @@ pub trait Network:
     const MAX_RECORD_ENTRIES: usize = Self::MIN_RECORD_ENTRIES.saturating_add(Self::MAX_DATA_ENTRIES);
 
     /// The maximum program size by number of characters.
-    const MAX_PROGRAM_SIZE: usize = 100_000; // 100 kB
-
+    const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 2] = [
+        (ConsensusVersion::V1, 100_000),  // 100 kB
+        (ConsensusVersion::V14, 512_000), // 512 kB
+    ];
     /// The maximum number of mappings in a program.
     const MAX_MAPPINGS: usize = 31;
     /// The maximum number of functions in a program.
@@ -220,7 +222,7 @@ pub trait Network:
     /// The maximum number of commands in finalize.
     const MAX_COMMANDS: usize = u16::MAX as usize;
     /// The maximum number of write commands in finalize.
-    const MAX_WRITES: u16 = 16;
+    const MAX_WRITES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 16), (ConsensusVersion::V14, 32)];
     /// The maximum number of `position` commands in finalize.
     const MAX_POSITIONS: usize = u8::MAX as usize;
 
@@ -232,9 +234,20 @@ pub trait Network:
     /// The maximum number of imports.
     const MAX_IMPORTS: usize = 64;
 
-    /// The maximum number of bytes in a transaction.
-    // Note: This value must **not** be decreased as it would invalidate existing transactions.
-    const MAX_TRANSACTION_SIZE: usize = 128_000; // 128 kB
+    /// A list of consensus versions and their corresponding maximum transaction sizes in bytes.
+    ///
+    /// A transaction consists of fixed identifiers, deployment data, and fees.
+    /// Fixed components include identifiers, ownership, checksums, and fees.
+    /// Variable components include the program bytecode and verifying-key entries.
+    /// Verifying-key entries scale with the number of functions and records.
+    ///
+    /// MAX_TRANSACTION_SIZE = C + MAX_PROGRAM_SIZE + (673 + 58) * (MAX_FUNCTIONS + MAX_RECORDS)
+    /// C = fixed size components (Up to 2367 bytes)
+    // Note: This value must **not** decrease without considering the impact on transaction validity.
+    const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 2] = [
+        (ConsensusVersion::V1, 128_000),  // 128 kB
+        (ConsensusVersion::V14, 768_000), // 768 kB
+    ];
 
     /// The state root type.
     type StateRoot: Bech32ID<Field<Self>>;
@@ -304,8 +317,26 @@ pub trait Network:
     }
     /// Returns the last `MAX_CERTIFICATES` value.
     #[allow(non_snake_case)]
-    fn LATEST_MAX_CERTIFICATES() -> Result<u16> {
-        Self::MAX_CERTIFICATES.last().map_or(Err(anyhow!("No MAX_CERTIFICATES defined.")), |(_, value)| Ok(*value))
+    fn LATEST_MAX_CERTIFICATES() -> u16 {
+        Self::MAX_CERTIFICATES.last().expect("MAX_CERTIFICATES must have at least one entry").1
+    }
+
+    /// Returns the last `MAX_PROGRAM_SIZE` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_PROGRAM_SIZE() -> usize {
+        Self::MAX_PROGRAM_SIZE.last().expect("MAX_PROGRAM_SIZE must have at least one entry").1
+    }
+
+    /// Returns the last `MAX_WRITES` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_WRITES() -> u16 {
+        Self::MAX_WRITES.last().expect("MAX_WRITES must have at least one entry").1
+    }
+
+    /// Returns the last `MAX_TRANSACTION_SIZE` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_TRANSACTION_SIZE() -> usize {
+        Self::MAX_TRANSACTION_SIZE.last().expect("MAX_TRANSACTION_SIZE must have at least one entry").1
     }
 
     /// Returns the block height where the the inclusion proof will be updated.

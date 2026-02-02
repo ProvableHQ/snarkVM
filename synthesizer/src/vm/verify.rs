@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -75,12 +75,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ) -> Result<()> {
         let timer = timer!("VM::check_transaction");
 
+        // Get the current block height for consensus version checks.
+        let current_block_height = self.block_store().current_block_height();
+
         /* Transaction */
 
+        // Get the maximum transaction size for the current consensus version.
+        let max_transaction_size = consensus_config_value!(N, MAX_TRANSACTION_SIZE, current_block_height)
+            .ok_or(anyhow!("Failed to fetch maximum transaction size"))?;
         // Allocate a buffer to write the transaction.
-        let mut buffer = Vec::with_capacity(N::MAX_TRANSACTION_SIZE);
+        let mut buffer = Vec::with_capacity(max_transaction_size);
         // Ensure that the transaction is well formed and does not exceed the maximum size.
-        if let Err(error) = transaction.write_le(LimitedWriter::new(&mut buffer, N::MAX_TRANSACTION_SIZE)) {
+        if let Err(error) = transaction.write_le(LimitedWriter::new(&mut buffer, max_transaction_size)) {
             bail!("Transaction '{}' is not well-formed: {error}", transaction.id())
         }
 
@@ -135,7 +141,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         lap!(timer, "Check for duplicate elements");
 
         // Get the consensus version.
-        let consensus_version = N::CONSENSUS_VERSION(self.block_store().current_block_height())?;
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
 
         // Construct the transaction checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
@@ -203,6 +209,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the program does not include V11 syntax
                 // If the `CONSENSUS_VERSION` is less than `V12`, ensure that
                 //   - the program does not include V12 syntax
+                // If the `CONSENSUS_VERSION` is less than `V13`, ensure that
+                //   - the program does not include V13 syntax
+                //   - the program does not use the external struct syntax `some_program.aleo/Struct`
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V13`, then verify that:
+                //   - the program's mappings do not use non-existent structs.
+                // If the `CONSENSUS_VERSION` is less than `V14`, ensure that
+                //   - the program does not include V14 syntax
                 if consensus_version < ConsensusVersion::V8 {
                     ensure!(
                         deployment.edition().is_zero(),
@@ -255,21 +268,27 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses string type after `ConsensusVersion::V12`"
                     );
                 }
-
-                // If the `CONSENSUS_VERSION` is less than `V13`, then verify that:
-                //   - the program does not use the external struct syntax `some_program.aleo/StructT`
-                // If the `CONSENSUS_VERSION` is greater than or equal to `V13`, then verify that:
-                //   - the program's mappings do not use non-existent structs.
                 if consensus_version < ConsensusVersion::V13 {
                     ensure!(
                         !deployment.program().contains_external_struct(),
                         "Invalid deployment transaction '{id}' - external structs may only be used beginning with `ConsensusVersion::V13`"
                     );
                 }
-
                 if consensus_version >= ConsensusVersion::V13 {
                     self.process.read().mapping_types_exist(deployment.program())?;
                 }
+                if consensus_version < ConsensusVersion::V14 {
+                    ensure!(
+                        !deployment.program().contains_v14_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
+                    );
+                }
+
+                // Ensure the program size is bounded properly based on the current block height.
+                deployment.program().check_program_size(current_block_height)?;
+
+                // Ensure the program writes do not exceed the maximum allowed based on the current block height.
+                deployment.program().check_program_writes(current_block_height)?;
 
                 // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.
                 if let Some(given_owner) = deployment.program_owner() {

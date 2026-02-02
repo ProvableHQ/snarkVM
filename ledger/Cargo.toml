@@ -134,6 +134,9 @@ optional = true
 [dependencies.snarkvm-synthesizer]
 workspace = true
 
+[dependencies.snarkvm-synthesizer-error]
+workspace = true
+
 [dependencies.snarkvm-utilities]
 workspace = true
 

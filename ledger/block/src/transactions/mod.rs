@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -199,10 +199,10 @@ impl<N: Network> Transactions<N> {
     pub const MAX_TRANSACTIONS: usize = usize::pow(2, TRANSACTIONS_DEPTH as u32).saturating_sub(1);
 
     /// The maximum number of aborted transactions allowed in a block.
-    pub fn max_aborted_transactions() -> Result<usize> {
-        Ok(BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH
+    pub fn max_aborted_transactions() -> usize {
+        BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH
             * BatchHeader::<N>::MAX_GC_ROUNDS
-            * Committee::<N>::max_committee_size()? as usize)
+            * Committee::<N>::max_committee_size() as usize
     }
 
     /// Returns an iterator over all transactions, for all transactions in `self`.
@@ -388,7 +388,7 @@ mod tests {
         // Determine the maximum number of transmissions in a block.
         let max_transmissions_per_block = BatchHeader::<CurrentNetwork>::MAX_TRANSMISSIONS_PER_BATCH
             * BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS
-            * CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap() as usize;
+            * CurrentNetwork::LATEST_MAX_CERTIFICATES() as usize;
 
         // Note: The maximum number of *transmissions* in a block cannot exceed the maximum number of *transactions* in a block.
         // If you intended to change the number of 'MAX_TRANSACTIONS', note that this will break the inclusion proof,

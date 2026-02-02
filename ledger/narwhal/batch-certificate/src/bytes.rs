@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,10 +21,10 @@ impl<N: Network> BatchCertificate<N> {
         // Read the number of signatures.
         let num_signatures = u16::read_le(&mut reader)?;
         // Ensure the number of signatures is within bounds.
-        if num_signatures > Self::max_signatures().map_err(error)? {
+        if num_signatures > Self::max_signatures() {
             return Err(error(format!(
                 "Number of signatures ({num_signatures}) exceeds the maximum ({})",
-                Self::max_signatures().map_err(error)?
+                Self::max_signatures()
             )));
         }
         // Read the signature bytes.

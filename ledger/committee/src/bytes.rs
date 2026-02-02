@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,10 +32,10 @@ impl<N: Network> FromBytes for Committee<N> {
         // Read the number of members.
         let num_members = u16::read_le(&mut reader)?;
         // Ensure the number of members is within the allowed limit.
-        if num_members > Self::max_committee_size().map_err(error)? {
+        if num_members > Self::max_committee_size() {
             return Err(error(format!(
                 "Committee cannot exceed {} members, found {num_members}",
-                Self::max_committee_size().map_err(error)?,
+                Self::max_committee_size(),
             )));
         }
 

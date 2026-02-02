@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,6 +35,7 @@ use console::{
         StructType,
         ValueType,
     },
+    types::U32,
 };
 use snarkvm_synthesizer_program::{
     CallOperator,
@@ -98,6 +99,14 @@ impl<N: Network> RegisterTypes<N> {
             Operand::ProgramID(_) | Operand::Signer | Operand::Caller => {
                 RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Address))
             }
+            Operand::AleoGenerator => RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
+            Operand::AleoGeneratorPowers(index) => match index {
+                None => RegisterType::Plaintext(PlaintextType::Array(ArrayType::new(
+                    PlaintextType::Literal(LiteralType::Group),
+                    vec![U32::new(N::Scalar::SIZE_IN_BITS as u32)],
+                )?)),
+                Some(_) => RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
+            },
             Operand::BlockHeight => bail!("'block.height' is not a valid operand in a non-finalize context."),
             Operand::BlockTimestamp => {
                 bail!("'block.timestamp' is not a valid operand in a non-finalize context.")

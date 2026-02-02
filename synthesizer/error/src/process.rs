@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use circuit::environment::ConstraintUnsatisfied;
-use snarkvm_synthesizer_program::{EvalError, ExecError};
+use crate::{EvalError, ExecError};
+use snarkvm_circuit_environment::ConstraintUnsatisfied;
 use thiserror::Error;
 
 // NOTE: Many errors in this module temporarily contain `Anyhow` variants.
@@ -185,7 +185,7 @@ pub enum InstructionExecError {
 
 impl<E> IndexedInstructionError<E> {
     /// Short-hand constructor for the `IndexedInstructionError` type.
-    pub(crate) fn new(index: usize, instruction: String, error: E) -> Self {
+    pub fn new(index: usize, instruction: String, error: E) -> Self {
         Self { index, instruction, error }
     }
 }

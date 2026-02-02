@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,9 @@
 // limitations under the License.
 
 use super::*;
-use crate::error::*;
+use snarkvm_synthesizer_error::*;
+
+use std::sync::OnceLock;
 
 impl<N: Network> Stack<N> {
     /// Evaluates a program closure on the given inputs.
@@ -82,6 +84,22 @@ impl<N: Network> Stack<N> {
                     Operand::Signer => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.signer()?)))),
                     // If the operand is the caller, retrieve the caller from the registers.
                     Operand::Caller => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.caller()?)))),
+                    // If the operand is the generator, retrieve the Aleo generator.
+                    Operand::AleoGenerator => N::g_powers()
+                        .first()
+                        .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                        .ok_or_else(|| anyhow!("Failed to retrieve the Aleo generator.")),
+                    // If the operand is the generator powers, retrieve the generator powers or the indexed group.
+                    Operand::AleoGeneratorPowers(index) => match index {
+                        None => Ok(Value::Plaintext(Plaintext::Array(
+                            N::g_powers().iter().map(|element| Plaintext::from(Literal::Group(*element))).collect(),
+                            OnceLock::new(),
+                        ))),
+                        Some(index) => N::g_powers()
+                            .get(**index as usize)
+                            .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                            .ok_or_else(|| anyhow!("Index {index} out of bounds for Aleo generator")),
+                    },
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => bail!("Cannot retrieve the block height from a closure scope."),
                     // If the operand is the block timestamp, throw an error.
@@ -242,6 +260,22 @@ impl<N: Network> Stack<N> {
                     Operand::Signer => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.signer()?)))),
                     // If the operand is the caller, retrieve the caller from the registers.
                     Operand::Caller => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.caller()?)))),
+                    // If the operand is the generator, retrieve the Aleo generator.
+                    Operand::AleoGenerator => N::g_powers()
+                        .first()
+                        .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                        .ok_or_else(|| anyhow!("Failed to retrieve the Aleo generator.")),
+                    // If the operand is the generator powers, retrieve the generator powers or the indexed group.
+                    Operand::AleoGeneratorPowers(index) => match index {
+                        None => Ok(Value::Plaintext(Plaintext::Array(
+                            N::g_powers().iter().map(|element| Plaintext::from(Literal::Group(*element))).collect(),
+                            OnceLock::new(),
+                        ))),
+                        Some(index) => N::g_powers()
+                            .get(**index as usize)
+                            .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                            .ok_or_else(|| anyhow!("Index {index} out of bounds for Aleo generator")),
+                    },
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => bail!("Cannot retrieve the block height from a function scope."),
                     // If the operand is the block timestamp, throw an error.

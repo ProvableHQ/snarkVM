@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -339,7 +339,7 @@ impl<N: Network> Block<N> {
         // Ensure the number of aborted solution IDs is within the allowed range.
         // This check is redundant if the block has been created via `Block::from()`.
         ensure!(
-            self.aborted_solution_ids.len() <= Solutions::<N>::max_aborted_solutions()?,
+            self.aborted_solution_ids.len() <= Solutions::<N>::max_aborted_solutions(),
             "Block {height} contains too many aborted solution IDs (found '{}')",
             self.aborted_solution_ids.len(),
         );
@@ -455,10 +455,10 @@ impl<N: Network> Block<N> {
 
         // Ensure the number of aborted transaction IDs is within the allowed range.
         // This check is redundant if the block has been created via `Block::from()`.
-        if self.aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
+        if self.aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions() {
             bail!(
                 "Cannot validate a block with more than {} aborted transaction IDs",
-                Transactions::<N>::max_aborted_transactions()?
+                Transactions::<N>::max_aborted_transactions()
             );
         }
 

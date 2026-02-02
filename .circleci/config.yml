@@ -358,6 +358,7 @@ commands:
               RUST_MIN_STACK=67108864 cargo test --package="<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED | tee "$OUT"
               : > "$CSV"; : > "$TOP"
             else
+              rm -rf target
               RUST_MIN_STACK=67108864 \
               cargo nextest run \
                 -p "<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED \

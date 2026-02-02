@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -105,7 +105,7 @@ impl<N: Network> BatchHeader<N> {
         );
         // Ensure that the number of previous certificate IDs is within bounds.
         ensure!(
-            previous_certificate_ids.len() <= N::LATEST_MAX_CERTIFICATES()? as usize,
+            previous_certificate_ids.len() <= N::LATEST_MAX_CERTIFICATES() as usize,
             "Invalid number of previous certificate IDs ({})",
             previous_certificate_ids.len()
         );
@@ -163,7 +163,7 @@ impl<N: Network> BatchHeader<N> {
         );
         // Ensure that the number of previous certificate IDs is within bounds.
         ensure!(
-            previous_certificate_ids.len() <= N::LATEST_MAX_CERTIFICATES()? as usize,
+            previous_certificate_ids.len() <= N::LATEST_MAX_CERTIFICATES() as usize,
             "Invalid number of previous certificate IDs ({})",
             previous_certificate_ids.len()
         );
