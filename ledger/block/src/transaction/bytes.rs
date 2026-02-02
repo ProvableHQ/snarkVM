@@ -14,6 +14,9 @@
 // limitations under the License.
 
 use super::*;
+use crate::RejectionReason;
+
+use snarkvm_synthesizer_error::ProcessFinalizeError;
 
 impl<N: Network> FromBytes for Transaction<N> {
     /// Reads the transaction from the buffer.
@@ -134,6 +137,46 @@ impl<N: Network> ToBytes for Transaction<N> {
                 id.write_le(&mut writer)?;
                 // Write the fee.
                 fee.write_le(&mut writer)
+            }
+        }
+    }
+}
+
+impl FromBytes for RejectionReason {
+    /// Reads the transaction from the buffer.
+    #[inline]
+    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the variant.
+        let variant = u8::read_le(&mut reader)?;
+
+        let reason = match variant {
+            0 => Self::AlreadyDeployedInTheBlock,
+            1 => {
+                let finalize_error = ProcessFinalizeError::read_le(&mut reader)?;
+                Self::FailedToFinalize(finalize_error)
+            }
+            _ => {
+                return Err(error("Invalid RejectionReason variant"));
+            }
+        };
+
+        Ok(reason)
+    }
+}
+
+impl ToBytes for RejectionReason {
+    /// Writes the transaction to the buffer.
+    #[inline]
+    fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        match self {
+            Self::AlreadyDeployedInTheBlock => {
+                // Write the variant.
+                0u8.write_le(&mut writer)
+            }
+            Self::FailedToFinalize(finalize_error) => {
+                // Write the variant.
+                1u8.write_le(&mut writer)?;
+                finalize_error.write_le(&mut writer)
             }
         }
     }

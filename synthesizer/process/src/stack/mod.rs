@@ -37,7 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace, error::*};
+use crate::{CallMetrics, Process, Trace};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -67,6 +67,7 @@ use console::{
     types::{Field, Group},
 };
 use snarkvm_ledger_block::{Deployment, Transaction, Transition};
+use snarkvm_synthesizer_error::*;
 use snarkvm_synthesizer_program::{
     CallOperator,
     Closure,
@@ -246,7 +247,7 @@ impl<N: Network> Stack<N> {
         // If the program exists in the process, check that the new program is valid.
         if let Ok(existing_stack) = process.get_stack(program_id) {
             // Ensure the program is not `credits.aleo`.
-            if program_id == &ProgramID::from_str("credits.aleo")? {
+            if program_id == &ProgramID::from_str("credits.aleo").unwrap() {
                 return Err(StackInitError::CreditsReinitialization);
             }
             // Get the existing program.
@@ -254,9 +255,11 @@ impl<N: Network> Stack<N> {
             // If the existing program does not have a constructor, check that the new program matches the existing program.
             // Otherwise, ensure that the upgrade is valid.
             match existing_program.contains_constructor() {
-                false => if existing_stack.program() != program {
-                    return Err(StackInitError::DifferentProgramAlreadyExists(program_id.to_string()));
-                },
+                false => {
+                    if existing_stack.program() != program {
+                        return Err(StackInitError::DifferentProgramAlreadyExists(program_id.to_string()));
+                    }
+                }
                 true => Self::check_upgrade_is_valid(existing_program, program)?,
             }
         }
@@ -267,7 +270,7 @@ impl<N: Network> Stack<N> {
 
     /// Partially initializes a new stack, given the process and the program, without checking for validity.
     /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `Stack::new` instead.
-    pub fn new_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
+    pub fn new_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self, StackInitError> {
         // Check that the program is well-formed.
         check_program_is_well_formed(program)?;
         // Return the stack.
@@ -432,19 +435,25 @@ impl<N: Network> Deref for StackRef<'_, N> {
 }
 
 // A helper function to check that a program is well-formed.
-fn check_program_is_well_formed<N: Network>(program: &Program<N>) -> Result<()> {
+fn check_program_is_well_formed<N: Network>(program: &Program<N>) -> Result<(), StackInitError> {
     // Ensure the program contains functions.
-    ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{}'", program.id());
+    if program.functions().is_empty() {
+        return Err(StackInitError::ProgramMissingFunctions(program.id().to_string()));
+    }
 
     // Serialize the program into bytes.
     let program_bytes = program.to_bytes_le()?;
     // Ensure the program deserializes from bytes correctly.
-    ensure!(program == &Program::from_bytes_le(&program_bytes)?, "Program byte serialization failed");
+    if program != &Program::from_bytes_le(&program_bytes).map_err(|_| StackInitError::ProgramMalformed)? {
+        return Err(StackInitError::ProgramMalformed);
+    }
 
     // Serialize the program into string.
     let program_string = program.to_string();
     // Ensure the program deserializes from a string correctly.
-    ensure!(program == &Program::from_str(&program_string)?, "Program string serialization failed");
+    if program != &Program::from_str(&program_string).map_err(|_| StackInitError::ProgramMalformed)? {
+        return Err(StackInitError::ProgramMalformed);
+    }
 
     Ok(())
 }

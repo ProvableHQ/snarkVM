@@ -26,7 +26,7 @@ impl<N: Network> FromBytes for Rejected<N> {
                 // Read the deployment.
                 let deployment = Deployment::read_le(&mut reader)?;
                 // Read the rejection reason.
-                let rejection_reason = RejectionReason::try_from(u8::read_le(&mut reader)?).map_err(error)?;
+                let rejection_reason = RejectionReason::read_le(&mut reader)?;
                 // Return the rejected deployment.
                 Ok(Self::new_deployment(program_owner, deployment, rejection_reason))
             }
@@ -34,7 +34,7 @@ impl<N: Network> FromBytes for Rejected<N> {
                 // Read the execution.
                 let execution = Execution::read_le(&mut reader)?;
                 // Read the rejection reason.
-                let rejection_reason = RejectionReason::try_from(u8::read_le(&mut reader)?).map_err(error)?;
+                let rejection_reason = RejectionReason::read_le(&mut reader)?;
                 // Return the rejected execution.
                 Ok(Self::new_execution(execution, rejection_reason))
             }
@@ -55,7 +55,7 @@ impl<N: Network> ToBytes for Rejected<N> {
                 // Write the deployment.
                 deployment.write_le(&mut writer)?;
                 // Write the rejection reason.
-                (*rejection_reason as u8).write_le(&mut writer)
+                rejection_reason.write_le(&mut writer)
             }
             Self::Execution(execution, rejection_reason) => {
                 // Write the variant.
@@ -63,7 +63,7 @@ impl<N: Network> ToBytes for Rejected<N> {
                 // Write the execution.
                 execution.write_le(&mut writer)?;
                 // Write the rejection reason.
-                (*rejection_reason as u8).write_le(&mut writer)
+                rejection_reason.write_le(&mut writer)
             }
         }
     }

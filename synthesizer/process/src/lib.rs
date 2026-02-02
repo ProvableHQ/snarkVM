@@ -64,6 +64,7 @@ use console::{
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Fee, Input, Output, Transaction, Transition};
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
+use snarkvm_synthesizer_error::*;
 use snarkvm_synthesizer_program::{
     Branch,
     Command,
@@ -403,7 +404,7 @@ impl<N: Network> Process<N> {
 
     /// Returns the stack for the given program ID.
     #[inline]
-    pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<Arc<Stack<N>>> {
+    pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<Arc<Stack<N>>, ProcessGenericError> {
         // Prepare the program ID.
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
         // Retrieve the stack.
@@ -411,7 +412,7 @@ impl<N: Network> Process<N> {
             .stacks
             .read()
             .get(&program_id)
-            .ok_or_else(|| anyhow!("Program '{program_id}' does not exist"))?
+            .ok_or_else(|| ProcessGenericError::MissingProgram(program_id.to_string()))?
             .clone();
         // Ensure the program ID matches.
         ensure!(stack.program_id() == &program_id, "Expected program '{}', found '{program_id}'", stack.program_id());

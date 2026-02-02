@@ -24,18 +24,24 @@ impl<N: Network> FinalizeTypes<N> {
     pub(super) fn initialize_finalize_types_from_constructor(
         stack: &Stack<N>,
         constructor: &Constructor<N>,
-    ) -> Result<Self> {
+    ) -> Result<Self, StackInitError> {
         // Initialize a map of registers to their types.
         let mut finalize_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
 
         // Check the commands are well-formed.
         for command in constructor.commands() {
             // Ensure the command is not a call instruction.
-            ensure!(!command.is_call(), "`call` commands are not allowed in constructors.");
+            if command.is_call() {
+                return Err(StackInitError::TypesConstructorWithCall);
+            }
             // Ensure the command is not a cast to record instruction.
-            ensure!(!command.is_cast_to_record(), "`cast` (to record) commands are not allowed in constructors.");
+            if command.is_cast_to_record() {
+                return Err(StackInitError::TypesConstructorWithCast);
+            }
             // Ensure the command is not an await command.
-            ensure!(!command.is_await(), "`await` commands are not allowed in constructors.");
+            if command.is_await() {
+                return Err(StackInitError::TypesConstructorWithAwait);
+            }
             // Check the command opcode, operands, and destinations.
             finalize_types.check_command(stack, constructor.positions(), command)?;
         }
@@ -185,7 +191,7 @@ impl<N: Network> FinalizeTypes<N> {
         stack: &Stack<N>,
         positions: &HashMap<Identifier<N>, usize>,
         command: &Command<N>,
-    ) -> Result<()> {
+    ) -> Result<(), StackInitError> {
         // Check the operands.
         for operand in command.operands() {
             // If the operand is `Operand::Checksum`, `Operand::Edition`, or `Operand::ProgramOwner` and it contains a program ID,

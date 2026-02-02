@@ -15,6 +15,7 @@
 
 use super::*;
 use console::program::{FinalizeType, Future, Register};
+use snarkvm_synthesizer_error::*;
 use snarkvm_synthesizer_program::{Await, FinalizeRegistersState, Operand, RegistersTrait};
 use snarkvm_utilities::try_vm_runtime;
 

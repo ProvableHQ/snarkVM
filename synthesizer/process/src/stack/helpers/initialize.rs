@@ -31,7 +31,7 @@ impl<N: Network> Stack<N> {
                 // Retrieve the program edition.
                 let edition = *stack.program_edition();
                 // Increment the edition.
-                edition.checked_add(1).ok_or_else(|| anyhow!("Overflow while incrementing the program edition"))?
+                edition.checked_add(1).ok_or(StackInitError::ProgramEditionOverflow)?
             }
         };
         // Construct a new stack.
@@ -44,7 +44,7 @@ impl<N: Network> Stack<N> {
 
     /// Create a new stack, given the process and program, without completely initializing or checking for validity.
     #[inline]
-    pub(crate) fn create_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
+    pub(crate) fn create_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self, StackInitError> {
         // Construct the stack for the program.
         let stack = Self {
             program: program.clone(),
@@ -55,7 +55,7 @@ impl<N: Network> Stack<N> {
             universal_srs: process.universal_srs().clone(),
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
-            program_address: program.id().to_address()?,
+            program_address: program.id().to_address().map_err(|_| StackInitError::ProgramIdConversion)?,
             program_checksum: program.to_checksum(),
             program_edition: U16::new(edition),
             program_owner: None,

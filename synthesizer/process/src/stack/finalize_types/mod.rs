@@ -73,14 +73,14 @@ impl<N: Network> FinalizeTypes<N> {
     /// Initializes a new instance of `FinalizeTypes` for the given constructor.
     /// Checks that the given constructor is well-formed for the given stack.
     #[inline]
-    pub fn from_constructor(stack: &Stack<N>, constructor: &Constructor<N>) -> Result<Self> {
+    pub fn from_constructor(stack: &Stack<N>, constructor: &Constructor<N>) -> Result<Self, StackInitError> {
         Self::initialize_finalize_types_from_constructor(stack, constructor)
     }
 
     /// Initializes a new instance of `FinalizeTypes` for the given finalize.
     /// Checks that the given finalize is well-formed for the given stack.
     #[inline]
-    pub fn from_finalize(stack: &Stack<N>, finalize: &Finalize<N>) -> Result<Self> {
+    pub fn from_finalize(stack: &Stack<N>, finalize: &Finalize<N>) -> Result<Self, StackInitError> {
         Self::initialize_finalize_types_from_finalize(stack, finalize)
     }
 

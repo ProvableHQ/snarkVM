@@ -18,6 +18,7 @@ mod serialize;
 mod string;
 
 use super::*;
+use snarkvm_synthesizer_error::ProcessFinalizeError;
 
 use crate::{Deployment, Execution, Fee};
 use serde::{Deserialize, Serialize};
@@ -100,24 +101,11 @@ impl<N: Network> Rejected<N> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[repr(u8)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[non_exhaustive]
 pub enum RejectionReason {
-    AlreadyDeployedInTheBlock = 0,
-    ProcessFinalizeError,
-}
-
-impl TryFrom<u8> for RejectionReason {
-    type Error = String;
-
-    fn try_from(val: u8) -> Result<Self, Self::Error> {
-        match val {
-            0 => Ok(Self::AlreadyDeployedInTheBlock),
-            1 => Ok(Self::FailedToFinalize),
-            _ => Err("Invalid RejectionReason variant: {val}".into()),
-        }
-    }
+    AlreadyDeployedInTheBlock,
+    FailedToFinalize(ProcessFinalizeError),
 }
 
 #[cfg(test)]
