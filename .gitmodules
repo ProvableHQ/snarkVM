@@ -1,0 +1,3 @@
+[submodule "algorithms/src/snark/varuna/ahp/prover/cuVaruna"]
+	path = algorithms/src/snark/varuna/ahp/prover/cuVaruna
+	url = git@github.com:ProvableHQ/cuVaruna.git
