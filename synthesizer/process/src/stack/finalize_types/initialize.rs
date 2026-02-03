@@ -744,6 +744,13 @@ impl<N: Network> FinalizeTypes<N> {
             Opcode::ECDSA(opcode) => RegisterTypes::check_ecdsa_opcode(opcode, instruction)?,
             Opcode::Serialize(opcode) => RegisterTypes::check_serialize_opcode(opcode, instruction)?,
             Opcode::Deserialize(opcode) => RegisterTypes::check_deserialize_opcode(opcode, instruction)?,
+            Opcode::In => {
+                // Ensure the instruction has one destination register.
+                ensure!(
+                    instruction.destinations().len() == 1,
+                    "Instruction '{instruction}' has multiple destinations."
+                );
+            }
         }
         Ok(())
     }

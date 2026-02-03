@@ -17,7 +17,7 @@ use circuit::AleoV0;
 use console::{
     network::MainnetV0,
     prelude::*,
-    program::{Identifier, Plaintext, Register, Value},
+    program::{Identifier, Register, Value},
 };
 use snarkvm_synthesizer_process::{Authorization, CallStack, FinalizeRegisters, Registers, Stack};
 use snarkvm_synthesizer_program::{FinalizeGlobalState, RegistersCircuit as _, RegistersTrait as _};
@@ -29,7 +29,7 @@ type CurrentAleo = AleoV0;
 pub fn sample_registers(
     stack: &Stack<CurrentNetwork>,
     function_name: &Identifier<CurrentNetwork>,
-    values: &[(Value<CurrentNetwork>, Option<circuit::Mode>)],
+    values: &[(&Value<CurrentNetwork>, Option<circuit::Mode>)],
 ) -> Result<Registers<CurrentNetwork, CurrentAleo>> {
     // Initialize the registers.
     let mut registers = Registers::<CurrentNetwork, CurrentAleo>::new(
@@ -41,6 +41,8 @@ pub fn sample_registers(
     for (index, (value, mode)) in values.iter().enumerate() {
         // Initialize the register.
         let register = Register::Locator(index as u64);
+        // Initialize the console value.
+        let value = (*value).clone();
         // Store the value in the console registers.
         registers.store(stack, &register, value.clone())?;
         // If the mode is not `None`,
@@ -60,7 +62,7 @@ pub fn sample_registers(
 pub fn sample_finalize_registers(
     stack: &Stack<CurrentNetwork>,
     function_name: &Identifier<CurrentNetwork>,
-    plaintexts: &[Plaintext<CurrentNetwork>],
+    literals: &[&Value<CurrentNetwork>],
 ) -> Result<FinalizeRegisters<CurrentNetwork>> {
     // Initialize the registers.
     let mut finalize_registers = FinalizeRegisters::<CurrentNetwork>::new(
@@ -72,11 +74,13 @@ pub fn sample_finalize_registers(
     );
 
     // For each literal,
-    for (index, plaintext) in plaintexts.iter().enumerate() {
+    for (index, val) in literals.iter().enumerate() {
         // Initialize the register
         let register = Register::Locator(index as u64);
+        // Initialize the console value.
+        let value = (*val).clone();
         // Store the value in the console registers.
-        finalize_registers.store(stack, &register, Value::Plaintext(plaintext.clone()))?;
+        finalize_registers.store(stack, &register, value)?;
     }
 
     Ok(finalize_registers)

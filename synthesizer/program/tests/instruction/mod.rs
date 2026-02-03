@@ -18,5 +18,6 @@ mod commit;
 mod deserialize;
 mod ecdsa;
 mod hash;
+mod in_;
 mod is;
 mod serialize;

@@ -595,6 +595,13 @@ impl<N: Network> RegisterTypes<N> {
             }
             Opcode::Serialize(opcode) => Self::check_serialize_opcode(opcode, instruction)?,
             Opcode::Deserialize(opcode) => Self::check_deserialize_opcode(opcode, instruction)?,
+            Opcode::In => {
+                // Ensure the instruction has one destination register.
+                ensure!(
+                    instruction.destinations().len() == 1,
+                    "Instruction '{instruction}' has multiple destinations."
+                );
+            }
         }
         Ok(())
     }

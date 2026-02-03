@@ -127,24 +127,22 @@ fn check_commit<const VARIANT: u8>(
     // Initialize a destination operand.
     let destination_operand = Operand::Register(destination);
 
+    // Create values from literals.
+    let value_a = Value::Plaintext(Plaintext::from(literal_a.clone()));
+    let value_b = Value::Plaintext(Plaintext::from(literal_b.clone()));
+
     // Attempt to evaluate the valid operand case.
-    let values =
-        [(Value::Plaintext(Plaintext::from(literal_a)), None), (Value::Plaintext(Plaintext::from(literal_b)), None)];
+    let values = [(&value_a, None), (&value_b, None)];
     let mut evaluate_registers = sample_registers(&stack, &function_name, &values).unwrap();
     let result_a = operation.evaluate(&stack, &mut evaluate_registers);
 
     // Attempt to execute the valid operand case.
-    let values = [
-        (Value::Plaintext(Plaintext::from(literal_a)), Some(*mode_a)),
-        (Value::Plaintext(Plaintext::from(literal_b)), Some(*mode_b)),
-    ];
+    let values = [(&value_a, Some(*mode_a)), (&value_b, Some(*mode_b))];
     let mut execute_registers = sample_registers(&stack, &function_name, &values).unwrap();
     let result_b = operation.execute::<CurrentAleo>(&stack, &mut execute_registers);
 
     // Attempt to finalize the valid operand case.
-    let mut finalize_registers =
-        sample_finalize_registers(&stack, &function_name, &[Plaintext::from(literal_a), Plaintext::from(literal_b)])
-            .unwrap();
+    let mut finalize_registers = sample_finalize_registers(&stack, &function_name, &[&value_a, &value_a]).unwrap();
     let result_c = operation.finalize(&stack, &mut finalize_registers);
 
     // Check that either all operations failed, or all operations succeeded.

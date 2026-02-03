@@ -37,6 +37,9 @@ pub use ecdsa_verify::*;
 mod hash;
 pub use hash::*;
 
+mod in_instruction;
+pub use in_instruction::*;
+
 mod is;
 pub use is::*;
 
