@@ -136,10 +136,48 @@ impl Database for RocksDB {
     fn open<S: Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
         let storage = storage.into();
 
-        // Retrieve the database.
-        let db_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
+        // Obtain the path to the primary instance.
+        let primary_path = aleo_std_storage::aleo_ledger_dir(network_id, &storage);
+        // Obtain the path to the secondary instance, if applicable.
+        let secondary_path = aleo_std_storage::aleo_secondary_ledger_dir(network_id, &storage);
+
+        // If the secondary path is given, open the database in secondary mode.
+        if let Some(secondary_path) = secondary_path {
+            let mut databases = DATABASES.lock();
+            let database = if let Some(db) = databases.get(&secondary_path) {
+                db.clone()
+            } else {
+                // Customize database options.
+                let mut db_opts = rocksdb::Options::default();
+                db_opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+
+                // Register the prefix length.
+                let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
+                db_opts.set_prefix_extractor(prefix_extractor);
+
+                let rocksdb = Arc::new(rocksdb::DB::open_as_secondary(&db_opts, &primary_path, &secondary_path)?);
+
+                let db = RocksDB {
+                    rocksdb,
+                    network_id,
+                    storage_mode: storage.clone(),
+                    atomic_batch: Default::default(),
+                    atomic_depth: Default::default(),
+                    atomic_writes_paused: Default::default(),
+                    default_readopts: Default::default(),
+                };
+
+                databases.insert(secondary_path.clone(), db.clone());
+
+                db
+            };
+
+            return Ok(database);
+        }
+
+        // Open the database in primary mode.
         let mut databases = DATABASES.lock();
-        let database = if let Some(db) = databases.get(&db_path) {
+        let database = if let Some(db) = databases.get(&primary_path) {
             db.clone()
         } else {
             // Customize database options.
@@ -156,7 +194,7 @@ impl Database for RocksDB {
                 options.create_if_missing(true);
                 options.set_max_open_files(8192);
 
-                Arc::new(rocksdb::DB::open(&options, &db_path)?)
+                Arc::new(rocksdb::DB::open(&options, &primary_path)?)
             };
 
             let db = RocksDB {
@@ -169,7 +207,7 @@ impl Database for RocksDB {
                 default_readopts: Default::default(),
             };
 
-            databases.insert(db_path.clone(), db.clone());
+            databases.insert(primary_path.clone(), db.clone());
 
             db
         };
