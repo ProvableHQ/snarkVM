@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use snarkvm_synthesizer_error::{CommandError, FinalizeTypesInitError, InstructionCheckError, RegisterTypesInitError};
 use snarkvm_synthesizer_program::types_equivalent;
 
 use super::*;
@@ -24,7 +25,7 @@ impl<N: Network> FinalizeTypes<N> {
     pub(super) fn initialize_finalize_types_from_constructor(
         stack: &Stack<N>,
         constructor: &Constructor<N>,
-    ) -> Result<Self, StackInitError> {
+    ) -> Result<Self, FinalizeTypesInitError> {
         // Initialize a map of registers to their types.
         let mut finalize_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
 
@@ -32,15 +33,15 @@ impl<N: Network> FinalizeTypes<N> {
         for command in constructor.commands() {
             // Ensure the command is not a call instruction.
             if command.is_call() {
-                return Err(StackInitError::TypesConstructorWithCall);
+                return Err(FinalizeTypesInitError::ConstructorWithCall);
             }
             // Ensure the command is not a cast to record instruction.
             if command.is_cast_to_record() {
-                return Err(StackInitError::TypesConstructorWithCast);
+                return Err(FinalizeTypesInitError::ConstructorWithCast);
             }
             // Ensure the command is not an await command.
             if command.is_await() {
-                return Err(StackInitError::TypesConstructorWithAwait);
+                return Err(FinalizeTypesInitError::ConstructorWithAwait);
             }
             // Check the command opcode, operands, and destinations.
             finalize_types.check_command(stack, constructor.positions(), command)?;
@@ -58,7 +59,10 @@ impl<N: Network> FinalizeTypes<N> {
     /// whose finalize is not well-formed, but it is not possible to execute a program whose finalize
     /// is not well-formed.
     #[inline]
-    pub(super) fn initialize_finalize_types_from_finalize(stack: &Stack<N>, finalize: &Finalize<N>) -> Result<Self> {
+    pub(super) fn initialize_finalize_types_from_finalize(
+        stack: &Stack<N>,
+        finalize: &Finalize<N>,
+    ) -> Result<Self, FinalizeTypesInitError> {
         // Initialize a map of registers to their types.
         let mut finalize_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
 
@@ -89,7 +93,9 @@ impl<N: Network> FinalizeTypes<N> {
                 // Note: `check_command` ensures that the register is a future. This is an additional check.
                 let locator = match finalize_types.get_type(stack, await_.register())? {
                     FinalizeType::Future(locator) => locator,
-                    FinalizeType::Plaintext(..) => bail!("Expected a future in '{await_}'"),
+                    FinalizeType::Plaintext(..) => {
+                        return Err(FinalizeTypesInitError::AwaitRegisterTypeInvalid(await_.register().to_string()));
+                    }
                 };
                 consumed_futures.insert((await_.register(), locator));
             }
@@ -97,11 +103,9 @@ impl<N: Network> FinalizeTypes<N> {
 
         // Check that all input futures are consumed.
         for input_future in &input_futures {
-            ensure!(
-                consumed_futures.contains(input_future),
-                "Futures in finalize '{}' are not all awaited.",
-                finalize.name()
-            )
+            if !consumed_futures.contains(input_future) {
+                return Err(FinalizeTypesInitError::MissingAwait(finalize.name().to_string()));
+            }
         }
 
         Ok(finalize_types)
@@ -111,65 +115,85 @@ impl<N: Network> FinalizeTypes<N> {
 impl<N: Network> FinalizeTypes<N> {
     /// Inserts the given input register and type into the registers.
     /// Note: The given input register must be a `Register::Locator`.
-    fn add_input(&mut self, register: Register<N>, finalize_type: FinalizeType<N>) -> Result<()> {
+    fn add_input(
+        &mut self,
+        register: Register<N>,
+        finalize_type: FinalizeType<N>,
+    ) -> Result<(), RegisterTypesInitError> {
         // Ensure there are no destination registers set yet.
-        ensure!(self.destinations.is_empty(), "Cannot add input registers after destination registers.");
+        if !self.destinations.is_empty() {
+            return Err(RegisterTypesInitError::InvalidAddOrder);
+        }
 
         // Check the input register.
         match register {
             Register::Locator(locator) => {
                 // Ensure the registers are monotonically increasing.
-                ensure!(self.inputs.len() as u64 == locator, "Register '{register}' is out of order");
+                if self.inputs.len() as u64 != locator {
+                    return Err(RegisterTypesInitError::OutOfOrder(register.to_string()));
+                }
 
                 // Insert the input register and type.
                 match self.inputs.insert(locator, finalize_type) {
                     // If the register already exists, throw an error.
-                    Some(..) => bail!("Input '{register}' already exists"),
+                    Some(..) => Err(RegisterTypesInitError::AlreadyExists(register.to_string())),
                     // If the register does not exist, return success.
                     None => Ok(()),
                 }
             }
             // Ensure the register is a locator, and not an access.
-            Register::Access(..) => bail!("Register '{register}' must be a locator."),
+            Register::Access(..) => Err(RegisterTypesInitError::NotALocator(register.to_string())),
         }
     }
 
     /// Inserts the given destination register and type into the registers.
     /// Note: The given destination register must be a `Register::Locator`.
-    fn add_destination(&mut self, register: Register<N>, finalize_type: FinalizeType<N>) -> Result<()> {
+    fn add_destination(
+        &mut self,
+        register: Register<N>,
+        finalize_type: FinalizeType<N>,
+    ) -> Result<(), RegisterTypesInitError> {
         // Check the destination register.
         match register {
             Register::Locator(locator) => {
                 // Ensure the registers are monotonically increasing.
                 let expected_locator = (self.inputs.len() as u64) + self.destinations.len() as u64;
-                ensure!(expected_locator == locator, "Register '{register}' is out of order");
+                if expected_locator != locator {
+                    return Err(RegisterTypesInitError::OutOfOrder(register.to_string()));
+                }
 
                 // Insert the destination register and type.
                 match self.destinations.insert(locator, finalize_type) {
                     // If the register already exists, throw an error.
-                    Some(..) => bail!("Destination '{register}' already exists"),
+                    Some(..) => Err(RegisterTypesInitError::AlreadyExists(register.to_string())),
                     // If the register does not exist, return success.
                     None => Ok(()),
                 }
             }
             // Ensure the register is a locator, and not an access.
-            Register::Access(..) => bail!("Register '{register}' must be a locator."),
+            Register::Access(..) => Err(RegisterTypesInitError::NotALocator(register.to_string())),
         }
     }
 }
 
 impl<N: Network> FinalizeTypes<N> {
     /// Ensure the given input register is well-formed.
-    fn check_input(&mut self, stack: &Stack<N>, register: &Register<N>, finalize_type: &FinalizeType<N>) -> Result<()> {
+    fn check_input(
+        &mut self,
+        stack: &Stack<N>,
+        register: &Register<N>,
+        finalize_type: &FinalizeType<N>,
+    ) -> Result<(), FinalizeTypesInitError> {
         // Ensure the register type is defined in the program.
         match finalize_type {
             FinalizeType::Plaintext(plaintext_type) => RegisterTypes::check_plaintext_type(stack, plaintext_type)?,
             FinalizeType::Future(locator) => {
-                ensure!(
-                    stack.program().contains_import(locator.program_id()),
-                    "Program '{locator}' is not imported by '{}'.",
-                    stack.program().id()
-                )
+                if !stack.program().contains_import(locator.program_id()) {
+                    return Err(FinalizeTypesInitError::MissingImport(
+                        locator.to_string(),
+                        stack.program().id().to_string(),
+                    ));
+                }
             }
         };
 
@@ -178,7 +202,7 @@ impl<N: Network> FinalizeTypes<N> {
 
         // Ensure the register type and the input type are equivalent.
         if !finalize_types_equivalent(stack, finalize_type, stack, &self.get_type(stack, register)?)? {
-            bail!("Input '{register}' does not match the expected input register type.")
+            return Err(RegisterTypesInitError::IncompatibleInputType(register.to_string()).into());
         }
 
         Ok(())
@@ -191,7 +215,7 @@ impl<N: Network> FinalizeTypes<N> {
         stack: &Stack<N>,
         positions: &HashMap<Identifier<N>, usize>,
         command: &Command<N>,
-    ) -> Result<(), StackInitError> {
+    ) -> Result<(), FinalizeTypesInitError> {
         // Check the operands.
         for operand in command.operands() {
             // If the operand is `Operand::Checksum`, `Operand::Edition`, or `Operand::ProgramOwner` and it contains a program ID,
@@ -200,7 +224,10 @@ impl<N: Network> FinalizeTypes<N> {
                 Operand::Checksum(program_id) | Operand::Edition(program_id) | Operand::ProgramOwner(program_id) => {
                     if let Some(program_id) = program_id {
                         if stack.get_external_stack(program_id).is_err() {
-                            bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
+                            return Err(FinalizeTypesInitError::MissingExternalImport(
+                                program_id.to_string(),
+                                stack.program_id().to_string(),
+                            ));
                         }
                     }
                 }
@@ -226,17 +253,17 @@ impl<N: Network> FinalizeTypes<N> {
 
     /// Checks that the given `await` command is well-formed.
     #[inline]
-    fn check_await(&mut self, stack: &Stack<N>, await_: &Await<N>) -> Result<()> {
+    fn check_await(&mut self, stack: &Stack<N>, await_: &Await<N>) -> Result<(), FinalizeTypesInitError> {
         // Ensure that the register is a locator.
-        ensure!(
-            matches!(await_.register(), Register::Locator(..)),
-            "The await register '{}' must be a locator.",
-            await_.register()
-        );
+        if !matches!(await_.register(), Register::Locator(..)) {
+            return Err(FinalizeTypesInitError::AwaitRegisterInvalid(await_.register().to_string()));
+        }
         // Ensure that the register is a future.
         match self.get_type(stack, await_.register())? {
             // If the register is a plaintext type, throw an error.
-            FinalizeType::Plaintext(..) => bail!("Expected a future"),
+            FinalizeType::Plaintext(..) => {
+                Err(FinalizeTypesInitError::AwaitRegisterTypeInvalid(await_.register().to_string()))
+            }
             // If the register is a future, return success.
             // Note that there are not restrictions on the exact type of future.
             FinalizeType::Future(..) => Ok(()),
@@ -250,42 +277,48 @@ impl<N: Network> FinalizeTypes<N> {
         stack: &Stack<N>,
         positions: &HashMap<Identifier<N>, usize>,
         branch: &Branch<N, VARIANT>,
-    ) -> Result<()> {
+    ) -> Result<(), FinalizeTypesInitError> {
         // Get the type of the first operand.
         let first_type = match self.get_type_from_operand(stack, branch.first())? {
             // If the register is a plaintext type, return it.
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
-            FinalizeType::Future(..) => bail!("A future cannot be used in a `branch` command"),
+            FinalizeType::Future(..) => {
+                return Err(CommandError::IncompatibleWithFuture("branch".into()).into());
+            }
         };
         // Get the type of the second operand.
         let second_type = match self.get_type_from_operand(stack, branch.second())? {
             // If the register is a plaintext type, return it.
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
-            FinalizeType::Future(..) => bail!("A future cannot be used in a `branch` command"),
+            FinalizeType::Future(..) => {
+                return Err(CommandError::IncompatibleWithFuture("branch".into()).into());
+            }
         };
         // Check that the operands have equivalent types.
-        ensure!(
-            types_equivalent(stack, &first_type, stack, &second_type)?,
-            "Command '{}' expects operands of the same type. Found operands of type '{}' and '{}'",
-            Branch::<N, VARIANT>::opcode(),
-            first_type,
-            second_type
-        );
+        if !types_equivalent(stack, &first_type, stack, &second_type)? {
+            return Err(CommandError::IncompatibleTypes(
+                Branch::<N, VARIANT>::opcode().to_string(),
+                first_type.to_string(),
+                second_type.to_string(),
+            )
+            .into());
+        }
         // Check that the `Position` has been defined.
-        ensure!(
-            positions.get(branch.position()).is_some(),
-            "Command '{}' expects a defined position to jump to. Found undefined position '{}'",
-            Branch::<N, VARIANT>::opcode(),
-            branch.position()
-        );
+        if positions.get(branch.position()).is_none() {
+            return Err(CommandError::BranchUndefinedPosition(
+                Branch::<N, VARIANT>::opcode().to_string(),
+                branch.position().to_string(),
+            )
+            .into());
+        }
         Ok(())
     }
 
     /// Ensures the given `contains` command is well-formed.
     #[inline]
-    fn check_contains(&mut self, stack: &Stack<N>, contains: &Contains<N>) -> Result<()> {
+    fn check_contains(&mut self, stack: &Stack<N>, contains: &Contains<N>) -> Result<(), FinalizeTypesInitError> {
         // Retrieve the mapping.
         let mapping = match contains.mapping() {
             CallOperator::Locator(locator) => {
@@ -296,18 +329,24 @@ impl<N: Network> FinalizeTypes<N> {
 
                 // Ensure the locator does not reference the current program.
                 if stack.program_id() == program_id {
-                    bail!("Locator '{locator}' does not reference an external mapping.");
+                    return Err(FinalizeTypesInitError::LocatorInternal(locator.to_string()));
                 }
                 // Ensure the current program contains an import for this external program.
                 if !stack.program().imports().keys().contains(program_id) {
-                    bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
+                    return Err(FinalizeTypesInitError::MissingExternalImport(
+                        program_id.to_string(),
+                        stack.program_id().to_string(),
+                    ));
                 }
                 // Retrieve the program.
                 let external_stack = stack.get_external_stack(program_id)?;
                 let external = external_stack.program();
                 // Ensure the mapping exists in the program.
                 if !external.contains_mapping(mapping_name) {
-                    bail!("Mapping '{mapping_name}' in '{program_id}' is not defined.")
+                    return Err(FinalizeTypesInitError::MappingUndefined(
+                        mapping_name.to_string(),
+                        program_id.to_string(),
+                    ));
                 }
                 // Retrieve the mapping from the program.
                 external.get_mapping(mapping_name)?
@@ -315,7 +354,10 @@ impl<N: Network> FinalizeTypes<N> {
             CallOperator::Resource(mapping_name) => {
                 // Ensure the declared mapping in `contains` is defined in the current program.
                 if !stack.program().contains_mapping(mapping_name) {
-                    bail!("Mapping '{mapping_name}' in '{}' is not defined.", stack.program_id())
+                    return Err(FinalizeTypesInitError::MappingUndefined(
+                        mapping_name.to_string(),
+                        stack.program_id().to_string(),
+                    ));
                 }
                 // Retrieve the mapping from the program.
                 stack.program().get_mapping(mapping_name)?
@@ -329,18 +371,25 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a plaintext type, return it.
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
-            FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `contains` command"),
+            FinalizeType::Future(..) => {
+                return Err(CommandError::IncompatibleWithFuture("contains".into()).into());
+            }
         };
         // Check that the key type in the mapping is equivalent to the key type in the instruction.
         if !types_equivalent(stack, mapping_key_type, stack, &key_type)? {
-            bail!(
-                "Key type in `contains` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'."
+            return Err(CommandError::MappingKeyTypeMismatch(
+                "`contains`".into(),
+                key_type.to_string(),
+                mapping_key_type.to_string(),
             )
+            .into());
         }
         // Get the destination register.
         let destination = contains.destination().clone();
         // Ensure the destination register is a locator (and does not reference an access).
-        ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
+        if !matches!(destination, Register::Locator(..)) {
+            return Err(CommandError::DestinationNotALocator(destination.to_string()).into());
+        }
         // Insert the destination register.
         self.add_destination(destination, FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Boolean)))?;
         Ok(())
@@ -348,7 +397,7 @@ impl<N: Network> FinalizeTypes<N> {
 
     /// Ensures the given `get` command is well-formed.
     #[inline]
-    fn check_get(&mut self, stack: &Stack<N>, get: &Get<N>) -> Result<()> {
+    fn check_get(&mut self, stack: &Stack<N>, get: &Get<N>) -> Result<(), FinalizeTypesInitError> {
         // Retrieve the mapping.
         let mapping = match get.mapping() {
             CallOperator::Locator(locator) => {
@@ -359,18 +408,24 @@ impl<N: Network> FinalizeTypes<N> {
 
                 // Ensure the locator does not reference the current program.
                 if stack.program_id() == program_id {
-                    bail!("Locator '{locator}' does not reference an external mapping.");
+                    return Err(FinalizeTypesInitError::LocatorInternal(locator.to_string()));
                 }
                 // Ensure the current program contains an import for this external program.
                 if !stack.program().imports().keys().contains(program_id) {
-                    bail!("External program '{program_id}' is not imported by '{}'.", stack.program_id());
+                    return Err(FinalizeTypesInitError::MissingExternalImport(
+                        program_id.to_string(),
+                        stack.program_id().to_string(),
+                    ));
                 }
                 // Retrieve the program.
                 let external_stack = stack.get_external_stack(program_id)?;
                 let external = external_stack.program();
                 // Ensure the mapping exists in the program.
                 if !external.contains_mapping(mapping_name) {
-                    bail!("Mapping '{mapping_name}' in '{program_id}' is not defined.")
+                    return Err(FinalizeTypesInitError::MappingUndefined(
+                        mapping_name.to_string(),
+                        program_id.to_string(),
+                    ));
                 }
                 // Retrieve the mapping from the program.
                 external.get_mapping(mapping_name)?
@@ -378,7 +433,10 @@ impl<N: Network> FinalizeTypes<N> {
             CallOperator::Resource(mapping_name) => {
                 // Ensure the declared mapping in `get` is defined in the current program.
                 if !stack.program().contains_mapping(mapping_name) {
-                    bail!("Mapping '{mapping_name}' in '{}' is not defined.", stack.program_id())
+                    return Err(FinalizeTypesInitError::MappingUndefined(
+                        mapping_name.to_string(),
+                        stack.program_id().to_string(),
+                    ));
                 }
                 // Retrieve the mapping from the program.
                 stack.program().get_mapping(mapping_name)?
@@ -394,16 +452,25 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a plaintext type, return it.
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
-            FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `get` command"),
+            FinalizeType::Future(..) => {
+                return Err(CommandError::IncompatibleWithFuture("get".into()).into());
+            }
         };
         // Check that the key type in the mapping is equivalent to the key type in the instruction.
         if !types_equivalent(stack, mapping_key_type, stack, &key_type)? {
-            bail!("Key type in `get` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'.")
+            return Err(CommandError::MappingKeyTypeMismatch(
+                "get".into(),
+                key_type.to_string(),
+                mapping_key_type.to_string(),
+            )
+            .into());
         }
         // Get the destination register.
         let destination = get.destination().clone();
         // Ensure the destination register is a locator (and does not reference an access).
-        ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
+        if !matches!(destination, Register::Locator(..)) {
+            return Err(CommandError::DestinationNotALocator(destination.to_string()).into());
+        }
         // Insert the destination register.
         self.add_destination(destination, FinalizeType::Plaintext(mapping_value_type.clone()))?;
         Ok(())
@@ -411,7 +478,7 @@ impl<N: Network> FinalizeTypes<N> {
 
     /// Ensures the given `get.or_use` command is well-formed.
     #[inline]
-    fn check_get_or_use(&mut self, stack: &Stack<N>, get_or_use: &GetOrUse<N>) -> Result<()> {
+    fn check_get_or_use(&mut self, stack: &Stack<N>, get_or_use: &GetOrUse<N>) -> Result<(), FinalizeTypesInitError> {
         // Retrieve the mapping.
         let mapping = match get_or_use.mapping() {
             CallOperator::Locator(locator) => {
@@ -422,18 +489,24 @@ impl<N: Network> FinalizeTypes<N> {
 
                 // Ensure the locator does not reference the current program.
                 if stack.program_id() == program_id {
-                    bail!("Locator '{locator}' does not reference an external mapping.");
+                    return Err(FinalizeTypesInitError::LocatorInternal(locator.to_string()));
                 }
                 // Ensure the current program contains an import for this external program.
                 if !stack.program().imports().keys().contains(program_id) {
-                    bail!("External program '{locator}' is not imported by '{program_id}'.");
+                    return Err(FinalizeTypesInitError::MissingExternalImport(
+                        program_id.to_string(),
+                        stack.program_id().to_string(),
+                    ));
                 }
                 // Retrieve the program.
                 let external_stack = stack.get_external_stack(program_id)?;
                 let external = external_stack.program();
                 // Ensure the mapping exists in the program.
                 if !external.contains_mapping(mapping_name) {
-                    bail!("Mapping '{mapping_name}' in '{program_id}' is not defined.")
+                    return Err(FinalizeTypesInitError::MappingUndefined(
+                        mapping_name.to_string(),
+                        program_id.to_string(),
+                    ));
                 }
                 // Retrieve the mapping from the program.
                 external.get_mapping(mapping_name)?
@@ -441,7 +514,10 @@ impl<N: Network> FinalizeTypes<N> {
             CallOperator::Resource(mapping_name) => {
                 // Ensure the declared mapping in `get.or_use` is defined in the current program.
                 if !stack.program().contains_mapping(mapping_name) {
-                    bail!("Mapping '{mapping_name}' in '{}' is not defined.", stack.program_id())
+                    return Err(FinalizeTypesInitError::MappingUndefined(
+                        mapping_name.to_string(),
+                        stack.program_id().to_string(),
+                    ));
                 }
                 // Retrieve the mapping from the program.
                 stack.program().get_mapping(mapping_name)?
@@ -457,31 +533,43 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a plaintext type, return it.
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
-            FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `get.or_use` command"),
+            FinalizeType::Future(..) => {
+                return Err(CommandError::IncompatibleWithFuture("get.or_use".into()).into());
+            }
         };
         // Check that the key type in the mapping is equivalent to the key type.
         if !types_equivalent(stack, mapping_key_type, stack, &key_type)? {
-            bail!(
-                "Key type in `get.or_use` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'."
+            return Err(CommandError::MappingKeyTypeMismatch(
+                "get.or_use".into(),
+                key_type.to_string(),
+                mapping_key_type.to_string(),
             )
+            .into());
         }
         // Retrieve the register type of the default value.
         let default_value_type = match self.get_type_from_operand(stack, get_or_use.default())? {
             // If the register is a plaintext type, return it.
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
-            FinalizeType::Future(..) => bail!("A default value cannot be a future"),
+            FinalizeType::Future(..) => {
+                return Err(CommandError::DefaultValueFuture.into());
+            }
         };
         // Check that the value type in the mapping is equivalent to the default value type.
         if !types_equivalent(stack, mapping_value_type, stack, &default_value_type)? {
-            bail!(
-                "Default value type in `get.or_use` '{default_value_type}' does not match the value type in the mapping '{mapping_value_type}'."
+            return Err(CommandError::MappingValueTypeMismatch(
+                "get.or_use".into(),
+                default_value_type.to_string(),
+                mapping_value_type.to_string(),
             )
+            .into());
         }
         // Get the destination register.
         let destination = get_or_use.destination().clone();
         // Ensure the destination register is a locator (and does not reference an access).
-        ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
+        if !matches!(destination, Register::Locator(..)) {
+            return Err(CommandError::DestinationNotALocator(destination.to_string()).into());
+        }
         // Insert the destination register.
         self.add_destination(destination, FinalizeType::Plaintext(default_value_type))?;
         Ok(())
@@ -489,24 +577,29 @@ impl<N: Network> FinalizeTypes<N> {
 
     /// Ensure the given `rand.chacha` command is well-formed.
     #[inline]
-    fn check_rand_chacha(&mut self, _stack: &Stack<N>, rand_chacha: &RandChaCha<N>) -> Result<()> {
+    fn check_rand_chacha(
+        &mut self,
+        _stack: &Stack<N>,
+        rand_chacha: &RandChaCha<N>,
+    ) -> Result<(), FinalizeTypesInitError> {
         // Ensure the number of operands is within bounds.
         if rand_chacha.operands().len() > MAX_ADDITIONAL_SEEDS {
-            bail!("The number of operands must be <= {MAX_ADDITIONAL_SEEDS}")
+            return Err(CommandError::TooManyOperands(MAX_ADDITIONAL_SEEDS).into());
         }
 
         // Get the destination register.
         let destination = rand_chacha.destination().clone();
         // Ensure the destination register is a locator (and does not reference an access).
-        ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
+        if !matches!(destination, Register::Locator(..)) {
+            return Err(CommandError::DestinationNotALocator(destination.to_string()).into());
+        }
 
         // Get the destination type.
         let destination_type = rand_chacha.destination_type();
         // Ensure the destination type is allowed.
-        ensure!(
-            !matches!(destination_type, LiteralType::String),
-            "Destination type '{destination_type}' is not allowed."
-        );
+        if matches!(destination_type, LiteralType::String) {
+            return Err(CommandError::InvalidDestinationType(destination_type.to_string()).into());
+        }
 
         // Insert the destination register.
         self.add_destination(destination, FinalizeType::Plaintext(PlaintextType::from(destination_type)))?;
@@ -515,10 +608,13 @@ impl<N: Network> FinalizeTypes<N> {
 
     /// Ensures the given `set` command is well-formed.
     #[inline]
-    fn check_set(&self, stack: &Stack<N>, set: &Set<N>) -> Result<()> {
+    fn check_set(&self, stack: &Stack<N>, set: &Set<N>) -> Result<(), FinalizeTypesInitError> {
         // Ensure the declared mapping in `set` is defined in the program.
         if !stack.program().contains_mapping(set.mapping_name()) {
-            bail!("Mapping '{}' in '{}' is not defined.", set.mapping_name(), stack.program_id())
+            return Err(FinalizeTypesInitError::MappingUndefined(
+                set.mapping_name().to_string(),
+                stack.program_id().to_string(),
+            ));
         }
         // Retrieve the mapping from the program.
         // Note that the unwrap is safe, as we have already checked the mapping exists.
@@ -532,34 +628,49 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a plaintext type, return it.
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
-            FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `set` command"),
+            FinalizeType::Future(..) => {
+                return Err(CommandError::IncompatibleWithFuture("set".into()).into());
+            }
         };
         // Check that the key type in the mapping is equivalent the key type.
         if !types_equivalent(stack, mapping_key_type, stack, &key_type)? {
-            bail!("Key type in `set` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'.")
+            return Err(CommandError::MappingKeyTypeMismatch(
+                "set".into(),
+                key_type.to_string(),
+                mapping_key_type.to_string(),
+            )
+            .into());
         }
         // Retrieve the type of the value.
         let value_type = match self.get_type_from_operand(stack, set.value())? {
             // If the register is a plaintext type, return it.
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
-            FinalizeType::Future(..) => bail!("A future cannot be used as a value in a `set` command"),
+            FinalizeType::Future(..) => {
+                return Err(CommandError::IncompatibleWithFuture("set".into()).into());
+            }
         };
         // Check that the value type in the mapping is equivalent the type of the value.
         if !types_equivalent(stack, mapping_value_type, stack, &value_type)? {
-            bail!(
-                "Value type in `set` '{value_type}' does not match the value type in the mapping '{mapping_value_type}'."
+            return Err(CommandError::MappingValueTypeMismatch(
+                "set".into(),
+                value_type.to_string(),
+                mapping_value_type.to_string(),
             )
+            .into());
         }
         Ok(())
     }
 
     /// Ensures the given `remove` command is well-formed.
     #[inline]
-    fn check_remove(&self, stack: &Stack<N>, remove: &Remove<N>) -> Result<()> {
+    fn check_remove(&self, stack: &Stack<N>, remove: &Remove<N>) -> Result<(), FinalizeTypesInitError> {
         // Ensure the declared mapping in `remove` is defined in the program.
         if !stack.program().contains_mapping(remove.mapping_name()) {
-            bail!("Mapping '{}' in '{}' is not defined.", remove.mapping_name(), stack.program_id())
+            return Err(FinalizeTypesInitError::MappingUndefined(
+                remove.mapping_name().to_string(),
+                stack.program_id().to_string(),
+            ));
         }
         // Retrieve the mapping from the program.
         // Note that the unwrap is safe, as we have already checked the mapping exists.
@@ -571,18 +682,29 @@ impl<N: Network> FinalizeTypes<N> {
             // If the register is a plaintext type, return it.
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
-            FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `remove` command"),
+            FinalizeType::Future(..) => {
+                return Err(CommandError::IncompatibleWithFuture("remove".into()).into());
+            }
         };
         // Check that the key type in the mapping is equivalent the key type.
         if !types_equivalent(stack, mapping_key_type, stack, &key_type)? {
-            bail!("Key type in `remove` '{key_type}' does not match the key type in the mapping '{mapping_key_type}'.")
+            return Err(CommandError::MappingKeyTypeMismatch(
+                "remove".into(),
+                key_type.to_string(),
+                mapping_key_type.to_string(),
+            )
+            .into());
         }
         Ok(())
     }
 
     /// Ensures the given instruction is well-formed.
     #[inline]
-    fn check_instruction(&mut self, stack: &Stack<N>, instruction: &Instruction<N>) -> Result<()> {
+    fn check_instruction(
+        &mut self,
+        stack: &Stack<N>,
+        instruction: &Instruction<N>,
+    ) -> Result<(), FinalizeTypesInitError> {
         // Ensure the opcode is well-formed.
         self.check_instruction_opcode(stack, instruction)?;
 
@@ -602,12 +724,16 @@ impl<N: Network> FinalizeTypes<N> {
             instruction.destinations().into_iter().zip_eq(destination_types.into_iter())
         {
             // Ensure the destination register is a locator (and does not reference an access).
-            ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
+            if !matches!(destination, Register::Locator(..)) {
+                return Err(RegisterTypesInitError::NotALocator(destination.to_string()).into());
+            }
             // Ensure that the destination type is a plaintext type.
             let destination_type = match destination_type {
                 RegisterType::Plaintext(destination_type) => FinalizeType::Plaintext(destination_type),
                 RegisterType::Future(locator) => FinalizeType::Future(locator),
-                _ => bail!("Destination type '{destination_type}' must be a plaintext type."),
+                _ => {
+                    return Err(CommandError::DestinationNotPlaintext(destination.to_string()).into());
+                }
             };
             // Insert the destination register.
             self.add_destination(destination, destination_type)?;
@@ -618,35 +744,46 @@ impl<N: Network> FinalizeTypes<N> {
     /// Ensures the opcode is a valid opcode and corresponds to the correct instruction.
     /// This method is called when adding a new closure or function to the program.
     #[inline]
-    fn check_instruction_opcode(&mut self, stack: &Stack<N>, instruction: &Instruction<N>) -> Result<()> {
+    fn check_instruction_opcode(
+        &mut self,
+        stack: &Stack<N>,
+        instruction: &Instruction<N>,
+    ) -> Result<(), InstructionCheckError> {
         match instruction.opcode() {
             Opcode::Literal(opcode) => {
                 // Ensure the opcode **is** a reserved opcode.
-                ensure!(Program::<N>::is_reserved_opcode(opcode), "'{opcode}' is not an opcode.");
+                if !Program::<N>::is_reserved_opcode(opcode) {
+                    return Err(InstructionCheckError::OpcodeInvalid(opcode.to_string()));
+                }
                 // Ensure the instruction is not the cast operation.
-                ensure!(!matches!(instruction, Instruction::Cast(..)), "Instruction '{instruction}' is a 'cast'.");
+                if matches!(instruction, Instruction::Cast(..)) {
+                    return Err(InstructionCheckError::ContextDisallowed("cast".into()));
+                }
                 // Ensure the instruction has one destination register.
-                ensure!(
-                    instruction.destinations().len() == 1,
-                    "Instruction '{instruction}' has multiple destinations."
-                );
+                if instruction.destinations().len() != 1 {
+                    return Err(InstructionCheckError::MultipleDestinations(instruction.to_string()));
+                }
             }
             Opcode::Assert(opcode) => match opcode {
-                "assert.eq" => ensure!(
-                    matches!(instruction, Instruction::AssertEq(..)),
-                    "Instruction '{instruction}' is not for opcode '{opcode}'."
-                ),
-                "assert.neq" => ensure!(
-                    matches!(instruction, Instruction::AssertNeq(..)),
-                    "Instruction '{instruction}' is not for opcode '{opcode}'."
-                ),
-                _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
+                "assert.eq" => {
+                    if !matches!(instruction, Instruction::AssertEq(..)) {
+                        return Err(InstructionCheckError::OpcodeMismatch(instruction.to_string(), opcode.to_string()));
+                    }
+                }
+                "assert.neq" => {
+                    if !matches!(instruction, Instruction::AssertNeq(..)) {
+                        return Err(InstructionCheckError::OpcodeMismatch(instruction.to_string(), opcode.to_string()));
+                    }
+                }
+                _ => {
+                    return Err(InstructionCheckError::OpcodeMismatch(instruction.to_string(), opcode.to_string()));
+                }
             },
             Opcode::Async => {
-                bail!("Instruction 'async' is not allowed in 'finalize' or 'constructor'.");
+                return Err(InstructionCheckError::ContextDisallowed("async".into()));
             }
             Opcode::Call => {
-                bail!("Instruction 'call' is not allowed in 'finalize' or 'constructor'.");
+                return Err(InstructionCheckError::ContextDisallowed("call".into()));
             }
             Opcode::Cast(opcode) => match opcode {
                 "cast" => {
@@ -657,17 +794,16 @@ impl<N: Network> FinalizeTypes<N> {
                     };
 
                     // Ensure the instruction has one destination register.
-                    ensure!(
-                        instruction.destinations().len() == 1,
-                        "Instruction '{instruction}' has multiple destinations."
-                    );
+                    if instruction.destinations().len() != 1 {
+                        return Err(InstructionCheckError::MultipleDestinations(instruction.to_string()));
+                    }
 
                     // Ensure the casted register type is defined.
                     match operation.cast_type() {
                         CastType::GroupXCoordinate
                         | CastType::GroupYCoordinate
                         | CastType::Plaintext(PlaintextType::Literal(..)) => {
-                            ensure!(instruction.operands().len() == 1, "Expected 1 operand.");
+                            return Err(CommandError::TooManyOperands(1).into());
                         }
                         CastType::Plaintext(plaintext @ PlaintextType::Struct(struct_name)) => {
                             // Ensure that the type is valid.
@@ -709,20 +845,21 @@ impl<N: Network> FinalizeTypes<N> {
                     };
 
                     // Ensure the instruction has one destination register.
-                    ensure!(
-                        instruction.destinations().len() == 1,
-                        "Instruction '{instruction}' has multiple destinations."
-                    );
+                    if instruction.destinations().len() != 1 {
+                        return Err(InstructionCheckError::MultipleDestinations(instruction.to_string()));
+                    }
 
                     // Ensure the casted register type is valid and defined.
                     match operation.cast_type() {
                         CastType::Plaintext(PlaintextType::Literal(_)) => {
-                            ensure!(instruction.operands().len() == 1, "Expected 1 operand.");
+                            return Err(CommandError::TooManyOperands(1).into());
                         }
                         _ => bail!("`cast.lossy` is only supported for casting to a literal type."),
                     }
                 }
-                _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
+                _ => {
+                    return Err(InstructionCheckError::OpcodeMismatch(instruction.to_string(), opcode.to_string()));
+                }
             },
             Opcode::Command(opcode) => {
                 bail!("Fatal error: Cannot check command '{opcode}' as an instruction.")
@@ -730,22 +867,25 @@ impl<N: Network> FinalizeTypes<N> {
             Opcode::Commit(opcode) => RegisterTypes::check_commit_opcode(opcode, instruction)?,
             Opcode::Hash(opcode) => RegisterTypes::check_hash_opcode(opcode, instruction)?,
             Opcode::Is(opcode) => match opcode {
-                "is.eq" => ensure!(
-                    matches!(instruction, Instruction::IsEq(..)),
-                    "Instruction '{instruction}' is not for opcode '{opcode}'."
-                ),
-                "is.neq" => ensure!(
-                    matches!(instruction, Instruction::IsNeq(..)),
-                    "Instruction '{instruction}' is not for opcode '{opcode}'."
-                ),
-                _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
+                "is.eq" => {
+                    if !matches!(instruction, Instruction::IsEq(..)) {
+                        return Err(InstructionCheckError::OpcodeMismatch(instruction.to_string(), opcode.to_string()));
+                    }
+                }
+                "is.neq" => {
+                    if !matches!(instruction, Instruction::IsNeq(..)) {
+                        return Err(InstructionCheckError::OpcodeMismatch(instruction.to_string(), opcode.to_string()));
+                    }
+                }
+                _ => {
+                    return Err(InstructionCheckError::OpcodeMismatch(instruction.to_string(), opcode.to_string()));
+                }
             },
             Opcode::Sign(_) => {
                 // Ensure the instruction has one destination register.
-                ensure!(
-                    instruction.destinations().len() == 1,
-                    "Instruction '{instruction}' has multiple destinations."
-                );
+                if instruction.destinations().len() != 1 {
+                    return Err(InstructionCheckError::MultipleDestinations(instruction.to_string()));
+                }
             }
             Opcode::ECDSA(opcode) => RegisterTypes::check_ecdsa_opcode(opcode, instruction)?,
             Opcode::Serialize(opcode) => RegisterTypes::check_serialize_opcode(opcode, instruction)?,

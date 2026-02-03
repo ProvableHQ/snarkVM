@@ -15,11 +15,16 @@
 
 use super::*;
 
+use snarkvm_synthesizer_error::RegisterTypesInitError;
+
 impl<N: Network> RegisterTypes<N> {
     /// Initializes a new instance of `RegisterTypes` for the given closure.
     /// Checks that the given closure is well-formed for the given stack.
     #[inline]
-    pub(super) fn initialize_closure_types(stack: &Stack<N>, closure: &Closure<N>) -> Result<Self> {
+    pub(super) fn initialize_closure_types(
+        stack: &Stack<N>,
+        closure: &Closure<N>,
+    ) -> Result<Self, RegisterTypesInitError> {
         // Initialize a map of registers to their types.
         let mut register_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
 
@@ -57,7 +62,10 @@ impl<N: Network> RegisterTypes<N> {
     /// Initializes a new instance of `RegisterTypes` for the given function.
     /// Checks that the given function is well-formed for the given stack.
     #[inline]
-    pub(super) fn initialize_function_types(stack: &Stack<N>, function: &Function<N>) -> Result<Self> {
+    pub(super) fn initialize_function_types(
+        stack: &Stack<N>,
+        function: &Function<N>,
+    ) -> Result<Self, RegisterTypesInitError> {
         // Initialize a map of registers to their types.
         let mut register_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
 
@@ -649,13 +657,16 @@ impl<N: Network> RegisterTypes<N> {
     // }
 
     /// Ensure any struct referenced directly or otherwise exists.
-    pub fn check_plaintext_type(stack: &Stack<N>, type_: &PlaintextType<N>) -> Result<()> {
+    pub fn check_plaintext_type(stack: &Stack<N>, type_: &PlaintextType<N>) -> Result<(), RegisterTypesInitError> {
         match type_ {
             PlaintextType::Literal(..) => Ok(()),
             PlaintextType::Struct(struct_name) => {
                 // Retrieve the struct from the program.
                 let Ok(struct_) = stack.program().get_struct(struct_name) else {
-                    bail!("Struct '{struct_name}' in '{}' is not defined.", stack.program_id())
+                    return Err(RegisterTypesInitError::StructUndefined(
+                        struct_name.to_string(),
+                        stack.program_id().to_string(),
+                    ));
                 };
                 struct_.members().values().try_for_each(|member| Self::check_plaintext_type(stack, member))
             }

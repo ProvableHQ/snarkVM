@@ -37,6 +37,7 @@ use console::{
     },
     types::U32,
 };
+use snarkvm_synthesizer_error::RegisterTypesInitError;
 use snarkvm_synthesizer_program::{
     CallOperator,
     CastType,
@@ -92,7 +93,11 @@ impl<N: Network> RegisterTypes<N> {
     }
 
     /// Returns the register type of the given operand.
-    pub fn get_type_from_operand(&self, stack: &impl StackTrait<N>, operand: &Operand<N>) -> Result<RegisterType<N>> {
+    pub fn get_type_from_operand(
+        &self,
+        stack: &impl StackTrait<N>,
+        operand: &Operand<N>,
+    ) -> Result<RegisterType<N>, RegisterTypesInitError> {
         Ok(match operand {
             Operand::Literal(literal) => RegisterType::Plaintext(PlaintextType::from(literal.to_type())),
             Operand::Register(register) => self.get_type(stack, register)?,
@@ -119,14 +124,22 @@ impl<N: Network> RegisterTypes<N> {
     }
 
     /// Returns the register type of the given register.
-    pub fn get_type(&self, stack: &impl StackTrait<N>, register: &Register<N>) -> Result<RegisterType<N>> {
+    pub fn get_type(
+        &self,
+        stack: &impl StackTrait<N>,
+        register: &Register<N>,
+    ) -> Result<RegisterType<N>, RegisterTypesInitError> {
         // Initialize a tracker for the register type.
         let register_type = if self.is_input(register) {
             // Retrieve the input value type as a register type.
-            self.inputs.get(&register.locator()).ok_or_else(|| anyhow!("Register '{register}' does not exist"))?
+            self.inputs
+                .get(&register.locator())
+                .ok_or_else(|| RegisterTypesInitError::MissingRegister(register.to_string()))?
         } else {
             // Retrieve the destination register type.
-            self.destinations.get(&register.locator()).ok_or_else(|| anyhow!("Register '{register}' does not exist"))?
+            self.destinations
+                .get(&register.locator())
+                .ok_or_else(|| RegisterTypesInitError::MissingRegister(register.to_string()))?
         };
 
         // Retrieve the path if the register is an access. Otherwise, return the register type.
@@ -136,7 +149,9 @@ impl<N: Network> RegisterTypes<N> {
             // If the register is an access, then traverse the path to output the register type.
             Register::Access(_, path) => {
                 // Ensure the path is valid.
-                ensure!(!path.is_empty(), "Register '{register}' references no accesses.");
+                if path.is_empty() {
+                    return Err(RegisterTypesInitError::MissingAccesses(register.to_string()));
+                }
                 // Output the path.
                 path
             }

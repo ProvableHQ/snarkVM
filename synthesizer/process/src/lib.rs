@@ -404,18 +404,23 @@ impl<N: Network> Process<N> {
 
     /// Returns the stack for the given program ID.
     #[inline]
-    pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<Arc<Stack<N>>, ProcessGenericError> {
+    pub fn get_stack(&self, program_id: impl TryInto<ProgramID<N>>) -> Result<Arc<Stack<N>>, ProcessError> {
         // Prepare the program ID.
-        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
+        let program_id = program_id.try_into().map_err(|_| ProcessError::InvalidProgramId)?;
         // Retrieve the stack.
         let stack = self
             .stacks
             .read()
             .get(&program_id)
-            .ok_or_else(|| ProcessGenericError::MissingProgram(program_id.to_string()))?
+            .ok_or_else(|| ProcessError::MissingProgram(program_id.to_string()))?
             .clone();
         // Ensure the program ID matches.
-        ensure!(stack.program_id() == &program_id, "Expected program '{}', found '{program_id}'", stack.program_id());
+        if stack.program_id() != &program_id {
+            return Err(ProcessError::ProgramIdMismatch(
+                stack.program_id().to_string(),
+                stack.program_id().to_string(),
+            ));
+        }
         // Return the stack.
         Ok(stack)
     }

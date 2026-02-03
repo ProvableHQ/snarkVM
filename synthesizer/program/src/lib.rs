@@ -103,6 +103,7 @@ use console::{
     program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
     types::U8,
 };
+use snarkvm_synthesizer_error::ProgramError;
 use snarkvm_utilities::cfg_iter;
 
 use indexmap::{IndexMap, IndexSet};
@@ -374,11 +375,13 @@ impl<N: Network> ProgramCore<N> {
     }
 
     /// Returns the mapping with the given name.
-    pub fn get_mapping(&self, name: &Identifier<N>) -> Result<Mapping<N>> {
+    pub fn get_mapping(&self, name: &Identifier<N>) -> Result<Mapping<N>, ProgramError> {
         // Attempt to retrieve the mapping.
-        let mapping = self.mappings.get(name).cloned().ok_or_else(|| anyhow!("Mapping '{name}' is not defined."))?;
+        let mapping = self.mappings.get(name).cloned().ok_or_else(|| ProgramError::MappingMissing(name.to_string()))?;
         // Ensure the mapping name matches.
-        ensure!(mapping.name() == name, "Expected mapping '{name}', but found mapping '{}'", mapping.name());
+        if mapping.name() != name {
+            return Err(ProgramError::MappingMismatch(name.to_string(), mapping.name().to_string()));
+        }
         // Return the mapping.
         Ok(mapping)
     }
