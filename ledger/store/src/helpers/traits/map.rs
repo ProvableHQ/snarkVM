@@ -21,7 +21,7 @@ use std::borrow::Cow;
 /// A trait representing map-like storage operations with read-write capabilities.
 pub trait Map<
     'a,
-    K: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + Deserialize<'a> + Send + Sync,
+    K: 'a + Clone + PartialEq + Eq + Hash + Serialize + Deserialize<'a> + Send + Sync,
     V: 'a + Clone + Serialize + Deserialize<'a> + Send + Sync,
 >: Clone + MapRead<'a, K, V> + Send + Sync
 {
@@ -92,7 +92,7 @@ pub trait Map<
 /// A trait representing map-like storage operations with read-only capabilities.
 pub trait MapRead<
     'a,
-    K: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + Deserialize<'a> + Sync,
+    K: 'a + Clone + PartialEq + Eq + Hash + Serialize + Deserialize<'a> + Sync,
     V: 'a + Clone + Serialize + Deserialize<'a> + Sync,
 >
 {

@@ -62,6 +62,10 @@ async = [
   "snarkvm-ledger-query/async",
   "snarkvm-synthesizer/async"
 ]
+history = [
+  "snarkvm-ledger-store/history",
+  "snarkvm-synthesizer/history",
+]
 locktick = [
   "dep:locktick",
   "snarkvm-ledger-puzzle/locktick",

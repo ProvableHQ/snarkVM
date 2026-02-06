@@ -38,7 +38,7 @@ use std::{
 
 #[derive(Clone)]
 pub struct MemoryMap<
-    K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > {
     // The reason for using BTreeMap with binary keys is for the order of items to be the same as
@@ -51,7 +51,7 @@ pub struct MemoryMap<
 }
 
 impl<
-    K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Default for MemoryMap<K, V>
 {
@@ -66,7 +66,7 @@ impl<
 }
 
 impl<
-    K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > FromIterator<(K, V)> for MemoryMap<K, V>
 {
@@ -87,7 +87,7 @@ impl<
 
 impl<
     'a,
-    K: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: 'a + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     V: 'a + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Map<'a, K, V> for MemoryMap<K, V>
 {
@@ -118,7 +118,7 @@ impl<
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the key-None pair to the batch.
             true => {
-                self.atomic_batch.lock().push((*key, None));
+                self.atomic_batch.lock().push((key.clone(), None));
             }
             // Otherwise, remove the key-value pair directly from the map.
             false => {
@@ -261,7 +261,7 @@ impl<
 
 impl<
     'a,
-    K: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: 'a + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     V: 'a + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > MapRead<'a, K, V> for MemoryMap<K, V>
 {
@@ -383,7 +383,7 @@ impl<
 }
 
 impl<
-    K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    K: Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
     V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Deref for MemoryMap<K, V>
 {

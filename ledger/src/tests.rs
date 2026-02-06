@@ -649,6 +649,33 @@ fn test_bond_and_unbond_validator() {
         )
         .unwrap();
 
+    // Procure mapping-related objects.
+    let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+    let metadata_mapping_name = Identifier::from_str("metadata").unwrap();
+    let metadata_mapping_key =
+        Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")
+            .unwrap();
+
+    // Check the initial historical mapping values.
+    #[cfg(feature = "history")]
+    {
+        let initial_mapping_value = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let initial_mapping_heights = ledger
+            .vm()
+            .finalize_store()
+            .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_heights, &[0]);
+    }
+
     // Check that the next block is valid.
     ledger.check_next_block(&transfer_block, rng).unwrap();
 
@@ -683,19 +710,43 @@ fn test_bond_and_unbond_validator() {
     // Add the bond public block to the ledger.
     ledger.advance_to_next_block(&bond_validator_block).unwrap();
 
+    // Check the historical mapping values after the bonding.
+    #[cfg(feature = "history")]
+    {
+        let initial_mapping_value = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let initial_mapping_value = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 2)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
+
+        let initial_mapping_heights = ledger
+            .vm()
+            .finalize_store()
+            .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_heights, &[0, 2]);
+    }
+
     // Check that the committee is updated with the new member.
     let committee = ledger.latest_committee().unwrap();
     assert!(committee.is_committee_member(new_member_address));
 
     // Check that number of validators in the `metadata` mapping in `credits.aleo` is updated.
-    let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
-    let metadata_mapping_name = Identifier::from_str("metadata").unwrap();
-    let key = Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")
-        .unwrap();
     let num_validators = match ledger
         .vm()
         .finalize_store()
-        .get_value_confirmed(program_id, metadata_mapping_name, &key)
+        .get_value_confirmed(program_id, metadata_mapping_name, &metadata_mapping_key)
         .unwrap()
         .unwrap()
     {
@@ -734,19 +785,51 @@ fn test_bond_and_unbond_validator() {
     // Add the bond public block to the ledger.
     ledger.advance_to_next_block(&unbond_public_block).unwrap();
 
+    // Check the historical mapping values after the unbonding.
+    #[cfg(feature = "history")]
+    {
+        let initial_mapping_value = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let initial_mapping_value = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 2)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
+
+        let initial_mapping_value = ledger
+            .vm()
+            .finalize_store()
+            .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 3)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
+
+        let initial_mapping_heights = ledger
+            .vm()
+            .finalize_store()
+            .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*initial_mapping_heights, &[0, 2, 3]);
+    }
+
     // Check that the committee does not include the new member.
     let committee = ledger.latest_committee().unwrap();
     assert!(!committee.is_committee_member(new_member_address));
 
     // Check that number of validators in the `metadata` mapping in `credtis.aleo` is updated.
-    let program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
-    let metadata_mapping_name = Identifier::from_str("metadata").unwrap();
-    let key = Plaintext::<CurrentNetwork>::from_str("aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc")
-        .unwrap();
     let num_validators = match ledger
         .vm()
         .finalize_store()
-        .get_value_confirmed(program_id, metadata_mapping_name, &key)
+        .get_value_confirmed(program_id, metadata_mapping_name, &metadata_mapping_key)
         .unwrap()
         .unwrap()
     {
