@@ -683,7 +683,22 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_key: Plaintext<N>,
         height: u32,
     ) -> Result<Option<Cow<'_, Value<N>>>, Error> {
-        self.storage.mapping_update_map().get_confirmed(&(program_id, mapping_name, mapping_key, height))
+        // First, obtain the heights at which updates have happened.
+        let Some(update_heights) = self.get_mapping_update_heights(program_id, mapping_name, mapping_key.clone())?
+        else {
+            return Ok(None);
+        };
+
+        // Find the updated height which matches the desired point in history.
+        let Some(applicable_height) = (match update_heights.binary_search(&height) {
+            Ok(_) => Some(height),
+            Err(idx) => update_heights.get(idx - 1).copied(),
+        }) else {
+            return Ok(None);
+        };
+
+        // Find the mapping value applicable at that height.
+        self.storage.mapping_update_map().get_confirmed(&(program_id, mapping_name, mapping_key, applicable_height))
     }
 
     /// Returns the historical value of a mapping.
