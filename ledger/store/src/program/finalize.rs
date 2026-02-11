@@ -692,6 +692,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         // Find the updated height which matches the desired point in history.
         let Some(applicable_height) = (match update_heights.binary_search(&height) {
             Ok(_) => Some(height),
+            Err(0) => None,
             Err(idx) => update_heights.get(idx - 1).copied(),
         }) else {
             return Ok(None);
