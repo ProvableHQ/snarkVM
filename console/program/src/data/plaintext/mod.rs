@@ -129,24 +129,15 @@ impl<N: Network> Hash for Plaintext<N> {
         match self {
             Self::Literal(literal, bits) => {
                 literal.hash(state);
-                if let Some(bits) = bits.get() {
-                    bits.hash(state);
-                }
             }
             Self::Struct(fields, bits) => {
                 for (name, value) in fields {
                     name.hash(state);
                     value.hash(state);
                 }
-                if let Some(bits) = bits.get() {
-                    bits.hash(state);
-                }
             }
             Self::Array(array, bits) => {
                 array.hash(state);
-                if let Some(bits) = bits.get() {
-                    bits.hash(state);
-                }
             }
         }
     }
