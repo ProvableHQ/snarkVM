@@ -127,16 +127,16 @@ impl<N: Network> From<&Literal<N>> for Plaintext<N> {
 impl<N: Network> Hash for Plaintext<N> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            Self::Literal(literal, bits) => {
+            Self::Literal(literal, _bits) => {
                 literal.hash(state);
             }
-            Self::Struct(fields, bits) => {
+            Self::Struct(fields, _bits) => {
                 for (name, value) in fields {
                     name.hash(state);
                     value.hash(state);
                 }
             }
-            Self::Array(array, bits) => {
+            Self::Array(array, _bits) => {
                 array.hash(state);
             }
         }

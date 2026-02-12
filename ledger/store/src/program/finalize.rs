@@ -702,7 +702,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         self.storage.mapping_update_map().get_confirmed(&(program_id, mapping_name, mapping_key, applicable_height))
     }
 
-    /// Returns the historical value of a mapping.
+    /// Returns the heights at which past mapping updates occurred.
     #[cfg(feature = "history")]
     pub fn get_mapping_update_heights(
         &self,

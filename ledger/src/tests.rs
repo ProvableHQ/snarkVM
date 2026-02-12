@@ -865,7 +865,7 @@ fn test_bond_and_unbond_validator() {
     let committee = ledger.latest_committee().unwrap();
     assert!(!committee.is_committee_member(new_member_address));
 
-    // Check that number of validators in the `metadata` mapping in `credtis.aleo` is updated.
+    // Check that number of validators in the `metadata` mapping in `credits.aleo` is updated.
     let num_validators = match ledger
         .vm()
         .finalize_store()
