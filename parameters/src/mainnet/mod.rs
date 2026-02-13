@@ -22,8 +22,7 @@ pub use powers::*;
 /// The restrictions list as a JSON-compatible string.
 pub const RESTRICTIONS_LIST: &str = include_str!("./resources/restrictions.json");
 
-const REMOTE_URLS: [&str; 2] =
-    ["https://parameters.provable.com/mainnet", "https://s3.us-west-1.amazonaws.com/mainnet.parameters"];
+const REMOTE_URLS: [&str; 1] = ["https://parameters-cached-routing.provable-inc.workers.dev/mainnet"];
 
 // Degrees
 impl_local!(Degree15, "resources/", "powers-of-beta-15", "usrs");

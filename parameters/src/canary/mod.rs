@@ -19,7 +19,7 @@ pub use genesis::*;
 /// The restrictions list as a JSON-compatible string.
 pub const RESTRICTIONS_LIST: &str = include_str!("./resources/restrictions.json");
 
-const REMOTE_URLS: [&str; 2] = ["https://parameters.provable.com/canary", "https://s3.us-west-1.amazonaws.com/canary.parameters"];
+const REMOTE_URLS: [&str; 1] = ["https://parameters-cached-routing.provable-inc.workers.dev/canary"];
 
 // BondPublic
 impl_remote!(BondPublicProver, REMOTE_URLS, "resources/", "bond_public", "prover", "credits");
