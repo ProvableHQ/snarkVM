@@ -406,7 +406,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
                                     })
                                     .map(|(fee_tx, finalize)| {
-                                        let rejected = Rejected::new_deployment(*program_owner, deployment);
+                                        let rejected = Rejected::new_deployment(*program_owner, deployment, None);
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
                                             .map_err(|e| e.to_string())
                                     })
@@ -476,7 +476,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         }) {
                                             Ok((fee_tx, finalize)) => {
                                                 // Construct the rejected execution.
-                                                let rejected = Rejected::new_execution(*execution.clone());
+                                                let rejected = Rejected::new_execution(*execution.clone(), None);
                                                 // Construct the rejected execute transaction.
                                                 ConfirmedTransaction::rejected_execute(
                                                     counter, fee_tx, rejected, finalize,
@@ -1748,7 +1748,7 @@ finalize transfer_public:
             Transaction::Execute(_, _, execution, fee) => ConfirmedTransaction::RejectedExecute(
                 index,
                 Transaction::from_fee(fee.clone().unwrap()).unwrap(),
-                Rejected::new_execution(*execution.clone()),
+                Rejected::new_execution(*execution.clone(), None),
                 finalize.to_vec(),
             ),
             _ => panic!("only reject execution transactions"),
@@ -2454,7 +2454,7 @@ function ped_hash:
                 let expected_confirmed_transaction = ConfirmedTransaction::RejectedExecute(
                     0,
                     fee_transaction,
-                    Rejected::new_execution(*execution),
+                    Rejected::new_execution(*execution, None),
                     vec![],
                 );
 

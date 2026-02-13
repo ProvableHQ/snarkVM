@@ -26,15 +26,33 @@ impl<N: Network> FromBytes for Rejected<N> {
                 // Read the deployment.
                 let deployment = Deployment::read_le(&mut reader)?;
                 // Return the rejected deployment.
-                Ok(Self::new_deployment(program_owner, deployment))
+                Ok(Self::new_deployment(program_owner, deployment, None))
             }
             1 => {
                 // Read the execution.
                 let execution = Execution::read_le(&mut reader)?;
                 // Return the rejected execution.
-                Ok(Self::new_execution(execution))
+                Ok(Self::new_execution(execution, None))
             }
-            2.. => Err(error(format!("Failed to decode rejected transaction variant {variant}"))),
+            2 => {
+                // Read the program owner.
+                let program_owner = ProgramOwner::read_le(&mut reader)?;
+                // Read the deployment.
+                let deployment = Deployment::read_le(&mut reader)?;
+                // Read the rejected reason.
+                let rejected_reason = RejectedReason::read_le(&mut reader)?;
+                // Return the rejected deployment.
+                Ok(Self::new_deployment(program_owner, deployment, Some(rejected_reason)))
+            }
+            3 => {
+                // Read the execution.
+                let execution = Execution::read_le(&mut reader)?;
+                // Read the rejected reason.
+                let rejected_reason = RejectedReason::read_le(&mut reader)?;
+                // Return the rejected execution.
+                Ok(Self::new_execution(execution, Some(rejected_reason)))
+            }
+            4.. => Err(error(format!("Failed to decode rejected transaction variant {variant}"))),
         }
     }
 }
@@ -43,7 +61,7 @@ impl<N: Network> ToBytes for Rejected<N> {
     /// Writes the rejected transaction to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         match self {
-            Self::Deployment(program_owner, deployment) => {
+            Self::Deployment(program_owner, deployment, None) => {
                 // Write the variant.
                 0u8.write_le(&mut writer)?;
                 // Write the program owner.
@@ -51,11 +69,29 @@ impl<N: Network> ToBytes for Rejected<N> {
                 // Write the deployment.
                 deployment.write_le(&mut writer)
             }
-            Self::Execution(execution) => {
+            Self::Execution(execution, None) => {
                 // Write the variant.
                 1u8.write_le(&mut writer)?;
                 // Write the execution.
                 execution.write_le(&mut writer)
+            }
+            Self::Deployment(program_owner, deployment, Some(rejected_reason)) => {
+                // Write the variant.
+                2u8.write_le(&mut writer)?;
+                // Write the program owner.
+                program_owner.write_le(&mut writer)?;
+                // Write the deployment.
+                deployment.write_le(&mut writer)?;
+                // Write the rejected reason.
+                rejected_reason.write_le(&mut writer)
+            }
+            Self::Execution(execution, Some(rejected_reason)) => {
+                // Write the variant.
+                3u8.write_le(&mut writer)?;
+                // Write the execution.
+                execution.write_le(&mut writer)?;
+                // Write the rejected reason.
+                rejected_reason.write_le(&mut writer)
             }
         }
     }

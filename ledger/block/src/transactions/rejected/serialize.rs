@@ -20,17 +20,29 @@ impl<N: Network> Serialize for Rejected<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => match self {
-                Self::Deployment(program_owner, deployment) => {
-                    let mut object = serializer.serialize_struct("Rejected", 3)?;
+                Self::Deployment(program_owner, deployment, rejected_reason) => {
+                    // Determine the number of fields based on whether the rejected reason is present.
+                    let num_fields = if rejected_reason.is_some() { 4 } else { 3 };
+                    let mut object = serializer.serialize_struct("Rejected", num_fields)?;
                     object.serialize_field("type", "deployment")?;
                     object.serialize_field("program_owner", program_owner)?;
                     object.serialize_field("deployment", deployment)?;
+                    // Serialize the rejected reason, if it exists.
+                    if let Some(reason) = rejected_reason {
+                        object.serialize_field("rejected_reason", reason)?;
+                    }
                     object.end()
                 }
-                Self::Execution(execution) => {
-                    let mut object = serializer.serialize_struct("Rejected", 2)?;
+                Self::Execution(execution, rejected_reason) => {
+                    // Determine the number of fields based on whether the rejected reason is present.
+                    let num_fields = if rejected_reason.is_some() { 3 } else { 2 };
+                    let mut object = serializer.serialize_struct("Rejected", num_fields)?;
                     object.serialize_field("type", "execution")?;
                     object.serialize_field("execution", execution)?;
+                    // Serialize the rejected reason, if it exists.
+                    if let Some(reason) = rejected_reason {
+                        object.serialize_field("rejected_reason", reason)?;
+                    }
                     object.end()
                 }
             },
@@ -59,14 +71,24 @@ impl<'de, N: Network> Deserialize<'de> for Rejected<N> {
                         // Parse the deployment.
                         let deployment: Deployment<N> =
                             DeserializeExt::take_from_value::<D>(&mut object, "deployment")?;
+                        // Parse the optional rejected reason.
+                        let rejected_reason: Option<RejectedReason> = match object.get("rejected_reason") {
+                            Some(_) => Some(DeserializeExt::take_from_value::<D>(&mut object, "rejected_reason")?),
+                            None => None,
+                        };
                         // Return the rejected deployment.
-                        Ok(Self::new_deployment(program_owner, deployment))
+                        Ok(Self::new_deployment(program_owner, deployment, rejected_reason))
                     }
                     Some("execution") => {
                         // Parse the execution.
                         let execution: Execution<N> = DeserializeExt::take_from_value::<D>(&mut object, "execution")?;
+                        // Parse the optional rejected reason.
+                        let rejected_reason: Option<RejectedReason> = match object.get("rejected_reason") {
+                            Some(_) => Some(DeserializeExt::take_from_value::<D>(&mut object, "rejected_reason")?),
+                            None => None,
+                        };
                         // Return the rejected execution.
-                        Ok(Self::new_execution(execution))
+                        Ok(Self::new_execution(execution, rejected_reason))
                     }
                     _ => Err(de::Error::custom("Invalid rejected transaction type")),
                 }

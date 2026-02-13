@@ -13,6 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod reason;
+pub use reason::*;
+
 mod bytes;
 mod serialize;
 mod string;
@@ -24,19 +27,23 @@ use crate::{Deployment, Execution, Fee};
 /// A wrapper around the rejected deployment or execution.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Rejected<N: Network> {
-    Deployment(ProgramOwner<N>, Box<Deployment<N>>),
-    Execution(Box<Execution<N>>),
+    Deployment(ProgramOwner<N>, Box<Deployment<N>>, Option<RejectedReason>),
+    Execution(Box<Execution<N>>, Option<RejectedReason>),
 }
 
 impl<N: Network> Rejected<N> {
     /// Initializes a rejected deployment.
-    pub fn new_deployment(program_owner: ProgramOwner<N>, deployment: Deployment<N>) -> Self {
-        Self::Deployment(program_owner, Box::new(deployment))
+    pub fn new_deployment(
+        program_owner: ProgramOwner<N>,
+        deployment: Deployment<N>,
+        rejected_reason: Option<RejectedReason>,
+    ) -> Self {
+        Self::Deployment(program_owner, Box::new(deployment), rejected_reason)
     }
 
     /// Initializes a rejected execution.
-    pub fn new_execution(execution: Execution<N>) -> Self {
-        Self::Execution(Box::new(execution))
+    pub fn new_execution(execution: Execution<N>, rejected_reason: Option<RejectedReason>) -> Self {
+        Self::Execution(Box::new(execution), rejected_reason)
     }
 
     /// Returns true if the rejected transaction is a deployment.
@@ -52,32 +59,40 @@ impl<N: Network> Rejected<N> {
     /// Returns the program owner of the rejected deployment.
     pub fn program_owner(&self) -> Option<&ProgramOwner<N>> {
         match self {
-            Self::Deployment(program_owner, _) => Some(program_owner),
-            Self::Execution(_) => None,
+            Self::Deployment(program_owner, _, _) => Some(program_owner),
+            Self::Execution(_, _) => None,
         }
     }
 
     /// Returns the rejected deployment.
     pub fn deployment(&self) -> Option<&Deployment<N>> {
         match self {
-            Self::Deployment(_, deployment) => Some(deployment),
-            Self::Execution(_) => None,
+            Self::Deployment(_, deployment, _) => Some(deployment),
+            Self::Execution(_, _) => None,
         }
     }
 
     /// Returns the rejected execution.
     pub fn execution(&self) -> Option<&Execution<N>> {
         match self {
-            Self::Deployment(_, _) => None,
-            Self::Execution(execution) => Some(execution),
+            Self::Deployment(_, _, _) => None,
+            Self::Execution(execution, _) => Some(execution),
+        }
+    }
+
+    /// Returns the rejected reason.
+    pub fn rejected_reason(&self) -> Option<&RejectedReason> {
+        match self {
+            Self::Deployment(_, _, rejected_reason) => rejected_reason.as_ref(),
+            Self::Execution(_, rejected_reason) => rejected_reason.as_ref(),
         }
     }
 
     /// Returns the rejected ID.
     pub fn to_id(&self) -> Result<Field<N>> {
         match self {
-            Self::Deployment(_, deployment) => deployment.to_deployment_id(),
-            Self::Execution(execution) => execution.to_execution_id(),
+            Self::Deployment(_, deployment, _) => deployment.to_deployment_id(),
+            Self::Execution(execution, _) => execution.to_execution_id(),
         }
     }
 
@@ -87,8 +102,8 @@ impl<N: Network> Rejected<N> {
     pub fn to_unconfirmed_id(&self, fee: &Option<Fee<N>>) -> Result<Field<N>> {
         // Compute the deployment or execution tree.
         let tree = match self {
-            Self::Deployment(_, deployment) => Transaction::deployment_tree(deployment)?,
-            Self::Execution(execution) => Transaction::execution_tree(execution)?,
+            Self::Deployment(_, deployment, _) => Transaction::deployment_tree(deployment)?,
+            Self::Execution(execution, _) => Transaction::execution_tree(execution)?,
         };
         // Construct the transaction tree and return the unconfirmed transaction ID.
         Ok(*Transaction::transaction_tree(tree, fee.as_ref())?.root())
@@ -107,6 +122,7 @@ pub mod test_helpers {
         version: u8,
         edition: u16,
         is_fee_private: bool,
+        has_rejected_reason: bool,
         rng: &mut TestRng,
     ) -> Rejected<CurrentNetwork> {
         // Sample a deploy transaction.
@@ -125,12 +141,22 @@ pub mod test_helpers {
         let deployment_id = deployment.to_deployment_id().unwrap();
         let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
+        // TODO (raychu86): Rejected Reason - Sample a new rejected reason.
+        let rejected_reason = match has_rejected_reason {
+            true => Some(RejectedReason::Placeholder),
+            false => None,
+        };
+
         // Return the rejected deployment.
-        Rejected::new_deployment(program_owner, deployment)
+        Rejected::new_deployment(program_owner, deployment, rejected_reason)
     }
 
     /// Samples a rejected execution.
-    pub(crate) fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
+    pub(crate) fn sample_rejected_execution(
+        is_fee_private: bool,
+        has_rejected_reason: bool,
+        rng: &mut TestRng,
+    ) -> Rejected<CurrentNetwork> {
         // Sample an execute transaction.
         let execution =
             match crate::transaction::test_helpers::sample_execution_transaction_with_fee(is_fee_private, rng, 0) {
@@ -138,8 +164,14 @@ pub mod test_helpers {
                 _ => unreachable!(),
             };
 
+        // TODO (raychu86): Rejected Reason - Sample a new rejected reason.
+        let rejected_reason = match has_rejected_reason {
+            true => Some(RejectedReason::Placeholder),
+            false => None,
+        };
+
         // Return the rejected execution.
-        Rejected::new_execution(*execution)
+        Rejected::new_execution(*execution, rejected_reason)
     }
 
     /// Sample a list of randomly rejected transactions.
@@ -147,16 +179,32 @@ pub mod test_helpers {
         let rng = &mut TestRng::default();
 
         vec![
-            sample_rejected_deployment(1, 0, true, rng),
-            sample_rejected_deployment(1, 0, false, rng),
-            sample_rejected_deployment(2, 0, true, rng),
-            sample_rejected_deployment(2, 0, false, rng),
-            sample_rejected_deployment(1, 1, true, rng),
-            sample_rejected_deployment(1, 1, false, rng),
-            sample_rejected_deployment(2, 1, true, rng),
-            sample_rejected_deployment(2, 1, false, rng),
-            sample_rejected_execution(true, rng),
-            sample_rejected_execution(false, rng),
+            sample_rejected_deployment(1, 0, true, true, rng),
+            sample_rejected_deployment(1, 0, true, false, rng),
+            sample_rejected_deployment(1, 0, false, true, rng),
+            sample_rejected_deployment(1, 0, false, false, rng),
+            sample_rejected_deployment(2, 0, true, true, rng),
+            sample_rejected_deployment(2, 0, true, false, rng),
+            sample_rejected_deployment(2, 0, false, true, rng),
+            sample_rejected_deployment(2, 0, false, false, rng),
+            sample_rejected_deployment(1, 1, true, true, rng),
+            sample_rejected_deployment(1, 1, true, false, rng),
+            sample_rejected_deployment(1, 1, false, true, rng),
+            sample_rejected_deployment(1, 1, false, false, rng),
+            sample_rejected_deployment(2, 1, true, true, rng),
+            sample_rejected_deployment(2, 1, true, false, rng),
+            sample_rejected_deployment(2, 1, false, true, rng),
+            sample_rejected_deployment(2, 1, false, false, rng),
+            sample_rejected_execution(true, true, rng),
+            sample_rejected_execution(true, false, rng),
+            sample_rejected_execution(false, true, rng),
+            sample_rejected_execution(false, false, rng),
         ]
     }
+
+    // pub(crate) fn sample_rejected_reason() -> RejectedReason {
+    //     let rng = &mut TestRng::default();
+    //     // TODO (raychu86): Rejected Reason
+    //     RejectedReason::Execution
+    // }
 }
