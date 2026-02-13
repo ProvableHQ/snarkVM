@@ -1192,49 +1192,6 @@ jobs:
 workflows:
   version: 2
 
-  cargo-workflow:
-    jobs:
-      - check-fmt
-      - check-clippy
-      - check-cargo-audit
-      - check-all-targets
-
-  circuit-workflow:
-    jobs:
-      - circuit
-      - circuit-account
-      - circuit-algorithms
-      - circuit-collections
-      - circuit-environment
-      - circuit-network
-      - circuit-program
-      - circuit-types
-      - circuit-types-address
-      - circuit-types-boolean
-      - circuit-types-field
-      - circuit-types-group
-      - circuit-types-integers
-      - circuit-types-scalar
-      - circuit-types-string
-
-  console-workflow:
-    jobs:
-      - console
-      - console-account
-      - console-algorithms
-      - console-collections
-      - console-network
-      - console-network-environment
-      - console-program
-      - console-types
-      - console-types-address
-      - console-types-boolean
-      - console-types-field
-      - console-types-group
-      - console-types-integers
-      - console-types-scalar
-      - console-types-string
-
   ledger-workflow:
     jobs:
       - ledger
