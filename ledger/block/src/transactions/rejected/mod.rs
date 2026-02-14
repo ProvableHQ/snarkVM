@@ -81,10 +81,10 @@ impl<N: Network> Rejected<N> {
     }
 
     /// Returns the rejected reason.
-    pub fn rejected_reason(&self) -> Option<&RejectedReason> {
+    pub fn rejected_reason(&self) -> Option<RejectedReason> {
         match self {
-            Self::Deployment(_, _, rejected_reason) => rejected_reason.as_ref(),
-            Self::Execution(_, rejected_reason) => rejected_reason.as_ref(),
+            Self::Deployment(_, _, rejected_reason) => *rejected_reason,
+            Self::Execution(_, rejected_reason) => *rejected_reason,
         }
     }
 

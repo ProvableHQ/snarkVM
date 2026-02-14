@@ -17,7 +17,10 @@ mod bytes;
 mod serialize;
 mod string;
 
-use crate::{Transaction, rejected::Rejected};
+use crate::{
+    Transaction,
+    rejected::{Rejected, RejectedReason},
+};
 use console::{network::prelude::*, program::FINALIZE_ID_DEPTH, types::Field};
 use snarkvm_synthesizer_program::FinalizeOperation;
 
@@ -219,6 +222,16 @@ impl<N: Network> ConfirmedTransaction<N> {
     /// Returns `true` if the confirmed transaction represents the given unconfirmed transaction ID.
     pub fn contains_unconfirmed_transaction_id(&self, unconfirmed_transaction_id: &N::TransactionID) -> bool {
         self.to_unconfirmed_transaction_id().is_ok_and(|id| &id == unconfirmed_transaction_id)
+    }
+
+    /// Returns the rejected reason, if the confirmed transaction is rejected.
+    pub fn rejected_reason(&self) -> Option<RejectedReason> {
+        match self {
+            Self::AcceptedDeploy(..) | Self::AcceptedExecute(..) => None,
+            Self::RejectedDeploy(_, _, rejected, _) | Self::RejectedExecute(_, _, rejected, _) => {
+                rejected.rejected_reason()
+            }
+        }
     }
 }
 

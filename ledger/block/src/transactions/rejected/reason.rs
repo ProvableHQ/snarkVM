@@ -16,7 +16,7 @@
 use super::*;
 
 /// The reason a transaction was rejected.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum RejectedReason {
     Placeholder,
 }

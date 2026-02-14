@@ -215,6 +215,20 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             }
         }
 
+        // Ensure that rejected reasons do not exist prior to `ConsensusVersion::V14`.
+        if block.height() < N::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap_or_default() {
+            cfg_iter!(block.transactions()).try_for_each(|transaction| {
+                if transaction.rejected_reason().is_some() {
+                    bail!(
+                        "Transaction '{}' in block {} has a rejected reason, but rejected reasons are not supported until ConsensusVersion::V14",
+                        transaction.id(),
+                        block.height()
+                    );
+                }
+                Ok(())
+            })?;
+        }
+
         // Determine if the block timestamp should be included.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
