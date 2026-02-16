@@ -154,7 +154,8 @@ impl ExpectedTest for ProgramTest {
         let expected = match rewrite {
             true => serde_yaml::Mapping::default(),
             false => {
-                let source = std::fs::read_to_string(&path).expect("Failed to read expectation file.");
+                let source = std::fs::read_to_string(&path)
+                    .expect(&format!("Failed to read expectation file {}", path.display()));
                 serde_yaml::from_str::<Mapping>(&source).expect("invalid expectation")
             }
         };

@@ -40,6 +40,7 @@ use snarkvm_synthesizer_program::FinalizeGlobalState;
 use anyhow::Result;
 use indexmap::IndexMap;
 use snarkvm_console::account::Address;
+use std::env;
 use utilities::*;
 
 #[cfg(not(feature = "rocks"))]
@@ -50,8 +51,13 @@ type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNet
 #[test]
 fn test_vm_execute_and_finalize() {
     // Load the tests.
-    let tests =
-        load_tests::<_, ProgramTest>("./tests/vm/execute_and_finalize", "./expectations/vm/execute_and_finalize");
+    let expectations_path =
+        if env::var("CONSENSUS_VERSION_HEIGHTS").is_ok() && env::var("CONSENSUS_VERSION_DEFAULT_HEIGHT").is_ok() {
+            "./expectations/execute_and_finalize_penultimate_version"
+        } else {
+            "./expectations/vm/execute_and_finalize"
+        };
+    let tests = load_tests::<_, ProgramTest>("./tests/vm/execute_and_finalize", expectations_path);
 
     // Run each test and compare it against its corresponding expectation.
     tests.iter().for_each(|test| {

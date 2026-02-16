@@ -1,0 +1,19 @@
+errors: []
+outputs:
+- verified: true
+  execute:
+    external_structs.aleo/main:
+      outputs:
+      - '{"type":"public","id":"4385221899594544742736712027131978213015428150850258296506493664596280533427field","value":"{\n  a: 1u32,\n  b: 2u32\n}"}'
+      - '{"type":"public","id":"7929192854934931912857857336039491679931484278506413866287056924011819669956field","value":"{\n  c: {\n    a: 1u32,\n    b: 2u32\n  }\n}"}'
+      - '{"type":"public","id":"3645403017355458377899223674117346984005413209069380479668071599470746259301field","value":"{\n  a: 1u32,\n  b: 2u32\n}"}'
+  speculate: the execution was accepted
+  add_next_block: succeeded.
+additional:
+- child_outputs:
+    child1.aleo/main_2:
+      outputs:
+      - '{"type":"private","id":"8037535531096523063197057748174077381059480079200703899506322747477778162492field","value":"ciphertext1qyqyfk9hz5rfwf8qvmlsc8he0c0aupyvkk2vzzerwydgq9daf7p3jpqprzt0e"}'
+    credits.aleo/fee_public:
+      outputs:
+      - '{"type":"future","id":"2878747513565501341207219377528294227279905180967972402659878042619399606537field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1l92c2rcgwnfg2hwv7pvd60yvyf5usv7xfw4vg6k6hmt4trqg4vyqkre9hy,\n    2104u64\n  ]\n}"}'

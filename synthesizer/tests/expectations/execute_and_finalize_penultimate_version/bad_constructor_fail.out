@@ -1,0 +1,5 @@
+errors: []
+outputs:
+- execute: 'Authorization failed: Process authorization failed: Program ''bad_constructor.aleo'' does not exist'
+additional:
+- {}
