@@ -1298,6 +1298,11 @@ workflows:
       - utilities-derives
       - wasm
 
+  temp-workflow:
+    when: pipeline.git.branch == "feat/store_num_consensus_heights2"
+    jobs:
+      - synthesizer-integration-penultimate-consensus
+
   # Run additional but unlikely to fail checks on merges only
   merge-workflow:
     when: pipeline.git.branch == "staging"
