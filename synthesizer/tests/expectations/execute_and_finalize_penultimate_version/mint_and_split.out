@@ -1,0 +1,30 @@
+errors: []
+outputs:
+- verified: true
+  execute:
+    mint_and_split.aleo/mint:
+      outputs:
+      - '{"type":"record","id":"5664701406562067552828344114098303767897965604026128467062564698122653063423field","checksum":"3626277694002129817450586298549700969311278894378425554567931927060435437015field","value":"record1qvqsq0n3e7ughtxyvmh6wvf9el2aawml5apsha3s3kvvlju4t2q7mjqvqyxx66trwfhkxun9v35hguerqqpqzqrcvwuwkzp83887fgthwjd39pmkq2eez62gm5j80thj8l80dalwqnr5fy7php8cj4t34qakyng346kyul53nyc5tkrdhyars9ahla7s5sgzh6e","sender_ciphertext":"1665447941447557328814969634132503709267279599551542167345190954389598538632field"}'
+  speculate: the execution was accepted
+  add_next_block: succeeded.
+- execute: Commitment '1266307482263846358970326041806201638141701138269282465033372005968041137990field' does not exist
+- execute: 'Authorization failed: Process authorization failed: Stack authorization failed: Input record for ''mint_and_split.aleo'' must belong to the signer'
+- verified: true
+  execute:
+    mint_and_split.aleo/split:
+      outputs:
+      - '{"type":"record","id":"1699699739729170697265293269960858783252948270460198505329736189985368874527field","checksum":"5094546139349890416493032421390261246272276476596348590549876461855714748426field","value":"record1qvqsptua8f8daxpfrpte04gsm9g9xnd8j0dtl5eh8535vhcv2mtef9ctqyxx66trwfhkxun9v35hguerqqpqzqqknlyy8amkrheskym52rs9prf82xytk90s86wd0l27qupf39fyqtfz2jn7dm59xddt7wgm3vf7pvuhvx6yxn6kfnwqq6a6lg6puegqqd2cxh8","sender_ciphertext":"8320175049502704724056884998196528853724472019327482611754212406252051074685field"}'
+      - '{"type":"record","id":"172925729887562152149415289505492834678003067935898794702724748466949372684field","checksum":"1603740492188563572946000461530713958992296086854591140121132385743964448321field","value":"record1qvqsq6qge800ds78synw4lugedt3z0vaf5wcca78qrrva9g5g9p655g9qyxx66trwfhkxun9v35hguerqqpqzqz5l7mvjfa763n9t2xrh5ae503gunal63ex2jj4mcx4mwkwrhmnq66c48n9dywl2ed6224qwzwm5e2n07d25749csx9m90dngxu6q3q6l9w8mm","sender_ciphertext":"6029181475896378477744653708372210086548977530010352512129978860336467153920field"}'
+  speculate: the execution was accepted
+  add_next_block: succeeded.
+additional:
+- child_outputs:
+    credits.aleo/fee_public:
+      outputs:
+      - '{"type":"future","id":"3572806592760112018519816250530207176073737548656800904593854927222723276908field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo19e6k5ferx3k8a9k79xtj4uuaztt2jl4eza7k43pygsu977yazypqqwdmw6,\n    1479u64\n  ]\n}"}'
+- {}
+- {}
+- child_outputs:
+    credits.aleo/fee_public:
+      outputs:
+      - '{"type":"future","id":"2737867445600091806851679290488962164244500258971055175206802088246641742248field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1j2hfs6yru47h2nvsjdefwtw6nwaj0y4zcl02juyy29txm7nt6y9qln7uhp,\n    2204u64\n  ]\n}"}'
