@@ -939,6 +939,12 @@ jobs:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
+      - checkout
+      - setup_environment:
+          cache_key: v4.2.0-rust-1.88.0-snarkvm-synthesizer-integration-cache
+      - run:
+          name: Generate assets
+          command: cargo test --package snarkvm-synthesizer --features test --no-run
       - run:
           name: Configure the CONSENSUS_VERSION_HEIGHTS variable
           command: |
