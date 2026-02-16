@@ -945,11 +945,16 @@ jobs:
           # Read the number of consensus versions
           COUNT=$(cat .generated_assets/num_consensus_heights)
 
-          # Generate the value (u32::MAX times the number of versions)
-          VAR_VALUE=$(yes 4294967295 | head -n "$COUNT" | paste -sd "," -)
+          # Calculate the penultimate index (count - 2)
+          PENULTIMATE=$((COUNT - 2))
 
-          # Export to BASH_ENV so 'run_test' can see it
+          # Generate sequence 0..PENULTIMATE joined by commas using seq
+          # Then append u32::MAX (4294967295)
+          VAR_VALUE="$(seq -s, 0 $LIMIT),4294967295"
+
+          # Export variables to BASH_ENV
           echo "export CONSENSUS_VERSION_HEIGHTS=\"$VAR_VALUE\"" >> "$BASH_ENV"
+          echo "export CONSENSUS_VERSION_DEFAULT_HEIGHT=\"$PENULTIMATE\"" >> "$BASH_ENV"
       - run_test:
           timeout: 30m # test_vm_execute_and_finalize can take over 10 minutes in the current setup
           no_output_timeout: 20m
