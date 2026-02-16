@@ -959,7 +959,7 @@ jobs:
           timeout: 30m # test_vm_execute_and_finalize can take over 10 minutes in the current setup
           no_output_timeout: 20m
           workspace_member: snarkvm-synthesizer
-          flags: --test '*' --features test -- --test-threads=4
+          flags: --test '*' --features test -- --test-threads=4 test_vm_execute_and_finalize
           cache_key_suffix: -integration
 
   synthesizer-process:
