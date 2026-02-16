@@ -20,7 +20,7 @@ use std::{
     io::{self, BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::Command,
-    str,
+    str::{self, FromStr},
 };
 
 use walkdir::WalkDir;
@@ -219,25 +219,36 @@ fn get_num_consensus_versions() -> u32 {
     let consensus_heights_reader = BufReader::new(consensus_heights_file);
     let mut line_iter = consensus_heights_reader.lines();
 
-    // Find the location of the MAINNET_V0_CONSENSUS_VERSION_HEIGHTS constant.
+    // Find the location of the ConsensusVersion enum.
     line_iter.by_ref().find(|line| {
-        line.as_ref()
-            .expect("Can't process the consensus heights file")
-            .contains("MAINNET_V0_CONSENSUS_VERSION_HEIGHTS")
+        line.as_ref().expect("Can't process the consensus heights file").contains("pub enum ConsensusVersion")
     });
 
-    // Traverse the list of variants and count them.
-    let mut num_consensus_versions = 0;
+    // Traverse the list of variants.
+    let mut last_consensus_version = 0;
     for line in line_iter {
         let line = line.expect("Can't process the consensus heights file");
-        if line.contains("];") {
+        // Split by whitespaces.
+        let trimmed = line.trim();
+        let mut parts = trimmed.split_whitespace();
+        // Skip empty lines.
+        let Some(variant) = parts.next() else {
+            break;
+        };
+
+        // Expect a "VN = N," format
+        if variant.starts_with("V") && parts.next() == Some("=") {
+            let consensus_version = parts.next().expect("Unexpected consensus version enum format");
+            let consensus_version = consensus_version.trim_end_matches(",");
+            last_consensus_version = u32::from_str(consensus_version).expect("Unexpected consensus version encoding");
+        } else if line == "}" {
             break;
         } else {
-            num_consensus_versions += 1;
+            continue;
         }
     }
 
-    num_consensus_versions
+    last_consensus_version
 }
 
 // The build script; it currently only checks the licenses.
