@@ -23,6 +23,7 @@ use itertools::Itertools;
 use serde_yaml::{Mapping, Sequence, Value};
 use snarkvm_console::{network::ConsensusVersion, prelude::Network};
 use std::{
+    env,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -106,12 +107,18 @@ impl ExpectedTest for ProgramTest {
 
         // If the `start_height` field is present in the config, parse it as a `u32`.
         // Otherwise use the latest consensus height as the default.
+        // This can be overridden with `CONSENSUS_VERSION_DEFAULT_HEIGHT`.
         let start_height = test_config
             .get("start_height")
             .map(|value| value.as_u64().expect("`start_height` must be a u32"))
-            .unwrap_or(
-                CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::latest()).expect("Expected consensus height") as u64
-            ) as u32;
+            .unwrap_or_else(|| {
+                env::var("CONSENSUS_VERSION_DEFAULT_HEIGHT")
+                    .map(|h| u64::from_str(&h).expect("Expected consensus height"))
+                    .unwrap_or_else(|_| {
+                        CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::latest()).expect("Expected consensus height")
+                            as u64
+                    })
+            }) as u32;
 
         // If the `keys` field is present in the config, parse it as a sequence of `PrivateKey`s.
         let keys = match test_config.get("keys") {
