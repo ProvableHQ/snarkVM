@@ -944,7 +944,7 @@ jobs:
           cache_key: v4.2.0-rust-1.88.0-snarkvm-synthesizer-integration-cache
       - run:
           name: Generate assets
-          command: cargo test --package snarkvm-synthesizer --features test --no-run
+          command: cargo check --workspace
       - run:
           name: Configure the CONSENSUS_VERSION_HEIGHTS variable
           command: |
@@ -965,7 +965,7 @@ jobs:
           timeout: 30m # test_vm_execute_and_finalize can take over 10 minutes in the current setup
           no_output_timeout: 20m
           workspace_member: snarkvm-synthesizer
-          flags: --test '*' --features test -- --test-threads=4 test_vm_execute_and_finalize
+          flags: --features test -- --test-threads=4 test_vm_execute_and_finalize
           cache_key_suffix: -integration
 
   synthesizer-process:
