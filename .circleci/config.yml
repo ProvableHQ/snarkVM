@@ -940,21 +940,21 @@ jobs:
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run:
-        name: Configure the CONSENSUS_VERSION_HEIGHTS variable
-        command: |
-          # Read the number of consensus versions
-          COUNT=$(cat .generated_assets/num_consensus_heights)
+          name: Configure the CONSENSUS_VERSION_HEIGHTS variable
+          command: |
+            # Read the number of consensus versions
+            COUNT=$(cat .generated_assets/num_consensus_heights)
 
-          # Calculate the penultimate index (count - 2)
-          PENULTIMATE=$((COUNT - 2))
+            # Calculate the penultimate index (count - 2)
+            PENULTIMATE=$((COUNT - 2))
 
-          # Generate sequence 0..PENULTIMATE joined by commas using seq
-          # Then append u32::MAX (4294967295)
-          VAR_VALUE="$(seq -s, 0 $LIMIT),4294967295"
+            # Generate sequence 0..PENULTIMATE joined by commas using seq
+            # Then append u32::MAX (4294967295)
+            VAR_VALUE="$(seq -s, 0 $LIMIT),4294967295"
 
-          # Export variables to BASH_ENV
-          echo "export CONSENSUS_VERSION_HEIGHTS=\"$VAR_VALUE\"" >> "$BASH_ENV"
-          echo "export CONSENSUS_VERSION_DEFAULT_HEIGHT=\"$PENULTIMATE\"" >> "$BASH_ENV"
+            # Export variables to BASH_ENV
+            echo "export CONSENSUS_VERSION_HEIGHTS=\"$VAR_VALUE\"" >> "$BASH_ENV"
+            echo "export CONSENSUS_VERSION_DEFAULT_HEIGHT=\"$PENULTIMATE\"" >> "$BASH_ENV"
       - run_test:
           timeout: 30m # test_vm_execute_and_finalize can take over 10 minutes in the current setup
           no_output_timeout: 20m
