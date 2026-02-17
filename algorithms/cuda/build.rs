@@ -84,7 +84,7 @@ fn main() {
         // Support multiple GPU architectures via CUDA_ARCH env var or compile for both A100 (sm_80) and H100 (sm_90)
         let cuda_arch = env::var("CUDA_ARCH").unwrap_or_default();
         if !cuda_arch.is_empty() {
-            nvcc.flag(&format!("-arch={}", cuda_arch));
+            nvcc.flag(format!("-arch={cuda_arch}"));
         } else {
             // Generate code for both A100 (sm_80) and H100 (sm_90)
             nvcc.flag("-gencode=arch=compute_80,code=sm_80");
