@@ -75,6 +75,11 @@ name = "kary_merkle_tree"
 path = "benches/kary_merkle_tree.rs"
 harness = false
 
+[[bench]]
+name = "execute_authorization"
+path = "benches/execute_authorization.rs"
+harness = false
+
 [dependencies.snarkvm-algorithms]
 workspace = true
 

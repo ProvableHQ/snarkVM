@@ -418,7 +418,7 @@ where
 
         // --------------------------------------------------------------------
         // First round
-        println!("\n========== CPU FIRST ROUND START ==========");
+        // println!("\n========== CPU FIRST ROUND START ==========");
         // println!("CPU First Round Inputs:");
         // println!("  total_instances: {}", prover_state.total_instances);
         // println!("  max_constraint_domain.size(): {}", prover_state.max_constraint_domain.size());
@@ -459,8 +459,8 @@ where
         };
         end_timer!(first_round_comm_time);
 
-        println!("CPU first_commitments: {:?}", first_commitments);
-        println!("========== CPU FIRST ROUND END ==========\n");
+        // println!("CPU first_commitments: {:?}", first_commitments);
+        // println!("========== CPU FIRST ROUND END ==========\n");
 
         Self::absorb_labeled(&first_commitments, &mut sponge);
 
@@ -476,7 +476,7 @@ where
 
         // --------------------------------------------------------------------
         // Second round
-        println!("\n========== CPU SECOND ROUND START ==========");
+        // println!("\n========== CPU SECOND ROUND START ==========");
 
         let (second_oracles, prover_state) =
             AHPForR1CS::<_, SM>::prover_second_round(&verifier_first_message, prover_state, zk_rng)?;
@@ -490,8 +490,8 @@ where
         )?;
         end_timer!(second_round_comm_time);
 
-        println!("CPU second_commitments: {:?}", second_commitments);
-        println!("========== CPU SECOND ROUND END ==========\n");
+        // println!("CPU second_commitments: {:?}", second_commitments);
+        // println!("========== CPU SECOND ROUND END ==========\n");
 
         Self::absorb_labeled(&second_commitments, &mut sponge);
 
@@ -528,16 +528,16 @@ where
                             &mut sponge,
                         )?;
 
-                    // Print sums for comparison with CUDA path
-                    println!("\n========== CPU PREPARE THIRD MESSAGE SUMS ==========");
-                    for (circuit_idx, circuit_sums) in prover_prepare_third_message.sums.iter().enumerate() {
-                        for (instance_idx, sums) in circuit_sums.iter().enumerate() {
-                            println!(
-                                "  Circuit {} Instance {}: sum_a={:?}, sum_b={:?}, sum_c={:?}",
-                                circuit_idx, instance_idx, sums.sum_a, sums.sum_b, sums.sum_c
-                            );
-                        }
-                    }
+                    // // Print sums for comparison with CUDA path
+                    // println!("\n========== CPU PREPARE THIRD MESSAGE SUMS ==========");
+                    // for (circuit_idx, circuit_sums) in prover_prepare_third_message.sums.iter().enumerate() {
+                    //     for (instance_idx, sums) in circuit_sums.iter().enumerate() {
+                    //         println!(
+                    //             "  Circuit {} Instance {}: sum_a={:?}, sum_b={:?}, sum_c={:?}",
+                    //             circuit_idx, instance_idx, sums.sum_a, sums.sum_b, sums.sum_c
+                    //         );
+                    //     }
+                    // }
                     // println!("========== CPU PREPARE THIRD MESSAGE SUMS END ==========\n");
 
                     (Some(prover_prepare_third_message), prover_state, Some(verifier_prepare_third_msg), verifier_state)
@@ -545,12 +545,12 @@ where
             }
         };
 
-        println!("========== CPU PREPARE THIRD ROUND END ==========\n");
+        // println!("========== CPU PREPARE THIRD ROUND END ==========\n");
         // --------------------------------------------------------------------
 
         // --------------------------------------------------------------------
         // Third round
-        println!("\n========== CPU THIRD ROUND START ==========");
+        // println!("\n========== CPU THIRD ROUND START ==========");
 
         let (prover_third_message, third_oracles, prover_state) = AHPForR1CS::<_, SM>::prover_third_round(
             &verifier_first_message,
@@ -573,7 +573,7 @@ where
         )?;
         end_timer!(third_round_comm_time);
 
-        println!("CPU third_commitments: {:?}", third_commitments);
+        // println!("CPU third_commitments: {:?}", third_commitments);
 
         match varuna_version {
             VarunaVersion::V1 => {
@@ -604,7 +604,7 @@ where
         }
         .ok_or_else(|| anyhow!("Prover did not contribute sums in the expected round."))?;
 
-        println!("========== CPU THIRD ROUND END ==========\n");
+        // println!("========== CPU THIRD ROUND END ==========\n");
 
         let (verifier_third_msg, verifier_state) =
             AHPForR1CS::<_, SM>::verifier_third_round(verifier_state, &mut sponge)?;
@@ -612,6 +612,7 @@ where
 
         // --------------------------------------------------------------------
         // Fourth round
+        // println!("========== CPU FOURTH ROUND START ==========\n");
 
         let (prover_fourth_message, fourth_oracles, mut prover_state) =
             AHPForR1CS::<_, SM>::prover_fourth_round(&verifier_second_msg, &verifier_third_msg, prover_state, zk_rng)?;
@@ -625,7 +626,7 @@ where
         )?;
         end_timer!(fourth_round_comm_time);
 
-        println!("CPU fourth_commitments: {:?}", fourth_commitments);
+        // println!("CPU fourth_commitments: {:?}", fourth_commitments);
 
         Self::absorb_labeled_with_sums(&fourth_commitments, &prover_fourth_message.sums, &mut sponge);
 
@@ -642,7 +643,7 @@ where
 
         // --------------------------------------------------------------------
         // Fifth round
-        println!("\n========== CPU FIFTH ROUND START ==========");
+        // println!("\n========== CPU FIFTH ROUND START ==========");
         let fifth_oracles = AHPForR1CS::<_, SM>::prover_fifth_round(verifier_fourth_msg, prover_state, zk_rng)?;
 
         let fifth_round_comm_time = start_timer!(|| "Committing to fifth round polys");
@@ -656,15 +657,15 @@ where
 
         Self::absorb_labeled(&fifth_commitments, &mut sponge);
 
-        println!("CPU fifth_commitments: {:?}", fifth_commitments);
-        println!("========== CPU FIFTH ROUND END ==========\n");
+        // println!("CPU fifth_commitments: {:?}", fifth_commitments);
+        // println!("========== CPU FIFTH ROUND END ==========\n");
 
         let verifier_state = AHPForR1CS::<_, SM>::verifier_fifth_round(verifier_state, &mut sponge)?;
         // --------------------------------------------------------------------
 
         // --------------------------------------------------------------------
         // Construct proof
-        println!("\n========== CPU PROOF CONSTRUCTION START ==========");
+        // println!("\n========== CPU PROOF CONSTRUCTION START ==========");
 
         // Gather prover polynomials in one vector.
         let polynomials: Vec<_> = index_a_polys
@@ -752,42 +753,42 @@ where
         }
         end_timer!(eval_time);
 
-        // Debug: Print evaluations for comparison with CUDA path
-        println!("  CPU evaluations (first 5):");
-        for (i, (label, eval)) in evaluations.iter().take(5).enumerate() {
-            println!("    [{}] {}: {:?}", i, label, eval);
-        }
-        println!("  CPU total evaluations: {}", evaluations.len());
+        // // Debug: Print evaluations for comparison with CUDA path
+        // println!("  CPU evaluations (first 5):");
+        // for (i, (label, eval)) in evaluations.iter().take(5).enumerate() {
+        //     println!("    [{}] {}: {:?}", i, label, eval);
+        // }
+        // println!("  CPU total evaluations: {}", evaluations.len());
 
-        // Debug: Print commitments for comparison
-        println!("  CPU Commitments:");
-        println!("    h_0: {:?}", commitments.h_0);
-        println!("    g_1: {:?}", commitments.g_1);
-        println!("    h_1: {:?}", commitments.h_1);
-        println!("    h_2: {:?}", commitments.h_2);
-        println!("    witness_commitments.len(): {}", commitments.witness_commitments.len());
-        if !commitments.witness_commitments.is_empty() {
-            println!("    witness_commitments[0].w: {:?}", commitments.witness_commitments[0].w);
-        }
+        // // Debug: Print commitments for comparison
+        // println!("  CPU Commitments:");
+        // println!("    h_0: {:?}", commitments.h_0);
+        // println!("    g_1: {:?}", commitments.g_1);
+        // println!("    h_1: {:?}", commitments.h_1);
+        // println!("    h_2: {:?}", commitments.h_2);
+        // println!("    witness_commitments.len(): {}", commitments.witness_commitments.len());
+        // if !commitments.witness_commitments.is_empty() {
+        //     println!("    witness_commitments[0].w: {:?}", commitments.witness_commitments[0].w);
+        // }
 
-        // Debug: Print prover messages
-        println!("  CPU Prover Third Message Sums:");
-        for (i, circuit_sums) in prover_third_message.sums.iter().enumerate() {
-            for (j, sums) in circuit_sums.iter().enumerate() {
-                println!("    Circuit {} Instance {}: sum_a={:?}", i, j, sums.sum_a);
-            }
-        }
-        println!("  CPU Prover Fourth Message Sums:");
-        for (i, sums) in prover_fourth_message.sums.iter().enumerate() {
-            println!("    [{}]: sum_a={:?}", i, sums.sum_a);
-        }
+        // // Debug: Print prover messages
+        // println!("  CPU Prover Third Message Sums:");
+        // for (i, circuit_sums) in prover_third_message.sums.iter().enumerate() {
+        //     for (j, sums) in circuit_sums.iter().enumerate() {
+        //         println!("    Circuit {} Instance {}: sum_a={:?}", i, j, sums.sum_a);
+        //     }
+        // }
+        // println!("  CPU Prover Fourth Message Sums:");
+        // for (i, sums) in prover_fourth_message.sums.iter().enumerate() {
+        //     println!("    [{}]: sum_a={:?}", i, sums.sum_a);
+        // }
 
-        // Debug: Print key polynomial samples
-        println!("  CPU Key Polynomials (degree, first 3 coeffs):");
-        for (i, poly) in polynomials.iter().take(10).enumerate() {
-            let coeffs_sample: Vec<_> = poly.polynomial().coeffs().take(3).collect();
-            println!("    [{}] {}: deg={}, coeffs={:?}", i, poly.label(), poly.degree(), coeffs_sample);
-        }
+        // // Debug: Print key polynomial samples
+        // println!("  CPU Key Polynomials (degree, first 3 coeffs):");
+        // for (i, poly) in polynomials.iter().take(10).enumerate() {
+        //     let coeffs_sample: Vec<_> = poly.polynomial().coeffs().take(3).collect();
+        //     println!("    [{}] {}: deg={}, coeffs={:?}", i, poly.label(), poly.degree(), coeffs_sample);
+        // }
 
         let evaluations = proof::Evaluations::from_map(&evaluations, batch_sizes.clone());
 
@@ -814,7 +815,7 @@ where
         proof.check_batch_sizes()?;
         ensure!(proof.pc_proof.is_hiding() == SM::ZK);
 
-        println!("========== CPU PROOF CONSTRUCTION END ==========\n");
+        // println!("========== CPU PROOF CONSTRUCTION END ==========\n");
 
         end_timer!(prover_time);
 

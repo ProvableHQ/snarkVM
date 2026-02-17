@@ -92,37 +92,7 @@ RustError snarkvm_msm(point_t *out, const affine_t points[], size_t npoints,
     return RustError{cudaErrorMemoryAllocation};
   }
 
-  // printf("CPUCUDA snarkvm_msm: npoints=%zu, ffi_affine_size=%zu, "
-  //        "sizeof(affine_t)=%zu\n",
-  //        npoints, ffi_affine_size, sizeof(affine_t));
-
   auto result = snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size);
-
-  // // DEBUG: Set MSM output to a constant value for comparison
-  // // This allows testing the hiding logic independently of MSM computation
-  // printf("DEBUG: Overwriting MSM output with constant value for
-  // comparison\n"); uint8_t *out_raw = (uint8_t *)out;
-  // // Set to a recognizable constant pattern (all 0xAA for X, 0xBB for Y, 0xCC
-  // // for Z) This is a test value - in production, remove this block
-  // memset(out_raw, 0xAA, 48);      // X coordinate
-  // memset(out_raw + 48, 0xBB, 48); // Y coordinate
-  // memset(out_raw + 96, 0xCC, 48); // Z coordinate
-  // // Note: This creates an invalid point, but allows comparison of hiding
-  // logic
-
-  // uint8_t *out_raw = (uint8_t *)out;
-  // printf("CPUCUDA msm_out FULL projective (X,Y,Z each 48 bytes) - CONSTANT "
-  //        "VALUE:\n");
-  // printf("  X: ");
-  // for (int j = 0; j < 48; j++)
-  //   printf("%02x", out_raw[j]);
-  // printf("\n  Y: ");
-  // for (int j = 48; j < 96; j++)
-  //   printf("%02x", out_raw[j]);
-  // printf("\n  Z: ");
-  // for (int j = 96; j < 144; j++)
-  //   printf("%02x", out_raw[j]);
-  // printf("\n");
 
   return result;
 }

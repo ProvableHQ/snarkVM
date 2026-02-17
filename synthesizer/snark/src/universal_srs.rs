@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use snarkvm_utilities::ToBytes;
 
 #[derive(Clone)]
 pub struct UniversalSRS<N: Network> {
@@ -30,7 +31,7 @@ impl<N: Network> UniversalSRS<N> {
     /// Returns the circuit proving and verifying key.
     pub fn to_circuit_key(
         &self,
-        _function_name: &str,
+        function_name: &str,
         assignment: &circuit::Assignment<N::Field>,
     ) -> Result<(ProvingKey<N>, VerifyingKey<N>)> {
         #[cfg(feature = "dev-print")]
@@ -38,10 +39,18 @@ impl<N: Network> UniversalSRS<N> {
 
         let (proving_key, verifying_key) = Varuna::<N>::circuit_setup(self, assignment)?;
 
+        let num_constraints = assignment.num_constraints();
+        let num_variables = assignment.num_variables();
+        let pk_bytes = proving_key.to_bytes_le()?.len();
+        let vk_bytes = verifying_key.to_bytes_le()?.len();
+        println!(
+            "[cuvaruna circuit] function={function_name} num_constraints={num_constraints} num_variables={num_variables} pk_bytes={pk_bytes} vk_bytes={vk_bytes}"
+        );
+
         #[cfg(feature = "dev-print")]
         {
             let _elapsed = timer.elapsed().as_millis();
-            dev_println!(" • Built '{_function_name}' (in {_elapsed} ms)");
+            dev_println!(" • Built '{function_name}' (in {_elapsed} ms)");
         }
 
         Ok((

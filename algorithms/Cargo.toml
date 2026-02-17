@@ -138,6 +138,7 @@ features = [ "filesystem" ]
 
 [features]
 cuda = [ "snarkvm-algorithms-cuda" ]
+cuvaruna = [ "cuda" ]
 cuvaruna-profiling = ["cuda", "nvtx"]
 cuvaruna-debug = []
 locktick = [ "snarkvm-parameters/locktick" ]

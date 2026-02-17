@@ -60,6 +60,22 @@ case "$1" in
         nsys profile --trace=cuda,nvtx,osrt --sample=cpu -o "$OUTPUT_NAME" \
             "$BINARY" test_transfer_private_execution --nocapture
         ;;
+    bench-base)
+        echo "Running benchmark with cuda (baseline)..."
+        cargo bench --package snarkvm-synthesizer --bench execute_authorization --features cuda
+        ;;
+    bench-cu)
+        echo "Running benchmark with cuvaruna..."
+        cargo bench --package snarkvm-synthesizer --bench execute_authorization --features cuvaruna
+        ;;
+    varuna-cpu)
+        echo "Running Varuna tall-matrix test (CPU)..."
+        cargo test -p snarkvm-algorithms --lib prove_and_verify_with_tall_matrix_big -- --nocapture
+        ;;
+    varuna-cu-profile)
+        echo "Running Varuna tall-matrix test (cuVaruna + profiling)..."
+        cargo test -p snarkvm-algorithms --lib prove_and_verify_with_tall_matrix_big --features cuvaruna --features cuvaruna-profiling -- --nocapture
+        ;;
     *)
         echo "Usage:"
         echo "  ./run.sh cpu               - Run CPU only (no CUDA)"
@@ -69,6 +85,10 @@ case "$1" in
         echo "  ./run.sh cu profile        - Run cuVaruna with profiling"
         echo "  ./run.sh cu debug profile  - Run cuVaruna with both"
         echo "  ./run.sh nsys [name]       - Build and run nsys profile (default: snarkvm_test_profile)"
+        echo "  ./run.sh bench-base        - Run benchmark with cuda (baseline)"
+        echo "  ./run.sh bench-cu          - Run benchmark with cuvaruna"
+        echo "  ./run.sh varuna-cpu        - Run Varuna tall-matrix test (CPU)"
+        echo "  ./run.sh varuna-cu-profile - Run Varuna tall-matrix test (cuVaruna + profiling)"
         exit 1
         ;;
 esac

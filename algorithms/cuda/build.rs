@@ -107,20 +107,6 @@ fn main() {
         }
         nvcc.file("cuda/snarkvm_api.cu").compile("snarkvm_algorithms_cuda");
 
-        // // Link CUDA runtime library
-        // println!("cargo:rustc-link-lib=cudart");
-
-        // // Add CUDA library search path
-        // if let Ok(cuda_path) = env::var("CUDA_HOME") {
-        //     println!("cargo:rustc-link-search={}/lib64", cuda_path);
-        // } else if let Ok(cuda_path) = env::var("CUDA_PATH") {
-        //     println!("cargo:rustc-link-search={}/lib64", cuda_path);
-        // } else {
-        //     // Default CUDA installation paths
-        //     println!("cargo:rustc-link-search=/usr/local/cuda/lib64");
-        //     println!("cargo:rustc-link-search=/usr/lib/x86_64-linux-gnu");
-        // }
-
         println!("cargo:rustc-cfg=feature=\"cuda\"");
         println!("cargo:rerun-if-changed=cuda");
         println!("cargo:rerun-if-changed=../src/snark/varuna/ahp/prover/cuVaruna/cuda");
