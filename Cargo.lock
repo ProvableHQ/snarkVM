@@ -3515,6 +3515,7 @@ dependencies = [
  "snarkvm-ledger-puzzle",
  "snarkvm-ledger-query",
  "snarkvm-ledger-store",
+ "snarkvm-synthesizer-error",
  "snarkvm-synthesizer-process",
  "snarkvm-synthesizer-program",
  "snarkvm-synthesizer-snark",

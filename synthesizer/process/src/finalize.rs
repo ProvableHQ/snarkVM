@@ -15,10 +15,56 @@
 
 use super::*;
 use console::program::{FinalizeType, Future, Register};
+use snarkvm_synthesizer_error::{FinalizeError, IndexedFinalizeError};
 use snarkvm_synthesizer_program::{Await, FinalizeRegistersState, Operand, RegistersTrait};
 use snarkvm_utilities::try_vm_runtime;
 
 use std::collections::HashSet;
+
+/// A helper macro to bail with an `IndexedFinalizeError` for a given index, command, and anyhow message.
+#[macro_export]
+macro_rules! indexed_finalize_bail {
+    // With locator + index + command
+    ($locator:expr, $index:expr, $command:expr, $($arg:tt)*) => {{
+        return Err(IndexedFinalizeError::new(
+            $locator.to_string(),
+            Some(($index, $command.to_string())),
+            FinalizeError::Anyhow(anyhow!($($arg)*)),
+        ));
+    }};
+    // With locator only (no command)
+    ($locator:expr, $($arg:tt)*) => {{
+        return Err(IndexedFinalizeError::new(
+            $locator.to_string(),
+            None,
+            FinalizeError::Anyhow(anyhow!($($arg)*)),
+        ));
+    }};
+}
+
+pub trait IntoIndexedFinalize<T> {
+    fn into_indexed(
+        self,
+        locator: impl Into<String>,
+        command: Option<(usize, impl Into<String>)>,
+    ) -> Result<T, IndexedFinalizeError>;
+}
+
+impl<T> IntoIndexedFinalize<T> for Result<T, Error> {
+    fn into_indexed(
+        self,
+        locator: impl Into<String>,
+        command: Option<(usize, impl Into<String>)>,
+    ) -> Result<T, IndexedFinalizeError> {
+        self.map_err(|e| {
+            IndexedFinalizeError::new(
+                locator.into(),
+                command.map(|(index, cmd)| (index, cmd.into())),
+                FinalizeError::Anyhow(e),
+            )
+        })
+    }
+}
 
 impl<N: Network> Process<N> {
     /// Finalizes the deployment and fee.
@@ -31,11 +77,14 @@ impl<N: Network> Process<N> {
         store: &FinalizeStore<N, P>,
         deployment: &Deployment<N>,
         fee: &Fee<N>,
-    ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>)> {
+    ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>), IndexedFinalizeError> {
         let timer = timer!("Process::finalize_deployment");
 
+        // Fetch the program ID.
+        let program_id_str = &deployment.program().id().to_string();
+
         // Compute the program stack.
-        let mut stack = Stack::new(self, deployment.program())?;
+        let mut stack = Stack::new(self, deployment.program()).into_indexed(program_id_str, None)?;
         lap!(timer, "Compute the stack");
 
         // Set the program owner.
@@ -45,7 +94,7 @@ impl<N: Network> Process<N> {
 
         // Insert the verifying keys.
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-            stack.insert_verifying_key(function_name, verifying_key.clone())?;
+            stack.insert_verifying_key(function_name, verifying_key.clone()).into_indexed(program_id_str, None)?;
         }
         lap!(timer, "Insert the verifying keys");
 
@@ -54,7 +103,7 @@ impl<N: Network> Process<N> {
             true => deployment.program().mappings().values().collect::<Vec<_>>(),
             false => {
                 // Get the existing stack.
-                let existing_stack = self.get_stack(deployment.program_id())?;
+                let existing_stack = self.get_stack(deployment.program_id()).into_indexed(program_id_str, None)?;
                 // Get the existing mappings.
                 let existing_mappings = existing_stack.program().mappings();
                 // Determine and return the new mappings
@@ -77,7 +126,7 @@ impl<N: Network> Process<N> {
             /* Finalize the fee. */
 
             // Retrieve the fee stack.
-            let fee_stack = self.get_stack(fee.program_id())?;
+            let fee_stack = self.get_stack(fee.program_id()).into_indexed(program_id_str, None)?;
             // Finalize the fee transition.
             finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
             lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
@@ -89,7 +138,8 @@ impl<N: Network> Process<N> {
             // Iterate over the mappings that must be initialized.
             for mapping in mappings {
                 // Initialize the mapping.
-                finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
+                finalize_operations
+                    .push(store.initialize_mapping(*program_id, *mapping.name()).into_indexed(program_id_str, None)?);
             }
             lap!(timer, "Initialize the program mappings");
 
@@ -117,30 +167,37 @@ impl<N: Network> Process<N> {
         store: &FinalizeStore<N, P>,
         execution: &Execution<N>,
         fee: Option<&Fee<N>>,
-    ) -> Result<Vec<FinalizeOperation<N>>> {
+    ) -> Result<Vec<FinalizeOperation<N>>, IndexedFinalizeError> {
         let timer = timer!("Program::finalize_execution");
 
         // Ensure the execution contains transitions.
-        ensure!(!execution.is_empty(), "There are no transitions in the execution");
+        if execution.is_empty() {
+            indexed_finalize_bail!("None", "There are no transitions in the execution");
+        }
 
         // Ensure the number of transitions matches the program function.
         // Retrieve the root transition (without popping it).
-        let transition = execution.peek()?;
+        let transition = execution.peek().into_indexed("None", None)?;
+        // Fetch the transition locator.
+        let transition_locator = &format!("{}/{}", transition.program_id(), transition.function_name());
         // Retrieve the stack.
-        let stack = self.get_stack(transition.program_id())?;
+        let stack = self.get_stack(transition.program_id()).into_indexed(transition_locator, None)?;
         // Ensure the number of calls matches the number of transitions.
-        let number_of_calls = stack.get_number_of_calls(transition.function_name())?;
-        ensure!(
-            number_of_calls == execution.len(),
-            "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
-            execution.len()
-        );
+        let number_of_calls =
+            stack.get_number_of_calls(transition.function_name()).into_indexed(transition_locator, None)?;
+        if !number_of_calls == execution.len() {
+            indexed_finalize_bail!(
+                transition_locator,
+                "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
+                execution.len()
+            );
+        }
         lap!(timer, "Verify the number of transitions");
 
         // Construct the call graph.
-        let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
+        let consensus_version = N::CONSENSUS_VERSION(state.block_height()).into_indexed(transition_locator, None)?;
         let call_graph = match (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
-            true => self.construct_call_graph(execution)?,
+            true => self.construct_call_graph(execution).into_indexed(transition_locator, None)?,
             // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
             false => HashMap::new(),
         };
@@ -154,11 +211,13 @@ impl<N: Network> Process<N> {
             /* Finalize the fee. */
 
             if let Some(fee) = fee {
+                // Fetch the fee locator.
+                let fee_locator = format!("{}/{}", fee.program_id(), fee.function_name());
                 // Retrieve the fee stack.
-                let fee_stack = self.get_stack(fee.program_id())?;
+                let fee_stack = self.get_stack(fee.program_id()).into_indexed(fee_locator, None)?;
                 // Finalize the fee transition.
                 finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
-                lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+                lap!(timer, "Finalize transition for '{fee_locator}'");
             }
 
             finish!(timer);
@@ -176,15 +235,16 @@ impl<N: Network> Process<N> {
         state: FinalizeGlobalState,
         store: &FinalizeStore<N, P>,
         fee: &Fee<N>,
-    ) -> Result<Vec<FinalizeOperation<N>>> {
+    ) -> Result<Vec<FinalizeOperation<N>>, IndexedFinalizeError> {
         let timer = timer!("Program::finalize_fee");
 
+        let locator = format!("{}/{}", fee.program_id(), fee.function_name());
         atomic_batch_scope!(store, {
             // Retrieve the stack.
-            let stack = self.get_stack(fee.program_id())?;
+            let stack = self.get_stack(fee.program_id()).into_indexed(locator, None)?;
             // Finalize the fee transition.
             let result = finalize_fee_transition(state, store, &stack, fee);
-            finish!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+            finish!(timer, "Finalize transition for '{locator}'");
             // Return the result.
             result
         })
@@ -197,9 +257,11 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     store: &FinalizeStore<N, P>,
     stack: &Arc<Stack<N>>,
     fee: &Fee<N>,
-) -> Result<Vec<FinalizeOperation<N>>> {
+) -> Result<Vec<FinalizeOperation<N>>, IndexedFinalizeError> {
+    // Fetch the fee locator.
+    let locator = &format!("{}/{}", fee.program_id(), fee.function_name());
     // Construct the call graph.
-    let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
+    let consensus_version = N::CONSENSUS_VERSION(state.block_height()).into_indexed(locator, None::<(_, String)>)?;
     let call_graph = match (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
         true => HashMap::from([(*fee.transition_id(), Vec::new())]),
         // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
@@ -207,12 +269,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     };
 
     // Finalize the transition.
-    match finalize_transition(state, store, stack, fee, call_graph) {
-        // If the evaluation succeeds, return the finalize operations.
-        Ok(finalize_operations) => Ok(finalize_operations),
-        // If the evaluation fails, bail and return the error.
-        Err(error) => bail!("'finalize' failed on '{}/{}' - {error}", fee.program_id(), fee.function_name()),
-    }
+    finalize_transition(state, store, stack, fee, call_graph)
 }
 
 /// Finalizes the constructor.
@@ -221,7 +278,7 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
     store: &FinalizeStore<N, P>,
     stack: &Stack<N>,
     transition_id: N::TransitionID,
-) -> Result<Vec<FinalizeOperation<N>>> {
+) -> Result<Vec<FinalizeOperation<N>>, IndexedFinalizeError> {
     // Retrieve the program ID.
     let program_id = stack.program_id();
     dev_println!("Finalizing constructor for {}...", stack.program_id());
@@ -233,13 +290,19 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
     // Currently, this nonce is set to zero for every constructor.
     let nonce = 0;
 
+    // Initialize the locator for the constructor.
+    let locator = &format!("{program_id}/constructor");
+
     // Get the constructor logic. If the program does not have a constructor, return early.
     let Some(constructor) = stack.program().constructor() else {
         return Ok(finalize_operations);
     };
 
     // Get the constructor types.
-    let constructor_types = stack.get_constructor_types()?.clone();
+    let constructor_types = match stack.get_constructor_types() {
+        Ok(types) => types.clone(),
+        Err(error) => indexed_finalize_bail!(locator, "Failed to get constructor types - {error}"),
+    };
 
     // Initialize the finalize registers.
     let mut registers = FinalizeRegisters::new(state, transition_id, *program_id.name(), constructor_types, nonce);
@@ -254,9 +317,10 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
         // Finalize the command.
         match &command {
             Command::Await(_) => {
-                bail!("Cannot `await` a Future in a constructor")
+                indexed_finalize_bail!(locator, counter, command, "Cannot `await` a Future in a constructor")
             }
             _ => finalize_command_except_await(
+                locator,
                 store,
                 stack,
                 &mut registers,
@@ -279,13 +343,15 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     stack: &Arc<Stack<N>>,
     transition: &Transition<N>,
     call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
-) -> Result<Vec<FinalizeOperation<N>>> {
+) -> Result<Vec<FinalizeOperation<N>>, IndexedFinalizeError> {
     // Retrieve the program ID.
     let program_id = transition.program_id();
     // Retrieve the function name.
     let function_name = transition.function_name();
+    // Construct the locator.
+    let transition_locator = &format!("{program_id}/{function_name}");
 
-    dev_println!("Finalizing transition for {}/{function_name}...", transition.program_id());
+    dev_println!("Finalizing transition for {transition_locator}...");
     debug_assert_eq!(stack.program_id(), transition.program_id());
 
     // If the last output of the transition is a future, retrieve and finalize it. Otherwise, there are no operations to finalize.
@@ -295,10 +361,12 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     };
 
     // Check that the program ID and function name of the transition match those in the future.
-    ensure!(
-        future.program_id() == program_id && future.function_name() == function_name,
-        "The program ID and function name of the future do not match the transition"
-    );
+    if future.program_id() != program_id || future.function_name() != function_name {
+        indexed_finalize_bail!(
+            transition_locator,
+            "The program ID and function name of the future do not match the transition"
+        );
+    }
 
     // Initialize a list for finalize operations.
     let mut finalize_operations = Vec::new();
@@ -311,18 +379,25 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     let mut nonce = 0;
 
     // Initialize the top-level finalize state.
-    states.push(initialize_finalize_state(state, future, stack, *transition.id(), nonce)?);
+    states.push(
+        initialize_finalize_state(state, future, stack, *transition.id(), nonce)
+            .into_indexed(transition_locator, None::<(_, String)>)?,
+    );
 
     // While there are active finalize states, finalize them.
     'outer: while let Some(FinalizeState { mut counter, mut registers, stack, mut call_counter, mut awaited }) =
         states.pop()
     {
         // Get the finalize logic.
-        let Some(finalize) = stack.get_function_ref(registers.function_name())?.finalize_logic() else {
-            bail!(
-                "The function '{}/{}' does not have an associated finalize scope",
-                stack.program_id(),
-                registers.function_name()
+        let finalize_locator = &format!("{}/{}", stack.program_id(), registers.function_name());
+        let Some(finalize) = stack
+            .get_function_ref(registers.function_name())
+            .into_indexed(finalize_locator, None::<(_, String)>)?
+            .finalize_logic()
+        else {
+            indexed_finalize_bail!(
+                finalize_locator,
+                "The function '{finalize_locator}' does not have an associated finalize scope",
             )
         };
         // Evaluate the commands.
@@ -334,19 +409,24 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                 Command::Await(await_) => {
                     // Check that the `await` register's is a locator.
                     if let Register::Access(_, _) = await_.register() {
-                        bail!("The 'await' register must be a locator")
+                        indexed_finalize_bail!(finalize_locator, "The 'await' register must be a locator")
                     };
                     // Check that the future has not previously been awaited.
-                    ensure!(
-                        !awaited.contains(await_.register()),
-                        "The future register '{}' has already been awaited",
-                        await_.register()
-                    );
+                    if awaited.contains(await_.register()) {
+                        indexed_finalize_bail!(
+                            finalize_locator,
+                            counter,
+                            command,
+                            "The future register '{}' has already been awaited",
+                            await_.register()
+                        );
+                    }
 
                     // Get the transition ID used to initialize the finalize registers.
                     // If the block height is greater than or equal to `ConsensusVersion::V3`, then use the top-level transition ID.
                     // Otherwise, query the call graph for the child transition ID corresponding to the future that is being awaited.
-                    let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
+                    let consensus_version = N::CONSENSUS_VERSION(state.block_height())
+                        .into_indexed(finalize_locator, Some((counter, command.to_string())))?;
                     let transition_id = if (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
                         // Get the current transition ID.
                         let transition_id = registers.transition_id();
@@ -354,9 +434,19 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                         match call_graph.get(transition_id) {
                             Some(transitions) => match transitions.get(call_counter) {
                                 Some(transition_id) => *transition_id,
-                                None => bail!("Child transition ID not found."),
+                                None => indexed_finalize_bail!(
+                                    finalize_locator,
+                                    counter,
+                                    command,
+                                    "Child transition ID not found."
+                                ),
                             },
-                            None => bail!("Transition ID '{transition_id}' not found in call graph"),
+                            None => indexed_finalize_bail!(
+                                finalize_locator,
+                                counter,
+                                command,
+                                "Transition ID '{transition_id}' not found in call graph"
+                            ),
                         }
                     } else {
                         *transition.id()
@@ -376,9 +466,19 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     )) {
                         Ok(Ok(callee_state)) => callee_state,
                         // If the evaluation fails, bail and return the error.
-                        Ok(Err(error)) => bail!("'finalize' failed to evaluate command ({command}): {error}"),
+                        Ok(Err(error)) => indexed_finalize_bail!(
+                            finalize_locator,
+                            counter,
+                            command,
+                            "'finalize' failed to evaluate command ({command}): {error}"
+                        ),
                         // If the evaluation fails, bail and return the error.
-                        Err(_) => bail!("'finalize' failed to evaluate command ({command})"),
+                        Err(_) => indexed_finalize_bail!(
+                            finalize_locator,
+                            counter,
+                            command,
+                            "'finalize' failed to evaluate command ({command})"
+                        ),
                     };
 
                     // Increment the call counter.
@@ -399,6 +499,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     continue 'outer;
                 }
                 _ => finalize_command_except_await(
+                    &format!("{program_id}/{function_name}"),
                     store,
                     stack.deref(),
                     &mut registers,
@@ -416,11 +517,13 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                 unawaited.push(input.register().clone());
             }
         }
-        ensure!(
-            unawaited.is_empty(),
-            "The following future registers have not been awaited: {}",
-            unawaited.iter().map(|r| r.to_string()).collect::<Vec<_>>().join(", ")
-        );
+        if !unawaited.is_empty() {
+            indexed_finalize_bail!(
+                finalize_locator,
+                "The following future registers have not been awaited: {}",
+                unawaited.iter().map(|r| r.to_string()).collect::<Vec<_>>().join(", ")
+            );
+        }
     }
 
     // Return the finalize operations.
@@ -485,6 +588,7 @@ fn initialize_finalize_state<N: Network>(
 // A helper function to finalize all commands except `await`, updating the finalize operations and the counter.
 #[inline]
 fn finalize_command_except_await<N: Network>(
+    locator: &str,
     store: &FinalizeStore<N, impl FinalizeStorage<N>>,
     stack: &impl StackTrait<N>,
     registers: &mut FinalizeRegisters<N>,
@@ -492,7 +596,7 @@ fn finalize_command_except_await<N: Network>(
     command: &Command<N>,
     counter: &mut usize,
     finalize_operations: &mut Vec<FinalizeOperation<N>>,
-) -> Result<()> {
+) -> Result<(), IndexedFinalizeError> {
     // Finalize the command.
     match &command {
         Command::BranchEq(branch_eq) => {
@@ -502,9 +606,19 @@ fn finalize_command_except_await<N: Network>(
                     *counter = new_counter;
                 }
                 // If the evaluation fails, bail and return the error.
-                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                Ok(Err(error)) => indexed_finalize_bail!(
+                    locator,
+                    *counter,
+                    command,
+                    "'{locator}' failed to evaluate command ({command}): {error}"
+                ),
                 // If the evaluation fails, bail and return the error.
-                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+                Err(_) => indexed_finalize_bail!(
+                    locator,
+                    *counter,
+                    command,
+                    "'{locator}' failed to evaluate command ({command})"
+                ),
             }
         }
         Command::BranchNeq(branch_neq) => {
@@ -514,13 +628,28 @@ fn finalize_command_except_await<N: Network>(
                     *counter = new_counter;
                 }
                 // If the evaluation fails, bail and return the error.
-                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                Ok(Err(error)) => indexed_finalize_bail!(
+                    locator,
+                    *counter,
+                    command,
+                    "'{locator}' failed to evaluate command ({command}): {error}"
+                ),
                 // If the evaluation fails, bail and return the error.
-                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+                Err(_) => indexed_finalize_bail!(
+                    locator,
+                    *counter,
+                    command,
+                    "'{locator}' failed to evaluate command ({command})"
+                ),
             }
         }
         Command::Await(_) => {
-            bail!("Cannot use `finalize_command_except_await` with an 'await' command")
+            indexed_finalize_bail!(
+                locator,
+                *counter,
+                command,
+                "Cannot use `finalize_command_except_await` with an 'await' command"
+            )
         }
         _ => {
             let result = try_vm_runtime!(|| command.finalize(stack, store, registers));
@@ -530,9 +659,20 @@ fn finalize_command_except_await<N: Network>(
                 // If the evaluation succeeds with no operation, continue.
                 Ok(Ok(None)) => {}
                 // If the evaluation fails, bail and return the error.
-                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                Ok(Err(error)) => {
+                    return Err(IndexedFinalizeError::new(
+                        locator.to_string(),
+                        Some((*counter, command.to_string())),
+                        error,
+                    ));
+                }
                 // If the evaluation fails, bail and return the error.
-                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+                Err(_) => indexed_finalize_bail!(
+                    locator,
+                    *counter,
+                    command,
+                    "'{locator}' failed to evaluate command ({command})"
+                ),
             }
             *counter += 1;
         }

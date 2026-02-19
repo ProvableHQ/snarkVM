@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{EvalError, ExecError};
+use anyhow::Error;
+use crate::{EvalError, ExecError, FinalizeError};
 use snarkvm_circuit_environment::ConstraintUnsatisfied;
 use thiserror::Error;
 
@@ -188,4 +189,73 @@ impl<E> IndexedInstructionError<E> {
     pub fn new(index: usize, instruction: String, error: E) -> Self {
         Self { index, instruction, error }
     }
+}
+
+/// A finalize error occurred at a particular index.
+#[derive(Debug, Error)]
+pub struct IndexedFinalizeError {
+    /// The location of the failing command.
+    pub locator: String,
+    /// The index and the failing command.
+    pub command: Option<(usize, String)>,
+    /// The instruction error.
+    pub error: FinalizeError,
+}
+
+impl std::fmt::Display for IndexedFinalizeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.command {
+            Some((index, command)) => write!(
+                f,
+                "Failed to finalize '{}' command ({command}) at index {index}: {}",
+                self.locator, self.error
+            ),
+            None => write!(
+                f,
+                "Failed to finalize '{}': {}",
+                self.locator, self.error
+            ),
+        }
+    }
+}
+
+impl From<Error> for IndexedFinalizeError {
+    fn from(error: Error) -> Self {
+        Self::new(
+            "None".to_string(),
+            None,
+            FinalizeError::Anyhow(error),
+        )
+    }
+}
+
+
+impl IndexedFinalizeError {
+    /// Short-hand constructor for the `IndexedFinalizeError` type.
+    pub fn new(locator: String, command: Option<(usize, String)>, error: FinalizeError) -> Self {
+        Self { locator, command, error }
+    }
+}
+
+// Note: Changes to the finalize errors will affect consensus. Do not modify variants without proper versioning and migration strategy.
+#[derive(Debug, Error)]
+pub enum RejectionFinalizeError {
+    /// Stack computation or VK insertion failed.
+    #[error("Stack error: {0}")]
+    Stack(anyhow::Error),
+    /// Fee finalization failed.
+    #[error("Fee finalization failed: {0}")]
+    Fee(anyhow::Error),
+    /// Mapping initialization failed.
+    #[error("Mapping initialization failed: {0}")]
+    MappingInit(anyhow::Error),
+    /// Constructor execution failed.
+    #[error("Constructor execution failed: {0}")]
+    Constructor(anyhow::Error),
+    /// Execution finalization failed.
+    #[error("Execution finalization failed: {0}")]
+    Execution(anyhow::Error),
+    /// A temporary variant for type-erased anyhow errors.
+    #[error(transparent)]
+    Anyhow(#[from] anyhow::Error),
 }
