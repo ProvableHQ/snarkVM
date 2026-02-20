@@ -15,56 +15,11 @@
 
 use super::*;
 use console::program::{FinalizeType, Future, Register};
-use snarkvm_synthesizer_error::{FinalizeError, IndexedFinalizeError};
+use snarkvm_synthesizer_error::{FinalizeError, IndexedFinalizeError, IntoIndexedFinalize, indexed_finalize_bail};
 use snarkvm_synthesizer_program::{Await, FinalizeRegistersState, Operand, RegistersTrait};
 use snarkvm_utilities::try_vm_runtime;
 
 use std::collections::HashSet;
-
-/// A helper macro to bail with an `IndexedFinalizeError` for a given index, command, and anyhow message.
-#[macro_export]
-macro_rules! indexed_finalize_bail {
-    // With locator + index + command
-    ($locator:expr, $index:expr, $command:expr, $($arg:tt)*) => {{
-        return Err(IndexedFinalizeError::new(
-            $locator.to_string(),
-            Some(($index, $command.to_string())),
-            FinalizeError::Anyhow(anyhow!($($arg)*)),
-        ));
-    }};
-    // With locator only (no command)
-    ($locator:expr, $($arg:tt)*) => {{
-        return Err(IndexedFinalizeError::new(
-            $locator.to_string(),
-            None,
-            FinalizeError::Anyhow(anyhow!($($arg)*)),
-        ));
-    }};
-}
-
-pub trait IntoIndexedFinalize<T> {
-    fn into_indexed(
-        self,
-        locator: impl Into<String>,
-        command: Option<(usize, impl Into<String>)>,
-    ) -> Result<T, IndexedFinalizeError>;
-}
-
-impl<T> IntoIndexedFinalize<T> for Result<T, Error> {
-    fn into_indexed(
-        self,
-        locator: impl Into<String>,
-        command: Option<(usize, impl Into<String>)>,
-    ) -> Result<T, IndexedFinalizeError> {
-        self.map_err(|e| {
-            IndexedFinalizeError::new(
-                locator.into(),
-                command.map(|(index, cmd)| (index, cmd.into())),
-                FinalizeError::Anyhow(e),
-            )
-        })
-    }
-}
 
 impl<N: Network> Process<N> {
     /// Finalizes the deployment and fee.
@@ -84,7 +39,7 @@ impl<N: Network> Process<N> {
         let program_id_str = &deployment.program().id().to_string();
 
         // Compute the program stack.
-        let mut stack = Stack::new(self, deployment.program()).into_indexed(program_id_str, None)?;
+        let mut stack = Stack::new(self, deployment.program()).into_indexed(program_id_str, None::<(usize, &str)>)?;
         lap!(timer, "Compute the stack");
 
         // Set the program owner.
@@ -94,7 +49,9 @@ impl<N: Network> Process<N> {
 
         // Insert the verifying keys.
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-            stack.insert_verifying_key(function_name, verifying_key.clone()).into_indexed(program_id_str, None)?;
+            stack
+                .insert_verifying_key(function_name, verifying_key.clone())
+                .into_indexed(program_id_str, None::<(usize, &str)>)?;
         }
         lap!(timer, "Insert the verifying keys");
 
@@ -103,7 +60,8 @@ impl<N: Network> Process<N> {
             true => deployment.program().mappings().values().collect::<Vec<_>>(),
             false => {
                 // Get the existing stack.
-                let existing_stack = self.get_stack(deployment.program_id()).into_indexed(program_id_str, None)?;
+                let existing_stack =
+                    self.get_stack(deployment.program_id()).into_indexed(program_id_str, None::<(usize, &str)>)?;
                 // Get the existing mappings.
                 let existing_mappings = existing_stack.program().mappings();
                 // Determine and return the new mappings
@@ -119,14 +77,14 @@ impl<N: Network> Process<N> {
         lap!(timer, "Retrieve the mappings to initialize");
 
         // Initialize the mappings, and store their finalize operations.
-        atomic_batch_scope!(store, {
+        atomic_batch_scope!(store, IndexedFinalizeError, {
             // Initialize a list for the finalize operations.
             let mut finalize_operations = Vec::with_capacity(deployment.program().mappings().len());
 
             /* Finalize the fee. */
 
             // Retrieve the fee stack.
-            let fee_stack = self.get_stack(fee.program_id()).into_indexed(program_id_str, None)?;
+            let fee_stack = self.get_stack(fee.program_id()).into_indexed(program_id_str, None::<(usize, &str)>)?;
             // Finalize the fee transition.
             finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
             lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
@@ -138,8 +96,11 @@ impl<N: Network> Process<N> {
             // Iterate over the mappings that must be initialized.
             for mapping in mappings {
                 // Initialize the mapping.
-                finalize_operations
-                    .push(store.initialize_mapping(*program_id, *mapping.name()).into_indexed(program_id_str, None)?);
+                finalize_operations.push(
+                    store
+                        .initialize_mapping(*program_id, *mapping.name())
+                        .into_indexed(program_id_str, None::<(usize, &str)>)?,
+                );
             }
             lap!(timer, "Initialize the program mappings");
 
@@ -177,14 +138,15 @@ impl<N: Network> Process<N> {
 
         // Ensure the number of transitions matches the program function.
         // Retrieve the root transition (without popping it).
-        let transition = execution.peek().into_indexed("None", None)?;
+        let transition = execution.peek().into_indexed("None", None::<(usize, &str)>)?;
         // Fetch the transition locator.
         let transition_locator = &format!("{}/{}", transition.program_id(), transition.function_name());
         // Retrieve the stack.
-        let stack = self.get_stack(transition.program_id()).into_indexed(transition_locator, None)?;
+        let stack = self.get_stack(transition.program_id()).into_indexed(transition_locator, None::<(usize, &str)>)?;
         // Ensure the number of calls matches the number of transitions.
-        let number_of_calls =
-            stack.get_number_of_calls(transition.function_name()).into_indexed(transition_locator, None)?;
+        let number_of_calls = stack
+            .get_number_of_calls(transition.function_name())
+            .into_indexed(transition_locator, None::<(usize, &str)>)?;
         if !number_of_calls == execution.len() {
             indexed_finalize_bail!(
                 transition_locator,
@@ -195,14 +157,15 @@ impl<N: Network> Process<N> {
         lap!(timer, "Verify the number of transitions");
 
         // Construct the call graph.
-        let consensus_version = N::CONSENSUS_VERSION(state.block_height()).into_indexed(transition_locator, None)?;
+        let consensus_version =
+            N::CONSENSUS_VERSION(state.block_height()).into_indexed(transition_locator, None::<(usize, &str)>)?;
         let call_graph = match (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
-            true => self.construct_call_graph(execution).into_indexed(transition_locator, None)?,
+            true => self.construct_call_graph(execution).into_indexed(transition_locator, None::<(usize, &str)>)?,
             // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
             false => HashMap::new(),
         };
 
-        atomic_batch_scope!(store, {
+        atomic_batch_scope!(store, IndexedFinalizeError, {
             // Finalize the root transition.
             // Note that this will result in all the remaining transitions being finalized, since the number
             // of calls matches the number of transitions.
@@ -212,9 +175,9 @@ impl<N: Network> Process<N> {
 
             if let Some(fee) = fee {
                 // Fetch the fee locator.
-                let fee_locator = format!("{}/{}", fee.program_id(), fee.function_name());
+                let fee_locator = &format!("{}/{}", fee.program_id(), fee.function_name());
                 // Retrieve the fee stack.
-                let fee_stack = self.get_stack(fee.program_id()).into_indexed(fee_locator, None)?;
+                let fee_stack = self.get_stack(fee.program_id()).into_indexed(fee_locator, None::<(usize, &str)>)?;
                 // Finalize the fee transition.
                 finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
                 lap!(timer, "Finalize transition for '{fee_locator}'");
@@ -238,10 +201,10 @@ impl<N: Network> Process<N> {
     ) -> Result<Vec<FinalizeOperation<N>>, IndexedFinalizeError> {
         let timer = timer!("Program::finalize_fee");
 
-        let locator = format!("{}/{}", fee.program_id(), fee.function_name());
-        atomic_batch_scope!(store, {
+        let locator = &format!("{}/{}", fee.program_id(), fee.function_name());
+        atomic_batch_scope!(store, IndexedFinalizeError, {
             // Retrieve the stack.
-            let stack = self.get_stack(fee.program_id()).into_indexed(locator, None)?;
+            let stack = self.get_stack(fee.program_id()).into_indexed(locator, None::<(usize, &str)>)?;
             // Finalize the fee transition.
             let result = finalize_fee_transition(state, store, &stack, fee);
             finish!(timer, "Finalize transition for '{locator}'");

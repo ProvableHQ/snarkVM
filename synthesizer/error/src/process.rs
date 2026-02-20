@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Error;
 use crate::{EvalError, ExecError, FinalizeError};
+use anyhow::Error;
 use snarkvm_circuit_environment::ConstraintUnsatisfied;
 use thiserror::Error;
 
@@ -192,6 +192,7 @@ impl<E> IndexedInstructionError<E> {
 }
 
 /// A finalize error occurred at a particular index.
+/// Note: Changes to the finalize errors will affect consensus. Do not modify variants without proper versioning and migration strategy.
 #[derive(Debug, Error)]
 pub struct IndexedFinalizeError {
     /// The location of the failing command.
@@ -205,30 +206,19 @@ pub struct IndexedFinalizeError {
 impl std::fmt::Display for IndexedFinalizeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.command {
-            Some((index, command)) => write!(
-                f,
-                "Failed to finalize '{}' command ({command}) at index {index}: {}",
-                self.locator, self.error
-            ),
-            None => write!(
-                f,
-                "Failed to finalize '{}': {}",
-                self.locator, self.error
-            ),
+            Some((index, command)) => {
+                write!(f, "Failed to finalize '{}' command ({command}) at index {index}: {}", self.locator, self.error)
+            }
+            None => write!(f, "Failed to finalize '{}': {}", self.locator, self.error),
         }
     }
 }
 
 impl From<Error> for IndexedFinalizeError {
     fn from(error: Error) -> Self {
-        Self::new(
-            "None".to_string(),
-            None,
-            FinalizeError::Anyhow(error),
-        )
+        Self::new("None".to_string(), None, FinalizeError::Anyhow(error))
     }
 }
-
 
 impl IndexedFinalizeError {
     /// Short-hand constructor for the `IndexedFinalizeError` type.
@@ -237,25 +227,47 @@ impl IndexedFinalizeError {
     }
 }
 
-// Note: Changes to the finalize errors will affect consensus. Do not modify variants without proper versioning and migration strategy.
-#[derive(Debug, Error)]
-pub enum RejectionFinalizeError {
-    /// Stack computation or VK insertion failed.
-    #[error("Stack error: {0}")]
-    Stack(anyhow::Error),
-    /// Fee finalization failed.
-    #[error("Fee finalization failed: {0}")]
-    Fee(anyhow::Error),
-    /// Mapping initialization failed.
-    #[error("Mapping initialization failed: {0}")]
-    MappingInit(anyhow::Error),
-    /// Constructor execution failed.
-    #[error("Constructor execution failed: {0}")]
-    Constructor(anyhow::Error),
-    /// Execution finalization failed.
-    #[error("Execution finalization failed: {0}")]
-    Execution(anyhow::Error),
-    /// A temporary variant for type-erased anyhow errors.
-    #[error(transparent)]
-    Anyhow(#[from] anyhow::Error),
+/// A helper macro to bail with an `IndexedFinalizeError` for a given index, command, and anyhow message.
+#[macro_export]
+macro_rules! indexed_finalize_bail {
+    // With locator + index + command
+    ($locator:expr, $index:expr, $command:expr, $($arg:tt)*) => {{
+        return Err(IndexedFinalizeError::new(
+            $locator.to_string(),
+            Some(($index, $command.to_string())),
+            FinalizeError::Anyhow(anyhow!($($arg)*)),
+        ));
+    }};
+    // With locator only (no command)
+    ($locator:expr, $($arg:tt)*) => {{
+        return Err(IndexedFinalizeError::new(
+            $locator.to_string(),
+            None,
+            FinalizeError::Anyhow(anyhow!($($arg)*)),
+        ));
+    }};
+}
+
+pub trait IntoIndexedFinalize<T> {
+    fn into_indexed(
+        self,
+        locator: impl Into<String>,
+        command: Option<(usize, impl Into<String>)>,
+    ) -> anyhow::Result<T, IndexedFinalizeError>;
+}
+
+impl<T> IntoIndexedFinalize<T> for anyhow::Result<T, Error> {
+    fn into_indexed(
+        self,
+        locator: impl Into<String>,
+        command: Option<(usize, impl Into<String>)>,
+    ) -> anyhow::Result<T, IndexedFinalizeError> {
+        self.map_err(|e| {
+            IndexedFinalizeError::new(
+                locator.into(),
+                command.map(|(index, cmd)| (index, cmd.into())),
+                FinalizeError::Anyhow(e),
+            )
+        })
+    }
 }

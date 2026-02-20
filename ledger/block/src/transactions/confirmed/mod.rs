@@ -17,10 +17,7 @@ mod bytes;
 mod serialize;
 mod string;
 
-use crate::{
-    Transaction,
-    rejected::{Rejected, RejectedReason},
-};
+use crate::{Transaction, rejected::Rejected, rejected_reason::RejectedReason};
 use console::{network::prelude::*, program::FINALIZE_ID_DEPTH, types::Field};
 use snarkvm_synthesizer_program::FinalizeOperation;
 

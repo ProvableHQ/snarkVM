@@ -16,6 +16,7 @@
 use super::*;
 
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
+use snarkvm_synthesizer_error::{FinalizeError, IndexedFinalizeError, IntoIndexedFinalize, indexed_finalize_bail};
 use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -279,6 +280,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine the maximum number of aborted transactions allowed in a block.
         let max_aborted_transactions = Transactions::<N>::max_aborted_transactions();
 
+        // Determine the consensus version being used for this block height.
+        let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
+
         // Update the block height used for the purposes of historical mapping accounting.
         #[cfg(feature = "history")]
         self.store
@@ -398,15 +402,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Define the closure for processing a rejected deployment.
                         let process_rejected_deployment =
                             |fee: &Fee<N>,
-                             deployment: Deployment<N>|
+                             deployment: Deployment<N>,
+                             rejected_reason: Option<RejectedReason>|
                              -> Result<Result<ConfirmedTransaction<N>, String>> {
                                 process
                                     .finalize_fee(state, store, fee)
+                                    .map_err(anyhow::Error::from)
                                     .and_then(|finalize| {
                                         Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
                                     })
                                     .map(|(fee_tx, finalize)| {
-                                        let rejected = Rejected::new_deployment(*program_owner, deployment, None);
+                                        let rejected =
+                                            Rejected::new_deployment(*program_owner, deployment, rejected_reason);
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
                                             .map_err(|e| e.to_string())
                                     })
@@ -415,17 +422,25 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Check if the program has already been deployed in this block.
                         match deployments.contains(deployment.program_id()) {
                             // If the program has already been deployed, construct the rejected deploy transaction.
-                            true => match process_rejected_deployment(fee, *deployment.clone()) {
-                                Ok(result) => result,
-                                Err(error) => {
-                                    // Note: On failure, skip this transaction, and continue speculation.
-                                    dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
-                                    // Store the aborted transaction.
-                                    aborted.push((transaction.clone(), error.to_string()));
-                                    // Continue to the next transaction.
-                                    continue 'outer;
+                            true => {
+                                let rejected_reason = match consensus_version < ConsensusVersion::V14 {
+                                    true => None,
+                                    false => {
+                                        Some(RejectedReason::DuplicateProgramID(deployment.program_id().to_string()))
+                                    }
+                                };
+                                match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
+                                    Ok(result) => result,
+                                    Err(error) => {
+                                        // Note: On failure, skip this transaction, and continue speculation.
+                                        dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                        // Store the aborted transaction.
+                                        aborted.push((transaction.clone(), error.to_string()));
+                                        // Continue to the next transaction.
+                                        continue 'outer;
+                                    }
                                 }
-                            },
+                            }
                             // If the program has not yet been deployed, attempt to deploy it.
                             false => match process.finalize_deployment(state, store, deployment, fee) {
                                 // Construct the accepted deploy transaction.
@@ -438,7 +453,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 // Construct the rejected deploy transaction.
                                 Err(error) => {
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
-                                    match process_rejected_deployment(fee, *deployment.clone()) {
+                                    let rejected_reason = match consensus_version < ConsensusVersion::V14 {
+                                        true => None,
+                                        false => Some(RejectedReason::from_indexed_finalize_error(error)),
+                                    };
+                                    match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
                                         Ok(result) => result,
                                         Err(error) => {
                                             // Note: On failure, skip this transaction, and continue speculation.
@@ -468,15 +487,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             // Construct the rejected execute transaction.
                             Err(error) => {
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
+                                let rejected_reason = match consensus_version < ConsensusVersion::V14 {
+                                    true => None,
+                                    false => Some(RejectedReason::from_indexed_finalize_error(error)),
+                                };
                                 match fee {
                                     // Finalize the fee, to ensure it is valid.
                                     Some(fee) => {
-                                        match process.finalize_fee(state, store, fee).and_then(|finalize| {
-                                            Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
-                                        }) {
+                                        match process
+                                            .finalize_fee(state, store, fee)
+                                            .map_err(anyhow::Error::from)
+                                            .and_then(|finalize| {
+                                                Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
+                                            }) {
                                             Ok((fee_tx, finalize)) => {
                                                 // Construct the rejected execution.
-                                                let rejected = Rejected::new_execution(*execution.clone(), None);
+                                                let rejected =
+                                                    Rejected::new_execution(*execution.clone(), rejected_reason);
                                                 // Construct the rejected execute transaction.
                                                 ConfirmedTransaction::rejected_execute(
                                                     counter, fee_tx, rejected, finalize,
@@ -1073,7 +1100,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         state: FinalizeGlobalState,
         store: &FinalizeStore<N, C::FinalizeStorage>,
         execution: &Execution<N>,
-    ) -> Result<()> {
+    ) -> Result<(), IndexedFinalizeError> {
         // Construct the program ID.
         let program_id = ProgramID::from_str("credits.aleo")?;
         // Construct the committee mapping name.
@@ -1109,7 +1136,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         Plaintext::Literal(Literal::Address(address), _) => Ok(address),
                         _ => Err(anyhow!("Invalid committee key (missing address) - {key}")),
                     })
-                    .collect::<Result<HashSet<_>>>()?;
+                    .collect::<Result<HashSet<_>>>()
+                    .into_indexed(format!("{program_id}/{committee_mapping}"), None::<(usize, &str)>)?;
                 // Get the number of new validators being bonded to.
                 let num_new_validators =
                     bond_validator_addresses.into_iter().filter(|address| !committee_members.contains(address)).count();
@@ -1120,7 +1148,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     .ok_or(anyhow!("Failed to retrieve the maximum committee size"))?;
                 // Check that the number of new validators being bonded does not exceed the maximum number of validators.
                 match next_committee_size > max_committee_size as usize {
-                    true => Err(anyhow!("Call to 'credits.aleo/bond_public' exceeds the committee size")),
+                    true => indexed_finalize_bail!(
+                        format!("{program_id}/bond_public"),
+                        "Call to '{program_id}/bond_public' exceeds the committee size"
+                    ),
                     false => Ok(()),
                 }
             }

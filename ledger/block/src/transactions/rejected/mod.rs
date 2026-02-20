@@ -13,9 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod reason;
-pub use reason::*;
-
 mod bytes;
 mod serialize;
 mod string;
@@ -83,8 +80,8 @@ impl<N: Network> Rejected<N> {
     /// Returns the rejected reason.
     pub fn rejected_reason(&self) -> Option<RejectedReason> {
         match self {
-            Self::Deployment(_, _, rejected_reason) => *rejected_reason,
-            Self::Execution(_, rejected_reason) => *rejected_reason,
+            Self::Deployment(_, _, rejected_reason) => rejected_reason.clone(),
+            Self::Execution(_, rejected_reason) => rejected_reason.clone(),
         }
     }
 
@@ -141,9 +138,9 @@ pub mod test_helpers {
         let deployment_id = deployment.to_deployment_id().unwrap();
         let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
-        // TODO (raychu86): Rejected Reason - Sample a new rejected reason.
+        // Sample a rejected reason for the deployment.
         let rejected_reason = match has_rejected_reason {
-            true => Some(RejectedReason::Placeholder),
+            true => Some(RejectedReason::DuplicateProgramID(deployment.program_id().to_string())),
             false => None,
         };
 
@@ -164,9 +161,9 @@ pub mod test_helpers {
                 _ => unreachable!(),
             };
 
-        // TODO (raychu86): Rejected Reason - Sample a new rejected reason.
+        // Sample a rejected reason for the execution.
         let rejected_reason = match has_rejected_reason {
-            true => Some(RejectedReason::Placeholder),
+            true => Some(RejectedReason::NonFinalize("credits.aleo/transfer_public".to_string())),
             false => None,
         };
 
@@ -201,10 +198,4 @@ pub mod test_helpers {
             sample_rejected_execution(false, false, rng),
         ]
     }
-
-    // pub(crate) fn sample_rejected_reason() -> RejectedReason {
-    //     let rng = &mut TestRng::default();
-    //     // TODO (raychu86): Rejected Reason
-    //     RejectedReason::Execution
-    // }
 }

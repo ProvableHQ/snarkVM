@@ -172,9 +172,7 @@ impl<N: Network> Command<N> {
     ) -> Result<Option<FinalizeOperation<N>>, FinalizeError> {
         match self {
             // Finalize the instruction, and return no finalize operation.
-            Command::Instruction(instruction) => {
-                instruction.finalize(stack, registers).map_err(Into::into).map(|_| None)
-            }
+            Command::Instruction(instruction) => instruction.finalize(stack, registers).map(|_| None),
             // `await` commands are processed by the caller of this method.
             Command::Await(_) => Err(FinalizeError::Anyhow(anyhow!("`await` commands cannot be finalized directly."))),
             // Finalize the 'contains' command, and return no finalize operation.
@@ -182,9 +180,13 @@ impl<N: Network> Command<N> {
             // Finalize the 'get' command, and return no finalize operation.
             Command::Get(get) => get.finalize(stack, store, registers).map(|_| None).map_err(Into::into),
             // Finalize the 'get.or_use' command, and return no finalize operation.
-            Command::GetOrUse(get_or_use) => get_or_use.finalize(stack, store, registers).map(|_| None).map_err(Into::into),
+            Command::GetOrUse(get_or_use) => {
+                get_or_use.finalize(stack, store, registers).map(|_| None).map_err(Into::into)
+            }
             // Finalize the `rand.chacha` command, and return no finalize operation.
-            Command::RandChaCha(rand_chacha) => rand_chacha.finalize(stack, registers).map(|_| None).map_err(Into::into),
+            Command::RandChaCha(rand_chacha) => {
+                rand_chacha.finalize(stack, registers).map(|_| None).map_err(Into::into)
+            }
             // Finalize the 'remove' command, and return the finalize operation.
             Command::Remove(remove) => remove.finalize(stack, store, registers).map_err(Into::into),
             // Finalize the 'set' command, and return the finalize operation.
