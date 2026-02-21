@@ -462,7 +462,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     continue 'outer;
                 }
                 _ => finalize_command_except_await(
-                    &format!("{program_id}/{function_name}"),
+                    finalize_locator,
                     store,
                     stack.deref(),
                     &mut registers,

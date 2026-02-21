@@ -163,9 +163,6 @@ constructor:
     let proof = proving_key.prove("test", varuna_version, &assignment, &mut TestRng::default()).unwrap();
     let proof_bytes = proof.to_bytes_le().unwrap();
 
-    println!("verifying_key_size: {}", verifying_key_bytes.len());
-    println!("proof size: {}", proof_bytes.len());
-
     let one = <Circuit as circuit::Environment>::BaseField::one();
     let zero = <Circuit as circuit::Environment>::BaseField::zero();
     let public_inputs = vec![one, one];
@@ -1599,3 +1596,299 @@ finalize do:
     // Verify.
     assert!(vm.check_transaction(&transaction, None, rng).is_err());
 }
+
+#[test]
+fn test_rejected_reason_deployments() {
+    let rng = &mut TestRng::default();
+
+    // Initialize the VM.
+    let vm = sample_vm();
+    let genesis = sample_genesis_block(rng);
+    vm.add_next_block(&genesis).unwrap();
+
+    // Fetch the genesis private key.
+    let private_key = sample_genesis_private_key(rng);
+
+    // Determine the V14 activation height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+
+    // Fund two accounts to pay for the two upgrades.
+    // This has to be done because only one deployment can be made per fee-paying address per block.
+    let private_key_2 = PrivateKey::new(rng).unwrap();
+    let private_key_3 = PrivateKey::new(rng).unwrap();
+    let address_2 = Address::try_from(&private_key_2).unwrap();
+    let address_3 = Address::try_from(&private_key_3).unwrap();
+
+    let tx_1 = vm
+        .execute(
+            &private_key,
+            ("credits.aleo", "transfer_public"),
+            [Value::from_str(&format!("{address_2}")).unwrap(), Value::from_str("100_000_000u64").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let tx_2 = vm
+        .execute(
+            &private_key,
+            ("credits.aleo", "transfer_public"),
+            [Value::from_str(&format!("{address_3}")).unwrap(), Value::from_str("100_000_000u64").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let block = sample_next_block(&vm, &private_key, &[tx_1, tx_2], rng).unwrap();
+    vm.add_next_block(&block).unwrap();
+
+    // Define a program whose constructor always fails.
+    let failing_constructor = Program::<CurrentNetwork>::from_str(
+        r"
+program failing_constructor.aleo;
+
+function dummy:
+
+constructor:
+    assert.eq true false;",
+    )
+    .unwrap();
+
+    // Define a program whose constructor always succeeds (used for the duplicate-ID tests).
+    let duplicate_id_program = Program::<CurrentNetwork>::from_str(
+        r"
+program duplicate_id_program.aleo;
+
+function dummy:
+
+constructor:
+    assert.eq true true;",
+    )
+    .unwrap();
+
+    // Advance to two slots before V14, leaving room for one pre-V14 test block.
+    while vm.block_store().current_block_height() < v14_height - 2 {
+        let block = sample_next_block(&vm, &private_key, &[], rng).unwrap();
+        vm.add_next_block(&block).unwrap();
+    }
+
+    // Place two transactions for `duplicate_id_program.aleo` and one for `failing_constructor.aleo`
+    // in the same block.  Before V14:
+    //   • The first `duplicate_id_program` deploy is accepted.
+    //   • The second `duplicate_id_program` deploy is rejected (duplicate program ID) with no rejected reason.
+    //   • The `failing_constructor` deploy is rejected (constructor fails) with no rejected reason.
+    let deploy_dup_1 = vm.deploy(&private_key, &duplicate_id_program, None, 0, None, rng).unwrap();
+    let deploy_dup_2 = vm.deploy(&private_key_2, &duplicate_id_program, None, 0, None, rng).unwrap();
+    let deploy_failing_constructor = vm.deploy(&private_key_3, &failing_constructor, None, 0, None, rng).unwrap();
+
+    let id_1 = deploy_dup_1.id();
+    let id_2 = deploy_dup_2.id();
+    let id_3 = deploy_failing_constructor.id();
+
+    println!("Deploying transactions with IDs: {id_1:?}, {id_2:?}, {id_3:?}");
+
+    let block =
+        sample_next_block(&vm, &private_key, &[deploy_dup_1, deploy_dup_2, deploy_failing_constructor], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+
+    println!("accepted: {:?}", block.transactions().transaction_ids().collect::<Vec<_>>());
+
+    println!("num rejected: {}", block.transactions().num_rejected());
+    println!("num aborted: {} - {:?}", block.aborted_transaction_ids().len(), block.aborted_transaction_ids());
+    assert_eq!(block.transactions().num_rejected(), 2);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    // Before V14, neither rejected transaction carries a rejected reason.
+    for confirmed_tx in block.transactions().iter().filter(|tx| tx.is_rejected()) {
+        assert!(confirmed_tx.rejected_reason().is_none());
+    }
+    vm.add_next_block(&block).unwrap();
+
+    // Advance to V14.
+    while vm.block_store().current_block_height() < v14_height {
+        let block = sample_next_block(&vm, &private_key, &[], rng).unwrap();
+        vm.add_next_block(&block).unwrap();
+    }
+
+    // Deploy two transactions for a fresh program `dup_program_2.aleo`.  At V14:
+    //   • The first deploy is accepted.
+    //   • The second deploy is rejected with `RejectedReason::DuplicateProgramID`.
+    let duplicate_id_program_2 = Program::<CurrentNetwork>::from_str(
+        r"
+program duplicate_id_program_2.aleo;
+
+function dummy:
+
+constructor:
+    assert.eq true true;",
+    )
+    .unwrap();
+    let deploy_dup2_1 = vm.deploy(&private_key, &duplicate_id_program_2, None, 0, None, rng).unwrap();
+    let deploy_dup2_2 = vm.deploy(&private_key_2, &duplicate_id_program_2, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &private_key, &[deploy_dup2_1, deploy_dup2_2], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 1);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    // The rejected transaction must carry a `DuplicateProgramID` reason.
+    let rejected_tx = block.transactions().iter().find(|tx| tx.is_rejected()).unwrap();
+    assert_eq!(
+        rejected_tx.rejected_reason(),
+        Some(RejectedReason::DuplicateProgramID("duplicate_id_program_2.aleo".to_string()))
+    );
+    vm.add_next_block(&block).unwrap();
+
+    // Re-deploy `failing_constructor.aleo`
+    // At V14 the deployment is again rejected, but now carries a `Finalize` reason.
+    let deploy_failing_constructor_2 = vm.deploy(&private_key, &failing_constructor, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &private_key, &[deploy_failing_constructor_2], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 1);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    let rejected_tx = block.transactions().iter().find(|tx| tx.is_rejected()).unwrap();
+    // The locator points to the constructor of `failing_constructor.aleo`.
+    let Some(RejectedReason::Finalize(locator, index, command)) = rejected_tx.rejected_reason() else {
+        panic!("Expected RejectedReason::Finalize, got {:?}", rejected_tx.rejected_reason());
+    };
+    assert_eq!(locator, "failing_constructor.aleo/constructor");
+    assert_eq!(index, 0);
+    assert_eq!(command, "assert.eq true false;");
+}
+
+#[test]
+fn test_rejected_reason_finalize() {
+    let rng = &mut TestRng::default();
+
+    // Initialize the VM.
+    let vm = sample_vm();
+    let genesis = sample_genesis_block(rng);
+    vm.add_next_block(&genesis).unwrap();
+
+    // Fetch the genesis private key.
+    let private_key = sample_genesis_private_key(rng);
+
+    // Determine the V14 activation height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+
+    // Define a program whose `fail` function always fails in finalize.
+    let fail_finalize_program = Program::<CurrentNetwork>::from_str(
+        r"
+program failing_program.aleo;
+
+function fail:
+    input r0 as boolean.public;
+    async fail r0 into r1;
+    output r1 as failing_program.aleo/fail.future;
+
+finalize fail:
+    input r0 as boolean.public;
+    assert.eq true true;
+    assert.eq false r0;
+
+constructor:
+    assert.eq true true;",
+    )
+    .unwrap();
+
+    // Define a program whose `fail` function always fails in finalize.
+    let call_fail_finalize_program = Program::<CurrentNetwork>::from_str(
+        r"
+import failing_program.aleo;
+
+program call_failing_program.aleo;
+
+function call_fail:
+    input r0 as boolean.public;
+    call failing_program.aleo/fail r0 into r1;
+    async call_fail r1 into r2;
+    output r2 as call_failing_program.aleo/call_fail.future;
+
+finalize call_fail:
+    input r0 as failing_program.aleo/fail.future;
+    await r0;
+
+constructor:
+    assert.eq true true;",
+    )
+    .unwrap();
+
+    // Advance to four blocks before V14, leaving room for one pre-V14 execution block.
+    while vm.block_store().current_block_height() < v14_height - 4 {
+        let block = sample_next_block(&vm, &private_key, &[], rng).unwrap();
+        vm.add_next_block(&block).unwrap();
+    }
+
+    // Deploy `failing_program.aleo` early so it is available for execution.
+    let deployment = vm.deploy(&private_key, &fail_finalize_program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // Deploy `call_failing_program.aleo` early so it is available for execution.
+    let deployment = vm.deploy(&private_key, &call_fail_finalize_program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // Execute `failing_program.aleo/fail_here` and `call_failing_program/call_fail_here`.
+    // The transaction is rejected in finalize, but before V14 no rejected reason is attached.
+    let inputs = [Value::from_str("true").unwrap()].into_iter();
+    let fail_transaction =
+        vm.execute(&private_key, ("failing_program.aleo", "fail"), inputs.clone(), None, 0, None, rng).unwrap();
+    let call_fail_transaction = vm
+        .execute(&private_key, ("call_failing_program.aleo", "call_fail"), inputs.clone(), None, 0, None, rng)
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[fail_transaction, call_fail_transaction], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 2);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+
+    println!("Current blcok: {}", block.height());
+    println!("V14 Height: {v14_height}");
+    // Before V14, neither rejected transaction carries a rejected reason.
+    for confirmed_tx in block.transactions().iter().filter(|tx| tx.is_rejected()) {
+        assert!(confirmed_tx.rejected_reason().is_none());
+    }
+    vm.add_next_block(&block).unwrap();
+
+    // Advance to V14, leaving room for one pre-V14 execution block.
+    while vm.block_store().current_block_height() < v14_height {
+        let block = sample_next_block(&vm, &private_key, &[], rng).unwrap();
+        vm.add_next_block(&block).unwrap();
+    }
+
+    // Execute `fail_finalize.aleo/fail` again.  Now at V14 the rejection carries a proper rejected reason.
+    let inputs = [Value::from_str("true").unwrap()].into_iter();
+    let fail_transaction =
+        vm.execute(&private_key, ("failing_program.aleo", "fail"), inputs.clone(), None, 0, None, rng).unwrap();
+    let call_fail_transaction = vm
+        .execute(&private_key, ("call_failing_program.aleo", "call_fail"), inputs.clone(), None, 0, None, rng)
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[fail_transaction, call_fail_transaction], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 2);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+
+    let transactions = block.transactions().iter().collect::<Vec<_>>();
+
+    // Ensure the first call fails and has the proper reason.
+    let first_confirmed_transaction = transactions[0];
+    let Some(RejectedReason::Finalize(locator, index, command)) = first_confirmed_transaction.rejected_reason() else {
+        panic!("Expected RejectedReason::Finalize, got {:?}", first_confirmed_transaction.rejected_reason());
+    };
+    assert_eq!(locator, "failing_program.aleo/fail");
+    assert_eq!(index, 1);
+    assert_eq!(command, "assert.eq false r0;");
+
+    // Ensure the second call fails and has the proper reason.
+    let second_confirmed_transaction = transactions[1];
+    let Some(RejectedReason::Finalize(locator, index, command)) = second_confirmed_transaction.rejected_reason() else {
+        panic!("Expected RejectedReason::Finalize, got {:?}", second_confirmed_transaction.rejected_reason());
+    };
+    assert_eq!(locator, "failing_program.aleo/fail");
+    assert_eq!(index, 1);
+    assert_eq!(command, "assert.eq false r0;");
+}
+
+// TODO (raychu86): Rejected Reason - Add tests for NonFinalize cases.
