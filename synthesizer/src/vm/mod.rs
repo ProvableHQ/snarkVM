@@ -955,8 +955,15 @@ function compute:
             FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
 
         // Speculate on the ratifications, solutions, and transactions.
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            vm.speculate(finalize_state, time_since_last_block, None, vec![], &None.into(), transactions.iter(), rng)?;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
+            finalize_state,
+            time_since_last_block,
+            Some(0u64),
+            vec![],
+            &None.into(),
+            transactions.iter(),
+            rng,
+        )?;
 
         // Construct the metadata associated with the block.
         let metadata = Metadata::new(

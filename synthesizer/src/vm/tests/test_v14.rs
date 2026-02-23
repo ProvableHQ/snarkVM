@@ -19,6 +19,7 @@ use crate::vm::test_helpers::*;
 
 use circuit::{Circuit, Environment, Inject, Mode};
 use console::{account::ViewKey, algorithms::U8, network::ConsensusVersion, program::Value};
+use snarkvm_ledger_committee::MIN_VALIDATOR_STAKE;
 use snarkvm_synthesizer_program::Program;
 use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS};
 use snarkvm_utilities::TestRng;
@@ -1684,20 +1685,9 @@ constructor:
     let deploy_dup_2 = vm.deploy(&private_key_2, &duplicate_id_program, None, 0, None, rng).unwrap();
     let deploy_failing_constructor = vm.deploy(&private_key_3, &failing_constructor, None, 0, None, rng).unwrap();
 
-    let id_1 = deploy_dup_1.id();
-    let id_2 = deploy_dup_2.id();
-    let id_3 = deploy_failing_constructor.id();
-
-    println!("Deploying transactions with IDs: {id_1:?}, {id_2:?}, {id_3:?}");
-
     let block =
         sample_next_block(&vm, &private_key, &[deploy_dup_1, deploy_dup_2, deploy_failing_constructor], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
-
-    println!("accepted: {:?}", block.transactions().transaction_ids().collect::<Vec<_>>());
-
-    println!("num rejected: {}", block.transactions().num_rejected());
-    println!("num aborted: {} - {:?}", block.aborted_transaction_ids().len(), block.aborted_transaction_ids());
     assert_eq!(block.transactions().num_rejected(), 2);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     // Before V14, neither rejected transaction carries a rejected reason.
@@ -1844,8 +1834,6 @@ constructor:
     assert_eq!(block.transactions().num_rejected(), 2);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
 
-    println!("Current blcok: {}", block.height());
-    println!("V14 Height: {v14_height}");
     // Before V14, neither rejected transaction carries a rejected reason.
     for confirmed_tx in block.transactions().iter().filter(|tx| tx.is_rejected()) {
         assert!(confirmed_tx.rejected_reason().is_none());
@@ -1891,4 +1879,174 @@ constructor:
     assert_eq!(command, "assert.eq false r0;");
 }
 
-// TODO (raychu86): Rejected Reason - Add tests for NonFinalize cases.
+#[test]
+fn test_rejected_reason_non_finalize() {
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
+    // Determine the V14 activation height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+
+    // Initialize the VM.
+    let vm = sample_vm();
+
+    // Construct the validators, one less than the maximum committee size.
+    let max_committee_size = consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, 0).unwrap();
+    let validators = (0..max_committee_size - 1)
+        .map(|_| {
+            let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+            let amount = MIN_VALIDATOR_STAKE;
+            let is_open = true;
+            (private_key, (amount, is_open))
+        })
+        .collect::<IndexMap<_, _>>();
+
+    // Track the allocated amount.
+    let mut allocated_amount = 0;
+
+    // Construct the committee.
+    let mut committee_map = IndexMap::new();
+    for (private_key, (amount, _)) in &validators {
+        let address = Address::try_from(private_key).unwrap();
+        committee_map.insert(address, (*amount, true, 0));
+        allocated_amount += *amount;
+    }
+
+    // Initialize new validator keys.
+    let mut new_validators = vec![];
+    let v14_max_committee_size = consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, v14_height).unwrap();
+    let num_new_validators = v14_max_committee_size as usize - validators.len();
+    for _ in 0..=num_new_validators {
+        let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let address = Address::try_from(&private_key).unwrap();
+        let withdrawal_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+        let withdrawal_address = Address::try_from(&withdrawal_private_key).unwrap();
+
+        new_validators.push((private_key, address, withdrawal_private_key, withdrawal_address));
+    }
+
+    // Construct the public balances, allocating the remaining supply to the first validator and the new validators.
+    // The remaining validators will have a balance of 0.
+    let mut remaining_supply = <CurrentNetwork as Network>::STARTING_SUPPLY - allocated_amount;
+    let public_balance = remaining_supply / (new_validators.len() + 1) as u64;
+    let mut public_balances = IndexMap::new();
+    for (private_key, _) in validators.iter() {
+        public_balances.insert(Address::try_from(private_key).unwrap(), 0);
+    }
+    for (_, address, _, _) in &new_validators {
+        public_balances.insert(*address, public_balance);
+        remaining_supply -= public_balance;
+    }
+    public_balances.insert(Address::try_from(validators.first().unwrap().0).unwrap(), remaining_supply);
+
+    // Construct the bonded balances.
+    let bonded_balances = validators
+        .iter()
+        .map(|(private_key, (amount, _))| {
+            let address = Address::try_from(private_key).unwrap();
+            (address, (address, address, *amount))
+        })
+        .collect();
+
+    // Fetch the first private_key
+    let private_key = validators.keys().next().unwrap();
+
+    // Construct the genesis block, which should pass.
+    let genesis_block = vm
+        .genesis_quorum(
+            private_key,
+            Committee::new_genesis(committee_map).unwrap(),
+            public_balances,
+            bonded_balances,
+            rng,
+        )
+        .unwrap();
+
+    // Initialize a Ledger from the genesis block.
+    vm.add_next_block(&genesis_block).unwrap();
+
+    // Advance a few blocks before V14.
+    while vm.block_store().current_block_height() < v14_height - 3 {
+        let block = sample_next_block(&vm, private_key, &[], rng).unwrap();
+        vm.add_next_block(&block).unwrap();
+    }
+
+    // Bond validators until the maximum.
+    let current_max_committee_size =
+        consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, vm.block_store().current_block_height()).unwrap();
+    let mut new_bond_transactions = vec![];
+    let num_new_validators_to_bond = current_max_committee_size as usize - validators.len();
+    assert!(num_new_validators_to_bond <= new_validators.len(), "Not enough new validators to bond");
+    for (new_validator_private_key, _, _, withdrawal_address) in new_validators.iter().take(num_new_validators_to_bond)
+    {
+        let bond_transaction = vm
+            .execute(
+                new_validator_private_key,
+                ("credits.aleo", "bond_validator"),
+                vec![
+                    Value::<CurrentNetwork>::from_str(&withdrawal_address.to_string()).unwrap(),
+                    Value::<CurrentNetwork>::from_str(&format!("{MIN_VALIDATOR_STAKE}u64")).unwrap(),
+                    Value::<CurrentNetwork>::from_str("10u8").unwrap(),
+                ]
+                .iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
+
+        new_bond_transactions.push(bond_transaction);
+    }
+    let block = sample_next_block(&vm, private_key, &new_bond_transactions, rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), new_bond_transactions.len());
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Attempt to bond a new validator past the maximum and ensure that the rejected reason does not exist.
+    let bond_transaction = vm
+        .execute(
+            &new_validators.last().unwrap().0,
+            ("credits.aleo", "bond_validator"),
+            vec![
+                Value::<CurrentNetwork>::from_str(&new_validators.last().unwrap().3.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str(&format!("{MIN_VALIDATOR_STAKE}u64")).unwrap(),
+                Value::<CurrentNetwork>::from_str("10u8").unwrap(),
+            ]
+            .iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, private_key, &[bond_transaction.clone()], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 1);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    // Before V14, neither rejected transaction carries a rejected reason.
+    for confirmed_tx in block.transactions().iter().filter(|tx| tx.is_rejected()) {
+        assert!(confirmed_tx.rejected_reason().is_none());
+    }
+
+    // Advance to the V14 height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    while vm.block_store().current_block_height() < v14_height {
+        let block = sample_next_block(&vm, private_key, &[], rng).unwrap();
+        vm.add_next_block(&block).unwrap();
+    }
+
+    // After V14 the bond is again rejected, but now carries a `NonFinalize` reason.
+    let block = sample_next_block(&vm, private_key, &[bond_transaction], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 1);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    let rejected_tx = block.transactions().iter().find(|tx| tx.is_rejected()).unwrap();
+    // The locator points to the constructor of `failing_constructor.aleo`.
+    let Some(RejectedReason::NonFinalize(locator)) = rejected_tx.rejected_reason() else {
+        panic!("Expected RejectedReason::NonFinalize, got {:?}", rejected_tx.rejected_reason());
+    };
+    assert_eq!(locator, "credits.aleo/bond_validator");
+    vm.add_next_block(&block).unwrap();
+}
