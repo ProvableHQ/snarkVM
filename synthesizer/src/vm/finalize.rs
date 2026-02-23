@@ -3142,6 +3142,13 @@ finalize compute:
         // Add the genesis block to the VM.
         vm_2.add_next_block(&genesis_2).unwrap();
 
+        println!("[VM2] Generating the next block.");
+        let next_block =
+            sample_next_block(&vm_2, validators.keys().next().unwrap(), &[], &genesis_2, &mut vec![], rng).unwrap();
+
+        println!("[VM2] Adding the next block to the VM to simulate block rewards.");
+        vm_2.add_next_block(&next_block).unwrap();
+
         println!("Checking that all mappings in `credits.aleo` are equal across the two VMs.");
 
         // Check that all mappings in `credits.aleo` are equal across the two VMs.

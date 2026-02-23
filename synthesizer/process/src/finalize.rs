@@ -147,7 +147,7 @@ impl<N: Network> Process<N> {
         let number_of_calls = stack
             .get_number_of_calls(transition.function_name())
             .into_indexed(transition_locator, None::<(usize, &str)>)?;
-        if !number_of_calls == execution.len() {
+        if number_of_calls != execution.len() {
             indexed_finalize_bail!(
                 transition_locator,
                 "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
