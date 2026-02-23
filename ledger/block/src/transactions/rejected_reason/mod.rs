@@ -30,7 +30,7 @@ pub enum RejectedReason {
     /// sensitive information or lead to DOS vectors by storing string representations of large structs.
     Finalize(String, usize, String),
 
-    /// The transaction was rejected due to a VM error not captured by the finalize command.
+    /// The transaction was rejected due to a VM error not captured by a finalize command.
     NonFinalize(String),
 }
 
