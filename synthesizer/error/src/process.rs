@@ -14,8 +14,11 @@
 // limitations under the License.
 
 use crate::{EvalError, ExecError, FinalizeError};
-use anyhow::Error;
 use snarkvm_circuit_environment::ConstraintUnsatisfied;
+use snarkvm_console_network::Network;
+use snarkvm_console_program::{Identifier, ProgramID};
+
+use anyhow::Error;
 use thiserror::Error;
 
 // NOTE: Many errors in this module temporarily contain `Anyhow` variants.
@@ -191,83 +194,120 @@ impl<E> IndexedInstructionError<E> {
     }
 }
 
-/// A finalize error occurred at a particular index.
+/// A finalize error occurred at a particular location.
 /// Note: Changes to the finalize errors will affect consensus. Do not modify variants without proper versioning and migration strategy.
-#[derive(Debug, Error)]
-pub struct IndexedFinalizeError {
-    /// The location of the failing command.
-    pub locator: String,
-    /// The index and the failing command.
-    pub command: Option<(usize, String)>,
-    /// The instruction error.
+///
+/// `C` is the command type stored in the error. Callers that have a concrete command type (e.g.
+/// `Command<N>` from synthesizer-program) may use it directly; callers without access to that
+/// type may use `String` (via `Display`). Using a generic avoids a circular crate dependency
+/// between `snarkvm-synthesizer-error` and `snarkvm-synthesizer-program`.
+pub struct IndexedFinalizeError<N: Network, C: ToString> {
+    /// The program ID of the failing command, if available.
+    pub program_id: Option<ProgramID<N>>,
+    /// The resource (function or constructor name) of the failing command, if available.
+    pub resource: Option<Identifier<N>>,
+    /// The index and the failing command, if available. Boxed to keep the struct small.
+    pub command: Option<Box<(usize, C)>>,
+    /// The finalize error.
     pub error: FinalizeError,
 }
 
-impl std::fmt::Display for IndexedFinalizeError {
+impl<N: Network, C: ToString> std::fmt::Debug for IndexedFinalizeError<N, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+
+impl<N: Network, C: ToString> std::fmt::Display for IndexedFinalizeError<N, C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Build a display string from the optional program ID and resource.
+        let locator = match (&self.program_id, &self.resource) {
+            (Some(program_id), Some(resource)) => format!("{program_id}/{resource}"),
+            (Some(program_id), None) => format!("{program_id}"),
+            (None, Some(resource)) => format!("{resource}"),
+            (None, None) => "None".to_string(),
+        };
         match &self.command {
-            Some((index, command)) => {
-                write!(f, "Failed to finalize '{}' command ({command}) at index {index}: {}", self.locator, self.error)
+            Some(cmd) => {
+                let (index, command) = cmd.as_ref();
+                write!(
+                    f,
+                    "Failed to finalize '{locator}' command ({}) at index {index}: {}",
+                    command.to_string(),
+                    self.error
+                )
             }
-            None => write!(f, "Failed to finalize '{}': {}", self.locator, self.error),
+            None => write!(f, "Failed to finalize '{locator}': {}", self.error),
         }
     }
 }
 
-impl From<Error> for IndexedFinalizeError {
+impl<N: Network, C: ToString> std::error::Error for IndexedFinalizeError<N, C> {}
+
+impl<N: Network, C: ToString> From<Error> for IndexedFinalizeError<N, C> {
+    /// Converts an anyhow error into an `IndexedFinalizeError` with no location or command context.
     fn from(error: Error) -> Self {
-        Self::new("None".to_string(), None, FinalizeError::Anyhow(error))
+        Self::new(None, None, None, FinalizeError::Anyhow(error))
     }
 }
 
-impl IndexedFinalizeError {
-    /// Short-hand constructor for the `IndexedFinalizeError` type.
-    pub fn new(locator: String, command: Option<(usize, String)>, error: FinalizeError) -> Self {
-        Self { locator, command, error }
+impl<N: Network, C: ToString> IndexedFinalizeError<N, C> {
+    /// Constructs an `IndexedFinalizeError` from its components.
+    pub fn new(
+        program_id: Option<ProgramID<N>>,
+        resource: Option<Identifier<N>>,
+        command: Option<(usize, C)>,
+        error: FinalizeError,
+    ) -> Self {
+        Self { program_id, resource, command: command.map(Box::new), error }
     }
 }
 
-/// A helper macro to bail with an `IndexedFinalizeError` for a given index, command, and anyhow message.
+/// A helper macro to bail with an `IndexedFinalizeError`.
+///
+/// Two forms:
+///   - `indexed_finalize_bail!(program_id, resource, index, command, "message {}", args)` — with command context.
+///   - `indexed_finalize_bail!(program_id, resource, "message {}", args)` — without command context.
+///
+/// `program_id` must be `Option<ProgramID<N>>` and `resource` must be `Option<Identifier<N>>`.
 #[macro_export]
 macro_rules! indexed_finalize_bail {
-    // With locator + index + command
-    ($locator:expr, $index:expr, $command:expr, $($arg:tt)*) => {{
+    // With program_id + resource + index + command + message.
+    ($program_id:expr, $resource:expr, $index:expr, $command:expr, $($arg:tt)+) => {{
         return Err(IndexedFinalizeError::new(
-            $locator.to_string(),
-            Some(($index, $command.to_string())),
-            FinalizeError::Anyhow(anyhow!($($arg)*)),
+            $program_id,
+            $resource,
+            Some(($index, $command)),
+            FinalizeError::Anyhow(anyhow!($($arg)+)),
         ));
     }};
-    // With locator only (no command)
-    ($locator:expr, $($arg:tt)*) => {{
+    // With program_id + resource + message only (no command context).
+    ($program_id:expr, $resource:expr, $($arg:tt)+) => {{
         return Err(IndexedFinalizeError::new(
-            $locator.to_string(),
+            $program_id,
+            $resource,
             None,
-            FinalizeError::Anyhow(anyhow!($($arg)*)),
+            FinalizeError::Anyhow(anyhow!($($arg)+)),
         ));
     }};
 }
 
-pub trait IntoIndexedFinalize<T> {
+pub trait IntoIndexedFinalize<N: Network, C: ToString, T> {
     fn into_indexed(
         self,
-        locator: impl Into<String>,
-        command: Option<(usize, impl Into<String>)>,
-    ) -> anyhow::Result<T, IndexedFinalizeError>;
+        program_id: Option<ProgramID<N>>,
+        resource: Option<Identifier<N>>,
+        command: Option<(usize, C)>,
+    ) -> anyhow::Result<T, IndexedFinalizeError<N, C>>;
 }
 
-impl<T> IntoIndexedFinalize<T> for anyhow::Result<T, Error> {
+impl<N: Network, C: ToString, T> IntoIndexedFinalize<N, C, T> for anyhow::Result<T, Error> {
     fn into_indexed(
         self,
-        locator: impl Into<String>,
-        command: Option<(usize, impl Into<String>)>,
-    ) -> anyhow::Result<T, IndexedFinalizeError> {
-        self.map_err(|e| {
-            IndexedFinalizeError::new(
-                locator.into(),
-                command.map(|(index, cmd)| (index, cmd.into())),
-                FinalizeError::Anyhow(e),
-            )
-        })
+        program_id: Option<ProgramID<N>>,
+        resource: Option<Identifier<N>>,
+        command: Option<(usize, C)>,
+    ) -> anyhow::Result<T, IndexedFinalizeError<N, C>> {
+        self.map_err(|e| IndexedFinalizeError::new(program_id, resource, command, FinalizeError::Anyhow(e)))
     }
 }

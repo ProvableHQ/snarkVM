@@ -30,6 +30,9 @@ workspace = true
 [dependencies.snarkvm-console-network]
 workspace = true
 
+[dependencies.snarkvm-console-program]
+workspace = true
+
 [dependencies.anyhow]
 workspace = true
 

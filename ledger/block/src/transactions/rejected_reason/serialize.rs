@@ -15,29 +15,40 @@
 
 use super::*;
 
-impl Serialize for RejectedReason {
+impl<N: Network> Serialize for RejectedReason<N> {
     /// Serializes the rejected reason into string or bytes.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => match self {
-                Self::DuplicateProgramID(locator) => {
+                Self::DuplicateProgramID(program_id) => {
                     let mut object = serializer.serialize_struct("RejectedReason", 2)?;
                     object.serialize_field("type", "duplicate_program_id")?;
-                    object.serialize_field("locator", locator)?;
+                    object.serialize_field("program_id", program_id)?;
                     object.end()
                 }
-                Self::Finalize(locator, index, command) => {
-                    let mut object = serializer.serialize_struct("RejectedReason", 4)?;
+                Self::Finalize(program_id, resource, index, command) => {
+                    let mut object = serializer.serialize_struct("RejectedReason", 5)?;
                     object.serialize_field("type", "finalize")?;
-                    object.serialize_field("locator", locator)?;
+                    object.serialize_field("program_id", program_id)?;
+                    object.serialize_field("resource", resource)?;
                     object.serialize_field("index", index)?;
-                    object.serialize_field("command", command)?;
+                    // Serialize the command via its display string to keep the JSON human-readable.
+                    object.serialize_field("command", &command.to_string())?;
                     object.end()
                 }
-                Self::NonFinalize(locator) => {
-                    let mut object = serializer.serialize_struct("RejectedReason", 2)?;
+                Self::NonFinalize(program_id, resource) => {
+                    // Only include fields that are present.
+                    let mut object = serializer.serialize_struct(
+                        "RejectedReason",
+                        1 + program_id.is_some() as usize + resource.is_some() as usize,
+                    )?;
                     object.serialize_field("type", "non_finalize")?;
-                    object.serialize_field("locator", locator)?;
+                    if let Some(program_id) = program_id {
+                        object.serialize_field("program_id", program_id)?;
+                    }
+                    if let Some(resource) = resource {
+                        object.serialize_field("resource", resource)?;
+                    }
                     object.end()
                 }
             },
@@ -46,7 +57,7 @@ impl Serialize for RejectedReason {
     }
 }
 
-impl<'de> Deserialize<'de> for RejectedReason {
+impl<'de, N: Network> Deserialize<'de> for RejectedReason<N> {
     /// Deserializes the rejected reason from a string or bytes.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         match deserializer.is_human_readable() {
@@ -58,18 +69,29 @@ impl<'de> Deserialize<'de> for RejectedReason {
                 // Recover the rejected reason.
                 match type_ {
                     Some("duplicate_program_id") => {
-                        let locator: String = DeserializeExt::take_from_value::<D>(&mut object, "locator")?;
-                        Ok(Self::DuplicateProgramID(locator))
+                        let program_id: ProgramID<N> = DeserializeExt::take_from_value::<D>(&mut object, "program_id")?;
+                        Ok(Self::DuplicateProgramID(program_id))
                     }
                     Some("finalize") => {
-                        let locator: String = DeserializeExt::take_from_value::<D>(&mut object, "locator")?;
+                        let program_id: ProgramID<N> = DeserializeExt::take_from_value::<D>(&mut object, "program_id")?;
+                        let resource: Identifier<N> = DeserializeExt::take_from_value::<D>(&mut object, "resource")?;
                         let index: usize = DeserializeExt::take_from_value::<D>(&mut object, "index")?;
-                        let command: String = DeserializeExt::take_from_value::<D>(&mut object, "command")?;
-                        Ok(Self::Finalize(locator, index, command))
+                        // The command is stored as a display string; parse it back.
+                        let command_str: String = DeserializeExt::take_from_value::<D>(&mut object, "command")?;
+                        let command = command_str.parse::<Command<N>>().map_err(de::Error::custom)?;
+                        Ok(Self::Finalize(program_id, resource, index, command))
                     }
                     Some("non_finalize") => {
-                        let locator: String = DeserializeExt::take_from_value::<D>(&mut object, "locator")?;
-                        Ok(Self::NonFinalize(locator))
+                        // Both fields are optional; use `.get()` to check presence before parsing.
+                        let program_id = match object.get("program_id").and_then(|v| v.as_str()) {
+                            Some(s) => Some(ProgramID::<N>::from_str(s).map_err(de::Error::custom)?),
+                            None => None,
+                        };
+                        let resource = match object.get("resource").and_then(|v| v.as_str()) {
+                            Some(s) => Some(Identifier::<N>::from_str(s).map_err(de::Error::custom)?),
+                            None => None,
+                        };
+                        Ok(Self::NonFinalize(program_id, resource))
                     }
                     _ => Err(de::Error::custom("Invalid rejected reason type")),
                 }
@@ -83,41 +105,43 @@ impl<'de> Deserialize<'de> for RejectedReason {
 mod tests {
     use super::*;
 
-    fn check_serde_json(expected: RejectedReason) {
-        // Serialize
+    type CurrentNetwork = console::network::MainnetV0;
+
+    fn check_serde_json(expected: RejectedReason<CurrentNetwork>) {
+        // Serialize.
         let expected_string = expected.to_string();
         let candidate_string = serde_json::to_string(&expected).unwrap();
-        let candidate = serde_json::from_str::<RejectedReason>(&candidate_string).unwrap();
+        let candidate = serde_json::from_str::<RejectedReason<CurrentNetwork>>(&candidate_string).unwrap();
         assert_eq!(expected, candidate);
         assert_eq!(expected_string, candidate_string);
         assert_eq!(expected_string, candidate.to_string());
 
-        // Deserialize
+        // Deserialize.
         assert_eq!(expected, RejectedReason::from_str(&expected_string).unwrap());
         assert_eq!(expected, serde_json::from_str(&candidate_string).unwrap());
     }
 
-    fn check_bincode(expected: RejectedReason) {
-        // Serialize
+    fn check_bincode(expected: RejectedReason<CurrentNetwork>) {
+        // Serialize.
         let expected_bytes = expected.to_bytes_le().unwrap();
         let expected_bytes_with_size_encoding = bincode::serialize(&expected).unwrap();
         assert_eq!(&expected_bytes[..], &expected_bytes_with_size_encoding[8..]);
 
-        // Deserialize
+        // Deserialize.
         assert_eq!(expected, RejectedReason::read_le(&expected_bytes[..]).unwrap());
         assert_eq!(expected, bincode::deserialize(&expected_bytes_with_size_encoding[..]).unwrap());
     }
 
     #[test]
     fn test_serde_json() {
-        for reason in crate::transactions::rejected_reason::test_helpers::sample_rejected_reasons() {
+        for reason in test_helpers::sample_rejected_reasons::<CurrentNetwork>() {
             check_serde_json(reason);
         }
     }
 
     #[test]
     fn test_bincode() {
-        for reason in crate::transactions::rejected_reason::test_helpers::sample_rejected_reasons() {
+        for reason in test_helpers::sample_rejected_reasons::<CurrentNetwork>() {
             check_bincode(reason);
         }
     }

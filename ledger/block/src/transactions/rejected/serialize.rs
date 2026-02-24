@@ -72,7 +72,7 @@ impl<'de, N: Network> Deserialize<'de> for Rejected<N> {
                         let deployment: Deployment<N> =
                             DeserializeExt::take_from_value::<D>(&mut object, "deployment")?;
                         // Parse the optional rejected reason.
-                        let rejected_reason: Option<RejectedReason> = match object.get("rejected_reason") {
+                        let rejected_reason: Option<RejectedReason<N>> = match object.get("rejected_reason") {
                             Some(_) => Some(DeserializeExt::take_from_value::<D>(&mut object, "rejected_reason")?),
                             None => None,
                         };
@@ -83,7 +83,7 @@ impl<'de, N: Network> Deserialize<'de> for Rejected<N> {
                         // Parse the execution.
                         let execution: Execution<N> = DeserializeExt::take_from_value::<D>(&mut object, "execution")?;
                         // Parse the optional rejected reason.
-                        let rejected_reason: Option<RejectedReason> = match object.get("rejected_reason") {
+                        let rejected_reason: Option<RejectedReason<N>> = match object.get("rejected_reason") {
                             Some(_) => Some(DeserializeExt::take_from_value::<D>(&mut object, "rejected_reason")?),
                             None => None,
                         };

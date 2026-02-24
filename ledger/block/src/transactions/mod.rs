@@ -34,6 +34,8 @@ use console::{
         Ciphertext,
         FINALIZE_ID_DEPTH,
         FINALIZE_OPERATIONS_DEPTH,
+        Identifier,
+        ProgramID,
         ProgramOwner,
         Record,
         TRANSACTIONS_DEPTH,
@@ -45,7 +47,7 @@ use console::{
 use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 use snarkvm_synthesizer_error::IndexedFinalizeError;
-use snarkvm_synthesizer_program::FinalizeOperation;
+use snarkvm_synthesizer_program::{Command, FinalizeOperation};
 
 use indexmap::IndexMap;
 

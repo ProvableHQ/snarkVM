@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl FromStr for RejectedReason {
+impl<N: Network> FromStr for RejectedReason<N> {
     type Err = Error;
 
     /// Initializes the rejected reason from a JSON-string.
@@ -24,14 +24,14 @@ impl FromStr for RejectedReason {
     }
 }
 
-impl Debug for RejectedReason {
+impl<N: Network> Debug for RejectedReason<N> {
     /// Prints the rejected reason as a JSON-string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl Display for RejectedReason {
+impl<N: Network> Display for RejectedReason<N> {
     /// Displays the rejected reason as a JSON-string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", serde_json::to_string(self).map_err::<fmt::Error, _>(ser::Error::custom)?)

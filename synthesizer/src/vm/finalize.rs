@@ -403,7 +403,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let process_rejected_deployment =
                             |fee: &Fee<N>,
                              deployment: Deployment<N>,
-                             rejected_reason: Option<RejectedReason>|
+                             rejected_reason: Option<RejectedReason<N>>|
                              -> Result<Result<ConfirmedTransaction<N>, String>> {
                                 process
                                     .finalize_fee(state, store, fee)
@@ -425,9 +425,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             true => {
                                 let rejected_reason = match consensus_version < ConsensusVersion::V14 {
                                     true => None,
-                                    false => {
-                                        Some(RejectedReason::DuplicateProgramID(deployment.program_id().to_string()))
-                                    }
+                                    false => Some(RejectedReason::DuplicateProgramID(*deployment.program_id())),
                                 };
                                 match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
                                     Ok(result) => result,
@@ -1100,11 +1098,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         state: FinalizeGlobalState,
         store: &FinalizeStore<N, C::FinalizeStorage>,
         execution: &Execution<N>,
-    ) -> Result<(), IndexedFinalizeError> {
+    ) -> Result<(), IndexedFinalizeError<N, Command<N>>> {
         // Construct the program ID.
         let program_id = ProgramID::from_str("credits.aleo")?;
         // Construct the committee mapping name.
         let committee_mapping = Identifier::from_str("committee")?;
+        // Construct the bond_validator resource name.
+        let bond_validator = Identifier::from_str("bond_validator")?;
 
         // Check if the execution has any `bond_validator` transitions, and collect
         // the unique validator addresses if so.
@@ -1137,7 +1137,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         _ => Err(anyhow!("Invalid committee key (missing address) - {key}")),
                     })
                     .collect::<Result<HashSet<_>>>()
-                    .into_indexed(format!("{program_id}/{committee_mapping}"), None::<(usize, &str)>)?;
+                    .into_indexed(Some(program_id), Some(committee_mapping), None::<(usize, Command<N>)>)?;
                 // Get the number of new validators being bonded to.
                 let num_new_validators =
                     bond_validator_addresses.into_iter().filter(|address| !committee_members.contains(address)).count();
@@ -1149,7 +1149,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Check that the number of new validators being bonded does not exceed the maximum number of validators.
                 match next_committee_size > max_committee_size as usize {
                     true => indexed_finalize_bail!(
-                        format!("{program_id}/bond_validator"),
+                        Some(program_id),
+                        Some(bond_validator),
                         "Call to '{program_id}/bond_validator' exceeds the committee size"
                     ),
                     false => Ok(()),

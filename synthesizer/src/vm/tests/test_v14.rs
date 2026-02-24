@@ -1725,7 +1725,8 @@ constructor:
     let rejected_tx = block.transactions().iter().find(|tx| tx.is_rejected()).unwrap();
     assert_eq!(
         rejected_tx.rejected_reason(),
-        Some(RejectedReason::DuplicateProgramID("duplicate_id_program_2.aleo".to_string()))
+        // safe: static literal
+        Some(RejectedReason::DuplicateProgramID("duplicate_id_program_2.aleo".parse().unwrap()))
     );
     vm.add_next_block(&block).unwrap();
 
@@ -1738,12 +1739,13 @@ constructor:
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     let rejected_tx = block.transactions().iter().find(|tx| tx.is_rejected()).unwrap();
     // The locator points to the constructor of `failing_constructor.aleo`.
-    let Some(RejectedReason::Finalize(locator, index, command)) = rejected_tx.rejected_reason() else {
+    let Some(RejectedReason::Finalize(program_id, resource, index, command)) = rejected_tx.rejected_reason() else {
         panic!("Expected RejectedReason::Finalize, got {:?}", rejected_tx.rejected_reason());
     };
-    assert_eq!(locator, "failing_constructor.aleo/constructor");
+    assert_eq!(program_id.to_string(), "failing_constructor.aleo");
+    assert_eq!(resource.to_string(), "constructor");
     assert_eq!(index, 0);
-    assert_eq!(command, "assert.eq true false;");
+    assert_eq!(command.to_string(), "assert.eq true false;");
 }
 
 #[test]
@@ -1862,21 +1864,27 @@ constructor:
 
     // Ensure the first call fails and has the proper reason.
     let first_confirmed_transaction = transactions[0];
-    let Some(RejectedReason::Finalize(locator, index, command)) = first_confirmed_transaction.rejected_reason() else {
+    let Some(RejectedReason::Finalize(program_id, resource, index, command)) =
+        first_confirmed_transaction.rejected_reason()
+    else {
         panic!("Expected RejectedReason::Finalize, got {:?}", first_confirmed_transaction.rejected_reason());
     };
-    assert_eq!(locator, "failing_program.aleo/fail");
+    assert_eq!(program_id.to_string(), "failing_program.aleo");
+    assert_eq!(resource.to_string(), "fail");
     assert_eq!(index, 1);
-    assert_eq!(command, "assert.eq false r0;");
+    assert_eq!(command.to_string(), "assert.eq false r0;");
 
     // Ensure the second call fails and has the proper reason.
     let second_confirmed_transaction = transactions[1];
-    let Some(RejectedReason::Finalize(locator, index, command)) = second_confirmed_transaction.rejected_reason() else {
+    let Some(RejectedReason::Finalize(program_id, resource, index, command)) =
+        second_confirmed_transaction.rejected_reason()
+    else {
         panic!("Expected RejectedReason::Finalize, got {:?}", second_confirmed_transaction.rejected_reason());
     };
-    assert_eq!(locator, "failing_program.aleo/fail");
+    assert_eq!(program_id.to_string(), "failing_program.aleo");
+    assert_eq!(resource.to_string(), "fail");
     assert_eq!(index, 1);
-    assert_eq!(command, "assert.eq false r0;");
+    assert_eq!(command.to_string(), "assert.eq false r0;");
 }
 
 #[test]
@@ -2044,9 +2052,10 @@ fn test_rejected_reason_non_finalize() {
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     let rejected_tx = block.transactions().iter().find(|tx| tx.is_rejected()).unwrap();
     // The locator points to the constructor of `failing_constructor.aleo`.
-    let Some(RejectedReason::NonFinalize(locator)) = rejected_tx.rejected_reason() else {
+    let Some(RejectedReason::NonFinalize(program_id, resource)) = rejected_tx.rejected_reason() else {
         panic!("Expected RejectedReason::NonFinalize, got {:?}", rejected_tx.rejected_reason());
     };
-    assert_eq!(locator, "credits.aleo/bond_validator");
+    assert_eq!(program_id.unwrap().to_string(), "credits.aleo");
+    assert_eq!(resource.unwrap().to_string(), "bond_validator");
     vm.add_next_block(&block).unwrap();
 }

@@ -222,7 +222,7 @@ impl<N: Network> ConfirmedTransaction<N> {
     }
 
     /// Returns the rejected reason, if the confirmed transaction is rejected.
-    pub fn rejected_reason(&self) -> Option<RejectedReason> {
+    pub fn rejected_reason(&self) -> Option<RejectedReason<N>> {
         match self {
             Self::AcceptedDeploy(..) | Self::AcceptedExecute(..) => None,
             Self::RejectedDeploy(_, _, rejected, _) | Self::RejectedExecute(_, _, rejected, _) => {

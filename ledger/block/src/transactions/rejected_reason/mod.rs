@@ -21,27 +21,40 @@ use super::*;
 
 /// The reason a transaction was rejected.
 #[derive(Clone, PartialEq, Eq)]
-pub enum RejectedReason {
+pub enum RejectedReason<N: Network> {
     /// The transaction was rejected due to a duplicate program ID deployment in the same block.
-    DuplicateProgramID(String),
+    DuplicateProgramID(ProgramID<N>),
 
-    /// The transaction was rejected due to a failed finalize command. (locator, index, command).
+    /// The transaction was rejected due to a failed finalize command. (program ID, resource, index, command).
     /// Note: We do not log the actual error message from the finalize command, as it may contain
     /// sensitive information or lead to DOS vectors by storing string representations of large structs.
-    Finalize(String, usize, String),
+    Finalize(ProgramID<N>, Identifier<N>, usize, Command<N>),
 
     /// The transaction was rejected due to a VM error not captured by a finalize command.
-    NonFinalize(String),
+    /// The programID and resource are logged if they are available.
+    NonFinalize(Option<ProgramID<N>>, Option<Identifier<N>>),
 }
 
-impl RejectedReason {
+impl<N: Network> RejectedReason<N> {
     /// Initializes the rejected reason from an indexed finalize error.
-    pub fn from_indexed_finalize_error(indexed_finalize_error: IndexedFinalizeError) -> Self {
-        match indexed_finalize_error.command {
+    ///
+    /// `C` may be any type whose `Display` output is a valid `Command<N>` string (e.g. `Command<N>`
+    /// itself or `String`). If the command string cannot be re-parsed, the reason falls back to
+    /// `NonFinalize` so that a bad string never causes a panic in consensus code.
+    pub fn from_indexed_finalize_error<C: ToString>(error: IndexedFinalizeError<N, C>) -> Self {
+        let program_id = error.program_id;
+        let resource = error.resource;
+        match error.command.map(|b| *b) {
             Some((index, command)) => {
-                Self::Finalize(indexed_finalize_error.locator.to_string(), index, command.to_string())
+                // Parse the command from its display string. Falls back to NonFinalize on failure.
+                match (program_id, resource, command.to_string().parse::<Command<N>>()) {
+                    (Some(program_id), Some(resource), Ok(command)) => {
+                        Self::Finalize(program_id, resource, index, command)
+                    }
+                    (program_id, resource, _) => Self::NonFinalize(program_id, resource),
+                }
             }
-            None => Self::NonFinalize(indexed_finalize_error.locator.to_string()),
+            None => Self::NonFinalize(program_id, resource),
         }
     }
 }
@@ -49,13 +62,22 @@ impl RejectedReason {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
+    use std::str::FromStr;
 
     /// Returns one instance of each `RejectedReason` variant for testing.
-    pub(crate) fn sample_rejected_reasons() -> Vec<RejectedReason> {
+    pub(crate) fn sample_rejected_reasons<N: Network>() -> Vec<RejectedReason<N>> {
+        let program = ProgramID::<N>::from_str("dummy_program.aleo").unwrap();
+        let credits = ProgramID::<N>::from_str("credits.aleo").unwrap();
+        let transfer = Identifier::<N>::from_str("transfer_public").unwrap();
+        let bond = Identifier::<N>::from_str("bond_public").unwrap();
+        let command = Command::<N>::from_str("assert.eq r0 r1;").unwrap();
         vec![
-            RejectedReason::DuplicateProgramID("credits.aleo".to_string()),
-            RejectedReason::Finalize("credits.aleo/transfer_public".to_string(), 3, "set r0 r1".to_string()),
-            RejectedReason::NonFinalize("credits.aleo/bond_public".to_string()),
+            RejectedReason::DuplicateProgramID(program),
+            RejectedReason::Finalize(credits, transfer, 3, command),
+            RejectedReason::NonFinalize(Some(credits), Some(bond)),
+            RejectedReason::NonFinalize(None, Some(bond)),
+            RejectedReason::NonFinalize(Some(credits), None),
+            RejectedReason::NonFinalize(None, None),
         ]
     }
 }

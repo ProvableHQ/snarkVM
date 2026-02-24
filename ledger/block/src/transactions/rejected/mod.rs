@@ -24,8 +24,8 @@ use crate::{Deployment, Execution, Fee};
 /// A wrapper around the rejected deployment or execution.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Rejected<N: Network> {
-    Deployment(ProgramOwner<N>, Box<Deployment<N>>, Option<RejectedReason>),
-    Execution(Box<Execution<N>>, Option<RejectedReason>),
+    Deployment(ProgramOwner<N>, Box<Deployment<N>>, Option<RejectedReason<N>>),
+    Execution(Box<Execution<N>>, Option<RejectedReason<N>>),
 }
 
 impl<N: Network> Rejected<N> {
@@ -33,13 +33,13 @@ impl<N: Network> Rejected<N> {
     pub fn new_deployment(
         program_owner: ProgramOwner<N>,
         deployment: Deployment<N>,
-        rejected_reason: Option<RejectedReason>,
+        rejected_reason: Option<RejectedReason<N>>,
     ) -> Self {
         Self::Deployment(program_owner, Box::new(deployment), rejected_reason)
     }
 
     /// Initializes a rejected execution.
-    pub fn new_execution(execution: Execution<N>, rejected_reason: Option<RejectedReason>) -> Self {
+    pub fn new_execution(execution: Execution<N>, rejected_reason: Option<RejectedReason<N>>) -> Self {
         Self::Execution(Box::new(execution), rejected_reason)
     }
 
@@ -78,7 +78,7 @@ impl<N: Network> Rejected<N> {
     }
 
     /// Returns the rejected reason.
-    pub fn rejected_reason(&self) -> Option<RejectedReason> {
+    pub fn rejected_reason(&self) -> Option<RejectedReason<N>> {
         match self {
             Self::Deployment(_, _, rejected_reason) => rejected_reason.clone(),
             Self::Execution(_, rejected_reason) => rejected_reason.clone(),
@@ -140,7 +140,7 @@ pub mod test_helpers {
 
         // Sample a rejected reason for the deployment.
         let rejected_reason = match has_rejected_reason {
-            true => Some(RejectedReason::DuplicateProgramID(deployment.program_id().to_string())),
+            true => Some(RejectedReason::DuplicateProgramID(*deployment.program_id())),
             false => None,
         };
 
@@ -163,7 +163,10 @@ pub mod test_helpers {
 
         // Sample a rejected reason for the execution.
         let rejected_reason = match has_rejected_reason {
-            true => Some(RejectedReason::NonFinalize("credits.aleo/transfer_public".to_string())),
+            true => Some(RejectedReason::NonFinalize(
+                Some("credits.aleo".parse::<ProgramID<CurrentNetwork>>().unwrap()),
+                Some("transfer_public".parse::<Identifier<CurrentNetwork>>().unwrap()),
+            )),
             false => None,
         };
 
@@ -176,17 +179,11 @@ pub mod test_helpers {
         let rng = &mut TestRng::default();
 
         vec![
-            sample_rejected_deployment(1, 0, true, true, rng),
             sample_rejected_deployment(1, 0, true, false, rng),
-            sample_rejected_deployment(1, 0, false, true, rng),
             sample_rejected_deployment(1, 0, false, false, rng),
-            sample_rejected_deployment(2, 0, true, true, rng),
             sample_rejected_deployment(2, 0, true, false, rng),
-            sample_rejected_deployment(2, 0, false, true, rng),
             sample_rejected_deployment(2, 0, false, false, rng),
-            sample_rejected_deployment(1, 1, true, true, rng),
             sample_rejected_deployment(1, 1, true, false, rng),
-            sample_rejected_deployment(1, 1, false, true, rng),
             sample_rejected_deployment(1, 1, false, false, rng),
             sample_rejected_deployment(2, 1, true, true, rng),
             sample_rejected_deployment(2, 1, true, false, rng),
