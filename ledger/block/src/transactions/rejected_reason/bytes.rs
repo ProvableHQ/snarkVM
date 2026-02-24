@@ -21,12 +21,10 @@ impl<N: Network> FromBytes for RejectedReason<N> {
         // Read the variant.
         let variant = u8::read_le(&mut reader)?;
         match variant {
-            // DuplicateProgramID: program ID.
             0 => {
                 let program_id = ProgramID::<N>::read_le(&mut reader)?;
                 Ok(Self::DuplicateProgramID(program_id))
             }
-            // Finalize: program ID, resource, command index (u32), command.
             1 => {
                 let program_id = ProgramID::<N>::read_le(&mut reader)?;
                 let resource = Identifier::<N>::read_le(&mut reader)?;
@@ -34,7 +32,6 @@ impl<N: Network> FromBytes for RejectedReason<N> {
                 let command = Command::<N>::read_le(&mut reader)?;
                 Ok(Self::Finalize(program_id, resource, index, command))
             }
-            // NonFinalize: optional program ID (presence flag + value), optional resource.
             2 => {
                 // Read the optional program ID.
                 let program_id = match u8::read_le(&mut reader)? {
@@ -59,12 +56,10 @@ impl<N: Network> ToBytes for RejectedReason<N> {
     /// Writes the rejected reason to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         match self {
-            // Write variant 0, then the program ID.
             Self::DuplicateProgramID(program_id) => {
                 0u8.write_le(&mut writer)?;
                 program_id.write_le(&mut writer)
             }
-            // Write variant 1, then program ID, resource, index (u32), command.
             Self::Finalize(program_id, resource, index, command) => {
                 1u8.write_le(&mut writer)?;
                 program_id.write_le(&mut writer)?;
@@ -72,7 +67,6 @@ impl<N: Network> ToBytes for RejectedReason<N> {
                 u32::try_from(*index).map_err(|_| error("Command index exceeds u32::MAX"))?.write_le(&mut writer)?;
                 command.write_le(&mut writer)
             }
-            // Write variant 2, then optional program ID and resource (each with a presence flag).
             Self::NonFinalize(program_id, resource) => {
                 2u8.write_le(&mut writer)?;
                 // Write the optional program ID.
