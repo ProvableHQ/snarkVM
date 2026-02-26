@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,36 +16,30 @@
 use std::{env, fs, path::PathBuf};
 
 fn main() {
+    // Only create the CA bundle for mobile targets. The include_bytes! in macros.rs that
+    // references cacert.pem is inside #[cfg(any(target_os = "android", target_os = "ios"))],
+    // so non-mobile builds never read this file and we skip filesystem work entirely.
+    let target = env::var("TARGET").unwrap_or_default();
+    if !target.contains("android") && !target.contains("ios") {
+        return;
+    }
+
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let ca_bundle_path = out_dir.join("cacert.pem");
+    let platform = if target.contains("android") { "Android" } else { "iOS" };
 
-    // Download CA bundle for mobile platforms (Android and iOS)
-    let target = env::var("TARGET").unwrap_or_default();
-    if target.contains("android") || target.contains("ios") {
-        let platform = if target.contains("android") { "Android" } else { "iOS" };
-        // Download Mozilla's CA certificate bundle
-        println!("cargo:warning=Downloading CA certificate bundle for {platform}...");
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:warning=Downloading CA certificate bundle for {platform}...");
 
-        let ca_bundle_url = "https://curl.se/ca/cacert.pem";
-        match download_ca_bundle(ca_bundle_url) {
-            Ok(contents) => {
-                // Write the CA bundle as a binary file that can be included with include_bytes!
-                // This is simpler and more efficient than generating a Rust array
-                fs::write(&ca_bundle_path, &contents).expect("Failed to write CA certificate bundle");
-
-                println!("cargo:warning=CA certificate bundle downloaded successfully");
-                println!("cargo:rerun-if-changed=build.rs");
-            }
-            Err(e) => {
-                panic!(
-                    "Failed to download CA certificate bundle: {e}\n\
-                     You may need to download it manually from {ca_bundle_url} and place it at {ca_bundle_path:?}"
-                );
-            }
+    let ca_bundle_url = "https://curl.se/ca/cacert.pem";
+    match download_ca_bundle(ca_bundle_url) {
+        Ok(contents) => {
+            fs::write(&ca_bundle_path, &contents).expect("Failed to write CA certificate bundle");
+            println!("cargo:warning=CA certificate bundle downloaded successfully");
         }
-    } else {
-        // For non-mobile targets, write an empty file
-        fs::write(&ca_bundle_path, b"").expect("Failed to write empty CA bundle");
+        Err(e) => {
+            panic!("Failed to download CA certificate bundle: {e}");
+        }
     }
 }
 

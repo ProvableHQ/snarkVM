@@ -77,49 +77,18 @@ macro_rules! impl_store_and_remote_fetch {
             // On mobile platforms (Android and iOS), configure curl to use the bundled CA certificate bundle
             #[cfg(any(target_os = "android", target_os = "ios"))]
             {
-                // Include the CA bundle bytes at compile time
                 const CA_BUNDLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/cacert.pem"));
 
-                // Use ssl_cainfo_blob to set the CA bundle directly from memory
-                // This avoids file I/O and permission issues
-                // Only use this if CA_BUNDLE is not empty (mobile builds should have it)
-                if !CA_BUNDLE.is_empty() {
-                    easy.ssl_cainfo_blob(CA_BUNDLE).map_err(|e| {
-                        $crate::errors::ParameterError::Crate("curl", format!("Failed to set CA bundle from memory: {}", e))
-                    })?;
-                } else {
-                    // Fallback: try to write to a file if blob method doesn't work or bundle is empty
-                    // This should not happen for mobile builds, but provides a fallback
-                    let mut ca_bundle_path = {
-                        let aleo_dir = aleo_std::aleo_dir();
-                        if aleo_dir.to_string_lossy().contains(".cargo/registry")
-                            || aleo_dir.to_string_lossy().contains("target/")
-                            || std::fs::create_dir_all(&aleo_dir).is_err()
-                        {
-                            std::env::temp_dir()
-                        } else {
-                            aleo_dir
-                        }
-                    };
-
-                    std::fs::create_dir_all(&ca_bundle_path).map_err(|e| {
-                        $crate::errors::ParameterError::Crate(
-                            "std::fs",
-                            format!("Failed to create directory at {:?}: {}", ca_bundle_path, e),
-                        )
-                    })?;
-
-                    ca_bundle_path.push("snarkvm_cacert.pem");
-                    std::fs::write(&ca_bundle_path, CA_BUNDLE).map_err(|e| {
-                        $crate::errors::ParameterError::Crate("std::fs", format!("Failed to write CA bundle: {}", e))
-                    })?;
-
-                    let ca_bundle_str = ca_bundle_path.to_str().ok_or_else(|| {
-                        $crate::errors::ParameterError::Crate("std::path", "CA bundle path is not valid UTF-8".to_string())
-                    })?;
-                    easy.cainfo(ca_bundle_str)
-                        .map_err(|e| $crate::errors::ParameterError::Crate("curl", format!("Failed to set CA bundle: {}", e)))?;
+                if CA_BUNDLE.is_empty() {
+                    return Err($crate::errors::ParameterError::Message(
+                        "CA certificate bundle is empty. For Android/iOS the bundle is downloaded at build time; \
+                         ensure the snarkvm-parameters build script ran successfully (e.g. build for aarch64-linux-android or aarch64-apple-ios).".into(),
+                    ));
                 }
+
+                easy.ssl_cainfo_blob(CA_BUNDLE).map_err(|e| {
+                    $crate::errors::ParameterError::Crate("curl", format!("Failed to set CA bundle from memory: {}", e))
+                })?;
             }
 
             #[cfg(not(feature = "no_std_out"))]
