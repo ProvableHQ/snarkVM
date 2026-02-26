@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use snarkvm_circuit_types::U8;
+use snarkvm_circuit_types::{U8, U32};
 
 impl<A: Aleo> ToBits for Future<A> {
     type Boolean = Boolean<A>;
@@ -39,7 +39,11 @@ impl<A: Aleo> ToBits for Future<A> {
         for argument in &self.arguments {
             let argument_bits = argument.to_bits_le();
             // Write the size of the argument.
-            U16::constant(console::U16::new(argument_bits.len() as u16)).write_bits_le(vec);
+            let argument_length = argument_bits.len();
+            match argument_length <= u16::MAX as usize {
+                true => U16::constant(console::U16::new(argument_length as u16)).write_bits_le(vec),
+                false => U32::constant(console::U32::new(argument_length as u32)).write_bits_le(vec),
+            }
             // Write the argument.
             vec.extend_from_slice(&argument_bits);
         }
@@ -65,7 +69,11 @@ impl<A: Aleo> ToBits for Future<A> {
         for argument in &self.arguments {
             let argument_bits = argument.to_bits_be();
             // Write the size of the argument.
-            U16::constant(console::U16::new(argument_bits.len() as u16)).write_bits_be(vec);
+            let argument_length = argument_bits.len();
+            match argument_length <= u16::MAX as usize {
+                true => U16::constant(console::U16::new(argument_length as u16)).write_bits_be(vec),
+                false => U32::constant(console::U32::new(argument_length as u32)).write_bits_be(vec),
+            }
             // Write the argument.
             vec.extend_from_slice(&argument_bits);
         }

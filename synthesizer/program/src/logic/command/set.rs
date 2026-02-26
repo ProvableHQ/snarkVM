@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -58,6 +58,12 @@ impl<N: Network> Set<N> {
     #[inline]
     pub const fn value(&self) -> &Operand<N> {
         &self.operands[1]
+    }
+
+    /// Returns whether this command refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
     }
 }
 

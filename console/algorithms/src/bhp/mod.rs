@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +23,7 @@ mod hash_uncompressed;
 
 use snarkvm_console_types::prelude::*;
 
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 const BHP_CHUNK_SIZE: usize = 3;
@@ -50,7 +51,8 @@ pub type BHP1024<E> = BHP<E, 8, 54>; // Supports inputs up to 1044 bits (4 u8 + 
 /// ```text
 /// DIGEST_N+1 = BHP([ DIGEST_N[0..DATA_BITS] || INPUT[(N+1)*BLOCK_SIZE..(N+2)*BLOCK_SIZE] ]);
 /// ```
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(bound = "E: Serialize + DeserializeOwned")]
 pub struct BHP<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> {
     /// The domain separator for the BHP hash function.
     domain: Vec<bool>,

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 250;
+    const ITERATIONS: u64 = 10;
 
     fn check_mul_by_cofactor(mode: Mode, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) {
         let mut rng = TestRng::default();

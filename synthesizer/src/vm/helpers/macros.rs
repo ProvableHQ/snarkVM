@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -71,7 +71,7 @@ macro_rules! convert {
                 // Process the logic.
                 $logic!(console::network::CanaryV0, circuit::AleoCanaryV0)
             }
-            _ => bail!("Unsupported VM configuration for network: {}", N::ID),
+            _ => return Err(anyhow!("Unsupported VM configuration for network: {}", N::ID).into()),
         }
     }};
 }
@@ -106,7 +106,7 @@ macro_rules! process {
                 // Process the logic.
                 $logic!(process.read(), console::network::CanaryV0, circuit::AleoCanaryV0)
             }
-            _ => bail!("Unsupported VM configuration for network: {}", N::ID),
+            _ => return Err(anyhow!("Unsupported VM configuration for network: {}", N::ID).into()),
         }
     }};
 }

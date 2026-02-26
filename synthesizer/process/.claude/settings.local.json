@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Skill(verify)",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(gh pr list:*)"
+    ]
+  }
+}

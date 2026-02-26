@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -65,7 +65,7 @@ impl<N: Network> Committee<N> {
     pub const COMMITTEE_LOOKBACK_RANGE: u64 = BatchHeader::<N>::MAX_GC_ROUNDS as u64;
 
     /// The maximum number of members that may be in a committee.
-    pub fn max_committee_size() -> Result<u16> {
+    pub fn max_committee_size() -> u16 {
         N::LATEST_MAX_CERTIFICATES()
     }
 
@@ -81,9 +81,9 @@ impl<N: Network> Committee<N> {
         ensure!(members.len() >= 3, "Committee must have at least 3 members");
         // Ensure there are no more than the maximum number of members.
         ensure!(
-            members.len() <= Self::max_committee_size()? as usize,
+            members.len() <= Self::max_committee_size() as usize,
             "Committee must have no more than {} members",
-            Self::max_committee_size()?
+            Self::max_committee_size()
         );
         // Ensure all members have the minimum required stake.
         ensure!(
@@ -466,7 +466,7 @@ mod tests {
         // Set the number of rounds.
         const NUM_ROUNDS: u64 = 256 * 2_000;
         // Sample the number of members.
-        let num_members = rng.gen_range(3..=Committee::<CurrentNetwork>::max_committee_size().unwrap());
+        let num_members = rng.gen_range(3..=Committee::<CurrentNetwork>::max_committee_size());
         // Sample a committee.
         let committee = crate::test_helpers::sample_committee_custom(num_members, rng);
         // Check the leader distribution.
@@ -478,10 +478,8 @@ mod tests {
         // Initialize the RNG.
         let rng = &mut TestRng::default();
         // Sample a committee.
-        let committee = crate::test_helpers::sample_committee_custom(
-            Committee::<CurrentNetwork>::max_committee_size().unwrap(),
-            rng,
-        );
+        let committee =
+            crate::test_helpers::sample_committee_custom(Committee::<CurrentNetwork>::max_committee_size(), rng);
 
         // Start a timer.
         let timer = std::time::Instant::now();

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -139,6 +139,11 @@ impl<N: Network> Stack<N> {
                     .collect::<Result<IndexMap<_, _>>>()?;
 
                 Plaintext::Struct(members, Default::default())
+            }
+            PlaintextType::ExternalStruct(locator) => {
+                let external_stack = self.get_external_stack(locator.program_id())?;
+                let new_type = PlaintextType::Struct(*locator.resource());
+                return external_stack.sample_plaintext_internal(&new_type, depth, rng);
             }
             // Sample an array.
             PlaintextType::Array(array_type) => {

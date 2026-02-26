@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Stack<N> {
     /// Authorizes a call to the program function for the given inputs.
@@ -24,7 +25,7 @@ impl<N: Network> Stack<N> {
         function_name: impl TryInto<Identifier<N>>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, StackAuthError> {
         let timer = timer!("Stack::authorize");
 
         // Get the program ID.
@@ -80,7 +81,7 @@ impl<N: Network> Stack<N> {
         function_name: impl TryInto<Identifier<N>>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, StackAuthError> {
         let timer = timer!("Stack::authorize_unchecked");
 
         // Get the program ID.
@@ -134,13 +135,15 @@ impl<N: Network> Stack<N> {
         &self,
         request: Request<N>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, StackAuthError> {
         let timer = timer!("Stack::authorize_request");
 
         // Get the program ID.
         let program_id = *self.program.id();
         // Ensure the program ID is credits.aleo.
-        ensure!(program_id.to_string() == "credits.aleo", "Program ID must be credits.aleo");
+        if program_id.to_string() != "credits.aleo" {
+            return Err(anyhow!("Program ID must be credits.aleo").into());
+        }
         // Initialize the authorization.
         let authorization = Authorization::new(request.clone());
         // Construct the call stack.

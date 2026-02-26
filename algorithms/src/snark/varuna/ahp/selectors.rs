@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 use super::verifier::QueryPoints;
 use crate::fft::{DensePolynomial, EvaluationDomain};
 use snarkvm_fields::{PrimeField, batch_inversion};
-use snarkvm_utilities::{cfg_into_iter, cfg_iter_mut};
+use snarkvm_utilities::cfg_into_iter;
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
@@ -97,7 +97,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         ensure!(remainder.is_zero(), "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})");
 
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
-        cfg_iter_mut!(h_i.coeffs).for_each(|c| *c *= multiplier);
+        h_i.coeffs.iter_mut().for_each(|c| *c *= multiplier);
 
         end_timer!(selector_time);
         Ok((h_i, None))
@@ -114,7 +114,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         let selector_time = start_timer!(|| "Compute selector with remainder witness");
 
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
-        cfg_iter_mut!(poly.coeffs).for_each(|c| *c *= multiplier);
+        poly.coeffs.iter_mut().for_each(|c| *c *= multiplier);
 
         let (h_i, mut xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;
         xg_i = xg_i.mul_by_vanishing_poly(*target_domain);

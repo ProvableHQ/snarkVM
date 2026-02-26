@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,11 +42,11 @@ use std::{borrow::Cow, fmt};
 
 use anyhow::{Result, ensure};
 
-#[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
-
 #[cfg(feature = "serial")]
 use itertools::Itertools;
+
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
 
 /// Returns the ceiling of the base-2 logarithm of `x`.
 ///
@@ -285,7 +285,7 @@ impl<F: FftField> EvaluationDomain<F> {
             }
 
             batch_inversion(u.as_mut_slice());
-            cfg_iter_mut!(u).zip_eq(ls).for_each(|(tau_minus_r, l)| {
+            cfg_iter_mut!(u, 1_000).zip_eq(ls).for_each(|(tau_minus_r, l)| {
                 *tau_minus_r = l * *tau_minus_r;
             });
             u
@@ -422,7 +422,7 @@ impl<F: FftField> EvaluationDomain<F> {
 
         let pc = self.precompute_ifft();
         self.ifft_helper_in_place_with_pc(x_s, FFTOrder::II, &pc);
-        cfg_iter_mut!(x_s).for_each(|val| *val *= self.size_inv);
+        cfg_iter_mut!(x_s, 1_000).for_each(|val| *val *= self.size_inv);
     }
 
     pub(crate) fn in_order_coset_ifft_in_place<T: DomainCoeff<F>>(&self, x_s: &mut [T]) {
@@ -500,7 +500,7 @@ impl<F: FftField> EvaluationDomain<F> {
         }
 
         self.ifft_helper_in_place_with_pc(x_s, FFTOrder::II, pre_comp);
-        cfg_iter_mut!(x_s).for_each(|val| *val *= self.size_inv);
+        cfg_iter_mut!(x_s, 1_000).for_each(|val| *val *= self.size_inv);
     }
 
     pub(crate) fn out_order_ifft_in_place_with_pc<T: DomainCoeff<F>>(
@@ -509,7 +509,7 @@ impl<F: FftField> EvaluationDomain<F> {
         pre_comp: &IFFTPrecomputation<F>,
     ) {
         self.ifft_helper_in_place_with_pc(x_s, FFTOrder::OI, pre_comp);
-        cfg_iter_mut!(x_s).for_each(|val| *val *= self.size_inv);
+        cfg_iter_mut!(x_s, 1_000).for_each(|val| *val *= self.size_inv);
     }
 
     #[allow(unused)]
@@ -684,7 +684,7 @@ impl<F: FftField> EvaluationDomain<F> {
             // we parallelize the butterfly operation within the chunk.
 
             if gap > MIN_GAP_SIZE_FOR_PARALLELISATION && num_chunks < max_threads {
-                cfg_iter_mut!(lo).zip(hi).zip(cfg_iter!(roots).step_by(step)).for_each(g);
+                cfg_iter_mut!(lo, 1000).zip(hi).zip(cfg_iter!(roots, 1000).step_by(step)).for_each(g);
             } else {
                 lo.iter_mut().zip(hi).zip(roots.iter().step_by(step)).for_each(g);
             }
@@ -762,8 +762,8 @@ impl<F: FftField> EvaluationDomain<F> {
             // the roots lookup is done a significant amount of times
             // Which also implies a large lookup stride.
             let (roots, step) = if num_chunks >= MIN_NUM_CHUNKS_FOR_COMPACTION && gap < xi.len() / 2 {
-                cfg_iter_mut!(compacted_roots[..gap])
-                    .zip(cfg_iter!(roots_cache[..(gap * num_chunks)]).step_by(num_chunks))
+                cfg_iter_mut!(compacted_roots[..gap], 1_000)
+                    .zip(cfg_iter!(roots_cache[..(gap * num_chunks)], 1_000).step_by(num_chunks))
                     .for_each(|(a, b)| *a = *b);
                 (&compacted_roots[..gap], 1)
             } else {

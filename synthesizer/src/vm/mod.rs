@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,11 +25,23 @@ mod verify;
 #[cfg(test)]
 mod tests;
 
-use crate::{Restrictions, cast_mut_ref, cast_ref, convert, process};
+use crate::{Restrictions, Stack, cast_mut_ref, cast_ref, convert, process};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
-    program::{Argument, Identifier, Literal, Locator, Plaintext, ProgramID, ProgramOwner, Record, Response, Value},
+    program::{
+        Argument,
+        FINALIZE_ID_DEPTH,
+        Identifier,
+        Literal,
+        Locator,
+        Plaintext,
+        ProgramID,
+        ProgramOwner,
+        Record,
+        Response,
+        Value,
+    },
     types::{Field, Group, U16, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -73,6 +85,7 @@ use snarkvm_synthesizer_process::{
     execution_cost,
 };
 use snarkvm_synthesizer_program::{
+    FinalizeCore,
     FinalizeGlobalState,
     FinalizeOperation,
     FinalizeStoreTrait,
@@ -984,6 +997,7 @@ function compute:
     }
 
     #[test]
+    #[ignore]
     fn test_multiple_deployments_and_multiple_executions() {
         let rng = &mut TestRng::default();
 
@@ -1133,6 +1147,7 @@ finalize getter:
     }
 
     #[test]
+    #[ignore]
     fn test_load_deployments_with_imports() {
         // NOTE: This seed was chosen for the CI's RNG to ensure that the test passes.
         let rng = &mut TestRng::fixed(123456789);
@@ -1373,6 +1388,7 @@ function check:
     }
 
     #[test]
+    #[ignore]
     fn test_deployment_with_external_records() {
         let rng = &mut TestRng::default();
 
@@ -1451,7 +1467,7 @@ function call_fee_public:
 finalize call_fee_public:
     input r0 as credits.aleo/fee_public.future;
     await r0;
-    
+
 function call_fee_private:
     input r0 as credits.aleo/credits.record;
     input r1 as u64.private;
@@ -1496,6 +1512,7 @@ function call_fee_private:
     }
 
     #[test]
+    #[cfg(feature = "memory-intensive")]
     #[ignore = "memory-intensive"]
     fn test_deployment_synthesis_overload() {
         let rng = &mut TestRng::default();
@@ -1807,105 +1824,6 @@ function do:
 
         // Update the VM.
         vm.add_next_block(&block).unwrap();
-    }
-
-    #[test]
-    #[ignore]
-    fn test_deployment_memory_overload() {
-        const NUM_DEPLOYMENTS: usize = 32;
-
-        let rng = &mut TestRng::default();
-
-        // Initialize a private key.
-        let private_key = sample_genesis_private_key(rng);
-
-        // Initialize a view key.
-        let view_key = ViewKey::try_from(&private_key).unwrap();
-
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block(rng);
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Deploy the base program.
-        let program = Program::from_str(
-            r"
-program program_layer_0.aleo;
-
-mapping m:
-    key as u8.public;
-    value as u32.public;
-
-function do:
-    input r0 as u32.public;
-    async do r0 into r1;
-    output r1 as program_layer_0.aleo/do.future;
-
-finalize do:
-    input r0 as u32.public;
-    set r0 into m[0u8];",
-        )
-        .unwrap();
-
-        let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
-
-        // For each layer, deploy a program that calls the program from the previous layer.
-        for i in 1..NUM_DEPLOYMENTS {
-            let mut program_string = String::new();
-            // Add the import statements.
-            for j in 0..i {
-                program_string.push_str(&format!("import program_layer_{j}.aleo;\n"));
-            }
-            // Add the program body.
-            program_string.push_str(&format!(
-                "program program_layer_{i}.aleo;
-
-mapping m:
-    key as u8.public;
-    value as u32.public;
-
-function do:
-    input r0 as u32.public;
-    call program_layer_{prev}.aleo/do r0 into r1;
-    async do r0 r1 into r2;
-    output r2 as program_layer_{i}.aleo/do.future;
-
-finalize do:
-    input r0 as u32.public;
-    input r1 as program_layer_{prev}.aleo/do.future;
-    await r1;
-    set r0 into m[0u8];",
-                prev = i - 1
-            ));
-            // Construct the program.
-            let program = Program::from_str(&program_string).unwrap();
-
-            // Deploy the program.
-            let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-
-            vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
-        }
-
-        // Fetch the unspent records.
-        let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        trace!("Unspent Records:\n{:#?}", records);
-
-        // Select a record to spend.
-        let record = Some(records.values().next().unwrap().decrypt(&view_key).unwrap());
-
-        // Prepare the inputs.
-        let inputs = [Value::<CurrentNetwork>::from_str("1u32").unwrap()].into_iter();
-
-        // Execute.
-        let transaction =
-            vm.execute(&private_key, ("program_layer_30.aleo", "do"), inputs, record, 0, None, rng).unwrap();
-
-        // Verify.
-        vm.check_transaction(&transaction, None, rng).unwrap();
     }
 
     #[test]

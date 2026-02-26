@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,9 +18,12 @@ use crate::{
     ConfirmedTxType,
     TransactionStore,
     TransitionStore,
-    helpers::memory::{MemoryMap, TransactionMemory, TransitionMemory},
+    helpers::{
+        memory::{MemoryMap, TransactionMemory, TransitionMemory},
+        traits::MapRead,
+    },
 };
-use console::{prelude::*, types::Field};
+use console::{prelude::*, program::BlockTree, types::Field};
 use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Header, Ratifications, Rejected, Solutions};
 use snarkvm_ledger_puzzle::SolutionID;
@@ -212,8 +215,23 @@ impl<N: Network> BlockStorage<N> for BlockMemory<N> {
         &self.transaction_store
     }
 
+    /// Stores a database backup at the given location.
     #[cfg(feature = "rocks")]
     fn backup_database<P: AsRef<std::path::Path>>(&self, _path: P) -> Result<(), String> {
         Err("Unavailable in memory-only mode".to_owned())
+    }
+
+    /// Creates the block tree based on the contents of the storage.
+    fn create_block_tree(&self) -> Result<BlockTree<N>> {
+        // Prepare an iterator over the block heights and prepare the leaves of the block tree.
+        let hashes = self
+            .id_map()
+            .iter_confirmed()
+            .sorted_unstable_by(|(h1, _), (h2, _)| h1.cmp(h2))
+            .map(|(_, hash)| hash.to_bits_le())
+            .collect::<Vec<Vec<bool>>>();
+
+        // Construct the block tree.
+        N::merkle_tree_bhp(&hashes)
     }
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +53,7 @@ use console::{
     },
     program::{Register, RegisterType},
 };
+use snarkvm_synthesizer_error::*;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Instruction<N: Network> {
@@ -282,6 +283,10 @@ pub enum Instruction<N: Network> {
     ShrWrapped(ShrWrapped<N>),
     /// Computes whether `signature` is valid for the given `address` and `message`.
     SignVerify(SignVerify<N>),
+    /// Computes whether `proof` is valid for the given `verifying_key` and `public inputs`.
+    SnarkVerify(SnarkVerify<N>),
+    /// Computes whether a `batch_proof` is valid for the given `verifying_keys` and `public inputs`.
+    SnarkVerifyBatch(SnarkVerifyBatch<N>),
     /// Squares 'first', storing the outcome in `destination`.
     Square(Square<N>),
     /// Compute the square root of 'first', storing the outcome in `destination`.
@@ -447,6 +452,10 @@ macro_rules! instruction {
             SerializeBits,
             SerializeBitsRaw,
 
+            // New opcodes added in `ConsensusVersion::V14`
+            SnarkVerify,
+            SnarkVerifyBatch,
+
             // New opcodes should be added here, with a comment on which consensus version they were added in.
         }}
     };
@@ -558,25 +567,39 @@ impl<N: Network> Instruction<N> {
     }
 
     /// Evaluates the instruction.
+    // Temporary until all instruction evaluate methods return EvalError (#2941, #3055).
+    #[allow(clippy::useless_conversion)]
     #[inline]
-    pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersSigner<N>) -> Result<()> {
-        instruction!(self, |instruction| instruction.evaluate(stack, registers))
+    pub fn evaluate(
+        &self,
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersSigner<N>,
+    ) -> Result<(), EvalError> {
+        instruction!(self, |instruction| instruction.evaluate(stack, registers).map_err(Into::into))
     }
 
     /// Executes the instruction.
+    // Temporary until all instruction execute methods return ExecError (#2941, #3055).
+    #[allow(clippy::useless_conversion)]
     #[inline]
     pub fn execute<A: circuit::Aleo<Network = N>>(
         &self,
         stack: &impl StackTrait<N>,
         registers: &mut impl RegistersCircuit<N, A>,
-    ) -> Result<()> {
-        instruction!(self, |instruction| instruction.execute::<A>(stack, registers))
+    ) -> Result<(), ExecError> {
+        instruction!(self, |instruction| instruction.execute::<A>(stack, registers).map_err(Into::into))
     }
 
     /// Finalizes the instruction.
+    // Temporary until all instruction finalize methods return FinalizeError (#2941, #3055).
+    #[allow(clippy::useless_conversion)]
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
-        instruction!(self, |instruction| instruction.finalize(stack, registers))
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersTrait<N>,
+    ) -> Result<(), FinalizeError> {
+        instruction!(self, |instruction| instruction.finalize(stack, registers).map_err(Into::into))
     }
 
     /// Returns the output type from the given input types.
@@ -587,6 +610,11 @@ impl<N: Network> Instruction<N> {
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
         instruction!(self, |instruction| instruction.output_types(stack, input_types))
+    }
+
+    /// Returns whether this instruction refers to an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        instruction!(self, |instruction| instruction.contains_external_struct())
     }
 
     /// Returns `true` if the instruction contains a literal string type.
@@ -637,7 +665,7 @@ mod tests {
         // Sanity check the number of instructions is unchanged.
         // Note that the number of opcodes **MUST NOT** exceed u16::MAX.
         assert_eq!(
-            119,
+            121,
             Instruction::<CurrentNetwork>::OPCODES.len(),
             "Update me if the number of instructions changes."
         );

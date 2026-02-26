@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -88,7 +88,10 @@ use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rand::{CryptoRng, Rng};
-use std::sync::{Arc, Weak};
+use std::{
+    cell::OnceCell,
+    sync::{Arc, Weak},
+};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;

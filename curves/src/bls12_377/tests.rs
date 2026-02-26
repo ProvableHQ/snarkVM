@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -182,7 +182,7 @@ fn test_fr_sum_of_products() {
     for i in [2, 4, 8, 16, 32] {
         let a = (0..i).map(|_| rng.r#gen()).collect::<Vec<_>>();
         let b = (0..i).map(|_| rng.r#gen()).collect::<Vec<_>>();
-        assert_eq!(Fr::sum_of_products(a.iter(), b.iter()), a.into_iter().zip(b).map(|(a, b)| a * b).sum());
+        assert_eq!(Fr::sum_of_products(&a, &b), a.into_iter().zip(b).map(|(a, b)| a * b).sum());
     }
 }
 
@@ -192,7 +192,7 @@ fn test_fq_sum_of_products() {
     for i in [2, 4, 8, 16, 32] {
         let a = (0..i).map(|_| rng.r#gen()).collect::<Vec<_>>();
         let b = (0..i).map(|_| rng.r#gen()).collect::<Vec<_>>();
-        assert_eq!(Fq::sum_of_products(a.iter(), b.iter()), a.into_iter().zip(b).map(|(a, b)| a * b).sum());
+        assert_eq!(Fq::sum_of_products(&a, &b), a.into_iter().zip(b).map(|(a, b)| a * b).sum());
     }
 }
 

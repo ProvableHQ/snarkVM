@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,15 +15,16 @@
 
 use snarkvm_console_types::{Address, Group, U8};
 
-use crate::StructType;
+use crate::{Locator, StructType};
 
 use super::*;
 
 impl<N: Network> RecordType<N> {
     /// Returns the number of bits of a record type.
-    pub fn size_in_bits<F>(&self, get_struct: &F) -> Result<usize>
+    pub fn size_in_bits<F0, F1>(&self, get_struct: &F0, get_external_struct: &F1) -> Result<usize>
     where
-        F: Fn(&Identifier<N>) -> Result<StructType<N>>,
+        F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
+        F1: Fn(&Locator<N>) -> Result<StructType<N>>,
     {
         // Initialize the counter.
         let mut size = 0usize;
@@ -45,7 +46,7 @@ impl<N: Network> RecordType<N> {
             data_size = data_size.checked_add(2).ok_or(anyhow!("`size_in_bits` overflowed"))?;
             // Account for the entry data bits.
             data_size = data_size
-                .checked_add(entry_type.plaintext_type().size_in_bits(get_struct)?)
+                .checked_add(entry_type.plaintext_type().size_in_bits(get_struct, get_external_struct)?)
                 .ok_or(anyhow!("`size_in_bits` overflowed"))?;
         }
 
@@ -73,10 +74,11 @@ impl<N: Network> RecordType<N> {
     }
 
     /// Returns the number of raw bits of a record type.
-    pub fn size_in_bits_raw<F>(&self, get_struct: &F) -> Result<usize>
+    pub fn size_in_bits_raw<F0, F1>(&self, get_struct: &F0, get_external_struct: &F1) -> Result<usize>
     where
-        F: Fn(&Identifier<N>) -> Result<StructType<N>>,
+        F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
+        F1: Fn(&Locator<N>) -> Result<StructType<N>>,
     {
-        self.size_in_bits(get_struct)
+        self.size_in_bits(get_struct, get_external_struct)
     }
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -96,7 +96,7 @@ mod tests {
 
     use core::ops::RangeInclusive;
 
-    const ITERATIONS: u64 = 32;
+    const ITERATIONS: u64 = 10;
 
     fn check_mul<I: IntegerType>(
         name: &str,

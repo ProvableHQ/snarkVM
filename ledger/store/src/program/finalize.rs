@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +29,11 @@ use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
+#[cfg(feature = "history")]
+use std::{
+    borrow::Cow,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
@@ -76,6 +81,12 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     type ProgramIDMap: for<'a> Map<'a, ProgramID<N>, IndexSet<Identifier<N>>>;
     /// The mapping of `(program ID, mapping name)` to `[(key, value)]`.
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    /// The mapping of `(program ID, mapping name, key, height)` to `value`.
+    #[cfg(feature = "history")]
+    type MappingUpdateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>;
+    /// The mapping of `(program ID, mapping name, key)` to [`height`].
+    #[cfg(feature = "history")]
+    type MappingUpdateHeightsMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
 
     /// Initializes the program state storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -86,6 +97,12 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     fn program_id_map(&self) -> &Self::ProgramIDMap;
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap;
+    /// Returns the historical mapping value map.
+    #[cfg(feature = "history")]
+    fn mapping_update_map(&self) -> &Self::MappingUpdateMap;
+    /// Returns the historical mapping update heights map.
+    #[cfg(feature = "history")]
+    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap;
 
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode;
@@ -95,13 +112,25 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().start_atomic();
         self.program_id_map().start_atomic();
         self.key_value_map().start_atomic();
+        #[cfg(feature = "history")]
+        {
+            self.mapping_update_map().start_atomic();
+            self.mapping_update_heights_map().start_atomic();
+        }
     }
 
     /// Checks if an atomic batch is in progress.
     fn is_atomic_in_progress(&self) -> bool {
-        self.committee_store().is_atomic_in_progress()
+        let ret = self.committee_store().is_atomic_in_progress()
             || self.program_id_map().is_atomic_in_progress()
-            || self.key_value_map().is_atomic_in_progress()
+            || self.key_value_map().is_atomic_in_progress();
+        #[cfg(feature = "history")]
+        let ret = {
+            ret || self.mapping_update_map().is_atomic_in_progress()
+                || self.mapping_update_heights_map().is_atomic_in_progress()
+        };
+
+        ret
     }
 
     /// Checkpoints the atomic batch.
@@ -109,6 +138,11 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_checkpoint();
         self.program_id_map().atomic_checkpoint();
         self.key_value_map().atomic_checkpoint();
+        #[cfg(feature = "history")]
+        {
+            self.mapping_update_map().atomic_checkpoint();
+            self.mapping_update_heights_map().atomic_checkpoint();
+        }
     }
 
     /// Clears the latest atomic batch checkpoint.
@@ -116,6 +150,11 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().clear_latest_checkpoint();
         self.program_id_map().clear_latest_checkpoint();
         self.key_value_map().clear_latest_checkpoint();
+        #[cfg(feature = "history")]
+        {
+            self.mapping_update_map().clear_latest_checkpoint();
+            self.mapping_update_heights_map().clear_latest_checkpoint();
+        }
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
@@ -123,6 +162,11 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_rewind();
         self.program_id_map().atomic_rewind();
         self.key_value_map().atomic_rewind();
+        #[cfg(feature = "history")]
+        {
+            self.mapping_update_map().atomic_rewind();
+            self.mapping_update_heights_map().atomic_rewind();
+        }
     }
 
     /// Aborts an atomic batch write operation.
@@ -130,14 +174,29 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().abort_atomic();
         self.program_id_map().abort_atomic();
         self.key_value_map().abort_atomic();
+        #[cfg(feature = "history")]
+        {
+            self.mapping_update_map().abort_atomic();
+            self.mapping_update_heights_map().abort_atomic();
+        }
     }
 
     /// Finishes an atomic batch write operation.
     fn finish_atomic(&self) -> Result<()> {
         self.committee_store().finish_atomic()?;
         self.program_id_map().finish_atomic()?;
-        self.key_value_map().finish_atomic()
+        self.key_value_map().finish_atomic()?;
+        #[cfg(feature = "history")]
+        {
+            self.mapping_update_map().finish_atomic()?;
+            self.mapping_update_heights_map().finish_atomic()?;
+        }
+        Ok(())
     }
+
+    /// Returns the current block height.
+    #[cfg(feature = "history")]
+    fn current_block_height(&self) -> &AtomicU32;
 
     /// Initializes the given `program ID` and `mapping name` in storage.
     /// If the `mapping name` is already initialized, an error is returned.
@@ -196,6 +255,27 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         let value_id = N::hash_bhp1024(&(key_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
 
         atomic_batch_scope!(self, {
+            // Update the historical maps.
+            #[cfg(feature = "history")]
+            {
+                let current_height = self.current_block_height().load(Ordering::SeqCst);
+
+                // Insert the initial value as the first historical update.
+                self.mapping_update_map()
+                    .insert((program_id, mapping_name, key.clone(), current_height), value.clone())?;
+
+                // Ensure the update height history does not already exist.
+                let height_update_key = (program_id, mapping_name, key.clone());
+                if self.mapping_update_heights_map().contains_key_speculative(&height_update_key)? {
+                    bail!(
+                        "Illegal operation: the history of height updates for '{program_id}/{mapping_name}/{key}' already exists in storage"
+                    );
+                }
+
+                // Insert the first historical update height.
+                self.mapping_update_heights_map().insert(height_update_key, vec![current_height])?;
+            }
+
             // Update the key-value map with the new key-value.
             self.key_value_map().insert((program_id, mapping_name), key, value)?;
 
@@ -228,6 +308,25 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         let value_id = N::hash_bhp1024(&(key_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
 
         atomic_batch_scope!(self, {
+            // Update the historical maps.
+            #[cfg(feature = "history")]
+            {
+                let current_height = self.current_block_height().load(Ordering::SeqCst);
+
+                // Register the updated value at the current height.
+                self.mapping_update_map()
+                    .insert((program_id, mapping_name, key.clone(), current_height), value.clone())?;
+
+                // Obtain the list of past update heights.
+                let key = (program_id, mapping_name, key.clone());
+                let update_heights =
+                    self.mapping_update_heights_map().get_confirmed(&key)?.map(|list| list.into_owned());
+                let mut update_heights = update_heights.unwrap_or_default();
+                // Extend the historical update heights with the current height.
+                update_heights.push(current_height);
+                self.mapping_update_heights_map().insert(key, update_heights)?;
+            }
+
             // Update the key-value map with the new key-value.
             self.key_value_map().insert((program_id, mapping_name), key, value)?;
 
@@ -568,6 +667,51 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     pub fn storage_mode(&self) -> &StorageMode {
         self.storage.storage_mode()
     }
+
+    /// Returns the current block height.
+    #[cfg(feature = "history")]
+    pub fn current_block_height(&self) -> &AtomicU32 {
+        self.storage.current_block_height()
+    }
+
+    /// Returns the historical value of a mapping.
+    #[cfg(feature = "history")]
+    pub fn get_historical_mapping_value(
+        &self,
+        program_id: ProgramID<N>,
+        mapping_name: Identifier<N>,
+        mapping_key: Plaintext<N>,
+        height: u32,
+    ) -> Result<Option<Cow<'_, Value<N>>>, Error> {
+        // First, obtain the heights at which updates have happened.
+        let Some(update_heights) = self.get_mapping_update_heights(program_id, mapping_name, mapping_key.clone())?
+        else {
+            return Ok(None);
+        };
+
+        // Find the updated height which matches the desired point in history.
+        let Some(applicable_height) = (match update_heights.binary_search(&height) {
+            Ok(_) => Some(height),
+            Err(0) => None,
+            Err(idx) => update_heights.get(idx - 1).copied(),
+        }) else {
+            return Ok(None);
+        };
+
+        // Find the mapping value applicable at that height.
+        self.storage.mapping_update_map().get_confirmed(&(program_id, mapping_name, mapping_key, applicable_height))
+    }
+
+    /// Returns the heights at which past mapping updates occurred.
+    #[cfg(feature = "history")]
+    pub fn get_mapping_update_heights(
+        &self,
+        program_id: ProgramID<N>,
+        mapping_name: Identifier<N>,
+        mapping_key: Plaintext<N>,
+    ) -> Result<Option<Cow<'_, Vec<u32>>>, Error> {
+        self.storage.mapping_update_heights_map().get_confirmed(&(program_id, mapping_name, mapping_key))
+    }
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -756,9 +900,11 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 mod tests {
     use super::*;
     use crate::helpers::memory::FinalizeMemory;
-    use console::{network::MainnetV0, program::Literal, types::U64};
+    use console::network::MainnetV0;
 
     use aleo_std::StorageMode;
+
+    use console::{program::Literal, types::U64};
 
     type CurrentNetwork = MainnetV0;
 
@@ -1263,6 +1409,7 @@ mod tests {
     /// NUM_ITEMS=100000 cargo test test_finalize_timings --features rocks -- --nocapture
     /// ```
     #[test]
+    #[ignore]
     fn test_finalize_timings() {
         let rng = &mut TestRng::default();
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -79,7 +79,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> PowChecked<Integer<E, M>> for
                     };
 
                     let overflow = overflow | positive_product_overflows | negative_product_underflows;
-                    E::assert_eq(overflow & bit, E::zero());
+                    E::assert_eq(overflow & bit, E::zero()).expect("Integer power overflow check failed");
 
                     // Return the product of `self` and `other` with the appropriate sign.
                     Self::ternary(operands_same_sign, &product, &(!&product).add_wrapped(&Self::one()))
@@ -87,7 +87,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> PowChecked<Integer<E, M>> for
                     let (product, overflow) = Self::mul_with_flags(&result, self);
 
                     // For unsigned multiplication, check that the overflow flag is not set.
-                    E::assert_eq(overflow & bit, E::zero());
+                    E::assert_eq(overflow & bit, E::zero()).expect("Integer power overflow check failed");
 
                     // Return the product of `self` and `other`.
                     product

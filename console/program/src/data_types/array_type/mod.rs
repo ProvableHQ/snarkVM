@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -93,9 +93,9 @@ impl<N: Network> ArrayType<N> {
         for length in &dimensions {
             ensure!(**length as usize >= N::MIN_ARRAY_ELEMENTS, "An array must have {} element", N::MIN_ARRAY_ELEMENTS);
             ensure!(
-                **length as usize <= N::MAX_ARRAY_ELEMENTS,
+                **length as usize <= N::LATEST_MAX_ARRAY_ELEMENTS(),
                 "An array can contain {} elements",
-                N::MAX_ARRAY_ELEMENTS
+                N::LATEST_MAX_ARRAY_ELEMENTS()
             );
         }
         // Construct the array type.

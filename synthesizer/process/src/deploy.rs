@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Process<N> {
     /// Deploys the given program ID, if it does not exist.
@@ -22,7 +23,7 @@ impl<N: Network> Process<N> {
         &self,
         program: &Program<N>,
         rng: &mut R,
-    ) -> Result<Deployment<N>> {
+    ) -> Result<Deployment<N>, ProcessDeployError> {
         let timer = timer!("Process::deploy");
 
         // Compute the stack.
@@ -30,12 +31,12 @@ impl<N: Network> Process<N> {
         lap!(timer, "Compute the stack");
 
         // Return the deployment.
-        let deployment = stack.deploy::<A, R>(rng);
+        let deployment = stack.deploy::<A, R>(rng)?;
         lap!(timer, "Construct the deployment");
 
         finish!(timer);
 
-        deployment
+        Ok(deployment)
     }
 
     /// Adds the newly-deployed program.

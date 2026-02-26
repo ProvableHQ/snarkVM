@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +59,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
 
 impl<
     'a,
-    K: 'a + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
+    K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
     V: 'a + Clone + Serialize + DeserializeOwned + Send + Sync,
 > Map<'a, K, V> for DataMap<K, V>
 {
@@ -93,7 +93,7 @@ impl<
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the key to the batch.
             true => {
-                self.atomic_batch.lock().push((*key, None));
+                self.atomic_batch.lock().push((key.clone(), None));
             }
             // Otherwise, remove the key-value pair directly from the map.
             false => {
@@ -278,7 +278,7 @@ impl<
 
 impl<
     'a,
-    K: 'a + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
+    K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
     V: 'a + Clone + Serialize + DeserializeOwned + Send + Sync,
 > MapRead<'a, K, V> for DataMap<K, V>
 {

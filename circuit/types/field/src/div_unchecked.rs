@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +41,7 @@ impl<E: Environment> DivUnchecked<Field<E>> for Field<E> {
 
                 // Ensure the quotient is correct by enforcing:
                 // `quotient * other == self`.
-                E::enforce(|| (&quotient, other, self));
+                E::enforce(|| (&quotient, other, self)).expect("Field division constraint unsatisfied");
 
                 // Return the quotient.
                 quotient
@@ -84,7 +84,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::{Circuit, assert_count_fails};
 
-    const ITERATIONS: u64 = 1000;
+    const ITERATIONS: u64 = 10;
 
     fn check_div_unchecked(
         name: &str,

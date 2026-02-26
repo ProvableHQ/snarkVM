@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +25,7 @@ use console::{
 use snarkvm_synthesizer_program::{Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
 
 use indexmap::IndexMap;
+use std::{cell::OnceCell, sync::OnceLock};
 
 #[derive(Clone)]
 pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {

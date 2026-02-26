@@ -44,9 +44,6 @@ workspace = true
 [dependencies.rand]
 workspace = true
 
-[dependencies.rayon]
-workspace = true
-
 [dependencies.serde]
 workspace = true
 features = [ "derive" ]

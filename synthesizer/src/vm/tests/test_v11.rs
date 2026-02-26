@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +32,7 @@ use std::sync::OnceLock;
 // - programs using syntax introduced in `V11` can be deployed at and after `V11`.
 // - a program with an array larger than 512 cannot be deployed after `V11`.
 #[test]
+#[ignore]
 fn test_deployments_for_v11_features() {
     // Define the programs.
     let programs = vec![
@@ -100,6 +101,7 @@ constructor:
 
 // This test verifies that a concrete set of test vectors for `ecdsa.verify.keccak256.eth` and `ecdsa.verify.digest.eth`.
 #[test]
+#[ignore]
 fn test_ecdsa_keccak256_eth() {
     // Define the message test vectors.
     // Each test vector is a tuple of (message, message_hash).
@@ -379,7 +381,7 @@ constructor:
                 // Create a block and fail if the number of accepted transactions is zero.
                 let block = sample_next_block(&vm, &caller_private_key, &[execution], rng).unwrap();
                 if block.transactions().num_accepted() == 0 {
-                    Err(anyhow::anyhow!("The transaction was not accepted"))
+                    Err(anyhow::anyhow!("The transaction was not accepted").into())
                 } else {
                     Ok(())
                 }

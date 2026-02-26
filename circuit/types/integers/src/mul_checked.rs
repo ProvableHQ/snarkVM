@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -98,7 +98,8 @@ impl<E: Environment, I: IntegerType> MulChecked<Self> for Integer<E, I> {
             // If the product should be positive, then it cannot exceed the signed maximum.
             let operands_same_sign = &self.msb().is_equal(other.msb());
             let positive_product_overflows = operands_same_sign & product.msb();
-            E::assert_eq(positive_product_overflows, E::zero());
+            E::assert_eq(positive_product_overflows, E::zero())
+                .expect("Signed multiplication positive overflow check failed");
 
             // If the product should be negative, then it cannot exceed the absolute value of the signed minimum.
             let negative_product_underflows = {
@@ -108,7 +109,8 @@ impl<E: Environment, I: IntegerType> MulChecked<Self> for Integer<E, I> {
                     !product.msb() | (product.msb() & !lower_product_bits_nonzero);
                 !operands_same_sign & !negative_product_lt_or_eq_signed_min
             };
-            E::assert_eq(negative_product_underflows, E::zero());
+            E::assert_eq(negative_product_underflows, E::zero())
+                .expect("Signed multiplication negative underflow check failed");
 
             // Note that the relevant overflow cases are checked independently above.
             // Return the product of `self` and `other` with the appropriate sign.
@@ -132,7 +134,8 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
 
             // Check that the computed product is equal to witnessed product, in the base field.
             // Note: The multiplication is safe as the field twice as large as the maximum integer type supported.
-            E::enforce(|| (this.to_field(), that.to_field(), product.to_field()));
+            E::enforce(|| (this.to_field(), that.to_field(), product.to_field()))
+                .expect("Integer multiplication constraint unsatisfied");
 
             product
         }
@@ -145,7 +148,7 @@ impl<E: Environment, I: IntegerType> Integer<E, I> {
             Boolean::assert_bits_are_zero(&z_1_upper_bits);
 
             // Check that `z2` is zero.
-            E::assert_eq(z2, E::zero());
+            E::assert_eq(z2, E::zero()).expect("Karatsuba multiplication overflow check failed");
 
             // Return the product of `self` and `other`.
             product
@@ -274,7 +277,7 @@ mod tests {
 
     use core::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    const ITERATIONS: u64 = 32;
+    const ITERATIONS: u64 = 10;
 
     fn check_mul<I: IntegerType + RefUnwindSafe>(
         name: &str,

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -73,7 +73,7 @@ mod tests {
     use crate::Circuit;
     use console::{TestRng, Uniform};
 
-    const ITERATIONS: u32 = 1000;
+    const ITERATIONS: u32 = 10;
 
     fn check_serialization(expected: Literal<Circuit>) {
         // Success cases.

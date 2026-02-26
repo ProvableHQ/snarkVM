@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +53,17 @@ impl<N: Network> FromBytes for Operand<N> {
                 Ok(Self::ProgramOwner(program_id))
             }
             10 => Ok(Self::BlockTimestamp),
+            11 => Ok(Self::AleoGenerator),
+            12 => {
+                let index_exists: bool = FromBytes::read_le(&mut reader)?;
+                match index_exists {
+                    true => {
+                        let index: U32<N> = FromBytes::read_le(&mut reader)?;
+                        Ok(Self::AleoGeneratorPowers(Some(index)))
+                    }
+                    false => Ok(Self::AleoGeneratorPowers(None)),
+                }
+            }
             variant => Err(error(format!("Failed to deserialize operand variant {variant}"))),
         }
     }
@@ -111,6 +122,18 @@ impl<N: Network> ToBytes for Operand<N> {
                 }
             }
             Self::BlockTimestamp => 10u8.write_le(&mut writer),
+            Self::AleoGenerator => 11u8.write_le(&mut writer),
+            Self::AleoGeneratorPowers(index) => {
+                12u8.write_le(&mut writer)?;
+                // Write the index if it is present.
+                match index {
+                    Some(index) => {
+                        true.write_le(&mut writer)?;
+                        index.write_le(&mut writer)
+                    }
+                    None => false.write_le(&mut writer),
+                }
+            }
         }
     }
 }

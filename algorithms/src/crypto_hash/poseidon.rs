@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -233,8 +233,9 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     #[inline]
     fn apply_mds(&mut self) {
         let mut new_state = State::default();
+        let curr_state: Vec<F> = self.state.iter().copied().collect::<Vec<_>>();
         new_state.iter_mut().zip(&self.parameters.mds).for_each(|(new_elem, mds_row)| {
-            *new_elem = F::sum_of_products(self.state.iter(), mds_row.iter());
+            *new_elem = F::sum_of_products(&curr_state, mds_row);
         });
         self.state = new_state;
     }

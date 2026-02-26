@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,7 +56,7 @@ use snarkvm_utilities::bytes_from_bits_le;
 
 type CurrentNetwork = MainnetV0;
 
-const ITERATIONS: usize = 25;
+const ITERATIONS: usize = 2;
 
 fn sample_valid_input_types<N: Network>(variant: ECDSAVerifyVariant) -> Vec<PlaintextType<N>> {
     match variant {

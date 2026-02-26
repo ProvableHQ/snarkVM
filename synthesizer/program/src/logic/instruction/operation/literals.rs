@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,6 +57,12 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
     #[inline]
     pub fn destinations(&self) -> Vec<Register<N>> {
         vec![self.destination.clone()]
+    }
+
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
     }
 }
 
@@ -159,6 +165,7 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
             .map(|input_type| match input_type {
                 RegisterType::Plaintext(PlaintextType::Literal(literal_type)) => Ok(*literal_type),
                 RegisterType::Plaintext(PlaintextType::Struct(..))
+                | RegisterType::Plaintext(PlaintextType::ExternalStruct(..))
                 | RegisterType::Plaintext(PlaintextType::Array(..))
                 | RegisterType::Record(..)
                 | RegisterType::ExternalRecord(..)

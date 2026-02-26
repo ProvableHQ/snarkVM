@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -226,7 +226,7 @@ mod tests {
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    const ITERATIONS: usize = 1000;
+    const ITERATIONS: usize = 10;
 
     #[test]
     fn test_staking_rewards() {

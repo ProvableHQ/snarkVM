@@ -18,6 +18,7 @@ edition = "2024"
 
 [features]
 default = [ "indexmap/rayon" ]
+history = [ ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
 rocks = [ "rocksdb", "smallvec" ]
 serial = [

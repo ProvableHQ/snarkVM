@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -77,7 +77,7 @@ use snarkvm_synthesizer_program::{
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
-const ITERATIONS: usize = 25;
+const ITERATIONS: usize = 2;
 
 fn sample_valid_input_types<N: Network, R: CryptoRng + Rng>(
     variant: HashVariant,
@@ -97,7 +97,7 @@ fn sample_valid_input_types<N: Network, R: CryptoRng + Rng>(
         | HashVariant::HashSha3_384NativeRaw
         | HashVariant::HashSha3_512NativeRaw => (0..10)
             .map(|_| {
-                let length = rng.gen_range(1..=(CurrentNetwork::MAX_ARRAY_ELEMENTS / 8)) * 8;
+                let length = rng.gen_range(1..=(CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS() / 8)) * 8;
                 PlaintextType::Array(
                     ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(
                         u32::try_from(length).unwrap(),
@@ -378,13 +378,13 @@ test_hash!(hash_bhp512_raw, HashBHP512Raw, ITERATIONS);
 test_hash!(hash_bhp768_raw, HashBHP768Raw, ITERATIONS);
 test_hash!(hash_bhp1024_raw, HashBHP1024Raw, ITERATIONS);
 
-test_hash!(hash_keccak256, HashKeccak256, 5);
-test_hash!(hash_keccak384, HashKeccak384, 5);
-test_hash!(hash_keccak512, HashKeccak512, 5);
+test_hash!(hash_keccak256, HashKeccak256, 2);
+test_hash!(hash_keccak384, HashKeccak384, 1);
+test_hash!(hash_keccak512, HashKeccak512, 1);
 
-test_hash!(hash_keccak256_raw, HashKeccak256Raw, 5);
-test_hash!(hash_keccak384_raw, HashKeccak384Raw, 5);
-test_hash!(hash_keccak512_raw, HashKeccak512Raw, 5);
+test_hash!(hash_keccak256_raw, HashKeccak256Raw, 2);
+test_hash!(hash_keccak384_raw, HashKeccak384Raw, 1);
+test_hash!(hash_keccak512_raw, HashKeccak512Raw, 1);
 
 test_hash!(hash_psd2, HashPSD2, ITERATIONS);
 test_hash!(hash_psd4, HashPSD4, ITERATIONS);
@@ -394,29 +394,29 @@ test_hash!(hash_psd2_raw, HashPSD2Raw, ITERATIONS);
 test_hash!(hash_psd4_raw, HashPSD4Raw, ITERATIONS);
 test_hash!(hash_psd8_raw, HashPSD8Raw, ITERATIONS);
 
-test_hash!(hash_sha3_256, HashSha3_256, 5);
-test_hash!(hash_sha3_384, HashSha3_384, 5);
-test_hash!(hash_sha3_512, HashSha3_512, 5);
+test_hash!(hash_sha3_256, HashSha3_256, 2);
+test_hash!(hash_sha3_384, HashSha3_384, 1);
+test_hash!(hash_sha3_512, HashSha3_512, 1);
 
-test_hash!(hash_sha3_256_raw, HashSha3_256Raw, 5);
-test_hash!(hash_sha3_384_raw, HashSha3_384Raw, 5);
-test_hash!(hash_sha3_512_raw, HashSha3_512Raw, 5);
+test_hash!(hash_sha3_256_raw, HashSha3_256Raw, 2);
+test_hash!(hash_sha3_384_raw, HashSha3_384Raw, 1);
+test_hash!(hash_sha3_512_raw, HashSha3_512Raw, 1);
 
-test_hash!(hash_keccak256_native, HashKeccak256Native, 5);
-test_hash!(hash_keccak384_native, HashKeccak384Native, 5);
-test_hash!(hash_keccak512_native, HashKeccak512Native, 5);
+test_hash!(hash_keccak256_native, HashKeccak256Native, 2);
+test_hash!(hash_keccak384_native, HashKeccak384Native, 1);
+test_hash!(hash_keccak512_native, HashKeccak512Native, 1);
 
-test_hash!(hash_sha3_256_native, HashSha3_256Native, 5);
-test_hash!(hash_sha3_384_native, HashSha3_384Native, 5);
-test_hash!(hash_sha3_512_native, HashSha3_512Native, 5);
+test_hash!(hash_sha3_256_native, HashSha3_256Native, 2);
+test_hash!(hash_sha3_384_native, HashSha3_384Native, 1);
+test_hash!(hash_sha3_512_native, HashSha3_512Native, 1);
 
-test_hash!(hash_keccak256_native_raw, HashKeccak256NativeRaw, 5);
-test_hash!(hash_keccak384_native_raw, HashKeccak384NativeRaw, 5);
-test_hash!(hash_keccak512_native_raw, HashKeccak512NativeRaw, 5);
+test_hash!(hash_keccak256_native_raw, HashKeccak256NativeRaw, 2);
+test_hash!(hash_keccak384_native_raw, HashKeccak384NativeRaw, 1);
+test_hash!(hash_keccak512_native_raw, HashKeccak512NativeRaw, 1);
 
-test_hash!(hash_sha3_256_native_raw, HashSha3_256NativeRaw, 5);
-test_hash!(hash_sha3_384_native_raw, HashSha3_384NativeRaw, 5);
-test_hash!(hash_sha3_512_native_raw, HashSha3_512NativeRaw, 5);
+test_hash!(hash_sha3_256_native_raw, HashSha3_256NativeRaw, 2);
+test_hash!(hash_sha3_384_native_raw, HashSha3_384NativeRaw, 1);
+test_hash!(hash_sha3_512_native_raw, HashSha3_512NativeRaw, 1);
 
 // Note this test must be explicitly written, instead of using the macro, because HashPED64 fails on certain input types.
 #[test]

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,7 @@ use crate::{
 use anyhow::Result;
 use rand::RngCore;
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_iter_mut, cfg_reduce};
+use snarkvm_utilities::{ExecutionPool, cfg_into_iter, cfg_reduce};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -109,7 +109,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     multiplier_2.add_polynomial(z_a, "z_a");
                     multiplier_2.add_polynomial(z_b, "z_b");
                     let mut rowcheck = multiplier_2.multiply().unwrap();
-                    cfg_iter_mut!(rowcheck.coeffs).zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
+                    rowcheck.coeffs.iter_mut().zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
 
                     instance_lhs += &(&rowcheck * instance_combiner);
 

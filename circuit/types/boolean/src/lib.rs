@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,7 +66,7 @@ impl<E: Environment> Inject for Boolean<E> {
 
         // Ensure (1 - a) * a = 0
         // `a` must be either 0 or 1.
-        E::enforce(|| (E::one() - &variable, &variable, E::zero()));
+        E::enforce(|| (E::one() - &variable, &variable, E::zero())).expect("Boolean variable constraint unsatisfied");
 
         Self(variable.into())
     }
@@ -227,14 +227,8 @@ mod tests {
 
             // Ensure `a` is either 0 or 1:
             // (1 - a) * a = 0
-            assert!(
-                std::panic::catch_unwind(|| Circuit::enforce(|| (
-                    Circuit::one() - &candidate,
-                    candidate,
-                    Circuit::zero()
-                )))
-                .is_err()
-            );
+            // For constant constraints that fail, `enforce` returns Err.
+            assert!(Circuit::enforce(|| (Circuit::one() - &candidate, candidate, Circuit::zero())).is_err());
             assert_eq!(0, Circuit::num_constraints());
 
             Circuit::reset();
@@ -244,7 +238,7 @@ mod tests {
 
             // Ensure `a` is either 0 or 1:
             // (1 - a) * a = 0
-            Circuit::enforce(|| (Circuit::one() - &candidate, candidate, Circuit::zero()));
+            Circuit::enforce(|| (Circuit::one() - &candidate, candidate, Circuit::zero())).unwrap();
             assert!(!Circuit::is_satisfied());
 
             Circuit::reset();
@@ -254,7 +248,7 @@ mod tests {
 
             // Ensure `a` is either 0 or 1:
             // (1 - a) * a = 0
-            Circuit::enforce(|| (Circuit::one() - &candidate, candidate, Circuit::zero()));
+            Circuit::enforce(|| (Circuit::one() - &candidate, candidate, Circuit::zero())).unwrap();
             assert!(!Circuit::is_satisfied());
 
             Circuit::reset();

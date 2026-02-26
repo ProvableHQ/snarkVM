@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -399,6 +399,9 @@ const HASH_PSD_PER_BYTE_COST: u64 = 75;
 const ECDSA_VERIFY_BASE_COST: u64 = 60_000;
 const ECDSA_VERIFY_ETH_BASE_COST: u64 = 75_000;
 
+const SNARK_VERIFY_BASE_COST: u64 = 100_000;
+const SNARK_VERIFY_PER_BYTE_COST: u64 = 50;
+
 #[derive(Copy, Clone)]
 pub enum ConsensusFeeVersion {
     V1,
@@ -431,6 +434,10 @@ fn plaintext_size_in_bytes<N: Network>(stack: &Stack<N>, plaintext_type: &Plaint
             })?;
             // Return the size of the struct.
             Ok(size_of_name.saturating_add(size_of_members))
+        }
+        PlaintextType::ExternalStruct(locator) => {
+            let external_stack = stack.get_external_stack(locator.program_id())?;
+            plaintext_size_in_bytes(&*external_stack, &PlaintextType::Struct(*locator.resource()))
         }
         PlaintextType::Array(array_type) => {
             // Retrieve the number of elements in the array.
@@ -548,7 +555,9 @@ pub fn cost_per_command<N: Network>(
                 FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Field)) => Ok(1_500),
                 FinalizeType::Plaintext(PlaintextType::Literal(_)) => Ok(500),
                 FinalizeType::Plaintext(PlaintextType::Array(_)) => bail!("'div' does not support arrays"),
-                FinalizeType::Plaintext(PlaintextType::Struct(_)) => bail!("'div' does not support structs"),
+                FinalizeType::Plaintext(PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_)) => {
+                    bail!("'div' does not support structs")
+                }
                 FinalizeType::Future(_) => bail!("'div' does not support futures"),
             }
         }
@@ -762,7 +771,9 @@ pub fn cost_per_command<N: Network>(
                 FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Scalar)) => Ok(10_000),
                 FinalizeType::Plaintext(PlaintextType::Literal(_)) => Ok(500),
                 FinalizeType::Plaintext(PlaintextType::Array(_)) => bail!("'mul' does not support arrays"),
-                FinalizeType::Plaintext(PlaintextType::Struct(_)) => bail!("'mul' does not support structs"),
+                FinalizeType::Plaintext(PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_)) => {
+                    bail!("'mul' does not support structs")
+                }
                 FinalizeType::Future(_) => bail!("'mul' does not support futures"),
             }
         }
@@ -780,7 +791,9 @@ pub fn cost_per_command<N: Network>(
                 FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Field)) => Ok(1_500),
                 FinalizeType::Plaintext(PlaintextType::Literal(_)) => Ok(500),
                 FinalizeType::Plaintext(PlaintextType::Array(_)) => bail!("'pow' does not support arrays"),
-                FinalizeType::Plaintext(PlaintextType::Struct(_)) => bail!("'pow' does not support structs"),
+                FinalizeType::Plaintext(PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_)) => {
+                    bail!("'pow' does not support structs")
+                }
                 FinalizeType::Future(_) => bail!("'pow' does not support futures"),
             }
         }
@@ -804,6 +817,12 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::ShlWrapped(_)) => Ok(500),
         Command::Instruction(Instruction::Shr(_)) => Ok(500),
         Command::Instruction(Instruction::ShrWrapped(_)) => Ok(500),
+        Command::Instruction(Instruction::SnarkVerify(snark)) => {
+            cost_in_size(stack, finalize_types, snark.operands(), SNARK_VERIFY_PER_BYTE_COST, SNARK_VERIFY_BASE_COST)
+        }
+        Command::Instruction(Instruction::SnarkVerifyBatch(snark)) => {
+            cost_in_size(stack, finalize_types, snark.operands(), SNARK_VERIFY_PER_BYTE_COST, SNARK_VERIFY_BASE_COST)
+        }
         Command::Instruction(Instruction::Square(_)) => Ok(500),
         Command::Instruction(Instruction::SquareRoot(_)) => Ok(2_500),
         Command::Instruction(Instruction::Sub(_)) => Ok(500),
@@ -957,7 +976,7 @@ mod tests {
     use circuit::{Aleo, AleoCanaryV0, AleoTestnetV0, AleoV0};
 
     use console::{
-        network::{CanaryV0, MainnetV0, TestnetV0},
+        network::{CanaryV0, ConsensusVersion, MainnetV0, TestnetV0, prelude::consensus_config_value_by_version},
         types::Address,
     };
     use snarkvm_synthesizer_program::Program;
@@ -986,7 +1005,8 @@ function over_five_thousand:
     // Cost for a program +1 byte above the threshold.
     const STORAGE_COST_ABOVE_THRESHOLD: u64 = 5002;
     // Storage cost for an execution transaction at the maximum transaction size.
-    const STORAGE_COST_MAX: u64 = 3_276_800;
+    const V1_STORAGE_COST_MAX: u64 = 3_276_800;
+    const V14_STORAGE_COST_MAX: u64 = 117_964_800;
 
     fn test_storage_cost_bounds<N: Network>() {
         // Calculate the bounds directly above and below the size threshold.
@@ -1000,7 +1020,12 @@ function over_five_thousand:
         assert_eq!(execution_storage_cost::<N>(threshold_lower_offset), threshold_lower_offset);
         assert_eq!(execution_storage_cost::<N>(threshold), threshold);
         assert_eq!(execution_storage_cost::<N>(threshold_upper_offset), STORAGE_COST_ABOVE_THRESHOLD);
-        assert_eq!(execution_storage_cost::<N>(N::MAX_TRANSACTION_SIZE as u64), STORAGE_COST_MAX);
+        // Use V1 value for backwards-compatible test.
+        let v1_max_tx_size = consensus_config_value_by_version!(N, MAX_TRANSACTION_SIZE, ConsensusVersion::V1).unwrap();
+        assert_eq!(execution_storage_cost::<N>(v1_max_tx_size as u64), V1_STORAGE_COST_MAX);
+        let v14_max_tx_size =
+            consensus_config_value_by_version!(N, MAX_TRANSACTION_SIZE, ConsensusVersion::V14).unwrap();
+        assert_eq!(execution_storage_cost::<N>(v14_max_tx_size as u64), V14_STORAGE_COST_MAX);
     }
 
     #[test]

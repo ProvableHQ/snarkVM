@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +29,8 @@ use snarkvm_ledger_committee::Committee;
 
 use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
+#[cfg(feature = "history")]
+use std::sync::{Arc, atomic::AtomicU32};
 
 /// A RocksDB finalize storage.
 #[derive(Clone)]
@@ -39,6 +41,15 @@ pub struct FinalizeDB<N: Network> {
     program_id_map: DataMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
     key_value_map: NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
+    /// The historical mapping map.
+    #[cfg(feature = "history")]
+    mapping_update_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>,
+    /// The historical mapping update heights map.
+    #[cfg(feature = "history")]
+    mapping_update_heights_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
+    /// The current block height.
+    #[cfg(feature = "history")]
+    block_height: Arc<AtomicU32>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -48,6 +59,10 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type CommitteeStorage = CommitteeDB<N>;
     type ProgramIDMap = DataMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    #[cfg(feature = "history")]
+    type MappingUpdateMap = DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>;
+    #[cfg(feature = "history")]
+    type MappingUpdateHeightsMap = DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
 
     /// Initializes the finalize storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -59,6 +74,12 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             committee_store,
             program_id_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::ProgramID))?,
             key_value_map: rocksdb::RocksDB::open_nested_map(N::ID, storage.clone(), MapID::Program(ProgramMap::KeyValueID))?,
+            #[cfg(feature = "history")]
+            mapping_update_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::MappingUpdate))?,
+            #[cfg(feature = "history")]
+            mapping_update_heights_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::MappingUpdateHeights))?,
+            #[cfg(feature = "history")]
+            block_height: Default::default(),
             storage_mode: storage,
         })
     }
@@ -78,9 +99,26 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         &self.key_value_map
     }
 
+    /// Returns the historical value map.
+    #[cfg(feature = "history")]
+    fn mapping_update_map(&self) -> &Self::MappingUpdateMap {
+        &self.mapping_update_map
+    }
+
+    #[cfg(feature = "history")]
+    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap {
+        &self.mapping_update_heights_map
+    }
+
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode {
         &self.storage_mode
+    }
+
+    /// Returns the current block height.
+    #[cfg(feature = "history")]
+    fn current_block_height(&self) -> &AtomicU32 {
+        &self.block_height
     }
 }
 

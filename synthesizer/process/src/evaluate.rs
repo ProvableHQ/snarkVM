@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,11 +14,15 @@
 // limitations under the License.
 
 use super::*;
+use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Process<N> {
     /// Evaluates a program function on the given request.
     #[inline]
-    pub fn evaluate<A: circuit::Aleo<Network = N>>(&self, authorization: Authorization<N>) -> Result<Response<N>> {
+    pub fn evaluate<A: circuit::Aleo<Network = N>>(
+        &self,
+        authorization: Authorization<N>,
+    ) -> Result<Response<N>, ProcessEvalError> {
         let timer = timer!("Process::evaluate");
 
         // Retrieve the top-level request (without popping it).
@@ -31,11 +35,11 @@ impl<N: Network> Process<N> {
         // Initialize an RNG.
         let rng = &mut rand::thread_rng();
         // Evaluate the function.
-        let response = stack.evaluate_function::<A, _>(CallStack::evaluate(authorization)?, None, None, rng);
+        let response = stack.evaluate_function::<A, _>(CallStack::evaluate(authorization)?, None, None, rng)?;
         lap!(timer, "Evaluate the function");
 
         finish!(timer);
 
-        response
+        Ok(response)
     }
 }

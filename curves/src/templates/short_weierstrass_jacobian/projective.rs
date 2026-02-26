@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@ use crate::{
     traits::{AffineCurve, ProjectiveCurve, ShortWeierstrassParameters as Parameters},
 };
 use snarkvm_fields::{Field, One, Zero, impl_add_sub_from_field_ref};
-use snarkvm_utilities::{FromBytes, ToBytes, cfg_iter_mut, rand::Uniform};
+use snarkvm_utilities::{FromBytes, ToBytes, rand::Uniform};
 
 use core::{
     fmt::{Display, Formatter, Result as FmtResult},
@@ -29,8 +29,6 @@ use rand::{
     Rng,
     distributions::{Distribution, Standard},
 };
-#[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
 use std::io::{Read, Result as IoResult, Write};
 
 #[derive(Copy, Clone, Debug)]
@@ -209,7 +207,7 @@ impl<P: Parameters> ProjectiveCurve for Projective<P> {
             g.z = tmp * s;
             tmp = newtmp;
         }
-        cfg_iter_mut!(v).filter(|g| !g.is_normalized()).for_each(|g| {
+        v.iter_mut().filter(|g| !g.is_normalized()).for_each(|g| {
             // Perform affine transformations
             let z2 = g.z.square(); // 1/z
             g.x *= &z2; // x/z^2
@@ -280,7 +278,7 @@ impl<P: Parameters> ProjectiveCurve for Projective<P> {
             self.x -= &v.double();
 
             // Y3 = r*(V-X3)-2*Y1*J
-            self.y = P::BaseField::sum_of_products([r, -self.y.double()].iter(), [(v - self.x), j].iter());
+            self.y = P::BaseField::sum_of_products(&[r, -self.y.double()], &[(v - self.x), j]);
 
             // Z3 = (Z1+H)^2-Z1Z1-HH
             self.z += &h;
@@ -459,7 +457,7 @@ impl<'a, P: Parameters> AddAssign<&'a Self> for Projective<P> {
             self.x = r.square() - j - (v.double());
 
             // Y3 = r*(V - X3) - 2*S1*J
-            self.y = P::BaseField::sum_of_products([r, -s1.double()].iter(), [(v - self.x), j].iter());
+            self.y = P::BaseField::sum_of_products(&[r, -s1.double()], &[(v - self.x), j]);
 
             // Z3 = ((Z1+Z2)^2 - Z1Z1 - Z2Z2)*H
             self.z = ((self.z + other.z).square() - z1z1 - z2z2) * h;

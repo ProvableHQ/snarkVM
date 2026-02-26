@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -136,7 +136,7 @@ fn execute(c: &mut Criterion) {
         // Bench the Transaction.write_le method using the LimitedWriter.
         c.bench_function("LimitedWriter::new - transfer_public", |b| {
             let mut buffer = Vec::with_capacity(3000);
-            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::MAX_TRANSACTION_SIZE)))
+            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::LATEST_MAX_TRANSACTION_SIZE())))
         });
 
         // Bench the execution of transfer_public.
@@ -182,7 +182,7 @@ fn execute(c: &mut Criterion) {
         // Bench the Transaction.write_le method using the LimitedWriter.
         c.bench_function("LimitedWriter::new - transfer_private", |b| {
             let mut buffer = Vec::with_capacity(3000);
-            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::MAX_TRANSACTION_SIZE)))
+            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::LATEST_MAX_TRANSACTION_SIZE())))
         });
 
         // Bench the check_transaction method.
@@ -270,8 +270,8 @@ function main:
 
         // Bench the Transaction.write_le method using the LimitedWriter.
         c.bench_function("LimitedWriter::new - too_big.aleo", |b| {
-            let mut buffer = Vec::with_capacity(MainnetV0::MAX_TRANSACTION_SIZE);
-            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::MAX_TRANSACTION_SIZE)))
+            let mut buffer = Vec::with_capacity(MainnetV0::LATEST_MAX_TRANSACTION_SIZE());
+            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::LATEST_MAX_TRANSACTION_SIZE())))
         });
 
         // Bench the check_transaction method.

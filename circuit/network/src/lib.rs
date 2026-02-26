@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,6 +49,9 @@ pub trait Aleo: Environment {
 
     /// Returns the serial number domain as a constant field element.
     fn serial_number_domain() -> Field<Self>;
+
+    /// Returns the powers of `G`.
+    fn g_powers() -> Vec<Group<Self>>;
 
     /// Returns the scalar multiplication on the generator `G`.
     fn g_scalar_multiply(scalar: &Scalar<Self>) -> Group<Self>;

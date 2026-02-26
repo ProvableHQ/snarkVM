@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
 use console::{
     network::prelude::*,
-    program::{Identifier, Locator, Register, RegisterType, ValueType},
+    program::{Identifier, Locator, Register, RegisterType},
 };
 
 /// The operator references a function name or closure name.
@@ -142,6 +142,12 @@ impl<N: Network> Call<N> {
         self.destinations.clone()
     }
 
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
+
     /// Returns `true` if the instruction is a function call.
     #[inline]
     pub fn is_function_call(&self, stack: &impl StackTrait<N>) -> Result<bool> {
@@ -181,16 +187,18 @@ impl<N: Network> Call<N> {
     }
 
     /// Returns the output type from the given program and input types.
-    #[inline]
     pub fn output_types(
         &self,
         stack: &impl StackTrait<N>,
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
-        // Retrieve the external stack, if needed, and the resource.
-        let (external_stack, resource) = match &self.operator {
+        // Retrieve the program (external if necessary) and the name of the function or closure.
+        let stack_value;
+        let (is_external, program, name) = match &self.operator {
             CallOperator::Locator(locator) => {
-                (Some(stack.get_external_stack(locator.program_id())?), locator.resource())
+                let program_name = locator.program_id();
+                stack_value = Some(stack.get_external_stack(program_name)?);
+                (true, stack_value.as_ref().unwrap().program(), locator.resource())
             }
             CallOperator::Resource(resource) => {
                 // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
@@ -199,16 +207,12 @@ impl<N: Network> Call<N> {
                 if stack.program().contains_function(resource) {
                     bail!("Cannot call '{resource}'. Use a closure ('closure {resource}:') instead.")
                 }
-                (None, resource)
+                (false, stack.program(), resource)
             }
         };
-        // Retrieve the program.
-        let (is_external, program) = match &external_stack {
-            Some(external_stack) => (true, external_stack.program()),
-            None => (false, stack.program()),
-        };
+
         // If the operator is a closure, retrieve the closure and compute the output types.
-        if let Ok(closure) = program.get_closure(resource) {
+        if let Ok(closure) = program.get_closure(name) {
             // Ensure the number of operands matches the number of input statements.
             if closure.inputs().len() != self.operands.len() {
                 bail!("Expected {} inputs, found {}", closure.inputs().len(), self.operands.len())
@@ -222,10 +226,16 @@ impl<N: Network> Call<N> {
                 bail!("Expected {} outputs, found {}", closure.outputs().len(), self.destinations.len())
             }
             // Return the output register types.
-            Ok(closure.outputs().iter().map(|output| output.register_type()).cloned().collect())
+            Ok(closure
+                .output_types()
+                .into_iter()
+                // If the function is an external program, we need to qualify its structs with
+                // the appropriate `ProgramID`.
+                .map(|output_type| if is_external { output_type.qualify(*program.id()) } else { output_type })
+                .collect::<Vec<_>>())
         }
         // If the operator is a function, retrieve the function and compute the output types.
-        else if let Ok(function) = program.get_function(resource) {
+        else if let Ok(function) = program.get_function(name) {
             // Ensure the number of operands matches the number of input statements.
             if function.inputs().len() != self.operands.len() {
                 bail!("Expected {} inputs, found {}", function.inputs().len(), self.operands.len())
@@ -239,18 +249,14 @@ impl<N: Network> Call<N> {
                 bail!("Expected {} outputs, found {}", function.outputs().len(), self.destinations.len())
             }
             // Return the output register types.
-            function
+            Ok(function
                 .output_types()
                 .into_iter()
-                .map(|output_type| match (is_external, output_type) {
-                    // If the output is a record and the function is external, return the external record type.
-                    (true, ValueType::Record(record_name)) => Ok(RegisterType::ExternalRecord(Locator::from_str(
-                        &format!("{}/{}", program.id(), record_name),
-                    )?)),
-                    // Else, return the register type.
-                    (_, output_type) => Ok(RegisterType::from(output_type)),
-                })
-                .collect::<Result<Vec<_>>>()
+                .map(RegisterType::from)
+                // If the function is an external program, we need to qualify its structs or records with
+                // the appropriate `ProgramID`.
+                .map(|register_type| if is_external { register_type.qualify(*program.id()) } else { register_type })
+                .collect::<Vec<_>>())
         }
         // Else, throw an error.
         else {

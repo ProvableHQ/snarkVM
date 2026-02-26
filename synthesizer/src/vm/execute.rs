@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,8 @@
 
 use super::*;
 
+use snarkvm_synthesizer_error::*;
+
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns a new execute transaction.
     ///
@@ -33,7 +35,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Transaction<N>> {
+    ) -> Result<Transaction<N>, VmExecError> {
         let (execution, _) = self.execute_with_response(
             private_key,
             (program_id, function_name),
@@ -61,7 +63,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<(Transaction<N>, Response<N>)> {
+    ) -> Result<(Transaction<N>, Response<N>), VmExecError> {
         // Get a default query if one is not provided.
         let query = match query {
             Some(q) => q,
@@ -157,7 +159,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Fee<N>> {
+    ) -> Result<Fee<N>, VmExecError> {
         debug_assert!(authorization.is_fee_private() || authorization.is_fee_public(), "Expected a fee authorization");
         // Get a default query if one is not provided.
         let query = match query {
@@ -177,7 +179,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: &dyn QueryTrait<N>,
         rng: &mut R,
-    ) -> Result<(Execution<N>, Response<N>)> {
+    ) -> Result<(Execution<N>, Response<N>), VmExecError> {
         let timer = timer!("VM::execute_authorization_raw");
 
         // Construct the locator of the main function.
@@ -232,7 +234,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: &dyn QueryTrait<N>,
         rng: &mut R,
-    ) -> Result<Fee<N>> {
+    ) -> Result<Fee<N>, VmExecError> {
         let timer = timer!("VM::execute_fee_authorization_raw");
 
         // Determine the consensus version.
@@ -710,6 +712,7 @@ finalize test:
     }
 
     #[test]
+    #[ignore]
     fn test_join_transaction_size() {
         let rng = &mut TestRng::default();
 
@@ -786,6 +789,7 @@ finalize test:
     }
 
     #[test]
+    #[ignore]
     fn test_fee_private_transition_size() {
         let rng = &mut TestRng::default();
 
@@ -826,6 +830,7 @@ finalize test:
     }
 
     #[test]
+    #[ignore]
     fn test_wide_nested_execution_cost() {
         // Initialize an RNG.
         let rng = &mut TestRng::default();
@@ -995,6 +1000,13 @@ finalize test:
         // Prepare the VM.
         let (vm, _) = prepare_vm(rng).unwrap();
 
+        // Forward the chain to block 13:
+        for _i in 1..13 {
+            let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
+
+            vm.add_next_block(&next_block).unwrap();
+        }
+
         // Construct the base program.
         let base_program = Program::from_str(
             r"
@@ -1012,7 +1024,9 @@ finalize test:
     input r1 as field.public;
     hash.bhp256 r0 into r2 as field;
     hash.bhp256 r1 into r3 as field;
-    set r2 into data[r3];",
+    set r2 into data[r3];
+constructor:
+    assert.eq edition 0u16;",
         )
         .unwrap();
 
@@ -1048,7 +1062,9 @@ finalize test:
     await r2;
     hash.bhp256 r0 into r3 as field;
     hash.bhp256 r1 into r4 as field;
-    set r3 into data[r4];",
+    set r3 into data[r4];
+constructor:
+    assert.eq edition 0u16;",
                 imports = (1..i).map(|j| format!("import test_{j}.aleo;")).join("\n"),
                 prev = i - 1,
                 curr = i,

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,3 +12,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+//! The set of errors that can be encountered within the circuit environment.
+
+use thiserror::Error;
+
+/// A constraint was not satisfied.
+#[derive(Debug, Error)]
+#[error("Constraint unsatisfied: ({a} * {b}) != {c}")]
+pub struct ConstraintUnsatisfied {
+    pub a: String,
+    pub b: String,
+    pub c: String,
+}

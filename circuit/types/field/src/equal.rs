@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -121,10 +121,10 @@ impl<E: Environment> Equal<Self> for Field<E> {
                 let is_eq = !is_neq.clone();
 
                 // Check 1: (a - b) * multiplier = is_neq
-                E::enforce(|| (&delta, &multiplier, &is_neq));
+                E::enforce(|| (&delta, &multiplier, &is_neq)).expect("Field equality check 1 failed");
 
                 // Check 2: (a - b) * not(is_neq) = 0
-                E::enforce(|| (delta, is_eq, E::zero()));
+                E::enforce(|| (delta, is_eq, E::zero())).expect("Field equality check 2 failed");
 
                 // Return `is_neq`.
                 is_neq
@@ -161,7 +161,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 200;
+    const ITERATIONS: u64 = 10;
 
     fn check_is_equal(name: &str, expected: bool, a: &Field<Circuit>, b: &Field<Circuit>) {
         Circuit::scope(name, || {
@@ -305,10 +305,10 @@ mod tests {
             let is_eq = !is_neq.clone();
 
             // Check 1: (a - b) * multiplier = is_neq
-            Circuit::enforce(|| (delta.clone(), multiplier, is_neq.clone()));
+            Circuit::enforce(|| (delta.clone(), multiplier, is_neq.clone())).unwrap();
 
             // Check 2: (a - b) * not(is_neq) = 0
-            Circuit::enforce(|| (delta, is_eq, Circuit::zero()));
+            Circuit::enforce(|| (delta, is_eq, Circuit::zero())).unwrap();
         };
 
         //

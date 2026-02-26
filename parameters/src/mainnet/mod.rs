@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,50 +22,51 @@ pub use powers::*;
 /// The restrictions list as a JSON-compatible string.
 pub const RESTRICTIONS_LIST: &str = include_str!("./resources/restrictions.json");
 
-const REMOTE_URL: &str = "https://parameters.provable.com/mainnet";
+const REMOTE_URLS: [&str; 2] =
+    ["https://parameters.provable.com/mainnet", "https://s3.us-west-1.amazonaws.com/mainnet.parameters"];
 
 // Degrees
 impl_local!(Degree15, "resources/", "powers-of-beta-15", "usrs");
-impl_remote!(Degree16, REMOTE_URL, "resources/", "powers-of-beta-16", "usrs");
-impl_remote!(Degree17, REMOTE_URL, "resources/", "powers-of-beta-17", "usrs");
-impl_remote!(Degree18, REMOTE_URL, "resources/", "powers-of-beta-18", "usrs");
-impl_remote!(Degree19, REMOTE_URL, "resources/", "powers-of-beta-19", "usrs");
-impl_remote!(Degree20, REMOTE_URL, "resources/", "powers-of-beta-20", "usrs");
-impl_remote!(Degree21, REMOTE_URL, "resources/", "powers-of-beta-21", "usrs");
-impl_remote!(Degree22, REMOTE_URL, "resources/", "powers-of-beta-22", "usrs");
-impl_remote!(Degree23, REMOTE_URL, "resources/", "powers-of-beta-23", "usrs");
-impl_remote!(Degree24, REMOTE_URL, "resources/", "powers-of-beta-24", "usrs");
-impl_remote!(Degree25, REMOTE_URL, "resources/", "powers-of-beta-25", "usrs");
+impl_remote!(Degree16, REMOTE_URLS, "resources/", "powers-of-beta-16", "usrs");
+impl_remote!(Degree17, REMOTE_URLS, "resources/", "powers-of-beta-17", "usrs");
+impl_remote!(Degree18, REMOTE_URLS, "resources/", "powers-of-beta-18", "usrs");
+impl_remote!(Degree19, REMOTE_URLS, "resources/", "powers-of-beta-19", "usrs");
+impl_remote!(Degree20, REMOTE_URLS, "resources/", "powers-of-beta-20", "usrs");
+impl_remote!(Degree21, REMOTE_URLS, "resources/", "powers-of-beta-21", "usrs");
+impl_remote!(Degree22, REMOTE_URLS, "resources/", "powers-of-beta-22", "usrs");
+impl_remote!(Degree23, REMOTE_URLS, "resources/", "powers-of-beta-23", "usrs");
+impl_remote!(Degree24, REMOTE_URLS, "resources/", "powers-of-beta-24", "usrs");
+impl_remote!(Degree25, REMOTE_URLS, "resources/", "powers-of-beta-25", "usrs");
 // TODO (nkls): restore on CI.
 // The SRS is only used for proving and we don't currently support provers of
 // this size. When a users wants to create a proof, they load the appropriate
 // powers for the circuit in `batch_circuit_setup` which calls `max_degree`
 // based on the domain size.
 #[cfg(feature = "large_params")]
-impl_remote!(Degree26, REMOTE_URL, "resources/", "powers-of-beta-26", "usrs");
+impl_remote!(Degree26, REMOTE_URLS, "resources/", "powers-of-beta-26", "usrs");
 #[cfg(feature = "large_params")]
-impl_remote!(Degree27, REMOTE_URL, "resources/", "powers-of-beta-27", "usrs");
+impl_remote!(Degree27, REMOTE_URLS, "resources/", "powers-of-beta-27", "usrs");
 #[cfg(feature = "large_params")]
-impl_remote!(Degree28, REMOTE_URL, "resources/", "powers-of-beta-28", "usrs");
+impl_remote!(Degree28, REMOTE_URLS, "resources/", "powers-of-beta-28", "usrs");
 
 // Shifted Degrees
 impl_local!(ShiftedDegree15, "resources/", "shifted-powers-of-beta-15", "usrs");
 impl_local!(ShiftedDegree16, "resources/", "shifted-powers-of-beta-16", "usrs");
-impl_remote!(ShiftedDegree17, REMOTE_URL, "resources/", "shifted-powers-of-beta-17", "usrs");
-impl_remote!(ShiftedDegree18, REMOTE_URL, "resources/", "shifted-powers-of-beta-18", "usrs");
-impl_remote!(ShiftedDegree19, REMOTE_URL, "resources/", "shifted-powers-of-beta-19", "usrs");
-impl_remote!(ShiftedDegree20, REMOTE_URL, "resources/", "shifted-powers-of-beta-20", "usrs");
-impl_remote!(ShiftedDegree21, REMOTE_URL, "resources/", "shifted-powers-of-beta-21", "usrs");
-impl_remote!(ShiftedDegree22, REMOTE_URL, "resources/", "shifted-powers-of-beta-22", "usrs");
-impl_remote!(ShiftedDegree23, REMOTE_URL, "resources/", "shifted-powers-of-beta-23", "usrs");
-impl_remote!(ShiftedDegree24, REMOTE_URL, "resources/", "shifted-powers-of-beta-24", "usrs");
-impl_remote!(ShiftedDegree25, REMOTE_URL, "resources/", "shifted-powers-of-beta-25", "usrs");
+impl_remote!(ShiftedDegree17, REMOTE_URLS, "resources/", "shifted-powers-of-beta-17", "usrs");
+impl_remote!(ShiftedDegree18, REMOTE_URLS, "resources/", "shifted-powers-of-beta-18", "usrs");
+impl_remote!(ShiftedDegree19, REMOTE_URLS, "resources/", "shifted-powers-of-beta-19", "usrs");
+impl_remote!(ShiftedDegree20, REMOTE_URLS, "resources/", "shifted-powers-of-beta-20", "usrs");
+impl_remote!(ShiftedDegree21, REMOTE_URLS, "resources/", "shifted-powers-of-beta-21", "usrs");
+impl_remote!(ShiftedDegree22, REMOTE_URLS, "resources/", "shifted-powers-of-beta-22", "usrs");
+impl_remote!(ShiftedDegree23, REMOTE_URLS, "resources/", "shifted-powers-of-beta-23", "usrs");
+impl_remote!(ShiftedDegree24, REMOTE_URLS, "resources/", "shifted-powers-of-beta-24", "usrs");
+impl_remote!(ShiftedDegree25, REMOTE_URLS, "resources/", "shifted-powers-of-beta-25", "usrs");
 // TODO (nkls): restore on CI.
 // See `Degree28` above for context.
 #[cfg(feature = "large_params")]
-impl_remote!(ShiftedDegree26, REMOTE_URL, "resources/", "shifted-powers-of-beta-26", "usrs");
+impl_remote!(ShiftedDegree26, REMOTE_URLS, "resources/", "shifted-powers-of-beta-26", "usrs");
 #[cfg(feature = "large_params")]
-impl_remote!(ShiftedDegree27, REMOTE_URL, "resources/", "shifted-powers-of-beta-27", "usrs");
+impl_remote!(ShiftedDegree27, REMOTE_URLS, "resources/", "shifted-powers-of-beta-27", "usrs");
 
 // Powers of Beta Times Gamma * G
 impl_local!(Gamma, "resources/", "powers-of-beta-gamma", "usrs");
@@ -75,97 +76,97 @@ impl_local!(NegBeta, "resources/", "neg-powers-of-beta", "usrs");
 impl_local!(BetaH, "resources/", "beta-h", "usrs");
 
 // BondPublic
-impl_remote!(BondPublicProver, REMOTE_URL, "resources/", "bond_public", "prover", "credits");
+impl_remote!(BondPublicProver, REMOTE_URLS, "resources/", "bond_public", "prover", "credits");
 impl_local!(BondPublicVerifier, "resources/", "bond_public", "verifier", "credits");
 // BondValidator
-impl_remote!(BondValidatorProver, REMOTE_URL, "resources/", "bond_validator", "prover", "credits");
+impl_remote!(BondValidatorProver, REMOTE_URLS, "resources/", "bond_validator", "prover", "credits");
 impl_local!(BondValidatorVerifier, "resources/", "bond_validator", "verifier", "credits");
 // UnbondPublic
-impl_remote!(UnbondPublicProver, REMOTE_URL, "resources/", "unbond_public", "prover", "credits");
+impl_remote!(UnbondPublicProver, REMOTE_URLS, "resources/", "unbond_public", "prover", "credits");
 impl_local!(UnbondPublicVerifier, "resources/", "unbond_public", "verifier", "credits");
 // ClaimUnbondPublic
-impl_remote!(ClaimUnbondPublicProver, REMOTE_URL, "resources/", "claim_unbond_public", "prover", "credits");
+impl_remote!(ClaimUnbondPublicProver, REMOTE_URLS, "resources/", "claim_unbond_public", "prover", "credits");
 impl_local!(ClaimUnbondPublicVerifier, "resources/", "claim_unbond_public", "verifier", "credits");
 // SetValidatorState
-impl_remote!(SetValidatorStateProver, REMOTE_URL, "resources/", "set_validator_state", "prover", "credits");
+impl_remote!(SetValidatorStateProver, REMOTE_URLS, "resources/", "set_validator_state", "prover", "credits");
 impl_local!(SetValidatorStateVerifier, "resources/", "set_validator_state", "verifier", "credits");
 // TransferPrivate
-impl_remote!(TransferPrivateProver, REMOTE_URL, "resources/", "transfer_private", "prover", "credits");
+impl_remote!(TransferPrivateProver, REMOTE_URLS, "resources/", "transfer_private", "prover", "credits");
 impl_local!(TransferPrivateVerifier, "resources/", "transfer_private", "verifier", "credits");
 // TransferPublic
-impl_remote!(TransferPublicProver, REMOTE_URL, "resources/", "transfer_public", "prover", "credits");
+impl_remote!(TransferPublicProver, REMOTE_URLS, "resources/", "transfer_public", "prover", "credits");
 impl_local!(TransferPublicVerifier, "resources/", "transfer_public", "verifier", "credits");
 // TransferPublicAsSigner
-impl_remote!(TransferPublicAsSignerProver, REMOTE_URL, "resources/", "transfer_public_as_signer", "prover", "credits");
+impl_remote!(TransferPublicAsSignerProver, REMOTE_URLS, "resources/", "transfer_public_as_signer", "prover", "credits");
 impl_local!(TransferPublicAsSignerVerifier, "resources/", "transfer_public_as_signer", "verifier", "credits");
 // TransferPrivateToPublic
-impl_remote!(TransferPrivateToPublicProver, REMOTE_URL, "resources/", "transfer_private_to_public", "prover", "credits");
+impl_remote!(TransferPrivateToPublicProver, REMOTE_URLS, "resources/", "transfer_private_to_public", "prover", "credits");
 impl_local!(TransferPrivateToPublicVerifier, "resources/", "transfer_private_to_public", "verifier", "credits");
 // TransferPublicToPrivate
-impl_remote!(TransferPublicToPrivateProver, REMOTE_URL, "resources/", "transfer_public_to_private", "prover", "credits");
+impl_remote!(TransferPublicToPrivateProver, REMOTE_URLS, "resources/", "transfer_public_to_private", "prover", "credits");
 impl_local!(TransferPublicToPrivateVerifier, "resources/", "transfer_public_to_private", "verifier", "credits");
 // Join
-impl_remote!(JoinProver, REMOTE_URL, "resources/", "join", "prover", "credits");
+impl_remote!(JoinProver, REMOTE_URLS, "resources/", "join", "prover", "credits");
 impl_local!(JoinVerifier, "resources/", "join", "verifier", "credits");
 // Split
-impl_remote!(SplitProver, REMOTE_URL, "resources/", "split", "prover", "credits");
+impl_remote!(SplitProver, REMOTE_URLS, "resources/", "split", "prover", "credits");
 impl_local!(SplitVerifier, "resources/", "split", "verifier", "credits");
 // FeePrivate
-impl_remote!(FeePrivateProver, REMOTE_URL, "resources/", "fee_private", "prover", "credits");
+impl_remote!(FeePrivateProver, REMOTE_URLS, "resources/", "fee_private", "prover", "credits");
 impl_local!(FeePrivateVerifier, "resources/", "fee_private", "verifier", "credits");
 // FeePublic
-impl_remote!(FeePublicProver, REMOTE_URL, "resources/", "fee_public", "prover", "credits");
+impl_remote!(FeePublicProver, REMOTE_URLS, "resources/", "fee_public", "prover", "credits");
 impl_local!(FeePublicVerifier, "resources/", "fee_public", "verifier", "credits");
 // Upgrade
-impl_remote!(UpgradeProver, REMOTE_URL, "resources/", "upgrade", "prover", "credits");
+impl_remote!(UpgradeProver, REMOTE_URLS, "resources/", "upgrade", "prover", "credits");
 impl_local!(UpgradeVerifier, "resources/", "upgrade", "verifier", "credits");
 
 // V0 Credits Keys
 
 // BondPublic
-impl_remote!(BondPublicV0Prover, REMOTE_URL, "resources/", "bond_public", "prover", "credits_v0");
+impl_remote!(BondPublicV0Prover, REMOTE_URLS, "resources/", "bond_public", "prover", "credits_v0");
 impl_local!(BondPublicV0Verifier, "resources/", "bond_public", "verifier", "credits_v0");
 // BondValidator
-impl_remote!(BondValidatorV0Prover, REMOTE_URL, "resources/", "bond_validator", "prover", "credits_v0");
+impl_remote!(BondValidatorV0Prover, REMOTE_URLS, "resources/", "bond_validator", "prover", "credits_v0");
 impl_local!(BondValidatorV0Verifier, "resources/", "bond_validator", "verifier", "credits_v0");
 // UnbondPublic
-impl_remote!(UnbondPublicV0Prover, REMOTE_URL, "resources/", "unbond_public", "prover", "credits_v0");
+impl_remote!(UnbondPublicV0Prover, REMOTE_URLS, "resources/", "unbond_public", "prover", "credits_v0");
 impl_local!(UnbondPublicV0Verifier, "resources/", "unbond_public", "verifier", "credits_v0");
 // ClaimUnbondPublic
-impl_remote!(ClaimUnbondPublicV0Prover, REMOTE_URL, "resources/", "claim_unbond_public", "prover", "credits_v0");
+impl_remote!(ClaimUnbondPublicV0Prover, REMOTE_URLS, "resources/", "claim_unbond_public", "prover", "credits_v0");
 impl_local!(ClaimUnbondPublicV0Verifier, "resources/", "claim_unbond_public", "verifier", "credits_v0");
 // SetValidatorState
-impl_remote!(SetValidatorStateV0Prover, REMOTE_URL, "resources/", "set_validator_state", "prover", "credits_v0");
+impl_remote!(SetValidatorStateV0Prover, REMOTE_URLS, "resources/", "set_validator_state", "prover", "credits_v0");
 impl_local!(SetValidatorStateV0Verifier, "resources/", "set_validator_state", "verifier", "credits_v0");
 // TransferPrivate
-impl_remote!(TransferPrivateV0Prover, REMOTE_URL, "resources/", "transfer_private", "prover", "credits_v0");
+impl_remote!(TransferPrivateV0Prover, REMOTE_URLS, "resources/", "transfer_private", "prover", "credits_v0");
 impl_local!(TransferPrivateV0Verifier, "resources/", "transfer_private", "verifier", "credits_v0");
 // TransferPublic
-impl_remote!(TransferPublicV0Prover, REMOTE_URL, "resources/", "transfer_public", "prover", "credits_v0");
+impl_remote!(TransferPublicV0Prover, REMOTE_URLS, "resources/", "transfer_public", "prover", "credits_v0");
 impl_local!(TransferPublicV0Verifier, "resources/", "transfer_public", "verifier", "credits_v0");
 // TransferPublicAsSigner
-impl_remote!(TransferPublicAsSignerV0Prover, REMOTE_URL, "resources/", "transfer_public_as_signer", "prover", "credits_v0");
+impl_remote!(TransferPublicAsSignerV0Prover, REMOTE_URLS, "resources/", "transfer_public_as_signer", "prover", "credits_v0");
 impl_local!(TransferPublicAsSignerV0Verifier, "resources/", "transfer_public_as_signer", "verifier", "credits_v0");
 // TransferPrivateToPublic
-impl_remote!(TransferPrivateToPublicV0Prover, REMOTE_URL, "resources/", "transfer_private_to_public", "prover", "credits_v0");
+impl_remote!(TransferPrivateToPublicV0Prover, REMOTE_URLS, "resources/", "transfer_private_to_public", "prover", "credits_v0");
 impl_local!(TransferPrivateToPublicV0Verifier, "resources/", "transfer_private_to_public", "verifier", "credits_v0");
 // TransferPublicToPrivate
-impl_remote!(TransferPublicToPrivateV0Prover, REMOTE_URL, "resources/", "transfer_public_to_private", "prover", "credits_v0");
+impl_remote!(TransferPublicToPrivateV0Prover, REMOTE_URLS, "resources/", "transfer_public_to_private", "prover", "credits_v0");
 impl_local!(TransferPublicToPrivateV0Verifier, "resources/", "transfer_public_to_private", "verifier", "credits_v0");
 // Join
-impl_remote!(JoinV0Prover, REMOTE_URL, "resources/", "join", "prover", "credits_v0");
+impl_remote!(JoinV0Prover, REMOTE_URLS, "resources/", "join", "prover", "credits_v0");
 impl_local!(JoinV0Verifier, "resources/", "join", "verifier", "credits_v0");
 // Split
-impl_remote!(SplitV0Prover, REMOTE_URL, "resources/", "split", "prover", "credits_v0");
+impl_remote!(SplitV0Prover, REMOTE_URLS, "resources/", "split", "prover", "credits_v0");
 impl_local!(SplitV0Verifier, "resources/", "split", "verifier", "credits_v0");
 // FeePrivate
-impl_remote!(FeePrivateV0Prover, REMOTE_URL, "resources/", "fee_private", "prover", "credits_v0");
+impl_remote!(FeePrivateV0Prover, REMOTE_URLS, "resources/", "fee_private", "prover", "credits_v0");
 impl_local!(FeePrivateV0Verifier, "resources/", "fee_private", "verifier", "credits_v0");
 // FeePublic
-impl_remote!(FeePublicV0Prover, REMOTE_URL, "resources/", "fee_public", "prover", "credits_v0");
+impl_remote!(FeePublicV0Prover, REMOTE_URLS, "resources/", "fee_public", "prover", "credits_v0");
 impl_local!(FeePublicV0Verifier, "resources/", "fee_public", "verifier", "credits_v0");
 // Upgrade
-impl_remote!(UpgradeV0Prover, REMOTE_URL, "resources/", "upgrade", "prover", "credits_v0");
+impl_remote!(UpgradeV0Prover, REMOTE_URLS, "resources/", "upgrade", "prover", "credits_v0");
 impl_local!(UpgradeV0Verifier, "resources/", "upgrade", "verifier", "credits_v0");
 
 #[macro_export]
@@ -229,9 +230,9 @@ macro_rules! insert_key {
 }
 
 // Inclusion
-impl_remote!(InclusionV0Prover, REMOTE_URL, "resources/", "inclusion", "prover", "credits_v0");
+impl_remote!(InclusionV0Prover, REMOTE_URLS, "resources/", "inclusion", "prover", "credits_v0");
 impl_local!(InclusionV0Verifier, "resources/", "inclusion", "verifier", "credits_v0");
-impl_remote!(InclusionProver, REMOTE_URL, "resources/", "inclusion", "prover", "credits");
+impl_remote!(InclusionProver, REMOTE_URLS, "resources/", "inclusion", "prover", "credits");
 impl_local!(InclusionVerifier, "resources/", "inclusion", "verifier", "credits");
 
 /// The function name for the inclusion circuit.

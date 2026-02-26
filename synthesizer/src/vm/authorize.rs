@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,8 @@
 
 use super::*;
 
+use snarkvm_synthesizer_error::*;
+
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Authorizes a call to the program function for the given inputs.
     #[inline]
@@ -25,7 +27,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         function_name: impl TryInto<Identifier<N>>,
         inputs: impl IntoIterator<IntoIter = impl ExactSizeIterator<Item = impl TryInto<Value<N>>>>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, VmAuthError> {
         let timer = timer!("VM::authorize");
 
         // Prepare the program ID.
@@ -128,7 +130,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         function_name: Identifier<N>,
         inputs: Vec<Value<N>>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, VmAuthError> {
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
                 // Compute the authorization.

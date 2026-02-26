@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,6 +35,7 @@ use console::{
         StructType,
         ValueType,
     },
+    types::U32,
 };
 use snarkvm_synthesizer_program::{
     CallOperator,
@@ -46,12 +47,14 @@ use snarkvm_synthesizer_program::{
     Operand,
     Program,
     StackTrait,
+    register_types_equivalent,
+    types_equivalent,
 };
 use snarkvm_utilities::dev_eprintln;
 
 use indexmap::{IndexMap, IndexSet};
 
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RegisterTypes<N: Network> {
     /// The mapping of all input registers to their defined types.
     inputs: IndexMap<u64, RegisterType<N>>,
@@ -96,6 +99,14 @@ impl<N: Network> RegisterTypes<N> {
             Operand::ProgramID(_) | Operand::Signer | Operand::Caller => {
                 RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Address))
             }
+            Operand::AleoGenerator => RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
+            Operand::AleoGeneratorPowers(index) => match index {
+                None => RegisterType::Plaintext(PlaintextType::Array(ArrayType::new(
+                    PlaintextType::Literal(LiteralType::Group),
+                    vec![U32::new(N::Scalar::SIZE_IN_BITS as u32)],
+                )?)),
+                Some(_) => RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
+            },
             Operand::BlockHeight => bail!("'block.height' is not a valid operand in a non-finalize context."),
             Operand::BlockTimestamp => {
                 bail!("'block.timestamp' is not a valid operand in a non-finalize context.")
@@ -221,6 +232,15 @@ impl<N: Network> RegisterTypes<N> {
                         None => bail!("'{identifier}' does not exist in struct '{struct_name}'"),
                     }
                 }
+                (RegisterAccessType::Plaintext(PlaintextType::ExternalStruct(locator)), Access::Member(identifier)) => {
+                    let external_stack = stack.get_external_stack(locator.program_id())?;
+                    // Retrieve the member type from the struct.
+                    match external_stack.program().get_struct(locator.resource())?.members().get(identifier) {
+                        // Update the member type.
+                        Some(member_type) => register_type = RegisterAccessType::Plaintext(member_type.clone()),
+                        None => bail!("'{identifier}' does not exist in struct '{locator}'"),
+                    }
+                }
                 // Traverse the path to output the register type.
                 (RegisterAccessType::Plaintext(PlaintextType::Array(array_type)), Access::Index(index)) => {
                     match index < array_type.length() {
@@ -262,7 +282,10 @@ impl<N: Network> RegisterTypes<N> {
                         None => bail!("Index out of bounds"),
                     }
                 }
-                (RegisterAccessType::Plaintext(PlaintextType::Struct(..)), Access::Index(..))
+                (
+                    RegisterAccessType::Plaintext(PlaintextType::Struct(..) | PlaintextType::ExternalStruct(..)),
+                    Access::Index(..),
+                )
                 | (RegisterAccessType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
                 | (RegisterAccessType::Future(..), Access::Member(..)) => {
                     bail!("Invalid access `{access}`")

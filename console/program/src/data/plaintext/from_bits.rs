@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -93,7 +93,7 @@ impl<N: Network> Plaintext<N> {
         // Array
         else if variant == PlaintextType::<N>::ARRAY_PREFIX_BITS {
             let num_elements = u32::from_bits_le(next_bits(32)?)?;
-            if num_elements as usize > N::MAX_ARRAY_ELEMENTS {
+            if num_elements as usize > N::LATEST_MAX_ARRAY_ELEMENTS() {
                 bail!("Array exceeds maximum of elements.");
             }
 
@@ -176,7 +176,7 @@ impl<N: Network> Plaintext<N> {
         // Array
         else if variant == PlaintextType::<N>::ARRAY_PREFIX_BITS {
             let num_elements = u32::from_bits_be(next_bits(32)?)?;
-            if num_elements as usize > N::MAX_ARRAY_ELEMENTS {
+            if num_elements as usize > N::LATEST_MAX_ARRAY_ELEMENTS() {
                 bail!("Array exceeds maximum of elements.");
             }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,6 +51,11 @@ impl<N: Network> ConstructorCore<N> {
         &self.positions
     }
 
+    /// Returns whether this constructor refers to an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        self.commands.iter().any(|command| command.contains_external_struct())
+    }
+
     /// Returns `true` if the constructor commands contain a string type.
     pub fn contains_string_type(&self) -> bool {
         self.commands.iter().any(|command| command.contains_string_type())
@@ -74,9 +79,9 @@ impl<N: Network> ConstructorCore<N> {
         // Ensure the number of write commands has not been exceeded.
         if command.is_write() {
             ensure!(
-                self.num_writes < N::MAX_WRITES,
+                self.num_writes < N::LATEST_MAX_WRITES(),
                 "Cannot add more than {} 'set' & 'remove' commands",
-                N::MAX_WRITES
+                N::LATEST_MAX_WRITES()
             );
         }
 
@@ -171,10 +176,10 @@ mod tests {
             positions: Default::default(),
         };
 
-        for _ in 0..CurrentNetwork::MAX_WRITES * 2 {
+        for _ in 0..CurrentNetwork::LATEST_MAX_WRITES() * 2 {
             let command = Command::<CurrentNetwork>::from_str("remove object[r0];").unwrap();
 
-            match constructor.commands.len() < CurrentNetwork::MAX_WRITES as usize {
+            match constructor.commands.len() < CurrentNetwork::LATEST_MAX_WRITES() as usize {
                 true => assert!(constructor.add_command(command).is_ok()),
                 false => assert!(constructor.add_command(command).is_err()),
             }

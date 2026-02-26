@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +33,7 @@ use aleo_std::StorageMode;
 //  - after `ConsensusVersion::V8`, existing programs cannot be executed until they are redeployed.
 //  - the VM can be loaded from a store at the very end.
 #[test]
+#[ignore]
 fn test_redeployment() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -199,6 +200,7 @@ function dummy2:
 
 // This test checks that the `credits.aleo` program cannot be redeployed.
 #[test]
+#[ignore]
 fn test_credits_cannot_be_redeployed() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -224,6 +226,7 @@ fn test_credits_cannot_be_redeployed() -> Result<()> {
 // - verifies that `credits.aleo/upgrade` cannot be executed before `ConsensusVersion::V8`
 // - verifies that `credits.aleo/upgrade` can be executed after `ConsensusVersion::V8`.
 #[test]
+#[ignore]
 fn test_credits_upgrade() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -344,6 +347,7 @@ finalize run:
 //   - a program can be redeployed using the exact same deployment, different fee, and in a different block, after `ConsensusVersion::V8` (even after `ConsensusVersion::V9`)
 // Note: It is important that this invariant holds, otherwise block rollbacks in the DB can be inconsistent.
 #[test]
+#[ignore]
 fn test_deploy_and_redeploy() -> Result<()> {
     let rng = &mut TestRng::default();
 

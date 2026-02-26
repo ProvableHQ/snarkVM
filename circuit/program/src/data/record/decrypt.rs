@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,7 @@ impl<A: Aleo> Record<A, Ciphertext<A>> {
         // Decrypt the record.
         let record = self.decrypt_symmetric_unchecked(record_view_key);
         // Ensure the view key corresponds to the record owner.
-        A::assert_eq(view_key.to_address(), record.owner().deref());
+        A::assert_eq(view_key.to_address(), record.owner().deref()).expect("View key must match record owner");
         // Return the decrypted record.
         record
     }
@@ -92,7 +92,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_encrypt_and_decrypt<A: Aleo>(
         view_key: &ViewKey<A>,

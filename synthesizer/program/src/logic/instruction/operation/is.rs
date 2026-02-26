@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait, register_types_equivalent};
 use console::{
     network::prelude::*,
     program::{Literal, LiteralType, Plaintext, PlaintextType, Register, RegisterType, Value},
@@ -70,6 +70,12 @@ impl<N: Network, const VARIANT: u8> IsInstruction<N, VARIANT> {
     #[inline]
     pub fn destinations(&self) -> Vec<Register<N>> {
         vec![self.destination.clone()]
+    }
+
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
     }
 }
 
@@ -131,7 +137,7 @@ impl<N: Network, const VARIANT: u8> IsInstruction<N, VARIANT> {
     /// Returns the output type from the given program and input types.
     pub fn output_types(
         &self,
-        _stack: &impl StackTrait<N>,
+        stack: &impl StackTrait<N>,
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
         // Ensure the number of input types is correct.
@@ -139,7 +145,7 @@ impl<N: Network, const VARIANT: u8> IsInstruction<N, VARIANT> {
             bail!("Instruction '{}' expects 2 inputs, found {} inputs", Self::opcode(), input_types.len())
         }
         // Ensure the operands are of the same type.
-        if input_types[0] != input_types[1] {
+        if !register_types_equivalent(stack, &input_types[0], stack, &input_types[1])? {
             bail!(
                 "Instruction '{}' expects inputs of the same type. Found inputs of type '{}' and '{}'",
                 Self::opcode(),

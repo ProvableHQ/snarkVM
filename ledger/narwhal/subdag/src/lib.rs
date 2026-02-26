@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -328,7 +328,7 @@ mod tests {
     fn test_max_certificates() {
         // Determine the maximum number of certificates in a block.
         let max_certificates_per_block =
-            BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS * CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap() as usize;
+            BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS * CurrentNetwork::LATEST_MAX_CERTIFICATES() as usize;
 
         // Note: The maximum number of certificates in a block must be able to be Merklized.
         assert!(

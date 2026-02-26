@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,46 +19,60 @@ use super::*;
 
 impl<N: Network> RegisterType<N> {
     /// Returns the number of bits of a register type.
-    pub fn size_in_bits<F0, F1, F2, F3>(
+    pub fn size_in_bits<F0, F1, F2, F3, F4>(
         &self,
         get_struct: &F0,
-        get_record: &F1,
-        get_external_record: &F2,
-        get_future: &F3,
+        get_external_struct: &F1,
+        get_record: &F2,
+        get_external_record: &F3,
+        get_future: &F4,
     ) -> Result<usize>
     where
         F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
-        F1: Fn(&Identifier<N>) -> Result<RecordType<N>>,
-        F2: Fn(&Locator<N>) -> Result<RecordType<N>>,
-        F3: Fn(&Locator<N>) -> Result<Vec<FinalizeType<N>>>,
+        F1: Fn(&Locator<N>) -> Result<StructType<N>>,
+        F2: Fn(&Identifier<N>) -> Result<RecordType<N>>,
+        F3: Fn(&Locator<N>) -> Result<RecordType<N>>,
+        F4: Fn(&Locator<N>) -> Result<Vec<FinalizeType<N>>>,
     {
         match self {
-            RegisterType::Plaintext(plaintext_type) => plaintext_type.size_in_bits(get_struct),
-            RegisterType::Record(identifier) => get_record(identifier)?.size_in_bits(get_struct),
-            RegisterType::ExternalRecord(locator) => get_external_record(locator)?.size_in_bits(get_struct),
-            RegisterType::Future(locator) => FinalizeType::future_size_in_bits(locator, get_struct, get_future),
+            RegisterType::Plaintext(plaintext_type) => plaintext_type.size_in_bits(get_struct, get_external_struct),
+            RegisterType::Record(identifier) => get_record(identifier)?.size_in_bits(get_struct, get_external_struct),
+            RegisterType::ExternalRecord(locator) => {
+                get_external_record(locator)?.size_in_bits(get_struct, get_external_struct)
+            }
+            RegisterType::Future(locator) => {
+                FinalizeType::future_size_in_bits(locator, get_struct, get_external_struct, get_future)
+            }
         }
     }
 
     /// Returns the number of raw bits of a register type.
-    pub fn size_in_bits_raw<F0, F1, F2, F3>(
+    pub fn size_in_bits_raw<F0, F1, F2, F3, F4>(
         &self,
         get_struct: &F0,
-        get_record: &F1,
-        get_external_record: &F2,
-        get_future: &F3,
+        get_external_struct: &F1,
+        get_record: &F2,
+        get_external_record: &F3,
+        get_future: &F4,
     ) -> Result<usize>
     where
         F0: Fn(&Identifier<N>) -> Result<StructType<N>>,
-        F1: Fn(&Identifier<N>) -> Result<RecordType<N>>,
-        F2: Fn(&Locator<N>) -> Result<RecordType<N>>,
-        F3: Fn(&Locator<N>) -> Result<Vec<FinalizeType<N>>>,
+        F1: Fn(&Locator<N>) -> Result<StructType<N>>,
+        F2: Fn(&Identifier<N>) -> Result<RecordType<N>>,
+        F3: Fn(&Locator<N>) -> Result<RecordType<N>>,
+        F4: Fn(&Locator<N>) -> Result<Vec<FinalizeType<N>>>,
     {
         match self {
-            RegisterType::Plaintext(plaintext_type) => plaintext_type.size_in_bits_raw(get_struct),
-            RegisterType::Record(identifier) => get_record(identifier)?.size_in_bits_raw(get_struct),
-            RegisterType::ExternalRecord(locator) => get_external_record(locator)?.size_in_bits_raw(get_struct),
-            RegisterType::Future(locator) => FinalizeType::future_size_in_bits_raw(locator, get_struct, get_future),
+            RegisterType::Plaintext(plaintext_type) => plaintext_type.size_in_bits_raw(get_struct, get_external_struct),
+            RegisterType::Record(identifier) => {
+                get_record(identifier)?.size_in_bits_raw(get_struct, get_external_struct)
+            }
+            RegisterType::ExternalRecord(locator) => {
+                get_external_record(locator)?.size_in_bits_raw(get_struct, get_external_struct)
+            }
+            RegisterType::Future(locator) => {
+                FinalizeType::future_size_in_bits_raw(locator, get_struct, get_external_struct, get_future)
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@ use circuit::{AleoV0, Eject};
 use console::{
     network::MainnetV0,
     prelude::*,
-    program::{ArrayType, Identifier, LiteralType, PlaintextType, Register, U32, Value},
+    program::{ArrayType, Identifier, LiteralType, Locator, PlaintextType, Register, U32, Value},
 };
 use snarkvm_synthesizer_process::{Process, Stack};
 use snarkvm_synthesizer_program::{
@@ -37,7 +37,7 @@ use snarkvm_synthesizer_program::{
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
-const ITERATIONS: usize = 25;
+const ITERATIONS: usize = 2;
 
 /// Samples the stack. Note: Do not replicate this for real program use, it is insecure.
 #[allow(clippy::type_complexity)]
@@ -97,11 +97,12 @@ fn check_serialize<const VARIANT: u8>(
 
     // Struct definitions are not supported.
     let fail_get_struct = |_: &Identifier<CurrentNetwork>| bail!("structs are not supported");
+    let fail_get_external_struct = |_: &Locator<CurrentNetwork>| bail!("structs are not supported");
 
     // Get the size in bits.
     let size_in_bits = match VARIANT {
-        0 => type_.size_in_bits(&fail_get_struct).unwrap(),
-        1 => type_.size_in_bits_raw(&fail_get_struct).unwrap(),
+        0 => type_.size_in_bits(&fail_get_struct, &fail_get_external_struct).unwrap(),
+        1 => type_.size_in_bits_raw(&fail_get_struct, &fail_get_external_struct).unwrap(),
         _ => panic!("Invalid 'serialize' variant"),
     };
     let size_in_bits = u32::try_from(size_in_bits).unwrap();

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,8 +43,8 @@ pub use universal_srs::UniversalSRS;
 mod verifying_key;
 pub use verifying_key::VerifyingKey;
 
-#[cfg(test)]
-pub(crate) mod test_helpers {
+#[cfg(any(test, feature = "test-helpers"))]
+pub mod test_helpers {
     use super::*;
     use circuit::{
         environment::{Assignment, Circuit, Eject, Environment, Inject, Mode, One},
@@ -55,10 +55,10 @@ pub(crate) mod test_helpers {
 
     use std::sync::OnceLock;
 
-    type CurrentNetwork = MainnetV0;
+    pub type CurrentNetwork = MainnetV0;
 
     /// Compute 2^EXPONENT - 1, in a purposefully constraint-inefficient manner for testing.
-    fn create_example_circuit<E: Environment>() -> Field<E> {
+    pub fn create_example_circuit<E: Environment>() -> Field<E> {
         let one = console::types::Field::<E::Network>::one();
         let two = one + one;
 
@@ -82,7 +82,7 @@ pub(crate) mod test_helpers {
     }
 
     /// Returns a sample assignment for the example circuit.
-    pub(crate) fn sample_assignment() -> Assignment<<Circuit as Environment>::BaseField> {
+    pub fn sample_assignment() -> Assignment<<Circuit as Environment>::BaseField> {
         static INSTANCE: OnceLock<Assignment<<Circuit as Environment>::BaseField>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
@@ -98,7 +98,7 @@ pub(crate) mod test_helpers {
     }
 
     /// Returns the sample circuit keys for the example circuit.
-    pub(crate) fn sample_keys() -> (ProvingKey<CurrentNetwork>, VerifyingKey<CurrentNetwork>) {
+    pub fn sample_keys() -> (ProvingKey<CurrentNetwork>, VerifyingKey<CurrentNetwork>) {
         static INSTANCE: OnceLock<(ProvingKey<CurrentNetwork>, VerifyingKey<CurrentNetwork>)> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
@@ -111,7 +111,7 @@ pub(crate) mod test_helpers {
     }
 
     /// Returns a sample proof for the example circuit.
-    pub(crate) fn sample_proof() -> Proof<CurrentNetwork> {
+    pub fn sample_proof() -> Proof<CurrentNetwork> {
         static INSTANCE: OnceLock<Proof<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
@@ -123,7 +123,7 @@ pub(crate) mod test_helpers {
     }
 
     /// Returns a sample certificate for the example circuit.
-    pub(super) fn sample_certificate() -> Certificate<CurrentNetwork> {
+    pub fn sample_certificate() -> Certificate<CurrentNetwork> {
         static INSTANCE: OnceLock<Certificate<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {

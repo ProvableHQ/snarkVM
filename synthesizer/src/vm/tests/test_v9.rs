@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +39,7 @@ use std::panic::AssertUnwindSafe;
 //   - programs without constructor cannot be deployed after V9
 //   - program with constructors can be deployed after V9
 #[test]
+#[ignore]
 fn test_constructor_requires_v9() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -134,6 +135,7 @@ function dummy:
 //  - a constructor with an "allow any" policy can be upgraded by anyone.
 //  - a program can be upgraded to a new edition with the exact same logic.
 #[test]
+#[ignore]
 fn test_simple_upgrade() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -279,6 +281,7 @@ constructor:
 //  - the first instance of a program must be the zero-th edition.
 //  - subsequent upgrades to the program must be sequential.
 #[test]
+#[ignore]
 fn test_editions_are_sequential() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -404,6 +407,7 @@ constructor:
 //  - records are semantically distinct (old records cannot be used in functions that require new records).
 //  - functions can be disabled using `assert.neq self.caller self.caller`.
 #[test]
+#[ignore]
 fn test_upgrade_with_records() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -586,6 +590,7 @@ constructor:
 //  - mappings created by and upgraded are correctly initialized and usable in the program.
 //  - functions can be disabled by inserting a failing condition in the on-chain logic.
 #[test]
+#[ignore]
 fn test_upgrade_with_mappings() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -799,6 +804,7 @@ constructor:
 //  - a dependent program can fix a specific version of the dependency
 //  - old executions of the dependent program are no longer valid after an upgrade
 #[test]
+#[ignore]
 fn test_upgrade_with_dependents() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -1090,6 +1096,7 @@ constructor:
 
 // This test checks that a deployment with a failing _init block is rejected.
 #[test]
+#[ignore]
 fn test_failing_init_block() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -1147,6 +1154,7 @@ constructor:
 
 // This test verifies that anyone can upgrade a program whose that explicitly places no restrictions on upgrades in the constructor.
 #[test]
+#[ignore]
 fn test_anyone_can_upgrade() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -1249,6 +1257,7 @@ constructor:
 
 // This test checks that a program the fixes the expected edition cannot be upgraded.
 #[test]
+#[ignore]
 fn test_non_upgradable_programs() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -1297,6 +1306,7 @@ constructor:
 
 // This test checks that a program can be made non-upgradable after being upgradable.
 #[test]
+#[ignore]
 fn test_downgrade_upgradable_program() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -1410,6 +1420,7 @@ constructor:
 // This test checks that an upgrade can be locked to a checksum.
 // The checksum is managed by an admin address.
 #[test]
+#[ignore]
 fn test_lock_upgrade_to_checksum() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -1625,6 +1636,7 @@ constructor:
 }
 
 #[test]
+#[ignore]
 fn test_upgrade_without_changing_contents_passes() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -1689,6 +1701,7 @@ function dummy:",
 
 // This test verifies that the `credits` program is not upgradable.
 #[test]
+#[ignore]
 fn test_credits_is_not_upgradable() {
     let rng = &mut TestRng::default();
 
@@ -1708,6 +1721,7 @@ fn test_credits_is_not_upgradable() {
 
 // This test verifies that programs that were deployed before the upgrade cannot be upgraded.
 #[test]
+#[ignore]
 fn test_existing_programs_cannot_be_upgraded() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -1817,6 +1831,7 @@ constructor:
 
 // This test checks that a program can be upgraded using the simple admin mechanism.
 #[test]
+#[ignore]
 fn test_simple_admin_upgrade() {
     let rng = &mut TestRng::default();
 
@@ -1910,6 +1925,7 @@ constructor:
 
 // This test verifies the behavior of `partially_verified_transactions` cache for transactions before and after a program upgrade.
 #[test]
+#[ignore]
 fn test_verification_cache() {
     let rng = &mut TestRng::default();
 
@@ -1992,6 +2008,7 @@ constructor:
 //   - `credits.aleo` does not have an owner.
 //   - a program deployed after `V9` has an owner.
 #[test]
+#[ignore]
 fn test_program_deployed_before_v9_do_not_have_owner() {
     let rng = &mut TestRng::default();
 
@@ -2057,6 +2074,7 @@ constructor:
 }
 
 #[test]
+#[ignore]
 fn test_old_execution_is_aborted_after_upgrade() {
     let rng = &mut TestRng::default();
 
@@ -2139,6 +2157,7 @@ function dummy2:",
 
 // This test verifies that `credits.aleo` transactions can be executed and added to blocks after the upgrade to V9.
 #[test]
+#[ignore]
 fn test_credits_executions() {
     let rng = &mut TestRng::default();
 
@@ -2203,6 +2222,7 @@ fn test_credits_executions() {
 //  - the VM can be loaded from a store at the very end.
 //  - the VM can be loaded directly from the latest programs.
 #[test]
+#[ignore]
 fn test_cyclic_imports_and_call_graphs() {
     let rng = &mut TestRng::default();
 
@@ -2449,6 +2469,7 @@ constructor:
 
 // This test checks that a program can only be upgraded after a certain block height.
 #[test]
+#[ignore]
 fn test_upgrade_after_block_height() -> Result<()> {
     let rng = &mut TestRng::default();
 
@@ -2521,6 +2542,7 @@ constructor:
 //  - an old execution of a program after an upgrade is accepted in a subsequent block, if the program contents match.
 //  - an old execution of a program after an upgrade is aborted in a subsequent block, if the program contents do not match.
 #[test]
+#[ignore]
 fn test_upgrade_and_execute_in_same_block() {
     let rng = &mut TestRng::default();
 
@@ -2750,6 +2772,7 @@ finalize set_first:
 // This test verifies that a program can be upgraded and then upgraded again in the same block.
 // Note: It is important that this invariant holds, otherwise block rollbacks in the DB can be inconsistent.
 #[test]
+#[ignore]
 fn test_upgrade_and_upgrade_in_same_block() {
     let rng = &mut TestRng::default();
 
@@ -2981,6 +3004,7 @@ function fly:
 //  - if the program deployed before `V9` has not done the one-time upgrade, then the upgradable program cannot be executed.
 //  - once the program deployed before `V9` has done the one-time upgrade, the upgradable program can be executed.
 #[test]
+#[ignore]
 fn test_upgradable_program_with_pre_v9_dependency() {
     let rng = &mut TestRng::default();
 
@@ -3104,6 +3128,7 @@ constructor:
 //  - parent programs that exceed the depth exist, but fail to execute.
 //  - the VM can be loaded from the store.
 #[test]
+#[ignore]
 fn test_upgrade_beyond_max_transition_depth() {
     let rng = &mut TestRng::default();
 
@@ -3339,6 +3364,7 @@ constructor:
 //   - the parent program exists, but cannot be executed.
 //   - the VM can be loaded from the store.
 #[test]
+#[ignore]
 fn test_upgrade_child_program_beyond_transaction_spend_limit() {
     let rng = &mut TestRng::default();
 

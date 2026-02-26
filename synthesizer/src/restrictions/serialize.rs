@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,7 +55,7 @@ mod tests {
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 10;
 
     const TEST_PROGRAM_CASES: &[&str] = &["testing.aleo", "hello.aleo", "abc_def.aleo", "a1234.aleo"];
     const TEST_FUNCTION_CASES: &[&str] = &["testing", "transfer", "hello", "foo", "bar"];

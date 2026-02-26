@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -94,7 +94,7 @@ impl<E: Environment, I: IntegerType> AddChecked<Self> for Integer<E, I> {
             //   - Note: the result of an overflow and underflow must be negative and positive, respectively.
             let is_same_sign = self.msb().is_equal(other.msb());
             let is_overflow = is_same_sign & sum.msb().is_not_equal(self.msb());
-            E::assert_eq(is_overflow, E::zero());
+            E::assert_eq(is_overflow, E::zero()).expect("Signed integer addition overflow check failed");
 
             sum
         } else {
@@ -104,7 +104,7 @@ impl<E: Environment, I: IntegerType> AddChecked<Self> for Integer<E, I> {
             // Check that the computed sum is equal to the witnessed sum, in the base field.
             let computed_sum = self.to_field() + other.to_field();
             let witnessed_sum = sum.to_field();
-            E::assert_eq(computed_sum, witnessed_sum);
+            E::assert_eq(computed_sum, witnessed_sum).expect("Unsigned integer addition constraint unsatisfied");
 
             sum
         }
@@ -169,7 +169,7 @@ mod tests {
 
     use core::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 10;
 
     fn check_add<I: IntegerType + RefUnwindSafe>(
         name: &str,

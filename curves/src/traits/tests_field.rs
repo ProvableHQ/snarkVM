@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -495,7 +495,7 @@ pub fn field_test<F: Field>(a: F, b: F, rng: &mut TestRng) {
         for _ in 0..len {
             a.push(F::rand(rng));
             b.push(F::rand(rng));
-            assert_eq!(F::sum_of_products(a.iter(), b.iter()), a.iter().zip(b.iter()).map(|(x, y)| *x * y).sum());
+            assert_eq!(F::sum_of_products(&a, &b), a.iter().zip(b.iter()).map(|(x, y)| *x * y).sum());
         }
     }
 

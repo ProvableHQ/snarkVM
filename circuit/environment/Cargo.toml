@@ -51,6 +51,9 @@ optional = true
 [dependencies.smallvec]
 workspace = true
 
+[dependencies.thiserror]
+workspace = true
+
 [dev-dependencies.snarkvm-algorithms]
 workspace = true
 features = [ "test" ]

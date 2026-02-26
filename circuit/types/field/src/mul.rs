@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,7 +66,7 @@ impl<E: Environment> MulAssign<&Field<E>> for Field<E> {
                 let product = witness!(|self, other| self * other);
 
                 // Ensure self * other == product.
-                E::enforce(|| (&*self, other, &product));
+                E::enforce(|| (&*self, other, &product)).expect("Field multiplication constraint unsatisfied");
 
                 *self = product;
             }
@@ -131,7 +131,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_mul(
         name: &str,

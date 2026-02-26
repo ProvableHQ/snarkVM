@@ -62,6 +62,10 @@ async = [
   "snarkvm-ledger-query/async",
   "snarkvm-synthesizer/async"
 ]
+history = [
+  "snarkvm-ledger-store/history",
+  "snarkvm-synthesizer/history",
+]
 locktick = [
   "dep:locktick",
   "snarkvm-ledger-puzzle/locktick",
@@ -134,6 +138,9 @@ optional = true
 [dependencies.snarkvm-synthesizer]
 workspace = true
 
+[dependencies.snarkvm-synthesizer-error]
+workspace = true
+
 [dependencies.snarkvm-utilities]
 workspace = true
 
@@ -168,15 +175,14 @@ workspace = true
 [dependencies.rayon]
 workspace = true
 
+[dependencies.thiserror]
+workspace = true
+
 [dependencies.time]
 workspace = true
 
 [dependencies.tracing]
 workspace = true
-
-[dependencies.thiserror]
-workspace = true
-features = [ "std" ]
 
 [dev-dependencies.bincode]
 workspace = true

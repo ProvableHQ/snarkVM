@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -62,9 +62,9 @@ pub fn display_error<E: Borrow<anyhow::Error>>(error: E) {
 /// * `message` - A description of what was being checked
 #[macro_export]
 macro_rules! ensure_equals {
-    ($actual:expr, $expected:expr, $message:expr) => {
+    ($actual:expr, $expected:expr, $message:expr $(, $format_args:tt)*) => {
         if $actual != $expected {
-            anyhow::bail!("{}: Was {} but expected {}.", $message, $actual, $expected);
+            anyhow::bail!("{}: Was {} but expected {}.", format!($message $(, $format_args)*), $actual, $expected);
         }
     };
 }
@@ -196,5 +196,18 @@ mod tests {
 
         assert!(result.is_ok(), "Should handle VM error gracefully");
         assert_eq!(result.unwrap(), "handled_vm_error");
+    }
+
+    // Check that format strings in the `ensure_equals!` work as expected.
+    #[test]
+    fn ensure_equals_with_format_string() {
+        let correct = "correct";
+        let error = || -> Result<()> {
+            ensure_equals!(1, 2, "Test value {} {correct}", "is not");
+            Ok(())
+        }()
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "Test value is not correct: Was 1 but expected 2.");
     }
 }

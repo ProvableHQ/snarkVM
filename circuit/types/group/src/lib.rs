@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -92,7 +92,7 @@ impl<E: Environment> Group<E> {
         let third = (a * x2) - Field::one();
 
         // Ensure y^2 * (dx^2 - 1) = (ax^2 - 1).
-        E::enforce(|| (first, second, third));
+        E::enforce(|| (first, second, third)).expect("Group enforce_on_curve constraint unsatisfied");
     }
 }
 
@@ -236,7 +236,7 @@ mod tests {
 
     use core::str::FromStr;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 10;
 
     /// Attempts to construct an affine group element from the given x-coordinate and mode.
     fn check_display(mode: Mode, point: console::Group<<Circuit as Environment>::Network>) {

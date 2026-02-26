@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,6 +38,6 @@ impl<E: Environment> Boolean<E> {
         // Compute `!(constant_bits_le < circuit_bits_le)`, equivalent to `constant_bits_le >= circuit_bits_le`.
         let is_less_than_or_equal = Boolean::is_less_than_or_equal_constant(circuit_bits_le, constant_bits_le);
         // Assert that `circuit_bits_le <= constant_bits_le`.
-        E::assert(is_less_than_or_equal);
+        E::assert(is_less_than_or_equal).expect("less_than_or_equal assertion failed");
     }
 }

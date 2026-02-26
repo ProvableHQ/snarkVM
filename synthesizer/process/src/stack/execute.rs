@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Stack<N> {
     /// Executes a program closure on the given inputs.
@@ -28,15 +29,17 @@ impl<N: Network> Stack<N> {
         signer: circuit::Address<A>,
         caller: circuit::Address<A>,
         tvk: circuit::Field<A>,
-    ) -> Result<Vec<circuit::Value<A>>> {
+    ) -> Result<Vec<circuit::Value<A>>, StackExecError> {
         let timer = timer!("Stack::execute_closure");
 
         // Ensure the call stack is not `Evaluate`.
-        ensure!(!matches!(call_stack, CallStack::Evaluate(..)), "Illegal operation: cannot evaluate in execute mode");
+        if matches!(call_stack, CallStack::Evaluate(..)) {
+            return Err(anyhow!("Illegal operation: cannot evaluate in execute mode").into());
+        }
 
         // Ensure the number of inputs matches the number of input statements.
         if closure.inputs().len() != inputs.len() {
-            bail!("Expected {} inputs, found {}", closure.inputs().len(), inputs.len())
+            return Err(anyhow!("Expected {} inputs, found {}", closure.inputs().len(), inputs.len()).into());
         }
         lap!(timer, "Check the number of inputs");
 
@@ -67,21 +70,27 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Store the inputs");
 
         // Execute the instructions.
-        for instruction in closure.instructions() {
+        for (ix, instruction) in closure.instructions().iter().enumerate() {
             // If the circuit is in execute mode, then evaluate the instructions.
             if let CallStack::Execute(..) = registers.call_stack_ref() {
                 // If the evaluation fails, bail and return the error.
                 if let Err(error) = instruction.evaluate(self, &mut registers) {
-                    bail!("Failed to evaluate instruction ({instruction}): {error}");
+                    let err = InstructionError::Eval(error.into());
+                    return Err(IndexedInstructionError::new(ix, format!("{instruction}"), err).into());
                 }
             }
             // Execute the instruction.
-            instruction.execute(self, &mut registers)?;
+            if let Err(error) = instruction.execute(self, &mut registers) {
+                let err = InstructionError::Exec(error.into());
+                return Err(IndexedInstructionError::new(ix, format!("{instruction}"), err).into());
+            }
         }
         lap!(timer, "Execute the instructions");
 
         // Ensure the number of public variables remains the same.
-        ensure!(A::num_public() == num_public, "Illegal closure operation: instructions injected public variables");
+        if A::num_public() != num_public {
+            return Err(anyhow!("Illegal closure operation: instructions injected public variables").into());
+        }
 
         use circuit::Inject;
 
@@ -89,7 +98,7 @@ impl<N: Network> Stack<N> {
         let outputs = closure
             .outputs()
             .iter()
-            .map(|output| {
+            .map(|output| -> Result<_> {
                 match output.operand() {
                     // If the operand is a literal, use the literal directly.
                     Operand::Literal(literal) => Ok(circuit::Value::Plaintext(circuit::Plaintext::from(
@@ -111,6 +120,33 @@ impl<N: Network> Stack<N> {
                     Operand::Caller => Ok(circuit::Value::Plaintext(circuit::Plaintext::from(
                         circuit::Literal::Address(registers.caller_circuit()?),
                     ))),
+                    // If the operand is the generator, retrieve the Aleo generator.
+                    Operand::AleoGenerator => A::g_powers()
+                        .first()
+                        .map(|element| {
+                            circuit::Value::Plaintext(circuit::Plaintext::from(circuit::Literal::Group(
+                                element.clone(),
+                            )))
+                        })
+                        .ok_or_else(|| anyhow!("Failed to retrieve the Aleo generator")),
+                    // If the operand is the generator powers, retrieve the generator powers or the indexed group.
+                    Operand::AleoGeneratorPowers(index) => match index {
+                        None => Ok(circuit::Value::Plaintext(circuit::Plaintext::Array(
+                            A::g_powers()
+                                .into_iter()
+                                .map(|element| circuit::Plaintext::from(circuit::Literal::Group(element)))
+                                .collect(),
+                            OnceCell::new(),
+                        ))),
+                        Some(index) => A::g_powers()
+                            .get(**index as usize)
+                            .map(|element| {
+                                circuit::Value::Plaintext(circuit::Plaintext::from(circuit::Literal::Group(
+                                    element.clone(),
+                                )))
+                            })
+                            .ok_or_else(|| anyhow!("Index {index} out of bounds for Aleo generator")),
+                    },
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => {
                         bail!("Illegal operation: cannot retrieve the block height in a closure scope")
@@ -133,6 +169,7 @@ impl<N: Network> Stack<N> {
                     }
                 }
             })
+            .map(|res| res.map_err(StackExecError::Anyhow))
             .collect();
         lap!(timer, "Load the outputs");
 
@@ -152,7 +189,7 @@ impl<N: Network> Stack<N> {
         console_caller: Option<ProgramID<N>>,
         console_root_tvk: Option<Field<N>>,
         rng: &mut R,
-    ) -> Result<Response<N>> {
+    ) -> Result<Response<N>, StackExecError> {
         let timer = timer!("Stack::execute_function");
 
         // Ensure the global constants for the Aleo environment are initialized.
@@ -171,15 +208,17 @@ impl<N: Network> Stack<N> {
         let console_request = call_stack.pop()?;
 
         // Ensure the network ID matches.
-        ensure!(
-            **console_request.network_id() == N::ID,
-            "Network ID mismatch. Expected {}, but found {}",
-            N::ID,
-            console_request.network_id()
-        );
+        if **console_request.network_id() != N::ID {
+            return Err(
+                anyhow!("Network ID mismatch. Expected {}, but found {}", N::ID, console_request.network_id()).into()
+            );
+        }
 
         // We can only have a root_tvk if this request was called by another request
-        ensure!(console_caller.is_some() == console_root_tvk.is_some());
+        if console_caller.is_some() != console_root_tvk.is_some() {
+            return Err(anyhow!("root_tvk requires a caller").into());
+        }
+
         // Determine if this is the top-level caller.
         let console_is_root = console_caller.is_none();
 
@@ -199,7 +238,7 @@ impl<N: Network> Stack<N> {
         let num_inputs = function.inputs().len();
         // Ensure the number of inputs matches the number of input statements.
         if num_inputs != console_request.inputs().len() {
-            bail!("Expected {num_inputs} inputs, found {}", console_request.inputs().len())
+            return Err(anyhow!("Expected {num_inputs} inputs, found {}", console_request.inputs().len()).into());
         }
         // Retrieve the input types.
         let input_types = function.input_types();
@@ -221,10 +260,9 @@ impl<N: Network> Stack<N> {
         };
 
         // Ensure the request is well-formed.
-        ensure!(
-            console_request.verify(&input_types, console_is_root, program_checksum),
-            "[Execute] Request is invalid"
-        );
+        if !console_request.verify(&input_types, console_is_root, program_checksum) {
+            return Err(anyhow!("[Execute] Request is invalid").into());
+        }
         lap!(timer, "Verify the console request");
 
         // Initialize the registers.
@@ -257,7 +295,7 @@ impl<N: Network> Stack<N> {
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
         // Ensure the request has a valid signature, inputs, and transition view key.
-        A::assert(request.verify(&input_types, &tpk, Some(root_tvk), is_root, program_checksum));
+        A::assert(request.verify(&input_types, &tpk, Some(root_tvk), is_root, program_checksum))?;
         lap!(timer, "Verify the circuit request");
 
         // Set the transition signer.
@@ -301,32 +339,36 @@ impl<N: Network> Stack<N> {
         let mut contains_function_call = false;
 
         // Execute the instructions.
-        for instruction in function.instructions() {
+        for (ix, instruction) in function.instructions().iter().enumerate() {
             // If the circuit is in execute mode, then evaluate the instructions.
             if let CallStack::Execute(..) = registers.call_stack_ref() {
                 // Evaluate the instruction.
                 let result = match instruction {
                     // If the instruction is a `call` instruction, we need to handle it separately.
-                    Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng),
+                    Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng)
+                        .map_err(|e| InstructionEvalError::Call(Box::new(e))),
                     // Otherwise, evaluate the instruction normally.
-                    _ => instruction.evaluate(self, &mut registers),
+                    _ => instruction.evaluate(self, &mut registers).map_err(Into::into),
                 };
                 // If the evaluation fails, bail and return the error.
                 if let Err(error) = result {
-                    bail!("Failed to evaluate instruction ({instruction}): {error}");
+                    let err = InstructionError::Eval(error);
+                    return Err(IndexedInstructionError::new(ix, format!("{instruction}"), err).into());
                 }
             }
 
             // Execute the instruction.
             let result = match instruction {
                 // If the instruction is a `call` instruction, we need to handle it separately.
-                Instruction::Call(call) => CallTrait::execute(call, self, &mut registers, rng),
+                Instruction::Call(call) => CallTrait::execute(call, self, &mut registers, rng)
+                    .map_err(|e| InstructionExecError::Call(Box::new(e))),
                 // Otherwise, execute the instruction normally.
-                _ => instruction.execute(self, &mut registers),
+                _ => instruction.execute(self, &mut registers).map_err(InstructionExecError::Exec),
             };
             // If the execution fails, bail and return the error.
             if let Err(error) = result {
-                bail!("Failed to execute instruction ({instruction}): {error}");
+                let err = InstructionError::Exec(error);
+                return Err(IndexedInstructionError::new(ix, format!("{instruction}"), err).into());
             }
 
             // If the instruction was a function call, then set the tracker to `true`.
@@ -365,6 +407,33 @@ impl<N: Network> Stack<N> {
                     Operand::Caller => Ok(circuit::Value::Plaintext(circuit::Plaintext::from(
                         circuit::Literal::Address(registers.caller_circuit()?),
                     ))),
+                    // If the operand is the generator, retrieve the Aleo generator.
+                    Operand::AleoGenerator => A::g_powers()
+                        .first()
+                        .map(|element| {
+                            circuit::Value::Plaintext(circuit::Plaintext::from(circuit::Literal::Group(
+                                element.clone(),
+                            )))
+                        })
+                        .ok_or_else(|| anyhow!("Failed to retrieve the Aleo generator")),
+                    // If the operand is the generator powers, retrieve the generator powers or the indexed group.
+                    Operand::AleoGeneratorPowers(index) => match index {
+                        None => Ok(circuit::Value::Plaintext(circuit::Plaintext::Array(
+                            A::g_powers()
+                                .into_iter()
+                                .map(|element| circuit::Plaintext::from(circuit::Literal::Group(element)))
+                                .collect(),
+                            OnceCell::new(),
+                        ))),
+                        Some(index) => A::g_powers()
+                            .get(**index as usize)
+                            .map(|element| {
+                                circuit::Value::Plaintext(circuit::Plaintext::from(circuit::Literal::Group(
+                                    element.clone(),
+                                )))
+                            })
+                            .ok_or_else(|| anyhow!("Index {index} out of bounds for Aleo generator")),
+                    },
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => {
                         bail!("Illegal operation: cannot retrieve the block height in a function scope")
@@ -409,9 +478,9 @@ impl<N: Network> Stack<N> {
         let num_function_constraints = A::num_constraints().saturating_sub(num_request_constraints);
 
         // If the function does not contain function calls, ensure no new public variables were injected.
-        if !contains_function_call {
+        if !contains_function_call && A::num_public() != num_public {
             // Ensure the number of public variables remains the same.
-            ensure!(A::num_public() == num_public, "Instructions in function injected public variables");
+            return Err(anyhow!("Instructions in function injected public variables").into());
         }
 
         // Construct the response.
@@ -449,13 +518,15 @@ impl<N: Network> Stack<N> {
         // If the circuit is in `Execute` or `PackageRun` mode, then ensure the circuit is satisfied.
         if matches!(registers.call_stack_ref(), CallStack::Execute(..) | CallStack::PackageRun(..)) {
             // If the circuit is empty or not satisfied, then throw an error.
-            ensure!(
-                A::num_constraints() > 0 && A::is_satisfied(),
-                "'{}/{}' is not satisfied on the given inputs ({} constraints).",
-                self.program.id(),
-                function.name(),
-                A::num_constraints()
-            );
+            if A::num_constraints() == 0 || !A::is_satisfied() {
+                return Err(anyhow!(
+                    "'{}/{}' is not satisfied on the given inputs ({} constraints).",
+                    self.program.id(),
+                    function.name(),
+                    A::num_constraints()
+                )
+                .into());
+            }
         }
 
         // Eject the circuit assignment and reset the circuit.

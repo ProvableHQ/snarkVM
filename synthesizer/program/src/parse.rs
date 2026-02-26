@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -78,6 +78,18 @@ impl<N: Network> Parser for ProgramCore<N> {
                 return map_res(take(0usize), Err)(string);
             }
         };
+
+        // Add the imports (if any) to the program.
+        for import in imports {
+            match program.add_import(import) {
+                Ok(_) => (),
+                Err(error) => {
+                    eprintln!("{error}");
+                    return map_res(take(0usize), Err)(string);
+                }
+            }
+        }
+
         // Construct the program with the parsed components.
         for component in components {
             let result = match component {
@@ -97,16 +109,6 @@ impl<N: Network> Parser for ProgramCore<N> {
                 }
             }
         }
-        // Lastly, add the imports (if any) to the program.
-        for import in imports {
-            match program.add_import(import) {
-                Ok(_) => (),
-                Err(error) => {
-                    eprintln!("{error}");
-                    return map_res(take(0usize), Err)(string);
-                }
-            }
-        }
 
         Ok((string, program))
     }
@@ -118,7 +120,7 @@ impl<N: Network> FromStr for ProgramCore<N> {
     /// Returns a program from a string literal.
     fn from_str(string: &str) -> Result<Self> {
         // Ensure the raw program string is less than MAX_PROGRAM_SIZE.
-        ensure!(string.len() <= N::MAX_PROGRAM_SIZE, "Program length exceeds N::MAX_PROGRAM_SIZE.");
+        ensure!(string.len() <= N::LATEST_MAX_PROGRAM_SIZE(), "Program length exceeds N::MAX_PROGRAM_SIZE.");
 
         match Self::parse(string) {
             Ok((remainder, object)) => {
@@ -278,6 +280,8 @@ function compute:
 
     #[test]
     fn test_program_size() {
+        let max_program_size: usize = CurrentNetwork::LATEST_MAX_PROGRAM_SIZE();
+
         // Define variable name for easy experimentation with program sizes.
         let var_name = "a";
 
@@ -292,7 +296,7 @@ function compute:
 
         // Helper function to generate large structs.
         let gen_struct_string = |n: usize| -> String {
-            let mut s = String::with_capacity(CurrentNetwork::MAX_PROGRAM_SIZE);
+            let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("struct m{i}:\n"));
                 for j in 0..10 {
@@ -304,7 +308,7 @@ function compute:
 
         // Helper function to generate large records.
         let gen_record_string = |n: usize| -> String {
-            let mut s = String::with_capacity(CurrentNetwork::MAX_PROGRAM_SIZE);
+            let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("record r{i}:\n    owner as address.private;\n"));
                 for j in 0..10 {
@@ -316,7 +320,7 @@ function compute:
 
         // Helper function to generate large mappings.
         let gen_mapping_string = |n: usize| -> String {
-            let mut s = String::with_capacity(CurrentNetwork::MAX_PROGRAM_SIZE);
+            let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("mapping {var_name}{i}:\n    key as field.public;\n    value as field.public;\n"));
             }
@@ -325,7 +329,7 @@ function compute:
 
         // Helper function to generate large closures.
         let gen_closure_string = |n: usize| -> String {
-            let mut s = String::with_capacity(CurrentNetwork::MAX_PROGRAM_SIZE);
+            let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("closure c{i}:\n    input r0 as u128;\n"));
                 for j in 0..10 {
@@ -338,10 +342,10 @@ function compute:
 
         // Helper function to generate large functions.
         let gen_function_string = |n: usize| -> String {
-            let mut s = String::with_capacity(CurrentNetwork::MAX_PROGRAM_SIZE);
+            let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("function f{i}:\n    add 1u128 1u128 into r0;\n"));
-                for j in 0..10 {
+                for j in 0..500 {
                     s.push_str(&format!("    add r0 r0 into r{j};\n"));
                 }
             }

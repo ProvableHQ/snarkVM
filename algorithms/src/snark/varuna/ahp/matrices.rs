@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,11 +25,10 @@ use crate::{
     },
 };
 use snarkvm_fields::{Field, PrimeField};
-use snarkvm_utilities::{cfg_into_iter, cfg_iter, cfg_iter_mut, serialize::*};
+use snarkvm_utilities::{cfg_into_iter, serialize::*};
 
 use anyhow::{Result, anyhow, ensure};
 
-#[cfg(feature = "serial")]
 use itertools::Itertools;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -188,8 +187,8 @@ pub(crate) fn matrix_evals<F: PrimeField>(
     let non_zero_entries = row_indices.len();
 
     // Zip safety: we intentionally only multiply the first non_zero_entries
-    cfg_iter_mut!(row_col_indices).zip(&col_indices).for_each(|(rc, &col)| *rc *= col);
-    cfg_iter_mut!(row_col_vals).zip(&row_col_indices).for_each(|(v, rc)| *v *= rc);
+    row_col_indices.iter_mut().zip(&col_indices).for_each(|(rc, &col)| *rc *= col);
+    row_col_vals.iter_mut().zip(&row_col_indices).for_each(|(v, rc)| *v *= rc);
 
     // Fill up the evaluations to the next power of two with entries at row 0 (1
     // in R_i), column 0 (1 in C_i) and value 0,
@@ -249,7 +248,10 @@ impl<F: PrimeField> MatrixArithmetization<F> {
             row_col.clone().interpolate()
         } else {
             ensure!(matrix_evals.row.evaluations.len() == matrix_evals.col.evaluations.len());
-            let row_col_evals: Vec<F> = cfg_iter!(matrix_evals.row.evaluations)
+            let row_col_evals: Vec<F> = matrix_evals
+                .row
+                .evaluations
+                .iter()
                 .zip_eq(&matrix_evals.col.evaluations)
                 .map(|(&r, &c)| r * c)
                 .collect();

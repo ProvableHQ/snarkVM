@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +29,9 @@ pub use circuit::*;
 pub mod environment;
 pub use environment::*;
 
+pub mod error;
+pub use error::*;
+
 pub mod helpers;
 pub use helpers::*;
 
@@ -45,6 +48,7 @@ pub use traits::*;
 pub mod prelude {
     pub use crate::{
         CircuitType,
+        ConstraintUnsatisfied,
         Count,
         Environment,
         LinearCombination,

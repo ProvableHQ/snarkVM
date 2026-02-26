@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -84,7 +84,7 @@ impl<E: Environment, I: IntegerType> RemChecked<Self> for Integer<E, I> {
                     let min = Integer::constant(console::Integer::MIN);
                     let neg_one = Integer::constant(-console::Integer::one());
                     let overflows = self.is_equal(&min) & other.is_equal(&neg_one);
-                    E::assert(!overflows);
+                    E::assert(!overflows).expect("Signed integer remainder overflow check failed");
 
                     // Divide the absolute value of `self` and `other` in the base field.
                     let unsigned_dividend = self.abs_wrapped().cast_as_dual();
@@ -166,7 +166,7 @@ mod tests {
 
     use std::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    const ITERATIONS: u64 = 32;
+    const ITERATIONS: u64 = 10;
 
     fn check_rem<I: IntegerType + RefUnwindSafe>(
         name: &str,

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -143,7 +143,7 @@ pub mod prelude {
         combinator::{complete, fail, map, map_res, opt, recognize},
         error::{ErrorKind, make_error},
         multi::{count, many0, many0_count, many1, separated_list0, separated_list1},
-        sequence::{pair, terminated},
+        sequence::{delimited, pair, terminated},
     };
     pub use num_traits::{AsPrimitive, One, Pow, Zero};
     pub use rand::{

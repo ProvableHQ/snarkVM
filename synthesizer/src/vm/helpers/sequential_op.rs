@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +32,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Sequentially process incoming operations.
             while let Ok(request) = request_rx.recv() {
                 let SequentialOperationRequest { op, response_tx } = request;
-                debug!("Sequentially processing operation '{op}'");
+                trace!("Sequentially processing operation '{op}'");
 
                 // Perform the queued operation.
                 let ret = match op {
@@ -54,7 +54,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Sends the given operation to the thread used for sequential processing.
     pub fn run_sequential_operation(&self, op: SequentialOperation<N>) -> Option<SequentialOperationResult<N>> {
-        debug!("Queuing operation '{op}' for sequential processing");
+        trace!("Queuing operation '{op}' for sequential processing");
 
         // Prepare a oneshot channel to obtain the result of the queued operation.
         let (response_tx, response_rx) = oneshot::channel();

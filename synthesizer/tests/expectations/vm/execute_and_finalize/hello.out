@@ -4,14 +4,14 @@ outputs:
   execute:
     hello.aleo/hello:
       outputs:
-      - '{"type":"private","id":"3067112289771026416602608029546215689480230635787358172269181214116473536657field","value":"ciphertext1qyq02t7uqlcfw9sgp0pypf2hgpqgfq9dazwtf06tmvxwutpq5hqrvzs4yqvtr"}'
+      - '{"type":"private","id":"7956368244586786834696717739774544525823270058796904078441478958189383835099field","value":"ciphertext1qyq8zd2d5tccnr37utfek4d2rzuylv0z5g25jvez9h8vdxa5k77hyrqtrhgmm"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
   execute:
     hello.aleo/hello:
       outputs:
-      - '{"type":"private","id":"7128432731345166329625533482159191637873282420112148589133159314814983916241field","value":"ciphertext1qyqy5l8q07xgvzz2uyhghmdca8ftq7nqx6suf9e2n0jsx35l8nvlupspkpqex"}'
+      - '{"type":"private","id":"920860077685870189118339238626755267381831606124680164428136639186353645396field","value":"ciphertext1qyqtuqg9h8ymhmd2shwh698aqe4xucz033aekj0cpgrcxeq270xk2rsekl6cg"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
@@ -34,11 +34,11 @@ additional:
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"5876238170943580993663194204772322189230649299859148831112976015919479421715field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr,\n    1317u64\n  ]\n}"}'
+      - '{"type":"future","id":"1859616768871582698460732494774856870427546991464712711584189806294878718709field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr,\n    1317u64\n  ]\n}"}'
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"6737852088521839690807682481308314838479705890883861842614262211605780698107field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr,\n    1317u64\n  ]\n}"}'
+      - '{"type":"future","id":"3207561934868347507928583331349861264891324082736913246760626505984452423149field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo10knkelvnd55fsaarm25wch7p9suf2tqlgwy5k4nxwms6d262xyfqm2tccr,\n    1317u64\n  ]\n}"}'
 - child_outputs:
     credits.aleo/fee_public:
       outputs:

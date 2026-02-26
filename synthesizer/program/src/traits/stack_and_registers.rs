@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +31,7 @@ use console::{
         Record,
         Register,
         RegisterType,
+        StructType,
         Value,
         ValueType,
     },
@@ -148,6 +149,109 @@ pub trait StackTrait<N: Network> {
         index: Field<N>,
         rng: &mut R,
     ) -> Result<Record<N, Plaintext<N>>>;
+}
+
+/// Are the two types either the same, or both structurally equivalent `PlaintextType`s?
+pub fn register_types_equivalent<N: Network>(
+    stack0: &impl StackTrait<N>,
+    type0: &RegisterType<N>,
+    stack1: &impl StackTrait<N>,
+    type1: &RegisterType<N>,
+) -> Result<bool> {
+    use RegisterType::*;
+    if let (Plaintext(plaintext0), Plaintext(plaintext1)) = (type0, type1) {
+        types_equivalent(stack0, plaintext0, stack1, plaintext1)
+    } else {
+        Ok(type0 == type1)
+    }
+}
+
+/// Determines whether two `PlaintextType` values are equivalent.
+///
+/// Equivalence of literals means they're the same type.
+///
+/// Equivalence of structs means they have the same local names (regardless of whether
+/// they're local or external), and their members have the same names and equivalent
+/// types in the same order, recursively.
+///
+/// Equivalence of arrays means they have the same length and their element types are
+/// equivalent.
+///
+/// This definition of equivalence was chosen to balance these concerns:
+///
+/// 1. All programs from before the existence of external structs will continue to work;
+///    thus it's necessary for a struct created from another program to be considered equivalent
+///    to a local one with the same name and structure, as in practice that was the behavior.
+/// 2. We don't want to allow a fork. Thus we do need to check names, not just structural
+///    equivalence - otherwise we could get a program deployable to a node which is using
+///    this check, but not deployable to a node running an earlier SnarkVM.
+///
+/// The stacks are passed because struct types need to access their stack to get their
+/// structure.
+pub fn types_equivalent<N: Network>(
+    stack0: &impl StackTrait<N>,
+    type0: &PlaintextType<N>,
+    stack1: &impl StackTrait<N>,
+    type1: &PlaintextType<N>,
+) -> Result<bool> {
+    use PlaintextType::*;
+
+    let struct_compare = |stack0, st0: &StructType<N>, stack1, st1: &StructType<N>| -> Result<bool> {
+        if st0.members().len() != st1.members().len() {
+            return Ok(false);
+        }
+
+        for ((name0, type0), (name1, type1)) in st0.members().iter().zip(st1.members()) {
+            if name0 != name1 || !types_equivalent(stack0, type0, stack1, type1)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    };
+
+    match (type0, type1) {
+        (Array(array0), Array(array1)) => Ok(array0.length() == array1.length()
+            && types_equivalent(stack0, array0.next_element_type(), stack1, array1.next_element_type())?),
+        (Literal(lit0), Literal(lit1)) => Ok(lit0 == lit1),
+        (Struct(id0), Struct(id1)) => {
+            if id0 != id1 {
+                return Ok(false);
+            }
+            let struct_type0 = stack0.program().get_struct(id0)?;
+            let struct_type1 = stack1.program().get_struct(id1)?;
+            struct_compare(stack0, struct_type0, stack1, struct_type1)
+        }
+        (ExternalStruct(loc0), ExternalStruct(loc1)) => {
+            if loc0.resource() != loc1.resource() {
+                return Ok(false);
+            }
+            let external_stack0 = stack0.get_external_stack(loc0.program_id())?;
+            let struct_type0 = external_stack0.program().get_struct(loc0.resource())?;
+            let external_stack1 = stack1.get_external_stack(loc1.program_id())?;
+            let struct_type1 = external_stack1.program().get_struct(loc1.resource())?;
+            struct_compare(&*external_stack0, struct_type0, &*external_stack1, struct_type1)
+        }
+        (ExternalStruct(loc), Struct(id)) => {
+            if loc.resource() != id {
+                return Ok(false);
+            }
+            let external_stack = stack0.get_external_stack(loc.program_id())?;
+            let struct_type0 = external_stack.program().get_struct(loc.resource())?;
+            let struct_type1 = stack1.program().get_struct(id)?;
+            struct_compare(&*external_stack, struct_type0, stack1, struct_type1)
+        }
+        (Struct(id), ExternalStruct(loc)) => {
+            if id != loc.resource() {
+                return Ok(false);
+            }
+            let struct_type0 = stack0.program().get_struct(id)?;
+            let external_stack = stack1.get_external_stack(loc.program_id())?;
+            let struct_type1 = external_stack.program().get_struct(loc.resource())?;
+            struct_compare(stack0, struct_type0, &*external_stack, struct_type1)
+        }
+        _ => Ok(false),
+    }
 }
 
 pub trait FinalizeRegistersState<N: Network>: RegistersTrait<N> {

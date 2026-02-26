@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -681,6 +681,92 @@ mod varuna_hiding {
             VarunaInst::verify(universal_verifier, &fs_parameters, &vk1, varuna_version, public_inputs1, &proof1)
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn test_circuit_verifying_key_bounded_deserialization() {
+        use snarkvm_utilities::serialize::*;
+
+        let mut rng = TestRng::default();
+
+        // Create a valid circuit and verifying key
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
+        let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+        let (circ, _public_inputs) = TestCircuit::gen_rand(1, 26, 25, &mut rng);
+        let (_index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circ).unwrap();
+
+        // Test 1: Valid verifying key should deserialize successfully
+        let serialized = index_vk.to_bytes_le().unwrap();
+        let deserialized: CircuitVerifyingKey<Bls12_377> =
+            CircuitVerifyingKey::deserialize_compressed(&serialized[..]).unwrap();
+        assert_eq!(index_vk, deserialized);
+
+        // Test 2: Verify the number of circuit commitments is within bounds (should be
+        // 12)
+        assert!(
+            index_vk.circuit_commitments.len() <= 12,
+            "Circuit commitments should not exceed 12, got {}",
+            index_vk.circuit_commitments.len()
+        );
+
+        // Test 3: Attempt to deserialize a verifying key with too many commitments
+        // We'll manually craft a malicious serialization with 13 commitments
+        let mut malicious_bytes = Vec::new();
+
+        // Serialize circuit_info
+        index_vk.circuit_info.serialize_compressed(&mut malicious_bytes).unwrap();
+
+        // Write a length of 13 (exceeds MAX_CIRCUIT_COMMITMENTS = 12)
+        let malicious_len: u64 = 13;
+        malicious_len.serialize_compressed(&mut malicious_bytes).unwrap();
+
+        // Serialize 13 commitments (repeating commitments as needed)
+        for i in 0..13 {
+            let commitment_idx = i % index_vk.circuit_commitments.len();
+            index_vk.circuit_commitments[commitment_idx].serialize_compressed(&mut malicious_bytes).unwrap();
+        }
+
+        // Serialize id
+        index_vk.id.serialize_compressed(&mut malicious_bytes).unwrap();
+
+        // Test 4: Deserialization should fail with InvalidData error
+        let result: Result<CircuitVerifyingKey<Bls12_377>, SerializationError> =
+            CircuitVerifyingKey::deserialize_compressed(&malicious_bytes[..]);
+
+        assert!(result.is_err(), "Deserialization should fail for more than 12 commitments");
+        assert!(
+            matches!(result.unwrap_err(), SerializationError::InvalidData),
+            "Error should be SerializationError::InvalidData"
+        );
+
+        // Test 5: Test backwards compatibility - verifying keys with <= 12 commitments
+        // should work
+        for num_commitments in 1..=12 {
+            let mut compatible_bytes = Vec::new();
+
+            // Serialize circuit_info
+            index_vk.circuit_info.serialize_compressed(&mut compatible_bytes).unwrap();
+
+            // Write a valid length (use min to handle cases where circuit has fewer
+            // commitments)
+            let actual_len = num_commitments.min(index_vk.circuit_commitments.len());
+            (actual_len as u64).serialize_compressed(&mut compatible_bytes).unwrap();
+
+            // Serialize the commitments (repeat if necessary for testing)
+            for i in 0..actual_len {
+                let commitment_idx = i % index_vk.circuit_commitments.len();
+                index_vk.circuit_commitments[commitment_idx].serialize_compressed(&mut compatible_bytes).unwrap();
+            }
+
+            // Serialize id
+            index_vk.id.serialize_compressed(&mut compatible_bytes).unwrap();
+
+            // This should succeed
+            let result: Result<CircuitVerifyingKey<Bls12_377>, SerializationError> =
+                CircuitVerifyingKey::deserialize_compressed(&compatible_bytes[..]);
+
+            assert!(result.is_ok(), "Deserialization should succeed for {num_commitments} commitments",);
+        }
     }
 }
 

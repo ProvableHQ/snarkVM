@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -94,6 +94,14 @@ impl<N: Network> FunctionCore<N> {
     /// Returns the function finalize logic.
     pub const fn finalize_logic(&self) -> Option<&FinalizeCore<N>> {
         self.finalize_logic.as_ref()
+    }
+
+    /// Returns whether this function refers to an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        self.inputs.iter().any(|input| input.value_type().contains_external_struct())
+            || self.outputs.iter().any(|output| output.value_type().contains_external_struct())
+            || self.instructions.iter().any(|instruction| instruction.contains_external_struct())
+            || self.finalize_logic.iter().any(|finalize| finalize.contains_external_struct())
     }
 
     /// Returns `true` if the function contains a string type.

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,6 +51,15 @@ impl<N: Network> ValueType<N> {
             ValueType::ExternalRecord(..) => 4,
             ValueType::Future(..) => 5,
         }
+    }
+
+    /// Returns whether this type references an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        use ValueType::*;
+        matches!(
+            self,
+            Constant(plaintext) | Public(plaintext) | Private(plaintext) if plaintext.contains_external_struct()
+        )
     }
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,7 +49,8 @@ impl<E: Environment> Nor<Self> for Boolean<E> {
 
             // Ensure (1 - `self`) * (1 - `other`) = `output`
             // `output` is `1` iff `self` and `other` are both `0`, otherwise `output` is `0`.
-            E::enforce(|| (E::one() - &self.0, E::one() - &other.0, &output));
+            E::enforce(|| (E::one() - &self.0, E::one() - &other.0, &output))
+                .expect("Boolean NOR constraint unsatisfied");
 
             output
         }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +53,10 @@ impl<N: Network> Mapping<N> {
     /// Returns the value statement.
     pub const fn value(&self) -> &MapValue<N> {
         &self.value
+    }
+
+    pub fn contains_external_struct(&self) -> bool {
+        self.key.plaintext_type().contains_external_struct() || self.value.plaintext_type().contains_external_struct()
     }
 
     /// Returns `true` if the mapping contains a string type.

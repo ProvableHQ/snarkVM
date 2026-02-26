@@ -33,7 +33,7 @@ locktick = [
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-history = [ "serde" ]
+history = [ "snarkvm-ledger-store/history" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",
@@ -61,6 +61,7 @@ wasm = [
 dev-print = [ "snarkvm-utilities/dev-print" ]
 dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]
 test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights" ]
+memory-intensive = [ ]
 
 [[bench]]
 name = "kary_merkle_tree"
@@ -97,6 +98,9 @@ workspace = true
 features = [ "query" ]
 
 [dependencies.snarkvm-ledger-store]
+workspace = true
+
+[dependencies.snarkvm-synthesizer-error]
 workspace = true
 
 [dependencies.snarkvm-synthesizer-process]
@@ -141,10 +145,6 @@ workspace = true
 [dependencies.rayon]
 workspace = true
 
-[dependencies.serde]
-workspace = true
-optional = true
-
 [dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
@@ -188,6 +188,10 @@ features = [ "test-helpers" ]
 [dev-dependencies.snarkvm-synthesizer-process]
 workspace = true
 features = [ "test" ]
+
+[dev-dependencies.snarkvm-synthesizer-snark]
+workspace = true
+features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-test-helpers]
 path = "../ledger/test-helpers"

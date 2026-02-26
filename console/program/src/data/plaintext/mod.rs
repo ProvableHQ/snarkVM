@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +33,10 @@ use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
 use indexmap::IndexMap;
-use std::sync::OnceLock;
+use std::{
+    hash::{Hash, Hasher},
+    sync::OnceLock,
+};
 
 #[derive(Clone)]
 pub enum Plaintext<N: Network> {
@@ -71,6 +74,40 @@ impl<N: Network> Plaintext<N> {
             _ => bail!("Expected a bit array, found a non-array plaintext."),
         }
     }
+
+    /// Returns the `Plaintext` as a `Vec<u8>`, if it is a u8 array.
+    pub fn as_byte_array(&self) -> Result<Vec<u8>> {
+        match self {
+            Self::Array(elements, _) => {
+                let mut bytes = Vec::with_capacity(elements.len());
+                for element in elements {
+                    match element {
+                        Self::Literal(Literal::U8(byte), _) => bytes.push(**byte),
+                        _ => bail!("Expected a u8 array, found a non-u8 element."),
+                    }
+                }
+                Ok(bytes)
+            }
+            _ => bail!("Expected a u8 array, found a non-array plaintext."),
+        }
+    }
+
+    /// Returns the `Plaintext` as a `Vec<N::Field>`, if it is a field array.
+    pub fn as_field_array(&self) -> Result<Vec<Field<N>>> {
+        match self {
+            Self::Array(elements, _) => {
+                let mut fields = Vec::with_capacity(elements.len());
+                for element in elements {
+                    match element {
+                        Self::Literal(Literal::Field(field), _) => fields.push(*field),
+                        _ => bail!("Expected an array of fields, found a non-field element."),
+                    }
+                }
+                Ok(fields)
+            }
+            _ => bail!("Expected an array of fields, found a non-array plaintext."),
+        }
+    }
 }
 
 impl<N: Network> From<Literal<N>> for Plaintext<N> {
@@ -84,6 +121,25 @@ impl<N: Network> From<&Literal<N>> for Plaintext<N> {
     /// Returns a new `Plaintext` from a `&Literal`.
     fn from(literal: &Literal<N>) -> Self {
         Self::Literal(literal.clone(), OnceLock::new())
+    }
+}
+
+impl<N: Network> Hash for Plaintext<N> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Literal(literal, _bits) => {
+                literal.hash(state);
+            }
+            Self::Struct(fields, _bits) => {
+                for (name, value) in fields {
+                    name.hash(state);
+                    value.hash(state);
+                }
+            }
+            Self::Array(array, _bits) => {
+                array.hash(state);
+            }
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -84,7 +84,8 @@ impl<E: Environment> Ternary for Field<E> {
             //       a - b = 0
             // => if a != b, as LHS != RHS, the witness is incorrect.
             //
-            E::enforce(|| ((first - second), condition, (&witness - second)));
+            E::enforce(|| ((first - second), condition, (&witness - second)))
+                .expect("Field ternary constraint unsatisfied");
 
             witness
         }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -411,6 +411,7 @@ fn is_valid_destination_type<N: Network>(variant: u8, destination_type: &Plainte
             PlaintextType::Literal(LiteralType::Boolean)
                 | PlaintextType::Literal(LiteralType::String)
                 | PlaintextType::Struct(..)
+                | PlaintextType::ExternalStruct(..)
                 | PlaintextType::Array(..)
         ),
         33..=44 => matches!(destination_type, PlaintextType::Array(array_type) if array_type.is_bit_array()),
@@ -473,6 +474,12 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
     #[inline]
     pub const fn destination_type(&self) -> &PlaintextType<N> {
         &self.destination_type
+    }
+
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        self.destination_type.contains_external_struct()
     }
 }
 
@@ -669,6 +676,11 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
             // A helper to get a struct declaration.
             let get_struct = |identifier: &Identifier<N>| stack.program().get_struct(identifier).cloned();
 
+            // A helper to get an external struct declaration.
+            let get_external_struct = |locator: &Locator<N>| {
+                stack.get_external_stack(locator.program_id())?.program().get_struct(locator.resource()).cloned()
+            };
+
             // A helper to get a record declaration.
             let get_record = |identifier: &Identifier<N>| stack.program().get_record(identifier).cloned();
 
@@ -698,8 +710,20 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
 
             // Get the size in bits.
             let size_in_bits = match variant.is_raw() {
-                false => input_types[0].size_in_bits(&get_struct, &get_record, &get_external_record, &get_future)?,
-                true => input_types[0].size_in_bits_raw(&get_struct, &get_record, &get_external_record, &get_future)?,
+                false => input_types[0].size_in_bits(
+                    &get_struct,
+                    &get_external_struct,
+                    &get_record,
+                    &get_external_record,
+                    &get_future,
+                )?,
+                true => input_types[0].size_in_bits_raw(
+                    &get_struct,
+                    &get_external_struct,
+                    &get_record,
+                    &get_external_record,
+                    &get_future,
+                )?,
             };
             // Check the number of bits.
             ensure!(
@@ -873,7 +897,7 @@ mod tests {
                 .map(|_| {
                     PlaintextType::Array(
                         ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(
-                            u32::try_from(rng.gen_range(1..=CurrentNetwork::MAX_ARRAY_ELEMENTS)).unwrap(),
+                            u32::try_from(rng.gen_range(1..=CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS())).unwrap(),
                         )])
                         .unwrap(),
                     )

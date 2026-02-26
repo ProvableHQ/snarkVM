@@ -81,6 +81,7 @@ members = [
   "metrics",
   "parameters",
   "synthesizer",
+  "synthesizer/error",
   "synthesizer/process",
   "synthesizer/program",
   "synthesizer/snark",
@@ -129,6 +130,7 @@ cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "snarkvm-synthesizer/history" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
 locktick = [
+  "snarkvm-console?/locktick",
   "snarkvm-algorithms?/locktick",
   "snarkvm-ledger?/locktick",
   "snarkvm-parameters?/locktick",
@@ -401,6 +403,10 @@ version = "=4.4.0"
 path = "synthesizer"
 version = "=4.4.0"
 
+[workspace.dependencies.snarkvm-synthesizer-error]
+path = "synthesizer/error"
+version = "=4.4.0"
+
 [workspace.dependencies.snarkvm-synthesizer-process]
 path = "synthesizer/process"
 version = "=4.4.0"
@@ -473,7 +479,7 @@ version = "0.14"
 version = "1.4"
 
 [workspace.dependencies.locktick]
-version = "0.4"
+version = "0.5"
 
 [workspace.dependencies.lru]
 version = "0.16"
