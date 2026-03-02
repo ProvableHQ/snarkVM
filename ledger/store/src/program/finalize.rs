@@ -387,6 +387,25 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
             // Insert the new key-value entries.
             for (key, value) in entries {
+                // Update the historical maps.
+                #[cfg(feature = "history")]
+                {
+                    let current_height = self.current_block_height().load(Ordering::SeqCst);
+
+                    // Register the updated value at the current height.
+                    self.mapping_update_map()
+                        .insert((program_id, mapping_name, key.clone(), current_height), value.clone())?;
+
+                    // Obtain the list of past update heights.
+                    let key = (program_id, mapping_name, key.clone());
+                    let update_heights =
+                        self.mapping_update_heights_map().get_confirmed(&key)?.map(|list| list.into_owned());
+                    let mut update_heights = update_heights.unwrap_or_default();
+                    // Extend the historical update heights with the current height.
+                    update_heights.push(current_height);
+                    self.mapping_update_heights_map().insert(key, update_heights)?;
+                }
+
                 // Insert the key-value entry.
                 self.key_value_map().insert((program_id, mapping_name), key, value)?;
             }
