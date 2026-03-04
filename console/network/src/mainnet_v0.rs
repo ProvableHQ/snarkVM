@@ -70,6 +70,7 @@ lazy_static! {
     /// The Poseidon hash function, using a rate of 8.
     pub static ref POSEIDON_8: Poseidon8<MainnetV0> = Poseidon8::<MainnetV0>::setup("AleoPoseidon8").expect("Failed to setup Poseidon8");
 
+    // TODO (raychu86): Determine if we can optimize by clearing from lazy_static after they are no longer necessary.
     pub static ref CREDITS_V0_PROVING_KEYS: IndexMap<String, Arc<VarunaProvingKey<Console>>> = {
         let mut map = IndexMap::new();
         snarkvm_parameters::insert_credit_v0_keys!(map, VarunaProvingKey<Console>, Prover);
@@ -78,6 +79,17 @@ lazy_static! {
     pub static ref CREDITS_V0_VERIFYING_KEYS: IndexMap<String, Arc<VarunaVerifyingKey<Console>>> = {
         let mut map = IndexMap::new();
         snarkvm_parameters::insert_credit_v0_keys!(map, VarunaVerifyingKey<Console>, Verifier);
+        map
+    };
+
+    pub static ref CREDITS_V1_PROVING_KEYS: IndexMap<String, Arc<VarunaProvingKey<Console>>> = {
+        let mut map = IndexMap::new();
+        snarkvm_parameters::insert_credit_v1_keys!(map, VarunaProvingKey<Console>, Prover);
+        map
+    };
+    pub static ref CREDITS_V1_VERIFYING_KEYS: IndexMap<String, Arc<VarunaVerifyingKey<Console>>> = {
+        let mut map = IndexMap::new();
+        snarkvm_parameters::insert_credit_v1_keys!(map, VarunaVerifyingKey<Console>, Verifier);
         map
     };
 
@@ -223,6 +235,20 @@ impl Network for MainnetV0 {
         CREDITS_V0_VERIFYING_KEYS
             .get(&function_name)
             .ok_or_else(|| anyhow!("Verifying key (v0) for credits_v0.aleo/{function_name}' not found"))
+    }
+
+    /// Returns the proving key for the given function name in the v1 version of `credits.aleo`.
+    fn get_credits_v1_proving_key(function_name: String) -> Result<&'static Arc<VarunaProvingKey<Self>>> {
+        CREDITS_V1_PROVING_KEYS
+            .get(&function_name)
+            .ok_or_else(|| anyhow!("Proving key for credits.aleo/{function_name}' not found"))
+    }
+
+    /// Returns the verifying key for the given function name in the v1 version of `credits.aleo`.
+    fn get_credits_v1_verifying_key(function_name: String) -> Result<&'static Arc<VarunaVerifyingKey<Self>>> {
+        CREDITS_V1_VERIFYING_KEYS
+            .get(&function_name)
+            .ok_or_else(|| anyhow!("Verifying key for credits.aleo/{function_name}' not found"))
     }
 
     /// Returns the proving key for the given function name in `credits.aleo`.

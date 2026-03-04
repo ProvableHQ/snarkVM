@@ -36,7 +36,6 @@ mod mainnet_v0;
 pub use mainnet_v0::*;
 
 mod testnet_v0;
-
 pub use testnet_v0::*;
 
 pub mod prelude {
@@ -360,6 +359,12 @@ pub trait Network:
 
     /// Returns the verifying key for the given function name in the v0 version of `credits.aleo`.
     fn get_credits_v0_verifying_key(function_name: String) -> Result<&'static Arc<VarunaVerifyingKey<Self>>>;
+
+    /// Returns the proving key for the given function name in the V1 version of `credits.aleo`.
+    fn get_credits_v1_proving_key(function_name: String) -> Result<&'static Arc<VarunaProvingKey<Self>>>;
+
+    /// Returns the verifying key for the given function name in the V1 version of `credits.aleo`.
+    fn get_credits_v1_verifying_key(function_name: String) -> Result<&'static Arc<VarunaVerifyingKey<Self>>>;
 
     /// Returns the proving key for the given function name in `credits.aleo`.
     fn get_credits_proving_key(function_name: String) -> Result<&'static Arc<VarunaProvingKey<Self>>>;
