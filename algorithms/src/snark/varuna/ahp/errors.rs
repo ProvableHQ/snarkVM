@@ -16,7 +16,7 @@
 /// Describes the failure modes of the AHP scheme.
 #[derive(Debug, Error)]
 pub enum AHPError {
-    #[error("{}", _0)]
+    #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
 
     #[error("Batch size was zero; must be at least 1.")]

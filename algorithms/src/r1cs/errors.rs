@@ -19,7 +19,7 @@ pub type SynthesisResult<T> = Result<T, SynthesisError>;
 /// such as CRS generation, proving or verification.
 #[derive(Debug, Error)]
 pub enum SynthesisError {
-    #[error("{}", _0)]
+    #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
     /// During synthesis, we lacked knowledge of a variable assignment.
     #[error("An assignment for a variable could not be computed")]
