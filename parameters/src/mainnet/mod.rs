@@ -183,7 +183,7 @@ macro_rules! insert_credit_keys {
         paste::paste! {
             let string = stringify!([<$variant:lower>]);
             $crate::insert_credit_v1_keys!($map, $type<$network>, $variant);
-            $crate::insert_key!($map, string, $type<$network>, ("upgrade", $crate::mainnet::[<Upgrade $variant>]::load_bytes()));
+            $crate::insert_key!($map, string, $type<$network>, ("redelegate", $crate::mainnet::[<Redelegate $variant>]::load_bytes()));
         }
     }};
 }
@@ -308,6 +308,8 @@ mod tests {
         FeePublicVerifier::load_bytes().expect("Failed to load fee_public verifier");
         UpgradeProver::load_bytes().expect("Failed to load upgrade prover");
         UpgradeVerifier::load_bytes().expect("Failed to load upgrade verifier");
+        RedelegateProver::load_bytes().expect("Failed to load redelegate prover");
+        RedelegateVerifier::load_bytes().expect("Failed to load redelegate verifier");
         InclusionProver::load_bytes().expect("Failed to load inclusion prover");
         InclusionVerifier::load_bytes().expect("Failed to load inclusion verifier");
     }

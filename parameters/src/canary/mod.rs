@@ -21,51 +21,59 @@ pub const RESTRICTIONS_LIST: &str = include_str!("./resources/restrictions.json"
 
 const REMOTE_URLS: [&str; 2] = ["https://parameters.provable.com/canary", "https://s3.us-west-1.amazonaws.com/canary.parameters"];
 
+// V2 Credits Keys
+
+// Redelegate
+impl_remote!(RedelegateProver, REMOTE_URLS, "resources/", "redelegate", "prover", "credits");
+impl_local!(RedelegateVerifier, "resources/", "redelegate", "verifier", "credits");
+
+// V1 and V2 Credits Keys
+
 // BondPublic
-impl_remote!(BondPublicProver, REMOTE_URLS, "resources/", "bond_public", "prover", "credits");
-impl_local!(BondPublicVerifier, "resources/", "bond_public", "verifier", "credits");
+impl_remote!(BondPublicProver, REMOTE_URLS, "resources/", "bond_public", "prover", "credits_v1");
+impl_local!(BondPublicVerifier, "resources/", "bond_public", "verifier", "credits_v1");
 // BondValidator
-impl_remote!(BondValidatorProver, REMOTE_URLS, "resources/", "bond_validator", "prover", "credits");
-impl_local!(BondValidatorVerifier, "resources/", "bond_validator", "verifier", "credits");
+impl_remote!(BondValidatorProver, REMOTE_URLS, "resources/", "bond_validator", "prover", "credits_v1");
+impl_local!(BondValidatorVerifier, "resources/", "bond_validator", "verifier", "credits_v1");
 // UnbondPublic
-impl_remote!(UnbondPublicProver, REMOTE_URLS, "resources/", "unbond_public", "prover", "credits");
-impl_local!(UnbondPublicVerifier, "resources/", "unbond_public", "verifier", "credits");
+impl_remote!(UnbondPublicProver, REMOTE_URLS, "resources/", "unbond_public", "prover", "credits_v1");
+impl_local!(UnbondPublicVerifier, "resources/", "unbond_public", "verifier", "credits_v1");
 // ClaimUnbondPublic
-impl_remote!(ClaimUnbondPublicProver, REMOTE_URLS, "resources/", "claim_unbond_public", "prover", "credits");
-impl_local!(ClaimUnbondPublicVerifier, "resources/", "claim_unbond_public", "verifier", "credits");
+impl_remote!(ClaimUnbondPublicProver, REMOTE_URLS, "resources/", "claim_unbond_public", "prover", "credits_v1");
+impl_local!(ClaimUnbondPublicVerifier, "resources/", "claim_unbond_public", "verifier", "credits_v1");
 // SetValidatorState
-impl_remote!(SetValidatorStateProver, REMOTE_URLS, "resources/", "set_validator_state", "prover", "credits");
-impl_local!(SetValidatorStateVerifier, "resources/", "set_validator_state", "verifier", "credits");
+impl_remote!(SetValidatorStateProver, REMOTE_URLS, "resources/", "set_validator_state", "prover", "credits_v1");
+impl_local!(SetValidatorStateVerifier, "resources/", "set_validator_state", "verifier", "credits_v1");
 // TransferPrivate
-impl_remote!(TransferPrivateProver, REMOTE_URLS, "resources/", "transfer_private", "prover", "credits");
-impl_local!(TransferPrivateVerifier, "resources/", "transfer_private", "verifier", "credits");
+impl_remote!(TransferPrivateProver, REMOTE_URLS, "resources/", "transfer_private", "prover", "credits_v1");
+impl_local!(TransferPrivateVerifier, "resources/", "transfer_private", "verifier", "credits_v1");
 // TransferPublic
-impl_remote!(TransferPublicProver, REMOTE_URLS, "resources/", "transfer_public", "prover", "credits");
-impl_local!(TransferPublicVerifier, "resources/", "transfer_public", "verifier", "credits");
+impl_remote!(TransferPublicProver, REMOTE_URLS, "resources/", "transfer_public", "prover", "credits_v1");
+impl_local!(TransferPublicVerifier, "resources/", "transfer_public", "verifier", "credits_v1");
 // TransferPublicAsSigner
-impl_remote!(TransferPublicAsSignerProver, REMOTE_URLS, "resources/", "transfer_public_as_signer", "prover", "credits");
-impl_local!(TransferPublicAsSignerVerifier, "resources/", "transfer_public_as_signer", "verifier", "credits");
+impl_remote!(TransferPublicAsSignerProver, REMOTE_URLS, "resources/", "transfer_public_as_signer", "prover", "credits_v1");
+impl_local!(TransferPublicAsSignerVerifier, "resources/", "transfer_public_as_signer", "verifier", "credits_v1");
 // TransferPrivateToPublic
-impl_remote!(TransferPrivateToPublicProver, REMOTE_URLS, "resources/", "transfer_private_to_public", "prover", "credits");
-impl_local!(TransferPrivateToPublicVerifier, "resources/", "transfer_private_to_public", "verifier", "credits");
+impl_remote!(TransferPrivateToPublicProver, REMOTE_URLS, "resources/", "transfer_private_to_public", "prover", "credits_v1");
+impl_local!(TransferPrivateToPublicVerifier, "resources/", "transfer_private_to_public", "verifier", "credits_v1");
 // TransferPublicToPrivate
-impl_remote!(TransferPublicToPrivateProver, REMOTE_URLS, "resources/", "transfer_public_to_private", "prover", "credits");
-impl_local!(TransferPublicToPrivateVerifier, "resources/", "transfer_public_to_private", "verifier", "credits");
+impl_remote!(TransferPublicToPrivateProver, REMOTE_URLS, "resources/", "transfer_public_to_private", "prover", "credits_v1");
+impl_local!(TransferPublicToPrivateVerifier, "resources/", "transfer_public_to_private", "verifier", "credits_v1");
 // Join
-impl_remote!(JoinProver, REMOTE_URLS, "resources/", "join", "prover", "credits");
-impl_local!(JoinVerifier, "resources/", "join", "verifier", "credits");
+impl_remote!(JoinProver, REMOTE_URLS, "resources/", "join", "prover", "credits_v1");
+impl_local!(JoinVerifier, "resources/", "join", "verifier", "credits_v1");
 // Split
-impl_remote!(SplitProver, REMOTE_URLS, "resources/", "split", "prover", "credits");
-impl_local!(SplitVerifier, "resources/", "split", "verifier", "credits");
+impl_remote!(SplitProver, REMOTE_URLS, "resources/", "split", "prover", "credits_v1");
+impl_local!(SplitVerifier, "resources/", "split", "verifier", "credits_v1");
 // FeePrivate
-impl_remote!(FeePrivateProver, REMOTE_URLS, "resources/", "fee_private", "prover", "credits");
-impl_local!(FeePrivateVerifier, "resources/", "fee_private", "verifier", "credits");
+impl_remote!(FeePrivateProver, REMOTE_URLS, "resources/", "fee_private", "prover", "credits_v1");
+impl_local!(FeePrivateVerifier, "resources/", "fee_private", "verifier", "credits_v1");
 // FeePublic
-impl_remote!(FeePublicProver, REMOTE_URLS, "resources/", "fee_public", "prover", "credits");
-impl_local!(FeePublicVerifier, "resources/", "fee_public", "verifier", "credits");
+impl_remote!(FeePublicProver, REMOTE_URLS, "resources/", "fee_public", "prover", "credits_v1");
+impl_local!(FeePublicVerifier, "resources/", "fee_public", "verifier", "credits_v1");
 // Upgrade
-impl_remote!(UpgradeProver, REMOTE_URLS, "resources/", "upgrade", "prover", "credits");
-impl_local!(UpgradeVerifier, "resources/", "upgrade", "verifier", "credits");
+impl_remote!(UpgradeProver, REMOTE_URLS, "resources/", "upgrade", "prover", "credits_v1");
+impl_local!(UpgradeVerifier, "resources/", "upgrade", "verifier", "credits_v1");
 
 // V0 Credits Keys
 
@@ -117,6 +125,17 @@ impl_local!(UpgradeV0Verifier, "resources/", "upgrade", "verifier", "credits_v0"
 
 #[macro_export]
 macro_rules! insert_canary_credit_keys {
+    ($map:ident, $type:ident<$network:ident>, $variant:ident) => {{
+        paste::paste! {
+            let string = stringify!([<$variant:lower>]);
+            $crate::insert_canary_credit_v1_keys!($map, $type<$network>, $variant);
+            $crate::insert_canary_key!($map, string, $type<$network>, ("redelegate", $crate::canary::[<Redelegate $variant>]::load_bytes()));
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! insert_canary_credit_v1_keys {
     ($map:ident, $type:ident<$network:ident>, $variant:ident) => {{
         paste::paste! {
             let string = stringify!([<$variant:lower>]);
@@ -178,8 +197,8 @@ macro_rules! insert_canary_key {
 // Inclusion
 impl_remote!(InclusionV0Prover, REMOTE_URLS, "resources/", "inclusion", "prover", "credits_v0");
 impl_local!(InclusionV0Verifier, "resources/", "inclusion", "verifier", "credits_v0");
-impl_remote!(InclusionProver, REMOTE_URLS, "resources/", "inclusion", "prover", "credits");
-impl_local!(InclusionVerifier, "resources/", "inclusion", "verifier", "credits");
+impl_remote!(InclusionProver, REMOTE_URLS, "resources/", "inclusion", "prover", "credits_v1");
+impl_local!(InclusionVerifier, "resources/", "inclusion", "verifier", "credits_v1");
 
 /// The function name for the inclusion circuit.
 pub const NETWORK_INCLUSION_FUNCTION_NAME: &str = "inclusion";
@@ -219,6 +238,8 @@ mod tests {
         FeePublicVerifier::load_bytes().expect("Failed to load fee_public verifier");
         UpgradeProver::load_bytes().expect("Failed to load upgrade prover");
         UpgradeVerifier::load_bytes().expect("Failed to load upgrade verifier");
+        RedelegateProver::load_bytes().expect("Failed to load redelegate prover");
+        RedelegateVerifier::load_bytes().expect("Failed to load redelegate verifier");
         InclusionProver::load_bytes().expect("Failed to load inclusion prover");
         InclusionVerifier::load_bytes().expect("Failed to load inclusion verifier");
     }
