@@ -132,9 +132,9 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                 output.insert(
                     serde_yaml::Value::String("errors".to_string()),
                     serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(format!(
-                        "Failed to run `VM::deploy for program {}: {}",
+                        "Failed to run `VM::deploy for program {}: {:#}",
                         program.id(),
-                        error
+                        anyhow::Error::from(error)
                     ))]),
                 );
                 output
@@ -231,7 +231,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                     Err(err) => {
                         result.insert(
                             serde_yaml::Value::String("execute".to_string()),
-                            serde_yaml::Value::String(err.to_string()),
+                            serde_yaml::Value::String(format!("{:#}", anyhow::Error::from(err))),
                         );
                         return (serde_yaml::Value::Mapping(result), serde_yaml::Value::Mapping(Default::default()));
                     }
