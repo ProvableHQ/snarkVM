@@ -76,6 +76,7 @@ use snarkvm_ledger_store::{
 };
 use snarkvm_synthesizer_process::{
     Authorization,
+    CreditsVersion,
     InclusionVersion,
     Process,
     Trace,
@@ -92,7 +93,6 @@ use snarkvm_synthesizer_program::{
     Program,
     StackTrait as _,
 };
-use snarkvm_synthesizer_snark::VerifyingKey;
 use snarkvm_utilities::try_vm_runtime;
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -162,10 +162,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Determine the latest block height.
             let latest_block_height = block_store.current_block_height();
             // Determine the consensus version.
-            let consensus_version = N::CONSENSUS_VERSION(latest_block_height)?; // TODO (raychu86): Record Commitment - Select the proper consensus version.
+            let consensus_version = N::CONSENSUS_VERSION(latest_block_height)?;
             // Initialize a new process based on the consensus version.
             if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
                 Process::load_v0()?
+            } else if (ConsensusVersion::V8..=ConsensusVersion::V14).contains(&consensus_version) {
+                Process::load_v1()?
             } else {
                 Process::load()?
             }
@@ -523,9 +525,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Next, finalize the transactions.
         match self.finalize(state, block.ratifications(), block.solutions(), block.transactions()) {
             Ok(_ratified_finalize_operations) => {
-                // If the block advances to `ConsensusVersion::V8`, updated the VKs used for the credits program.
+                // If the block advances to `ConsensusVersion::V8`, updated the credits program to V1.
                 if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
-                    self.update_credits_verifying_keys()?;
+                    self.update_credits_program(CreditsVersion::V1)?;
+                }
+                // If the block advances to `ConsensusVersion::v15`, update the credits program to V2.
+                if N::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap_or_default() == block.height() {
+                    self.update_credits_program(CreditsVersion::V2)?;
                 }
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
@@ -572,30 +578,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Update the `credits.aleo` program in the VM with the latest verifying keys.
-    fn update_credits_verifying_keys(&self) -> Result<()> {
-        // Initialize the store for 'credits.aleo'.
-        let credits = Program::<N>::credits()?;
-
+    fn update_credits_program(&self, credits_version: CreditsVersion) -> Result<()> {
         // Acquire the process lock.
-        let process = self.process.write();
+        let mut process = self.process.write();
+
+        // Generate the new stack for 'credits.aleo' with the latest verifying keys.
+        let stack = Stack::new_credits(&process, credits_version)?;
 
         // Synthesize the 'credits.aleo' verifying keys.
-        for function_name in credits.functions().keys() {
-            // Remove the proving key.
-            process.remove_proving_key(credits.id(), function_name)?;
-            // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
-            // Retrieve the number of public and private variables.
-            // Note: This number does *NOT* include the number of constants. This is safe because
-            // this program is never deployed, as it is a first-class citizen of the protocol.
-            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
-            // Insert the verifying key.
-            process.insert_verifying_key(
-                credits.id(),
-                function_name,
-                VerifyingKey::new(verifying_key.clone(), num_variables),
-            )?;
-        }
+        Stack::insert_credits_verifying_keys(&process, credits_version)?;
+
+        // Add the stack to the process.
+        process.add_stack(stack);
 
         Ok(())
     }

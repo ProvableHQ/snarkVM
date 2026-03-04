@@ -292,6 +292,18 @@ impl<N: Network> ProgramCore<N> {
         })
     }
 
+    /// Initializes the v0 version of the credits program.
+    #[inline]
+    pub fn credits_v0() -> Result<Self> {
+        Self::from_str(include_str!("./resources/credits_v0.aleo"))
+    }
+
+    /// Initializes the v1 version of the credits program.
+    #[inline]
+    pub fn credits_v1() -> Result<Self> {
+        Self::from_str(include_str!("./resources/credits_v1.aleo"))
+    }
+
     /// Initializes the credits program.
     #[inline]
     pub fn credits() -> Result<Self> {

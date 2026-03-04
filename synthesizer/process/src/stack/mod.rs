@@ -96,6 +96,14 @@ use std::{
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
+/// The `CreditsVersion` is used to track the version of the `credits.aleo` program.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum CreditsVersion {
+    V0 = 0,
+    V1 = 1,
+    V2 = 2,
+}
+
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
 
 /// The `CallStack` is used to track the current state of the program execution.
@@ -377,6 +385,77 @@ impl<N: Network> Stack<N> {
             Some(finalize_types) => Ok(finalize_types.clone()),
             None => bail!("Finalize types for '{name}' do not exist"),
         }
+    }
+
+    /// Initializes a new stack given the process and the program.
+    pub fn new_credits(process: &Process<N>, credits_version: CreditsVersion) -> Result<Self> {
+        // Load the appropriate version of the `credits.aleo` program.
+        let program = match credits_version {
+            CreditsVersion::V0 => Program::<N>::credits_v0()?,
+            CreditsVersion::V1 => Program::<N>::credits_v1()?,
+            CreditsVersion::V2 => Program::<N>::credits()?,
+        };
+
+        // Retrieve the program ID.
+        let program_id = program.id();
+        // Check that the program is well-formed.
+        check_program_is_well_formed(&program)?;
+
+        // If the program exists in the process, check that the new program is valid.
+        if let Ok(existing_stack) = process.get_stack(program_id) {
+            // Get the existing program.
+            let existing_program = existing_stack.program();
+
+            // Ensure that the previous version of `credits.aleo` is being upgraded to the new version, and that the program edition is incremented by one.
+            let program_edition = *existing_stack.program_edition;
+            let credits_version_as_edition = credits_version as u16;
+            ensure!(
+                program_edition.saturating_add(1) == credits_version_as_edition,
+                "The existing '{program_id}' edition ({program_edition}) should be one less than the new '{program_id}' program edition ({credits_version_as_edition})."
+            );
+            // Ensure that the program does not contain a constructor.
+            ensure!(!existing_program.contains_constructor(), "credits.aleo should not contain a constructor");
+        }
+
+        // Return the stack.
+        Stack::initialize(process, &program)
+    }
+
+    /// Inserts the verifying keys (based on the version) if the program ID is 'credits.aleo'.
+    pub fn insert_credits_verifying_keys(process: &Process<N>, credits_version: CreditsVersion) -> Result<()> {
+        // Retrieve the program ID.
+        let program_id = ProgramID::from_str("credits.aleo")?;
+
+        // Fetch the stack.
+        let stack = process.get_stack(program_id)?;
+
+        // Ensure that the provided credits verion matches the stack's program edition.
+        let program_edition = *stack.program_edition;
+        let credits_version_as_edition = credits_version as u16;
+        ensure!(
+            program_edition == credits_version_as_edition,
+            "The provided credits version ({program_edition}) should match the stack's program edition ({credits_version_as_edition})."
+        );
+
+        // Retrieve the program.
+        let program = stack.program();
+
+        for function_name in program.functions().keys() {
+            // Load the verifying key.
+            let verifying_key = match credits_version {
+                CreditsVersion::V0 => N::get_credits_v0_verifying_key(function_name.to_string()),
+                CreditsVersion::V1 => N::get_credits_v1_verifying_key(function_name.to_string()),
+                CreditsVersion::V2 => N::get_credits_verifying_key(function_name.to_string()),
+            }?;
+            // Retrieve the number of public and private variables.
+            // Note: This number does *NOT* include the number of constants. This is safe because
+            // this program is never deployed, as it is a first-class citizen of the protocol.
+            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+            // Insert the verifying key.
+            stack.insert_verifying_key(function_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
+        }
+
+        Ok(())
     }
 
     /// Inserts the proving key if the program ID is 'credits.aleo'.

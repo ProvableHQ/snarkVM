@@ -676,7 +676,11 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         // Insert `credits.aleo`, which is the default program.
         let credits_id = ProgramID::from_str("credits.aleo")?;
         storage.edition_map().insert(credits_id, 0)?;
-        storage.program_map().insert((credits_id, 0), Program::credits()?)?;
+        storage.program_map().insert((credits_id, 0), Program::credits_v0()?)?;
+        storage.edition_map().insert(credits_id, 1)?;
+        storage.program_map().insert((credits_id, 1), Program::credits_v1()?)?;
+        storage.edition_map().insert(credits_id, 2)?;
+        storage.program_map().insert((credits_id, 2), Program::credits()?)?;
 
         // Return the deployment store.
         Ok(Self { storage, _phantom: PhantomData })
