@@ -40,18 +40,12 @@ pub enum SynthesisError {
     #[error("Encountered an identity element in the CRS")]
     UnexpectedIdentity,
     /// During proof generation, we encountered an I/O error with the CRS
-    #[error("Encountered an I/O error")]
-    IoError(std::io::Error),
+    #[error("I/O error")]
+    IoError(#[from] std::io::Error),
     /// During verification, our verifying key was malformed.
     #[error("Malformed verifying key, public input count was {} but expected {}", _0, _1)]
     MalformedVerifyingKey(usize, usize),
     /// During CRS generation, we observed an unconstrained auxiliary variable
     #[error("Auxiliary variable was unconstrained")]
     UnconstrainedVariable,
-}
-
-impl From<std::io::Error> for SynthesisError {
-    fn from(e: std::io::Error) -> SynthesisError {
-        SynthesisError::IoError(e)
-    }
 }
