@@ -226,27 +226,10 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn load() -> Result<Self> {
         let timer = timer!("Process::load");
-
-        // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
-        lap!(timer, "Initialize process");
-
-        // Initialize the 'credits.aleo' program.
-        let program = Program::credits()?;
-        lap!(timer, "Load credits program");
-
-        // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
-        lap!(timer, "Initialize stack");
-
-        // Synthesize the 'credits.aleo' verifying keys.
-        Stack::insert_credits_verifying_keys(&process, CreditsVersion::V2)?;
-        lap!(timer, "Load circuit keys");
-
-        // Add the stack to the process.
-        process.add_stack(stack);
-
+        // Specify the version of credits.aleo to load.
+        let credits_version = CreditsVersion::V2;
+        // Load the process with the specified version of credits.aleo.
+        let process = Self::load_with_credits(credits_version)?;
         finish!(timer, "Process::load");
         // Return the process.
         Ok(process)
@@ -256,27 +239,10 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn load_v1() -> Result<Self> {
         let timer = timer!("Process::load_v1");
-
-        // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
-        lap!(timer, "Initialize process");
-
-        // Initialize the 'credits.aleo' program.
-        let program = Program::credits_v1()?;
-        lap!(timer, "Load credits program");
-
-        // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
-        lap!(timer, "Initialize stack");
-
-        // Synthesize the 'credits.aleo' verifying keys.
-        Stack::insert_credits_verifying_keys(&process, CreditsVersion::V1)?;
-        lap!(timer, "Load circuit keys");
-
-        // Add the stack to the process.
-        process.add_stack(stack);
-
+        // Specify the version of credits.aleo to load.
+        let credits_version = CreditsVersion::V1;
+        // Load the process with the specified version of credits.aleo.
+        let process = Self::load_with_credits(credits_version)?;
         finish!(timer, "Process::load_v1");
         // Return the process.
         Ok(process)
@@ -286,28 +252,36 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn load_v0() -> Result<Self> {
         let timer = timer!("Process::load_v0");
+        // Specify the version of credits.aleo to load.
+        let credits_version = CreditsVersion::V0;
+        // Load the process with the specified version of credits.aleo.
+        let process = Self::load_with_credits(credits_version)?;
+        finish!(timer, "Process::load_v0");
+        // Return the process.
+        Ok(process)
+    }
+
+    /// Helper function to load `credits.aleo` based on the provided version.
+    fn load_with_credits(credits_version: CreditsVersion) -> Result<Self> {
+        let timer = timer!("Process::load_with_credits");
 
         // Initialize the process.
         let mut process =
             Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
         lap!(timer, "Initialize process");
 
-        // Initialize the 'credits.aleo' program.
-        let program = Program::credits_v0()?;
-        lap!(timer, "Load credits program");
-
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new_credits(&process, credits_version)?;
         lap!(timer, "Initialize stack");
 
         // Synthesize the 'credits.aleo' verifying keys.
-        Stack::insert_credits_verifying_keys(&process, CreditsVersion::V0)?;
+        stack.insert_credits_verifying_keys(credits_version)?;
         lap!(timer, "Load circuit keys");
 
         // Add the stack to the process.
         process.add_stack(stack);
 
-        finish!(timer, "Process::load_v0");
+        finish!(timer, "Process::load_with_credits");
         // Return the process.
         Ok(process)
     }

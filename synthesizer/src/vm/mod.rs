@@ -586,7 +586,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let stack = Stack::new_credits(&process, credits_version)?;
 
         // Synthesize the 'credits.aleo' verifying keys.
-        Stack::insert_credits_verifying_keys(&process, credits_version)?;
+        stack.insert_credits_verifying_keys(credits_version)?;
 
         // Add the stack to the process.
         process.add_stack(stack);

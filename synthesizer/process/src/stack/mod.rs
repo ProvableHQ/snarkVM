@@ -390,10 +390,10 @@ impl<N: Network> Stack<N> {
     /// Initializes a new stack given the process and the program.
     pub fn new_credits(process: &Process<N>, credits_version: CreditsVersion) -> Result<Self> {
         // Load the appropriate version of the `credits.aleo` program.
-        let program = match credits_version {
-            CreditsVersion::V0 => Program::<N>::credits_v0()?,
-            CreditsVersion::V1 => Program::<N>::credits_v1()?,
-            CreditsVersion::V2 => Program::<N>::credits()?,
+        let (program, edition) = match credits_version {
+            CreditsVersion::V0 => (Program::<N>::credits_v0()?, 0),
+            CreditsVersion::V1 => (Program::<N>::credits_v1()?, 1),
+            CreditsVersion::V2 => (Program::<N>::credits()?, 2),
         };
 
         // Retrieve the program ID.
@@ -417,20 +417,26 @@ impl<N: Network> Stack<N> {
             ensure!(!existing_program.contains_constructor(), "credits.aleo should not contain a constructor");
         }
 
+        // Construct a new stack.
+        let stack = Self::create_raw(process, &program, edition)?;
+        // Initialize and check the stack's validity.
+        stack.initialize_and_check(process)?;
         // Return the stack.
-        Stack::initialize(process, &program)
+        Ok(stack)
     }
 
     /// Inserts the verifying keys (based on the version) if the program ID is 'credits.aleo'.
-    pub fn insert_credits_verifying_keys(process: &Process<N>, credits_version: CreditsVersion) -> Result<()> {
+    pub fn insert_credits_verifying_keys(&self, credits_version: CreditsVersion) -> Result<()> {
         // Retrieve the program ID.
         let program_id = ProgramID::from_str("credits.aleo")?;
-
-        // Fetch the stack.
-        let stack = process.get_stack(program_id)?;
+        ensure!(
+            self.program_id() == &program_id,
+            "Cannot insert credits verifying keys for program '{}' since the program ID is not '{program_id}'.",
+            self.program_id(),
+        );
 
         // Ensure that the provided credits verion matches the stack's program edition.
-        let program_edition = *stack.program_edition;
+        let program_edition = *self.program_edition;
         let credits_version_as_edition = credits_version as u16;
         ensure!(
             program_edition == credits_version_as_edition,
@@ -438,7 +444,7 @@ impl<N: Network> Stack<N> {
         );
 
         // Retrieve the program.
-        let program = stack.program();
+        let program = self.program();
 
         for function_name in program.functions().keys() {
             // Load the verifying key.
@@ -452,7 +458,7 @@ impl<N: Network> Stack<N> {
             // this program is never deployed, as it is a first-class citizen of the protocol.
             let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
             // Insert the verifying key.
-            stack.insert_verifying_key(function_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
+            self.insert_verifying_key(function_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
         }
 
         Ok(())
