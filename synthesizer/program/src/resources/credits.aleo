@@ -151,19 +151,19 @@ mapping pool:
 
 /**********************************************************************************************************************/
 
-// The `redelegated` mapping contains the delegator with their redelegation information, including the previous validator, new validator, and the unlock height.
+// The `redelegated` mapping contains the delegator with their redelegation information.
 mapping redelegated:
     // The key represents the address of the delegator.
     key as address.public;
     // The value represents the redelegate state.
     value as redelegate_state.public;
 
-// The `redelegate_state` struct tracks the microcredits that are currently unbonding, along with the unlock height.
+// The `redelegate_state` struct tracks the redelegation information for a delegator, including the previous validator, new validator, and the unlock height.
 struct redelegate_state:
     // The previous validator address from which the microcredits are being redelegated.
-    previous_validator as u64;
+    previous_validator as address;
     // The new validator address to which the microcredits are being redelegated.
-    new_validator as u64;
+    new_validator as address;
     // The block height at which the delegator can redelegate to another validator.
     height as u32;
 
@@ -1169,7 +1169,7 @@ finalize redelegate:
 
     // Check that the delegator has not redelegated within the cooldown period.
     // Set the default redelegating state.
-    cast r3.validator r1 0u32 into r8 as redelegate_state;
+    cast r2.validator r1 0u32 into r8 as redelegate_state;
     // Get the redelegated state for the delegator, or default to the initial redelegation state.
     get.or_use redelegated[r0] r8 into r9;
     // Ensure that the redelegation cooldown period has passed since the last redelegation.
@@ -1179,19 +1179,19 @@ finalize redelegate:
     // Set the new redelegation height.
     add block.height 403200u32 into r11;
     // Construct the new redelegate state.
-    cast r3.validator r1 r11 into r12 as redelegate_state;
+    cast r2.validator r1 r11 into r12 as redelegate_state;
 
     /* Delegated */
 
     // Update the delegated mappings for the old and the new validators.
     get delegated[r2.validator] into r13;
     // Subtract the delegator's microcredits from the old validator's total delegation.
-    sub r12 r2.microcredits into r14;
+    sub r13 r2.microcredits into r14;
 
     // Get the current total delegation for the new validator.
     get.or_use delegated[r1] 0u64 into r15;
     // Add the delegator's microcredits to the new validator's total delegation.
-    add r14 r2.microcredits into r16;
+    add r15 r2.microcredits into r16;
 
     /* Writes */
 
