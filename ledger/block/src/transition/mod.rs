@@ -390,6 +390,15 @@ impl<N: Network> Transition<N> {
             && self.program_id.to_string() == "credits.aleo"
             && self.function_name.to_string() == "upgrade"
     }
+
+    /// Returns `true` if this is a `redelegate` transition.
+    #[inline]
+    pub fn is_redelegate(&self) -> bool {
+        self.inputs.len() == 1
+            && self.outputs.len() == 1
+            && self.program_id.to_string() == "credits.aleo"
+            && self.function_name.to_string() == "redelegate"
+    }
 }
 
 impl<N: Network> Transition<N> {

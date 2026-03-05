@@ -396,26 +396,8 @@ impl<N: Network> Stack<N> {
             CreditsVersion::V2 => (Program::<N>::credits()?, 2),
         };
 
-        // Retrieve the program ID.
-        let program_id = program.id();
         // Check that the program is well-formed.
         check_program_is_well_formed(&program)?;
-
-        // If the program exists in the process, check that the new program is valid.
-        if let Ok(existing_stack) = process.get_stack(program_id) {
-            // Get the existing program.
-            let existing_program = existing_stack.program();
-
-            // Ensure that the previous version of `credits.aleo` is being upgraded to the new version, and that the program edition is incremented by one.
-            let program_edition = *existing_stack.program_edition;
-            let credits_version_as_edition = credits_version as u16;
-            ensure!(
-                program_edition.saturating_add(1) == credits_version_as_edition,
-                "The existing '{program_id}' edition ({program_edition}) should be one less than the new '{program_id}' program edition ({credits_version_as_edition})."
-            );
-            // Ensure that the program does not contain a constructor.
-            ensure!(!existing_program.contains_constructor(), "credits.aleo should not contain a constructor");
-        }
 
         // Construct a new stack.
         let stack = Self::create_raw(process, &program, edition)?;

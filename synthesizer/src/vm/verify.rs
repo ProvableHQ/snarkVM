@@ -647,6 +647,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
+        // Perform checks if the execution contains `credits.aleo/redelegate`.
+        if execution.transitions().any(|t| t.is_redelegate()) {
+            // Do not allow `credits.aleo/upgrade` calls on the previous inclusion version or until after the migration block has passed.
+            if consensus_version < ConsensusVersion::V15 {
+                bail!("Execution verification failed - `credits.aleo/redelegate` cannot be called yet");
+            }
+        }
+
         // Verify the execution proof, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),

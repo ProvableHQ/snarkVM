@@ -174,7 +174,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         };
         #[cfg(any(test, feature = "test"))]
         // Initialize a new process.
-        let mut process = Process::load()?;
+        // We load from Credits V1 for tests because V2 is a superset of V1 and adds new functionality
+        // whose activation via ConsensusVersion needs to be tested.
+        let mut process = {
+            // Determine the latest block height.
+            let latest_block_height = block_store.current_block_height();
+            // Determine the consensus version.
+            let consensus_version = N::CONSENSUS_VERSION(latest_block_height)?;
+            // Initialize a new process based on the consensus version.
+            if (ConsensusVersion::V1..=ConsensusVersion::V14).contains(&consensus_version) {
+                Process::load_v1()?
+            } else {
+                Process::load()?
+            }
+        };
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
