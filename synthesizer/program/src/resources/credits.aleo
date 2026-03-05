@@ -151,6 +151,24 @@ mapping pool:
 
 /**********************************************************************************************************************/
 
+// The `redelegated` mapping contains the delegator with their redelegation information, including the previous validator, new validator, and the unlock height.
+mapping redelegated:
+    // The key represents the address of the delegator.
+    key as address.public;
+    // The value represents the redelegate state.
+    value as redelegate_state.public;
+
+// The `redelegate_state` struct tracks the microcredits that are currently unbonding, along with the unlock height.
+struct redelegate_state:
+    // The previous validator address from which the microcredits are being redelegated.
+    previous_validator as u64;
+    // The new validator address to which the microcredits are being redelegated.
+    new_validator as u64;
+    // The block height at which the delegator can redelegate to another validator.
+    height as u32;
+
+/**********************************************************************************************************************/
+
 // The `credits` record is used to store credits privately.
 record credits:
     // The address of the owner.
@@ -448,7 +466,7 @@ finalize unbond_public:
     input r2 as u64.public;
 
     // Set the default unbonding state.
-    add block.height 360u32 into r3;
+    add block.height 403200u32 into r3;
     // Construct the default unbonding state.
     cast 0u64 r3 into r4 as unbond_state;
 
@@ -544,6 +562,11 @@ finalize unbond_public:
 
             // Remove the bonded state.
             remove bonded[r1];
+
+            /* Redelegated */
+
+            // Remove the redelegated state.
+            remove redelegated[r1];
 
             /* Metadata */
 
@@ -1088,3 +1111,96 @@ finalize upgrade:
     set r2 into pool[aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc];
 
 /**********************************************************************************************************************/
+
+/// The `redelegate` function allows a delegator to redelegate from their current validator to a new validator without unbonding first.
+/// Once a delegator redelegates, they must wait for a cooldown period of 403,200 blocks (approximately 28 days) before they can redelegate
+/// again to another validator. This function is callable only by the delegator's address and the delegator cannot redelegate to themselves.
+/// The new validator must be different from the current validator, must be open to new stakers, and must not be unbonding.
+function redelegate:
+    // Input the new validator's address.
+    input r0 as address.public;
+
+    // Ensure that the delegator is not redelegating to itself.
+    assert.neq self.caller r0;
+
+    // Redelegate to the new validator.
+    async redelegate self.caller r0 into r1;
+
+    // Output the finalize future.
+    output r1 as credits.aleo/redelegate.future;
+
+finalize redelegate:
+    // Input the delegator's address.
+    input r0 as address.public;
+
+    // Input the new validator's address.
+    input r1 as address.public;
+
+    /* Check Validator Requirements */
+
+    // Retrieve the delegator's bond state.
+    // Note: If the bonded state does not exist, reject the transition.
+    get bonded[r0] into r2;
+
+    // Ensure that the new validator is not the same as the current validator.
+    assert.neq r1 r2.validator;
+
+    // Ensure that the delegator is not a validator.
+    contains committee[r0] into r3;
+    assert.eq r3 false;
+    assert.neq r0 r2.validator;
+
+    // Ensure that the validator is open to new stakers. By default, `is_open` is set to `true`.
+    // Similar to `bond_public`, we do not check if the validator is in the committee.
+    cast true 0u8 into r4 as committee_state;
+    get.or_use committee[r1] r4 into r5;
+    assert.eq r5.is_open true;
+
+    // Ensure that the validator is not unbonding
+    contains unbonding[r1] into r6;
+    assert.eq r6 false;
+
+    /* Bonded */
+
+    // Update the bond state for the delegator
+    cast r1 r2.microcredits into r7 as bond_state;
+
+    /* Redelegated */
+
+    // Check that the delegator has not redelegated within the cooldown period.
+    // Set the default redelegating state.
+    cast r3.validator r1 0u32 into r8 as redelegate_state;
+    // Get the redelegated state for the delegator, or default to the initial redelegation state.
+    get.or_use redelegated[r0] r8 into r9;
+    // Ensure that the redelegation cooldown period has passed since the last redelegation.
+    gte block.height r9.height into r10;
+    assert.eq r10 true;
+
+    // Set the new redelegation height.
+    add block.height 403200u32 into r11;
+    // Construct the new redelegate state.
+    cast r3.validator r1 r11 into r12 as redelegate_state;
+
+    /* Delegated */
+
+    // Update the delegated mappings for the old and the new validators.
+    get delegated[r2.validator] into r13;
+    // Subtract the delegator's microcredits from the old validator's total delegation.
+    sub r12 r2.microcredits into r14;
+
+    // Get the current total delegation for the new validator.
+    get.or_use delegated[r1] 0u64 into r15;
+    // Add the delegator's microcredits to the new validator's total delegation.
+    add r14 r2.microcredits into r16;
+
+    /* Writes */
+
+    // Set the new bond state for the delegator.
+    set r7 into bonded[r0];
+
+    // Set the new delegated totals for the old and the new validators.
+    set r14 into delegated[r2.validator];
+    set r16 into delegated[r1];
+
+    // Set the new redelegation state for the delegator.
+    set r12 into redelegated[r0];
