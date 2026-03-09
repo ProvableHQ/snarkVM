@@ -16,6 +16,8 @@
 use super::*;
 
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
+#[cfg(feature = "history-staking-rewards")]
+use snarkvm_ledger_store::helpers::Map;
 use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -1395,6 +1397,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                     // Compute the updated stakers, using the committee and block reward.
                     let next_stakers = staking_rewards(&current_stakers, &current_committee, *block_reward);
+
+                    #[cfg(feature = "history-staking-rewards")]
+                    {
+                        for (curr_stake, (staker, (validator, new_stake))) in
+                            current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
+                        {
+                            let reward = new_stake - curr_stake;
+                            let height = state.block_height();
+                            store.staking_rewards_map().insert((*staker, height), (*validator, reward, *new_stake))?;
+                        }
+                    }
 
                     // Compute the updated delegated amounts, using the next_stakers updated amounts.
                     let next_delegated = to_next_delegated(&next_stakers);

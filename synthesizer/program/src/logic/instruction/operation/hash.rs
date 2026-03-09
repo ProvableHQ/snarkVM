@@ -410,6 +410,7 @@ fn is_valid_destination_type<N: Network>(variant: u8, destination_type: &Plainte
             destination_type,
             PlaintextType::Literal(LiteralType::Boolean)
                 | PlaintextType::Literal(LiteralType::String)
+                | PlaintextType::Literal(LiteralType::Identifier)
                 | PlaintextType::Struct(..)
                 | PlaintextType::ExternalStruct(..)
                 | PlaintextType::Array(..)
@@ -788,11 +789,11 @@ impl<N: Network, const VARIANT: u8> Parser for HashInstruction<N, VARIANT> {
         let (string, destination_type) = PlaintextType::parse(string)?;
         // Ensure the destination type is allowed.
         match destination_type {
-            PlaintextType::Literal(LiteralType::Boolean) | PlaintextType::Literal(LiteralType::String) => {
-                map_res(fail, |_: ParserResult<Self>| {
-                    Err(error(format!("Failed to parse 'hash': '{destination_type}' is invalid")))
-                })(string)
-            }
+            PlaintextType::Literal(LiteralType::Boolean)
+            | PlaintextType::Literal(LiteralType::String)
+            | PlaintextType::Literal(LiteralType::Identifier) => map_res(fail, |_: ParserResult<Self>| {
+                Err(error(format!("Failed to parse 'hash': '{destination_type}' is invalid")))
+            })(string),
             _ => Ok((string, Self { operands, destination, destination_type })),
         }
     }

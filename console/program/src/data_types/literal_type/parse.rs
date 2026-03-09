@@ -38,6 +38,7 @@ impl Parser for LiteralType {
             map(tag(Self::Scalar.type_name()), |_| Self::Scalar),
             map(tag(Self::Signature.type_name()), |_| Self::Signature),
             map(tag(Self::String.type_name()), |_| Self::String),
+            map(tag(Self::Identifier.type_name()), |_| Self::Identifier),
         ))(string)
     }
 }

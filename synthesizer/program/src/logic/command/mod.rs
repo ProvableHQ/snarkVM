@@ -219,6 +219,14 @@ impl<N: Network> Command<N> {
         self.operands().iter().any(|operand| operand.contains_string_type())
     }
 
+    /// Returns `true` if the command contains an identifier type in its cast type.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Command::Instruction(instruction) => instruction.contains_identifier_type(),
+            _ => Ok(false),
+        }
+    }
+
     /// Returns `true` if the command contains an array type with a size that exceeds the given maximum.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
         match self {

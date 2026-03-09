@@ -69,7 +69,8 @@ fn check_operand_type_is_valid(variant: u8, operand_type: &PlaintextType<impl Ne
             | LiteralType::U32
             | LiteralType::U64
             | LiteralType::U128
-            | LiteralType::Scalar => Ok(()),
+            | LiteralType::Scalar
+            | LiteralType::Identifier => Ok(()),
             _ => bail!("Invalid literal type '{literal_type}' for 'serialize' instruction"),
         }
     }
@@ -486,6 +487,7 @@ mod tests {
             PlaintextType::Literal(LiteralType::U64),
             PlaintextType::Literal(LiteralType::U128),
             PlaintextType::Literal(LiteralType::Scalar),
+            PlaintextType::Literal(LiteralType::Identifier),
         ]
     }
 

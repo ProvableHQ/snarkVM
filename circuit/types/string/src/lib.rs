@@ -18,6 +18,9 @@
 
 extern crate snarkvm_console_types_string as console;
 
+pub mod identifier_literal;
+pub use identifier_literal::IdentifierLiteral;
+
 mod equal;
 mod helpers;
 

@@ -75,6 +75,7 @@ function test_serde_equivalence:
             PlaintextType::Literal(LiteralType::U64),
             PlaintextType::Literal(LiteralType::U128),
             PlaintextType::Literal(LiteralType::Scalar),
+            PlaintextType::Literal(LiteralType::Identifier),
             PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap()),
         ];
 
@@ -331,6 +332,7 @@ finalize dummy:
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::U64)),
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::U128)),
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Scalar)),
+        RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Identifier)),
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Signature)),
         RegisterType::Plaintext(PlaintextType::Array(
             ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap(),

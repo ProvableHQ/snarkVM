@@ -218,6 +218,7 @@ fn test_types(variant: SerializeVariant) -> Vec<PlaintextType<CurrentNetwork>> {
         PlaintextType::Literal(LiteralType::U64),
         PlaintextType::Literal(LiteralType::U128),
         PlaintextType::Literal(LiteralType::Scalar),
+        PlaintextType::Literal(LiteralType::Identifier),
         PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap()),
     ];
 

@@ -61,6 +61,16 @@ impl<N: Network> ConstructorCore<N> {
         self.commands.iter().any(|command| command.contains_string_type())
     }
 
+    /// Returns `true` if the constructor contains an identifier type in its cast types.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        for command in &self.commands {
+            if command.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Returns `true` if the constructor contains an array type with a size that exceeds the given maximum.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
         self.commands.iter().any(|command| command.exceeds_max_array_size(max_array_size))

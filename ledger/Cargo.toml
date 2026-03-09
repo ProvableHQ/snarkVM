@@ -66,6 +66,10 @@ history = [
   "snarkvm-ledger-store/history",
   "snarkvm-synthesizer/history",
 ]
+history-staking-rewards = [
+  "snarkvm-ledger-store/history-staking-rewards",
+  "snarkvm-synthesizer/history-staking-rewards",
+]
 locktick = [
   "dep:locktick",
   "snarkvm-ledger-puzzle/locktick",
