@@ -1899,7 +1899,7 @@ constructor:
     assert_eq!(
         rejected_tx.rejected_reason(),
         // safe: static literal
-        Some(RejectedReason::DuplicateProgramID("duplicate_id_program_2.aleo".parse().unwrap()))
+        &Some(RejectedReason::DuplicateProgramID("duplicate_id_program_2.aleo".parse().unwrap()))
     );
     vm.add_next_block(&block).unwrap();
 
@@ -1917,7 +1917,7 @@ constructor:
     };
     assert_eq!(program_id.to_string(), "failing_constructor.aleo");
     assert_eq!(resource.to_string(), "constructor");
-    assert_eq!(index, 0);
+    assert_eq!(*index, 0);
     assert_eq!(command.to_string(), "assert.eq true false;");
 }
 
@@ -2044,7 +2044,7 @@ constructor:
     };
     assert_eq!(program_id.to_string(), "failing_program.aleo");
     assert_eq!(resource.to_string(), "fail");
-    assert_eq!(index, 1);
+    assert_eq!(*index, 1);
     assert_eq!(command.to_string(), "assert.eq false r0;");
 
     // Ensure the second call fails and has the proper reason.
@@ -2056,7 +2056,7 @@ constructor:
     };
     assert_eq!(program_id.to_string(), "failing_program.aleo");
     assert_eq!(resource.to_string(), "fail");
-    assert_eq!(index, 1);
+    assert_eq!(*index, 1);
     assert_eq!(command.to_string(), "assert.eq false r0;");
 }
 

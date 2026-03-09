@@ -266,8 +266,8 @@ impl<N: Network, C: ToString> IndexedFinalizeError<N, C> {
 /// A helper macro to bail with an `IndexedFinalizeError`.
 ///
 /// Two forms:
-///   - `indexed_finalize_bail!(program_id, resource, index, command, "message {}", args)` — with command context.
-///   - `indexed_finalize_bail!(program_id, resource, "message {}", args)` — without command context.
+///   - `indexed_finalize_bail!(program_id, resource, index, command, message)` — with command context.
+///   - `indexed_finalize_bail!(program_id, resource, message)` — without command context.
 ///
 /// `program_id` must be `Option<ProgramID<N>>` and `resource` must be `Option<Identifier<N>>`.
 #[macro_export]

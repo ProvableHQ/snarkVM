@@ -72,10 +72,10 @@ impl<'de, N: Network> Deserialize<'de> for Rejected<N> {
                         let deployment: Deployment<N> =
                             DeserializeExt::take_from_value::<D>(&mut object, "deployment")?;
                         // Parse the optional rejected reason.
-                        let rejected_reason: Option<RejectedReason<N>> = match object.get("rejected_reason") {
-                            Some(_) => Some(DeserializeExt::take_from_value::<D>(&mut object, "rejected_reason")?),
-                            None => None,
-                        };
+                        let rejected_reason = serde_json::from_value(
+                            object.get_mut("rejected_reason").unwrap_or(&mut serde_json::Value::Null).take(),
+                        )
+                        .map_err(de::Error::custom)?;
                         // Return the rejected deployment.
                         Ok(Self::new_deployment(program_owner, deployment, rejected_reason))
                     }
@@ -83,10 +83,10 @@ impl<'de, N: Network> Deserialize<'de> for Rejected<N> {
                         // Parse the execution.
                         let execution: Execution<N> = DeserializeExt::take_from_value::<D>(&mut object, "execution")?;
                         // Parse the optional rejected reason.
-                        let rejected_reason: Option<RejectedReason<N>> = match object.get("rejected_reason") {
-                            Some(_) => Some(DeserializeExt::take_from_value::<D>(&mut object, "rejected_reason")?),
-                            None => None,
-                        };
+                        let rejected_reason = serde_json::from_value(
+                            object.get_mut("rejected_reason").unwrap_or(&mut serde_json::Value::Null).take(),
+                        )
+                        .map_err(de::Error::custom)?;
                         // Return the rejected execution.
                         Ok(Self::new_execution(execution, rejected_reason))
                     }

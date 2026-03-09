@@ -78,10 +78,10 @@ impl<N: Network> Rejected<N> {
     }
 
     /// Returns the rejected reason.
-    pub fn rejected_reason(&self) -> Option<RejectedReason<N>> {
+    pub fn rejected_reason(&self) -> &Option<RejectedReason<N>> {
         match self {
-            Self::Deployment(_, _, rejected_reason) => rejected_reason.clone(),
-            Self::Execution(_, rejected_reason) => rejected_reason.clone(),
+            Self::Deployment(_, _, rejected_reason) => rejected_reason,
+            Self::Execution(_, rejected_reason) => rejected_reason,
         }
     }
 
@@ -181,8 +181,8 @@ pub mod test_helpers {
         vec![
             sample_rejected_deployment(1, 0, true, false, rng),
             sample_rejected_deployment(1, 0, false, false, rng),
-            sample_rejected_deployment(2, 0, true, false, rng),
-            sample_rejected_deployment(2, 0, false, false, rng),
+            sample_rejected_deployment(2, 0, true, true, rng),
+            sample_rejected_deployment(2, 0, false, true, rng),
             sample_rejected_deployment(1, 1, true, false, rng),
             sample_rejected_deployment(1, 1, false, false, rng),
             sample_rejected_deployment(2, 1, true, true, rng),
