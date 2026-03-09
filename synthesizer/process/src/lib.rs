@@ -419,6 +419,12 @@ impl<N: Network> Process<N> {
         Ok(stack)
     }
 
+    /// Returns the latest deployed edition for the given program ID, defaulting to 0 if unknown.
+    #[inline]
+    pub fn get_latest_edition_for_program(&self, program_id: &ProgramID<N>) -> u16 {
+        self.get_stack(program_id).ok().map(|s| *s.program_edition()).unwrap_or(0u16)
+    }
+
     /// Returns the proving key for the given program ID and function name.
     #[inline]
     pub fn get_proving_key(

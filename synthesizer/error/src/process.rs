@@ -203,7 +203,7 @@ impl<E> IndexedInstructionError<E> {
 /// between `snarkvm-synthesizer-error` and `snarkvm-synthesizer-program`.
 pub struct IndexedFinalizeError<N: Network, C: ToString> {
     /// The program ID of the failing command, if available.
-    pub program_id: Option<ProgramID<N>>,
+    pub program_id: Option<(ProgramID<N>, u16)>,
     /// The resource (function or constructor name) of the failing command, if available.
     pub resource: Option<Identifier<N>>,
     /// The index and the failing command, if available. Boxed to keep the struct small.
@@ -222,8 +222,8 @@ impl<N: Network, C: ToString> std::fmt::Display for IndexedFinalizeError<N, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Build a display string from the optional program ID and resource.
         let locator = match (&self.program_id, &self.resource) {
-            (Some(program_id), Some(resource)) => format!("{program_id}/{resource}"),
-            (Some(program_id), None) => format!("{program_id}"),
+            (Some((program_id, _)), Some(resource)) => format!("{program_id}/{resource}"),
+            (Some((program_id, _)), None) => format!("{program_id}"),
             (None, Some(resource)) => format!("{resource}"),
             (None, None) => "None".to_string(),
         };
@@ -254,7 +254,7 @@ impl<N: Network, C: ToString> From<Error> for IndexedFinalizeError<N, C> {
 impl<N: Network, C: ToString> IndexedFinalizeError<N, C> {
     /// Constructs an `IndexedFinalizeError` from its components.
     pub fn new(
-        program_id: Option<ProgramID<N>>,
+        program_id: Option<(ProgramID<N>, u16)>,
         resource: Option<Identifier<N>>,
         command: Option<(usize, C)>,
         error: FinalizeError,
@@ -266,10 +266,10 @@ impl<N: Network, C: ToString> IndexedFinalizeError<N, C> {
 /// A helper macro to bail with an `IndexedFinalizeError`.
 ///
 /// Two forms:
-///   - `indexed_finalize_bail!(program_id, resource, index, command, message)` — with command context.
-///   - `indexed_finalize_bail!(program_id, resource, message)` — without command context.
+///   - `indexed_finalize_bail!(program_id, resource, index, command, error message)` — with command context.
+///   - `indexed_finalize_bail!(program_id, resource, error message)` — without command context.
 ///
-/// `program_id` must be `Option<ProgramID<N>>` and `resource` must be `Option<Identifier<N>>`.
+/// `program_id` must be `Option<(ProgramID<N>, u16)>` and `resource` must be `Option<Identifier<N>>`.
 #[macro_export]
 macro_rules! indexed_finalize_bail {
     // With program_id + resource + index + command + message.
@@ -295,7 +295,7 @@ macro_rules! indexed_finalize_bail {
 pub trait IntoIndexedFinalize<N: Network, C: ToString, T> {
     fn into_indexed(
         self,
-        program_id: Option<ProgramID<N>>,
+        program_id: Option<(ProgramID<N>, u16)>,
         resource: Option<Identifier<N>>,
         command: Option<(usize, C)>,
     ) -> anyhow::Result<T, IndexedFinalizeError<N, C>>;
@@ -304,7 +304,7 @@ pub trait IntoIndexedFinalize<N: Network, C: ToString, T> {
 impl<N: Network, C: ToString, T> IntoIndexedFinalize<N, C, T> for anyhow::Result<T, Error> {
     fn into_indexed(
         self,
-        program_id: Option<ProgramID<N>>,
+        program_id: Option<(ProgramID<N>, u16)>,
         resource: Option<Identifier<N>>,
         command: Option<(usize, C)>,
     ) -> anyhow::Result<T, IndexedFinalizeError<N, C>> {

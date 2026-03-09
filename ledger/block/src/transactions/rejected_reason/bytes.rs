@@ -27,16 +27,21 @@ impl<N: Network> FromBytes for RejectedReason<N> {
             }
             1 => {
                 let program_id = ProgramID::<N>::read_le(&mut reader)?;
+                let edition = u16::read_le(&mut reader)?;
                 let resource = Identifier::<N>::read_le(&mut reader)?;
                 let index = u32::read_le(&mut reader)? as usize;
                 let command = Command::<N>::read_le(&mut reader)?;
-                Ok(Self::Finalize(program_id, resource, index, command))
+                Ok(Self::Finalize(program_id, edition, resource, index, command))
             }
             2 => {
-                // Read the optional program ID.
+                // Read the optional program ID and edition.
                 let program_id = match u8::read_le(&mut reader)? {
                     0 => None,
-                    1 => Some(ProgramID::<N>::read_le(&mut reader)?),
+                    1 => {
+                        let id = ProgramID::<N>::read_le(&mut reader)?;
+                        let edition = u16::read_le(&mut reader)?;
+                        Some((id, edition))
+                    }
                     flag => return Err(error(format!("Invalid program_id presence flag {flag}"))),
                 };
                 // Read the optional resource.
@@ -60,21 +65,23 @@ impl<N: Network> ToBytes for RejectedReason<N> {
                 0u8.write_le(&mut writer)?;
                 program_id.write_le(&mut writer)
             }
-            Self::Finalize(program_id, resource, index, command) => {
+            Self::Finalize(program_id, edition, resource, index, command) => {
                 1u8.write_le(&mut writer)?;
                 program_id.write_le(&mut writer)?;
+                edition.write_le(&mut writer)?;
                 resource.write_le(&mut writer)?;
                 u32::try_from(*index).map_err(|_| error("Command index exceeds u32::MAX"))?.write_le(&mut writer)?;
                 command.write_le(&mut writer)
             }
             Self::NonFinalize(program_id, resource) => {
                 2u8.write_le(&mut writer)?;
-                // Write the optional program ID.
+                // Write the optional program ID and edition.
                 match program_id {
                     None => 0u8.write_le(&mut writer)?,
-                    Some(program_id) => {
+                    Some((id, edition)) => {
                         1u8.write_le(&mut writer)?;
-                        program_id.write_le(&mut writer)?;
+                        id.write_le(&mut writer)?;
+                        edition.write_le(&mut writer)?;
                     }
                 }
                 // Write the optional resource.

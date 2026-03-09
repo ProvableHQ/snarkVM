@@ -476,7 +476,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // and update the respective leaves of the finalize tree.
                     Transaction::Execute(_, _, execution, fee) => {
                         // Determine if the transaction is safe for execution, and proceed to execute it.
-                        match Self::prepare_for_execution(state, store, execution)
+                        match self
+                            .prepare_for_execution(state, store, execution)
                             .and_then(|_| process.finalize_execution(state, store, execution, fee.as_ref()))
                         {
                             // Construct the accepted execute transaction.
@@ -1097,6 +1098,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     ///   then the outcome should not exceed the maximum committee size.
     #[inline]
     fn prepare_for_execution(
+        &self,
         state: FinalizeGlobalState,
         store: &FinalizeStore<N, C::FinalizeStorage>,
         execution: &Execution<N>,
@@ -1139,7 +1141,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         _ => Err(anyhow!("Invalid committee key (missing address) - {key}")),
                     })
                     .collect::<Result<HashSet<_>>>()
-                    .into_indexed(Some(program_id), Some(committee_mapping), None::<(usize, Command<N>)>)?;
+                    .into_indexed(
+                        Some((program_id, self.process().read().get_latest_edition_for_program(&program_id))),
+                        Some(committee_mapping),
+                        None::<(usize, Command<N>)>,
+                    )?;
+                // Retrieve the latest edition for error context.
+                let program_edition = self.process().read().get_latest_edition_for_program(&program_id);
                 // Get the number of new validators being bonded to.
                 let num_new_validators =
                     bond_validator_addresses.into_iter().filter(|address| !committee_members.contains(address)).count();
@@ -1151,7 +1159,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Check that the number of new validators being bonded does not exceed the maximum number of validators.
                 match next_committee_size > max_committee_size as usize {
                     true => indexed_finalize_bail!(
-                        Some(program_id),
+                        Some((program_id, program_edition)),
                         Some(bond_validator),
                         "Call to '{program_id}/bond_validator' exceeds the committee size"
                     ),

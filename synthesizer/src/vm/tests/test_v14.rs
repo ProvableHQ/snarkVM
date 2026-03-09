@@ -1912,7 +1912,7 @@ constructor:
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     let rejected_tx = block.transactions().iter().find(|tx| tx.is_rejected()).unwrap();
     // The locator points to the constructor of `failing_constructor.aleo`.
-    let Some(RejectedReason::Finalize(program_id, resource, index, command)) = rejected_tx.rejected_reason() else {
+    let Some(RejectedReason::Finalize(program_id, _, resource, index, command)) = rejected_tx.rejected_reason() else {
         panic!("Expected RejectedReason::Finalize, got {:?}", rejected_tx.rejected_reason());
     };
     assert_eq!(program_id.to_string(), "failing_constructor.aleo");
@@ -2037,7 +2037,7 @@ constructor:
 
     // Ensure the first call fails and has the proper reason.
     let first_confirmed_transaction = transactions[0];
-    let Some(RejectedReason::Finalize(program_id, resource, index, command)) =
+    let Some(RejectedReason::Finalize(program_id, _, resource, index, command)) =
         first_confirmed_transaction.rejected_reason()
     else {
         panic!("Expected RejectedReason::Finalize, got {:?}", first_confirmed_transaction.rejected_reason());
@@ -2049,7 +2049,7 @@ constructor:
 
     // Ensure the second call fails and has the proper reason.
     let second_confirmed_transaction = transactions[1];
-    let Some(RejectedReason::Finalize(program_id, resource, index, command)) =
+    let Some(RejectedReason::Finalize(program_id, _, resource, index, command)) =
         second_confirmed_transaction.rejected_reason()
     else {
         panic!("Expected RejectedReason::Finalize, got {:?}", second_confirmed_transaction.rejected_reason());
@@ -2228,7 +2228,7 @@ fn test_rejected_reason_non_finalize() {
     let Some(RejectedReason::NonFinalize(program_id, resource)) = rejected_tx.rejected_reason() else {
         panic!("Expected RejectedReason::NonFinalize, got {:?}", rejected_tx.rejected_reason());
     };
-    assert_eq!(program_id.unwrap().to_string(), "credits.aleo");
+    assert_eq!(program_id.as_ref().unwrap().0.to_string(), "credits.aleo");
     assert_eq!(resource.unwrap().to_string(), "bond_validator");
     vm.add_next_block(&block).unwrap();
 }

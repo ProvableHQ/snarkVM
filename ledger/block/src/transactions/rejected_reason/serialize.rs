@@ -26,10 +26,11 @@ impl<N: Network> Serialize for RejectedReason<N> {
                     object.serialize_field("program_id", program_id)?;
                     object.end()
                 }
-                Self::Finalize(program_id, resource, index, command) => {
-                    let mut object = serializer.serialize_struct("RejectedReason", 5)?;
+                Self::Finalize(program_id, edition, resource, index, command) => {
+                    let mut object = serializer.serialize_struct("RejectedReason", 6)?;
                     object.serialize_field("type", "finalize")?;
                     object.serialize_field("program_id", program_id)?;
+                    object.serialize_field("edition", edition)?;
                     object.serialize_field("resource", resource)?;
                     object.serialize_field("index", index)?;
                     // Serialize the command via its display string to keep the JSON human-readable.
@@ -40,11 +41,12 @@ impl<N: Network> Serialize for RejectedReason<N> {
                     // Only include fields that are present.
                     let mut object = serializer.serialize_struct(
                         "RejectedReason",
-                        1 + program_id.is_some() as usize + resource.is_some() as usize,
+                        1 + program_id.is_some() as usize * 2 + resource.is_some() as usize,
                     )?;
                     object.serialize_field("type", "non_finalize")?;
-                    if let Some(program_id) = program_id {
-                        object.serialize_field("program_id", program_id)?;
+                    if let Some((pid, edition)) = program_id {
+                        object.serialize_field("program_id", pid)?;
+                        object.serialize_field("edition", edition)?;
                     }
                     if let Some(resource) = resource {
                         object.serialize_field("resource", resource)?;
@@ -74,17 +76,22 @@ impl<'de, N: Network> Deserialize<'de> for RejectedReason<N> {
                     }
                     Some("finalize") => {
                         let program_id: ProgramID<N> = DeserializeExt::take_from_value::<D>(&mut object, "program_id")?;
+                        let edition: u16 = DeserializeExt::take_from_value::<D>(&mut object, "edition")?;
                         let resource: Identifier<N> = DeserializeExt::take_from_value::<D>(&mut object, "resource")?;
                         let index: usize = DeserializeExt::take_from_value::<D>(&mut object, "index")?;
                         // The command is stored as a display string; parse it back.
                         let command_str: String = DeserializeExt::take_from_value::<D>(&mut object, "command")?;
                         let command = command_str.parse::<Command<N>>().map_err(de::Error::custom)?;
-                        Ok(Self::Finalize(program_id, resource, index, command))
+                        Ok(Self::Finalize(program_id, edition, resource, index, command))
                     }
                     Some("non_finalize") => {
                         // Both fields are optional; use `.get()` to check presence before parsing.
                         let program_id = match object.get("program_id").and_then(|v| v.as_str()) {
-                            Some(s) => Some(ProgramID::<N>::from_str(s).map_err(de::Error::custom)?),
+                            Some(s) => {
+                                let pid = ProgramID::<N>::from_str(s).map_err(de::Error::custom)?;
+                                let edition: u16 = DeserializeExt::take_from_value::<D>(&mut object, "edition")?;
+                                Some((pid, edition))
+                            }
                             None => None,
                         };
                         let resource = match object.get("resource").and_then(|v| v.as_str()) {

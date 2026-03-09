@@ -25,14 +25,14 @@ pub enum RejectedReason<N: Network> {
     /// The transaction was rejected due to a duplicate program ID deployment in the same block.
     DuplicateProgramID(ProgramID<N>),
 
-    /// The transaction was rejected due to a failed finalize command. (program ID, resource, index, command).
+    /// The transaction was rejected due to a failed finalize command. (program ID, edition, resource, index, command).
     /// Note: We do not log the actual error message from the finalize command, as it may contain
     /// sensitive information or lead to DOS vectors by storing string representations of large structs.
-    Finalize(ProgramID<N>, Identifier<N>, usize, Command<N>),
+    Finalize(ProgramID<N>, u16, Identifier<N>, usize, Command<N>),
 
     /// The transaction was rejected due to a VM error not captured by a finalize command.
     /// The programID and resource are logged if they are available.
-    NonFinalize(Option<ProgramID<N>>, Option<Identifier<N>>),
+    NonFinalize(Option<(ProgramID<N>, u16)>, Option<Identifier<N>>),
 }
 
 impl<N: Network> RejectedReason<N> {
@@ -48,8 +48,8 @@ impl<N: Network> RejectedReason<N> {
             Some((index, command)) => {
                 // Parse the command from its display string. Falls back to NonFinalize on failure.
                 match (program_id, resource, command.to_string().parse::<Command<N>>()) {
-                    (Some(program_id), Some(resource), Ok(command)) => {
-                        Self::Finalize(program_id, resource, index, command)
+                    (Some((pid, edition)), Some(resource), Ok(command)) => {
+                        Self::Finalize(pid, edition, resource, index, command)
                     }
                     (program_id, resource, _) => Self::NonFinalize(program_id, resource),
                 }
@@ -73,10 +73,10 @@ pub mod test_helpers {
         let command = Command::<N>::from_str("assert.eq r0 r1;").unwrap();
         vec![
             RejectedReason::DuplicateProgramID(program),
-            RejectedReason::Finalize(credits, transfer, 3, command),
-            RejectedReason::NonFinalize(Some(credits), Some(bond)),
+            RejectedReason::Finalize(credits, 1, transfer, 3, command),
+            RejectedReason::NonFinalize(Some((credits, 0u16)), Some(bond)),
             RejectedReason::NonFinalize(None, Some(bond)),
-            RejectedReason::NonFinalize(Some(credits), None),
+            RejectedReason::NonFinalize(Some((credits, 0u16)), None),
             RejectedReason::NonFinalize(None, None),
         ]
     }

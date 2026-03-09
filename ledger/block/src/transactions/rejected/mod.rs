@@ -164,7 +164,7 @@ pub mod test_helpers {
         // Sample a rejected reason for the execution.
         let rejected_reason = match has_rejected_reason {
             true => Some(RejectedReason::NonFinalize(
-                Some("credits.aleo".parse::<ProgramID<CurrentNetwork>>().unwrap()),
+                Some(("credits.aleo".parse::<ProgramID<CurrentNetwork>>().unwrap(), 0u16)),
                 Some("transfer_public".parse::<Identifier<CurrentNetwork>>().unwrap()),
             )),
             false => None,
