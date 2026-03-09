@@ -15,6 +15,7 @@
 
 use super::*;
 
+// Getters for `Ledger`.
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the committee for the given `block height`.
     pub fn get_committee(&self, block_height: u32) -> Result<Option<Committee<N>>> {
@@ -223,29 +224,44 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the transaction for the given transaction ID.
     pub fn get_transaction(&self, transaction_id: N::TransactionID) -> Result<Transaction<N>> {
-        // Retrieve the transaction.
         match self.vm.block_store().get_transaction(&transaction_id)? {
             Some(transaction) => Ok(transaction),
-            None => bail!("Missing transaction for ID {transaction_id}"),
+            None => bail!("Missing transaction '{transaction_id}' in block storage"),
         }
+    }
+
+    /// Returns the transaction for the given transaction ID, or `None` if no transaction of this ID exists.
+    pub fn try_get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
+        self.vm.block_store().get_transaction(transaction_id)
     }
 
     /// Returns the confirmed transaction for the given transaction ID.
     pub fn get_confirmed_transaction(&self, transaction_id: N::TransactionID) -> Result<ConfirmedTransaction<N>> {
-        // Retrieve the confirmed transaction.
-        match self.vm.block_store().get_confirmed_transaction(&transaction_id)? {
+        match self.try_get_confirmed_transaction(&transaction_id)? {
             Some(confirmed_transaction) => Ok(confirmed_transaction),
             None => bail!("Missing confirmed transaction for ID {transaction_id}"),
         }
     }
 
+    /// Returns the confirmed transaction for the given transaction ID, or `None` if no confirmed transaction of this ID exists.
+    pub fn try_get_confirmed_transaction(
+        &self,
+        transaction_id: &N::TransactionID,
+    ) -> Result<Option<ConfirmedTransaction<N>>> {
+        self.vm.block_store().get_confirmed_transaction(transaction_id)
+    }
+
     /// Returns the unconfirmed transaction for the given `transaction ID`.
     pub fn get_unconfirmed_transaction(&self, transaction_id: &N::TransactionID) -> Result<Transaction<N>> {
-        // Retrieve the unconfirmed transaction.
-        match self.vm.block_store().get_unconfirmed_transaction(transaction_id)? {
+        match self.try_get_unconfirmed_transaction(transaction_id)? {
             Some(unconfirmed_transaction) => Ok(unconfirmed_transaction),
             None => bail!("Missing unconfirmed transaction for ID {transaction_id}"),
         }
+    }
+
+    /// Returns the unconfirmed transaction for the given transaction ID, or `None` if no unconfirmed transaction of this ID exists.
+    pub fn try_get_unconfirmed_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
+        self.vm.block_store().get_unconfirmed_transaction(transaction_id)
     }
 
     /// Returns the latest edition for the given `program ID`.
@@ -295,6 +311,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the solution for the given solution ID.
     pub fn get_solution(&self, solution_id: &SolutionID<N>) -> Result<Solution<N>> {
+        match self.try_get_solution(solution_id)? {
+            Some(solution) => Ok(solution),
+            None => bail!("Missing solution for ID {solution_id}"),
+        }
+    }
+
+    /// Returns the solution for the given solution ID, or `None` if no solution of this ID exists.
+    pub fn try_get_solution(&self, solution_id: &SolutionID<N>) -> Result<Option<Solution<N>>> {
         self.vm.block_store().get_solution(solution_id)
     }
 

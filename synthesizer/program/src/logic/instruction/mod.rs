@@ -622,6 +622,20 @@ impl<N: Network> Instruction<N> {
         self.operands().iter().any(|operand| operand.contains_string_type())
     }
 
+    /// Returns `true` if the instruction contains an identifier type in its type declarations.
+    /// Checks cast destination types and serialize/deserialize operand/destination types.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Self::Cast(instruction) => instruction.cast_type().contains_identifier_type(),
+            Self::CastLossy(instruction) => instruction.cast_type().contains_identifier_type(),
+            Self::SerializeBits(instruction) => instruction.operand_type().contains_identifier_type(),
+            Self::SerializeBitsRaw(instruction) => instruction.operand_type().contains_identifier_type(),
+            Self::DeserializeBits(instruction) => instruction.destination_type().contains_identifier_type(),
+            Self::DeserializeBitsRaw(instruction) => instruction.destination_type().contains_identifier_type(),
+            _ => Ok(false),
+        }
+    }
+
     /// Returns `true` if the instruction contains an array type with a size that exceeds the given maximum.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
         // Only cast and serialize instructions may contain an explicit reference to an array.

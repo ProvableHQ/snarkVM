@@ -83,12 +83,26 @@ pub fn maximum_allowed_solutions_per_epoch<N: Network>(prover_stake: u64, curren
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the number of remaining solutions a prover can submit in the current epoch.
+    ///
+    /// # Locking
+    /// This function may deadlock if called while holding a write lock to the current block.
     pub fn num_remaining_solutions(&self, prover_address: &Address<N>, additional_solutions_in_block: u64) -> u64 {
+        self.num_remaining_solutions_inner(&self.current_block.read(), prover_address, additional_solutions_in_block)
+    }
+
+    /// Internal version of [`Self::num_remaining_solutions`] to be used when already holding a lock to the current block.
+    pub(super) fn num_remaining_solutions_inner(
+        &self,
+        latest_block: &Block<N>,
+        prover_address: &Address<N>,
+        additional_solutions_in_block: u64,
+    ) -> u64 {
         // Fetch the prover's stake.
         let prover_stake = self.get_bonded_amount(prover_address).unwrap_or(0);
 
         // Determine the maximum number of solutions allowed based on this prover's stake.
-        let maximum_allowed_solutions = maximum_allowed_solutions_per_epoch::<N>(prover_stake, self.latest_timestamp());
+        let maximum_allowed_solutions =
+            maximum_allowed_solutions_per_epoch::<N>(prover_stake, latest_block.timestamp());
 
         // Fetch the number of solutions the prover has earned rewards for in the current epoch.
         let prover_num_solutions_in_epoch = *self.epoch_provers_cache.read().get(prover_address).unwrap_or(&0);
@@ -101,9 +115,23 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns `true` if the given prover address has reached their solution limit for the current epoch.
+    ///
+    /// # Locking
+    /// This function may deadlock if called while holding a write lock to the current block.
     pub fn is_solution_limit_reached(&self, prover_address: &Address<N>, additional_solutions_in_block: u64) -> bool {
+        self.is_solution_limit_reached_inner(&self.current_block.read(), prover_address, additional_solutions_in_block)
+    }
+
+    /// Internal version of [`Self::is_solution_limit_reached`] to be used when already holding a lock to the current block.
+    pub(super) fn is_solution_limit_reached_inner(
+        &self,
+        latest_block: &Block<N>,
+        prover_address: &Address<N>,
+        additional_solutions_in_block: u64,
+    ) -> bool {
         // Calculate the number of remaining solutions for the prover.
-        let num_remaining_solutions = self.num_remaining_solutions(prover_address, additional_solutions_in_block);
+        let num_remaining_solutions =
+            self.num_remaining_solutions_inner(latest_block, prover_address, additional_solutions_in_block);
 
         // If the number of remaining solutions is zero, the limit is reached.
         num_remaining_solutions == 0

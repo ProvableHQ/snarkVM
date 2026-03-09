@@ -141,8 +141,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         lap!(timer, "Check for duplicate elements");
 
         // Get the consensus version.
-        let current_block_height = self.block_store().current_block_height();
-        let consensus_version = N::CONSENSUS_VERSION(self.block_store().current_block_height())?;
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
 
         // Construct the transaction checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
@@ -216,7 +215,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // If the `CONSENSUS_VERSION` is greater than or equal to `V13`, then verify that:
                 //   - the program's mappings do not use non-existent structs.
                 // If the `CONSENSUS_VERSION` is less than `V14`, ensure that
-                //   - the program does not include V14 syntax
+                //   - the program does not include V14 syntax (snark.verify, aleo::GENERATOR, identifier literals/types)
                 //   - the argument bit size of futures does not exceed the maximum allowed size of u16::MAX.
                 if consensus_version < ConsensusVersion::V8 {
                     ensure!(
@@ -281,7 +280,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }
                 if consensus_version < ConsensusVersion::V14 {
                     ensure!(
-                        !deployment.program().contains_v14_syntax(),
+                        !deployment.program().contains_v14_syntax()?,
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
                     );
                     // Check that all future argument bit sizes do not exceed the maximum allowed size of u16::MAX.
@@ -745,10 +744,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let result = match verification {
             Ok(()) => match self.block_store().contains_state_root(&fee.global_state_root()) {
                 Ok(true) => Ok(()),
-                Ok(false) => bail!("Fee verification failed: global state root not found"),
-                Err(error) => bail!("Fee verification failed: {error}"),
+                Ok(false) => bail!("Fee verification failed - State root {} not found", fee.global_state_root()),
+                Err(error) => bail!("Fee verification failed - Storage error - {error}"),
             },
-            Err(error) => bail!("Fee verification failed: {error}"),
+            Err(error) => bail!("Fee verification failed - {error}"),
         };
         finish!(timer, "Check the global state root");
         result

@@ -143,6 +143,7 @@ impl<N: Network> RandChaCha<N> {
             LiteralType::Scalar => Literal::Scalar(Scalar::rand(&mut rng)),
             LiteralType::Signature => bail!("Cannot 'rand.chacha' into a 'signature'"),
             LiteralType::String => bail!("Cannot 'rand.chacha' into a 'string'"),
+            LiteralType::Identifier => bail!("Cannot 'rand.chacha' into an 'identifier'"),
         };
 
         // Assign the value to the destination register.
@@ -192,7 +193,7 @@ impl<N: Network> Parser for RandChaCha<N> {
         let (string, _) = tag(";")(string)?;
 
         // Ensure the destination type is allowed.
-        if destination_type == LiteralType::String {
+        if matches!(destination_type, LiteralType::String | LiteralType::Identifier) {
             return map_res(fail, |_: ParserResult<Self>| {
                 Err(error(format!("Failed to parse 'rand.chacha': '{destination_type}' is invalid")))
             })(string);
@@ -271,7 +272,7 @@ impl<N: Network> FromBytes for RandChaCha<N> {
         let destination_type = LiteralType::read_le(&mut reader)?;
 
         // Ensure the destination type is allowed.
-        if destination_type == LiteralType::String {
+        if matches!(destination_type, LiteralType::String | LiteralType::Identifier) {
             return Err(error(format!("Failed to parse 'rand.chacha': '{destination_type}' is invalid")));
         }
 

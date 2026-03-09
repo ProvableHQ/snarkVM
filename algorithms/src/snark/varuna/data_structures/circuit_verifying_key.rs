@@ -28,7 +28,7 @@ use std::{
 };
 
 /// Verification key for a specific index (i.e., R1CS matrices).
-#[derive(Debug, Clone, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, CanonicalSerialize)]
 pub struct CircuitVerifyingKey<E: PairingEngine> {
     /// Stores information about the size of the circuit, as well as its defined
     /// field.
@@ -36,6 +36,67 @@ pub struct CircuitVerifyingKey<E: PairingEngine> {
     /// Commitments to the indexed polynomials.
     pub circuit_commitments: Vec<sonic_pc::Commitment<E>>,
     pub id: CircuitId,
+}
+
+impl<E: PairingEngine> Valid for CircuitVerifyingKey<E> {
+    fn check(&self) -> Result<(), SerializationError> {
+        self.circuit_info.check()?;
+        sonic_pc::Commitment::<E>::batch_check(self.circuit_commitments.iter())?;
+        self.id.check()
+    }
+
+    fn batch_check<'a>(batch: impl Iterator<Item = &'a Self> + Send) -> Result<(), SerializationError>
+    where
+        Self: 'a,
+    {
+        #[cfg(not(feature = "serial"))]
+        {
+            use rayon::{iter::ParallelBridge, prelude::ParallelIterator};
+            batch.par_bridge().try_for_each(|e| e.check())?;
+        }
+        #[cfg(feature = "serial")]
+        {
+            for item in batch {
+                item.check()?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<E: PairingEngine> CanonicalDeserialize for CircuitVerifyingKey<E> {
+    fn deserialize_with_mode<R: Read>(
+        mut reader: R,
+        compress: Compress,
+        validate: Validate,
+    ) -> Result<Self, SerializationError> {
+        // Deserialize circuit_info
+        let circuit_info = CircuitInfo::deserialize_with_mode(&mut reader, compress, validate)?;
+
+        // Deserialize the length of circuit_commitments
+        let len = u64::deserialize_with_mode(&mut reader, compress, validate)?;
+
+        // Bound check: Maximum of 12 commitments (3 matrices × 4 polynomials each)
+        const MAX_CIRCUIT_COMMITMENTS: u64 = 12;
+        if len > MAX_CIRCUIT_COMMITMENTS {
+            return Err(SerializationError::InvalidData);
+        }
+
+        // Deserialize circuit_commitments
+        let mut circuit_commitments = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            circuit_commitments.push(sonic_pc::Commitment::deserialize_with_mode(&mut reader, compress, Validate::No)?);
+        }
+
+        if let Validate::Yes = validate {
+            sonic_pc::Commitment::<E>::batch_check(circuit_commitments.iter())?;
+        }
+
+        // Deserialize id
+        let id = CircuitId::deserialize_with_mode(&mut reader, compress, validate)?;
+
+        Ok(CircuitVerifyingKey { circuit_info, circuit_commitments, id })
+    }
 }
 
 impl<E: PairingEngine> FromBytes for CircuitVerifyingKey<E> {

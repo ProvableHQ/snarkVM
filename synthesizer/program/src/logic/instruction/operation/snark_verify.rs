@@ -88,7 +88,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
     /// Returns the operands in the operation.
     #[inline]
     pub fn operands(&self) -> &[Operand<N>] {
-        // Sanity check that there are exactly three operands.
+        // Sanity check that there are exactly four operands.
         debug_assert!(self.operands.len() == 4, "Instruction '{}' must have four operands", Self::opcode());
         // Return the operands.
         &self.operands
@@ -306,7 +306,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
         let inputs = registers.load(stack, &self.operands[2])?;
         let proof = registers.load(stack, &self.operands[3])?;
 
-        // Verify the signature.
+        // Verify the proof.
         let _function_name = "snark.verify";
         let output = evaluate_varuna_proof_internal(
             SnarkVerifyVariant::new(VARIANT),

@@ -48,10 +48,19 @@ impl<N: Network> Stack<N> {
 
         // Initialize the registers.
         let mut registers = Registers::new(call_stack, self.get_register_types(closure.name())?.clone());
+
+        use circuit::Eject;
+
+        // Set the transaction signer.
+        registers.set_signer(signer.eject_value());
         // Set the transition signer, as a circuit.
         registers.set_signer_circuit(signer);
+        // Set the transaction caller.
+        registers.set_caller(caller.eject_value());
         // Set the transition caller, as a circuit.
         registers.set_caller_circuit(caller);
+        // Set the transition view key.
+        registers.set_tvk(tvk.eject_value());
         // Set the transition view key, as a circuit.
         registers.set_tvk_circuit(tvk);
         lap!(timer, "Initialize the registers");
@@ -60,7 +69,6 @@ impl<N: Network> Stack<N> {
         closure.inputs().iter().map(|i| i.register()).zip_eq(inputs).try_for_each(|(register, input)| {
             // If the circuit is in execute mode, then store the console input.
             if let CallStack::Execute(..) = registers.call_stack_ref() {
-                use circuit::Eject;
                 // Assign the console input to the register.
                 registers.store(self, register, input.eject_value())?;
             }

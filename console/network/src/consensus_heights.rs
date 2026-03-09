@@ -51,7 +51,8 @@ pub enum ConsensusVersion {
     V13 = 13,
     /// V14: Increase the program size limit to 512 kB, the transaction size limit to 540 kB,
     ///      the array size limit to 2048, and the `Future` argument bit size to 32 bits.
-    ///      Introduces `aleo::GENERATOR`, `aleo::GENERATOR_POWERS`, and `snark.verify` opcodes.
+    ///      Introduces `aleo::GENERATOR`, `aleo::GENERATOR_POWERS`, `snark.verify` opcodes,
+    ///      and identifier literal types.
     V14 = 14,
 }
 

@@ -33,7 +33,8 @@ locktick = [
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-history = [ "snarkvm-ledger-store/history", "serde" ]
+history = [ "snarkvm-ledger-store/history" ]
+history-staking-rewards = [ "snarkvm-ledger-store/history-staking-rewards" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",
@@ -144,10 +145,6 @@ workspace = true
 
 [dependencies.rayon]
 workspace = true
-
-[dependencies.serde]
-workspace = true
-optional = true
 
 [dependencies.serde_json]
 workspace = true

@@ -270,7 +270,8 @@ impl<N: Network> ProgramCore<N> {
     /// the keywords in the list should be restricted.
     #[rustfmt::skip]
     pub const RESTRICTED_KEYWORDS: &'static [(ConsensusVersion, &'static [&'static str])] = &[
-        (ConsensusVersion::V6, &["constructor"])
+        (ConsensusVersion::V6, &["constructor"]),
+        (ConsensusVersion::V14, &["identifier"])
     ];
 
     /// Initializes an empty program.
@@ -1086,33 +1087,96 @@ impl<N: Network> ProgramCore<N> {
     }
 
     /// Returns `true` if a program contains any V14 syntax.
-    /// This includes:
-    /// 1. `snark.verify.*` opcodes
-    /// 2. `Operand::AleoGenerator` or `Operand::AleoGeneratorPowers`.
+    /// This includes `snark.verify.*` opcodes, `Operand::AleoGenerator`, `Operand::AleoGeneratorPowers`,
+    /// or `Literal::Identifier`. Also checks for identifier type declarations in function inputs/outputs,
+    /// finalize inputs/outputs, closures, structs, mappings, and records.
+    /// This is enforced to be `false` for programs before `ConsensusVersion::V14`.
     #[inline]
-    pub fn contains_v14_syntax(&self) -> bool {
-        // Helper to check if any of the opcodes start with `snark.verify` or uses AleoGenerator/AleoGeneratorPowers operands
-        let has_op = |instr: &Instruction<N>| {
-            instr.opcode().starts_with("snark.verify")
-                || cfg_iter!(instr.operands())
-                    .any(|operand| matches!(operand, Operand::AleoGenerator | Operand::AleoGeneratorPowers(_)))
-        };
+    pub fn contains_v14_syntax(&self) -> Result<bool> {
+        /// Returns `true` if the operand is V14 syntax.
+        fn is_v14_operand<N: Network>(operand: &Operand<N>) -> bool {
+            matches!(
+                operand,
+                Operand::AleoGeneratorPowers(_)
+                    | Operand::AleoGenerator
+                    | Operand::Literal(console::program::Literal::Identifier(..))
+            )
+        }
 
-        // Determine if any function instructions contain the new syntax.
-        let function_contains =
-            cfg_iter!(self.functions()).flat_map(|(_, function)| function.instructions()).any(has_op);
+        // Check functions: instructions, finalize commands, and type declarations in one pass.
+        for (_, function) in self.functions() {
+            if function.instructions().iter().any(|instruction| {
+                instruction.opcode().starts_with("snark.verify")
+                    || cfg_iter!(instruction.operands()).any(is_v14_operand)
+            }) {
+                return Ok(true);
+            }
+            if function
+                .finalize_logic()
+                .map(|finalize| {
+                    finalize.commands().iter().any(|cmd| {
+                        matches!(cmd, Command::Instruction(instr) if instr.opcode().starts_with("snark.verify"))
+                            || cfg_iter!(cmd.operands()).any(is_v14_operand)
+                    })
+                })
+                .unwrap_or(false)
+            {
+                return Ok(true);
+            }
+            if function.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
 
-        // Determine if any closure instructions contain the new syntax.
-        let closure_contains = cfg_iter!(self.closures()).flat_map(|(_, closure)| closure.instructions()).any(has_op);
+        // Check closures: instructions and type declarations in one pass.
+        for (_, closure) in self.closures() {
+            if closure.instructions().iter().any(|instruction| {
+                instruction.opcode().starts_with("snark.verify")
+                    || cfg_iter!(instruction.operands()).any(is_v14_operand)
+            }) {
+                return Ok(true);
+            }
+            if closure.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
 
-        // Determine if any finalize commands or constructor commands contain the new syntax.
-        let command_contains = cfg_iter!(self.functions())
-            .flat_map(|(_, function)| function.finalize_logic().map(|finalize| finalize.commands()))
-            .flatten()
-            .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
-            .any(|command| matches!(command, Command::Instruction(instruction) if has_op(instruction)));
+        // Check constructor commands.
+        let constructor_contains = self.constructor.iter().any(|constructor| {
+            constructor.commands().iter().any(|cmd| {
+                matches!(cmd, Command::Instruction(instr) if instr.opcode().starts_with("snark.verify"))
+                    || cfg_iter!(cmd.operands()).any(is_v14_operand)
+            })
+        });
+        if constructor_contains {
+            return Ok(true);
+        }
 
-        function_contains || closure_contains || command_contains
+        // Check constructor for identifier types in cast destinations and type declarations.
+        if let Some(constructor) = &self.constructor {
+            if constructor.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+
+        // Check remaining type definitions: mappings, structs, records.
+        for mapping in self.mappings.values() {
+            if mapping.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        for struct_type in self.structs.values() {
+            if struct_type.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        for record_type in self.records.values() {
+            if record_type.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     /// Returns `true` if a program contains any string type.

@@ -133,8 +133,10 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
     vm: VM<N, C>,
     /// The genesis block.
     genesis_block: Block<N>,
+
     /// The current epoch hash.
     current_epoch_hash: RwLock<Option<N::BlockHash>>,
+
     /// The committee resulting from all the on-chain staking activity.
     ///
     /// This includes any bonding and unbonding transactions in the latest block.
@@ -154,9 +156,10 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
 
     /// The latest block that was added to the ledger.
     ///
-    /// This lock is also used as a way to prevent concurrent updates to the ledger, and to ensure that
-    /// the ledger does not advance while certain check happen.
+    /// This lock is also to ensure *atomicity* of calls to `[Ledger::advance`], i.e., to guarantee that
+    /// there cannot be multiple concurrent ledger advancements and that ledger state cannot be read while advancement happens.
     current_block: RwLock<Block<N>>,
+
     /// The recent committees of interest paired with their applicable rounds.
     ///
     /// Each entry consisting of a round `R` and a committee `C`,

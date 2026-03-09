@@ -105,7 +105,8 @@ fn check_destination_type_is_valid(variant: u8, destination_type: &PlaintextType
             | LiteralType::U32
             | LiteralType::U64
             | LiteralType::U128
-            | LiteralType::Scalar => Ok(()),
+            | LiteralType::Scalar
+            | LiteralType::Identifier => Ok(()),
             _ => bail!("Invalid literal type '{literal_type}' for 'deserialize' instruction"),
         }
     }
@@ -930,6 +931,7 @@ mod tests {
             PlaintextType::Literal(LiteralType::U64),
             PlaintextType::Literal(LiteralType::U128),
             PlaintextType::Literal(LiteralType::Scalar),
+            PlaintextType::Literal(LiteralType::Identifier),
         ]
     }
 

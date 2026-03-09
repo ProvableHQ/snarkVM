@@ -23,6 +23,11 @@ include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
 edition = "2024"
 
+[[bench]]
+name = "bigint"
+path = "benches/bigint.rs"
+harness = false
+
 [dependencies.snarkvm-utilities-derives]
 workspace = true
 optional = true
@@ -77,6 +82,9 @@ default-features = false
 [dependencies.zeroize]
 workspace = true
 features = [ "derive" ]
+
+[dev-dependencies.criterion]
+workspace = true
 
 [dev-dependencies.tracing-test]
 workspace = true

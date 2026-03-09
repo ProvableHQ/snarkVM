@@ -498,7 +498,7 @@ impl<N: Network> FinalizeTypes<N> {
         let destination_type = rand_chacha.destination_type();
         // Ensure the destination type is allowed.
         ensure!(
-            !matches!(destination_type, LiteralType::String),
+            !matches!(destination_type, LiteralType::String | LiteralType::Identifier),
             "Destination type '{destination_type}' is not allowed."
         );
 

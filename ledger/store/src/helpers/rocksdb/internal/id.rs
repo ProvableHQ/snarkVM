@@ -204,6 +204,7 @@ pub enum ProgramMap {
     KeyValueID = DataID::KeyValueMap as u16,
     MappingUpdate = DataID::MappingUpdateMap as u16,
     MappingUpdateHeights = DataID::MappingUpdateHeightsMap as u16,
+    StakingRewards = DataID::StakingRewardsMap as u16,
 }
 
 /// The RocksDB map prefix for test-related entries.
@@ -309,6 +310,8 @@ enum DataID {
     MappingUpdateMap,
     // Historical mapping update heights.
     MappingUpdateHeightsMap,
+    /// Historical staking rewards.
+    StakingRewardsMap,
 
     // Testing
     #[cfg(test)]

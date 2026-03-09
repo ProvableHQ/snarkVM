@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use std::{
+    cmp,
     fmt::{Debug, Display},
     io::{Read, Result as IoResult, Write},
 };
@@ -309,16 +310,15 @@ impl Display for BigInteger384 {
 }
 impl Ord for BigInteger384 {
     #[inline]
-    #[allow(clippy::comparison_chain)]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         for (a, b) in self.0.iter().rev().zip(other.0.iter().rev()) {
-            if a < b {
-                return std::cmp::Ordering::Less;
-            } else if a > b {
-                return std::cmp::Ordering::Greater;
+            match a.cmp(b) {
+                cmp::Ordering::Less => return cmp::Ordering::Less,
+                cmp::Ordering::Greater => return cmp::Ordering::Greater,
+                _ => continue,
             }
         }
-        std::cmp::Ordering::Equal
+        cmp::Ordering::Equal
     }
 }
 impl PartialOrd for BigInteger384 {

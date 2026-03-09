@@ -201,10 +201,9 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
     /// Returns the transaction for the given transaction ID.
     pub fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Transaction<N>> {
         match self {
-            Self::VM(block_store) => {
-                let txn = block_store.get_transaction(transaction_id)?;
-                txn.ok_or_else(|| anyhow!("Transaction {transaction_id} not in local storage"))
-            }
+            Self::VM(block_store) => block_store
+                .get_transaction(transaction_id)?
+                .ok_or_else(|| anyhow!("Missing transaction '{transaction_id}' in block storage")),
             Self::REST(query) => query.get_transaction(transaction_id),
             Self::STATIC(_query) => bail!("get_transaction is not supported by StaticQuery"),
         }
@@ -214,10 +213,9 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
     #[cfg(feature = "async")]
     pub async fn get_transaction_async(&self, transaction_id: &N::TransactionID) -> Result<Transaction<N>> {
         match self {
-            Self::VM(block_store) => {
-                let txn = block_store.get_transaction(transaction_id)?;
-                txn.ok_or_else(|| anyhow!("Transaction {transaction_id} not in local storage"))
-            }
+            Self::VM(block_store) => block_store
+                .get_transaction(transaction_id)?
+                .ok_or_else(|| anyhow!("Missing transaction '{transaction_id}' in block storage")),
             Self::REST(query) => query.get_transaction_async(transaction_id).await,
             Self::STATIC(_query) => bail!("get_transaction is not supported by StaticQuery"),
         }

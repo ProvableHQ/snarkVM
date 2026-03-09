@@ -55,7 +55,8 @@ impl<N: Network> EpochProgram<N> {
                 | LiteralType::U128
                 | LiteralType::Scalar
                 | LiteralType::Signature
-                | LiteralType::String => {
+                | LiteralType::String
+                | LiteralType::Identifier => {
                     unreachable!("Invalid input literal type, malformed program");
                 }
             };

@@ -809,26 +809,35 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         Ok(solutions.into_owned())
     }
 
-    /// Returns the prover solution for the given solution ID.
-    fn get_solution(&self, solution_id: &SolutionID<N>) -> Result<Solution<N>> {
+    /// Returns the prover solution for the given solution ID, or `None` if no reference to this solution
+    /// exists in the ledger.
+    fn get_solution(&self, solution_id: &SolutionID<N>) -> Result<Option<Solution<N>>> {
         // Retrieve the block height for the solution ID.
         let Some(block_height) = self.find_block_height_from_solution_id(solution_id)? else {
-            bail!("The block height for solution ID '{solution_id}' is missing in block storage")
+            // In this case, the solution is not yet known to the ledger.
+            return Ok(None);
         };
-        // Retrieve the block hash.
+
+        // Errors below are more severe, as it measn there is a reference to solution, but
+        // the solution itself is missing.
+
+        // Get the block hash for the given height.
         let Some(block_hash) = self.get_block_hash(block_height)? else {
             bail!("The block hash for block '{block_height}' is missing in block storage")
         };
-        // Retrieve the solutions.
+
+        // Get the solutions for the block.
         let Some(solutions) = self.solutions_map().get_confirmed(&block_hash)? else {
             bail!("The solutions for block '{block_height}' are missing in block storage")
         };
+
         // Retrieve the prover solution.
-        match solutions.deref().deref() {
-            Some(solutions) => solutions.get(solution_id).cloned().ok_or_else(|| {
-                anyhow!("The prover solution for solution ID '{solution_id}' is missing in block storage")
-            }),
-            _ => bail!("The prover solution for solution ID '{solution_id}' is missing in block storage"),
+        if let Some(solutions) = solutions.deref().deref()
+            && let Some(solution) = solutions.get(solution_id).cloned()
+        {
+            Ok(Some(solution))
+        } else {
+            bail!("The prover solution for solution ID '{solution_id}' is missing in block storage");
         }
     }
 
@@ -846,7 +855,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         // Retrieve the transactions.
         transaction_ids
             .iter()
-            .map(|transaction_id| self.get_confirmed_transaction(*transaction_id))
+            .map(|transaction_id| self.get_confirmed_transaction(transaction_id))
             .collect::<Result<Option<Transactions<_>>>>()
     }
 
@@ -855,7 +864,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         Ok(self.aborted_transaction_ids_map().get_confirmed(block_hash)?.map(|x| x.into_owned()))
     }
 
-    /// Returns the transaction for the given `TransactionID`.
+    /// Returns the transaction for the given `TransactionID`, or `None` if no transaction of this ID exists.
     fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         // Check if the transaction was rejected or aborted.
         // Note: We can only retrieve accepted or rejected transactions. We cannot retrieve aborted transactions.
@@ -868,37 +877,45 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
 
         let Some(confirmed) = transactions.find_confirmed_transaction_for_unconfirmed_transaction_id(transaction_id)
         else {
-            if let Some(aborted_ids) = self.get_block_aborted_transaction_ids(&block_hash)? {
-                if aborted_ids.contains(transaction_id) {
-                    bail!("Transaction '{transaction_id}' was aborted in block '{block_hash}'");
-                }
+            if let Some(aborted_ids) = self.get_block_aborted_transaction_ids(&block_hash)?
+                && aborted_ids.contains(transaction_id)
+            {
+                bail!("Transaction '{transaction_id}' was aborted in block '{block_hash}'");
+            } else {
+                return Ok(None);
             }
-            bail!("Missing transaction '{transaction_id}' in block storage");
         };
         Ok(Some(confirmed.transaction().clone()))
     }
 
-    /// Returns the confirmed transaction for the given `transaction ID`.
-    fn get_confirmed_transaction(&self, transaction_id: N::TransactionID) -> Result<Option<ConfirmedTransaction<N>>> {
+    /// Returns the confirmed transaction for the given `transaction ID`, or `None` if no confirmed transaction of this ID exists.
+    fn get_confirmed_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<ConfirmedTransaction<N>>> {
         // Retrieve the transaction.
-        let Some(transaction) = self.get_transaction(&transaction_id)? else {
-            bail!("Missing transaction '{transaction_id}' in block storage");
+        let Some(transaction) = self.get_transaction(transaction_id)? else {
+            return Ok(None);
         };
+
         // Retrieve the confirmed attributes.
         let Some((_, confirmed_type, finalize_operations)) =
             self.confirmed_transactions_map().get_confirmed(&transaction.id())?.map(|x| x.into_owned())
         else {
-            bail!("Missing confirmed transaction '{transaction_id}' in block storage")
+            return Ok(None);
         };
+
         // Construct the confirmed transaction.
         to_confirmed_transaction(confirmed_type, transaction, finalize_operations).map(Some)
     }
 
-    /// Get the unconfirmed transaction for the given `TransactionID`.
+    /// Retrieve an unconfirmed transaction using its ID.
     ///
     /// For unconfirmed and accepted transactions, this will return original transaction issued by the client.
     /// This function also returns the original execution/deployment for a rejected transaction,
     /// even when the given `TransactionID` is of a fee transaction.
+    ///
+    /// # Returns
+    /// - `Ok(txn)` if the transaction exists and is not confirmed
+    /// - `Ok(None)` if no such unconfirmed transaction exist
+    /// - `Err(_)` if any other error occured (most likely a storage corruption)
     fn get_unconfirmed_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         // Check if the transaction was rejected or aborted.
         // Note: We can only retrieve accepted or rejected transactions. We cannot retrieve aborted transactions.
@@ -907,10 +924,13 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
                 Some(transactions) => {
                     match transactions.find_confirmed_transaction_for_unconfirmed_transaction_id(transaction_id) {
                         Some(confirmed) => Ok(Some(confirmed.to_unconfirmed_transaction()?)),
-                        None => bail!("Missing transaction '{transaction_id}' in block storage"),
+                        None => Ok(None),
                     }
                 }
-                None => bail!("Missing transactions for block '{block_hash}' in block storage"),
+                // This is an error, because there must always be a transactions entry for a known block hash.
+                None => bail!(
+                    "Transaction '{transaction_id}' is associated with a block '{block_hash}', but no transactions entry exists for it"
+                ),
             },
             None => {
                 let Some(txn) = self.transaction_store().get_transaction(transaction_id)? else {
@@ -921,12 +941,15 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
                 if let Transaction::Fee(_, fee) = txn {
                     // Look up the original transaction in its block.
                     let Some(block_hash) = self.find_block_hash(transaction_id)? else {
-                        bail!("Missing fee transaction '{transaction_id}' in block storage");
+                        // This is an error, because a fee transaction must always have an original transaction associated with it.
+                        bail!("Transaction {transaction_id} is a fee transaction with no associated block");
                     };
 
                     match self.get_block_transactions(&block_hash)? {
                         Some(transactions) => transactions.find_unconfirmed_transaction_for_transition_id(fee.id()),
-                        None => bail!("Missing transactions for block '{block_hash}' in block storage"),
+                        None => bail!(
+                            "Transaction {transaction_id} is associated with block '{block_hash}' but no transacitons entry exists for it"
+                        ),
                     }
                 } else {
                     Ok(Some(txn))
@@ -1055,7 +1078,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
         // Insert the (state root, block height) pair.
         self.storage.insert((*updated_tree.root()).into(), block)?;
-        // Update the block tree.
+        // Update the block tree, preserving the previous Merkle tree allocation for performance.
+        updated_tree.preserve_tree_allocation(&mut tree);
         *tree = updated_tree;
         // Add the block to the block cache (unless it is a genesis block).
         if block.height() != 0
@@ -1365,7 +1389,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     }
 
     /// Returns the prover solution for the given solution ID.
-    pub fn get_solution(&self, solution_id: &SolutionID<N>) -> Result<Solution<N>> {
+    pub fn get_solution(&self, solution_id: &SolutionID<N>) -> Result<Option<Solution<N>>> {
         self.storage.get_solution(solution_id)
     }
 
@@ -1382,24 +1406,41 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         self.storage.get_block_aborted_transaction_ids(block_hash)
     }
 
-    /// Returns the transaction for the given `transaction ID`.
+    /// Retrieve a transaction using its ID.
     ///
     /// For a rejected transaction, this returns the fee transaction, not the original/unconfirmed one.
+    ///
+    /// # Returns
+    /// - `Ok(txn)` if the transaction exists
+    /// - `Ok(None)` if no such transaction exist
+    /// - `Err(_)` if any other error occured
+    ///
     pub fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         self.storage.get_transaction(transaction_id)
     }
 
-    /// Returns the confirmed transaction for the given `transaction ID`.
+    /// Retreive a confirmed transation using its ID.
+    ///
+    /// # Returns
+    /// - `Ok(txn)` if the transaction exists
+    /// - `Ok(None)` if no such confirmed transaction exist
+    /// - `Err(_)` if no such transaction exist or any other error occured
     pub fn get_confirmed_transaction(
         &self,
         transaction_id: &N::TransactionID,
     ) -> Result<Option<ConfirmedTransaction<N>>> {
-        self.storage.get_confirmed_transaction(*transaction_id)
+        self.storage.get_confirmed_transaction(transaction_id)
     }
 
-    /// Returns the unconfirmed transaction for the given `transaction ID`.
-    ///
+    /// Retrieve an unconfirmed transaction using its ID.
+    ///  
     /// For a rejected transaction, this returns the origin transaction issued by the user, not the fee transaction.
+    ///
+    /// # Returns
+    /// - `Ok(txn)` if the transaction exists and is not confirmed
+    /// - `Ok(None)` if no such unconfirmed transaction exist
+    /// - `Err(_)` if any other error occured
+    ///
     pub fn get_unconfirmed_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         self.storage.get_unconfirmed_transaction(transaction_id)
     }

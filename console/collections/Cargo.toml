@@ -28,6 +28,13 @@ features = [ "field", "integers" ]
 [dependencies.aleo-std]
 workspace = true
 
+[dependencies.locktick]
+workspace = true
+optional = true
+
+[dependencies.parking_lot]
+workspace = true
+
 [dependencies.rayon]
 workspace = true
 
@@ -45,4 +52,5 @@ workspace = true
 
 [features]
 serial = [ ]
+locktick = [ "dep:locktick" ]
 timer = [ "aleo-std/timer" ]
