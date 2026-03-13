@@ -871,6 +871,7 @@ jobs:
       - run_test:
           workspace_member: snarkvm-parameters
           flags: --run-ignored ignored-only -- --test-threads=2 
+          use_cache: false
           cache_key_suffix: -v-{{ epoch }}
           no_output_timeout: 20m
           timeout: 30m
