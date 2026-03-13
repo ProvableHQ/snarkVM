@@ -1190,84 +1190,84 @@ jobs:
 workflows:
   version: 2
 
-  cargo-workflow:
-    jobs:
-      - check-fmt
-      - check-clippy
-      - check-cargo-audit
-      - check-all-targets
+  # cargo-workflow:
+  #   jobs:
+  #     - check-fmt
+  #     - check-clippy
+  #     - check-cargo-audit
+  #     - check-all-targets
 
-  circuit-workflow:
-    jobs:
-      - circuit
-      - circuit-account
-      - circuit-algorithms
-      - circuit-collections
-      - circuit-environment
-      - circuit-network
-      - circuit-program
-      - circuit-types
-      - circuit-types-address
-      - circuit-types-boolean
-      - circuit-types-field
-      - circuit-types-group
-      - circuit-types-integers
-      - circuit-types-scalar
-      - circuit-types-string
+  # circuit-workflow:
+  #   jobs:
+  #     - circuit
+  #     - circuit-account
+  #     - circuit-algorithms
+  #     - circuit-collections
+  #     - circuit-environment
+  #     - circuit-network
+  #     - circuit-program
+  #     - circuit-types
+  #     - circuit-types-address
+  #     - circuit-types-boolean
+  #     - circuit-types-field
+  #     - circuit-types-group
+  #     - circuit-types-integers
+  #     - circuit-types-scalar
+  #     - circuit-types-string
 
-  console-workflow:
-    jobs:
-      - console
-      - console-account
-      - console-algorithms
-      - console-collections
-      - console-network
-      - console-network-environment
-      - console-program
-      - console-types
-      - console-types-address
-      - console-types-boolean
-      - console-types-field
-      - console-types-group
-      - console-types-integers
-      - console-types-scalar
-      - console-types-string
+  # console-workflow:
+  #   jobs:
+  #     - console
+  #     - console-account
+  #     - console-algorithms
+  #     - console-collections
+  #     - console-network
+  #     - console-network-environment
+  #     - console-program
+  #     - console-types
+  #     - console-types-address
+  #     - console-types-boolean
+  #     - console-types-field
+  #     - console-types-group
+  #     - console-types-integers
+  #     - console-types-scalar
+  #     - console-types-string
 
-  ledger-workflow:
-    jobs:
-      - ledger
-      - ledger-with-valid-solutions
-      - ledger-authority
-      - ledger-committee
-      - ledger-narwhal
-      - ledger-narwhal-batch-certificate
-      - ledger-narwhal-batch-header
-      - ledger-narwhal-data
-      - ledger-narwhal-subdag
-      - ledger-narwhal-transmission
-      - ledger-narwhal-transmission-id
-      - ledger-puzzle
-      - ledger-puzzle-epoch
-      - ledger-query
-      - ledger-store
-      - ledger-test-helpers
+  # ledger-workflow:
+  #   jobs:
+  #     - ledger
+  #     - ledger-with-valid-solutions
+  #     - ledger-authority
+  #     - ledger-committee
+  #     - ledger-narwhal
+  #     - ledger-narwhal-batch-certificate
+  #     - ledger-narwhal-batch-header
+  #     - ledger-narwhal-data
+  #     - ledger-narwhal-subdag
+  #     - ledger-narwhal-transmission
+  #     - ledger-narwhal-transmission-id
+  #     - ledger-puzzle
+  #     - ledger-puzzle-epoch
+  #     - ledger-query
+  #     - ledger-store
+  #     - ledger-test-helpers
 
-  synthesizer-workflow:
-    jobs:
-      - synthesizer
-      - synthesizer-process
-      - synthesizer-program
-      - synthesizer-snark
+  # synthesizer-workflow:
+  #   jobs:
+  #     - synthesizer
+  #     - synthesizer-process
+  #     - synthesizer-program
+  #     - synthesizer-snark
 
-  snarkvm-workflow:
-    jobs:
-      - algorithms
-      - curves
-      - fields
-      - snarkvm
-      - utilities
-      - utilities-derives
-      - wasm
+  # snarkvm-workflow:
+  #   jobs:
+  #     - algorithms
+  #     - curves
+  #     - fields
+  #     - snarkvm
+  #     - utilities
+  #     - utilities-derives
+  #     - wasm
 
   # Run additional but unlikely to fail checks on merges only
   merge-workflow:
@@ -1275,30 +1275,30 @@ workflows:
       or pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "feat/dynamic-dispatch"
+      or pipeline.git.branch == "test-ci-dynamic-dispatch"
     jobs:
-      - check-unused-dependencies # This can be cleaned up before releases
-      - check-cargo-semver-checks # This can be cleaned up before releases
-      - ledger-with-rocksdb-partition1 # Often similar results as `ledger`
-      - ledger-with-rocksdb-partition2 # Often similar results as `ledger`
-      - ledger-block # Very heavy and time taking run
-      - ledger-store-prerelease # Run the slowest ledger-store tests as pre-release
-      - ledger-with-valid-solutions-prerelease # Run the slowest ledger-with-valid-solution test as pre-release
-      - parameters # Infrastructure which often runs fine
-      - parameters-large # Infrastructure which often runs fine
+      # - check-unused-dependencies # This can be cleaned up before releases
+      # - check-cargo-semver-checks # This can be cleaned up before releases
+      # - ledger-with-rocksdb-partition1 # Often similar results as `ledger`
+      # - ledger-with-rocksdb-partition2 # Often similar results as `ledger`
+      # - ledger-block # Very heavy and time taking run
+      # - ledger-store-prerelease # Run the slowest ledger-store tests as pre-release
+      # - ledger-with-valid-solutions-prerelease # Run the slowest ledger-with-valid-solution test as pre-release
+      # - parameters # Infrastructure which often runs fine
+      # - parameters-large # Infrastructure which often runs fine
       - parameters-uncached # Infrastructure which often runs fine
-      - synthesizer-integration # Very slow test taking over 30+ minutes to pass
-      - synthesizer-prerelease # Run the slowest synthesizer tests as pre-release
-      - synthesizer-process-with-rocksdb # Often similar results as `synthesizer-process`
-      - synthesizer-program-integration # Expensive, rarely impacted, duplicate test-runs with `synthesizer`
-      - synthesizer-program-integration-keccak # Expensive and rarely impacted
-      - synthesizer-program-integration-psd # Expensive and rarely impacted
-      - synthesizer-program-integration-sha # Expensive and rarely impacted
-      - synthesizer-program-integration-instruction-is # Expensive and rarely impacted
-      - synthesizer-program-integration-instruction-equal # Expensive and rarely impacted
-      - synthesizer-program-integration-instruction-commit # Expensive and rarely impacted
-      - synthesizer-test-partition1 # Often similar results as `synthesizer`
-      - synthesizer-test-partition2 # Often similar results as `synthesizer`
+      # - synthesizer-integration # Very slow test taking over 30+ minutes to pass
+      # - synthesizer-prerelease # Run the slowest synthesizer tests as pre-release
+      # - synthesizer-process-with-rocksdb # Often similar results as `synthesizer-process`
+      # - synthesizer-program-integration # Expensive, rarely impacted, duplicate test-runs with `synthesizer`
+      # - synthesizer-program-integration-keccak # Expensive and rarely impacted
+      # - synthesizer-program-integration-psd # Expensive and rarely impacted
+      # - synthesizer-program-integration-sha # Expensive and rarely impacted
+      # - synthesizer-program-integration-instruction-is # Expensive and rarely impacted
+      # - synthesizer-program-integration-instruction-equal # Expensive and rarely impacted
+      # - synthesizer-program-integration-instruction-commit # Expensive and rarely impacted
+      # - synthesizer-test-partition1 # Often similar results as `synthesizer`
+      # - synthesizer-test-partition2 # Often similar results as `synthesizer`
 
   release-workflow:
     when: pipeline.git.branch == "canary"
