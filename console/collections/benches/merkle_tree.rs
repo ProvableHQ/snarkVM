@@ -23,12 +23,12 @@ use snarkvm_console_network::{
 };
 use snarkvm_console_types::Field;
 
-use criterion::{BatchSize, BenchmarkId, Criterion};
-use std::collections::BTreeMap;
+use criterion::{BatchSize, BenchmarkId, Criterion, SamplingMode};
+use snarkvm_console_network::BHPMerkleTree;
+use std::{collections::BTreeMap, sync::OnceLock, time::Duration};
 
 const DEPTH: u8 = 32;
 const MAX_INSTANTIATED_DEPTH: u8 = 16;
-
 const NUM_LEAVES: &[usize] = &[1, 10, 100, 1_000, 10_000, 100_000];
 const APPEND_SIZES: &[usize] = &[1, 10, 100, 1_000, 10_000, 100_000];
 const UPDATE_SIZES: &[usize] = &[1, 10, 100, 1_000, 10_000];
@@ -37,6 +37,22 @@ const UPDATE_SIZES: &[usize] = &[1, 10, 100, 1_000, 10_000];
 macro_rules! generate_leaves {
     ($num_leaves:expr, $rng:expr) => {{ (0..$num_leaves).map(|_| Field::<MainnetV0>::rand($rng).to_bits_le()).collect::<Vec<_>>() }};
 }
+
+// Lazy-initialized data for large benchmarks. Initialized only when the benchmark is actually run.
+static LEAVES_65537: OnceLock<Vec<Vec<bool>>> = OnceLock::new();
+static LEAVES_16777217: OnceLock<Vec<Vec<bool>>> = OnceLock::new();
+
+struct AppendState {
+    tree: BHPMerkleTree<MainnetV0, DEPTH>,
+    new_leaf: Vec<bool>,
+}
+
+static APPEND_POW16_65534_STATE: OnceLock<AppendState> = OnceLock::new();
+static APPEND_POW16_65535_STATE: OnceLock<AppendState> = OnceLock::new();
+static APPEND_POW16_65536_STATE: OnceLock<AppendState> = OnceLock::new();
+static APPEND_POW24_16777214_STATE: OnceLock<AppendState> = OnceLock::new();
+static APPEND_POW24_16777215_STATE: OnceLock<AppendState> = OnceLock::new();
+static APPEND_POW24_16777216_STATE: OnceLock<AppendState> = OnceLock::new();
 
 fn new(c: &mut Criterion) {
     let mut rng = TestRng::default();
@@ -148,6 +164,170 @@ fn update_many(c: &mut Criterion) {
     }
 }
 
+/// Benchmarks Merkle tree creation with 2^16 vs 2^16+1 leaves at block-tree depth (32).
+/// Run only this comparison: cargo bench -p snarkvm-console-collections --bench merkle_tree -- 65536_vs_65537
+fn creation_65536_vs_65537_leaves(c: &mut Criterion) {
+    const N: usize = 1 << 16; // 2^16
+    let mut group = c.benchmark_group("MerkleTree/new/creation_65536_vs_65537");
+    group.bench_function("65536_leaves_depth_32", |b| {
+        let leaves = LEAVES_65537.get_or_init(|| {
+            let mut rng = TestRng::default();
+            generate_leaves!(N + 1, &mut rng)
+        });
+        b.iter(|| {
+            let _tree = MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..N]).unwrap();
+        })
+    });
+    group.bench_function("65537_leaves_depth_32", |b| {
+        let leaves = LEAVES_65537.get_or_init(|| {
+            let mut rng = TestRng::default();
+            generate_leaves!(N + 1, &mut rng)
+        });
+        b.iter(|| {
+            let _tree = MainnetV0::merkle_tree_bhp::<DEPTH>(leaves).unwrap();
+        })
+    });
+}
+
+/// Benchmarks Merkle tree creation with 2^24 vs 2^24+1 leaves at block-tree depth (32).
+/// Uses Criterion's Flat sampling mode and minimal sample count for long-running iterations.
+/// Run only this comparison: cargo bench -p snarkvm-console-collections --bench merkle_tree -- 16777216_vs_16777217
+fn creation_16777216_vs_16777217_leaves(c: &mut Criterion) {
+    const N: usize = 1 << 24; // 2^24
+    let mut group = c.benchmark_group("MerkleTree/new/creation_16777216_vs_16777217");
+    group.sampling_mode(SamplingMode::Flat);
+    group.sample_size(10);
+    group.measurement_time(Duration::from_secs(60));
+    group.bench_function("16777216_leaves_depth_32", |b| {
+        let leaves = LEAVES_16777217.get_or_init(|| {
+            let mut rng = TestRng::default();
+            generate_leaves!(N + 1, &mut rng)
+        });
+        b.iter(|| {
+            let _tree = MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..N]).unwrap();
+        })
+    });
+    group.bench_function("16777217_leaves_depth_32", |b| {
+        let leaves = LEAVES_16777217.get_or_init(|| {
+            let mut rng = TestRng::default();
+            generate_leaves!(N + 1, &mut rng)
+        });
+        b.iter(|| {
+            let _tree = MainnetV0::merkle_tree_bhp::<DEPTH>(leaves).unwrap();
+        })
+    });
+}
+
+/// Benchmarks Merkle tree append of 1 leaf at 2^16-1 vs 2^16 leaves (latter crosses power-of-two boundary).
+/// Run only this comparison: cargo bench -p snarkvm-console-collections --bench merkle_tree -- append_65535_vs_65536
+fn append_pow16_leaves(c: &mut Criterion) {
+    const N: usize = 1 << 16; // 2^16
+    let mut group = c.benchmark_group("MerkleTree/append/append_pow16_leaves");
+    group.bench_function("append_1_to_65534_leaves", |b| {
+        let state = APPEND_POW16_65534_STATE.get_or_init(|| {
+            let mut rng = TestRng::default();
+            let leaves = generate_leaves!(N + 1, &mut rng);
+            AppendState {
+                tree: MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..N - 1]).unwrap(),
+                new_leaf: leaves[N].clone(),
+            }
+        });
+        b.iter_batched(
+            || state.tree.clone(),
+            |mut tree| tree.append(std::slice::from_ref(&state.new_leaf)).unwrap(),
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_function("append_1_to_65535_leaves", |b| {
+        let state = APPEND_POW16_65535_STATE.get_or_init(|| {
+            let mut rng = TestRng::default();
+            let leaves = generate_leaves!(N + 2, &mut rng);
+            AppendState {
+                tree: MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..N]).unwrap(),
+                new_leaf: leaves[N + 1].clone(),
+            }
+        });
+        b.iter_batched(
+            || state.tree.clone(),
+            |mut tree| tree.append(std::slice::from_ref(&state.new_leaf)).unwrap(),
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("append_1_to_65536_leaves", |b| {
+        let state = APPEND_POW16_65536_STATE.get_or_init(|| {
+            let mut rng = TestRng::default();
+            let leaves = generate_leaves!(N + 3, &mut rng);
+            AppendState {
+                tree: MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..N + 1]).unwrap(),
+                new_leaf: leaves[N + 2].clone(),
+            }
+        });
+        b.iter_batched(
+            || state.tree.clone(),
+            |mut tree| tree.append(std::slice::from_ref(&state.new_leaf)).unwrap(),
+            BatchSize::SmallInput,
+        )
+    });
+}
+
+/// Benchmarks Merkle tree append of 1 leaf at 2^24-2, 2^24-1, and 2^24 leaves (last crosses power-of-two boundary).
+/// Uses Criterion's Flat sampling mode and minimal sample count for long-running iterations.
+/// Run only this comparison: cargo bench -p snarkvm-console-collections --bench merkle_tree -- append_pow24_leaves
+fn append_pow24_leaves(c: &mut Criterion) {
+    const N: usize = 1 << 24; // 2^24
+    let mut group = c.benchmark_group("MerkleTree/append/append_pow24_leaves");
+    group.sampling_mode(SamplingMode::Flat);
+    group.sample_size(10);
+    group.measurement_time(Duration::from_secs(60));
+    group.bench_function("append_1_to_16777214_leaves", |b| {
+        let state = APPEND_POW24_16777214_STATE.get_or_init(|| {
+            let mut rng = TestRng::default();
+            let leaves = generate_leaves!(N, &mut rng);
+            AppendState {
+                tree: MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..N - 1]).unwrap(),
+                new_leaf: leaves[N - 1].clone(),
+            }
+        });
+        b.iter_batched(
+            || state.tree.clone(),
+            |mut tree| tree.append(std::slice::from_ref(&state.new_leaf)).unwrap(),
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_function("append_1_to_16777215_leaves", |b| {
+        let state = APPEND_POW24_16777215_STATE.get_or_init(|| {
+            let mut rng = TestRng::default();
+            let leaves = generate_leaves!(N + 2, &mut rng);
+            AppendState {
+                tree: MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..N]).unwrap(),
+                new_leaf: leaves[N + 1].clone(),
+            }
+        });
+        b.iter_batched(
+            || state.tree.clone(),
+            |mut tree| tree.append(std::slice::from_ref(&state.new_leaf)).unwrap(),
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("append_1_to_16777216_leaves", |b| {
+        let state = APPEND_POW24_16777216_STATE.get_or_init(|| {
+            let mut rng = TestRng::default();
+            let leaves = generate_leaves!(N + 3, &mut rng);
+            AppendState {
+                tree: MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..N + 1]).unwrap(),
+                new_leaf: leaves[N + 2].clone(),
+            }
+        });
+        b.iter_batched(
+            || state.tree.clone(),
+            |mut tree| tree.append(std::slice::from_ref(&state.new_leaf)).unwrap(),
+            BatchSize::SmallInput,
+        )
+    });
+}
+
 fn update_vs_update_many(c: &mut Criterion) {
     let mut group = c.benchmark_group("UpdateVSUpdateMany");
     let mut rng = TestRng::default();
@@ -179,6 +359,6 @@ fn update_vs_update_many(c: &mut Criterion) {
 criterion_group! {
     name = merkle_tree;
     config = Criterion::default().sample_size(10);
-    targets = new, append, update, update_many, update_vs_update_many
+    targets = new, append, update, update_many, creation_65536_vs_65537_leaves, creation_16777216_vs_16777217_leaves, append_pow16_leaves, append_pow24_leaves, update_vs_update_many
 }
 criterion_main!(merkle_tree);
