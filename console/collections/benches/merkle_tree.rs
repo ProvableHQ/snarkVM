@@ -328,6 +328,43 @@ fn append_pow24_leaves(c: &mut Criterion) {
     });
 }
 
+/// Benchmarks prepare_append with vs without preserved_tree_allocation (same result, allocation reuse).
+/// Run only: cargo bench -p snarkvm-console-collections --bench merkle_tree -- prepare_append_preserved
+fn prepare_append_with_vs_without_preserved_allocation(c: &mut Criterion) {
+    let mut group = c.benchmark_group("MerkleTree/prepare_append/prepare_append_preserved");
+    let mut rng = TestRng::default();
+    const NUM_LEAVES: usize = 2 ^ 24;
+    const NUM_NEW_LEAVES: usize = 1;
+    let leaves = generate_leaves!(NUM_LEAVES, &mut rng);
+    let new_leaves = generate_leaves!(NUM_NEW_LEAVES, &mut rng);
+    let base_tree = MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves).unwrap();
+
+    group.bench_function("without_preserved_allocation", |b| {
+        b.iter_batched(
+            || base_tree.clone(),
+            |tree| {
+                tree.prepare_append(&new_leaves).unwrap();
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_function("with_preserved_allocation", |b| {
+        b.iter_batched(
+            || {
+                let mut t = base_tree.clone();
+                let with_preserved = t.prepare_append(&[]).unwrap();
+                with_preserved.preserve_tree_allocation(&mut t);
+                with_preserved
+            },
+            |tree| {
+                tree.prepare_append(&new_leaves).unwrap();
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
 fn update_vs_update_many(c: &mut Criterion) {
     let mut group = c.benchmark_group("UpdateVSUpdateMany");
     let mut rng = TestRng::default();
@@ -359,6 +396,6 @@ fn update_vs_update_many(c: &mut Criterion) {
 criterion_group! {
     name = merkle_tree;
     config = Criterion::default().sample_size(10);
-    targets = new, append, update, update_many, creation_65536_vs_65537_leaves, creation_16777216_vs_16777217_leaves, append_pow16_leaves, append_pow24_leaves, update_vs_update_many
+    targets = new, append, update, update_many, creation_65536_vs_65537_leaves, creation_16777216_vs_16777217_leaves, append_pow16_leaves, append_pow24_leaves, prepare_append_with_vs_without_preserved_allocation, update_vs_update_many
 }
 criterion_main!(merkle_tree);

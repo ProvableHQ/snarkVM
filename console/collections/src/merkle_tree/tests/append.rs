@@ -577,6 +577,46 @@ fn test_merkle_tree_depth_4_poseidon() -> Result<()> {
     )
 }
 
+/// Ensures that the result of prepare_append is identical with and without preserved_tree_allocation.
+#[test]
+fn test_prepare_append_result_identical_with_and_without_preserved_tree_allocation() -> Result<()> {
+    type LH = BHP1024<CurrentEnvironment>;
+    type PH = BHP512<CurrentEnvironment>;
+    const DEPTH: u8 = 8;
+
+    let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
+    let path_hasher = PH::setup("AleoMerkleTreeTest1")?;
+
+    let mut rng = TestRng::default();
+    let initial_leaves: Vec<Vec<bool>> =
+        (0..16).map(|_| Field::<CurrentEnvironment>::rand(&mut rng).to_bits_le()).collect();
+    let additional_leaves: Vec<Vec<bool>> =
+        (0..5).map(|_| Field::<CurrentEnvironment>::rand(&mut rng).to_bits_le()).collect();
+
+    // Build two identical trees from the same initial leaves.
+    let tree_a1 = MerkleTree::<CurrentEnvironment, LH, PH, DEPTH>::new(&leaf_hasher, &path_hasher, &initial_leaves)?;
+    let mut tree_a2 =
+        MerkleTree::<CurrentEnvironment, LH, PH, DEPTH>::new(&leaf_hasher, &path_hasher, &initial_leaves)?;
+
+    // Result without preserved allocation: prepare_append with no prior preserve_tree_allocation.
+    assert!(tree_a1.preserved_tree_allocation.lock().is_none());
+    let result_without = tree_a1.prepare_append(&additional_leaves)?;
+
+    // Result with preserved allocation: append empty to get a tree that we can call preserve_tree_allocation on,
+    // then prepare_append the same additional_leaves (reusing the allocation).
+    let tree_with_preserved = tree_a2.prepare_append(&[])?;
+    tree_with_preserved.preserve_tree_allocation(&mut tree_a2);
+    assert!(tree_with_preserved.preserved_tree_allocation.lock().is_some());
+    let result_with = tree_with_preserved.prepare_append(&additional_leaves)?;
+
+    // Both results must be identical.
+    assert_eq!(result_without.root(), result_with.root());
+    assert_eq!(result_without.number_of_leaves, result_with.number_of_leaves);
+    assert_eq!(result_without.tree(), result_with.tree());
+
+    Ok(())
+}
+
 /// Use `cargo test profiler --features timer` to run this test.
 #[ignore]
 #[test]
