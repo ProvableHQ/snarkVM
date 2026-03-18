@@ -51,7 +51,7 @@ pub enum ConsensusVersion {
     /// V13: Introduces external structs.
     V13 = 13,
     /// V14: Increase the program size limit to 512 kB, the transaction size limit to 540 kB,
-    ///      the array size limit to 2048, the anchor time to 40 and the `Future` argument bit size to 32 bits.
+    ///      the array size limit to 2048, the `Future` argument bit size to 32 bits, and the anchor time to 35.
     ///      Introduces `aleo::GENERATOR`, `aleo::GENERATOR_POWERS`, `snark.verify` opcodes,
     ///      and dynamic dispatch, and identifier literal types.
     V14 = 14,
