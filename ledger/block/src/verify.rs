@@ -387,6 +387,7 @@ impl<N: Network> Block<N> {
             expected_last_coinbase_target,
             expected_last_coinbase_timestamp,
         ) = to_next_targets::<N>(
+            N::CONSENSUS_VERSION(height)?,
             previous_block.cumulative_proof_target(),
             combined_proof_target,
             previous_block.coinbase_target(),
