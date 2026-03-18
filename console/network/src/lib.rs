@@ -173,6 +173,9 @@ pub trait Network:
     const ANCHOR_HEIGHT: u32 = Self::ANCHOR_TIME as u32 / Self::BLOCK_TIME as u32;
     /// The anchor time in seconds.
     const ANCHOR_TIME: u16 = 25;
+    /// A list of (consensus_version, anchor_time_in_seconds) pairs (sparse).
+    /// Each entry takes effect at the specified version and remains active until the next entry.
+    const ANCHOR_TIMES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 25), (ConsensusVersion::V14, 40)];
     /// The expected time per block in seconds.
     const BLOCK_TIME: u16 = 10;
     /// The number of blocks per epoch.
