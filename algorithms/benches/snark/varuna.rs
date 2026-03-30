@@ -30,6 +30,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
 type FS = PoseidonSponge<Fq, 2, 1>;
+const BENCH_RNG_SEED: u64 = 12345;
 
 fn snark_universal_setup(c: &mut Criterion) {
     let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(1000000, 1000000, 1000000).unwrap();
@@ -42,7 +43,7 @@ fn snark_universal_setup(c: &mut Criterion) {
 }
 
 fn snark_circuit_setup(c: &mut Criterion) {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
 
     let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100000, 100000, 100000).unwrap();
     let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
@@ -59,7 +60,7 @@ fn snark_circuit_setup(c: &mut Criterion) {
 }
 
 fn snark_prove(c: &mut Criterion) {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
 
     let num_constraints = 10000;
     let num_variables = 2500;
@@ -90,7 +91,7 @@ fn snark_prove(c: &mut Criterion) {
 }
 
 fn snark_batch_prove(c: &mut Criterion) {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
 
     c.bench_function("snark_batch_prove", move |b| {
         let num_constraints_base = 100;
@@ -137,7 +138,7 @@ fn snark_batch_prove(c: &mut Criterion) {
 }
 
 fn snark_verify(c: &mut Criterion) {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
 
     c.bench_function("snark_verify", move |b| {
         let num_constraints = 100;
@@ -172,7 +173,7 @@ fn snark_verify(c: &mut Criterion) {
 }
 
 fn snark_batch_verify(c: &mut Criterion) {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
 
     c.bench_function("snark_batch_verify", move |b| {
         let num_constraints_base = 100;
@@ -232,7 +233,7 @@ fn snark_batch_verify(c: &mut Criterion) {
 fn snark_vk_serialize(c: &mut Criterion) {
     use snarkvm_utilities::serialize::Compress;
     let mut group = c.benchmark_group("snark_vk_serialize");
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
     for mode in [Compress::Yes, Compress::No] {
         let name = match mode {
             Compress::No => "uncompressed",
@@ -261,7 +262,7 @@ fn snark_vk_serialize(c: &mut Criterion) {
 fn snark_vk_deserialize(c: &mut Criterion) {
     use snarkvm_utilities::serialize::{Compress, Validate};
     let mut group = c.benchmark_group("snark_vk_deserialize");
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
     for compress in [Compress::Yes, Compress::No] {
         let compress_name = match compress {
             Compress::No => "uncompressed",
@@ -296,7 +297,7 @@ fn snark_vk_deserialize(c: &mut Criterion) {
 }
 
 fn snark_certificate_prove(c: &mut Criterion) {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
 
     let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100000, 100000, 100000).unwrap();
     let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
@@ -318,7 +319,7 @@ fn snark_certificate_prove(c: &mut Criterion) {
 }
 
 fn snark_certificate_verify(c: &mut Criterion) {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
 
     let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100_000, 100_000, 100_000).unwrap();
     let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
