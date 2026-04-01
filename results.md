@@ -1655,3 +1655,30 @@ The FS challenge squeezing MUST remain sequential (it updates the hash state). B
   - **Phase 2 (parallel)**: For each query point, adds a pool job that runs `combine_polynomials(to_combine)` followed by `KZG10::open`. All query points' combine+open work now runs in parallel, vs. previously only the KZG opens were parallel (combine was sequential).
 - Removed now-unused `query_polys`/`query_rands` intermediate Vecs (replaced by inlined degree checking).
 
+**Commit:** `91b69bdd5` on `test/autoresearch_varuna_credits_aleo_0028`
+
+### Results
+- Benchmark (vs 0027 baseline):
+  - credits.aleo.transfer_public: 298.6 ms → 296.84 ms (p=0.86, no change)
+  - credits.aleo.transfer_private: 2510.3 ms → 2503.7 ms (p=0.37, no change)
+  - credits.aleo.transfer_public_to_private: 473.9 ms → 474.12 ms (p=0.90, no change)
+  - credits.aleo.transfer_private_to_public: 2479.4 ms → 2483.4 ms (p=0.66, no change)
+  - credits.aleo.join: 2850.6 ms → 2849.2 ms (p=0.93, no change)
+  - credits.aleo.split: 2463.1 ms → 2484.2 ms (p=0.07, no change)
+- vs baseline:
+  - transfer_public: -15.2%, transfer_private: -15.2%, transfer_public_to_private: -17.2%
+  - transfer_private_to_public: -14.8%, join: -14.9%, split: -14.6%
+- Correctness: pass (1/1 test_credits_methods_proof_correctness)
+
+### Conclusion
+
+**No measurable improvement.** Parallelizing `combine_polynomials` across query points in `batch_open` yielded no measurable benefit. All Criterion p-values are > 0.05, meaning no statistically significant change vs the 0027 baseline. The null result is informative: `combine_polynomials` is NOT a bottleneck in the polynomial commitment opening phase. The dominant cost is the MSM inside `KZG10::open` (multi-scalar multiplication over the SRS), which was already running in parallel across query points. The sequential `combine_polynomials` calls were so fast relative to MSM that moving them into the parallel pool made no difference.
+
+The code change is correct and has no regressions. The cumulative improvement from 0019+0020+...+0028 vs baseline remains ~14.6-17.2% (same as 0027).
+
+Future experiments should investigate:
+(a) The MSM itself — KZG10 opens require a full MSM over the SRS for each polynomial. Could MSM be accelerated via Pippenger precomputation or other algorithmic improvements?
+(b) Reduce the number of polynomial commitment opens (fewer query points or fewer polynomials per query set would reduce both combine and MSM work).
+(c) The first round `calculate_w` function: each instance's w_poly computation involves FFT + IFFT + divide. These are already in parallel but the individual FFTs/IFFTs could benefit from precomputed sub-domain precomputations.
+(d) Investigate the `evaluate_lc` sequential loop in varuna.rs (evaluate all linear combinations at query points) — potentially a small sequential bottleneck.
+
