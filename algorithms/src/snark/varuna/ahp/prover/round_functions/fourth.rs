@@ -194,14 +194,25 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let R_size = constraint_domain.size_as_field_element;
         let C_size = variable_domain.size_as_field_element;
 
-        // Precompute (alpha - row_i) * (beta - col_i) once — reused for both b_poly
-        // evals and f inverses, saving K redundant field multiplications per
-        // matrix.
+        // Precompute (alpha - row_i) * (beta - col_i) once — reused for b_poly evals
+        // and f inverses, saving K redundant field multiplications per matrix.
         let cross_products: Vec<F> =
             row_on_K.evaluations.iter().zip_eq(&col_on_K.evaluations).map(|(r, c)| (alpha - r) * (beta - c)).collect();
         let rc_factor = R_size * C_size;
 
-        let mut job_pool = snarkvm_utilities::ExecutionPool::with_capacity(2);
+        // Parallelize all three IFFT-bound polynomials (a_poly, b_poly, f) in a
+        // 3-job pool so their IFFTs can overlap. Previously f was computed
+        // sequentially after the 2-job a_poly/b_poly pool; moving it into the
+        // same pool saves roughly one K-size IFFT worth of wall-clock time.
+        //
+        // Memory tradeoff: cross_products is cloned once (for b_poly), same as
+        // before. The f job moves the original cross_products, so no extra
+        // allocation vs the prior 2-job design. row_col_val.evaluations is shared
+        // by reference across the a_poly and f jobs (no clone needed).
+        let cross_products_for_b = cross_products.clone();
+        let matrix_sumcheck_constants = v_R_i_alpha_v_C_i_beta * constraint_domain.size_inv * variable_domain.size_inv;
+
+        let mut job_pool = snarkvm_utilities::ExecutionPool::with_capacity(3);
         job_pool.add_job(|| {
             let a_poly_time = start_timer!(|| format!("Computing a poly for {label}"));
             let a_poly = {
@@ -215,7 +226,6 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         // b_poly evals = R_size * C_size * (alpha - r) * (beta - c) = rc_factor *
         // cross_products[i].
-        let cross_products_for_b = cross_products.clone();
         job_pool.add_job(move || {
             let b_poly_time = start_timer!(|| format!("Computing b poly for {label}"));
             let b_poly = {
@@ -226,28 +236,25 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             end_timer!(b_poly_time);
             b_poly
         });
-        let [a_poly, b_poly]: [_; 2] = job_pool.execute_all().try_into().unwrap();
 
-        let f_evals_time = start_timer!(|| format!("Computing f evals on K for {label}"));
-        // Reuse cross_products (moved) as the inverses vector — no second MV pass
-        // needed.
-        let mut inverses = cross_products;
+        // f evals = matrix_sumcheck_constants * row_col_val[i] / cross_products[i].
+        // batch_inversion_and_mul inverts cross_products in place and scales by the
+        // constant, then we multiply element-wise by row_col_val.
+        job_pool.add_job(move || {
+            let f_evals_time = start_timer!(|| format!("Computing f evals on K for {label}"));
+            let mut inverses = cross_products;
+            batch_inversion_and_mul(&mut inverses, &matrix_sumcheck_constants);
+            inverses.iter_mut().zip_eq(&row_col_val.evaluations).for_each(|(inv, v)| *inv *= v);
+            end_timer!(f_evals_time);
 
-        let matrix_sumcheck_constants = v_R_i_alpha_v_C_i_beta * constraint_domain.size_inv * variable_domain.size_inv;
-        batch_inversion_and_mul(&mut inverses, &matrix_sumcheck_constants);
-
-        inverses.iter_mut().zip_eq(&row_col_val.evaluations).for_each(|(inv, v)| *inv *= v);
-        let f_evals_on_K = inverses;
-
-        end_timer!(f_evals_time);
-
-        let f_poly_time = start_timer!(|| format!("Computing f poly for {label}"));
-        // we define f as the rational equation for which we're running the sumcheck
-        // protocol
-        let f = EvaluationsOnDomain::from_vec_and_domain(f_evals_on_K, non_zero_domain)
-            .interpolate_with_pc(ifft_precomputation);
-
-        end_timer!(f_poly_time);
+            let f_poly_time = start_timer!(|| format!("Computing f poly for {label}"));
+            // f is the rational equation for which we're running the sumcheck protocol.
+            let f = EvaluationsOnDomain::from_vec_and_domain(inverses, non_zero_domain)
+                .interpolate_with_pc(ifft_precomputation);
+            end_timer!(f_poly_time);
+            f
+        });
+        let [a_poly, b_poly, f]: [_; 3] = job_pool.execute_all().try_into().unwrap();
         let g = DensePolynomial::from_coefficients_slice(&f.coeffs[1..]);
         let mut h = &a_poly
             - &{
