@@ -64,10 +64,11 @@ const fn batch_size(msm_size: usize) -> usize {
     // those values. In general, it was found that undershooting is better than
     // overshooting this heuristic.
     if cfg!(target_arch = "x86_64") && msm_size < 500_000 {
-        // Assumes an L1 cache size of 32KiB. Note that larger cache sizes
-        // are not negatively impacted by this value, however smaller L1 cache sizes
-        // are.
-        300
+        // Tuned for an L1D cache of 64KiB: 600 affinep points × 96 bytes +
+        // scratch_space of 300 × 96 bytes ≈ 57.6KiB, which fits in a 64KiB
+        // L1D cache. Machines with smaller L1 caches (e.g., 32KiB) should use
+        // 300; the larger value reduces the number of batch inversions per MSM.
+        600
     } else {
         // Assumes an L2 cache size of 1MiB. Note that larger cache sizes
         // are not negatively impacted by this value, however smaller L2 cache sizes
