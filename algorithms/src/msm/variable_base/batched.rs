@@ -70,10 +70,10 @@ const fn batch_size(msm_size: usize) -> usize {
         // 300; the larger value reduces the number of batch inversions per MSM.
         600
     } else {
-        // Assumes an L2 cache size of 1MiB. Note that larger cache sizes
-        // are not negatively impacted by this value, however smaller L2 cache sizes
-        // are.
-        3000
+        // Tuned for an L2 cache of 2MiB: 6000 affine points × 96 bytes +
+        // scratch_space of 3000 × 96 bytes ≈ 864KiB, which fits in a 2MiB L2
+        // cache. Machines with smaller L2 caches (e.g., 1MiB) should use 3000.
+        6000
     }
 }
 
