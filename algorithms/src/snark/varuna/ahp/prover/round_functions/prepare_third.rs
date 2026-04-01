@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    fft::DensePolynomial,
+    fft::{DensePolynomial, EvaluationDomain},
     snark::varuna::{
         AHPError,
         SNARKMode,
@@ -117,8 +117,32 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     .collect::<Vec<usize>>(),
             );
 
+            // Compute 2n multiplication domain and its sub-precomputation once per circuit.
+            // The product m_at_alpha * assignment has degree < 2n, so the FFT domain must be
+            // of size >= 2n.
+            let variable_domain_size = circuit_specific_state.variable_domain.size();
+            let mul_domain = EvaluationDomain::<F>::new(2 * variable_domain_size).unwrap();
+            // Extract the sub-precomputation for mul_domain from the circuit's precomputation,
+            // avoiding re-computation of FFT roots of unity.
+            let mul_fft_pc = Arc::new(
+                circuit
+                    .fft_precomputation
+                    .precomputation_for_subdomain(&mul_domain)
+                    .unwrap()
+                    .into_owned(),
+            );
+            let mul_ifft_pc = Arc::new(mul_fft_pc.to_ifft_precomputation());
+
             // Iterate for each instance in the batch.
             for assignment in assignments_i {
+                // Precompute assignment evaluations on the 2n multiplication domain in
+                // out-of-order FFT form once per instance. This is reused across the 3 matrix
+                // jobs (A, B, C), saving 2 out of 3 FFTs of size 2n per instance.
+                let mut assignment_coeffs_2n = assignment.coeffs.clone();
+                assignment_coeffs_2n.resize(mul_domain.size(), F::zero());
+                mul_domain.out_order_fft_in_place_with_pc(&mut assignment_coeffs_2n, &mul_fft_pc);
+                let assignment_evals_oo = Arc::new(assignment_coeffs_2n);
+
                 // Iterate for each R1CS matrix corresponding to the circuit and instance.
                 for label in matrix_labels {
                     let matrix = match label {
@@ -128,13 +152,18 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     };
                     let l_at_alpha_clone = Arc::clone(&l_at_alpha);
                     let col_reindex_clone = Arc::clone(&col_reindex);
+                    let assignment_evals = Arc::clone(&assignment_evals_oo);
+                    let mul_fft_pc_clone = Arc::clone(&mul_fft_pc);
+                    let mul_ifft_pc_clone = Arc::clone(&mul_ifft_pc);
                     job_pool.add_job(move || {
-                        let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness(
+                        let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness_with_evals(
                             label,
                             &circuit_specific_state.variable_domain,
-                            &circuit.fft_precomputation,
+                            mul_domain,
+                            &mul_fft_pc_clone,
+                            &mul_ifft_pc_clone,
                             &circuit.ifft_precomputation,
-                            assignment,
+                            &assignment_evals,
                             matrix,
                             &l_at_alpha_clone,
                             &col_reindex_clone,

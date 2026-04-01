@@ -457,6 +457,55 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         Ok(z_m_at_alpha)
     }
 
+    /// Like `calculate_lineval_sumcheck_instance_witness` but accepts precomputed assignment
+    /// evaluations on the 2n multiplication domain in out-of-order FFT form. This avoids
+    /// the FFT of the assignment for each matrix job, saving 2 of 3 FFTs of size 2n per
+    /// instance.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::snark::varuna) fn calculate_lineval_sumcheck_instance_witness_with_evals(
+        _matrix_label: &str,
+        variable_domain: &EvaluationDomain<F>,
+        mul_domain: EvaluationDomain<F>,
+        mul_fft_precomputation: &FFTPrecomputation<F>,
+        mul_ifft_precomputation: &IFFTPrecomputation<F>,
+        ifft_precomputation: &IFFTPrecomputation<F>,
+        assignment_evals_oo: &[F],
+        matrix: &Matrix<F>,
+        l_at_alpha: &[F],
+        col_reindex: &[usize],
+    ) -> Result<DensePolynomial<F>> {
+        let m_at_alpha_evals_time = start_timer!(|| format!("Compute m_at_alpha_evals for {_matrix_label}"));
+        let mut m_at_alpha_evals = vec![F::zero(); variable_domain.size()];
+        for (row_index, row) in matrix.iter().enumerate() {
+            let l = l_at_alpha[row_index];
+            for (val, col_index) in row {
+                m_at_alpha_evals[col_reindex[*col_index]] += *val * l;
+            }
+        }
+        end_timer!(m_at_alpha_evals_time);
+
+        let z_m_at_alpha_time = start_timer!(|| format!("Compute z_m_at_alpha for {_matrix_label}"));
+        // IFFT m_at_alpha_evals to get the coefficient representation.
+        let m_at_alpha = Evaluations::from_vec_and_domain(m_at_alpha_evals, *variable_domain)
+            .interpolate_with_pc(ifft_precomputation);
+
+        // FFT m_at_alpha to the 2n multiplication domain in out-of-order form.
+        let mut m_at_alpha_coeffs = m_at_alpha.coeffs;
+        m_at_alpha_coeffs.resize(mul_domain.size(), F::zero());
+        mul_domain.out_order_fft_in_place_with_pc(&mut m_at_alpha_coeffs, mul_fft_precomputation);
+
+        // Pointwise multiply with precomputed assignment evaluations (already in out-of-order
+        // FFT form on the 2n domain).
+        m_at_alpha_coeffs.iter_mut().zip(assignment_evals_oo).for_each(|(a, b)| *a *= b);
+
+        // IFFT from 2n domain to get the product polynomial coefficients.
+        mul_domain.out_order_ifft_in_place_with_pc(&mut m_at_alpha_coeffs, mul_ifft_precomputation);
+        let z_m_at_alpha = DensePolynomial::from_coefficients_vec(m_at_alpha_coeffs);
+        end_timer!(z_m_at_alpha_time);
+
+        Ok(z_m_at_alpha)
+    }
+
     fn calculate_lineval_sumcheck_instance_witness_polys(
         _matrix_label: &str,
         variable_domain: &EvaluationDomain<F>,
