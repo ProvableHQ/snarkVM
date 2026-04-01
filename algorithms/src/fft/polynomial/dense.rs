@@ -194,6 +194,39 @@ impl<F: PrimeField> DensePolynomial<F> {
         Ok((DensePolynomial::from_coefficients_vec(quotient), DensePolynomial::from_coefficients_vec(coeffs)))
     }
 
+    /// Divide `self` by a monic linear polynomial `(X - point)` using
+    /// Ruffini's rule (synthetic division).
+    ///
+    /// Returns the quotient `q(X)` of degree `self.degree() - 1`. If `self` is
+    /// zero or degree-0, returns the zero polynomial (the constant term is the
+    /// remainder and callers that need zero-remainder guarantees should verify
+    /// it via `self.evaluate(point).is_zero()`).
+    ///
+    /// Ruffini's rule recurrence: `q[i] = p[i+1] + point * q[i+1]`, iterated
+    /// from the leading coefficient down. This costs exactly `n` field
+    /// multiplications and `n` field additions for a degree-`n` polynomial,
+    /// with no intermediate allocations beyond the output vector. It is
+    /// faster than the general `divide_with_q_and_r` for linear divisors
+    /// because that path dispatches through `Polynomial::Dense` with two inner
+    /// loop iterations per step plus leading-zero trimming overhead.
+    pub fn divide_by_linear_poly(&self, point: F) -> DensePolynomial<F> {
+        let d = self.degree();
+        if d == 0 {
+            return DensePolynomial::zero();
+        }
+        // q has degree d - 1, so d coefficients.
+        let mut q = vec![F::zero(); d];
+        // q[d-1] = p[d] (leading coefficient of self).
+        q[d - 1] = self.coeffs[d];
+        // Descend: q[i] = p[i+1] + point * q[i+1].
+        for i in (0..d - 1).rev() {
+            q[i] = self.coeffs[i + 1] + point * q[i + 1];
+        }
+        // The remainder p[0] + point * q[0] is discarded; callers that need
+        // exact division should assert self.evaluate(point).is_zero().
+        DensePolynomial::from_coefficients_vec(q)
+    }
+
     /// Evaluate `self` over `domain`.
     pub fn evaluate_over_domain_by_ref(&self, domain: EvaluationDomain<F>) -> Evaluations<F> {
         let poly: Polynomial<'_, F> = self.into();

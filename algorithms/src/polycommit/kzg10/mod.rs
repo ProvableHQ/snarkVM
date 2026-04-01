@@ -217,17 +217,20 @@ impl<E: PairingEngine> KZG10<E> {
         point: E::Fr,
         randomness: &KZGRandomness<E>,
     ) -> Result<(DensePolynomial<E::Fr>, Option<DensePolynomial<E::Fr>>), PCError> {
-        let divisor = DensePolynomial::from_coefficients_vec(vec![-point, E::Fr::one()]);
-
         let witness_time = start_timer!(|| "Computing witness polynomial");
-        let witness_polynomial = polynomial / &divisor;
+        // Use Ruffini's rule (synthetic division) for the linear divisor (X - point).
+        // This costs exactly n multiplications and n additions for a degree-n polynomial,
+        // versus the general divide_with_q_and_r which iterates over all dense
+        // divisor coefficients per step (2 iterations for a monic linear divisor)
+        // plus leading-zero trimming overhead on every iteration.
+        let witness_polynomial = polynomial.divide_by_linear_poly(point);
         end_timer!(witness_time);
 
         let random_witness_polynomial = if randomness.is_hiding() {
             let random_p = &randomness.blinding_polynomial;
 
             let witness_time = start_timer!(|| "Computing random witness polynomial");
-            let random_witness_polynomial = random_p / &divisor;
+            let random_witness_polynomial = random_p.divide_by_linear_poly(point);
             end_timer!(witness_time);
             Some(random_witness_polynomial)
         } else {
