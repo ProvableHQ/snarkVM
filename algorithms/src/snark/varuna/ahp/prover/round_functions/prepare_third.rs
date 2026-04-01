@@ -93,7 +93,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             state.circuit_specific_states.len()
         );
         for ((&circuit, circuit_specific_state), assignments_i) in
-            state.circuit_specific_states.iter().zip_eq(assignments.values())
+            state.circuit_specific_states.iter().zip_eq(assignments.into_values())
         {
             // Precompute l_at_alpha once per circuit (alpha is fixed for the entire round;
             // all instances and matrices of this circuit share the same Lagrange
@@ -127,12 +127,16 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let mul_fft_pc = Arc::clone(&circuit.mul_fft_precomputation);
             let mul_ifft_pc = Arc::clone(&circuit.mul_ifft_precomputation);
 
-            // Iterate for each instance in the batch.
+            // Iterate for each instance in the batch (consuming so we can move
+            // the coefficient buffer directly into the 2n domain without a clone).
             for assignment in assignments_i {
                 // Precompute assignment evaluations on the 2n multiplication domain in
                 // out-of-order FFT form once per instance. This is reused across the 3 matrix
                 // jobs (A, B, C), saving 2 out of 3 FFTs of size 2n per instance.
-                let mut assignment_coeffs_2n = assignment.coeffs.clone();
+                // Move the coefficient Vec out of assignment (O(1)), then extend with
+                // zeros to the 2n domain size — no clone needed.
+                let mut assignment_coeffs_2n = assignment.coeffs;
+                assignment_coeffs_2n.reserve(mul_domain.size() - assignment_coeffs_2n.len());
                 assignment_coeffs_2n.resize(mul_domain.size(), F::zero());
                 mul_domain.out_order_fft_in_place_with_pc(&mut assignment_coeffs_2n, &mul_fft_pc);
                 let assignment_evals_oo = Arc::new(assignment_coeffs_2n);
