@@ -160,13 +160,38 @@ impl<F: PrimeField> DensePolynomial<F> {
 
     /// Divide `self` by the vanishing polynomial for the domain `domain`.
     /// Returns the quotient and remainder of the division.
+    ///
+    /// Uses a specialized O(d) additions-only fold algorithm for `X^n - 1`
+    /// instead of generic polynomial long division, which requires O(d) field
+    /// multiplications. Each step: `q[k-n] = coeffs[k]`, `coeffs[k-n] +=
+    /// coeffs[k]`, `coeffs[k] = 0`. After the loop, `coeffs[0..n]` is the
+    /// remainder.
     pub fn divide_by_vanishing_poly(
         &self,
         domain: EvaluationDomain<F>,
     ) -> Result<(DensePolynomial<F>, DensePolynomial<F>)> {
-        let self_poly = Polynomial::from(self);
-        let vanishing_poly = Polynomial::from(domain.vanishing_polynomial());
-        self_poly.divide_with_q_and_r(&vanishing_poly)
+        let n = domain.size();
+        let d = self.degree();
+        if d < n {
+            return Ok((DensePolynomial::zero(), self.clone()));
+        }
+        let mut coeffs = self.coeffs.clone();
+        let q_len = d - n + 1;
+        let mut quotient = vec![F::zero(); q_len];
+        for k in (n..=d).rev() {
+            let c = coeffs[k];
+            quotient[k - n] = c;
+            coeffs[k - n] += c;
+            coeffs[k] = F::zero();
+        }
+        // Remove trailing zeros from remainder and quotient.
+        while coeffs.last().map_or(false, |c| c.is_zero()) {
+            coeffs.pop();
+        }
+        while quotient.last().map_or(false, |c| c.is_zero()) {
+            quotient.pop();
+        }
+        Ok((DensePolynomial::from_coefficients_vec(quotient), DensePolynomial::from_coefficients_vec(coeffs)))
     }
 
     /// Evaluate `self` over `domain`.
