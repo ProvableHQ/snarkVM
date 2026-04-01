@@ -1619,3 +1619,39 @@ Future experiments should investigate:
 (c) The `PolyMultiplier` call for b×f in the fourth round: still sequential after the 3-job pool. Could be parallelized with the outer circuit loops.
 (d) Fifth round: the linear combination step across all matrices and circuits.
 
+## test/autoresearch_varuna_credits_aleo_0028
+
+### Plan
+
+**Target:** Parallelize polynomial combination across query points in `batch_open`.
+
+**Problem:** In `SonicKZG10::batch_open` (`algorithms/src/polycommit/sonic_pc/mod.rs`), the flow is:
+1. Sequential: for each query point, call `combine_for_open` (squeezes FS challenges + accumulates polynomial linear combinations)
+2. Sequential: add KZG open job to pool
+3. Parallel: `pool.execute_all()` runs KZG opens for all query points in parallel
+
+Step 1 is fully sequential. Each `combine_for_open` call iterates through the polynomials queried at that point, squeezes one FS challenge per polynomial (mandatory sequential), and then does `poly += (coeff, poly_ref)` for each polynomial — the accumulation. For Varuna with 3 query points (alpha, beta, gamma) and ~5 polynomials per query point of degree up to 2n ≈ 131072, this is 3 × 5 × O(n) polynomial arithmetic done sequentially.
+
+The FS challenge squeezing MUST remain sequential (it updates the hash state). But the polynomial accumulations for different query points are INDEPENDENT of each other and can run in parallel.
+
+**Fix:** Restructure `batch_open` to:
+1. Sequential phase: for each query point, squeeze all FS challenges (building a `Vec<(challenge, poly_owned, rand_ref)>` per query point). Also squeeze the `_randomizer` in order. Collect per-query-point `(query_point, to_combine_vec)` into a Vec.
+2. Parallel phase: for each query point, run `combine_polynomials(to_combine_vec)` + `KZG10::open` in a single pool job, allowing all query points' combine + open work to happen in parallel.
+
+**Why this helps:** Currently the 3 `combine_polynomials` calls are sequential (total ~3× the per-call time). With this change they run in parallel alongside their respective KZG opens. Since MSM for KZG open is the dominant per-query cost, adding `combine_polynomials` to the same pool job does not extend the critical path — it overlaps with the KZG open of another query point. Total saved: approximately 2 × (combine time for one query point) per prove call.
+
+**Expected savings:** For large polynomial degrees (n = 65536), combining ~5 polynomials per query point takes O(5n) parallel field additions. Saving 2 of 3 sequential combines could reduce total prove time by ~1-3% for large circuits.
+
+**Files to change:**
+- `algorithms/src/polycommit/sonic_pc/mod.rs`: restructure `batch_open` to separate FS squeezing from polynomial combination.
+
+### Implementation
+
+**`algorithms/src/polycommit/sonic_pc/mod.rs`**
+- Changed `combine_polynomials` signature: the third element of each tuple changed from `&'a Randomness<E>` to owned `Randomness<E>`. Updated `combined_rand += rand` and `combined_rand += (coeff, rand)` to `combined_rand += &rand` and `combined_rand += (coeff, &rand)` respectively, using the existing `AddAssign<&KZGRandomness<E>>` impls.
+- Updated `combine_for_open` to clone randomness when building `to_combine`: `(*r).clone()` — O(1) for non-ZK proofs where the blinding polynomial is empty.
+- Restructured `batch_open` into two phases:
+  - **Phase 1 (sequential)**: For each query point, checks degrees/bounds, squeezes FS challenges (one per polynomial), clones the randomness, calls `polynomial.polynomial().to_dense().into_owned()` to get an owned `DensePolynomial`, and squeezes the per-query `_randomizer`. Collects `(query_point, to_combine_vec)` into `per_query_data`.
+  - **Phase 2 (parallel)**: For each query point, adds a pool job that runs `combine_polynomials(to_combine)` followed by `KZG10::open`. All query points' combine+open work now runs in parallel, vs. previously only the KZG opens were parallel (combine was sequential).
+- Removed now-unused `query_polys`/`query_rands` intermediate Vecs (replaced by inlined degree checking).
+

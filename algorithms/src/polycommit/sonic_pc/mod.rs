@@ -278,7 +278,9 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
             kzg10::KZG10::<E>::check_degrees_and_bounds(universal_prover.max_degree, enforced_degree_bounds, p)?;
             let challenge = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
-            to_combine.push((challenge, p.polynomial().to_dense(), r));
+            // Clone randomness so combine_polynomials can take it by value. For non-ZK
+            // proofs the blinding polynomial is zero (empty Vec), making this O(1).
+            to_combine.push((challenge, p.polynomial().to_dense(), (*r).clone()));
         }
 
         Ok(Self::combine_polynomials(to_combine))
@@ -316,24 +318,43 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             labels.1.insert(label);
         }
 
-        let mut pool = snarkvm_utilities::ExecutionPool::<_>::with_capacity(query_to_labels_map.len());
+        // Phase 1 (sequential): squeeze FS challenges and collect per-query polynomial
+        // data. The FS sponge must be updated in a fixed sequential order; the actual
+        // polynomial combination (phase 2) has no FS dependency and can run in
+        // parallel across query points.
+        let mut per_query_data: Vec<(E::Fr, Vec<(E::Fr, DensePolynomial<E::Fr>, Randomness<E>)>)> =
+            Vec::with_capacity(query_to_labels_map.len());
         for (_point_name, (&query, labels)) in query_to_labels_map.into_iter() {
-            let mut query_polys = Vec::with_capacity(labels.len());
-            let mut query_rands = Vec::with_capacity(labels.len());
-
+            let mut to_combine = Vec::with_capacity(labels.len());
             for label in labels {
                 let (polynomial, rand) =
                     poly_rand.get(label as &str).ok_or(PCError::MissingPolynomial { label: label.to_string() })?;
-
-                query_polys.push(*polynomial);
-                query_rands.push(*rand);
+                let enforced_degree_bounds: Option<&[usize]> = ck.enforced_degree_bounds.as_deref();
+                kzg10::KZG10::<E>::check_degrees_and_bounds(
+                    universal_prover.max_degree,
+                    enforced_degree_bounds,
+                    *polynomial,
+                )?;
+                let challenge = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
+                // Clone randomness so the owned tuple can be moved into a pool job.
+                // For non-ZK proofs the blinding polynomial is zero (empty Vec), so
+                // this clone is O(1).
+                to_combine.push((challenge, polynomial.polynomial().to_dense().into_owned(), (*rand).clone()));
             }
-            let (polynomial, rand) =
-                Self::combine_for_open(universal_prover, ck, query_polys.into_iter(), query_rands.into_iter(), fs_rng)?;
             let _randomizer = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
+            per_query_data.push((query, to_combine));
+        }
 
+        // Phase 2 (parallel): combine polynomials and open at each query point in
+        // parallel. combine_polynomials performs only polynomial arithmetic — no FS
+        // operations — so it is safe to run across query points simultaneously.
+        // This overlaps the per-query-point combine work (previously sequential)
+        // with the KZG open MSM, reducing critical-path latency.
+        let mut pool = snarkvm_utilities::ExecutionPool::<_>::with_capacity(per_query_data.len());
+        for (query, to_combine) in per_query_data {
             pool.add_job(move || {
                 let proof_time = start_timer!(|| "Creating proof");
+                let (polynomial, rand) = Self::combine_polynomials(to_combine);
                 let proof = kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand);
                 end_timer!(proof_time);
                 proof
@@ -550,8 +571,8 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 }
 
 impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
-    fn combine_polynomials<'a, B: Borrow<DensePolynomial<E::Fr>>>(
-        coeffs_polys_rands: impl IntoIterator<Item = (E::Fr, B, &'a Randomness<E>)>,
+    fn combine_polynomials<B: Borrow<DensePolynomial<E::Fr>>>(
+        coeffs_polys_rands: impl IntoIterator<Item = (E::Fr, B, Randomness<E>)>,
     ) -> (DensePolynomial<E::Fr>, Randomness<E>) {
         let mut combined_poly = DensePolynomial::zero();
         let mut combined_rand = Randomness::empty();
@@ -559,10 +580,10 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             let poly = poly.borrow();
             if coeff.is_one() {
                 combined_poly += poly;
-                combined_rand += rand;
+                combined_rand += &rand;
             } else {
                 combined_poly += (coeff, poly);
-                combined_rand += (coeff, rand);
+                combined_rand += (coeff, &rand);
             }
         }
         (combined_poly, combined_rand)
