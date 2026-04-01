@@ -227,6 +227,44 @@ impl<F: PrimeField> DensePolynomial<F> {
         DensePolynomial::from_coefficients_vec(q)
     }
 
+    /// Consuming variant of [`divide_by_vanishing_poly`] that works in-place on
+    /// the coefficient buffer, avoiding one O(degree) clone.
+    ///
+    /// Takes ownership of `self` and rewrites its `coeffs` buffer into the
+    /// remainder, returning `(quotient, remainder)`. The calling convention is
+    /// identical to `divide_by_vanishing_poly` except that `self` is consumed.
+    ///
+    /// This is semantically equivalent to the borrowing version but avoids the
+    /// `let mut coeffs = self.coeffs.clone()` at the start of that method.
+    /// For hot-path polynomials of degree ~2n (e.g., rowcheck or lineval), the
+    /// saved clone avoids allocating and copying several hundred kilobytes.
+    pub fn divide_by_vanishing_poly_in_place(
+        mut self,
+        domain: EvaluationDomain<F>,
+    ) -> Result<(DensePolynomial<F>, DensePolynomial<F>)> {
+        let n = domain.size();
+        let d = self.degree();
+        if d < n {
+            return Ok((DensePolynomial::zero(), self));
+        }
+        let q_len = d - n + 1;
+        let mut quotient = vec![F::zero(); q_len];
+        for k in (n..=d).rev() {
+            let c = self.coeffs[k];
+            quotient[k - n] = c;
+            self.coeffs[k - n] += c;
+            self.coeffs[k] = F::zero();
+        }
+        // self.coeffs now holds the remainder in-place; trim trailing zeros.
+        while self.coeffs.last().map_or(false, |c| c.is_zero()) {
+            self.coeffs.pop();
+        }
+        while quotient.last().map_or(false, |c| c.is_zero()) {
+            quotient.pop();
+        }
+        Ok((DensePolynomial::from_coefficients_vec(quotient), self))
+    }
+
     /// Evaluate `self` over `domain`.
     pub fn evaluate_over_domain_by_ref(&self, domain: EvaluationDomain<F>) -> Evaluations<F> {
         let poly: Polynomial<'_, F> = self.into();

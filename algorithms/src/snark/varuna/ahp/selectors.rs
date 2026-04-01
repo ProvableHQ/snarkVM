@@ -70,7 +70,7 @@ pub(crate) fn precompute_selectors<F: PrimeField>(
 /// selector polynomial. This function applies the random combiner and selector
 /// in an optimized way
 pub(crate) fn apply_randomized_selector<F: PrimeField>(
-    poly: &mut DensePolynomial<F>,
+    poly: DensePolynomial<F>,
     combiner: F,
     target_domain: &EvaluationDomain<F>,
     src_domain: &EvaluationDomain<F>,
@@ -93,7 +93,8 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // (H_i.size() / H.size());
         let selector_time = start_timer!(|| "Compute selector without remainder witness");
 
-        let (mut h_i, remainder) = poly.divide_by_vanishing_poly(*src_domain)?;
+        // Take ownership to divide in-place, avoiding an O(degree) clone.
+        let (mut h_i, remainder) = poly.divide_by_vanishing_poly_in_place(*src_domain)?;
         ensure!(
             remainder.is_zero(),
             "[No remainder witness] Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
@@ -122,16 +123,19 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // O(deg) polynomial division. For single-circuit proofs (credits.aleo),
         // this fires every time.
         if src_domain.size == target_domain.size {
+            let mut poly = poly;
             poly.coeffs.iter_mut().for_each(|c| *c *= combiner);
-            let (h_i, xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;
+            // Take ownership to divide in-place, avoiding an O(degree) clone.
+            let (h_i, xg_i) = poly.divide_by_vanishing_poly_in_place(*src_domain)?;
             end_timer!(selector_time);
             return Ok((h_i, Some(xg_i)));
         }
 
+        let mut poly = poly;
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
         poly.coeffs.iter_mut().for_each(|c| *c *= multiplier);
 
-        let (h_i, mut xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;
+        let (h_i, mut xg_i) = poly.divide_by_vanishing_poly_in_place(*src_domain)?;
         xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
 
         let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;

@@ -516,7 +516,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         combiner: F,
         z_m_at_alpha: Option<DensePolynomial<F>>,
     ) -> Result<LinevalInstance<F>> {
-        let mut z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
+        let z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
 
         // O(1) sum formula: Σ_{x∈H} p(x) = n·(c_0 + c_n) for a polynomial of degree <
         // 2n over a multiplicative domain H of size n, since Σ_{x∈H} x^k = n
@@ -527,7 +527,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let sum = n * (c_0 + c_n);
 
         let (h_1_i, xg_1_i) =
-            apply_randomized_selector(&mut z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;
+            apply_randomized_selector(z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;
         let xg_1_i = xg_1_i.ok_or(anyhow::anyhow!("Expected remainder when applying selector."))?;
 
         Ok(LinevalInstance { h_1_i, xg_1_i, sum })

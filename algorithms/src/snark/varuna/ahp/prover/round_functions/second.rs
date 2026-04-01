@@ -116,10 +116,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let mut rowcheck = multiplier_2.multiply().unwrap();
                     rowcheck.coeffs.iter_mut().zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
 
-                    let mut instance_lhs = &rowcheck * instance_combiner;
+                    let instance_lhs = &rowcheck * instance_combiner;
 
                     let (h_0_i, remainder) = apply_randomized_selector(
-                        &mut instance_lhs,
+                        instance_lhs,
                         circuit_combiner,
                         &max_constraint_domain,
                         &constraint_domain,
