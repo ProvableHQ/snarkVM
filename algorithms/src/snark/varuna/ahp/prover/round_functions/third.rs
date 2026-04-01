@@ -28,7 +28,6 @@ use crate::{
         SNARKMode,
         VarunaVersion,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
-        matrices::transpose,
         prover::{self, MatrixSums, ThirdMessage},
         selectors::apply_randomized_selector,
         verifier::select_third_round_challenges,
@@ -40,7 +39,7 @@ use snarkvm_utilities::ExecutionPool;
 use anyhow::{Result, ensure};
 use itertools::Itertools;
 use rand::Rng;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 struct LinevalInstance<F: PrimeField> {
     h_1_i: DensePolynomial<F>,
@@ -89,8 +88,19 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         )
         .map_err(AHPError::AnyhowError)?;
 
-        let assignments = Self::calculate_assignments(&mut state)?;
-        let matrix_transposes = Self::calculate_matrix_transpose(&mut state)?;
+        // In V2, z_m_at_alpha_polys are precomputed in prover_prepare_third_round and the
+        // V2 job branch does not use assignments or matrix transposes; computing them here
+        // for V2 is pure dead work.
+        let assignments = match varuna_version {
+            VarunaVersion::V1 => Some(Self::calculate_assignments(&mut state)?),
+            VarunaVersion::V2 => None,
+        };
+
+        // In V2 the job closures don't use matrix transposes — skip the computation.
+        let matrix_transposes = match varuna_version {
+            VarunaVersion::V1 => Some(Self::calculate_matrix_transpose(&mut state)?),
+            VarunaVersion::V2 => None,
+        };
 
         let (h_1, x_g_1_sum, msg) = Self::calculate_lineval_sumcheck_witness(
             &mut state,
@@ -141,8 +151,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     fn calculate_lineval_sumcheck_witness(
         state: &mut prover::State<F, SM>,
         third_round_batch_combiners: &BTreeMap<CircuitId, verifier::BatchCombiners<F>>,
-        assignments: BTreeMap<CircuitId, Vec<DensePolynomial<F>>>,
-        matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>,
+        assignments: Option<BTreeMap<CircuitId, Vec<DensePolynomial<F>>>>,
+        matrix_transposes: Option<BTreeMap<CircuitId, BTreeMap<String, crate::snark::varuna::Matrix<F>>>>,
         alpha: &F,
         eta_b: &F,
         eta_c: &F,
@@ -163,80 +173,147 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             third_round_batch_combiners.len(),
             state.circuit_specific_states.len()
         );
-        ensure!(
-            state.circuit_specific_states.len() == assignments.len(),
-            "[calculate Lineval Sumcheck Witness] Expected {} assignments, but {} were provided.",
-            assignments.len(),
-            state.circuit_specific_states.len()
-        );
-        ensure!(
-            state.circuit_specific_states.len() == matrix_transposes.len(),
-            "[calculate Lineval Sumcheck Witness] Expected {} matrix transposes, but {} were provided.",
-            matrix_transposes.len(),
-            state.circuit_specific_states.len()
-        );
-        for ((((circuit, circuit_specific_state), batch_combiner), assignments_i), matrix_transposes_i) in state
-            .circuit_specific_states
-            .iter_mut()
-            .zip_eq(third_round_batch_combiners.values())
-            .zip_eq(assignments.values())
-            .zip_eq(matrix_transposes.values())
-        {
-            let circuit_combiner = batch_combiner.circuit_combiner;
-            let instance_combiners = &batch_combiner.instance_combiners;
-            let constraint_domain = &circuit_specific_state.constraint_domain;
-            let variable_domain = &circuit_specific_state.variable_domain;
-            let fft_precomputation = &circuit.fft_precomputation;
-            let ifft_precomputation = &circuit.ifft_precomputation;
+        if let Some(ref a) = assignments {
+            ensure!(
+                state.circuit_specific_states.len() == a.len(),
+                "[calculate Lineval Sumcheck Witness] Expected {} assignments, but {} were provided.",
+                a.len(),
+                state.circuit_specific_states.len()
+            );
+        }
+        if let Some(ref t) = matrix_transposes {
+            ensure!(
+                state.circuit_specific_states.len() == t.len(),
+                "[calculate Lineval Sumcheck Witness] Expected {} matrix transposes, but {} were provided.",
+                t.len(),
+                state.circuit_specific_states.len()
+            );
+        }
 
-            // Iterate for each instance in the batch.
-            for (instance_combiner, assignment) in itertools::izip!(instance_combiners, assignments_i) {
-                // Destructure the optional z_m_at_alpha_polys to a vector of optional
-                // DensePolynomials.
-                let z_m_at_alpha_for_circuit = match &mut circuit_specific_state.z_m_at_alpha_polys {
-                    Some(z_m_at_alpha) => {
-                        ensure!(z_m_at_alpha.len() > 0);
-                        let Some([z_a_at_alpha, z_b_at_alpha, z_c_at_alpha]) = z_m_at_alpha.pop_front() else {
-                            anyhow::bail!("Expected z_m_at_alpha_polys to contain sufficient elements.")
-                        };
-                        [Some(z_a_at_alpha), Some(z_b_at_alpha), Some(z_c_at_alpha)]
-                    }
-                    None => [None, None, None],
-                };
-                // Iterate for each R1CS matrix corresponding to the circuit and instance.
-                for (label, matrix_combiner, z_m_at_alpha) in
-                    itertools::izip!(matrix_labels, matrix_combiners, z_m_at_alpha_for_circuit)
+        // V1 path: use row-major matrices + precomputed l_at_alpha + col_reindex table.
+        // V2 path: use precomputed z_m_at_alpha_polys (no assignment/transpose needed).
+        match varuna_version {
+            VarunaVersion::V1 => {
+                let assignments = assignments.expect("V1 requires assignments");
+                for (((circuit, circuit_specific_state), batch_combiner), assignments_i) in state
+                    .circuit_specific_states
+                    .iter_mut()
+                    .zip_eq(third_round_batch_combiners.values())
+                    .zip_eq(assignments.into_values())
                 {
-                    let matrix_transpose = &matrix_transposes_i[label];
-                    let combiner = circuit_combiner * instance_combiner * matrix_combiner;
-                    job_pool.add_job(move || match varuna_version {
-                        VarunaVersion::V1 => {
-                            let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness(
-                                label,
-                                constraint_domain,
-                                variable_domain,
-                                fft_precomputation,
-                                ifft_precomputation,
-                                assignment,
-                                matrix_transpose,
-                                *alpha,
-                            )?;
-                            Self::calculate_lineval_sumcheck_instance_witness_polys(
-                                label,
-                                variable_domain,
-                                max_variable_domain,
-                                combiner,
-                                Some(z_m_at_alpha),
-                            )
+                    let circuit_combiner = batch_combiner.circuit_combiner;
+                    let instance_combiners = &batch_combiner.instance_combiners;
+                    let constraint_domain = &circuit_specific_state.constraint_domain;
+                    let variable_domain = &circuit_specific_state.variable_domain;
+                    let fft_precomputation = &circuit.fft_precomputation;
+                    let ifft_precomputation = &circuit.ifft_precomputation;
+
+                    // Precompute l_at_alpha once per circuit (alpha is fixed for the entire
+                    // round). All instances and all matrices of this circuit share the same
+                    // Lagrange coefficients.
+                    let l_at_alpha =
+                        Arc::new(constraint_domain.evaluate_all_lagrange_coefficients(*alpha));
+
+                    // Precompute col_reindex table once per circuit to avoid per-entry
+                    // reindex_by_subdomain calls in the sparse MV hot loop.
+                    let input_domain = &circuit_specific_state.input_domain;
+                    let col_reindex = Arc::new(
+                        (0..variable_domain.size())
+                            .map(|i| variable_domain.reindex_by_subdomain(input_domain, i).unwrap())
+                            .collect::<Vec<usize>>(),
+                    );
+
+                    for (instance_combiner, assignment) in itertools::izip!(instance_combiners, assignments_i) {
+                        // Wrap assignment in Arc so all 3 matrix job closures can share it
+                        // without cloning the full polynomial.
+                        let assignment = Arc::new(assignment);
+                        let z_m_at_alpha_for_circuit = match &mut circuit_specific_state.z_m_at_alpha_polys {
+                            Some(z_m_at_alpha) => {
+                                ensure!(z_m_at_alpha.len() > 0);
+                                let Some([z_a_at_alpha, z_b_at_alpha, z_c_at_alpha]) = z_m_at_alpha.pop_front()
+                                else {
+                                    anyhow::bail!("Expected z_m_at_alpha_polys to contain sufficient elements.")
+                                };
+                                [Some(z_a_at_alpha), Some(z_b_at_alpha), Some(z_c_at_alpha)]
+                            }
+                            None => [None, None, None],
+                        };
+                        // _z_m_at_alpha is unused in V1: z_m_at_alpha_polys is None for V1,
+                        // so this is always None. V1 computes z_m_at_alpha fresh inside
+                        // calculate_lineval_sumcheck_instance_witness.
+                        for (label, matrix_combiner, _z_m_at_alpha) in
+                            itertools::izip!(matrix_labels, matrix_combiners, z_m_at_alpha_for_circuit)
+                        {
+                            let combiner = circuit_combiner * instance_combiner * matrix_combiner;
+                            let l_at_alpha = Arc::clone(&l_at_alpha);
+                            let col_reindex = Arc::clone(&col_reindex);
+                            let assignment = Arc::clone(&assignment);
+                            let matrix = match label {
+                                "a" => &circuit.a,
+                                "b" => &circuit.b,
+                                _ => &circuit.c,
+                            };
+                            job_pool.add_job(move || {
+                                let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness(
+                                    label,
+                                    variable_domain,
+                                    fft_precomputation,
+                                    ifft_precomputation,
+                                    &assignment,
+                                    matrix,
+                                    &l_at_alpha,
+                                    &col_reindex,
+                                )?;
+                                Self::calculate_lineval_sumcheck_instance_witness_polys(
+                                    label,
+                                    variable_domain,
+                                    max_variable_domain,
+                                    combiner,
+                                    Some(z_m_at_alpha),
+                                )
+                            });
                         }
-                        VarunaVersion::V2 => Self::calculate_lineval_sumcheck_instance_witness_polys(
-                            label,
-                            variable_domain,
-                            max_variable_domain,
-                            combiner,
-                            z_m_at_alpha,
-                        ),
-                    });
+                    }
+                }
+            }
+            VarunaVersion::V2 => {
+                for ((circuit, circuit_specific_state), batch_combiner) in state
+                    .circuit_specific_states
+                    .iter_mut()
+                    .zip_eq(third_round_batch_combiners.values())
+                {
+                    let circuit_combiner = batch_combiner.circuit_combiner;
+                    let instance_combiners = &batch_combiner.instance_combiners;
+                    let variable_domain = &circuit_specific_state.variable_domain;
+                    let _ = circuit; // suppress unused warning
+
+                    for instance_combiner in instance_combiners {
+                        let z_m_at_alpha_for_circuit = match &mut circuit_specific_state.z_m_at_alpha_polys {
+                            Some(z_m_at_alpha) => {
+                                ensure!(z_m_at_alpha.len() > 0);
+                                let Some([z_a_at_alpha, z_b_at_alpha, z_c_at_alpha]) = z_m_at_alpha.pop_front()
+                                else {
+                                    anyhow::bail!("Expected z_m_at_alpha_polys to contain sufficient elements.")
+                                };
+                                [Some(z_a_at_alpha), Some(z_b_at_alpha), Some(z_c_at_alpha)]
+                            }
+                            None => [None, None, None],
+                        };
+                        for (label, matrix_combiner, z_m_at_alpha) in
+                            itertools::izip!(matrix_labels, matrix_combiners, z_m_at_alpha_for_circuit)
+                        {
+                            let combiner = circuit_combiner * instance_combiner * matrix_combiner;
+                            job_pool.add_job(move || {
+                                Self::calculate_lineval_sumcheck_instance_witness_polys(
+                                    label,
+                                    variable_domain,
+                                    max_variable_domain,
+                                    combiner,
+                                    z_m_at_alpha,
+                                )
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -315,6 +392,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     pub(in crate::snark::varuna) fn calculate_matrix_transpose(
         state: &mut prover::State<F, SM>,
     ) -> Result<BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>> {
+        use crate::snark::varuna::matrices::transpose;
         let transpose_time = start_timer!(|| "Transpose of matrices");
         let mut job_pool = ExecutionPool::with_capacity(state.circuit_specific_states.len() * 3);
         state.circuit_specific_states.iter().for_each(|(circuit, circuit_specific_state)| {
@@ -340,35 +418,33 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         Ok(matrix_transposes)
     }
 
+    /// Compute z_m_at_alpha = m_at_alpha * assignment, where m_at_alpha is evaluated by
+    /// directly iterating the original row-major matrix (no transpose allocation needed).
+    /// Uses a precomputed col_reindex table to avoid per-entry reindex_by_subdomain overhead.
+    /// alpha is a random verifier challenge; P[alpha in H] ≈ 2^{-200}, so the l_at_alpha
+    /// zero-check is always false and is omitted from the inner loop.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::snark::varuna) fn calculate_lineval_sumcheck_instance_witness(
         _matrix_label: &str,
-        constraint_domain: &EvaluationDomain<F>,
         variable_domain: &EvaluationDomain<F>,
         fft_precomputation: &FFTPrecomputation<F>,
         ifft_precomputation: &IFFTPrecomputation<F>,
         assignment: &DensePolynomial<F>,
-        matrix_transpose: &Matrix<F>,
-        alpha: F,
+        matrix: &Matrix<F>,
+        l_at_alpha: &[F],
+        col_reindex: &[usize],
     ) -> Result<DensePolynomial<F>> {
-        // Let C = variable_domain
-        // Let R = constraint_domain
-        // Let K = non_zero_domain
-        // Let L^S_t(X) = Lagrange polynomial evaluating to 1 on S when any X∈S==t
-
-        // Compute for each c∈C: M(α,c) = \sum_{κ∈K} val(κ)·L^R_row(κ)(α)·L^C_col(κ)(c)
-        // We do this by iterating over the sparse transpose of matrix M
-        // Instead of calculating L^C_col(κ)(c), we add val(k)*L^R_row(α) where we know
-        // L^C_col(k)(X) will be 1
-        let m_at_alpha_evals_time = start_timer!(|| format!("Compute m_at_alpha_evals parallel for {_matrix_label}"));
-        let l_at_alpha = constraint_domain.evaluate_all_lagrange_coefficients(alpha);
-        let m_at_alpha_evals: Vec<_> = matrix_transpose
-            .iter()
-            .map(|col| col.iter().map(|(val, row_index)| *val * l_at_alpha[*row_index]).sum::<F>())
-            .collect();
+        let m_at_alpha_evals_time = start_timer!(|| format!("Compute m_at_alpha_evals for {_matrix_label}"));
+        let mut m_at_alpha_evals = vec![F::zero(); variable_domain.size()];
+        for (row_index, row) in matrix.iter().enumerate() {
+            let l = l_at_alpha[row_index];
+            for (val, col_index) in row {
+                m_at_alpha_evals[col_reindex[*col_index]] += *val * l;
+            }
+        }
         end_timer!(m_at_alpha_evals_time);
 
-        let z_m_at_alpha_time = start_timer!(|| format!("Compute z_m_at_alpha_time for {_matrix_label}"));
+        let z_m_at_alpha_time = start_timer!(|| format!("Compute z_m_at_alpha for {_matrix_label}"));
         let m_at_alpha = Evaluations::from_vec_and_domain(m_at_alpha_evals, *variable_domain)
             .interpolate_with_pc(ifft_precomputation);
         let mut multiplier = PolyMultiplier::new();
@@ -389,7 +465,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         z_m_at_alpha: Option<DensePolynomial<F>>,
     ) -> Result<LinevalInstance<F>> {
         let mut z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
-        let sum = z_m_at_alpha.evaluate_over_domain_by_ref(*variable_domain).evaluations.into_iter().sum::<F>();
+
+        // O(1) sum formula: Σ_{x∈H} p(x) = n·(c_0 + c_n) for a polynomial of degree < 2n
+        // over a multiplicative domain H of size n, since Σ_{x∈H} x^k = n iff n|k else 0.
+        let n = variable_domain.size_as_field_element;
+        let c_0 = z_m_at_alpha.coeffs.first().copied().unwrap_or_else(snarkvm_fields::Zero::zero);
+        let c_n = z_m_at_alpha.coeffs.get(variable_domain.size()).copied().unwrap_or_else(snarkvm_fields::Zero::zero);
+        let sum = n * (c_0 + c_n);
 
         let (h_1_i, xg_1_i) =
             apply_randomized_selector(&mut z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;

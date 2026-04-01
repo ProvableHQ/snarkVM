@@ -97,13 +97,18 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 itertools::izip!(instance_combiners, z_a, z_b, z_c).enumerate()
             {
                 job_pool.add_job(move || {
-                    let mut instance_lhs = DensePolynomial::zero();
+                    // Parallelize the 3 z_m IFFT computations — they are independent and each
+                    // costs O(n log n). Collecting them into a 3-job pool allows all three
+                    // IFFTs to overlap with each other and with sibling instance jobs.
+                    let mut zm_pool = ExecutionPool::with_capacity(3);
                     let za_label = witness_label(circuit.id, "z_a", j);
                     let zb_label = witness_label(circuit.id, "z_b", j);
                     let zc_label = witness_label(circuit.id, "z_c", j);
-                    let z_a = Self::calculate_z_m(za_label, z_a, constraint_domain, circuit);
-                    let z_b = Self::calculate_z_m(zb_label, z_b, constraint_domain, circuit);
-                    let z_c = Self::calculate_z_m(zc_label, z_c, constraint_domain, circuit);
+                    zm_pool.add_job(move || Self::calculate_z_m(za_label, z_a, constraint_domain, circuit));
+                    zm_pool.add_job(move || Self::calculate_z_m(zb_label, z_b, constraint_domain, circuit));
+                    zm_pool.add_job(move || Self::calculate_z_m(zc_label, z_c, constraint_domain, circuit));
+                    let [z_a, z_b, z_c] = zm_pool.execute_all().try_into().expect("exactly 3 jobs");
+
                     let mut multiplier_2 = PolyMultiplier::new();
                     multiplier_2.add_precomputation(fft_precomputation, ifft_precomputation);
                     multiplier_2.add_polynomial(z_a, "z_a");
@@ -111,7 +116,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let mut rowcheck = multiplier_2.multiply().unwrap();
                     rowcheck.coeffs.iter_mut().zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
 
-                    instance_lhs += &(&rowcheck * instance_combiner);
+                    let mut instance_lhs = &rowcheck * instance_combiner;
 
                     let (h_0_i, remainder) = apply_randomized_selector(
                         &mut instance_lhs,

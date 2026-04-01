@@ -17,7 +17,6 @@ use crate::{
     fft::DensePolynomial,
     snark::varuna::{
         AHPError,
-        Matrix,
         SNARKMode,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
         prover::{self, MatrixSums, ThirdMessage},
@@ -29,7 +28,10 @@ use snarkvm_utilities::ExecutionPool;
 use anyhow::Result;
 use itertools::Itertools;
 use rand::Rng;
-use std::collections::{BTreeMap, VecDeque};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::Arc,
+};
 
 struct LinevalPrepInstance<F: PrimeField> {
     z_m_at_alpha: DensePolynomial<F>,
@@ -56,13 +58,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
 
         let assignments = Self::calculate_assignments(&mut state)?;
-        let matrix_transposes = Self::calculate_matrix_transpose(&mut state)?;
 
         let msg = Self::calculate_prep_lineval_sumcheck_witness(
             &mut state,
             first_round_batch_combiners,
             assignments,
-            matrix_transposes,
             alpha,
         )?;
 
@@ -75,26 +75,19 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         state: &mut prover::State<F, SM>,
         first_round_batch_combiners: &BTreeMap<CircuitId, verifier::BatchCombiners<F>>,
         assignments: BTreeMap<CircuitId, Vec<DensePolynomial<F>>>,
-        matrix_transposes: BTreeMap<CircuitId, BTreeMap<String, Matrix<F>>>,
         alpha: &F,
     ) -> Result<ThirdMessage<F>> {
         let num_instances = first_round_batch_combiners.values().map(|c| c.instance_combiners.len()).collect_vec();
         let total_instances = num_instances.iter().sum::<usize>();
         let matrix_labels = ["a", "b", "c"];
 
-        let fft_precomputations = state
-            .circuit_specific_states
-            .keys()
-            .map(|circuit| (circuit.fft_precomputation.clone(), circuit.ifft_precomputation.clone()))
-            .collect_vec();
-
         // Compute lineval sumcheck witnesses
         let mut job_pool = ExecutionPool::with_capacity(total_instances * 3);
         // Iterate for each circuit in the batch.
         anyhow::ensure!(
-            state.circuit_specific_states.len() == fft_precomputations.len(),
+            state.circuit_specific_states.len() == first_round_batch_combiners.len(),
             "[calculate Prep Lineval Sumcheck Witness] Expected {} circuit specific states, but {} were provided.",
-            fft_precomputations.len(),
+            first_round_batch_combiners.len(),
             state.circuit_specific_states.len()
         );
         anyhow::ensure!(
@@ -103,40 +96,60 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             assignments.len(),
             state.circuit_specific_states.len()
         );
-        anyhow::ensure!(
-            state.circuit_specific_states.len() == matrix_transposes.len(),
-            "[calculate Prep Lineval Sumcheck Witness] Expected {} matrix transposes, but {} were provided.",
-            matrix_transposes.len(),
-            state.circuit_specific_states.len()
-        );
-        for ((((&circuit, circuit_specific_state), precomp), assignments_i), matrix_transposes_i) in state
-            .circuit_specific_states
-            .iter()
-            .zip_eq(fft_precomputations.iter())
-            .zip_eq(assignments.values())
-            .zip_eq(matrix_transposes.values())
+        for ((&circuit, circuit_specific_state), assignments_i) in
+            state.circuit_specific_states.iter().zip_eq(assignments.values())
         {
+            // Precompute l_at_alpha once per circuit (alpha is fixed for the entire round;
+            // all instances and matrices of this circuit share the same Lagrange coefficients).
+            let l_at_alpha =
+                Arc::new(circuit_specific_state.constraint_domain.evaluate_all_lagrange_coefficients(*alpha));
+
+            // Precompute col_reindex table once per circuit to replace per-entry
+            // reindex_by_subdomain calls with an O(1) table lookup.
+            let col_reindex = Arc::new(
+                (0..circuit_specific_state.variable_domain.size())
+                    .map(|i| {
+                        circuit_specific_state
+                            .variable_domain
+                            .reindex_by_subdomain(&circuit_specific_state.input_domain, i)
+                            .unwrap()
+                    })
+                    .collect::<Vec<usize>>(),
+            );
+
             // Iterate for each instance in the batch.
             for assignment in assignments_i {
                 // Iterate for each R1CS matrix corresponding to the circuit and instance.
                 for label in matrix_labels {
-                    let matrix_transpose = &matrix_transposes_i[label];
+                    let matrix = match label {
+                        "a" => &circuit.a,
+                        "b" => &circuit.b,
+                        _ => &circuit.c,
+                    };
+                    let l_at_alpha_clone = Arc::clone(&l_at_alpha);
+                    let col_reindex_clone = Arc::clone(&col_reindex);
                     job_pool.add_job(move || {
                         let z_m_at_alpha = Self::calculate_lineval_sumcheck_instance_witness(
                             label,
-                            &circuit_specific_state.constraint_domain,
                             &circuit_specific_state.variable_domain,
-                            &precomp.0,
-                            &precomp.1,
+                            &circuit.fft_precomputation,
+                            &circuit.ifft_precomputation,
                             assignment,
-                            matrix_transpose,
-                            *alpha,
+                            matrix,
+                            &l_at_alpha_clone,
+                            &col_reindex_clone,
                         )?;
-                        let sum = z_m_at_alpha
-                            .evaluate_over_domain_by_ref(circuit_specific_state.variable_domain)
-                            .evaluations
-                            .into_iter()
-                            .sum::<F>();
+
+                        // O(1) sum formula: Σ_{x∈H} p(x) = n·(c_0 + c_n) for degree < 2n
+                        // polynomial over multiplicative domain H of size n.
+                        let n = circuit_specific_state.variable_domain.size_as_field_element;
+                        let c_0 = z_m_at_alpha.coeffs.first().copied().unwrap_or_else(snarkvm_fields::Zero::zero);
+                        let c_n = z_m_at_alpha
+                            .coeffs
+                            .get(circuit_specific_state.variable_domain.size())
+                            .copied()
+                            .unwrap_or_else(snarkvm_fields::Zero::zero);
+                        let sum = n * (c_0 + c_n);
                         Ok((circuit, LinevalPrepInstance { z_m_at_alpha, sum }))
                     });
                 }
