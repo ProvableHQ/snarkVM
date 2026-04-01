@@ -160,7 +160,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // vanishing polynomial over variable_domain.
         let w_poly = EvaluationsOnDomain::from_vec_and_domain(w_poly_evals, variable_domain)
             .interpolate_with_pc(&circuit.ifft_precomputation);
-        let (w_poly, remainder) = w_poly.divide_by_vanishing_poly(input_domain).unwrap();
+        let (w_poly, remainder) = w_poly.divide_by_vanishing_poly_in_place(input_domain).unwrap();
         assert!(remainder.is_zero());
 
         assert!(w_poly.degree() < variable_domain.size() - input_domain.size());

@@ -138,7 +138,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         let (h_i, mut xg_i) = poly.divide_by_vanishing_poly_in_place(*src_domain)?;
         xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
 
-        let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
+        let (xg_i, remainder) = xg_i.divide_by_vanishing_poly_in_place(*src_domain)?;
         ensure!(
             remainder.is_zero(),
             "[Returning remainder witness] Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
