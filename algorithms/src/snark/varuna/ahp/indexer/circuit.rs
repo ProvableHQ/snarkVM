@@ -93,6 +93,16 @@ pub struct Circuit<F: PrimeField, SM: SNARKMode> {
     pub mul_fft_precomputation: Arc<FFTPrecomputation<F>>,
     pub mul_ifft_precomputation: Arc<IFFTPrecomputation<F>>,
 
+    /// Precomputed IFFT precomputation for the constraint domain and FFT/IFFT
+    /// precomputations for the 2×constraint domain (used in the second round
+    /// to IFFT z_m evaluations and to multiply z_a by z_b). Stored behind Arc
+    /// so prove calls pay O(1) Arc::clone instead of an O(n) step_by copy
+    /// from `fft_precomputation` (which covers the largest domain). Not
+    /// serialized; reconstructed from `index_info`.
+    pub constraint_ifft_precomputation: Arc<IFFTPrecomputation<F>>,
+    pub constraint_mul_fft_precomputation: Arc<FFTPrecomputation<F>>,
+    pub constraint_mul_ifft_precomputation: Arc<IFFTPrecomputation<F>>,
+
     /// Precomputed column reindex table mapping variable-domain indices to
     /// their positions after reindexing by the input subdomain. Cached here
     /// (Arc) so prove calls share the data with O(1) cost. Not serialized;
@@ -261,6 +271,29 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
         );
         let mul_ifft_precomputation = Arc::new(mul_fft_precomputation.to_ifft_precomputation());
 
+        // Precompute IFFT precomputation for the constraint domain and FFT/IFFT
+        // precomputations for the 2×constraint multiplication domain. These
+        // allow the second round to avoid O(n) step_by copies from
+        // `fft_precomputation` (which covers the largest domain) when the
+        // non-zero domains are larger than the constraint domain.
+        let constraint_domain =
+            EvaluationDomain::<F>::new(constraint_domain_size).ok_or(SerializationError::InvalidData)?;
+        let constraint_fft_pc = fft_precomputation
+            .precomputation_for_subdomain(&constraint_domain)
+            .ok_or(SerializationError::InvalidData)?
+            .into_owned();
+        let constraint_ifft_precomputation = Arc::new(constraint_fft_pc.to_ifft_precomputation());
+        let constraint_mul_domain =
+            EvaluationDomain::<F>::new(2 * constraint_domain_size).ok_or(SerializationError::InvalidData)?;
+        let constraint_mul_fft_precomputation = Arc::new(
+            fft_precomputation
+                .precomputation_for_subdomain(&constraint_mul_domain)
+                .ok_or(SerializationError::InvalidData)?
+                .into_owned(),
+        );
+        let constraint_mul_ifft_precomputation =
+            Arc::new(constraint_mul_fft_precomputation.to_ifft_precomputation());
+
         // Precompute the col_reindex table from domain sizes. Only valid when
         // variable_domain_size > input_domain_size (i.e., circuit has private vars).
         let variable_domain =
@@ -331,6 +364,9 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
             ifft_precomputation,
             mul_fft_precomputation,
             mul_ifft_precomputation,
+            constraint_ifft_precomputation,
+            constraint_mul_fft_precomputation,
+            constraint_mul_ifft_precomputation,
             col_reindex,
             non_zero_ifft_precomputation,
             non_zero_mul_fft_precomputation,

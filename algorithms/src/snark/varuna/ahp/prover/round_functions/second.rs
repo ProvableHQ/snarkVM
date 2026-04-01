@@ -88,14 +88,22 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let circuit_combiner = batch_combiners[&circuit.id].circuit_combiner;
             let instance_combiners = batch_combiners[&circuit.id].instance_combiners.clone();
             let constraint_domain = circuit_specific_state.constraint_domain;
-            let fft_precomputation = &circuit.fft_precomputation;
-            let ifft_precomputation = &circuit.ifft_precomputation;
+            // Use the constraint-domain-specific precomputations to avoid an O(n)
+            // step_by copy from `fft_precomputation` (which covers the largest
+            // domain). When non-zero domains exceed constraint size, the full
+            // precomputation is strictly larger and `precomputation_for_subdomain`
+            // would allocate a new Vec on every IFFT/FFT call. The cached Arc
+            // versions are always the exact right size — O(1) to borrow.
+            let constraint_mul_fft_pc = std::sync::Arc::clone(&circuit.constraint_mul_fft_precomputation);
+            let constraint_mul_ifft_pc = std::sync::Arc::clone(&circuit.constraint_mul_ifft_precomputation);
 
             let _circuit_id = &circuit.id; // seems like a compiler bug marks this as unused
 
             for (j, (instance_combiner, z_a, z_b, z_c)) in
                 itertools::izip!(instance_combiners, z_a, z_b, z_c).enumerate()
             {
+                let constraint_mul_fft_pc = std::sync::Arc::clone(&constraint_mul_fft_pc);
+                let constraint_mul_ifft_pc = std::sync::Arc::clone(&constraint_mul_ifft_pc);
                 job_pool.add_job(move || {
                     // Parallelize the 3 z_m IFFT computations — they are independent and each
                     // costs O(n log n). Collecting them into a 3-job pool allows all three
@@ -110,7 +118,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let [z_a, z_b, z_c] = zm_pool.execute_all().try_into().expect("exactly 3 jobs");
 
                     let mut multiplier_2 = PolyMultiplier::new();
-                    multiplier_2.add_precomputation(fft_precomputation, ifft_precomputation);
+                    // Use the 2×constraint-domain precomputation directly so that
+                    // `precomputation_for_subdomain` returns Cow::Borrowed (no
+                    // allocation) instead of an O(n) step_by copy.
+                    multiplier_2.add_precomputation(&constraint_mul_fft_pc, &constraint_mul_ifft_pc);
                     multiplier_2.add_polynomial(z_a, "z_a");
                     multiplier_2.add_polynomial(z_b, "z_b");
                     let mut rowcheck = multiplier_2.multiply().unwrap();
@@ -156,7 +167,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let poly_time = start_timer!(|| format!("Computing {label}"));
 
         let evals = EvaluationsOnDomain::from_vec_and_domain(evaluations, constraint_domain);
-        let poly = evals.interpolate_with_pc_by_ref(&circuit.ifft_precomputation);
+        // Use the constraint-domain-specific IFFT precomputation to avoid an
+        // O(n) step_by copy from `circuit.ifft_precomputation` (which covers
+        // the largest domain and would step through it if non-zero domains are
+        // larger than the constraint domain).
+        let poly = evals.interpolate_with_pc_by_ref(&circuit.constraint_ifft_precomputation);
 
         debug_assert!(
             poly.evaluate_over_domain_by_ref(constraint_domain)

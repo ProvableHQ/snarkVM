@@ -86,6 +86,27 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         );
         let mul_ifft_precomputation = std::sync::Arc::new(mul_fft_precomputation.to_ifft_precomputation());
 
+        // Precompute IFFT precomputation for the constraint domain and FFT/IFFT
+        // precomputations for the 2×constraint multiplication domain. These are
+        // used in the second round to IFFT z_m evaluations and to multiply z_a
+        // by z_b, avoiding O(n) step_by copies from `fft_precomputation` (which
+        // covers the largest domain) when non-zero domains exceed constraint size.
+        let constraint_fft_pc = fft_precomputation
+            .precomputation_for_subdomain(&constraint_domain)
+            .ok_or(anyhow!("Could not extract constraint domain fft precomputation"))?
+            .into_owned();
+        let constraint_ifft_precomputation = std::sync::Arc::new(constraint_fft_pc.to_ifft_precomputation());
+        let constraint_mul_domain = EvaluationDomain::new(2 * constraint_domain.size())
+            .ok_or(anyhow!("Could not create 2x constraint domain"))?;
+        let constraint_mul_fft_precomputation = std::sync::Arc::new(
+            fft_precomputation
+                .precomputation_for_subdomain(&constraint_mul_domain)
+                .ok_or(anyhow!("Could not extract 2x constraint domain fft precomputation"))?
+                .into_owned(),
+        );
+        let constraint_mul_ifft_precomputation =
+            std::sync::Arc::new(constraint_mul_fft_precomputation.to_ifft_precomputation());
+
         // Precompute the col_reindex table once at index time so prove calls can
         // use it directly without recomputing O(n) reindexing on every prove.
         let col_reindex = {
@@ -155,6 +176,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             ifft_precomputation,
             mul_fft_precomputation,
             mul_ifft_precomputation,
+            constraint_ifft_precomputation,
+            constraint_mul_fft_precomputation,
+            constraint_mul_ifft_precomputation,
             col_reindex,
             non_zero_ifft_precomputation,
             non_zero_mul_fft_precomputation,
