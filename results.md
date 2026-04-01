@@ -1682,3 +1682,49 @@ Future experiments should investigate:
 (c) The first round `calculate_w` function: each instance's w_poly computation involves FFT + IFFT + divide. These are already in parallel but the individual FFTs/IFFTs could benefit from precomputed sub-domain precomputations.
 (d) Investigate the `evaluate_lc` sequential loop in varuna.rs (evaluate all linear combinations at query points) — potentially a small sequential bottleneck.
 
+## test/autoresearch_varuna_credits_aleo_0029
+
+### Plan
+
+**Target:** Parallelize `convert_to_bigints` in `KZG10::commit` / `KZG10::open`.
+
+**Problem:** In `algorithms/src/polycommit/kzg10/mod.rs`, the `convert_to_bigints` function converts each field element in a polynomial from Montgomery representation to `BigInteger` using `to_bigint()`. This is called before every MSM (one call per polynomial commitment open). Each element's conversion is independent — pure embarrassingly parallel work. For a polynomial of degree n = 65536, this is 65536 independent Montgomery reductions done sequentially.
+
+**Hypothesis:** With 3 query-point jobs running in parallel via the `ExecutionPool` (from 0028), each job runs its MSM serially. Between the sequential `compute_witness_polynomial` phase and the MSM, the `convert_to_bigints` call could potentially use idle rayon threads from the outer pool. Switching from `p.iter()` to `cfg_iter!(p)` (which maps to `par_iter()` under rayon) should allow the Montgomery conversions to be distributed across available threads.
+
+**Fix:** Change `convert_to_bigints` to use `cfg_iter!(p).map(|s| s.to_bigint()).collect()` instead of `p.iter().map(|s| s.to_bigint()).collect()`. The `cfg_iter!` macro was already imported.
+
+**Files to change:**
+- `algorithms/src/polycommit/kzg10/mod.rs`: change `p.iter()` to `cfg_iter!(p)` in `convert_to_bigints`.
+
+### Implementation
+
+**`algorithms/src/polycommit/kzg10/mod.rs`**
+- Changed `p.iter().map(|s| s.to_bigint())` to `cfg_iter!(p).map(|s| s.to_bigint())` in `convert_to_bigints`.
+- Added a comment explaining the intent: use rayon parallel iterator so idle rayon threads can assist with the Montgomery-form-to-BigInteger conversion.
+
+**Commit:** `fb784ea7a` on `test/autoresearch_varuna_credits_aleo_0029`
+
+### Results
+- Benchmark (vs 0028 baseline):
+  - credits.aleo.transfer_public: 298.6 ms → 317.3 ms (+6.1% / +6.9% median)
+  - credits.aleo.transfer_private: 2510.3 ms → 2776.0 ms (+10.9% / +10.0% median)
+  - credits.aleo.transfer_public_to_private: 473.9 ms → 516.3 ms (+8.9% / +9.0% median)
+  - credits.aleo.transfer_private_to_public: 2479.4 ms → 2711.4 ms (+9.2% / +8.2% median)
+  - credits.aleo.join: 2850.6 ms → 3177.6 ms (+11.5% / +12.8% median)
+  - credits.aleo.split: 2484.2 ms → 2668.1 ms (+7.4% / +6.7% median)
+- Correctness: pass (1/1 test_varuna_with_prover_test_vectors)
+
+### Conclusion
+
+**Significant regression — ~6-12% across all operations.** Parallelizing `convert_to_bigints` with `cfg_iter!` (nested rayon) causes severe thread contention rather than improvement. The 3 outer `ExecutionPool` jobs already saturate the rayon thread pool with parallel MSM work (`batched::msm` uses `cfg_into_iter!` internally). Adding a nested `par_iter()` inside each job creates rayon work-stealing conflicts: threads stolen by one job's `convert_to_bigints` delay progress on the other two jobs' MSMs (and their own MSMs). The sequential `p.iter()` version keeps each job's `convert_to_bigints` cheap and deterministic, letting rayon focus on MSM parallelism.
+
+Key lesson: When rayon is already saturating the thread pool at the outer level (3 MSM jobs), adding nested `par_iter()` on a small inner loop is counterproductive. Nested rayon is beneficial only when the outer level has few jobs that leave threads idle.
+
+The change is reverted. The cumulative improvement from 0019+0020+...+0028 vs baseline remains ~14.6-17.2%.
+
+Future experiments should investigate:
+(a) `compute_witness_polynomial` in KZG10::open — this is the polynomial long-division step (O(n) sequential). For degree-n polynomials, this divides p(x) by (x - z), producing a degree-(n-1) polynomial one coefficient at a time. Could be a meaningful sequential bottleneck before each MSM.
+(b) The first round `calculate_w` function — each instance's w_poly uses sequential divide_by_vanishing_poly. Multiple instances could benefit from more aggressive batching.
+(c) Investigate whether any of the 5 AHP rounds has a sequential bottleneck that the profiler would reveal (e.g., matrix sumcheck in round 2, lineval in round 3).
+
