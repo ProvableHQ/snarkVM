@@ -40,6 +40,9 @@ mod translation;
 // Tests comparing static vs dynamic calls to all credits.aleo functions.
 mod compare_calls_to_credits;
 
+// Correctness tests for credits.aleo execution proof verification.
+mod credits_proof_correctness;
+
 // Tests for restricted keywords at V14.
 mod restricted_keywords;
 

@@ -22,14 +22,30 @@ use snarkvm_algorithms::{
     crypto_hash::PoseidonSponge,
     snark::varuna::{CircuitVerifyingKey, TestCircuit, VarunaHidingMode, VarunaSNARK, VarunaVersion, ahp::AHPForR1CS},
 };
+use snarkvm_circuit::network::AleoV0;
+use snarkvm_console::{
+    account::{Address, ViewKey},
+    network::MainnetV0,
+    program::{Plaintext, Record, Value},
+};
 use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+use snarkvm_ledger_block::Transition;
+use snarkvm_ledger_query::Query;
+use snarkvm_ledger_store::{ConsensusStore, helpers::memory::ConsensusMemory};
+use snarkvm_synthesizer::VM;
 use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, TestRng};
 
+use aleo_std::StorageMode;
 use criterion::Criterion;
+use indexmap::IndexMap;
 use std::{collections::BTreeMap, time::Duration};
+use std::str::FromStr;
 
 type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
 type FS = PoseidonSponge<Fq, 2, 1>;
+type CurrentNetwork = MainnetV0;
+type CurrentAleo = AleoV0;
+type LedgerType = ConsensusMemory<CurrentNetwork>;
 
 fn snark_universal_setup(c: &mut Criterion) {
     let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(1000000, 1000000, 1000000).unwrap();
@@ -109,6 +125,154 @@ fn snark_prove_tall_matrix_small(c: &mut Criterion) {
         let varuna_version = VarunaVersion::V2;
         b.iter(|| {
             VarunaInst::prove(universal_prover, &fs_parameters, &params.0, varuna_version, &circuit, rng).unwrap()
+        })
+    });
+}
+
+fn snark_prove_credits_aleo(c: &mut Criterion) {
+    let rng_setup = &mut TestRng::fixed(42);
+
+    // Common setup once for all credits.aleo methods.
+    let vm = VM::<CurrentNetwork, LedgerType>::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
+    let caller_private_key = snarkvm_ledger_test_helpers::sample_genesis_private_key(rng_setup);
+    let genesis = vm.genesis_beacon(&caller_private_key, rng_setup).unwrap();
+    vm.add_next_block(&genesis).unwrap();
+
+    let query = Query::VM(vm.block_store().clone());
+    let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+    let address = Address::try_from(&caller_private_key).unwrap();
+    let records = genesis
+        .transitions()
+        .cloned()
+        .flat_map(Transition::into_records)
+        .collect::<IndexMap<_, _>>()
+        .values()
+        .map(|record| record.decrypt(&caller_view_key).unwrap())
+        .collect::<Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>>();
+    assert!(records.len() >= 2, "Expected at least 2 genesis records");
+
+    // Helper to construct and prepare one trace.
+    let build_trace = |function: &str, inputs: Vec<Value<CurrentNetwork>>, rng: &mut TestRng| {
+        let authorization = vm.authorize(&caller_private_key, "credits.aleo", function, inputs, rng).unwrap();
+        let (_, mut trace) = vm.process().read().execute::<CurrentAleo, _>(authorization, rng).unwrap();
+        trace.prepare(&query).unwrap();
+        trace
+    };
+
+    let trace_transfer_public = build_trace(
+        "transfer_public",
+        vec![
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ],
+        rng_setup,
+    );
+    let trace_transfer_private = build_trace(
+        "transfer_private",
+        vec![
+            Value::<CurrentNetwork>::Record(records[0].clone()),
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ],
+        rng_setup,
+    );
+    let trace_transfer_public_to_private = build_trace(
+        "transfer_public_to_private",
+        vec![
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ],
+        rng_setup,
+    );
+    let trace_transfer_private_to_public = build_trace(
+        "transfer_private_to_public",
+        vec![
+            Value::<CurrentNetwork>::Record(records[0].clone()),
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ],
+        rng_setup,
+    );
+    let trace_join = build_trace(
+        "join",
+        vec![
+            Value::<CurrentNetwork>::Record(records[0].clone()),
+            Value::<CurrentNetwork>::Record(records[1].clone()),
+        ],
+        rng_setup,
+    );
+    let trace_split = build_trace(
+        "split",
+        vec![Value::<CurrentNetwork>::Record(records[0].clone()), Value::<CurrentNetwork>::from_str("1u64").unwrap()],
+        rng_setup,
+    );
+
+    // Bench only the prove step for each prebuilt real trace.
+    let mut rng_transfer_public = TestRng::fixed(43);
+    c.bench_function("credits.aleo.transfer_public", |b| {
+        let varuna_version = VarunaVersion::V2;
+        b.iter(|| {
+            trace_transfer_public
+                .prove_execution::<CurrentAleo, _>("credits.aleo/transfer_public", varuna_version, &mut rng_transfer_public)
+                .unwrap()
+        })
+    });
+
+    let mut rng_transfer_private = TestRng::fixed(44);
+    c.bench_function("credits.aleo.transfer_private", |b| {
+        let varuna_version = VarunaVersion::V2;
+        b.iter(|| {
+            trace_transfer_private
+                .prove_execution::<CurrentAleo, _>("credits.aleo/transfer_private", varuna_version, &mut rng_transfer_private)
+                .unwrap()
+        })
+    });
+
+    let mut rng_transfer_public_to_private = TestRng::fixed(45);
+    c.bench_function("credits.aleo.transfer_public_to_private", |b| {
+        let varuna_version = VarunaVersion::V2;
+        b.iter(|| {
+            trace_transfer_public_to_private
+                .prove_execution::<CurrentAleo, _>(
+                    "credits.aleo/transfer_public_to_private",
+                    varuna_version,
+                    &mut rng_transfer_public_to_private,
+                )
+                .unwrap()
+        })
+    });
+
+    let mut rng_transfer_private_to_public = TestRng::fixed(46);
+    c.bench_function("credits.aleo.transfer_private_to_public", |b| {
+        let varuna_version = VarunaVersion::V2;
+        b.iter(|| {
+            trace_transfer_private_to_public
+                .prove_execution::<CurrentAleo, _>(
+                    "credits.aleo/transfer_private_to_public",
+                    varuna_version,
+                    &mut rng_transfer_private_to_public,
+                )
+                .unwrap()
+        })
+    });
+
+    let mut rng_join = TestRng::fixed(47);
+    c.bench_function("credits.aleo.join", |b| {
+        let varuna_version = VarunaVersion::V2;
+        b.iter(|| {
+            trace_join
+                .prove_execution::<CurrentAleo, _>("credits.aleo/join", varuna_version, &mut rng_join)
+                .unwrap()
+        })
+    });
+
+    let mut rng_split = TestRng::fixed(48);
+    c.bench_function("credits.aleo.split", |b| {
+        let varuna_version = VarunaVersion::V2;
+        b.iter(|| {
+            trace_split
+                .prove_execution::<CurrentAleo, _>("credits.aleo/split", varuna_version, &mut rng_split)
+                .unwrap()
         })
     });
 }
@@ -367,8 +531,8 @@ fn snark_certificate_verify(c: &mut Criterion) {
 
 criterion_group! {
     name = varuna_snark;
-    config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_prove_tall_matrix_small, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
+    config = Criterion::default().sample_size(10).measurement_time(Duration::from_secs(10));
+    targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_prove_tall_matrix_small, snark_prove_credits_aleo, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
 }
 
 criterion_main!(varuna_snark);

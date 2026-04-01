@@ -132,6 +132,27 @@ workspace = true
 workspace = true
 features = [ "filesystem" ]
 
+[dev-dependencies.snarkvm-circuit]
+workspace = true
+
+[dev-dependencies.snarkvm-console]
+workspace = true
+
+[dev-dependencies.snarkvm-ledger-block]
+workspace = true
+
+[dev-dependencies.snarkvm-ledger-query]
+workspace = true
+
+[dev-dependencies.snarkvm-ledger-store]
+workspace = true
+
+[dev-dependencies.snarkvm-synthesizer]
+workspace = true
+
+[dev-dependencies.snarkvm-ledger-test-helpers]
+path = "../ledger/test-helpers"
+
 [features]
 cuda = [ "snarkvm-algorithms-cuda" ]
 locktick = [ "snarkvm-parameters/locktick" ]

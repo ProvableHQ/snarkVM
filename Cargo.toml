@@ -652,8 +652,8 @@ incremental = true
 
 [profile.test]
 opt-level = 3
-lto = "thin"
+lto = "off"
 incremental = true
-debug = true
+debug = false
 debug-assertions = true
 

@@ -307,6 +307,7 @@ mod tests {
     use snarkvm_ledger_block::Transition;
     use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command};
     use snarkvm_synthesizer_program::StackTrait;
+    use std::time::Instant;
 
     use indexmap::IndexMap;
 
@@ -337,6 +338,59 @@ mod tests {
         vm.add_next_block(&genesis).unwrap();
 
         Ok((vm, records))
+    }
+
+
+    #[test]
+    fn test_transfer_private_execution() {
+        let rng = &mut TestRng::fixed(42);
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+        let address = Address::try_from(&caller_private_key).unwrap();
+
+        // Prepare the VM and records.
+        let (vm, records) = prepare_vm(rng).unwrap();
+
+        // Get two different records from the genesis block.
+        let mut records_iter = records.values();
+        let record1 = records_iter.next().unwrap().decrypt(&caller_view_key).unwrap();
+        let record2 = records_iter.next().unwrap().decrypt(&caller_view_key).unwrap();
+
+        fn transfer_private(
+            vm: &VM<CurrentNetwork, LedgerType>,
+            caller_private_key: &PrivateKey<CurrentNetwork>,
+            address: &Address<CurrentNetwork>,
+            record: Record<CurrentNetwork, Plaintext<CurrentNetwork>>,
+            rng: &mut TestRng,
+        ) -> bool {
+            let inputs = [
+                Value::<CurrentNetwork>::Record(record),
+                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+            ];
+            let authorization =
+                vm.authorize(&caller_private_key, "credits.aleo", "transfer_private", inputs, rng).unwrap();
+            let now = Instant::now();
+            let _transaction = vm.execute_authorization(authorization, None, None, rng).unwrap();
+            let elapsed = now.elapsed();
+            println!("Execution time: {}ms", elapsed.as_millis());
+
+            // assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+            // // Verify the execution proof (without fee validation).
+            // if let Transaction::Execute(_, _, execution, _) = &transaction {
+            //     vm.process()
+            //         .read()
+            //         .verify_execution(ConsensusVersion::V4, VarunaVersion::V2, InclusionVersion::V0, execution)
+            //         .unwrap();
+            // }
+            true
+        }
+
+        assert!(transfer_private(&vm, &caller_private_key, &address, record1, rng));
+        assert!(transfer_private(&vm, &caller_private_key, &address, record2, rng));
+        assert!(false);
     }
 
     #[test]
