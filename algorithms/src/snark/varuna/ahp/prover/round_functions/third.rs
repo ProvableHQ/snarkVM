@@ -88,9 +88,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         )
         .map_err(AHPError::AnyhowError)?;
 
-        // In V2, z_m_at_alpha_polys are precomputed in prover_prepare_third_round and the
-        // V2 job branch does not use assignments or matrix transposes; computing them here
-        // for V2 is pure dead work.
+        // In V2, z_m_at_alpha_polys are precomputed in prover_prepare_third_round and
+        // the V2 job branch does not use assignments or matrix transposes;
+        // computing them here for V2 is pure dead work.
         let assignments = match varuna_version {
             VarunaVersion::V1 => Some(Self::calculate_assignments(&mut state)?),
             VarunaVersion::V2 => None,
@@ -211,17 +211,23 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     // Precompute l_at_alpha once per circuit (alpha is fixed for the entire
                     // round). All instances and all matrices of this circuit share the same
                     // Lagrange coefficients.
-                    let l_at_alpha =
-                        Arc::new(constraint_domain.evaluate_all_lagrange_coefficients(*alpha));
+                    let l_at_alpha = Arc::new(constraint_domain.evaluate_all_lagrange_coefficients(*alpha));
 
-                    // Precompute col_reindex table once per circuit to avoid per-entry
-                    // reindex_by_subdomain calls in the sparse MV hot loop.
-                    let input_domain = &circuit_specific_state.input_domain;
-                    let col_reindex = Arc::new(
-                        (0..variable_domain.size())
-                            .map(|i| variable_domain.reindex_by_subdomain(input_domain, i).unwrap())
-                            .collect::<Vec<usize>>(),
-                    );
+                    // Use the precomputed col_reindex table from the Circuit struct (computed once
+                    // at index time). Arc::clone is O(1). Falls back to per-prove computation
+                    // for the degenerate case where variable_domain == input_domain.
+                    let col_reindex = match &circuit.col_reindex {
+                        Some(cached) => Arc::clone(cached),
+                        None => Arc::new(
+                            (0..variable_domain.size())
+                                .map(|i| {
+                                    variable_domain
+                                        .reindex_by_subdomain(&circuit_specific_state.input_domain, i)
+                                        .unwrap()
+                                })
+                                .collect::<Vec<usize>>(),
+                        ),
+                    };
 
                     for (instance_combiner, assignment) in itertools::izip!(instance_combiners, assignments_i) {
                         // Wrap assignment in Arc so all 3 matrix job closures can share it
@@ -230,8 +236,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         let z_m_at_alpha_for_circuit = match &mut circuit_specific_state.z_m_at_alpha_polys {
                             Some(z_m_at_alpha) => {
                                 ensure!(z_m_at_alpha.len() > 0);
-                                let Some([z_a_at_alpha, z_b_at_alpha, z_c_at_alpha]) = z_m_at_alpha.pop_front()
-                                else {
+                                let Some([z_a_at_alpha, z_b_at_alpha, z_c_at_alpha]) = z_m_at_alpha.pop_front() else {
                                     anyhow::bail!("Expected z_m_at_alpha_polys to contain sufficient elements.")
                                 };
                                 [Some(z_a_at_alpha), Some(z_b_at_alpha), Some(z_c_at_alpha)]
@@ -277,10 +282,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 }
             }
             VarunaVersion::V2 => {
-                for ((circuit, circuit_specific_state), batch_combiner) in state
-                    .circuit_specific_states
-                    .iter_mut()
-                    .zip_eq(third_round_batch_combiners.values())
+                for ((circuit, circuit_specific_state), batch_combiner) in
+                    state.circuit_specific_states.iter_mut().zip_eq(third_round_batch_combiners.values())
                 {
                     let circuit_combiner = batch_combiner.circuit_combiner;
                     let instance_combiners = &batch_combiner.instance_combiners;
@@ -291,8 +294,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         let z_m_at_alpha_for_circuit = match &mut circuit_specific_state.z_m_at_alpha_polys {
                             Some(z_m_at_alpha) => {
                                 ensure!(z_m_at_alpha.len() > 0);
-                                let Some([z_a_at_alpha, z_b_at_alpha, z_c_at_alpha]) = z_m_at_alpha.pop_front()
-                                else {
+                                let Some([z_a_at_alpha, z_b_at_alpha, z_c_at_alpha]) = z_m_at_alpha.pop_front() else {
                                     anyhow::bail!("Expected z_m_at_alpha_polys to contain sufficient elements.")
                                 };
                                 [Some(z_a_at_alpha), Some(z_b_at_alpha), Some(z_c_at_alpha)]
@@ -418,10 +420,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         Ok(matrix_transposes)
     }
 
-    /// Compute z_m_at_alpha = m_at_alpha * assignment, where m_at_alpha is evaluated by
-    /// directly iterating the original row-major matrix (no transpose allocation needed).
-    /// Uses a precomputed col_reindex table to avoid per-entry reindex_by_subdomain overhead.
-    /// alpha is a random verifier challenge; P[alpha in H] ≈ 2^{-200}, so the l_at_alpha
+    /// Compute z_m_at_alpha = m_at_alpha * assignment, where m_at_alpha is
+    /// evaluated by directly iterating the original row-major matrix (no
+    /// transpose allocation needed). Uses a precomputed col_reindex table
+    /// to avoid per-entry reindex_by_subdomain overhead. alpha is a random
+    /// verifier challenge; P[alpha in H] ≈ 2^{-200}, so the l_at_alpha
     /// zero-check is always false and is omitted from the inner loop.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::snark::varuna) fn calculate_lineval_sumcheck_instance_witness(
@@ -457,10 +460,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         Ok(z_m_at_alpha)
     }
 
-    /// Like `calculate_lineval_sumcheck_instance_witness` but accepts precomputed assignment
-    /// evaluations on the 2n multiplication domain in out-of-order FFT form. This avoids
-    /// the FFT of the assignment for each matrix job, saving 2 of 3 FFTs of size 2n per
-    /// instance.
+    /// Like `calculate_lineval_sumcheck_instance_witness` but accepts
+    /// precomputed assignment evaluations on the 2n multiplication domain
+    /// in out-of-order FFT form. This avoids the FFT of the assignment for
+    /// each matrix job, saving 2 of 3 FFTs of size 2n per instance.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::snark::varuna) fn calculate_lineval_sumcheck_instance_witness_with_evals(
         _matrix_label: &str,
@@ -494,8 +497,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         m_at_alpha_coeffs.resize(mul_domain.size(), F::zero());
         mul_domain.out_order_fft_in_place_with_pc(&mut m_at_alpha_coeffs, mul_fft_precomputation);
 
-        // Pointwise multiply with precomputed assignment evaluations (already in out-of-order
-        // FFT form on the 2n domain).
+        // Pointwise multiply with precomputed assignment evaluations (already in
+        // out-of-order FFT form on the 2n domain).
         m_at_alpha_coeffs.iter_mut().zip(assignment_evals_oo).for_each(|(a, b)| *a *= b);
 
         // IFFT from 2n domain to get the product polynomial coefficients.
@@ -515,8 +518,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     ) -> Result<LinevalInstance<F>> {
         let mut z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
 
-        // O(1) sum formula: Σ_{x∈H} p(x) = n·(c_0 + c_n) for a polynomial of degree < 2n
-        // over a multiplicative domain H of size n, since Σ_{x∈H} x^k = n iff n|k else 0.
+        // O(1) sum formula: Σ_{x∈H} p(x) = n·(c_0 + c_n) for a polynomial of degree <
+        // 2n over a multiplicative domain H of size n, since Σ_{x∈H} x^k = n
+        // iff n|k else 0.
         let n = variable_domain.size_as_field_element;
         let c_0 = z_m_at_alpha.coeffs.first().copied().unwrap_or_else(snarkvm_fields::Zero::zero);
         let c_n = z_m_at_alpha.coeffs.get(variable_domain.size()).copied().unwrap_or_else(snarkvm_fields::Zero::zero);

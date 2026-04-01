@@ -117,9 +117,10 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         let selector_time = start_timer!(|| "Compute selector with remainder witness");
 
         // Fast path: when src_domain == target_domain, the selector polynomial is 1, so
-        // `mul_by_vanishing_poly(target) / v_{src}` = identity on the remainder. The two
-        // operations cancel exactly, saving an O(deg) multiply and an O(deg) polynomial
-        // division. For single-circuit proofs (credits.aleo), this fires every time.
+        // `mul_by_vanishing_poly(target) / v_{src}` = identity on the remainder. The
+        // two operations cancel exactly, saving an O(deg) multiply and an
+        // O(deg) polynomial division. For single-circuit proofs (credits.aleo),
+        // this fires every time.
         if src_domain.size == target_domain.size {
             poly.coeffs.iter_mut().for_each(|c| *c *= combiner);
             let (h_i, xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;

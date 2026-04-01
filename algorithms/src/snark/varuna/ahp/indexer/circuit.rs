@@ -93,6 +93,13 @@ pub struct Circuit<F: PrimeField, SM: SNARKMode> {
     pub mul_fft_precomputation: Arc<FFTPrecomputation<F>>,
     pub mul_ifft_precomputation: Arc<IFFTPrecomputation<F>>,
 
+    /// Precomputed column reindex table mapping variable-domain indices to
+    /// their positions after reindexing by the input subdomain. Cached here
+    /// (Arc) so prove calls share the data with O(1) cost. Not serialized;
+    /// reconstructed from `index_info`. `None` when
+    /// `variable_domain.size() == input_domain.size()` (no private variables).
+    pub col_reindex: Option<Arc<Vec<usize>>>,
+
     pub(crate) _mode: PhantomData<SM>,
     pub(crate) id: CircuitId,
 }
@@ -244,6 +251,22 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
         );
         let mul_ifft_precomputation = Arc::new(mul_fft_precomputation.to_ifft_precomputation());
 
+        // Precompute the col_reindex table from domain sizes. Only valid when
+        // variable_domain_size > input_domain_size (i.e., circuit has private vars).
+        let variable_domain =
+            EvaluationDomain::<F>::new(variable_domain_size).ok_or(SerializationError::InvalidData)?;
+        let input_domain =
+            EvaluationDomain::<F>::new(index_info.num_public_inputs).ok_or(SerializationError::InvalidData)?;
+        let col_reindex = if variable_domain_size > input_domain.size() {
+            Some(Arc::new(
+                (0..variable_domain_size)
+                    .map(|i| variable_domain.reindex_by_subdomain(&input_domain, i).unwrap())
+                    .collect::<Vec<usize>>(),
+            ))
+        } else {
+            None
+        };
+
         let a = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
         let b = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
         let c = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
@@ -260,6 +283,7 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
             ifft_precomputation,
             mul_fft_precomputation,
             mul_ifft_precomputation,
+            col_reindex,
             _mode: PhantomData,
             id,
         })

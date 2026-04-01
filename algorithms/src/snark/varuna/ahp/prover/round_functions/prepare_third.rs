@@ -102,17 +102,22 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 Arc::new(circuit_specific_state.constraint_domain.evaluate_all_lagrange_coefficients(*alpha));
 
             // Precompute col_reindex table once per circuit to replace per-entry
-            // reindex_by_subdomain calls with an O(1) table lookup.
-            let col_reindex = Arc::new(
-                (0..circuit_specific_state.variable_domain.size())
-                    .map(|i| {
-                        circuit_specific_state
-                            .variable_domain
-                            .reindex_by_subdomain(&circuit_specific_state.input_domain, i)
-                            .unwrap()
-                    })
-                    .collect::<Vec<usize>>(),
-            );
+            // Use the cached col_reindex table from the Circuit struct (computed once
+            // at index time). Arc::clone is O(1). Falls back to per-prove computation
+            // for the degenerate case where variable_domain == input_domain.
+            let col_reindex = match &circuit.col_reindex {
+                Some(cached) => Arc::clone(cached),
+                None => Arc::new(
+                    (0..circuit_specific_state.variable_domain.size())
+                        .map(|i| {
+                            circuit_specific_state
+                                .variable_domain
+                                .reindex_by_subdomain(&circuit_specific_state.input_domain, i)
+                                .unwrap()
+                        })
+                        .collect::<Vec<usize>>(),
+                ),
+            };
 
             // Use the precomputed 2n multiplication domain FFT precomputation from the
             // Circuit struct (computed once at index time). The Arc::clone is O(1)

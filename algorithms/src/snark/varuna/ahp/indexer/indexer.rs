@@ -86,6 +86,22 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         );
         let mul_ifft_precomputation = std::sync::Arc::new(mul_fft_precomputation.to_ifft_precomputation());
 
+        // Precompute the col_reindex table once at index time so prove calls can
+        // use it directly without recomputing O(n) reindexing on every prove.
+        let col_reindex = {
+            let input_domain = EvaluationDomain::new(index_info.num_public_inputs)
+                .ok_or(anyhow!("Could not create input domain for col_reindex"))?;
+            if variable_domain.size() > input_domain.size() {
+                Some(std::sync::Arc::new(
+                    (0..variable_domain.size())
+                        .map(|i| variable_domain.reindex_by_subdomain(&input_domain, i).unwrap())
+                        .collect::<Vec<usize>>(),
+                ))
+            } else {
+                None
+            }
+        };
+
         end_timer!(fft_precomp_time);
 
         Ok(Circuit {
@@ -100,6 +116,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             ifft_precomputation,
             mul_fft_precomputation,
             mul_ifft_precomputation,
+            col_reindex,
             id,
             _mode: PhantomData,
         })
