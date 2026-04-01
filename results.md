@@ -1728,3 +1728,54 @@ Future experiments should investigate:
 (b) The first round `calculate_w` function — each instance's w_poly uses sequential divide_by_vanishing_poly. Multiple instances could benefit from more aggressive batching.
 (c) Investigate whether any of the 5 AHP rounds has a sequential bottleneck that the profiler would reveal (e.g., matrix sumcheck in round 2, lineval in round 3).
 
+## test/autoresearch_varuna_credits_aleo_0030
+
+### Plan
+
+**Target:** Accelerate `compute_witness_polynomial` in `KZG10::open` using Ruffini's rule (synthetic division) for the linear divisor `(X - point)`.
+
+**Problem:** In `algorithms/src/polycommit/kzg10/mod.rs`, `compute_witness_polynomial` divides the combined polynomial `p(x)` by `(x - query_point)` using the general `divide_with_q_and_r` function. For a linear divisor `[-point, 1]` stored as a Dense polynomial, the inner loop runs 2 iterations per outer step, plus there are leading-zero cleanup operations on every outer iteration. For a degree-n polynomial, this performs approximately n × (1 mul + 4 field ops) = ~5n operations.
+
+**Fix:** Add a specialized `divide_by_linear_poly(point: F)` method to `DensePolynomial<F>` using Ruffini's rule (synthetic division): `q[i] = p[i+1] + point * q[i+1]`. This is O(n) with exactly n multiplications and n additions — no intermediate allocations, no dispatch overhead, no leading-zero trimming per step. Replace the `polynomial / &divisor` call in `compute_witness_polynomial` with `polynomial.divide_by_linear_poly(point)`.
+
+**Files to change:**
+- `algorithms/src/fft/polynomial/dense.rs`: add `divide_by_linear_poly` method to `DensePolynomial<F>`.
+- `algorithms/src/polycommit/kzg10/mod.rs`: use `divide_by_linear_poly` instead of general division.
+
+**Expected improvement:** `compute_witness_polynomial` is called 3 times per prove (once per query point). Each call operates on a combined polynomial of degree up to ~131072 (for gamma, which includes all non-zero-domain polynomials). Saving ~3n operations per call × 3 calls = ~9n operations per prove. For n = 65536, this is about 590k field operations saved, which at ~1ns each = ~0.6ms savings. This is small but free.
+
+### Implementation
+
+**`algorithms/src/fft/polynomial/dense.rs`**
+- Added `divide_by_linear_poly(&self, point: F) -> DensePolynomial<F>` to the `impl<F: PrimeField> DensePolynomial<F>` block.
+- Uses Ruffini's recurrence: `q[d-1] = p[d]`, then `q[i] = p[i+1] + point * q[i+1]` for `i` from `d-2` down to `0`.
+- Returns `DensePolynomial::from_coefficients_vec(q)`. For degree-0 input, returns zero.
+
+**`algorithms/src/polycommit/kzg10/mod.rs`**
+- `compute_witness_polynomial`: removed `let divisor = DensePolynomial::from_coefficients_vec(...)` and replaced `polynomial / &divisor` with `polynomial.divide_by_linear_poly(point)`.
+- Also replaced `random_p / &divisor` with `random_p.divide_by_linear_poly(point)` (ZK path).
+
+**Commit:** `7067b72d0` on `test/autoresearch_varuna_credits_aleo_0030`
+
+### Results
+- Benchmark (vs 0028 baseline of 298.6ms / 2510ms / 473.9ms / 2479ms / 2850ms / 2484ms):
+  - credits.aleo.transfer_public: 298.6 ms → 300.0 ms (+0.5%, within noise)
+  - credits.aleo.transfer_private: 2510.3 ms → 2483.2 ms (-1.1%, within noise)
+  - credits.aleo.transfer_public_to_private: 473.9 ms → 471.1 ms (-0.6%, within noise)
+  - credits.aleo.transfer_private_to_public: 2479.4 ms → 2535.5 ms (+2.3%, within noise)
+  - credits.aleo.join: 2850.6 ms → 2873.4 ms (+0.8%, within noise)
+  - credits.aleo.split: 2484.2 ms → 2452.8 ms (-1.3%, within noise)
+- Correctness: pass (1/1 test_varuna_with_prover_test_vectors)
+
+### Conclusion
+
+**No measurable improvement.** Ruffini's rule reduces the instruction count in `compute_witness_polynomial` but the savings are too small relative to the MSM cost that dominates each query-point open. The `compute_witness_polynomial` division is O(n) whereas the subsequent MSM is O(n log n) with rayon parallelism — so even a 2-3× speedup to the division is invisible in end-to-end timing. All six benchmarks show changes within ±2.3%, well within typical measurement noise (±3-5% for multi-second benchmarks).
+
+The code change is correct and has no correctness regressions. The cumulative improvement from 0019+...+0028 vs baseline remains ~14.6-17.2%.
+
+Future experiments should investigate:
+(a) Areas that are O(n log n) or larger in the hot path — specifically the commit phase (MSM) or FFT computations that might have hidden redundancy.
+(b) Overlapping independent rounds: the AHP prover currently processes rounds strictly sequentially. If any two consecutive rounds have independent sub-computations, pipelining could reduce wall-clock time.
+(c) Reducing the number of polynomials committed per round: each additional polynomial adds one MSM to the critical path. If any polynomial can be derived from others at the verifier without an explicit commitment, the prover's commit overhead is reduced.
+(d) Batching MSMs across round commitments: if multiple polynomials within a round or across rounds share the same SRS basis, their MSMs could be combined into a single larger MSM (trading point-doubling overhead for fewer launches).
+
