@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use core::marker::PhantomData;
+use std::sync::Arc;
 
 use crate::{
     fft::{
@@ -83,6 +84,15 @@ pub struct Circuit<F: PrimeField, SM: SNARKMode> {
 
     pub fft_precomputation: FFTPrecomputation<F>,
     pub ifft_precomputation: IFFTPrecomputation<F>,
+
+    /// Precomputed FFT precomputation for the 2×variable_domain (used in
+    /// prepare_third.rs to multiply m_at_alpha by assignment polynomials).
+    /// Stored behind Arc so prove calls share the data with O(1) Arc::clone
+    /// instead of an O(n) step_by copy. Not serialized; reconstructed from
+    /// `index_info`.
+    pub mul_fft_precomputation: Arc<FFTPrecomputation<F>>,
+    pub mul_ifft_precomputation: Arc<IFFTPrecomputation<F>>,
+
     pub(crate) _mode: PhantomData<SM>,
     pub(crate) id: CircuitId,
 }
@@ -220,6 +230,20 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
             non_zero_c_domain_size,
         )
         .ok_or(SerializationError::InvalidData)?;
+
+        // Compute the 2×variable_domain FFT precomputation by extracting the
+        // sub-precomputation from the full fft_precomputation. This avoids an
+        // O(n) extraction on every prove call.
+        let mul_domain_size = 2 * variable_domain_size;
+        let mul_domain = EvaluationDomain::<F>::new(mul_domain_size).ok_or(SerializationError::InvalidData)?;
+        let mul_fft_precomputation = Arc::new(
+            fft_precomputation
+                .precomputation_for_subdomain(&mul_domain)
+                .ok_or(SerializationError::InvalidData)?
+                .into_owned(),
+        );
+        let mul_ifft_precomputation = Arc::new(mul_fft_precomputation.to_ifft_precomputation());
+
         let a = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
         let b = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
         let c = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
@@ -234,6 +258,8 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
             c_arith: CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?,
             fft_precomputation,
             ifft_precomputation,
+            mul_fft_precomputation,
+            mul_ifft_precomputation,
             _mode: PhantomData,
             id,
         })

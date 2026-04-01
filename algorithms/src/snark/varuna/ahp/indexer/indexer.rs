@@ -73,6 +73,19 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             non_zero_c_domain.size(),
         )
         .ok_or(anyhow!("The polynomial degree is too large"))?;
+
+        // Precompute the 2×variable_domain FFT sub-precomputation once at index
+        // time so that prove calls can use it directly without recomputing.
+        let mul_domain =
+            EvaluationDomain::new(2 * variable_domain.size()).ok_or(anyhow!("The polynomial degree is too large"))?;
+        let mul_fft_precomputation = std::sync::Arc::new(
+            fft_precomputation
+                .precomputation_for_subdomain(&mul_domain)
+                .ok_or(anyhow!("Could not extract sub-precomputation for 2x variable domain"))?
+                .into_owned(),
+        );
+        let mul_ifft_precomputation = std::sync::Arc::new(mul_fft_precomputation.to_ifft_precomputation());
+
         end_timer!(fft_precomp_time);
 
         Ok(Circuit {
@@ -85,6 +98,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             c_arith,
             fft_precomputation,
             ifft_precomputation,
+            mul_fft_precomputation,
+            mul_ifft_precomputation,
             id,
             _mode: PhantomData,
         })

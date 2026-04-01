@@ -59,12 +59,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         let assignments = Self::calculate_assignments(&mut state)?;
 
-        let msg = Self::calculate_prep_lineval_sumcheck_witness(
-            &mut state,
-            first_round_batch_combiners,
-            assignments,
-            alpha,
-        )?;
+        let msg =
+            Self::calculate_prep_lineval_sumcheck_witness(&mut state, first_round_batch_combiners, assignments, alpha)?;
 
         end_timer!(round_time);
 
@@ -100,7 +96,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             state.circuit_specific_states.iter().zip_eq(assignments.values())
         {
             // Precompute l_at_alpha once per circuit (alpha is fixed for the entire round;
-            // all instances and matrices of this circuit share the same Lagrange coefficients).
+            // all instances and matrices of this circuit share the same Lagrange
+            // coefficients).
             let l_at_alpha =
                 Arc::new(circuit_specific_state.constraint_domain.evaluate_all_lagrange_coefficients(*alpha));
 
@@ -117,21 +114,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     .collect::<Vec<usize>>(),
             );
 
-            // Compute 2n multiplication domain and its sub-precomputation once per circuit.
-            // The product m_at_alpha * assignment has degree < 2n, so the FFT domain must be
-            // of size >= 2n.
+            // Use the precomputed 2n multiplication domain FFT precomputation from the
+            // Circuit struct (computed once at index time). The Arc::clone is O(1)
+            // (atomic reference count bump) instead of the prior O(n) step_by copy.
             let variable_domain_size = circuit_specific_state.variable_domain.size();
             let mul_domain = EvaluationDomain::<F>::new(2 * variable_domain_size).unwrap();
-            // Extract the sub-precomputation for mul_domain from the circuit's precomputation,
-            // avoiding re-computation of FFT roots of unity.
-            let mul_fft_pc = Arc::new(
-                circuit
-                    .fft_precomputation
-                    .precomputation_for_subdomain(&mul_domain)
-                    .unwrap()
-                    .into_owned(),
-            );
-            let mul_ifft_pc = Arc::new(mul_fft_pc.to_ifft_precomputation());
+            let mul_fft_pc = Arc::clone(&circuit.mul_fft_precomputation);
+            let mul_ifft_pc = Arc::clone(&circuit.mul_ifft_precomputation);
 
             // Iterate for each instance in the batch.
             for assignment in assignments_i {
