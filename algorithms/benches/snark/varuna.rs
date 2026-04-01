@@ -89,6 +89,30 @@ fn snark_prove(c: &mut Criterion) {
     });
 }
 
+fn snark_prove_tall_matrix_small(c: &mut Criterion) {
+    let rng = &mut TestRng::from_seed(67676767);
+
+    let num_constraints = 750_000;
+    let num_variables = 25_000;
+    let mul_depth = 4;
+
+    let max_degree =
+        AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(num_constraints, num_constraints, num_constraints).unwrap();
+    let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+    let universal_prover = &universal_srs.to_universal_prover().unwrap();
+    let fs_parameters = FS::sample_parameters();
+
+    let (circuit, _) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, rng);
+    let params = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
+
+    c.bench_function("snark_prove_tall_matrix_small_v2", |b| {
+        let varuna_version = VarunaVersion::V2;
+        b.iter(|| {
+            VarunaInst::prove(universal_prover, &fs_parameters, &params.0, varuna_version, &circuit, rng).unwrap()
+        })
+    });
+}
+
 fn snark_batch_prove(c: &mut Criterion) {
     let rng = &mut TestRng::default();
 
@@ -344,7 +368,7 @@ fn snark_certificate_verify(c: &mut Criterion) {
 criterion_group! {
     name = varuna_snark;
     config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
+    targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_prove_tall_matrix_small, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
 }
 
 criterion_main!(varuna_snark);
