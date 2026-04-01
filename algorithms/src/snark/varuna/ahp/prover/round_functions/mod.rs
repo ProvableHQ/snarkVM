@@ -26,9 +26,9 @@ use snarkvm_fields::PrimeField;
 use anyhow::Result;
 use itertools::Itertools;
 use rand::{CryptoRng, Rng};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
-use snarkvm_utilities::dev_println;
+use snarkvm_utilities::{ExecutionPool, dev_println};
 
 mod fifth;
 mod first;
@@ -132,35 +132,42 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
                         Self::formatted_public_input_is_admissible(&padded_public_variables)?;
 
-                        let eval_z_a_time = start_timer!(|| format!("For {:?}, evaluating z_A_{i}", circuit.id));
-                        let z_a = circuit
-                            .a
-                            .iter()
-                            .map(|row| {
-                                inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
-                            })
-                            .collect();
-                        end_timer!(eval_z_a_time);
-
-                        let eval_z_b_time = start_timer!(|| format!("For {:?}, evaluating z_B_{i}", circuit.id));
-                        let z_b = circuit
-                            .b
-                            .iter()
-                            .map(|row| {
-                                inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
-                            })
-                            .collect();
-                        end_timer!(eval_z_b_time);
-
-                        let eval_z_c_time = start_timer!(|| format!("For {:?}, evaluating z_C_{i}", circuit.id));
-                        let z_c = circuit
-                            .c
-                            .iter()
-                            .map(|row| {
-                                inner_product(&padded_public_variables, &private_variables, row, num_public_variables)
-                            })
-                            .collect();
-                        end_timer!(eval_z_c_time);
+                        // Wrap inputs in Arc so the three MV-product jobs can share
+                        // them without cloning (O(1) reference-count bump per job).
+                        let pub_vars = Arc::new(padded_public_variables);
+                        let priv_vars = Arc::new(private_variables);
+                        let mut mv_pool = ExecutionPool::with_capacity(3);
+                        let pub_a = Arc::clone(&pub_vars);
+                        let priv_a = Arc::clone(&priv_vars);
+                        mv_pool.add_job(move || {
+                            circuit
+                                .a
+                                .iter()
+                                .map(|row| inner_product(&pub_a, &priv_a, row, num_public_variables))
+                                .collect::<Vec<F>>()
+                        });
+                        let pub_b = Arc::clone(&pub_vars);
+                        let priv_b = Arc::clone(&priv_vars);
+                        mv_pool.add_job(move || {
+                            circuit
+                                .b
+                                .iter()
+                                .map(|row| inner_product(&pub_b, &priv_b, row, num_public_variables))
+                                .collect::<Vec<F>>()
+                        });
+                        let pub_c = Arc::clone(&pub_vars);
+                        let priv_c = Arc::clone(&priv_vars);
+                        mv_pool.add_job(move || {
+                            circuit
+                                .c
+                                .iter()
+                                .map(|row| inner_product(&pub_c, &priv_c, row, num_public_variables))
+                                .collect::<Vec<F>>()
+                        });
+                        let [z_a, z_b, z_c]: [Vec<F>; 3] = mv_pool.execute_all().try_into().expect("exactly 3 jobs");
+                        // Recover owned Vecs from Arc — all 3 jobs completed, so refs are unique.
+                        let padded_public_variables = Arc::try_unwrap(pub_vars).expect("Arc uniquely owned");
+                        let private_variables = Arc::try_unwrap(priv_vars).expect("Arc uniquely owned");
 
                         Ok(prover::Assignments::<F>(padded_public_variables, private_variables, z_a, z_b, z_c))
                     })
