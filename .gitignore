@@ -23,3 +23,9 @@ artifacts
 !.claude/CLAUDE.md
 !.claude/.gitignore
 !.claude/skills/
+
+# EXPERIMENTS DO NOT REMOVE
+*conclusion.md
+*results.md
+*program.md
+branches.txt
