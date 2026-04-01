@@ -102,6 +102,45 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             }
         };
 
+        // Precompute IFFT and 2×non-zero domain FFT/IFFT precomputations for each
+        // matrix (a, b, c) so that the fourth round can use them directly without
+        // O(k) step_by extractions on every interpolation call.
+        let non_zero_sizes = [non_zero_a_domain.size(), non_zero_b_domain.size(), non_zero_c_domain.size()];
+        let non_zero_ifft_precomputation: [std::sync::Arc<_>; 3] = non_zero_sizes
+            .iter()
+            .map(|&size| {
+                let domain = EvaluationDomain::new(size)
+                    .ok_or(anyhow!("Could not create non-zero domain for ifft precomputation"))?;
+                let nz_fft_pc = fft_precomputation
+                    .precomputation_for_subdomain(&domain)
+                    .ok_or(anyhow!("Could not extract non-zero domain fft precomputation"))?
+                    .into_owned();
+                Ok(std::sync::Arc::new(nz_fft_pc.to_ifft_precomputation()))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?
+            .try_into()
+            .expect("exactly 3 elements");
+        let non_zero_mul_fft_precomputation: [std::sync::Arc<_>; 3] = non_zero_sizes
+            .iter()
+            .map(|&size| {
+                let mul_nz_domain = EvaluationDomain::new(2 * size)
+                    .ok_or(anyhow!("Could not create 2x non-zero domain for mul fft precomputation"))?;
+                let nz_mul_fft_pc = fft_precomputation
+                    .precomputation_for_subdomain(&mul_nz_domain)
+                    .ok_or(anyhow!("Could not extract 2x non-zero domain fft precomputation"))?
+                    .into_owned();
+                Ok(std::sync::Arc::new(nz_mul_fft_pc))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?
+            .try_into()
+            .expect("exactly 3 elements");
+        let non_zero_mul_ifft_precomputation: [std::sync::Arc<_>; 3] = non_zero_mul_fft_precomputation
+            .iter()
+            .map(|fft_pc| std::sync::Arc::new(fft_pc.to_ifft_precomputation()))
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("exactly 3 elements");
+
         end_timer!(fft_precomp_time);
 
         Ok(Circuit {
@@ -117,6 +156,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             mul_fft_precomputation,
             mul_ifft_precomputation,
             col_reindex,
+            non_zero_ifft_precomputation,
+            non_zero_mul_fft_precomputation,
+            non_zero_mul_ifft_precomputation,
             id,
             _mode: PhantomData,
         })

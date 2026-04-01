@@ -94,8 +94,31 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let k_domains = [state_i.non_zero_a_domain, state_i.non_zero_b_domain, state_i.non_zero_c_domain];
             let ariths = [&circuit.a_arith, &circuit.b_arith, &circuit.c_arith];
             let id = circuit.id;
+            // Use per-matrix non-zero domain precomputations (Arc::clone is O(1)).
+            // These avoid an O(k) step_by subdomain extraction on every IFFT call
+            // in calculate_matrix_sumcheck_witness.
+            let nz_ifft_pcs = [
+                std::sync::Arc::clone(&circuit.non_zero_ifft_precomputation[0]),
+                std::sync::Arc::clone(&circuit.non_zero_ifft_precomputation[1]),
+                std::sync::Arc::clone(&circuit.non_zero_ifft_precomputation[2]),
+            ];
+            let nz_mul_fft_pcs = [
+                std::sync::Arc::clone(&circuit.non_zero_mul_fft_precomputation[0]),
+                std::sync::Arc::clone(&circuit.non_zero_mul_fft_precomputation[1]),
+                std::sync::Arc::clone(&circuit.non_zero_mul_fft_precomputation[2]),
+            ];
+            let nz_mul_ifft_pcs = [
+                std::sync::Arc::clone(&circuit.non_zero_mul_ifft_precomputation[0]),
+                std::sync::Arc::clone(&circuit.non_zero_mul_ifft_precomputation[1]),
+                std::sync::Arc::clone(&circuit.non_zero_mul_ifft_precomputation[2]),
+            ];
 
-            for (matrix_label, non_zero_domain, arith) in itertools::izip!(matrix_labels, k_domains, ariths) {
+            for (i, (matrix_label, non_zero_domain, arith)) in
+                itertools::izip!(matrix_labels, k_domains, ariths).enumerate()
+            {
+                let nz_ifft_pc = std::sync::Arc::clone(&nz_ifft_pcs[i]);
+                let nz_mul_fft_pc = std::sync::Arc::clone(&nz_mul_fft_pcs[i]);
+                let nz_mul_ifft_pc = std::sync::Arc::clone(&nz_mul_ifft_pcs[i]);
                 pool.add_job(move || {
                     let result = Self::calculate_matrix_sumcheck_witness(
                         matrix_label,
@@ -108,8 +131,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         *beta,
                         v_R_i_alpha_v_C_i_beta,
                         max_non_zero_domain_size,
-                        &circuit.fft_precomputation,
-                        &circuit.ifft_precomputation,
+                        &nz_ifft_pc,
+                        &nz_mul_fft_pc,
+                        &nz_mul_ifft_pc,
                     );
                     (circuit, result)
                 });
@@ -159,8 +183,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         beta: F,
         v_R_i_alpha_v_C_i_beta: F,
         max_non_zero_domain: EvaluationDomain<F>,
-        fft_precomputation: &FFTPrecomputation<F>,
+        // Per-matrix precomputations for K (IFFT) and 2×K (multiply FFT/IFFT).
+        // Using these directly avoids O(k) step_by subdomain extractions per call.
         ifft_precomputation: &IFFTPrecomputation<F>,
+        mul_fft_precomputation: &FFTPrecomputation<F>,
+        mul_ifft_precomputation: &IFFTPrecomputation<F>,
     ) -> Result<(Sum<F>, Lhs<F>, Gpoly<F>, Apoly<F>, Bpoly<F>)> {
         let (row_on_K, col_on_K, row_col_val) =
             (&arithmetization.row, &arithmetization.col, &arithmetization.row_col_val);
@@ -227,7 +254,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 let mut multiplier = PolyMultiplier::new();
                 multiplier.add_polynomial_ref(&b_poly, "b");
                 multiplier.add_polynomial_ref(&f, "f");
-                multiplier.add_precomputation(fft_precomputation, ifft_precomputation);
+                // Use the 2×non_zero_domain precomputation directly so that the
+                // PolyMultiplier's precomputation_for_subdomain call returns
+                // Cow::Borrowed (no allocation) instead of O(k) step_by copy.
+                multiplier.add_precomputation(mul_fft_precomputation, mul_ifft_precomputation);
                 multiplier.multiply().unwrap()
             };
 

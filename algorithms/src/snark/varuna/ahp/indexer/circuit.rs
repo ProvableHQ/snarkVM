@@ -100,6 +100,16 @@ pub struct Circuit<F: PrimeField, SM: SNARKMode> {
     /// `variable_domain.size() == input_domain.size()` (no private variables).
     pub col_reindex: Option<Arc<Vec<usize>>>,
 
+    /// Precomputed FFT/IFFT precomputations for each non-zero domain (K_a,
+    /// K_b, K_c) and their 2× multiplication domains. Stored as Arc so that
+    /// prove calls pay O(1) Arc::clone instead of an O(k) step_by extraction
+    /// from `fft_precomputation` on every interpolation in the fourth round.
+    /// Indexed [0=a, 1=b, 2=c]. Not serialized; reconstructed from
+    /// `index_info`.
+    pub non_zero_ifft_precomputation: [Arc<IFFTPrecomputation<F>>; 3],
+    pub non_zero_mul_fft_precomputation: [Arc<FFTPrecomputation<F>>; 3],
+    pub non_zero_mul_ifft_precomputation: [Arc<IFFTPrecomputation<F>>; 3],
+
     pub(crate) _mode: PhantomData<SM>,
     pub(crate) id: CircuitId,
 }
@@ -267,6 +277,44 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
             None
         };
 
+        // Precompute IFFT and 2× multiplication domain FFT/IFFT precomputations
+        // for each non-zero domain (K_a, K_b, K_c). These are extracted from
+        // fft_precomputation once here so that prove calls can use them directly
+        // without O(k) step_by extraction on every interpolation in the fourth round.
+        let non_zero_sizes = [non_zero_a_domain_size, non_zero_b_domain_size, non_zero_c_domain_size];
+        let non_zero_ifft_precomputation: [Arc<IFFTPrecomputation<F>>; 3] = non_zero_sizes
+            .iter()
+            .map(|&size| {
+                let domain = EvaluationDomain::<F>::new(size).ok_or(SerializationError::InvalidData)?;
+                let nz_fft_pc = fft_precomputation
+                    .precomputation_for_subdomain(&domain)
+                    .ok_or(SerializationError::InvalidData)?
+                    .into_owned();
+                Ok(Arc::new(nz_fft_pc.to_ifft_precomputation()))
+            })
+            .collect::<Result<Vec<_>, SerializationError>>()?
+            .try_into()
+            .map_err(|_| SerializationError::InvalidData)?;
+        let non_zero_mul_fft_precomputation: [Arc<FFTPrecomputation<F>>; 3] = non_zero_sizes
+            .iter()
+            .map(|&size| {
+                let mul_nz_domain = EvaluationDomain::<F>::new(2 * size).ok_or(SerializationError::InvalidData)?;
+                let nz_mul_fft_pc = fft_precomputation
+                    .precomputation_for_subdomain(&mul_nz_domain)
+                    .ok_or(SerializationError::InvalidData)?
+                    .into_owned();
+                Ok(Arc::new(nz_mul_fft_pc))
+            })
+            .collect::<Result<Vec<_>, SerializationError>>()?
+            .try_into()
+            .map_err(|_| SerializationError::InvalidData)?;
+        let non_zero_mul_ifft_precomputation: [Arc<IFFTPrecomputation<F>>; 3] = non_zero_mul_fft_precomputation
+            .iter()
+            .map(|fft_pc| Arc::new(fft_pc.to_ifft_precomputation()))
+            .collect::<Vec<_>>()
+            .try_into()
+            .map_err(|_| SerializationError::InvalidData)?;
+
         let a = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
         let b = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
         let c = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
@@ -284,6 +332,9 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
             mul_fft_precomputation,
             mul_ifft_precomputation,
             col_reindex,
+            non_zero_ifft_precomputation,
+            non_zero_mul_fft_precomputation,
+            non_zero_mul_ifft_precomputation,
             _mode: PhantomData,
             id,
         })
