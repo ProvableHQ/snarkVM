@@ -359,6 +359,14 @@ impl<'a, F: Field> AddAssign<(F, &'a Polynomial<'a, F>)> for DensePolynomial<F> 
 impl<'a, F: Field> AddAssign<(F, &'a DensePolynomial<F>)> for DensePolynomial<F> {
     #[allow(clippy::suspicious_op_assign_impl)]
     fn add_assign(&mut self, (f, other): (F, &'a DensePolynomial<F>)) {
+        // Fast path: when f == 1 this reduces to plain polynomial addition,
+        // saving O(deg) field multiplications. Common in linear combination
+        // assembly (open_combinations) and sumcheck accumulation where many
+        // LC terms carry coefficient F::one().
+        if f.is_one() {
+            *self += other;
+            return;
+        }
         if self.is_zero() {
             self.coeffs.clear();
             self.coeffs.extend_from_slice(&other.coeffs);
