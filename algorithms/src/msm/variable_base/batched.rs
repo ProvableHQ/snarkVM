@@ -205,10 +205,10 @@ pub(super) fn batch_add<G: AffineCurve>(
     // Skip entries (bucket_index ≥ num_buckets) sort last, matching sort_unstable.
     //
     // Optimisations:
-    // 1. Fuse `counts` and `starts` into a single `starts` array (one fewer
-    //    32 KiB allocation) via the shifted-histogram trick.
-    // 2. Thread-local scratch buffer (SORT_SCRATCH) reused across calls so that
-    //    no allocation or zero-initialization occurs after the first call on each
+    // 1. Fuse `counts` and `starts` into a single `starts` array (one fewer 32 KiB
+    //    allocation) via the shifted-histogram trick.
+    // 2. Thread-local scratch buffer (SORT_SCRATCH) reused across calls so that no
+    //    allocation or zero-initialization occurs after the first call on each
     //    rayon thread. The scatter loop overwrites every slot exactly once, so
     //    leftover data from the previous call is safe to ignore.
     // 3. std::mem::swap to hand the sorted buffer to `bucket_positions` in O(1).
@@ -469,9 +469,13 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
         sum
     } else {
         // Determine the bucket size `c` (chosen empirically).
+        // Use `ln(n) + 1` instead of the default `+ 2`: for n=65536 this gives
+        // c=12 (4095 buckets) rather than c=13 (8191 buckets), halving the
+        // working-set size of the counting-sort starts array and improving L1
+        // cache utilisation.
         let c = match scalars.len() < 32 {
             true => 1,
-            false => crate::msm::ln_without_floats(scalars.len()) + 2,
+            false => crate::msm::ln_without_floats(scalars.len()) + 1,
         };
 
         let num_bits = <G::ScalarField as PrimeField>::size_in_bits();
