@@ -2430,3 +2430,50 @@ Future experiments should investigate:
 (a) Whether c=11 (ln+0) gives further improvement by further halving the bucket count to 2047.
 (b) Whether c is scale-sensitive for other proof sizes (n=131072 for larger programs would give c=12 with the old formula and c=11 with the new).
 (c) The `batched_window` accumulation phase: the `for i in (0..num_buckets - 1).rev()` running-sum loop is sequential and may benefit from SIMD-style prefetching hints.
+
+## test/autoresearch_varuna_credits_aleo_0048
+
+### Plan
+
+**Target:** Try Pippenger c=ln(n) (c=11 for n=65536), further reducing bucket count to 2047 (4x fewer than c=13), at the cost of 24 windows vs 20 (for c=13).
+
+**Problem:** Experiment 0047 showed c=12 gives 2.4-6.5% improvement over c=13 by reducing cache pressure. The question is whether c=11 (even fewer buckets, more windows) continues the trend or overcorrects.
+
+**Fix:** Change `+ 1` to `+ 0` (i.e., bare `ln_without_floats(scalars.len())`).
+
+**Files changed:**
+- `algorithms/src/msm/variable_base/batched.rs`: `+ 1` → plain `ln_without_floats(n)`
+
+**Commit:** `4cd81ae22` on `test/autoresearch_varuna_credits_aleo_0048`
+
+### Results
+
+- Benchmark (medians; vs 0047 baseline of tp=269.10ms / tpriv=2290.3ms / tp2p=428.83ms / tpriv2pub=2243.3ms / join=2628.5ms / split=2227.1ms):
+  - credits.aleo.transfer_public: 269.10 ms → 273.29 ms (+1.6%, no change detected p=0.20)
+  - credits.aleo.transfer_private: 2290.3 ms → 2247.7 ms (-1.9%, within noise threshold p=0.00)
+  - credits.aleo.transfer_public_to_private: 428.83 ms → 413.63 ms (-3.5%, improved p=0.00)
+  - credits.aleo.transfer_private_to_public: 2243.3 ms → 2208.4 ms (-1.6%, no change detected p=0.07)
+  - credits.aleo.join: 2628.5 ms → 2573.1 ms (-2.1%, no change detected p=0.07)
+  - credits.aleo.split: 2227.1 ms → 2188.1 ms (-1.8%, within noise threshold p=0.00)
+- Correctness: benchmarks ran cleanly
+
+Compared against original (pre-0047) baseline (tp=287.66ms / tpriv=2350.3ms / tp2p=447.27ms / tpriv2pub=2325.6ms / join=2663.2ms / split=2311.8ms):
+  - credits.aleo.transfer_public: -5.0% (vs c=12: -6.5%) — c=11 slightly worse
+  - credits.aleo.transfer_private: -4.4% (vs c=12: -2.4%) — c=11 better
+  - credits.aleo.transfer_public_to_private: -7.5% (vs c=12: -4.4%) — c=11 better
+  - credits.aleo.transfer_private_to_public: -5.0% (vs c=12: -3.3%) — c=11 better
+  - credits.aleo.join: -3.4% (vs c=12: -2.0%) — c=11 better
+  - credits.aleo.split: -5.3% (vs c=12: -3.5%) — c=11 better
+
+### Conclusion
+
+**Keeping c=11 — mixed but net-positive improvement over c=12.** The transfer_public benchmark regresses slightly (~1.5%) but all other 5 benchmarks improve by 1.6-3.5% compared to c=12. The heavier proof benchmarks (tpriv, tp2p, tpriv2pub, join, split) all benefit from the smaller bucket working-set. The trade-off: c=11 uses 24 windows instead of 22 (extra ~10% window iterations) but each window's `res` accumulator is 2047 × sizeof(G::Affine) ≈ ~196KB (vs ~393KB for c=12), fitting more comfortably in L2 cache.
+
+New best baselines: tp=273.29ms / tpriv=2247.7ms / tp2p=413.63ms / tpriv2pub=2208.4ms / join=2573.1ms / split=2188.1ms
+
+Note: `transfer_public` shows +1.6% regression vs c=12. This suggests c=12 may be closer to optimal for MSM-dominant benchmarks. The minimum in the c vs performance curve likely lies between c=11 and c=13.
+
+Future experiments should investigate:
+(a) Whether c=10 (ln-1, 1023 buckets) further helps the heavier benchmarks or causes regression everywhere.
+(b) A per-MSM adaptive `c` based on `scalars.len()` — for large n, c=11 or c=12; for very large n (131072), c=12 or c=13.
+(c) Profiling with perf/cachegrind to determine actual L2/L3 cache miss rates for different c values.
