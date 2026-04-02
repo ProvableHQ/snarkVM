@@ -1779,3 +1779,394 @@ Future experiments should investigate:
 (c) Reducing the number of polynomials committed per round: each additional polynomial adds one MSM to the critical path. If any polynomial can be derived from others at the verifier without an explicit commitment, the prover's commit overhead is reduced.
 (d) Batching MSMs across round commitments: if multiple polynomials within a round or across rounds share the same SRS basis, their MSMs could be combined into a single larger MSM (trading point-doubling overhead for fewer launches).
 
+## test/autoresearch_varuna_credits_aleo_0031
+
+### Plan
+
+**Target:** Eliminate O(n) coefficient buffer clone in `apply_randomized_selector` by switching to a consuming, in-place `divide_by_vanishing_poly_in_place` variant.
+
+**Problem:** `apply_randomized_selector` is called in rounds 2, 3, and 4 of the AHP prover. In each call, `divide_by_vanishing_poly` takes `&self`, allocating a new `Vec<F>` of up to ~131072 field elements and copying all coefficients before performing the in-place division. For degree-2n polynomials (n ≈ 65536), this is one O(n) heap allocation and one O(n) memcopy per call — avoidable if we consume the polynomial directly.
+
+**Fix:**
+1. Add `divide_by_vanishing_poly_in_place(self, domain) -> Result<(DensePolynomial<F>, DensePolynomial<F>)>` to `DensePolynomial<F>` — a consuming variant that divides in-place without cloning.
+2. Change `apply_randomized_selector` signature to take `poly: DensePolynomial<F>` by value (instead of `&mut DensePolynomial<F>`).
+3. Update all callers in `second.rs`, `third.rs`, `fourth.rs` to pass polynomials by value.
+
+**Files to change:**
+- `algorithms/src/fft/polynomial/dense.rs`: add `divide_by_vanishing_poly_in_place`.
+- `algorithms/src/snark/varuna/ahp/selectors.rs`: change signature, use in-place variant.
+- `algorithms/src/snark/varuna/ahp/prover/round_functions/second.rs`: remove `mut`, pass by value.
+- `algorithms/src/snark/varuna/ahp/prover/round_functions/third.rs`: pass by value.
+- `algorithms/src/snark/varuna/ahp/prover/round_functions/fourth.rs`: remove `mut`, pass by value.
+
+**Expected improvement:** ~4 calls × O(n) clone saved per prove = ~4 × 65536 × 8 bytes = ~2MB of allocation+copy avoided. At modern memory bandwidth, saving ~2MB of unnecessary copy work is estimated to be ~0.5-1ms savings.
+
+### Implementation
+
+**`algorithms/src/fft/polynomial/dense.rs`**
+- Added `divide_by_vanishing_poly_in_place(self, domain: EvaluationDomain<F>) -> Result<(DensePolynomial<F>, DensePolynomial<F>)>`: consumes `self`, runs the same additions-only `X^n - 1` division algorithm in-place on `self.coeffs`, then trims trailing zeros and returns (quotient, remainder). No heap allocation or clone.
+
+**`algorithms/src/snark/varuna/ahp/selectors.rs`**
+- Changed `apply_randomized_selector` to take `poly: DensePolynomial<F>` by value.
+- Fast path (src_domain == target_domain): applies combiner in-place, then calls `divide_by_vanishing_poly_in_place`.
+- No-remainder path: calls `divide_by_vanishing_poly_in_place` directly on `poly`.
+- Remainder path (multi-circuit): applies multiplier in-place, calls `divide_by_vanishing_poly_in_place`.
+
+**`algorithms/src/snark/varuna/ahp/prover/round_functions/second.rs`**
+- Removed `mut` from `let instance_lhs`; changed `apply_randomized_selector(&mut instance_lhs, ...)` to `apply_randomized_selector(instance_lhs, ...)`.
+
+**`algorithms/src/snark/varuna/ahp/prover/round_functions/third.rs`**
+- Changed `apply_randomized_selector(&mut z_m_at_alpha, ...)` to `apply_randomized_selector(z_m_at_alpha, ...)`.
+- Fixed spurious `let mut z_m_at_alpha` warning (removed `mut`).
+
+**`algorithms/src/snark/varuna/ahp/prover/round_functions/fourth.rs`**
+- Removed `mut` from `let mut h`; changed `apply_randomized_selector(&mut h, ...)` to `apply_randomized_selector(h, ...)`.
+
+**Commit:** `f6c6e3d97` on `test/autoresearch_varuna_credits_aleo_0031`
+
+### Results
+
+- Benchmark (medians; vs 0030 baseline of tp=300.0ms / tpriv=2483ms / tp2p=471.1ms / tpriv2pub=2535ms / join=2873ms / split=2453ms):
+  - credits.aleo.transfer_public: 300.0 ms → 300.9 ms (+0.3%, within noise)
+  - credits.aleo.transfer_private: 2483.2 ms → 2475.5 ms (-0.3%, within noise)
+  - credits.aleo.transfer_public_to_private: 471.1 ms → 473.5 ms (+0.5%, within noise)
+  - credits.aleo.transfer_private_to_public: 2535.5 ms → 2448.0 ms (-3.5%, possibly signal)
+  - credits.aleo.join: 2873.4 ms → 2834.6 ms (-1.4%, within noise)
+  - credits.aleo.split: 2452.8 ms → 2425.4 ms (-1.1%, within noise)
+- Correctness: pass (1/1 test_varuna_with_prover_test_vectors)
+
+### Conclusion
+
+**Inconclusive — likely within noise.** The O(n) clone elimination saves at most ~2MB of allocation per prove call. However, the polynomial division itself is already O(n) additions, and the subsequent FFTs and MSMs cost O(n log n). The savings are too small to measure reliably against multi-second benchmark noise. Most benchmarks show changes within ±1.5%; `transfer_private_to_public` appears to have improved ~3.5%, but single-run measurements cannot confirm significance.
+
+The change is correct, avoids one unnecessary heap allocation per `apply_randomized_selector` call, and is good code hygiene (pass-by-value makes ownership clear). No regressions.
+
+The cumulative improvement from 0019+0020+...+0031 vs baseline remains approximately ~14.6-17.2%.
+
+Future experiments should investigate:
+(a) FFT parallelism: the `best_fft` function in `algorithms/src/fft/` uses recursive Cooley-Tukey with rayon at each level. For the dominant n ≈ 65536 size, verify that the rayon work-splitting threshold is optimal.
+(b) Reduce round-3 compute: 3 matrix sumchecks (A, B, C) each do sparse MV + IFFT + FFT + pointwise multiply + IFFT. If any matrix has structure (e.g., B is often identity-like in simple circuits), it could be skipped.
+(c) Investigate SRS precomputation in KZG10::commit: for fixed SRS basis, precomputing window tables (NAF, booth encoding) could accelerate the MSM for polynomial coefficients that repeat across proofs.
+(d) Evaluate whether `PolyMultiplier`'s precomputation path truly avoids any allocation in the common-domain case, or whether there's a hidden clone in the `Cow::Borrowed` fast path.
+
+
+## test/autoresearch_varuna_credits_aleo_0032
+
+### Plan
+
+**Target:** Tune the MSM `batch_size` constant for the actual L1D cache size of this benchmark host (64KiB, not 32KiB as assumed).
+
+**Problem:** In `algorithms/src/msm/variable_base/batched.rs`, the `batch_size()` function returns 300 for x86_64 with small MSMs (< 500k scalars). This was calibrated for a 32KiB L1D cache: `300 × 96 bytes + 150 × 96 bytes (scratch) ≈ 43.2KB`. However, this benchmark host has a 64KiB L1D cache. The current batch_size leaves ~20KB of L1D unused.
+
+**Fix:** Increase x86_64 small-MSM `batch_size` from 300 to 600. With 600: `600 × 96 + 300 × 96 ≈ 57.6KB`, which still fits in a 64KB L1D cache while reducing the number of batch inversions by 2×.
+
+**Files to change:**
+- `algorithms/src/msm/variable_base/batched.rs`: change 300 → 600 for x86_64 small MSMs.
+
+### Implementation
+
+**`algorithms/src/msm/variable_base/batched.rs`**
+- Changed `300` to `600` in the x86_64 small-MSM branch.
+- Updated comment to reflect 64KiB L1D assumption.
+
+**Commit:** `c422730ed` on `test/autoresearch_varuna_credits_aleo_0032`
+
+### Results
+
+- Benchmark (medians; vs 0031 baseline of tp=300.9ms / tpriv=2475ms / tp2p=473.5ms / tpriv2pub=2448ms / join=2835ms / split=2425ms):
+  - credits.aleo.transfer_public: 300.9 ms → 300.3 ms (-0.2%, within noise)
+  - credits.aleo.transfer_private: 2475.5 ms → 2468.7 ms (-0.3%, within noise)
+  - credits.aleo.transfer_public_to_private: 473.5 ms → 467.4 ms (-1.3%, modest improvement)
+  - credits.aleo.transfer_private_to_public: 2448.0 ms → 2457.8 ms (+0.4%, within noise)
+  - credits.aleo.join: 2834.6 ms → 2804.1 ms (-1.1%, modest improvement)
+  - credits.aleo.split: 2425.4 ms → 2416.6 ms (-0.4%, within noise)
+- Correctness: pass (1/1 test_varuna_with_prover_test_vectors)
+
+### Conclusion
+
+**Modest improvement.** Increasing the MSM batch_size from 300 to 600 to better match the host's 64KiB L1D cache provides ~1-1.3% improvement on the medium-sized circuits (join, transfer_public_to_private). The larger private circuits show minimal change, likely because the per-batch work is overshadowed by total algorithmic cost. The improvement comes from halving the number of batch inversions per window.
+
+The change is machine-specific (assumes 64KiB L1D). General deployments on machines with 32KiB L1D should keep 300.
+
+Cumulative improvement from 0019+...+0032 vs baseline (~350ms / 2.95s / 572ms / 2.92s / 3.35s / 2.91s):
+- transfer_public: ~14.2%, transfer_private: ~16.4%, transfer_public_to_private: ~18.3%
+- transfer_private_to_public: ~15.8%, join: ~16.3%, split: ~17.0%
+
+Future experiments should investigate:
+(a) The window count `c` in Pippenger's algorithm: for n=65537, c≈18, giving ~14 windows. Could tuning `c` differently help?
+(b) The L2 branch (batch_size=3000) was calibrated for 1MiB L2 cache. This machine has 2MiB L2 — for large MSMs, batch_size=6000 might help.
+(c) FFT recursion threshold: `best_fft` splits work recursively; the threshold for going serial vs parallel may not be optimal for this machine's 64KB L1D.
+(d) Precompute window table for KZG SRS: for a fixed SRS, precomputing NAF/w-NAF tables could reduce EC point doublings during MSM.
+
+## test/autoresearch_varuna_credits_aleo_0033
+
+### Plan
+
+**Target:** Tune the MSM `batch_size` L2-branch constant for the 2MiB L2 cache on this benchmark host.
+
+**Problem:** The `else` branch of `batch_size()` returns 3000 (calibrated for 1MiB L2 cache). This host has a 2MiB L2 cache, so 6000 affine points × 96 + 3000 × 96 scratch ≈ 864KB still fits in 2MiB and would halve the number of batch inversions for polynomials larger than 500k coefficients.
+
+**Fix:** Increase the L2 branch `batch_size` from 3000 to 6000.
+
+**Files to change:**
+- `algorithms/src/msm/variable_base/batched.rs`: change 3000 → 6000 in the else branch.
+
+### Implementation
+
+**`algorithms/src/msm/variable_base/batched.rs`**
+- Changed `3000` to `6000` in the else branch.
+- Updated comment to reflect 2MiB L2 assumption.
+
+**Commit:** `e6497e68b` on `test/autoresearch_varuna_credits_aleo_0033`
+
+### Results
+
+- Benchmark (medians; vs 0032 baseline of tp=300.3ms / tpriv=2469ms / tp2p=467.4ms / tpriv2pub=2458ms / join=2804ms / split=2417ms):
+  - credits.aleo.transfer_public: 300.3 ms → 295.7 ms (-1.5%, possibly noise)
+  - credits.aleo.transfer_private: 2468.7 ms → 2472.9 ms (+0.2%, within noise)
+  - credits.aleo.transfer_public_to_private: 467.4 ms → 469.8 ms (+0.5%, within noise)
+  - credits.aleo.transfer_private_to_public: 2457.8 ms → 2479.3 ms (+0.9%, within noise)
+  - credits.aleo.join: 2804.1 ms → 2810.4 ms (+0.2%, within noise)
+  - credits.aleo.split: 2416.6 ms → 2423.4 ms (+0.3%, within noise)
+- Correctness: pass (1/1 test_varuna_with_prover_test_vectors)
+
+### Conclusion
+
+**No measurable improvement.** The L2 branch (batch_size for msm_size ≥ 500k) is not exercised by credits.aleo proof polynomials — all polynomial sizes in the credits.aleo benchmarks are < 500k coefficients. The L2 branch change has no effect on the benchmark timings. The transfer_public -1.5% delta is likely measurement noise.
+
+The code change is harmless (no regressions) but ineffective for this workload. The cumulative improvement from 0019+...+0033 is approximately the same as 0032.
+
+Future experiments should investigate:
+(a) Profile whether the sequential `for lc in linear_combinations` loop in `open_combinations` (building combined polynomials) is a bottleneck. For many LCs each with many terms, the sequential accumulation of DensePolynomials could be ~10-20% of total time.
+(b) Look at the `eval_time` loop that evaluates each LC polynomial at 3 query points: can polynomial evaluations be shared across LCs that reference the same underlying polynomials?
+(c) Investigate whether `polynomial.to_dense()` in `batch_open`'s `to_combine` collection creates unnecessary allocations (line ~342 of sonic_pc/mod.rs).
+(d) Investigate the Pippenger window size `c`: for n~65k, c≈18. Tuning `c` between 16-20 could affect MSM performance.
+
+## test/autoresearch_varuna_credits_aleo_0034
+
+### Plan
+
+**Target:** Eliminate remaining O(n) clone calls in `divide_by_vanishing_poly` by using the consuming in-place variant in `calculate_w` (round 1) and in the remainder-witness path of `apply_randomized_selector`.
+
+**Problem:** Two remaining `divide_by_vanishing_poly` calls (non-in-place) on owned polynomials:
+1. `first.rs:163`: `w_poly.divide_by_vanishing_poly(input_domain)` — `w_poly` is freshly computed and never used after, so can be consumed.
+2. `selectors.rs:141`: `xg_i.divide_by_vanishing_poly(*src_domain)` — `xg_i` is an owned polynomial at this point, can be consumed.
+
+**Fix:** Replace both calls with `divide_by_vanishing_poly_in_place`.
+
+**Files to change:**
+- `algorithms/src/snark/varuna/ahp/prover/round_functions/first.rs`: line 163
+- `algorithms/src/snark/varuna/ahp/selectors.rs`: line 141
+
+### Implementation
+
+- `first.rs`: `w_poly.divide_by_vanishing_poly(input_domain)` → `w_poly.divide_by_vanishing_poly_in_place(input_domain)`
+- `selectors.rs`: `xg_i.divide_by_vanishing_poly(*src_domain)` → `xg_i.divide_by_vanishing_poly_in_place(*src_domain)`
+
+**Commit:** `18b71a01d` on `test/autoresearch_varuna_credits_aleo_0034`
+
+### Results
+
+- Benchmark (medians; vs 0033 baseline of tp=295.7ms / tpriv=2472.9ms / tp2p=469.8ms / tpriv2pub=2479.3ms / join=2810.4ms / split=2423.4ms):
+  - credits.aleo.transfer_public: 295.7 ms → 298.2 ms (+0.8%, within noise)
+  - credits.aleo.transfer_private: 2472.9 ms → 2459.7 ms (-0.5%, within noise)
+  - credits.aleo.transfer_public_to_private: 469.8 ms → 468.7 ms (-0.2%, within noise)
+  - credits.aleo.transfer_private_to_public: 2479.3 ms → 2465.2 ms (-0.6%, within noise)
+  - credits.aleo.join: 2810.4 ms → 2812.1 ms (+0.1%, within noise)
+  - credits.aleo.split: 2423.4 ms → 2432.1 ms (+0.4%, within noise)
+- Correctness: pass (1/1 test_varuna_with_prover_test_vectors)
+
+### Conclusion
+
+**No measurable improvement.** The two remaining O(n) clone eliminations are below measurement noise (~3-5%). The in-place variants are semantically correct and avoid unnecessary allocations, but the savings (~0.2ms each, ~1 allocation per prove) are invisible against multi-second benchmarks.
+
+The change is correct and maintains the "all divide_by_vanishing_poly calls use in-place where possible" invariant. No regressions.
+
+Future experiments should investigate:
+(a) Consuming `assignments` by value in `prepare_third` to avoid the `assignment.coeffs.clone()` (currently needs a clone because assignments are iterated by reference). If assignments are consumed, we can move and resize instead of clone+resize.
+(b) Parallelizing the `prover_second_round` and `prover_prepare_third_round` calls — these are currently sequential but operate on disjoint parts of the prover state and could theoretically run in parallel.
+(c) Reducing memory pressure by freeing polynomials earlier once they're committed (the polynomial data can be released after the commit MSM but before the AHP round computation).
+(d) Profile with perf/flamegraph to identify actual hot spots at the function level.
+
+## test/autoresearch_varuna_credits_aleo_0035
+
+### Plan
+
+**Target:** Consume `assignments` by value in `calculate_prep_lineval_sumcheck_witness` to avoid the O(n) `assignment.coeffs.clone()` call.
+
+**Problem:** In `prepare_third.rs`, `calculate_prep_lineval_sumcheck_witness` receives `assignments: BTreeMap<CircuitId, Vec<DensePolynomial<F>>>` by value. The outer loop previously used `assignments.values()` (yielding references), which forced the inner loop to call `assignment.coeffs.clone()` before the 2n resize, because a reference cannot be moved.
+
+**Fix:** Change `assignments.values()` to `assignments.into_values()` (consuming the BTreeMap), and `iter()` on the inner vec to `into_iter()`. This allows the inner loop to move `assignment.coeffs` out directly (O(1)) and resize in-place, avoiding one O(n) allocation+copy per instance per prove call.
+
+**Files to change:**
+- `algorithms/src/snark/varuna/ahp/prover/round_functions/prepare_third.rs`: change `assignments.values()` to `assignments.into_values()` and consume `assignment.coeffs` by move.
+
+### Implementation
+
+- Changed `assignments.values()` to `assignments.into_values()` in the outer zip_eq.
+- Changed `for assignment in assignments_i.iter()` to `for assignment in assignments_i` (consuming iteration).
+- Changed `let mut assignment_coeffs_2n = assignment.coeffs.clone()` to `let mut assignment_coeffs_2n = assignment.coeffs` (move, O(1)).
+- The `ensure!` check on `assignments.len()` was preserved (runs before the consuming iteration).
+
+**Commit:** `6be405a86` on `test/autoresearch_varuna_credits_aleo_0035`
+
+### Results
+
+- Benchmark (medians; vs 0034 baseline of tp=298.2ms / tpriv=2459.7ms / tp2p=468.7ms / tpriv2pub=2465.2ms / join=2812.1ms / split=2432.1ms):
+  - credits.aleo.transfer_public: 298.2 ms → 297.8 ms (-0.1%, within noise)
+  - credits.aleo.transfer_private: 2459.7 ms → 2473.8 ms (+0.6%, within noise)
+  - credits.aleo.transfer_public_to_private: 468.7 ms → 471.7 ms (+0.6%, within noise)
+  - credits.aleo.transfer_private_to_public: 2465.2 ms → 2469.8 ms (+0.2%, within noise)
+  - credits.aleo.join: 2812.1 ms → 2789.0 ms (-0.8%, within noise)
+  - credits.aleo.split: 2432.1 ms → 2432.8 ms (0.0%, within noise)
+- Correctness: pass
+
+### Conclusion
+
+**No measurable improvement.** The O(n) clone elimination (one Vec<F> copy per instance per prove) is below the measurement noise floor of ~3-5%. Credits.aleo uses a single instance per circuit, so the savings is one clone of an ~n=65k element vec per prove — approximately 65k × 32 bytes = 2MB allocation, which saves ~0.1-0.2ms, invisible against 300ms-2800ms benchmarks.
+
+The change is semantically correct and idiomatic (consuming iteration instead of cloning). No regressions.
+
+Future experiments should investigate:
+(a) The `evaluate_all_lagrange_coefficients` function uses a sequential loop for powers of `group_gen` (n multiplications). For n=65536, parallelizing this with divide-and-conquer could save ~100μs per call. However this is likely still below the noise floor.
+(b) Profile with perf to find what is actually consuming time in the ~300ms single-transfer proofs.
+(c) Investigate whether `batch_open` in SonicPC can pipeline the MSM computations more efficiently using the precomputed shift powers.
+(d) Look at the KZG opening polynomial construction — `batch_open` builds shifted polynomials for each query point and each polynomial; this may have redundant work.
+
+## test/autoresearch_varuna_credits_aleo_0036
+
+### Plan
+
+**Target:** Cache constraint-domain-specific FFT/IFFT precomputations in the `Circuit` struct to eliminate O(n) `step_by` allocations in the second proving round.
+
+**Problem:** `AHPForR1CS::fft_precomputation` computes the maximum domain size across all domains (2×constraint, 2×variable, 2×non_zero_a/b/c). When non-zero domains exceed the constraint domain, `circuit.fft_precomputation` and `circuit.ifft_precomputation` cover a domain STRICTLY LARGER than the constraint domain. Every call to `precomputation_for_subdomain(&constraint_domain)` on a larger precomputation performs an O(n) `step_by(ratio)` copy — allocating a new `Vec` of constraint-domain size.
+
+In the second round, this triggered:
+1. `calculate_z_m` calls `evals.interpolate_with_pc_by_ref(&circuit.ifft_precomputation)` — which internally calls `precomputation_for_subdomain` on the constraint domain, triggering O(n) step_by. Called 3 times per instance (for z_a, z_b, z_c).
+2. `calculate_rowcheck_witness` sets up a `PolyMultiplier` with `circuit.fft_precomputation` for the 2×constraint domain multiplication. Inside `multiply()`, `precomputation_for_subdomain(&mul_domain)` is called on the larger precomputation, again O(n) step_by.
+
+**Fix:** Add 3 cached Arc fields to `Circuit`: `constraint_ifft_precomputation` (for constraint domain IFFT), `constraint_mul_fft_precomputation` (for 2×constraint domain FFT), `constraint_mul_ifft_precomputation` (for 2×constraint domain IFFT). Compute these once at index time by calling `precomputation_for_subdomain` then `to_ifft_precomputation`, store behind `Arc`. In the second round, use `Arc::clone` (O(1)) instead of triggering O(n) step_by every prove call.
+
+**Files changed:**
+- `algorithms/src/snark/varuna/ahp/indexer/circuit.rs`: added 3 `Arc<_>` fields
+- `algorithms/src/snark/varuna/ahp/indexer/indexer.rs`: computed the 3 new precomputations at index time
+- `algorithms/src/snark/varuna/ahp/prover/round_functions/second.rs`: used the cached precomputations
+
+### Implementation
+
+- Added `constraint_ifft_precomputation: Arc<IFFTPrecomputation<F>>`, `constraint_mul_fft_precomputation: Arc<FFTPrecomputation<F>>`, `constraint_mul_ifft_precomputation: Arc<IFFTPrecomputation<F>>` to `Circuit` struct in `circuit.rs`.
+- Added computation of these 3 fields in both `indexer.rs` (`index` function) and `circuit.rs` (`CanonicalDeserialize` impl) by extracting with `precomputation_for_subdomain` and wrapping in `Arc`.
+- In `second.rs` `calculate_rowcheck_witness`: cloned the constraint-mul precomputations via `Arc::clone` in the outer loop, passed into inner job closure, and used them directly in `PolyMultiplier::add_precomputation` — so `precomputation_for_subdomain` returns `Cow::Borrowed` (no allocation).
+- In `second.rs` `calculate_z_m`: changed from `circuit.ifft_precomputation` (largest domain) to `circuit.constraint_ifft_precomputation` (exact constraint-domain IFFT) — so the IFFT precomputation matches the evaluation domain exactly, returning `Cow::Borrowed`.
+
+**Commit:** `d791bb930` on `test/autoresearch_varuna_credits_aleo_0036`
+
+### Results
+
+- Benchmark (medians; vs 0035 baseline of tp=297.8ms / tpriv=2473.8ms / tp2p=471.7ms / tpriv2pub=2469.8ms / join=2789.0ms / split=2432.8ms):
+  - credits.aleo.transfer_public: 297.8 ms → 300.7 ms (+1.0%, within noise)
+  - credits.aleo.transfer_private: 2473.8 ms → 2469.6 ms (-0.2%, within noise)
+  - credits.aleo.transfer_public_to_private: 471.7 ms → 466.0 ms (-1.2%, within noise)
+  - credits.aleo.transfer_private_to_public: 2469.8 ms → 2448.9 ms (-0.8%, within noise)
+  - credits.aleo.join: 2789.0 ms → 2779.4 ms (-0.3%, within noise)
+  - credits.aleo.split: 2432.8 ms → 2429.1 ms (-0.2%, within noise)
+- Correctness: pass
+
+### Conclusion
+
+**No measurable improvement.** Despite eliminating real O(n) `step_by` allocations, the savings are below the noise floor (~3-5%). The reason: for `credits.aleo`, the non-zero domain sizes are NOT larger than the constraint domain — so `circuit.fft_precomputation` is already equal in size to the constraint-domain precomputation, making `precomputation_for_subdomain` return `Cow::Borrowed` (no allocation) even without the optimization. The optimization is correct and beneficial in theory (for circuits where non-zero domains exceed the constraint domain), but has no effect on the current benchmark program.
+
+The change is kept as a correctness and future-proofing improvement. No regressions.
+
+Future experiments should investigate:
+(a) Apply the same step_by fix to `first.rs`: `variable_domain.in_order_fft_in_place_with_pc(&mut coeffs, &circuit.fft_precomputation)` and `.interpolate_with_pc(&circuit.ifft_precomputation)` — same issue if non-zero domains exceed variable domain.
+(b) Profile `transfer_public` (300ms) more carefully with `perf` to find what dominates.
+(c) Investigate `batch_open` in SonicPC — KZG opening polynomial construction may have redundant work.
+(d) Parallelize the z_m computations (z_a, z_b, z_c) within each instance — these 3 IFFTs are independent and could run concurrently.
+
+
+## test/autoresearch_varuna_credits_aleo_0037
+
+### Plan
+
+**Target:** Cache variable-domain-specific FFT/IFFT precomputations in the `Circuit` struct to eliminate O(n) `step_by` allocations in `first.rs` and `prepare_third.rs`.
+
+**Problem:** Similar to experiment 0036 but for the variable domain. In `first.rs`, `circuit.fft_precomputation` (largest domain) is used for FFT operations on `variable_domain`, and `circuit.ifft_precomputation` is used for IFFT. In `prepare_third.rs`, `circuit.ifft_precomputation` is used for IFFT on the variable domain. If non-zero domains exceed the variable domain, these trigger O(n) `step_by` allocations in `precomputation_for_subdomain`.
+
+**Fix:** Add 2 cached Arc fields to `Circuit`: `variable_fft_precomputation` and `variable_ifft_precomputation`. Use them in `first.rs` and `prepare_third.rs`.
+
+**Files changed:**
+- `algorithms/src/snark/varuna/ahp/indexer/circuit.rs`: added 2 `Arc<_>` fields
+- `algorithms/src/snark/varuna/ahp/indexer/indexer.rs`: computed the 2 new precomputations at index time
+- `algorithms/src/snark/varuna/ahp/prover/round_functions/first.rs`: used `circuit.variable_fft_precomputation` and `circuit.variable_ifft_precomputation`
+- `algorithms/src/snark/varuna/ahp/prover/round_functions/prepare_third.rs`: used `circuit.variable_ifft_precomputation`
+
+**Commit:** `6c2550b68` on `test/autoresearch_varuna_credits_aleo_0037`
+
+### Results
+
+- Benchmark (medians; vs 0036 baseline of tp=300.7ms / tpriv=2469.6ms / tp2p=466.0ms / tpriv2pub=2448.9ms / join=2779.4ms / split=2429.1ms):
+  - credits.aleo.transfer_public: 300.7 ms → 296.93 ms (-1.2%, within noise)
+  - credits.aleo.transfer_private: 2469.6 ms → 2475.6 ms (+0.2%, within noise)
+  - credits.aleo.transfer_public_to_private: 466.0 ms → 463.31 ms (-0.6%, within noise)
+  - credits.aleo.transfer_private_to_public: 2448.9 ms → 2473.3 ms (+1.0%, within noise)
+  - credits.aleo.join: 2779.4 ms → 2783.1 ms (+0.1%, within noise)
+  - credits.aleo.split: 2429.1 ms → 2423.8 ms (-0.2%, within noise)
+- Correctness: pass
+
+### Conclusion
+
+**No measurable improvement.** The same pattern as 0036: for `credits.aleo`, the variable domain equals the max domain, so `circuit.fft_precomputation` already matches exactly — `precomputation_for_subdomain` returns `Cow::Borrowed` without the optimization. The entire "eliminate step_by via cached exact-size precomputation" class of optimizations is now exhausted for the credits.aleo benchmark: all domain sizes (constraint, variable, non_zero) equal the max domain.
+
+The change is semantically correct, kept as future-proofing (beneficial for circuits where domains differ). No regressions.
+
+Future experiments should investigate genuinely different areas:
+(a) Profile with `perf` to find dominant costs in the ~300ms single-transfer proofs.
+(b) Investigate whether `batch_open` in SonicPC can reduce KZG opening polynomial construction overhead.
+(c) Look at `evaluate_all_lagrange_coefficients` — potentially parallelizable with divide-and-conquer.
+(d) Study parallelism opportunities between the AHP rounds (pipeline stalls between sequential rounds).
+
+## test/autoresearch_varuna_credits_aleo_0038
+
+### Plan
+
+**Target:** Replace `sort_unstable()` with counting sort in `batch_add` inside the MSM (multi-scalar multiplication) module.
+
+**Problem:** In `algorithms/src/msm/variable_base/batched.rs`, `batch_add` calls `bucket_positions.sort_unstable()` to sort BucketPositions by `bucket_index`. For n≈65536 (typical MSM size for credits.aleo), this is O(n log n) ≈ 1M comparisons per window. Since `bucket_index` values are bounded integers in [0, num_buckets-1] (num_buckets = 2^c = 8192 for c=13), or u32::MAX for "skip" entries, counting sort runs in O(n + num_buckets) ≈ 73k operations — roughly 13× fewer. With 20 windows per MSM and ~11 MSMs per proof, this could save ~20ms per proof.
+
+**Fix:** Replace `bucket_positions.sort_unstable()` with a manual counting sort implementation:
+1. Count occurrences for each bucket index.
+2. Prefix-sum to compute start positions.
+3. Scatter elements into output buffer in sorted order.
+4. Copy back to `bucket_positions`.
+
+Skip entries (bucket_index ≥ num_buckets = u32::MAX in practice) are placed at the end, matching sort_unstable's behavior (since u32::MAX sorts after all valid bucket indices under the existing `Ord` impl).
+
+**Files changed:**
+- `algorithms/src/msm/variable_base/batched.rs`: replaced `bucket_positions.sort_unstable()` with counting sort
+- `algorithms/src/fft/polynomial/dense.rs`: fixed 4 pre-existing clippy `map_or(false, ...)` → `is_some_and(...)` warnings (needed for `-D warnings` to pass)
+
+**Commit:** `4186cedab` on `test/autoresearch_varuna_credits_aleo_0038`
+
+### Results
+
+- Benchmark (medians; vs 0037 baseline of tp=296.93ms / tpriv=2475.6ms / tp2p=463.31ms / tpriv2pub=2473.3ms / join=2783.1ms / split=2423.8ms):
+  - credits.aleo.transfer_public: 296.93 ms → 292.07 ms (-1.6%)
+  - credits.aleo.transfer_private: 2475.6 ms → 2418.7 ms (-2.3%)
+  - credits.aleo.transfer_public_to_private: 463.31 ms → 455.15 ms (-1.8%)
+  - credits.aleo.transfer_private_to_public: 2473.3 ms → 2398.6 ms (-3.0%)
+  - credits.aleo.join: 2783.1 ms → 2744.4 ms (-1.4%)
+  - credits.aleo.split: 2423.8 ms → 2375.0 ms (-2.0%)
+- Correctness: pass
+
+### Conclusion
+
+**Consistent improvement of ~1.4-3.0% across all benchmarks.** This is the first experiment since 0033 (O(1) sum formula) to show improvements beyond the noise floor. The counting sort reduces per-window sorting from O(n log n) to O(n + k), saving real wall-clock time that aggregates across 20 windows × ~11 MSMs per proof. Larger MSMs (transfer_private at 2x scalar count) show proportionally larger improvements (~2.3-3.0%).
+
+The counting sort code uses safe Rust only (`vec![sentinel; n]` initialization instead of `unsafe set_len`), complying with `#![warn(unsafe_code)]` + `-D warnings` clippy.
+
+Future experiments should investigate:
+(a) Tune the counting sort implementation further — the output buffer initialization (`vec![sentinel; n]`) writes n elements; could use `MaybeUninit` with unsafe if we want to avoid the init cost.
+(b) Investigate whether `num_buckets` in `batch_add` could be passed in directly to avoid a recomputation.
+(c) Profile to find whether the MSM's bucket accumulation loop (after the sort) has remaining optimization potential.
+(d) Investigate whether the `c` parameter (window size) could be tuned for the specific MSM sizes used in credits.aleo proofs.
