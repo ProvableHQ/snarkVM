@@ -2477,3 +2477,39 @@ Future experiments should investigate:
 (a) Whether c=10 (ln-1, 1023 buckets) further helps the heavier benchmarks or causes regression everywhere.
 (b) A per-MSM adaptive `c` based on `scalars.len()` — for large n, c=11 or c=12; for very large n (131072), c=12 or c=13.
 (c) Profiling with perf/cachegrind to determine actual L2/L3 cache miss rates for different c values.
+
+## test/autoresearch_varuna_credits_aleo_0049
+
+### Plan
+
+**Target:** Reuse a thread-local buffer for the `bucket_positions` Vec in `batched_window` to avoid per-window allocation of ~512 KiB (65536 × 8 bytes). With 24 windows per MSM and parallel execution, this would eliminate ~12 MiB of per-MSM allocation per thread.
+
+**Problem:** `batched_window` creates `bucket_positions` via `.collect()` from an n-element iterator. The allocator must map/extend the heap 24 times per MSM per parallel thread.
+
+**Fix:** Add `BUCKET_POS_SCRATCH` thread-local holding a `Vec<BucketPosition>`. In `batched_window`, borrow it, resize to n if needed, fill via indexed writes, call `batch_add`, then release. The `std::mem::swap` inside `batch_add` (which exchanges with SORT_SCRATCH) leaves both TLS buffers in a valid state for the next call.
+
+**Files changed:**
+- `algorithms/src/msm/variable_base/batched.rs`: added `BUCKET_POS_SCRATCH` TLS and refactored `batched_window` to use it
+
+**Commit:** `736c205d0` (reverted via `42a2fd680`)
+
+### Results
+
+- Benchmark (medians; vs 0048 baseline of tp=273.29ms / tpriv=2247.7ms / tp2p=413.63ms / tpriv2pub=2208.4ms / join=2573.1ms / split=2188.1ms):
+  - credits.aleo.transfer_public: 273.29 ms → 279.49 ms (+2.3%, REGRESSION)
+  - credits.aleo.transfer_private: 2247.7 ms → 2266.2 ms (+0.8%, no change)
+  - credits.aleo.transfer_public_to_private: 413.63 ms → 424.10 ms (+2.5%, REGRESSION)
+  - credits.aleo.transfer_private_to_public: 2208.4 ms → 2218.1 ms (+0.4%, no change)
+  - credits.aleo.join: 2573.1 ms → 2533.2 ms (-1.6%, no change)
+  - credits.aleo.split: 2188.1 ms → 2190.0 ms (+0.1%, no change)
+
+### Conclusion
+
+**Reverted — slight regression on 2/6 benchmarks, neutral on rest.** The per-window allocation cost is lower than expected because:
+1. The allocator reuses freed heap regions efficiently — the jemalloc/tcmalloc thread cache makes `Vec::collect()` nearly free after warmup.
+2. Adding a TLS closure (`BUCKET_POS_SCRATCH.with(...)`) introduces indirection overhead: two TLS lookups per window (BUCKET_POS_SCRATCH + borrow + drop) vs zero for the direct `.collect()`.
+3. The indexed write loop vs iterator `collect()` may miss LLVM's auto-vectorization optimizations for the original `.map().collect()` chain.
+
+Key lesson: thread-local allocation reuse is most valuable when the allocation involves system calls (large allocs, first access to pages). For n=65536 × 8B = 512KB per window, the allocator's thread-local cache (tcache) handles reallocation without system calls after warmup, making the TLS approach's overhead visible.
+
+Baselines unchanged: tp=273.29ms / tpriv=2247.7ms / tp2p=413.63ms / tpriv2pub=2208.4ms / join=2573.1ms / split=2188.1ms
