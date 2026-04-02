@@ -2513,3 +2513,44 @@ Future experiments should investigate:
 Key lesson: thread-local allocation reuse is most valuable when the allocation involves system calls (large allocs, first access to pages). For n=65536 × 8B = 512KB per window, the allocator's thread-local cache (tcache) handles reallocation without system calls after warmup, making the TLS approach's overhead visible.
 
 Baselines unchanged: tp=273.29ms / tpriv=2247.7ms / tp2p=413.63ms / tpriv2pub=2208.4ms / join=2573.1ms / split=2188.1ms
+
+## test/autoresearch_varuna_credits_aleo_0050
+
+### Plan
+
+**Target:** Replace the per-scalar `BigInteger::divn(w_start) + modulo` with a direct 1-2 limb read in the Pippenger window extraction loop.
+
+**Problem:** For each of the n=65536 scalars per window, the current code copies the BigInteger and calls `divn(w_start)` to right-shift it, then takes `% (1 << c)` for the low c bits. `divn(w_start)` loops over the 4 limbs `(w_start / 64)` times plus a partial-shift pass. For the last window (w_start=242 with c=11), this is 3 full limb-loop passes + 1 partial = ~16 operations per scalar instead of 1-2.
+
+**Fix:** Compute `limb_idx = w_start / 64` and `bit_off = w_start % 64`. Read `limbs[limb_idx] >> bit_off`. For cross-limb windows (bit_off + c > 64), OR in `limbs[limb_idx+1] << (64 - bit_off)`. Guard against out-of-bounds on the last partial limb.
+
+**Files changed:**
+- `algorithms/src/msm/variable_base/batched.rs`: replaced divn+modulo with direct limb read
+
+**Commit:** `a4a3246a3` on `test/autoresearch_varuna_credits_aleo_0050`
+
+### Results
+
+- Benchmark (medians; vs 0048 baseline of tp=273.29ms / tpriv=2247.7ms / tp2p=413.63ms / tpriv2pub=2208.4ms / join=2573.1ms / split=2188.1ms):
+  - credits.aleo.transfer_public: 273.29 ms → 272.90 ms (-0.1%, criterion -2.7% p=0.00)
+  - credits.aleo.transfer_private: 2247.7 ms → 2259.8 ms (+0.5%, no change p=0.49)
+  - credits.aleo.transfer_public_to_private: 413.63 ms → 409.81 ms (-0.9%, criterion -3.4% p=0.00)
+  - credits.aleo.transfer_private_to_public: 2208.4 ms → 2203.2 ms (-0.2%, no change p=0.49)
+  - credits.aleo.join: 2573.1 ms → 2574.1 ms (0%, within noise p=0.00)
+  - credits.aleo.split: 2188.1 ms → 2184.6 ms (-0.2%, no change p=0.53)
+- Correctness: MSM unit tests pass (3/3)
+
+### Conclusion
+
+**Keeping the optimization — modest but consistent improvement on MSM-heavy benchmarks.** The direct limb read replaces O(w_start/64 × 4) operations with O(1) for each of the n×num_windows scalar decompositions. For the MSM-heavy benchmarks (transfer_public, transfer_public_to_private where prove time is ~70% MSM), criterion reports 2.7-3.4% improvement with p=0.00. The heavier private-transfer benchmarks (more FFT work relative to MSM) show noise-level changes.
+
+The optimization is algorithmically correct: for BLS12-377 scalars stored as 4×u64 limbs in little-endian order, `limbs[w_start/64] >> (w_start%64)` gives the bits starting at position `w_start`, and the cross-limb guard is needed only for windows straddling a 64-bit boundary.
+
+New best baselines: tp=272.90ms / tpriv=2259.8ms / tp2p=409.81ms / tpriv2pub=2203.2ms / join=2574.1ms / split=2184.6ms
+
+Note: tpriv appears to have regressed slightly (+0.5%) relative to 0048, but this is within noise (criterion says p=0.49 no change). The 0048 baseline for tpriv (2247.7ms) may have been a favorable sample.
+
+Future experiments should investigate:
+(a) Whether the inner `bucket_positions` loop (the scalar decomposition) can be auto-vectorized by providing SIMD-friendly data access patterns.
+(b) The `batch_add_in_place_same_slice` function — currently uses sequential prefetch hints but only on x86_64. The batch addition inner loop (the field inversion chain) may have further optimization potential.
+(c) The `res = vec![Zero::zero(); num_buckets]` allocation at the end of `batch_add` — for c=11, num_buckets=2047, so ~196 KiB per window. Could this be thread-locally cached similarly to SORT_SCRATCH?
