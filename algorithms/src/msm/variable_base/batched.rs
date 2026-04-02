@@ -191,7 +191,7 @@ pub(super) fn batch_add<G: AffineCurve>(
     num_buckets: usize,
     bases: &[G],
     bucket_positions: &mut Vec<BucketPosition>,
-) -> G::Projective {
+) -> Vec<G> {
     assert!(bases.len() >= bucket_positions.len());
     assert!(!bases.is_empty());
 
@@ -399,39 +399,9 @@ pub(super) fn batch_add<G: AffineCurve>(
         new_scalar_length = 0;
     }
 
-    // Compute the window sum directly from the sparse populated buckets,
-    // avoiding the O(num_buckets) dense zero-initialized array (≈852 KiB for
-    // BLS12-377 with num_buckets=8191). After tree reduction, bucket_positions
-    // [0..num_scalars] has exactly one entry per populated bucket, sorted by
-    // bucket_index ascending (courtesy of the counting sort above). We iterate
-    // in reverse (highest bucket first) and use the running-sum trick:
-    //   result = sum_i (i * bucket[i])
-    //          = bucket[k] + (bucket[k] + bucket[k-1]) + ...
-    // For empty buckets (gaps in the sparse representation), running_sum is
-    // unchanged but must still be added to res for each missing position.
-    // With ~99.97% bucket fill rate (n=65536, k=8191, E[empty]=~2.5),
-    // the inner empty-bucket loop rarely executes, keeping total iterations
-    // close to num_scalars ≈ num_buckets.
-    let mut res = G::Projective::zero();
-    let mut running_sum = G::Projective::zero();
-    // Highest bucket index seen so far; starts just above the valid range.
-    let mut prev_bucket = num_buckets;
-    for bucket_position in bucket_positions[..num_scalars].iter().rev() {
-        let current_bucket = bucket_position.bucket_index as usize;
-        // Handle empty buckets between prev_bucket-1 and current_bucket+1
-        // (exclusive). For each empty bucket, running_sum doesn't change but
-        // res must be incremented by running_sum.
-        let empty_count = prev_bucket - current_bucket - 1;
-        for _ in 0..empty_count {
-            res += &running_sum;
-        }
-        running_sum.add_assign_mixed(&new_bases[bucket_position.scalar_index as usize]);
-        res += &running_sum;
-        prev_bucket = current_bucket;
-    }
-    // Handle remaining empty buckets from bucket 0 to prev_bucket-1.
-    for _ in 0..prev_bucket {
-        res += &running_sum;
+    let mut res = vec![Zero::zero(); num_buckets];
+    for bucket_position in bucket_positions.iter().take(num_scalars) {
+        res[bucket_position.bucket_index as usize] = new_bases[bucket_position.scalar_index as usize];
     }
     res
 }
@@ -463,7 +433,14 @@ fn batched_window<G: AffineCurve>(
         })
         .collect();
 
-    let res = batch_add(num_buckets, bases, &mut bucket_positions);
+    let buckets = batch_add(num_buckets, bases, &mut bucket_positions);
+
+    let mut res = G::Projective::zero();
+    let mut running_sum = G::Projective::zero();
+    for b in buckets.into_iter().rev() {
+        running_sum.add_assign_mixed(&b);
+        res += &running_sum;
+    }
 
     (res, window_size)
 }

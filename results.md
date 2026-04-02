@@ -2244,3 +2244,40 @@ Future experiments should investigate:
 (b) Optimizing the main `batch_add_write` inner loop — the random access to `bases[idx]` causes cache misses in the 6.8 MB affine point array.
 (c) Looking at polynomial operations (FFT/IFFT) that may have optimization potential independent of the MSM.
 (d) Investigating whether the `starts` array (32 KiB) could also benefit from thread-local reuse.
+
+## test/autoresearch_varuna_credits_aleo_0041
+
+### Plan
+
+**Target:** Eliminate the O(num_buckets) dense zero-initialized bucket result array in `batch_add` by replacing it with an in-place sparse Horner accumulation directly over `bucket_positions[0..num_scalars]`.
+
+**Problem:** `let mut res = vec![Zero::zero(); num_buckets]` in `batch_add` allocates and zero-initializes 8191 affine points (≈852 KiB for BLS12-377) per window call. After tree reduction, `bucket_positions[0..num_scalars]` has exactly one entry per populated bucket (~99.97% fill rate at n=65536, k=8191), sorted by bucket_index. Iterating this sparse array directly for the Horner accumulation avoids both the allocation and the subsequent dense iteration in `batched_window`.
+
+**Implementation:** Changed `batch_add` to return `G::Projective` instead of `Vec<G>`. Replaced the dense fill + return with a sparse reverse-iteration over `bucket_positions[..num_scalars]`, tracking `prev_bucket` to accumulate empty-bucket contributions (which occur ~2.5 times on average at 99.97% fill). Removed the Horner loop from `batched_window`.
+
+**Files changed:**
+- `algorithms/src/msm/variable_base/batched.rs`: sparse accumulation in batch_add, removed Horner loop from batched_window
+
+**Commit:** `4d296b0cb` on `test/autoresearch_varuna_credits_aleo_0041` (reverted after benchmarking)
+
+### Results
+
+- Benchmark (medians; vs 0040 baseline of tp=292.52ms / tpriv=2407.9ms / tp2p=462.45ms / tpriv2pub=2374.6ms / join=2716.9ms / split=2352.6ms):
+  - credits.aleo.transfer_public: 292.52 ms → 296.51 ms (+1.4%, regression)
+  - credits.aleo.transfer_private: 2407.9 ms → 2404.7 ms (-0.1%)
+  - credits.aleo.transfer_public_to_private: 462.45 ms → 459.33 ms (-0.7%)
+  - credits.aleo.transfer_private_to_public: 2374.6 ms → 2382.3 ms (+0.3%)
+  - credits.aleo.join: 2716.9 ms → 2743.5 ms (+1.0%, regression)
+  - credits.aleo.split: 2352.6 ms → 2365.1 ms (+0.5%)
+- Correctness: pass (MSM tests and varuna tests pass)
+
+### Conclusion
+
+**Reverted — no measurable improvement, slight regression.** Despite eliminating 187 MB/proof of zero-initialization, the benchmark shows mostly small regressions. Likely cause: (a) the 852 KiB zero-init is handled efficiently by the OS via lazy page allocation + page zeroing (free from kernel's perspective), and (b) the dense 8191-entry iteration in the old Horner loop was sequential (cache-friendly), while the fused sparse approach accesses `new_bases[bp.scalar_index]` in random order.
+
+The change is reverted. The dense bucket array approach remains as it was.
+
+Future experiments should focus on:
+(a) Profiling with `perf record -e cache-misses` to identify the dominant cache miss sources.
+(b) Finding opportunities in the FFT/IFFT operations, which may have parallelism or allocation savings.
+(c) Investigating the `starts` array allocation (32 KiB per window) with a thread-local reuse approach similar to SORT_SCRATCH.
