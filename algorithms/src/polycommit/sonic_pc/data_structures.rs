@@ -588,13 +588,6 @@ impl<F: Field> LinearCombination<F> {
 impl<'a, F: Field> AddAssign<(F, &'a LinearCombination<F>)> for LinearCombination<F> {
     #[allow(clippy::suspicious_op_assign_impl)]
     fn add_assign(&mut self, (coeff, other): (F, &'a LinearCombination<F>)) {
-        // Fast path: when coeff == 1 this reduces to plain LC addition, saving
-        // one field multiplication per term. For single-instance proofs the
-        // instance combiner is always F::one(), so this fires frequently.
-        if coeff.is_one() {
-            *self += other;
-            return;
-        }
         for (t, c) in other.terms.iter() {
             self.add(coeff * c, t.clone());
         }
@@ -640,11 +633,6 @@ impl<F: Field> SubAssign<F> for LinearCombination<F> {
 
 impl<F: Field> MulAssign<F> for LinearCombination<F> {
     fn mul_assign(&mut self, coeff: F) {
-        // Fast path: multiplying by one is a no-op. For single-circuit proofs
-        // the selector is F::one(), so circuit_term *= selector hits this.
-        if coeff.is_one() {
-            return;
-        }
         self.terms.values_mut().for_each(|c| *c *= &coeff);
     }
 }
