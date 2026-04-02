@@ -127,7 +127,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let mut rowcheck = multiplier_2.multiply().unwrap();
                     rowcheck.coeffs.iter_mut().zip(&z_c.coeffs).for_each(|(ab, c)| *ab -= c);
 
-                    let instance_lhs = &rowcheck * instance_combiner;
+                    // Use the owned form to avoid cloning rowcheck (saves O(2n) memcpy).
+                    // Fast-path for instance_combiner == 1 (single-instance proofs):
+                    // skip O(2n) scalar multiplications entirely.
+                    let instance_lhs = if instance_combiner.is_one() {
+                        rowcheck
+                    } else {
+                        rowcheck * instance_combiner
+                    };
 
                     let (h_0_i, remainder) = apply_randomized_selector(
                         instance_lhs,

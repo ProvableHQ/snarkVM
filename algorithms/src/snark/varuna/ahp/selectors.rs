@@ -101,7 +101,11 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         );
 
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
-        h_i.coeffs.iter_mut().for_each(|c| *c *= multiplier);
+        // Skip the O(n) scalar-multiply loop when multiplier == 1 (common for
+        // single-circuit single-instance proofs where combiner=1 and domains are equal).
+        if !multiplier.is_one() {
+            h_i.coeffs.iter_mut().for_each(|c| *c *= multiplier);
+        }
 
         end_timer!(selector_time);
         Ok((h_i, None))
@@ -124,7 +128,10 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // this fires every time.
         if src_domain.size == target_domain.size {
             let mut poly = poly;
-            poly.coeffs.iter_mut().for_each(|c| *c *= combiner);
+            // Skip the O(n) scalar-multiply loop when combiner == 1.
+            if !combiner.is_one() {
+                poly.coeffs.iter_mut().for_each(|c| *c *= combiner);
+            }
             // Take ownership to divide in-place, avoiding an O(degree) clone.
             let (h_i, xg_i) = poly.divide_by_vanishing_poly_in_place(*src_domain)?;
             end_timer!(selector_time);
