@@ -421,13 +421,36 @@ fn batched_window<G: AffineCurve>(
         .iter()
         .enumerate()
         .map(|(scalar_index, &scalar)| {
-            let mut scalar = scalar;
-
-            // We right-shift by w_start, thus getting rid of the lower bits.
-            scalar.divn(w_start as u32);
-
-            // We mod the remaining bits by the window size.
-            let scalar = (scalar.as_ref()[0] % (1 << c)) as i32;
+            // Extract the c-bit window starting at bit w_start from the scalar
+            // without a full BigInteger divn + modulo.  A BigInteger is stored
+            // as an array of u64 limbs in little-endian order (limb 0 = bits
+            // 0..63).  The window fits entirely in one or two limbs:
+            //
+            //   limb_idx = w_start / 64   (index of the limb containing bit w_start)
+            //   bit_off  = w_start % 64   (position within that limb)
+            //
+            // If bit_off + c <= 64: all c bits reside in limb limb_idx.
+            // Otherwise: low (64 - bit_off) bits from limb_idx and high
+            //            (c - (64 - bit_off)) bits from limb_idx + 1.
+            //
+            // This replaces O(w_start/64 × 4) limb-shift operations in divn
+            // with 1-2 array reads + 1-2 bit-ops per scalar.
+            let limbs = scalar.as_ref();
+            let limb_idx = w_start / 64;
+            let bit_off = w_start % 64;
+            let mask = (1u64 << c) - 1;
+            let window_bits = if bit_off + c <= 64 {
+                (limbs[limb_idx] >> bit_off) & mask
+            } else {
+                // Window straddles two limbs.
+                let lo = limbs[limb_idx] >> bit_off;
+                // Guard against reading beyond the last limb: if limb_idx+1
+                // is out of range, the high bits are zero (the scalar has
+                // fewer than w_start+c meaningful bits).
+                let hi = if limb_idx + 1 < limbs.len() { limbs[limb_idx + 1] << (64 - bit_off) } else { 0 };
+                (lo | hi) & mask
+            };
+            let scalar = window_bits as i32;
 
             BucketPosition { bucket_index: (scalar - 1) as u32, scalar_index: scalar_index as u32 }
         })
