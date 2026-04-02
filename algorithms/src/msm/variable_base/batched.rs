@@ -23,6 +23,17 @@ use rayon::prelude::*;
 #[cfg(target_arch = "x86_64")]
 use crate::{prefetch_slice, prefetch_slice_write};
 
+// Thread-local scratch buffer for the counting sort output in `batch_add`.
+// Reusing a pre-allocated Vec across calls on the same thread eliminates
+// both the per-call allocation (O(n) malloc + OS page-fault) and the
+// sentinel zero-initialization (O(n) memset) since the scatter loop
+// overwrites every slot exactly once. With 20 windows per MSM and ~11 MSMs
+// per proof, this saves ~110 MB of allocation+init work per proof.
+thread_local! {
+    static SORT_SCRATCH: std::cell::RefCell<Vec<BucketPosition>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct BucketPosition {
     pub bucket_index: u32,
@@ -193,13 +204,14 @@ pub(super) fn batch_add<G: AffineCurve>(
     // saving ~90% of sort cost at typical MSM sizes (n ≈ 65k, num_buckets ≈ 8k).
     // Skip entries (bucket_index ≥ num_buckets) sort last, matching sort_unstable.
     //
-    // Optimisations vs the original 2-array design:
+    // Optimisations:
     // 1. Fuse `counts` and `starts` into a single `starts` array (one fewer
-    //    32 KiB allocation) using the shifted-histogram trick: accumulate into
-    //    `starts[idx]` then prefix-sum in place.
-    // 2. std::mem::swap instead of copy_from_slice to move the sorted buffer
-    //    into `bucket_positions` in O(1) (3 pointer/length field swaps) rather
-    //    than copying n × 8 bytes element-by-element.
+    //    32 KiB allocation) via the shifted-histogram trick.
+    // 2. Thread-local scratch buffer (SORT_SCRATCH) reused across calls so that
+    //    no allocation or zero-initialization occurs after the first call on each
+    //    rayon thread. The scatter loop overwrites every slot exactly once, so
+    //    leftover data from the previous call is safe to ignore.
+    // 3. std::mem::swap to hand the sorted buffer to `bucket_positions` in O(1).
     {
         let n = bucket_positions.len();
         // Single counts+starts array: starts[i] accumulates count of bucket i,
@@ -210,8 +222,7 @@ pub(super) fn batch_add<G: AffineCurve>(
             if idx < num_buckets {
                 starts[idx] += 1;
             }
-            // Skip entries (bucket_index >= num_buckets) are not counted here;
-            // skip_start is the remaining positions after all valid buckets.
+            // Skip entries (bucket_index >= num_buckets) are not counted here.
         }
         // Prefix-sum in place: starts[i] becomes the start position of bucket i.
         let mut cumsum = 0u32;
@@ -222,26 +233,36 @@ pub(super) fn batch_add<G: AffineCurve>(
         }
         // cumsum == number of non-skip entries; skip entries occupy [cumsum .. n).
         let skip_start = cumsum as usize;
-        // Scatter into output buffer in sorted order. Initialise with a sentinel
-        // value; every slot is overwritten by the scatter loop below.
-        let mut sorted = vec![BucketPosition { bucket_index: u32::MAX, scalar_index: 0 }; n];
-        let mut cursors = starts;
-        let mut skip_cur = skip_start;
-        for pos in bucket_positions.iter() {
-            let idx = pos.bucket_index as usize;
-            if idx < num_buckets {
-                let out_idx = cursors[idx] as usize;
-                sorted[out_idx] = *pos;
-                cursors[idx] += 1;
-            } else {
-                sorted[skip_cur] = *pos;
-                skip_cur += 1;
+        // Scatter into the thread-local scratch buffer. The buffer is reused
+        // across calls on the same rayon thread, so no allocation or
+        // zero-initialization occurs once the buffer has been warmed up.
+        // resize() is O(1) when len >= n (no write), O(n-len) on first call.
+        // After the first window per thread the buffer stays at capacity n and
+        // all subsequent resize() calls are no-ops.
+        SORT_SCRATCH.with(|cell| {
+            let mut sorted = cell.borrow_mut();
+            // Sentinel value used only on first call (warm-up). Subsequent
+            // calls find len == n and resize() is a no-op. Every position
+            // in [0..n] is overwritten by the scatter loop below.
+            sorted.resize(n, BucketPosition { bucket_index: u32::MAX, scalar_index: 0 });
+            let mut cursors = starts;
+            let mut skip_cur = skip_start;
+            for pos in bucket_positions.iter() {
+                let idx = pos.bucket_index as usize;
+                if idx < num_buckets {
+                    let out_idx = cursors[idx] as usize;
+                    sorted[out_idx] = *pos;
+                    cursors[idx] += 1;
+                } else {
+                    sorted[skip_cur] = *pos;
+                    skip_cur += 1;
+                }
             }
-        }
-        // Swap the sorted buffer into bucket_positions in O(1) (pointer/length
-        // field swap) instead of copying n × 8 bytes element-by-element.
-        // The old unsorted Vec in `sorted` is then dropped at end of this block.
-        std::mem::swap(bucket_positions, &mut sorted);
+            // Swap the sorted buffer into bucket_positions in O(1).
+            // After the swap: bucket_positions holds sorted data,
+            // sorted holds the old unsorted data (reused next call).
+            std::mem::swap(bucket_positions, &mut *sorted);
+        });
     }
 
     let mut num_scalars = bucket_positions.len();
