@@ -191,7 +191,12 @@ pub(super) fn batch_add<G: AffineCurve>(
     num_buckets: usize,
     bases: &[G],
     bucket_positions: &mut Vec<BucketPosition>,
-) -> Vec<G> {
+) -> (usize, Vec<G>) {
+    // Returns `(num_scalars, new_bases)` where `bucket_positions[..num_scalars]`
+    // contains the final sorted bucket assignments and `new_bases[i]` is the
+    // accumulated affine point for assignment `i`. The caller can Horner-
+    // accumulate directly from this sparse representation, avoiding the
+    // `vec![Zero::zero(); num_buckets]` scatter buffer (~196 KiB for c=11).
     assert!(bases.len() >= bucket_positions.len());
     assert!(!bases.is_empty());
 
@@ -399,11 +404,10 @@ pub(super) fn batch_add<G: AffineCurve>(
         new_scalar_length = 0;
     }
 
-    let mut res = vec![Zero::zero(); num_buckets];
-    for bucket_position in bucket_positions.iter().take(num_scalars) {
-        res[bucket_position.bucket_index as usize] = new_bases[bucket_position.scalar_index as usize];
-    }
-    res
+    // Return the sparse (num_scalars, new_bases) pair. The caller walks
+    // bucket_positions[..num_scalars] in reverse bucket-index order to
+    // Horner-accumulate without materialising the dense res buffer.
+    (num_scalars, new_bases)
 }
 
 #[inline]
@@ -456,12 +460,26 @@ fn batched_window<G: AffineCurve>(
         })
         .collect();
 
-    let buckets = batch_add(num_buckets, bases, &mut bucket_positions);
+    let (num_reduced, new_bases) = batch_add(num_buckets, bases, &mut bucket_positions);
 
+    // Horner accumulation directly from the sparse reduced bucket list.
+    // After batch_add, bucket_positions[..num_reduced] holds (bucket_index,
+    // scalar_index) pairs sorted in ascending bucket_index order.
+    // We walk in descending bucket_index order (highest to lowest), merging
+    // each non-empty bucket into the running sum and adding running_sum to res.
+    // Empty buckets (no entry in bucket_positions for that index) contribute
+    // the unchanged running_sum to res without an affine addition.
+    // This replaces the former `vec![Zero::zero(); num_buckets]` scatter buffer
+    // (196 KiB for c=11) with a pointer walk over ~2047 pairs (16 KiB).
     let mut res = G::Projective::zero();
     let mut running_sum = G::Projective::zero();
-    for b in buckets.into_iter().rev() {
-        running_sum.add_assign_mixed(&b);
+    let mut bp_idx = num_reduced; // points past the last valid entry
+    for bucket_idx in (0..num_buckets as u32).rev() {
+        // Check if the highest remaining bucket_position matches this index.
+        if bp_idx > 0 && bucket_positions[bp_idx - 1].bucket_index == bucket_idx {
+            bp_idx -= 1;
+            running_sum.add_assign_mixed(&new_bases[bucket_positions[bp_idx].scalar_index as usize]);
+        }
         res += &running_sum;
     }
 
