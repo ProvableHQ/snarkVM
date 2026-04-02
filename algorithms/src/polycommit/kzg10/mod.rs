@@ -475,12 +475,7 @@ fn skip_leading_zeros_and_convert_to_bigints<F: PrimeField>(p: &DensePolynomial<
 
 fn convert_to_bigints<F: PrimeField>(p: &[F]) -> Vec<F::BigInteger> {
     let to_bigint_time = start_timer!(|| "Converting polynomial coeffs to bigints");
-    // Montgomery reduction (to_bigint) is a pure per-element computation with no
-    // data dependency between elements. Parallelising with cfg_iter! saturates
-    // idle rayon threads during the sequential gap between the bigint conversion
-    // and the subsequent MSM, reducing the critical-path latency of each commit
-    // and open call by up to one MSM-size bigint-conversion worth of time.
-    let coeffs = cfg_iter!(p).map(|s| s.to_bigint()).collect::<Vec<_>>();
+    let coeffs = p.iter().map(|s| s.to_bigint()).collect::<Vec<_>>();
     end_timer!(to_bigint_time);
     coeffs
 }
