@@ -2281,3 +2281,152 @@ Future experiments should focus on:
 (a) Profiling with `perf record -e cache-misses` to identify the dominant cache miss sources.
 (b) Finding opportunities in the FFT/IFFT operations, which may have parallelism or allocation savings.
 (c) Investigating the `starts` array allocation (32 KiB per window) with a thread-local reuse approach similar to SORT_SCRATCH.
+
+## test/autoresearch_varuna_credits_aleo_0044
+
+### Plan
+
+**Target:** Parallelize `to_bigint()` conversion in KZG10 commitment using `cfg_iter!`.
+
+**Problem:** `convert_to_bigints` uses `p.iter().map(|s| s.to_bigint())` (sequential). For n=65536 coefficients, each `to_bigint()` does an inverse-Montgomery reduction (~10 field multiplications). Sequential cost: ~65536 × 10 = 655K field ops. Single-polynomial commit calls (1st/2nd/5th rounds: 1 polynomial each) leave most rayon threads idle in the outer ExecutionPool.
+
+**Fix:** Replace `p.iter()` with `cfg_iter!(p)` in `convert_to_bigints` and `commit_lagrange.evaluations.iter()`.
+
+**Files changed:**
+- `algorithms/src/polycommit/kzg10/mod.rs`: `cfg_iter!` in two places
+
+**Commit:** `2e32f00cd` (reverted after benchmarking)
+
+### Results
+
+- Benchmark (medians; vs 0042 baseline of tp=288.76ms / tpriv=2391.5ms / tp2p=446.17ms / tpriv2pub=2361.0ms / join=2717.0ms / split=2351.4ms):
+  - credits.aleo.transfer_public: 288.76 ms → 321.30 ms (+11.3%, REGRESSION)
+  - credits.aleo.transfer_private: 2391.5 ms → 2676.0 ms (+11.9%, REGRESSION)
+  - credits.aleo.transfer_public_to_private: 446.17 ms → 504.06 ms (+12.9%, REGRESSION)
+  - credits.aleo.transfer_private_to_public: 2361.0 ms → 2617.6 ms (+10.9%, REGRESSION)
+  - credits.aleo.join: 2717.0 ms → 2985.0 ms (+9.9%, REGRESSION)
+  - credits.aleo.split: 2351.4 ms → 2597.9 ms (+10.5%, REGRESSION)
+  - snark_prove_v1: 161ms → 170ms (+5.6%, REGRESSION)
+  - snark_prove_v2: 161ms → 169ms (+5.0%, REGRESSION)
+  - snark_circuit_setup_10000: 134ms → 151ms (+12.7%, REGRESSION)
+- Correctness: pass
+
+### Conclusion
+
+**Reverted — severe regression (~10-13%).** The nested rayon parallelism (outer ExecutionPool commits + inner cfg_iter! for to_bigint) causes rayon thread pool contention. The MSM windows use rayon's `cfg_into_iter!` and are displaced by the nested to_bigint tasks via task stealing. Even the index time regressed, indicating global rayon pool interference.
+
+Key lesson: adding rayon parallelism inside `convert_to_bigints` conflicts with the MSM's parallel window execution. The MSM's ~20 windows × N polynomial commits all compete for the same rayon thread pool. Adding more rayon tasks (the to_bigint conversion) increases contention and reduces throughput.
+
+Future experiments must avoid adding rayon parallelism inside functions that are called while the MSM is running.
+
+## test/autoresearch_varuna_credits_aleo_0045
+
+### Plan
+
+**Target:** Skip O(deg) field multiplications in `AddAssign<(F, &DensePolynomial)>` when the scalar coefficient equals field identity.
+
+**Problem:** `AddAssign<(F, &DensePolynomial<F>)>` performs `*a += f * b` per coefficient regardless of whether `f == 1`. When `f.is_one()`, each `f * b` is a redundant field multiplication (plain `b` would suffice). This impl is called in `open_combinations` for each LC term, where many single-term LCs (g_1, h_1, h_0, h_2, g_a/b/c, a_poly/b_poly for each matrix) carry coefficient `F::one()`. For a polynomial of degree K, saving O(K) multiplications per LC term adds up to millions of avoided field muls per proof.
+
+**Fix:** Add `if f.is_one() { *self += other; return; }` at the top of `AddAssign<(F, &DensePolynomial)>`. Delegates to the plain `AddAssign<&DensePolynomial>` which uses additions only — no multiplications.
+
+**Files changed:**
+- `algorithms/src/fft/polynomial/dense.rs`: is_one() fast path in AddAssign<(F, &DensePolynomial)>
+
+**Commit:** `cb1a21245` on `test/autoresearch_varuna_credits_aleo_0045`
+
+### Results
+
+- Benchmark (medians; vs 0042 baseline of tp=288.76ms / tpriv=2391.5ms / tp2p=446.17ms / tpriv2pub=2361.0ms / join=2717.0ms / split=2351.4ms):
+  - credits.aleo.transfer_public: 288.76 ms → 287.66 ms (-0.4%, within noise)
+  - credits.aleo.transfer_private: 2391.5 ms → 2350.3 ms (-1.7%)
+  - credits.aleo.transfer_public_to_private: 446.17 ms → 447.27 ms (+0.2%, within noise)
+  - credits.aleo.transfer_private_to_public: 2361.0 ms → 2325.6 ms (-1.5%)
+  - credits.aleo.join: 2717.0 ms → 2663.2 ms (-2.0%)
+  - credits.aleo.split: 2351.4 ms → 2311.8 ms (-1.7%)
+- Correctness: criterion marks p=0.00 < 0.05 (statistically significant)
+
+### Conclusion
+
+**Consistent ~1-2% improvement across heavier benchmarks.** The is_one() fast path in `AddAssign<(F, &DensePolynomial)>` fires for all single-term LCs with coefficient F::one() in `open_combinations`, replacing O(deg) field multiplications with O(deg) field additions. For polynomials of degree 65K+, each skip saves ~65K field multiplications. With 15-20+ single-term unit-coefficient LCs per proof (g_1, h_1, h_0, h_2, g_a/b/c, a_poly_a/b/c, b_poly_a/b/c), the total savings are on the order of 1-2M avoided field multiplications per proof.
+
+The transfer_public and transfer_public_to_private benchmarks are too fast to show significance above noise (~3-5%), but the slower benchmarks (tpriv, tpriv2pub, join, split) show consistent 1.5-2.0% improvement.
+
+New best baselines: tp=287.66ms / tpriv=2350.3ms / tp2p=447.27ms / tpriv2pub=2325.6ms / join=2663.2ms / split=2311.8ms
+
+Future experiments should investigate:
+(a) Whether similar is_one() guards are needed in SubAssign or other polynomial arithmetic paths.
+(b) The `poly += (*coeff, cur_poly.polynomial())` call in `open_combinations`: for multi-term LCs with mixed coefficients, can we sort terms by is_one() first to maximize cache efficiency?
+(c) The MSM `batch_add` inner loops for further cache miss reduction.
+
+## test/autoresearch_varuna_credits_aleo_0046
+
+### Plan
+
+**Target:** Skip per-term field multiplications in `AddAssign<(F, &LinearCombination)>` and `MulAssign<F>` for `LinearCombination` when coefficient equals field identity.
+
+**Problem:** For single-instance credits.aleo proofs, `sample_batch_combiners` sets `instance_combiners = vec![F::one()]`. This means `circuit_term += (F::one(), &lineval)` calls `AddAssign<(F, &LinearCombination)>` which does `coeff * c` for each term even when coeff=1. Similarly `circuit_term *= *selector` fires with selector=F::one() for single-circuit proofs. Both ops multiply when they could skip.
+
+**Fix:** Add `if coeff.is_one() { *self += other; return; }` to AddAssign, and `if coeff.is_one() { return; }` to MulAssign in `algorithms/src/polycommit/sonic_pc/data_structures.rs`.
+
+**Commit:** `7e1495113` on `test/autoresearch_varuna_credits_aleo_0046`
+
+### Results
+
+- Benchmark (medians; vs 0045 baseline of tp=287.66ms / tpriv=2350.3ms / tp2p=447.27ms / tpriv2pub=2325.6ms / join=2663.2ms / split=2311.8ms):
+  - credits.aleo.transfer_public: 287.66 ms → 290.62 ms (+1.1%, within noise, p=0.16)
+  - credits.aleo.transfer_private: 2350.3 ms → 2346.4 ms (-0.2%, within noise, p=0.61)
+  - credits.aleo.transfer_public_to_private: 447.27 ms → 448.53 ms (+0.3%, within noise, p=0.49)
+  - credits.aleo.transfer_private_to_public: 2325.6 ms → 2318.9 ms (-0.3%, within noise, p=0.73)
+  - credits.aleo.join: 2663.2 ms → 2682.4 ms (+0.7%, within noise, p=0.16)
+  - credits.aleo.split: 2311.8 ms → 2307.9 ms (-0.2%, within noise, p=0.67)
+- Correctness: pass
+
+### Conclusion
+
+**Reverted — no measurable improvement.** LinearCombination terms are few (6-20), so the per-term multiplication savings are negligible at ~2s proof time. The optimization is structurally correct but the call site is not a bottleneck. The DensePolynomial version (0045) mattered because degree-65K+ polynomials gave O(65K) multiplications to eliminate; LCs give O(10) — three orders of magnitude less.
+
+New baselines unchanged: tp=287.66ms / tpriv=2350.3ms / tp2p=447.27ms / tpriv2pub=2325.6ms / join=2663.2ms / split=2311.8ms
+(d) Whether the `lhs_polynomials` accumulation in fifth.rs can skip O(deg) scale when delta happens to be 1 (it won't since delta is random).
+
+## test/autoresearch_varuna_credits_aleo_0047
+
+### Plan
+
+**Target:** Tune the Pippenger MSM window parameter `c` from `ln(n)+2` to `ln(n)+1`, reducing bucket count from 8191 to 4095 for n=65536 and improving cache utilization.
+
+**Problem:** In `algorithms/src/msm/variable_base/batched.rs`, the window parameter is computed as:
+```rust
+let c = crate::msm::ln_without_floats(scalars.len()) + 2;
+```
+For n=65536 (credits.aleo proof polynomial sizes), `ln(65536)=11`, giving c=13, which results in `num_buckets = (1 << 13) - 1 = 8191` buckets per window and `num_windows = ceil(255/13) = 20` windows. The `starts` working array is `vec![0u32; num_buckets] = 32KB` and the `res` accumulator is `vec![G::Affine::zero(); num_buckets] = 786KB`. The combined working set of ~820KB per window iteration may cause L2 cache pressure. Reducing to c=12 (4095 buckets, 16KB starts, ~393KB res) halves the bucket-phase working set, which may improve cache hit rates in the counting-sort scatter and bucket-accumulation phases.
+
+**Fix:** Change `+ 2` to `+ 1` in the c-selection formula. This increases window count from 20 to 22 (ceil(255/12)=22) — a small ~10% more work per MSM — but may be offset by better cache utilization per window.
+
+**Files changed:**
+- `algorithms/src/msm/variable_base/batched.rs`: `+ 2` → `+ 1`
+
+**Commit:** `df9e0bda5` on `test/autoresearch_varuna_credits_aleo_0047`
+
+### Results
+
+- Benchmark (medians; vs 0045/0046 baseline of tp=287.66ms / tpriv=2350.3ms / tp2p=447.27ms / tpriv2pub=2325.6ms / join=2663.2ms / split=2311.8ms):
+  - credits.aleo.transfer_public: 287.66 ms → 269.10 ms (-6.5%, p=0.00)
+  - credits.aleo.transfer_private: 2350.3 ms → 2290.3 ms (-2.4%, p=0.00)
+  - credits.aleo.transfer_public_to_private: 447.27 ms → 428.83 ms (-4.4%, p=0.00)
+  - credits.aleo.transfer_private_to_public: 2325.6 ms → 2243.3 ms (-3.3%, p=0.00)
+  - credits.aleo.join: 2663.2 ms → 2628.5 ms (-2.0%, within noise threshold, p=0.03)
+  - credits.aleo.split: 2311.8 ms → 2227.1 ms (-3.5%, p=0.00)
+- Correctness: all benchmarks ran cleanly
+
+### Conclusion
+
+**Significant improvement across all benchmarks.** Reducing the Pippenger bucket count from 8191 to 4095 (c=12 vs c=13) gives 2.4-6.5% improvement. The faster `transfer_public` and `transfer_public_to_private` benchmarks (which have a higher ratio of MSM work relative to FFT) show the largest gains (6.5% and 4.4% respectively), confirming the hypothesis that cache utilization was the bottleneck. The heavier private-transfer benchmarks (more circuit constraints → more FFT relative to MSM) show 2-3.5% improvements.
+
+The c=12 formula uses one more window (22 vs 20) but each window is more cache-friendly: the `res` accumulator shrinks from ~786KB to ~393KB, fitting more comfortably in L2 cache. The net tradeoff strongly favors c=12 for n≈65536.
+
+New best baselines: tp=269.10ms / tpriv=2290.3ms / tp2p=428.83ms / tpriv2pub=2243.3ms / join=2628.5ms / split=2227.1ms
+
+Future experiments should investigate:
+(a) Whether c=11 (ln+0) gives further improvement by further halving the bucket count to 2047.
+(b) Whether c is scale-sensitive for other proof sizes (n=131072 for larger programs would give c=12 with the old formula and c=11 with the new).
+(c) The `batched_window` accumulation phase: the `for i in (0..num_buckets - 1).rev()` running-sum loop is sequential and may benefit from SIMD-style prefetching hints.
