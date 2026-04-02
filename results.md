@@ -2554,3 +2554,37 @@ Future experiments should investigate:
 (a) Whether the inner `bucket_positions` loop (the scalar decomposition) can be auto-vectorized by providing SIMD-friendly data access patterns.
 (b) The `batch_add_in_place_same_slice` function — currently uses sequential prefetch hints but only on x86_64. The batch addition inner loop (the field inversion chain) may have further optimization potential.
 (c) The `res = vec![Zero::zero(); num_buckets]` allocation at the end of `batch_add` — for c=11, num_buckets=2047, so ~196 KiB per window. Could this be thread-locally cached similarly to SORT_SCRATCH?
+
+## test/autoresearch_varuna_credits_aleo_0051
+
+### Plan
+
+**Target:** Eliminate the `vec![Zero::zero(); num_buckets]` dense scatter buffer in `batch_add` by returning sparse (num_scalars, new_bases) and doing inline sparse Horner accumulation in `batched_window`.
+
+**Problem:** `batch_add` allocates and zero-initializes `res = vec![G::Affine::zero(); num_buckets=2047]` (~196 KiB for c=11) per window, then scatters `num_scalars` points into it. With 24 windows per MSM: 24 × 196 KiB = ~4.7 MiB per MSM of zero-init + scatter. The Horner loop then reads all 2047 entries.
+
+**Fix:** Change `batch_add` to return `(num_scalars, new_bases)`. In `batched_window`, replace the dense `buckets` loop with a reverse walk over `bucket_positions[..num_scalars]` (sorted by bucket_index), merging non-empty buckets directly into `running_sum`.
+
+**Files changed:**
+- `algorithms/src/msm/variable_base/batched.rs`: changed `batch_add` return type and refactored `batched_window` Horner loop
+
+**Commit:** `15e6a93e0` (reverted via `e246b5cde`)
+
+### Results
+
+- Benchmark (medians; vs 0050 baseline of tp=272.90ms / tpriv=2259.8ms / tp2p=409.81ms / tpriv2pub=2203.2ms / join=2574.1ms / split=2184.6ms):
+  - credits.aleo.transfer_public: 272.90 ms → 276.42 ms (+1.3%, within noise p=0.01)
+  - credits.aleo.transfer_private: 2259.8 ms → 2265.1 ms (+0.2%, no change p=0.49)
+  - credits.aleo.transfer_public_to_private: 409.81 ms → 415.56 ms (+1.4%, within noise p=0.00)
+  - credits.aleo.transfer_private_to_public: 2203.2 ms → 2209.3 ms (+0.3%, no change p=0.74)
+  - credits.aleo.join: 2574.1 ms → 2556.0 ms (-0.7%, no change p=0.27)
+  - credits.aleo.split: 2184.6 ms → 2190.1 ms (+0.3%, no change p=0.51)
+
+### Conclusion
+
+**Reverted — neutral result.** Eliminating the 196 KiB zero-init scatter buffer has no measurable effect because:
+1. The allocator's thread cache (tcache) reuses recently freed 196 KiB regions without system calls, making the allocation effectively free after warmup.
+2. The new sparse walk adds a comparison per bucket iteration (`bp.bucket_index == bucket_idx`), offsetting the saved scatter loop iterations.
+3. With n=65536 >> num_buckets=2047, essentially all 2047 buckets are non-empty (P(empty bucket) ≈ e^{-32} ≈ 0), so the dense and sparse loops do the same number of effective iterations.
+
+Baselines unchanged: tp=272.90ms / tpriv=2259.8ms / tp2p=409.81ms / tpriv2pub=2203.2ms / join=2574.1ms / split=2184.6ms
