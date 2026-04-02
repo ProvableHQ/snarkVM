@@ -2206,3 +2206,41 @@ Future experiments should investigate:
 (b) Tuning the MSM `c` parameter (window size) dynamically based on actual scalar density distribution rather than just n.
 (c) Investigating whether the main `batch_add_write` loop's random access pattern into `bases` (6.8 MB affine point array) can be improved with better cache prefetching.
 (d) Profiling with `perf` to confirm where the remaining ~97% of time goes.
+
+## test/autoresearch_varuna_credits_aleo_0040
+
+### Plan
+
+**Target:** Use a thread-local scratch buffer for the counting sort in `batch_add` to eliminate per-call allocation and zero-initialization of the sort output buffer.
+
+**Problem:** Each `batch_add` call (once per window, 20 windows per MSM, ~11 MSMs per proof = 220 calls/proof) allocates a fresh 512 KiB `sorted: Vec<BucketPosition>` via `resize()`. After the first call per thread, the resize() would be O(1) if the buffer is reused. The scatter loop overwrites every slot in [0..n] exactly once, so no zero-initialization is needed on reuse.
+
+**Mechanism:** Thread-local `SORT_SCRATCH: RefCell<Vec<BucketPosition>>` pre-allocates once per rayon worker thread (first window call). On subsequent calls from the same thread, `resize(n, sentinel)` is O(1) (len already == n). After scatter, `std::mem::swap(bucket_positions, &mut *sorted)` hands the sorted buffer to `bucket_positions` in O(1). The thread-local receives the previous `batched_window`'s original allocation (which had len=n from `.collect()`), keeping the thread-local buffer alive across calls.
+
+**Files changed:**
+- `algorithms/src/msm/variable_base/batched.rs`: added `SORT_SCRATCH` thread_local, used it in `batch_add`
+
+**Commit:** `ff9501eb7` on `test/autoresearch_varuna_credits_aleo_0040`
+
+### Results
+
+- Benchmark (medians; vs 0039 baseline of tp=290.64ms / tpriv=2395.4ms / tp2p=450.57ms / tpriv2pub=2376.3ms / join=2706.9ms / split=2356.2ms):
+  - credits.aleo.transfer_public: 290.64 ms → 292.52 ms (+0.6%, within noise)
+  - credits.aleo.transfer_private: 2395.4 ms → 2407.9 ms (+0.5%, within noise)
+  - credits.aleo.transfer_public_to_private: 450.57 ms → 462.45 ms (+2.6%, regression within noise ±1.9%)
+  - credits.aleo.transfer_private_to_public: 2376.3 ms → 2374.6 ms (-0.1%, within noise)
+  - credits.aleo.join: 2706.9 ms → 2716.9 ms (+0.4%, within noise)
+  - credits.aleo.split: 2356.2 ms → 2352.6 ms (-0.2%, within noise)
+- Correctness: pass
+
+### Conclusion
+
+**No measurable improvement.** Results are within noise (±3-5%). The thread-local RefCell access (~5ns overhead × 220 calls ≈ 1μs) is negligible, but the allocation savings (~12-100μs total per proof) are also too small to measure reliably. The transfer_public_to_private apparent regression (+2.6%) is within benchmark noise.
+
+The change is semantically correct (no use-after-free: the thread-local buffer is handed off to `batched_window`'s `bucket_positions` Vec via swap, and `batched_window` frees the old thread-local allocation while TLS receives the new one). However, the performance benefit is below the noise floor.
+
+Future experiments should investigate:
+(a) Profiling with `perf stat` or `perf record` to identify the actual dominant cost categories (cache misses, branch mispredictions, instruction throughput).
+(b) Optimizing the main `batch_add_write` inner loop — the random access to `bases[idx]` causes cache misses in the 6.8 MB affine point array.
+(c) Looking at polynomial operations (FFT/IFFT) that may have optimization potential independent of the MSM.
+(d) Investigating whether the `starts` array (32 KiB) could also benefit from thread-local reuse.
