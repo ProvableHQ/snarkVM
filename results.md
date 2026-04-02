@@ -2170,3 +2170,39 @@ Future experiments should investigate:
 (b) Investigate whether `num_buckets` in `batch_add` could be passed in directly to avoid a recomputation.
 (c) Profile to find whether the MSM's bucket accumulation loop (after the sort) has remaining optimization potential.
 (d) Investigate whether the `c` parameter (window size) could be tuned for the specific MSM sizes used in credits.aleo proofs.
+
+## test/autoresearch_varuna_credits_aleo_0039
+
+### Plan
+
+**Target:** Further optimize the counting sort in `batch_add` with two micro-optimizations:
+1. Fuse the separate `counts` and `starts` arrays into a single `starts` array (saves one 32 KiB allocation per window call using the shifted-histogram trick).
+2. Replace `bucket_positions.copy_from_slice(&sorted)` with `std::mem::swap(bucket_positions, &mut sorted)` to avoid copying ~512 KiB of elements per window call. This requires changing the signature of `batch_add` from `&mut [BucketPosition]` to `&mut Vec<BucketPosition>`.
+
+**Problem:** In the counting sort from 0038, the output buffer `sorted` (n × 8 bytes ≈ 512 KiB for n=65536) was copied back into `bucket_positions` via `copy_from_slice`. With 20 windows per MSM and ~11 MSMs per proof, this amounts to 220 × 512 KiB ≈ 110 MB of memcpy per proof. The `std::mem::swap` replaces this with an O(1) pointer swap (3 field swaps of size_t). Additionally, the separate `counts` array was a redundant 32 KiB allocation that can be eliminated by doing the histogram count directly into `starts` and then prefix-summing in-place.
+
+**Files changed:**
+- `algorithms/src/msm/variable_base/batched.rs`: changed `batch_add` signature to `&mut Vec<BucketPosition>`, fused counts+starts, added `std::mem::swap`
+
+**Commit:** `c89b5efd9` on `test/autoresearch_varuna_credits_aleo_0039`
+
+### Results
+
+- Benchmark (medians; vs 0038 baseline of tp=292.07ms / tpriv=2418.7ms / tp2p=455.15ms / tpriv2pub=2398.6ms / join=2744.4ms / split=2375.0ms):
+  - credits.aleo.transfer_public: 292.07 ms → 290.64 ms (-0.5%)
+  - credits.aleo.transfer_private: 2418.7 ms → 2395.4 ms (-1.0%)
+  - credits.aleo.transfer_public_to_private: 455.15 ms → 450.57 ms (-1.0%)
+  - credits.aleo.transfer_private_to_public: 2398.6 ms → 2376.3 ms (-0.9%)
+  - credits.aleo.join: 2744.4 ms → 2706.9 ms (-1.4%)
+  - credits.aleo.split: 2375.0 ms → 2356.2 ms (-0.8%)
+- Correctness: pass
+
+### Conclusion
+
+**Consistent improvement of ~0.5-1.4% across all benchmarks.** The `std::mem::swap` eliminates ~110 MB/proof of element-by-element memcpy, replacing it with O(1) pointer swaps. The fused counts+starts array saves 20 × 11 = 220 small allocations (32 KiB each) per proof. Together these incremental gains are borderline above the noise floor.
+
+Future experiments should investigate:
+(a) Eliminating the `sorted` buffer entirely via in-place permutation (cycle-following), saving another 512 KiB × 220 = 110 MB/proof of zero-initialization and allocation.
+(b) Tuning the MSM `c` parameter (window size) dynamically based on actual scalar density distribution rather than just n.
+(c) Investigating whether the main `batch_add_write` loop's random access pattern into `bases` (6.8 MB affine point array) can be improved with better cache prefetching.
+(d) Profiling with `perf` to confirm where the remaining ~97% of time goes.
