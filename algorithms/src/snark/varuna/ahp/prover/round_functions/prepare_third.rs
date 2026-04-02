@@ -119,11 +119,14 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                 ),
             };
 
-            // Use the precomputed 2n multiplication domain FFT precomputation from the
-            // Circuit struct (computed once at index time). The Arc::clone is O(1)
-            // (atomic reference count bump) instead of the prior O(n) step_by copy.
+            // Use the precomputed variable-domain and 2n multiplication domain FFT/IFFT
+            // precomputations from the Circuit struct (computed once at index time).
+            // Each Arc::clone is O(1) instead of the prior O(n) step_by copy that
+            // would occur when using `circuit.ifft_precomputation` (largest domain)
+            // if non-zero domains exceed the variable domain.
             let variable_domain_size = circuit_specific_state.variable_domain.size();
             let mul_domain = EvaluationDomain::<F>::new(2 * variable_domain_size).unwrap();
+            let variable_ifft_pc = Arc::clone(&circuit.variable_ifft_precomputation);
             let mul_fft_pc = Arc::clone(&circuit.mul_fft_precomputation);
             let mul_ifft_pc = Arc::clone(&circuit.mul_ifft_precomputation);
 
@@ -151,6 +154,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     let l_at_alpha_clone = Arc::clone(&l_at_alpha);
                     let col_reindex_clone = Arc::clone(&col_reindex);
                     let assignment_evals = Arc::clone(&assignment_evals_oo);
+                    let variable_ifft_pc_clone = Arc::clone(&variable_ifft_pc);
                     let mul_fft_pc_clone = Arc::clone(&mul_fft_pc);
                     let mul_ifft_pc_clone = Arc::clone(&mul_ifft_pc);
                     job_pool.add_job(move || {
@@ -160,7 +164,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                             mul_domain,
                             &mul_fft_pc_clone,
                             &mul_ifft_pc_clone,
-                            &circuit.ifft_precomputation,
+                            // Use the variable-domain-specific IFFT precomputation to
+                            // avoid O(n) step_by copies from `circuit.ifft_precomputation`
+                            // (largest domain) when non-zero domains exceed variable domain.
+                            &variable_ifft_pc_clone,
                             &assignment_evals,
                             matrix,
                             &l_at_alpha_clone,

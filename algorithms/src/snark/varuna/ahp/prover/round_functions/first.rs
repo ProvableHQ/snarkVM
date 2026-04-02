@@ -141,7 +141,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let x_evals = {
             let mut coeffs = x_poly.coeffs;
             coeffs.resize(variable_domain.size(), F::zero());
-            variable_domain.in_order_fft_in_place_with_pc(&mut coeffs, &circuit.fft_precomputation);
+            // Use the variable-domain-specific FFT precomputation so that
+            // `precomputation_for_subdomain` returns Cow::Borrowed (no
+            // allocation) when non-zero domains exceed the variable domain and
+            // `circuit.fft_precomputation` covers a larger domain.
+            variable_domain.in_order_fft_in_place_with_pc(&mut coeffs, &circuit.variable_fft_precomputation);
             coeffs
         };
 
@@ -158,8 +162,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         // Interpolating \widetilde{z} - \widetilde{x} and dividing by the
         // vanishing polynomial over variable_domain.
+        // Use the variable-domain-specific IFFT precomputation to avoid an
+        // O(n) step_by copy from `circuit.ifft_precomputation` (largest domain).
         let w_poly = EvaluationsOnDomain::from_vec_and_domain(w_poly_evals, variable_domain)
-            .interpolate_with_pc(&circuit.ifft_precomputation);
+            .interpolate_with_pc(&circuit.variable_ifft_precomputation);
         let (w_poly, remainder) = w_poly.divide_by_vanishing_poly_in_place(input_domain).unwrap();
         assert!(remainder.is_zero());
 

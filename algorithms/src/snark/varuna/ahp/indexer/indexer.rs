@@ -74,8 +74,24 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         )
         .ok_or(anyhow!("The polynomial degree is too large"))?;
 
-        // Precompute the 2×variable_domain FFT sub-precomputation once at index
-        // time so that prove calls can use it directly without recomputing.
+        // Precompute FFT/IFFT precomputations for the variable_domain and its
+        // 2× multiplication domain once at index time. The variable-domain
+        // precomputations are used in first.rs (FFT of x_poly coefficients,
+        // IFFT of w_poly_evals on variable_domain) and prepare_third.rs (IFFT
+        // of m_at_alpha on variable_domain). The 2×variable-domain ones are
+        // used in prepare_third.rs (out-of-order FFT/IFFT for m_at_alpha ×
+        // assignment multiplication). All four are extracted from the full
+        // fft_precomputation once here so that prove calls can use them via
+        // O(1) Arc::clone instead of triggering O(n) step_by extractions on
+        // every call.
+        let variable_fft_precomputation = std::sync::Arc::new(
+            fft_precomputation
+                .precomputation_for_subdomain(&variable_domain)
+                .ok_or(anyhow!("Could not extract sub-precomputation for variable domain"))?
+                .into_owned(),
+        );
+        let variable_ifft_precomputation =
+            std::sync::Arc::new(variable_fft_precomputation.to_ifft_precomputation());
         let mul_domain =
             EvaluationDomain::new(2 * variable_domain.size()).ok_or(anyhow!("The polynomial degree is too large"))?;
         let mul_fft_precomputation = std::sync::Arc::new(
@@ -174,6 +190,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             c_arith,
             fft_precomputation,
             ifft_precomputation,
+            variable_fft_precomputation,
+            variable_ifft_precomputation,
             mul_fft_precomputation,
             mul_ifft_precomputation,
             constraint_ifft_precomputation,

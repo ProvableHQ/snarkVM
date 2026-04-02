@@ -85,11 +85,16 @@ pub struct Circuit<F: PrimeField, SM: SNARKMode> {
     pub fft_precomputation: FFTPrecomputation<F>,
     pub ifft_precomputation: IFFTPrecomputation<F>,
 
-    /// Precomputed FFT precomputation for the 2×variable_domain (used in
-    /// prepare_third.rs to multiply m_at_alpha by assignment polynomials).
-    /// Stored behind Arc so prove calls share the data with O(1) Arc::clone
-    /// instead of an O(n) step_by copy. Not serialized; reconstructed from
+    /// Precomputed FFT/IFFT precomputations for the variable_domain and its
+    /// 2× multiplication domain. Used in first.rs (FFT of x_poly on
+    /// variable_domain, IFFT of w_poly_evals) and prepare_third.rs (IFFT of
+    /// m_at_alpha, FFT/IFFT of m_at_alpha × assignment). Stored behind Arc so
+    /// prove calls pay O(1) Arc::clone instead of an O(n) step_by copy from
+    /// `fft_precomputation` (which covers the largest domain) when non-zero
+    /// domains exceed the variable domain. Not serialized; reconstructed from
     /// `index_info`.
+    pub variable_fft_precomputation: Arc<FFTPrecomputation<F>>,
+    pub variable_ifft_precomputation: Arc<IFFTPrecomputation<F>>,
     pub mul_fft_precomputation: Arc<FFTPrecomputation<F>>,
     pub mul_ifft_precomputation: Arc<IFFTPrecomputation<F>>,
 
@@ -258,9 +263,20 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
         )
         .ok_or(SerializationError::InvalidData)?;
 
-        // Compute the 2×variable_domain FFT precomputation by extracting the
-        // sub-precomputation from the full fft_precomputation. This avoids an
-        // O(n) extraction on every prove call.
+        // Precompute FFT/IFFT precomputations for the variable_domain and its
+        // 2× multiplication domain. Variable-domain precomputations avoid
+        // O(n) step_by copies in first.rs (x_poly FFT, w_poly IFFT) and
+        // prepare_third.rs (m_at_alpha IFFT) when non-zero domains exceed the
+        // variable domain size. The 2×variable precomputations are used for
+        // m_at_alpha × assignment multiplication.
+        let variable_domain =
+            EvaluationDomain::<F>::new(variable_domain_size).ok_or(SerializationError::InvalidData)?;
+        let variable_fft_pc = fft_precomputation
+            .precomputation_for_subdomain(&variable_domain)
+            .ok_or(SerializationError::InvalidData)?
+            .into_owned();
+        let variable_fft_precomputation = Arc::new(variable_fft_pc);
+        let variable_ifft_precomputation = Arc::new(variable_fft_precomputation.to_ifft_precomputation());
         let mul_domain_size = 2 * variable_domain_size;
         let mul_domain = EvaluationDomain::<F>::new(mul_domain_size).ok_or(SerializationError::InvalidData)?;
         let mul_fft_precomputation = Arc::new(
@@ -296,8 +312,6 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
 
         // Precompute the col_reindex table from domain sizes. Only valid when
         // variable_domain_size > input_domain_size (i.e., circuit has private vars).
-        let variable_domain =
-            EvaluationDomain::<F>::new(variable_domain_size).ok_or(SerializationError::InvalidData)?;
         let input_domain =
             EvaluationDomain::<F>::new(index_info.num_public_inputs).ok_or(SerializationError::InvalidData)?;
         let col_reindex = if variable_domain_size > input_domain.size() {
@@ -362,6 +376,8 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
             c_arith: CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?,
             fft_precomputation,
             ifft_precomputation,
+            variable_fft_precomputation,
+            variable_ifft_precomputation,
             mul_fft_precomputation,
             mul_ifft_precomputation,
             constraint_ifft_precomputation,
