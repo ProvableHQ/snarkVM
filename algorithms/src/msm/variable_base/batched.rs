@@ -27,10 +27,19 @@ use crate::{prefetch_slice, prefetch_slice_write};
 // Reusing a pre-allocated Vec across calls on the same thread eliminates
 // both the per-call allocation (O(n) malloc + OS page-fault) and the
 // sentinel zero-initialization (O(n) memset) since the scatter loop
-// overwrites every slot exactly once. With 20 windows per MSM and ~11 MSMs
+// overwrites every slot exactly once. With 24 windows per MSM and ~11 MSMs
 // per proof, this saves ~110 MB of allocation+init work per proof.
 thread_local! {
     static SORT_SCRATCH: std::cell::RefCell<Vec<BucketPosition>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+// Thread-local scratch buffer for the `bucket_positions` input to `batch_add`.
+// With 24 windows per MSM, each creating a fresh `Vec<BucketPosition>` of
+// length n=65536 (8 bytes each = 512 KiB), reusing this buffer eliminates
+// ~12 MiB of per-MSM allocation per parallel thread.
+thread_local! {
+    static BUCKET_POS_SCRATCH: std::cell::RefCell<Vec<BucketPosition>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -417,23 +426,42 @@ fn batched_window<G: AffineCurve>(
     let window_size = if (w_start % c) != 0 { w_start % c } else { c };
     let num_buckets = (1 << window_size) - 1;
 
-    let mut bucket_positions: Vec<_> = scalars
-        .iter()
-        .enumerate()
-        .map(|(scalar_index, &scalar)| {
-            let mut scalar = scalar;
-
+    // Reuse a thread-local buffer for bucket_positions to avoid per-window
+    // allocation of ~512 KiB (n=65536 × 8 bytes). On the first call per thread
+    // the vec is allocated and grown to n; subsequent calls find len >= n and
+    // all indexed writes overwrite stale data from the previous call.
+    let buckets = BUCKET_POS_SCRATCH.with(|cell| {
+        let mut bucket_positions = cell.borrow_mut();
+        let n = scalars.len();
+        if bucket_positions.len() < n {
+            bucket_positions.resize(n, BucketPosition { bucket_index: u32::MAX, scalar_index: 0 });
+        }
+        for (scalar_index, &scalar) in scalars.iter().enumerate() {
+            let mut s = scalar;
             // We right-shift by w_start, thus getting rid of the lower bits.
-            scalar.divn(w_start as u32);
-
+            s.divn(w_start as u32);
             // We mod the remaining bits by the window size.
-            let scalar = (scalar.as_ref()[0] % (1 << c)) as i32;
-
-            BucketPosition { bucket_index: (scalar - 1) as u32, scalar_index: scalar_index as u32 }
-        })
-        .collect();
-
-    let buckets = batch_add(num_buckets, bases, &mut bucket_positions);
+            let s = (s.as_ref()[0] % (1 << c)) as i32;
+            bucket_positions[scalar_index] =
+                BucketPosition { bucket_index: (s - 1) as u32, scalar_index: scalar_index as u32 };
+        }
+        // batch_add expects a &mut Vec<BucketPosition> of length n.  We pass a
+        // sub-vec of exactly n entries by temporarily truncating to n (the vec
+        // may be longer after a previous call with a larger n).
+        let orig_len = bucket_positions.len();
+        bucket_positions.truncate(n);
+        // SAFETY: batch_add may swap this vec with SORT_SCRATCH and use it as
+        // the sorted output buffer.  After batch_add returns, bucket_positions
+        // holds the reduced (post-sort) data from the final reduction round.
+        // On the next call we overwrite all n entries via indexed writes above,
+        // so the stale data is harmless.
+        let result = batch_add(num_buckets, bases, &mut *bucket_positions);
+        // Restore original capacity so the TLS buffer grows monotonically.
+        if bucket_positions.len() < orig_len {
+            bucket_positions.resize(orig_len, BucketPosition { bucket_index: u32::MAX, scalar_index: 0 });
+        }
+        result
+    });
 
     let mut res = G::Projective::zero();
     let mut running_sum = G::Projective::zero();
