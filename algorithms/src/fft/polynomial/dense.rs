@@ -185,10 +185,10 @@ impl<F: PrimeField> DensePolynomial<F> {
             coeffs[k] = F::zero();
         }
         // Remove trailing zeros from remainder and quotient.
-        while coeffs.last().map_or(false, |c| c.is_zero()) {
+        while coeffs.last().is_some_and(|c| c.is_zero()) {
             coeffs.pop();
         }
-        while quotient.last().map_or(false, |c| c.is_zero()) {
+        while quotient.last().is_some_and(|c| c.is_zero()) {
             quotient.pop();
         }
         Ok((DensePolynomial::from_coefficients_vec(quotient), DensePolynomial::from_coefficients_vec(coeffs)))
@@ -256,10 +256,10 @@ impl<F: PrimeField> DensePolynomial<F> {
             self.coeffs[k] = F::zero();
         }
         // self.coeffs now holds the remainder in-place; trim trailing zeros.
-        while self.coeffs.last().map_or(false, |c| c.is_zero()) {
+        while self.coeffs.last().is_some_and(|c| c.is_zero()) {
             self.coeffs.pop();
         }
-        while quotient.last().map_or(false, |c| c.is_zero()) {
+        while quotient.last().is_some_and(|c| c.is_zero()) {
             quotient.pop();
         }
         Ok((DensePolynomial::from_coefficients_vec(quotient), self))

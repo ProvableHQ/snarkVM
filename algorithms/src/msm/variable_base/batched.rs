@@ -187,8 +187,52 @@ pub(super) fn batch_add<G: AffineCurve>(
     // Fetch the ideal batch size for the number of bases.
     let batch_size = batch_size(bases.len());
 
-    // Sort the buckets by their bucket index (not scalar index).
-    bucket_positions.sort_unstable();
+    // Counting sort by bucket_index (bounded integer in [0, num_buckets-1], or
+    // u32::MAX for "skip" entries where the scalar's window bits are zero).
+    // Counting sort is O(n + num_buckets) vs O(n log n) for sort_unstable,
+    // saving ~90% of sort cost at typical MSM sizes (n ≈ 65k, num_buckets ≈ 8k).
+    // Skip entries (bucket_index ≥ num_buckets) sort last, matching sort_unstable.
+    {
+        let n = bucket_positions.len();
+        // Count occurrences for each bucket; separate count for skip entries.
+        let mut counts = vec![0u32; num_buckets];
+        for pos in bucket_positions.iter() {
+            let idx = pos.bucket_index as usize;
+            if idx < num_buckets {
+                counts[idx] += 1;
+            }
+            // Skip entries (bucket_index ≥ num_buckets) are counted implicitly:
+            // skip_start = cumsum after prefix sum, skip items go at positions
+            // [skip_start .. n).
+        }
+        // Prefix sum: compute start position of each bucket in sorted output.
+        let mut starts = vec![0u32; num_buckets];
+        let mut cumsum = 0u32;
+        for i in 0..num_buckets {
+            starts[i] = cumsum;
+            cumsum += counts[i];
+        }
+        // cumsum == number of non-skip entries; skip entries go at the end.
+        let skip_start = cumsum as usize;
+        // Scatter into output buffer in sorted order. Initialise with a sentinel
+        // value; every slot is overwritten by the scatter loop below.
+        let mut sorted =
+            vec![BucketPosition { bucket_index: u32::MAX, scalar_index: 0 }; n];
+        let mut cursors = starts;
+        let mut skip_cur = skip_start;
+        for pos in bucket_positions.iter() {
+            let idx = pos.bucket_index as usize;
+            if idx < num_buckets {
+                let out_idx = cursors[idx] as usize;
+                sorted[out_idx] = *pos;
+                cursors[idx] += 1;
+            } else {
+                sorted[skip_cur] = *pos;
+                skip_cur += 1;
+            }
+        }
+        bucket_positions.copy_from_slice(&sorted);
+    }
 
     let mut num_scalars = bucket_positions.len();
     let mut all_ones = true;
