@@ -179,7 +179,7 @@ fn batch_add_write<G: AffineCurve>(
 pub(super) fn batch_add<G: AffineCurve>(
     num_buckets: usize,
     bases: &[G],
-    bucket_positions: &mut [BucketPosition],
+    bucket_positions: &mut Vec<BucketPosition>,
 ) -> Vec<G> {
     assert!(bases.len() >= bucket_positions.len());
     assert!(!bases.is_empty());
@@ -192,32 +192,39 @@ pub(super) fn batch_add<G: AffineCurve>(
     // Counting sort is O(n + num_buckets) vs O(n log n) for sort_unstable,
     // saving ~90% of sort cost at typical MSM sizes (n ≈ 65k, num_buckets ≈ 8k).
     // Skip entries (bucket_index ≥ num_buckets) sort last, matching sort_unstable.
+    //
+    // Optimisations vs the original 2-array design:
+    // 1. Fuse `counts` and `starts` into a single `starts` array (one fewer
+    //    32 KiB allocation) using the shifted-histogram trick: accumulate into
+    //    `starts[idx]` then prefix-sum in place.
+    // 2. std::mem::swap instead of copy_from_slice to move the sorted buffer
+    //    into `bucket_positions` in O(1) (3 pointer/length field swaps) rather
+    //    than copying n × 8 bytes element-by-element.
     {
         let n = bucket_positions.len();
-        // Count occurrences for each bucket; separate count for skip entries.
-        let mut counts = vec![0u32; num_buckets];
+        // Single counts+starts array: starts[i] accumulates count of bucket i,
+        // then is converted to start position via prefix-sum.
+        let mut starts = vec![0u32; num_buckets];
         for pos in bucket_positions.iter() {
             let idx = pos.bucket_index as usize;
             if idx < num_buckets {
-                counts[idx] += 1;
+                starts[idx] += 1;
             }
-            // Skip entries (bucket_index ≥ num_buckets) are counted implicitly:
-            // skip_start = cumsum after prefix sum, skip items go at positions
-            // [skip_start .. n).
+            // Skip entries (bucket_index >= num_buckets) are not counted here;
+            // skip_start is the remaining positions after all valid buckets.
         }
-        // Prefix sum: compute start position of each bucket in sorted output.
-        let mut starts = vec![0u32; num_buckets];
+        // Prefix-sum in place: starts[i] becomes the start position of bucket i.
         let mut cumsum = 0u32;
-        for i in 0..num_buckets {
-            starts[i] = cumsum;
-            cumsum += counts[i];
+        for s in starts.iter_mut() {
+            let cnt = *s;
+            *s = cumsum;
+            cumsum += cnt;
         }
-        // cumsum == number of non-skip entries; skip entries go at the end.
+        // cumsum == number of non-skip entries; skip entries occupy [cumsum .. n).
         let skip_start = cumsum as usize;
         // Scatter into output buffer in sorted order. Initialise with a sentinel
         // value; every slot is overwritten by the scatter loop below.
-        let mut sorted =
-            vec![BucketPosition { bucket_index: u32::MAX, scalar_index: 0 }; n];
+        let mut sorted = vec![BucketPosition { bucket_index: u32::MAX, scalar_index: 0 }; n];
         let mut cursors = starts;
         let mut skip_cur = skip_start;
         for pos in bucket_positions.iter() {
@@ -231,7 +238,10 @@ pub(super) fn batch_add<G: AffineCurve>(
                 skip_cur += 1;
             }
         }
-        bucket_positions.copy_from_slice(&sorted);
+        // Swap the sorted buffer into bucket_positions in O(1) (pointer/length
+        // field swap) instead of copying n × 8 bytes element-by-element.
+        // The old unsorted Vec in `sorted` is then dropped at end of this block.
+        std::mem::swap(bucket_positions, &mut sorted);
     }
 
     let mut num_scalars = bucket_positions.len();
