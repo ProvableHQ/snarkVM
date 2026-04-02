@@ -469,13 +469,13 @@ pub fn msm<G: AffineCurve>(bases: &[G], scalars: &[<G::ScalarField as PrimeField
         sum
     } else {
         // Determine the bucket size `c` (chosen empirically).
-        // Use `ln(n) + 1` instead of the default `+ 2`: for n=65536 this gives
-        // c=12 (4095 buckets) rather than c=13 (8191 buckets), halving the
-        // working-set size of the counting-sort starts array and improving L1
-        // cache utilisation.
+        // Use `ln(n)` instead of the default `+ 2`: for n=65536 this gives
+        // c=11 (2047 buckets) rather than c=13 (8191 buckets), quartering the
+        // working-set size of the bucket accumulation arrays and improving
+        // cache utilisation at the cost of more windows (ceil(255/11)=24).
         let c = match scalars.len() < 32 {
             true => 1,
-            false => crate::msm::ln_without_floats(scalars.len()) + 1,
+            false => crate::msm::ln_without_floats(scalars.len()),
         };
 
         let num_bits = <G::ScalarField as PrimeField>::size_in_bits();
