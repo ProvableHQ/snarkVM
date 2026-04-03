@@ -401,7 +401,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             next_timestamp,
             N::GENESIS_TIMESTAMP,
             N::STARTING_SUPPLY,
-            N::ANCHOR_TIMES[0].1,
+            N::REWARD_ANCHOR_TIME,
             N::ANCHOR_HEIGHT,
             N::BLOCK_TIME,
             combined_proof_target,

@@ -561,4 +561,11 @@ mod tests {
         let result = ConsensusVersion::from_bytes_le(&invalid_bytes);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_reward_anchor_time() {
+        assert_eq!(MainnetV0::REWARD_ANCHOR_TIME, MainnetV0::ANCHOR_TIMES.first().unwrap().1);
+        assert_eq!(TestnetV0::REWARD_ANCHOR_TIME, TestnetV0::ANCHOR_TIMES.first().unwrap().1);
+        assert_eq!(CanaryV0::REWARD_ANCHOR_TIME, CanaryV0::ANCHOR_TIMES.first().unwrap().1);
+    }
 }

@@ -283,7 +283,7 @@ fn anchor_block_reward_at_timestamp(
 
         // Compute the numerator.
         // Note that we perform a `saturating_div(10)` on the `anchor_time` in the numerator and the `number_of_seconds_in_10_years` denominator.
-        // This is done to to match the truncation of `anchor_block_reward_at_height` in an attempt to
+        // This is done to match the truncation of `anchor_block_reward_at_height` in an attempt to
         // keep the reward more consistent between the two functions.
         let numerator =
             2 * starting_supply as u128 * anchor_time.saturating_div(10) as u128 * num_remaining_seconds_to_year_10;
@@ -596,7 +596,7 @@ mod tests {
             CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
             CurrentNetwork::GENESIS_TIMESTAMP,
             CurrentNetwork::STARTING_SUPPLY,
-            CurrentNetwork::ANCHOR_TIMES[0].1,
+            CurrentNetwork::REWARD_ANCHOR_TIME,
         );
         assert_eq!(reward_at_block_1, EXPECTED_ANCHOR_BLOCK_REWARD_AT_BLOCK_1);
 
@@ -606,7 +606,7 @@ mod tests {
                 timestamp_at_year(CurrentNetwork::GENESIS_TIMESTAMP, year),
                 CurrentNetwork::GENESIS_TIMESTAMP,
                 CurrentNetwork::STARTING_SUPPLY,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
             );
             assert_eq!(reward_at_year, expected_reward);
         }
@@ -633,13 +633,13 @@ mod tests {
 
         // Ensure that the reward is decreasing for blocks before year 9.
         let mut previous_reward = reward_at_block_1;
-        let anchor_time = CurrentNetwork::ANCHOR_TIMES[0].1 as usize;
+        let anchor_time = CurrentNetwork::REWARD_ANCHOR_TIME as usize;
         for timestamp in (CurrentNetwork::GENESIS_TIMESTAMP..timestamp_at_year_9).step_by(anchor_time).skip(1) {
             let reward = anchor_block_reward_at_timestamp(
                 timestamp,
                 CurrentNetwork::GENESIS_TIMESTAMP,
                 CurrentNetwork::STARTING_SUPPLY,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
             );
             assert!(reward < previous_reward, "Failed on timestamp {timestamp}");
             previous_reward = reward;
@@ -651,7 +651,7 @@ mod tests {
                 timestamp,
                 CurrentNetwork::GENESIS_TIMESTAMP,
                 CurrentNetwork::STARTING_SUPPLY,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
             );
             assert_eq!(reward, 19_025_874);
         }
@@ -724,7 +724,7 @@ mod tests {
                     timestamp,
                     CurrentNetwork::GENESIS_TIMESTAMP,
                     CurrentNetwork::STARTING_SUPPLY,
-                    CurrentNetwork::ANCHOR_TIMES[0].1,
+                    CurrentNetwork::REWARD_ANCHOR_TIME,
                 );
             }
         }
@@ -947,7 +947,7 @@ mod tests {
             block_timestamp,
             TestnetV0::GENESIS_TIMESTAMP,
             TestnetV0::STARTING_SUPPLY,
-            TestnetV0::ANCHOR_TIMES[0].1,
+            TestnetV0::REWARD_ANCHOR_TIME,
             TestnetV0::ANCHOR_HEIGHT,
             TestnetV0::BLOCK_TIME,
             1,
@@ -959,7 +959,7 @@ mod tests {
             block_timestamp,
             TestnetV0::GENESIS_TIMESTAMP,
             TestnetV0::STARTING_SUPPLY,
-            TestnetV0::ANCHOR_TIMES[0].1,
+            TestnetV0::REWARD_ANCHOR_TIME,
             1,
             0,
             1,
@@ -977,7 +977,7 @@ mod tests {
                 block_timestamp,
                 TestnetV0::GENESIS_TIMESTAMP,
                 TestnetV0::STARTING_SUPPLY,
-                TestnetV0::ANCHOR_TIMES[0].1,
+                TestnetV0::REWARD_ANCHOR_TIME,
                 TestnetV0::ANCHOR_HEIGHT,
                 TestnetV0::BLOCK_TIME,
                 1,
@@ -1008,7 +1008,7 @@ mod tests {
                 block_timestamp,
                 TestnetV0::GENESIS_TIMESTAMP,
                 TestnetV0::STARTING_SUPPLY,
-                TestnetV0::ANCHOR_TIMES[0].1,
+                TestnetV0::REWARD_ANCHOR_TIME,
                 TestnetV0::ANCHOR_HEIGHT,
                 TestnetV0::BLOCK_TIME,
                 1,
@@ -1020,7 +1020,7 @@ mod tests {
                 block_timestamp,
                 TestnetV0::GENESIS_TIMESTAMP,
                 TestnetV0::STARTING_SUPPLY,
-                TestnetV0::ANCHOR_TIMES[0].1,
+                TestnetV0::REWARD_ANCHOR_TIME,
                 1,
                 0,
                 1,
@@ -1035,7 +1035,7 @@ mod tests {
                 block_timestamp,
                 TestnetV0::GENESIS_TIMESTAMP,
                 TestnetV0::STARTING_SUPPLY,
-                TestnetV0::ANCHOR_TIMES[0].1,
+                TestnetV0::REWARD_ANCHOR_TIME,
                 TestnetV0::ANCHOR_HEIGHT,
                 TestnetV0::BLOCK_TIME,
                 1,
@@ -1139,7 +1139,7 @@ mod tests {
             CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
             CurrentNetwork::GENESIS_TIMESTAMP,
             CurrentNetwork::STARTING_SUPPLY,
-            CurrentNetwork::ANCHOR_TIMES[0].1,
+            CurrentNetwork::REWARD_ANCHOR_TIME,
             combined_proof_target,
             0,
             coinbase_target,
@@ -1152,7 +1152,7 @@ mod tests {
             CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
             CurrentNetwork::GENESIS_TIMESTAMP,
             CurrentNetwork::STARTING_SUPPLY,
-            CurrentNetwork::ANCHOR_TIMES[0].1,
+            CurrentNetwork::REWARD_ANCHOR_TIME,
             combined_proof_target / 2,
             0,
             coinbase_target,
@@ -1165,7 +1165,7 @@ mod tests {
             CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
             CurrentNetwork::GENESIS_TIMESTAMP,
             CurrentNetwork::STARTING_SUPPLY,
-            CurrentNetwork::ANCHOR_TIMES[0].1,
+            CurrentNetwork::REWARD_ANCHOR_TIME,
             combined_proof_target,
             coinbase_target / 2,
             coinbase_target,
@@ -1178,7 +1178,7 @@ mod tests {
             CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
             CurrentNetwork::GENESIS_TIMESTAMP,
             CurrentNetwork::STARTING_SUPPLY,
-            CurrentNetwork::ANCHOR_TIMES[0].1,
+            CurrentNetwork::REWARD_ANCHOR_TIME,
             u128::MAX,
             0,
             coinbase_target,
@@ -1191,7 +1191,7 @@ mod tests {
             CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
             CurrentNetwork::GENESIS_TIMESTAMP,
             CurrentNetwork::STARTING_SUPPLY,
-            CurrentNetwork::ANCHOR_TIMES[0].1,
+            CurrentNetwork::REWARD_ANCHOR_TIME,
             0,
             0,
             coinbase_target,
@@ -1204,7 +1204,7 @@ mod tests {
             CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
             CurrentNetwork::GENESIS_TIMESTAMP,
             CurrentNetwork::STARTING_SUPPLY,
-            CurrentNetwork::ANCHOR_TIMES[0].1,
+            CurrentNetwork::REWARD_ANCHOR_TIME,
             1,
             coinbase_target + 1,
             coinbase_target,
@@ -1284,7 +1284,7 @@ mod tests {
                 CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
                 CurrentNetwork::GENESIS_TIMESTAMP,
                 CurrentNetwork::STARTING_SUPPLY,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
                 combined_proof_target as u128,
                 cumulative_proof_target,
                 coinbase_target,
@@ -1403,7 +1403,7 @@ mod tests {
             CurrentNetwork::GENESIS_TIMESTAMP + CurrentNetwork::BLOCK_TIME as i64,
             CurrentNetwork::GENESIS_TIMESTAMP,
             CurrentNetwork::STARTING_SUPPLY,
-            CurrentNetwork::ANCHOR_TIMES[0].1,
+            CurrentNetwork::REWARD_ANCHOR_TIME,
             1,
             0,
             1,
@@ -1425,7 +1425,7 @@ mod tests {
                 timestamp,
                 CurrentNetwork::GENESIS_TIMESTAMP,
                 CurrentNetwork::STARTING_SUPPLY,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
                 1,
                 cumulative_proof_target,
                 coinbase_target,
@@ -1516,7 +1516,7 @@ mod tests {
             timestamp_at_year_10,
             CurrentNetwork::GENESIS_TIMESTAMP,
             CurrentNetwork::STARTING_SUPPLY,
-            CurrentNetwork::ANCHOR_TIMES[0].1,
+            CurrentNetwork::REWARD_ANCHOR_TIME,
             1,
             0,
             1,
@@ -1535,7 +1535,7 @@ mod tests {
                 timestamp,
                 CurrentNetwork::GENESIS_TIMESTAMP,
                 CurrentNetwork::STARTING_SUPPLY,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
             );
             assert_eq!(anchor_reward, 19_025_874);
 
@@ -1543,7 +1543,7 @@ mod tests {
                 timestamp,
                 CurrentNetwork::GENESIS_TIMESTAMP,
                 CurrentNetwork::STARTING_SUPPLY,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
                 combined_proof_target,
                 cumulative_proof_target,
                 coinbase_target,
@@ -1578,7 +1578,7 @@ mod tests {
                 timestamp,
                 N::GENESIS_TIMESTAMP,
                 N::STARTING_SUPPLY,
-                N::ANCHOR_TIMES[0].1,
+                N::REWARD_ANCHOR_TIME,
                 N::ANCHOR_HEIGHT,
                 N::BLOCK_TIME,
                 1,
@@ -1589,7 +1589,7 @@ mod tests {
 
             // Calculate the average expected coinbase reward per block based on the retargeting interval.
             // This is the upper bound, because we consider hitting 50% of the coinbase target eligible for retargeting.
-            let avg_coinbase_reward_per_block = coinbase_reward * AVG_BLOCK_TIME as u64 / N::ANCHOR_TIMES[0].1 as u64;
+            let avg_coinbase_reward_per_block = coinbase_reward * AVG_BLOCK_TIME as u64 / N::REWARD_ANCHOR_TIME as u64;
 
             // Update the trackers.
             block_height += 1;
@@ -1633,12 +1633,12 @@ mod tests {
             let previous_timestamp = rng.random();
 
             // Targets stay the same when the drift is as expected.
-            let next_timestamp = previous_timestamp + CurrentNetwork::ANCHOR_TIMES[0].1 as i64;
+            let next_timestamp = previous_timestamp + CurrentNetwork::REWARD_ANCHOR_TIME as i64;
             let new_coinbase_target = coinbase_target(
                 previous_coinbase_target,
                 previous_timestamp,
                 next_timestamp,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
                 CurrentNetwork::NUM_BLOCKS_PER_EPOCH,
                 CurrentNetwork::GENESIS_COINBASE_TARGET,
             )
@@ -1652,12 +1652,12 @@ mod tests {
             assert_eq!(new_prover_target, previous_prover_target);
 
             // Targets decrease (easier) when the drift is greater than expected.
-            let new_timestamp = previous_timestamp + 2 * CurrentNetwork::ANCHOR_TIMES[0].1 as i64;
+            let new_timestamp = previous_timestamp + 2 * CurrentNetwork::REWARD_ANCHOR_TIME as i64;
             let new_coinbase_target = coinbase_target(
                 previous_coinbase_target,
                 previous_timestamp,
                 new_timestamp,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
                 CurrentNetwork::NUM_BLOCKS_PER_EPOCH,
                 CurrentNetwork::GENESIS_COINBASE_TARGET,
             )
@@ -1671,12 +1671,12 @@ mod tests {
             assert!(new_prover_target < previous_prover_target);
 
             // Targets increase (harder) when the drift is less than expected.
-            let next_timestamp = previous_timestamp + (CurrentNetwork::ANCHOR_TIMES[0].1 / 2) as i64;
+            let next_timestamp = previous_timestamp + (CurrentNetwork::REWARD_ANCHOR_TIME / 2) as i64;
             let new_coinbase_target = coinbase_target(
                 previous_coinbase_target,
                 previous_timestamp,
                 next_timestamp,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
                 CurrentNetwork::NUM_BLOCKS_PER_EPOCH,
                 CurrentNetwork::GENESIS_COINBASE_TARGET,
             )
@@ -1708,7 +1708,7 @@ mod tests {
 
             let half_life = CurrentNetwork::NUM_BLOCKS_PER_EPOCH
                 .saturating_div(2)
-                .saturating_mul(CurrentNetwork::ANCHOR_TIMES[0].1 as u32) as i64;
+                .saturating_mul(CurrentNetwork::REWARD_ANCHOR_TIME as u32) as i64;
 
             // New coinbase target is greater than half if the drift equals the half life.
             let next_timestamp = previous_timestamp + half_life;
@@ -1716,7 +1716,7 @@ mod tests {
                 previous_coinbase_target,
                 previous_timestamp,
                 next_timestamp,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
                 CurrentNetwork::NUM_BLOCKS_PER_EPOCH,
                 CurrentNetwork::GENESIS_COINBASE_TARGET,
             )
@@ -1725,12 +1725,12 @@ mod tests {
             assert!(next_coinbase_target > previous_coinbase_target / 2);
 
             // New coinbase target is halved if the drift is 1 anchor height past the half life.
-            let next_timestamp = previous_timestamp + half_life + CurrentNetwork::ANCHOR_TIMES[0].1 as i64;
+            let next_timestamp = previous_timestamp + half_life + CurrentNetwork::REWARD_ANCHOR_TIME as i64;
             let next_coinbase_target = coinbase_target(
                 previous_coinbase_target,
                 previous_timestamp,
                 next_timestamp,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
                 CurrentNetwork::NUM_BLOCKS_PER_EPOCH,
                 CurrentNetwork::GENESIS_COINBASE_TARGET,
             )
@@ -1739,12 +1739,12 @@ mod tests {
             assert_eq!(next_coinbase_target, previous_coinbase_target / 2);
 
             // New coinbase target is less than half if the drift is more than 1 anchor height past the half life.
-            let next_timestamp = previous_timestamp + half_life + 2 * CurrentNetwork::ANCHOR_TIMES[0].1 as i64;
+            let next_timestamp = previous_timestamp + half_life + 2 * CurrentNetwork::REWARD_ANCHOR_TIME as i64;
             let next_coinbase_target = coinbase_target(
                 previous_coinbase_target,
                 previous_timestamp,
                 next_timestamp,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
                 CurrentNetwork::NUM_BLOCKS_PER_EPOCH,
                 CurrentNetwork::GENESIS_COINBASE_TARGET,
             )
@@ -1779,7 +1779,7 @@ mod tests {
                 previous_coinbase_target,
                 previous_timestamp,
                 next_timestamp,
-                CurrentNetwork::ANCHOR_TIMES[0].1,
+                CurrentNetwork::REWARD_ANCHOR_TIME,
                 CurrentNetwork::NUM_BLOCKS_PER_EPOCH,
                 CurrentNetwork::GENESIS_COINBASE_TARGET,
             )
@@ -1967,7 +1967,7 @@ mod tests {
         let previous_coinbase_target: u64 = rng.random_range(minimum_coinbase_target..u64::MAX / 2);
         let previous_timestamp: i64 = rng.random();
 
-        let anchor_time_v1 = CurrentNetwork::ANCHOR_TIMES[0].1;
+        let anchor_time_v1 = CurrentNetwork::REWARD_ANCHOR_TIME;
         let anchor_time_v15 = CurrentNetwork::ANCHOR_TIMES[1].1;
 
         // Confirm the regimes are set up correctly relative to each anchor time.
@@ -2019,7 +2019,7 @@ mod tests {
         let previous_coinbase_target: u64 = rng.random_range(minimum_coinbase_target..u64::MAX);
         let previous_timestamp: i64 = rng.random();
 
-        let anchor_time_v1 = CurrentNetwork::ANCHOR_TIMES[0].1;
+        let anchor_time_v1 = CurrentNetwork::REWARD_ANCHOR_TIME;
         let anchor_time_v15 = CurrentNetwork::ANCHOR_TIMES[1].1;
 
         // Compute the half life for each anchor time.
@@ -2082,7 +2082,7 @@ mod tests {
         let initial_coinbase_target: u64 = rng.random_range(minimum_coinbase_target..u64::MAX / 2);
         let initial_timestamp: i64 = rng.random();
 
-        let anchor_time_v1 = CurrentNetwork::ANCHOR_TIMES[0].1;
+        let anchor_time_v1 = CurrentNetwork::REWARD_ANCHOR_TIME;
         let anchor_time_v15 = CurrentNetwork::ANCHOR_TIMES[1].1;
 
         // Count blocks to double with anchor_time=25 (V1).
