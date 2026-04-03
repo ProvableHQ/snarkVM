@@ -1911,13 +1911,13 @@ mod tests {
     }
 
     #[test]
-    fn test_to_next_targets_v14_anchor_time() {
-        // With V14, anchor_time = 35 instead of 25.
-        // Verify that calling to_next_targets with V14 produces a different
+    fn test_to_next_targets_v15_anchor_time() {
+        // With V15, anchor_time = 35 instead of 25.
+        // Verify that calling to_next_targets with V15 produces a different
         // coinbase target than V1 when timestamps cause retargeting.
         let last_coinbase_target = CurrentNetwork::GENESIS_COINBASE_TARGET;
         let last_coinbase_timestamp = 0i64;
-        let next_timestamp = 32i64; // 32 seconds — between 25s (V1 anchor time) and 35s (V14 anchor time)
+        let next_timestamp = 32i64; // 32 seconds — between 25s (V1 anchor time) and 35s (V15 anchor time)
 
         let (coinbase_target_v1, _, _, _, _, _) = to_next_targets::<CurrentNetwork>(
             ConsensusVersion::V1,
@@ -1931,8 +1931,8 @@ mod tests {
         )
         .unwrap();
 
-        let (coinbase_target_v14, _, _, _, _, _) = to_next_targets::<CurrentNetwork>(
-            ConsensusVersion::V14,
+        let (coinbase_target_v15, _, _, _, _, _) = to_next_targets::<CurrentNetwork>(
+            ConsensusVersion::V15,
             0,
             0,
             last_coinbase_target,
@@ -1944,8 +1944,8 @@ mod tests {
         .unwrap();
 
         assert_ne!(
-            coinbase_target_v1, coinbase_target_v14,
-            "V14 should use anchor_time=35 and produce a different coinbase target than V1 (anchor_time=25)"
+            coinbase_target_v1, coinbase_target_v15,
+            "V15 should use anchor_time=35 and produce a different coinbase target than V1 (anchor_time=25)"
         );
     }
 
@@ -1955,25 +1955,25 @@ mod tests {
         // diff < anchor_time → blocks are fast → target increases (harder).
         // diff > anchor_time → blocks are slow → target decreases (easier).
         //
-        // FAST  (diff=10):  10 < 25 < 35  → target increases for both V1 and V14.
-        // MID   (diff=32):  25 < 32 < 35  → target decreases for V1, increases for V14.
-        // SLOW  (diff=50):  25 < 35 < 50  → target decreases for both V1 and V14.
+        // FAST  (diff=10):  10 < 25 < 35  → target increases for both V1 and V15.
+        // MID   (diff=32):  25 < 32 < 35  → target decreases for V1, increases for V15.
+        // SLOW  (diff=50):  25 < 35 < 50  → target decreases for both V1 and V15.
         const DIFF_FAST: i64 = 10;
         const DIFF_MID: i64 = 32;
         const DIFF_SLOW: i64 = 50;
 
         let minimum_coinbase_target: u64 = 2u64.pow(10) - 1;
         let mut rng = TestRng::default();
-        let previous_coinbase_target: u64 = rng.gen_range(minimum_coinbase_target..u64::MAX / 2);
-        let previous_timestamp: i64 = rng.r#gen();
+        let previous_coinbase_target: u64 = rng.random_range(minimum_coinbase_target..u64::MAX / 2);
+        let previous_timestamp: i64 = rng.random();
 
         let anchor_time_v1 = CurrentNetwork::ANCHOR_TIMES[0].1;
-        let anchor_time_v14 = CurrentNetwork::ANCHOR_TIMES[1].1;
+        let anchor_time_v15 = CurrentNetwork::ANCHOR_TIMES[1].1;
 
         // Confirm the regimes are set up correctly relative to each anchor time.
-        assert!(DIFF_FAST < anchor_time_v1 as i64 && DIFF_FAST < anchor_time_v14 as i64);
-        assert!(DIFF_MID > anchor_time_v1 as i64 && DIFF_MID < anchor_time_v14 as i64);
-        assert!(DIFF_SLOW > anchor_time_v1 as i64 && DIFF_SLOW > anchor_time_v14 as i64);
+        assert!(DIFF_FAST < anchor_time_v1 as i64 && DIFF_FAST < anchor_time_v15 as i64);
+        assert!(DIFF_MID > anchor_time_v1 as i64 && DIFF_MID < anchor_time_v15 as i64);
+        assert!(DIFF_SLOW > anchor_time_v1 as i64 && DIFF_SLOW > anchor_time_v15 as i64);
 
         let call = |diff: i64, anchor_time: u16| {
             coinbase_target(
@@ -1988,27 +1988,27 @@ mod tests {
         };
 
         // FAST (diff=10): both anchor times see fast blocks → both targets increase.
-        // V14 increases more: 10/35 is a smaller ratio than 10/25.
+        // V15 increases more: 10/35 is a smaller ratio than 10/25.
         let fast_v1 = call(DIFF_FAST, anchor_time_v1);
-        let fast_v14 = call(DIFF_FAST, anchor_time_v14);
+        let fast_v15 = call(DIFF_FAST, anchor_time_v15);
         assert!(fast_v1 > previous_coinbase_target);
-        assert!(fast_v14 > previous_coinbase_target);
-        assert!(fast_v14 > fast_v1);
+        assert!(fast_v15 > previous_coinbase_target);
+        assert!(fast_v15 > fast_v1);
 
-        // MID (diff=32): only V14 still sees fast blocks → V1 decreases, V14 increases.
+        // MID (diff=32): only V15 still sees fast blocks → V1 decreases, V15 increases.
         let mid_v1 = call(DIFF_MID, anchor_time_v1);
-        let mid_v14 = call(DIFF_MID, anchor_time_v14);
+        let mid_v15 = call(DIFF_MID, anchor_time_v15);
         assert!(mid_v1 < previous_coinbase_target);
-        assert!(mid_v14 > previous_coinbase_target);
-        assert!(mid_v14 > mid_v1);
+        assert!(mid_v15 > previous_coinbase_target);
+        assert!(mid_v15 > mid_v1);
 
         // SLOW (diff=50): both anchor times see slow blocks → both targets decrease.
-        // V14 decreases less: 50/35 is a smaller ratio than 50/25.
+        // V15 decreases less: 50/35 is a smaller ratio than 50/25.
         let slow_v1 = call(DIFF_SLOW, anchor_time_v1);
-        let slow_v14 = call(DIFF_SLOW, anchor_time_v14);
+        let slow_v15 = call(DIFF_SLOW, anchor_time_v15);
         assert!(slow_v1 < previous_coinbase_target);
-        assert!(slow_v14 < previous_coinbase_target);
-        assert!(slow_v14 > slow_v1);
+        assert!(slow_v15 < previous_coinbase_target);
+        assert!(slow_v15 > slow_v1);
     }
 
     #[test]
@@ -2016,20 +2016,20 @@ mod tests {
         let mut rng = TestRng::default();
 
         let minimum_coinbase_target: u64 = 2u64.pow(10) - 1;
-        let previous_coinbase_target: u64 = rng.gen_range(minimum_coinbase_target..u64::MAX);
-        let previous_timestamp: i64 = rng.r#gen();
+        let previous_coinbase_target: u64 = rng.random_range(minimum_coinbase_target..u64::MAX);
+        let previous_timestamp: i64 = rng.random();
 
         let anchor_time_v1 = CurrentNetwork::ANCHOR_TIMES[0].1;
-        let anchor_time_v14 = CurrentNetwork::ANCHOR_TIMES[1].1;
+        let anchor_time_v15 = CurrentNetwork::ANCHOR_TIMES[1].1;
 
         // Compute the half life for each anchor time.
         let half_life_v1 =
             CurrentNetwork::NUM_BLOCKS_PER_EPOCH.saturating_div(2).saturating_mul(anchor_time_v1 as u32) as i64;
-        let half_life_v14 =
-            CurrentNetwork::NUM_BLOCKS_PER_EPOCH.saturating_div(2).saturating_mul(anchor_time_v14 as u32) as i64;
+        let half_life_v15 =
+            CurrentNetwork::NUM_BLOCKS_PER_EPOCH.saturating_div(2).saturating_mul(anchor_time_v15 as u32) as i64;
 
         // A larger anchor time means a longer half life.
-        assert!(half_life_v14 > half_life_v1);
+        assert!(half_life_v15 > half_life_v1);
 
         // At the V1 halving point (half_life_v1 + anchor_time_v1), anchor_time=25 halves the target.
         let next_timestamp = previous_timestamp + half_life_v1 + anchor_time_v1 as i64;
@@ -2046,29 +2046,29 @@ mod tests {
 
         // At the same timestamp, anchor_time=35 has not yet reached its own halving point,
         // so the target remains above half.
-        let target_v14_at_v1_halving = coinbase_target(
+        let target_v15_at_v1_halving = coinbase_target(
             previous_coinbase_target,
             previous_timestamp,
             next_timestamp,
-            anchor_time_v14,
+            anchor_time_v15,
             CurrentNetwork::NUM_BLOCKS_PER_EPOCH,
             CurrentNetwork::GENESIS_COINBASE_TARGET,
         )
         .unwrap();
-        assert!(target_v14_at_v1_halving > previous_coinbase_target / 2);
+        assert!(target_v15_at_v1_halving > previous_coinbase_target / 2);
 
-        // At the V14 halving point (half_life_v14 + anchor_time_v14), anchor_time=35 halves the target.
-        let next_timestamp_v14 = previous_timestamp + half_life_v14 + anchor_time_v14 as i64;
-        let target_v14_at_v14_halving = coinbase_target(
+        // At the V15 halving point (half_life_v15 + anchor_time_v15), anchor_time=35 halves the target.
+        let next_timestamp_v15 = previous_timestamp + half_life_v15 + anchor_time_v15 as i64;
+        let target_v15_at_v15_halving = coinbase_target(
             previous_coinbase_target,
             previous_timestamp,
-            next_timestamp_v14,
-            anchor_time_v14,
+            next_timestamp_v15,
+            anchor_time_v15,
             CurrentNetwork::NUM_BLOCKS_PER_EPOCH,
             CurrentNetwork::GENESIS_COINBASE_TARGET,
         )
         .unwrap();
-        assert_eq!(target_v14_at_v14_halving, previous_coinbase_target / 2);
+        assert_eq!(target_v15_at_v15_halving, previous_coinbase_target / 2);
     }
 
     #[test]
@@ -2079,11 +2079,11 @@ mod tests {
         const ANCHOR_TIME_DELTA: i64 = 15;
 
         let minimum_coinbase_target: u64 = 2u64.pow(10) - 1;
-        let initial_coinbase_target: u64 = rng.gen_range(minimum_coinbase_target..u64::MAX / 2);
-        let initial_timestamp: i64 = rng.r#gen();
+        let initial_coinbase_target: u64 = rng.random_range(minimum_coinbase_target..u64::MAX / 2);
+        let initial_timestamp: i64 = rng.random();
 
         let anchor_time_v1 = CurrentNetwork::ANCHOR_TIMES[0].1;
-        let anchor_time_v14 = CurrentNetwork::ANCHOR_TIMES[1].1;
+        let anchor_time_v15 = CurrentNetwork::ANCHOR_TIMES[1].1;
 
         // Count blocks to double with anchor_time=25 (V1).
         let mut previous_coinbase_target = initial_coinbase_target;
@@ -2104,27 +2104,27 @@ mod tests {
             num_blocks_v1 += 1;
         }
 
-        // Count blocks to double with anchor_time=35 (V14).
+        // Count blocks to double with anchor_time=35 (V15).
         let mut previous_coinbase_target = initial_coinbase_target;
         let mut previous_timestamp = initial_timestamp;
-        let mut num_blocks_v14 = 0u32;
+        let mut num_blocks_v15 = 0u32;
         while previous_coinbase_target < initial_coinbase_target * 2 {
             let next_timestamp = previous_timestamp + ANCHOR_TIME_DELTA;
             previous_coinbase_target = coinbase_target(
                 previous_coinbase_target,
                 previous_timestamp,
                 next_timestamp,
-                anchor_time_v14,
+                anchor_time_v15,
                 CurrentNetwork::NUM_BLOCKS_PER_EPOCH,
                 CurrentNetwork::GENESIS_COINBASE_TARGET,
             )
             .unwrap();
             previous_timestamp = next_timestamp;
-            num_blocks_v14 += 1;
+            num_blocks_v15 += 1;
         }
 
         // A larger anchor time shrinks the drift-to-anchor ratio (15/35 < 15/25),
         // so more blocks are needed to double the target.
-        assert!(num_blocks_v14 > num_blocks_v1);
+        assert!(num_blocks_v15 > num_blocks_v1);
     }
 }
