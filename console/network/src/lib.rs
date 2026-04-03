@@ -179,7 +179,8 @@ pub trait Network:
     /// A list of (consensus_version, anchor_time_in_seconds) pairs (sparse).
     /// Each entry takes effect at the specified version and remains active until the next entry.
     /// The anchor time, defined as the expected time in seconds to reach the coinbase target.
-    const ANCHOR_TIMES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 25), (ConsensusVersion::V15, 35)];
+    const ANCHOR_TIMES: [(ConsensusVersion, u16); 2] =
+        [(ConsensusVersion::V1, Self::REWARD_ANCHOR_TIME), (ConsensusVersion::V15, 35)];
     /// The expected time per block in seconds.
     const BLOCK_TIME: u16 = 10;
     /// The number of blocks per epoch.
