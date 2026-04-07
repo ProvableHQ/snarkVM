@@ -136,6 +136,30 @@ workspace = true
 workspace = true
 features = [ "filesystem" ]
 
+[dev-dependencies.snarkvm-circuit]
+workspace = true
+
+[dev-dependencies.snarkvm-console]
+workspace = true
+features = [ "test" ]
+
+[dev-dependencies.snarkvm-ledger-block]
+workspace = true
+
+[dev-dependencies.snarkvm-ledger-query]
+workspace = true
+features = [ "query" ]
+
+[dev-dependencies.snarkvm-ledger-store]
+workspace = true
+
+[dev-dependencies.snarkvm-ledger-test-helpers]
+workspace = true
+
+[dev-dependencies.snarkvm-synthesizer]
+workspace = true
+features = [ "test" ]
+
 [features]
 cuda = [ "snarkvm-algorithms-cuda" ]
 cuvaruna = [ "cuda" ]
