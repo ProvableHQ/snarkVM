@@ -14,7 +14,26 @@
 // limitations under the License.
 
 use colored::Colorize;
-use std::borrow::Borrow;
+
+use std::{
+    any::Any,
+    backtrace::Backtrace,
+    borrow::Borrow,
+    cell::Cell,
+    panic,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+thread_local! {
+/// The message backtrace of the last panic on this thread (if any).
+///
+/// We store this information here instead of directly processing it in a panic hook, because panic hooks are global whereas this can be processed on a per-thread basis.
+/// For example, one thread may execute a program where panics should *not* cause the entire process to terminate, while in another thread there is a panic due to a bug.
+static PANIC_INFO: Cell<Option<(String, Backtrace)>> = const { Cell::new(None) };
+}
+
+/// Keeps track of whether a panic hook was installed already.
+static PANIC_HOOK_INSTALLED: AtomicBool = const { AtomicBool::new(false) };
 
 /// Generates an `io::Error` from the given string.
 #[inline]
@@ -80,7 +99,30 @@ pub trait PrettyUnwrap {
     fn pretty_expect<S: ToString>(self, context: S) -> Self::Inner;
 }
 
-/// Helper for `PrettyUnwrap`, which creates a panic with the `anyhow::Error` nicely formatted and also logs the panic.
+/// Set the global panic hook for the process.
+///
+/// This function should be called once at startup. Subsequent calls to it have no effect.
+pub fn set_panic_hook() {
+    // Check if the hook was already installed.
+    // Note, that this allows for a small race condition, where the hook is installed by another thread after the check, but before the load.
+    // However, that is safe as the installed hook will be indentical, and this check merely exists for performance reasons.
+    if PANIC_HOOK_INSTALLED.load(Ordering::Acquire) {
+        return;
+    }
+
+    // Install the hook.
+    std::panic::set_hook(Box::new(|err| {
+        let msg = err.to_string();
+        let trace = Backtrace::force_capture();
+        PANIC_INFO.with(move |info| info.set(Some((msg, trace))));
+    }));
+
+    // Mark the hook as installed.
+    PANIC_HOOK_INSTALLED.store(true, Ordering::Release);
+}
+
+/// Helper for `PrettyUnwrap`:
+/// Creates a panic with the `anyhow::Error` nicely formatted.
 #[track_caller]
 #[inline]
 fn pretty_panic(error: &anyhow::Error) -> ! {
@@ -97,6 +139,7 @@ impl<T> PrettyUnwrap for anyhow::Result<T> {
     type Inner = T;
 
     #[track_caller]
+    #[inline]
     fn pretty_unwrap(self) -> Self::Inner {
         match self {
             Ok(result) => result,
@@ -117,9 +160,59 @@ impl<T> PrettyUnwrap for anyhow::Result<T> {
     }
 }
 
+/// `try_vm_runtime` executes the given closure in an environment which will safely halt
+/// without producing logs that look like unexpected behavior.
+/// In debug mode, it prints to stderr using the format: "VM safely halted at {location}: {halt message}".
+///
+/// Note: For this to work as expected, panics must be set to `unwind` during compilation (default), and the closure cannot invoke any async code that may potentially execute in a different OS thread.
+#[track_caller]
+#[inline]
+pub fn try_vm_runtime<R, F: FnMut() -> R>(f: F) -> Result<R, Box<dyn Any + Send>> {
+    // Perform the operation that may panic.
+    let result = std::panic::catch_unwind(panic::AssertUnwindSafe(f));
+
+    if result.is_err() {
+        // Get the stored panic and backtrace from the thread-local variable.
+        let (msg, _) = PANIC_INFO.with(|info| info.take()).expect("No panic information stored?");
+
+        #[cfg(debug_assertions)]
+        {
+            // Remove all words up to "panicked".
+            // And prepend with "VM Safely halted"
+            let msg = msg
+                .to_string()
+                .split_ascii_whitespace()
+                .skip_while(|&word| word != "panicked")
+                .collect::<Vec<&str>>()
+                .join(" ")
+                .replacen("panicked", "VM safely halted", 1);
+
+            eprintln!("{msg}");
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            // Discard message
+            let _ = msg;
+        }
+    }
+
+    // Return the result, allowing regular error-handling.
+    result
+}
+
+/// `catch_unwind` calls the given closure `f` and, if `f` panics, returns the panic message and backtrace.
+#[inline]
+pub fn catch_unwind<R, F: FnMut() -> R>(f: F) -> Result<R, (String, Backtrace)> {
+    // Perform the operation that may panic.
+    std::panic::catch_unwind(panic::AssertUnwindSafe(f)).map_err(|_| {
+        // Get the stored panic and backtrace from the thread-local variable.
+        PANIC_INFO.with(|info| info.take()).expect("No panic information stored?")
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{PrettyUnwrap, flatten_error, pretty_panic};
+    use super::{PrettyUnwrap, catch_unwind, flatten_error, pretty_panic, set_panic_hook, try_vm_runtime};
 
     use anyhow::{Context, Result, anyhow, bail};
     use colored::Colorize;
@@ -177,14 +270,92 @@ mod tests {
         assert_eq!(*result.downcast::<String>().expect("Error was not a string"), expected);
     }
 
+    // Ensure catch_unwind stores the panic message as expected.
+    #[test]
+    fn test_catch_unwind() {
+        set_panic_hook();
+        let result = catch_unwind(move || {
+            panic!("This is my message");
+        });
+
+        let (msg, bt) = result.expect_err("No panic caught");
+        assert!(msg.ends_with("This is my message"));
+
+        // This function should be in the panics backtrace
+        assert!(bt.to_string().contains("test_catch_unwind"));
+    }
+
+    // Ensure top-level `catch_unwind` captures a non-VM panic with the correct message and backtrace.
+    //
+    // This mirrors the usage in the sequential ops thread, where `catch_unwind` wraps the entire
+    // thread body and may catch panics unrelated to `try_vm_runtime` (e.g. storage panics).
+    #[test]
+    fn test_top_level_panic_captured() {
+        set_panic_hook();
+        let result = catch_unwind(|| {
+            panic!("Non-VM top-level panic");
+        });
+        let (msg, bt) = result.expect_err("Should have caught a panic");
+        assert!(msg.ends_with("Non-VM top-level panic"), "Unexpected message: {msg}");
+        assert!(bt.to_string().contains("test_top_level_panic_captured"), "Backtrace missing caller");
+    }
+
+    // Ensure `catch_unwind` correctly captures a fresh top-level panic after `try_vm_runtime`
+    // has already consumed a VM panic from `PANIC_INFO`.
+    #[test]
+    fn test_catch_unwind_after_vm_panic() {
+        set_panic_hook();
+
+        // Simulate a VM panic caught and consumed by `try_vm_runtime`.
+        let vm_result = try_vm_runtime(|| panic!("VM execution failed"));
+        assert!(vm_result.is_err(), "try_vm_runtime should catch VM panics");
+
+        // A subsequent top-level panic must be captured with fresh data, not stale VM info.
+        let result = catch_unwind(|| {
+            panic!("Subsequent top-level panic");
+        });
+        let (msg, _) = result.expect_err("Should have caught a panic");
+        assert!(msg.ends_with("Subsequent top-level panic"), "Got stale or wrong message: {msg}");
+    }
+
+    // Ensure a top-level panic (not caught by our wrappers) still propagates normally
+    // when the panic hook is installed, i.e. the hook does not swallow panics.
+    #[test]
+    fn test_top_level_panic_propagates_with_hook() {
+        set_panic_hook();
+
+        // Use std::panic::catch_unwind directly so we can observe propagation without
+        // going through our wrappers.
+        let result = std::panic::catch_unwind(|| {
+            panic!("Propagating top-level panic");
+        });
+        assert!(result.is_err(), "Panic should propagate to the caller");
+    }
+
+    // Ensure `catch_unwind` captures top-level panics correctly even when a preceding
+    // `try_vm_runtime` completed successfully (no prior panic in PANIC_INFO).
+    #[test]
+    fn test_catch_unwind_after_successful_vm_runtime() {
+        set_panic_hook();
+
+        // try_vm_runtime succeeds without panicking.
+        let vm_result = try_vm_runtime(|| 42u32);
+        assert_eq!(vm_result.unwrap(), 42);
+
+        // A top-level panic that follows should still be captured correctly.
+        let result = catch_unwind(|| panic!("Top-level panic after successful VM run"));
+        let (msg, _) = result.expect_err("Should have caught a panic");
+        assert!(msg.ends_with("Top-level panic after successful VM run"), "Got: {msg}");
+    }
+
     /// Ensure catch_unwind does not break `try_vm_runtime`.
     #[test]
     fn test_nested_with_try_vm_runtime() {
-        use crate::try_vm_runtime;
+        set_panic_hook();
 
         let result = std::panic::catch_unwind(|| {
             // try_vm_runtime uses catch_unwind internally
-            let vm_result = try_vm_runtime!(|| {
+            let vm_result = try_vm_runtime(|| {
                 panic!("VM operation failed!");
             });
 

@@ -39,7 +39,7 @@ features = [ "preserve_order" ]
 
 [dependencies.tokio]
 optional = true
-version = "1"
+workspace = true
 features = [ "rt" ]
 
 [dev-dependencies.snarkvm-ledger-block]
