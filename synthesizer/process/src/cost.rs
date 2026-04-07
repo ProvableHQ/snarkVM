@@ -15,11 +15,12 @@
 
 use std::collections::HashMap;
 
-use crate::{Authorization, FinalizeTypes, Process, Stack, StackRef, StackTrait};
+use crate::{circuit, Authorization, FinalizeTypes, Process, Stack, StackRef, StackTrait};
 
 use console::{
+    account::PrivateKey,
     prelude::*,
-    program::{FinalizeType, Identifier, LiteralType, PlaintextType},
+    program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Value},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
@@ -139,6 +140,35 @@ pub fn execution_cost_for_authorization<N: Network>(
     ))?;
 
     execution_cost_given_size(process, &reconstructed_execution, execution_size, consensus_version)
+}
+
+/// Estimates the execution cost in microcredits for a given program function and inputs,
+/// without requiring access to the caller's private key.
+///
+/// This is useful when the private key is stored in a hardware wallet or MPC wallet
+/// and cannot be used for arbitrary computations outside of final signing.
+///
+/// Internally, this generates an ephemeral private key to produce a valid `Authorization`
+/// (following the same pattern used by `CheckDeployment`), then delegates to
+/// `execution_cost_for_authorization` for the actual cost computation.
+pub fn estimate_execution_cost<N: Network, A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+    process: &Process<N>,
+    program_id: impl TryInto<ProgramID<N>>,
+    function_name: impl TryInto<Identifier<N>>,
+    inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
+    consensus_version: ConsensusVersion,
+    rng: &mut R,
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
+    // Generate an ephemeral private key for authorization (not used for signing the final transaction).
+    let burner_private_key = PrivateKey::new(rng)?;
+
+    // Authorize the call using the ephemeral key. Use `authorize_unchecked` to skip
+    // circuit satisfiability checks, since we only need the transitions for cost estimation.
+    let authorization =
+        process.authorize_unchecked::<A, R>(&burner_private_key, program_id, function_name, inputs, rng)?;
+
+    // Compute the execution cost from the authorization.
+    execution_cost_for_authorization(process, &authorization, consensus_version)
 }
 
 /// Returns the compute cost for a deployment in microcredits.
