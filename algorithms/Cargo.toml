@@ -165,8 +165,9 @@ features = [ "test" ]
 
 [features]
 cuda = [ "snarkvm-algorithms-cuda" ]
-cuvaruna = [ "cuda" ]
-cuvaruna-profiling = ["cuda", "nvtx"]
+# Forward to the synthesizer so `varuna` benches hit `cuVaruna::prove_batch` (NVTX lives there), not CPU `Varuna::prove_batch`.
+cuvaruna = [ "cuda", "snarkvm-synthesizer/cuvaruna" ]
+cuvaruna-profiling = [ "cuda", "nvtx", "snarkvm-synthesizer/cuvaruna-profiling" ]
 cuvaruna-debug = []
 locktick = [ "snarkvm-parameters/locktick" ]
 profiler = [ "aleo-std/profiler" ]
