@@ -25,3 +25,11 @@ artifacts
 !.claude/skills/
 !.claude/commands/
 algorithms/src/snark/varuna/ahp/prover/cuVaruna/
+
+
+# Dave
+results.md
+program.md
+branches.txt
+summary_cuvaruna.md
+summary_perf.md

@@ -96,6 +96,9 @@ workspace = true
 [dependencies.rand]
 workspace = true
 
+[dependencies.rand_core]
+workspace = true
+
 [dependencies.rayon]
 workspace = true
 

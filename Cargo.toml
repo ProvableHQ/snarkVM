@@ -530,6 +530,9 @@ version = "0.10"
 [workspace.dependencies.rand_chacha]
 version = "0.10"
 
+[workspace.dependencies.rand_core]
+version = "0.10"
+
 [workspace.dependencies.rayon]
 version = "1"
 

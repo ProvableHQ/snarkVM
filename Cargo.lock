@@ -3151,6 +3151,7 @@ dependencies = [
  "num-traits",
  "nvtx",
  "rand 0.10.0",
+ "rand_core 0.10.0",
  "rayon",
  "serde",
  "serde_json",
