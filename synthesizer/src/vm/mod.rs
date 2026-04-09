@@ -409,15 +409,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Prepare the caller.
         let caller = Address::try_from(private_key)?;
-        // Prepare the locator.
-        let locator = ("credits.aleo", "transfer_public_to_private");
+        // Prepare the locators.
+        let credits_locator = ("credits.aleo", "transfer_public_to_private");
+        let one_to_many_records_locator = ("one_to_many_records.aleo", "mint");
         // Prepare the amount for each call to the function.
         let amount = public_balances
             .get(&caller)
             .ok_or_else(|| anyhow!("Missing public balance for {caller}"))?
             .saturating_div(Block::<N>::NUM_GENESIS_TRANSACTIONS.saturating_mul(2) as u64);
         // Prepare the function inputs.
-        let inputs = [caller.to_string(), format!("{amount}_u64")];
+        let credits_inputs = [caller.to_string(), format!("{amount}_u64")];
+        let one_to_many_records_inputs = [caller.to_string(), format!("{amount}_u64")];
 
         // Prepare the ratifications.
         let ratifications =
@@ -427,9 +429,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Prepare the aborted solution IDs.
         let aborted_solution_ids = vec![];
         // Prepare the transactions.
-        let transactions = (0..Block::<N>::NUM_GENESIS_TRANSACTIONS)
-            .map(|_| self.execute(private_key, locator, inputs.iter(), None, 0, None, rng))
+        let credits_transactions = (0..Block::<N>::NUM_GENESIS_TRANSACTIONS / 2)
+            .map(|_| self.execute(private_key, credits_locator, credits_inputs.iter(), None, 0, None, rng))
             .collect::<Result<Vec<_>, _>>()?;
+        let one_to_many_records_transactions = (0..Block::<N>::NUM_GENESIS_TRANSACTIONS / 2)
+            .map(|_| {
+                self.execute(
+                    private_key,
+                    one_to_many_records_locator,
+                    one_to_many_records_inputs.iter(),
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let transactions = credits_transactions.into_iter().chain(one_to_many_records_transactions).collect::<Vec<_>>();
 
         // Construct the finalize state.
         let state = FinalizeGlobalState::new_genesis::<N>()?;

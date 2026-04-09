@@ -111,29 +111,37 @@ impl<N: Network> Process<N> {
             Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
         lap!(timer, "Initialize process");
 
-        // Initialize the 'credits.aleo' program.
-        let program = Program::credits()?;
-        lap!(timer, "Load credits program");
+        // Initialize the 'credits.aleo' and 'one_to_many_records.aleo' programs.
+        let credits_program = Program::credits()?;
+        let one_to_many_records_program = Program::one_to_many_records()?;
+        lap!(timer, "Load initial programs");
 
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
-        lap!(timer, "Initialize stack");
+        let credits_stack = Stack::new(&process, &credits_program)?;
+        let one_to_many_records_stack = Stack::new(&process, &one_to_many_records_program)?;
+        lap!(timer, "Initialize stacks");
 
         // Synthesize the 'credits.aleo' circuit keys.
-        for function_name in program.functions().keys() {
-            stack.synthesize_key::<A, _>(function_name, rng)?;
+        for function_name in credits_program.functions().keys() {
+            credits_stack.synthesize_key::<A, _>(function_name, rng)?;
+            lap!(timer, "Synthesize circuit keys for {function_name}");
+        }
+        for function_name in one_to_many_records_program.functions().keys() {
+            one_to_many_records_stack.synthesize_key::<A, _>(function_name, rng)?;
             lap!(timer, "Synthesize circuit keys for {function_name}");
         }
         let rng = &mut rand::thread_rng();
         let credits_record_name = Identifier::<N>::from_str("credits").unwrap(); // Safe: "credits" is always a valid identifier.
-        stack.synthesize_translation_key::<A, _>(&credits_record_name, rng)?;
-        lap!(timer, "Synthesize credits program keys");
+        credits_stack.synthesize_translation_key::<A, _>(&credits_record_name, rng)?;
+        let one_to_many_records_record_name = Identifier::<N>::from_str("test").unwrap(); // Safe: "test" is always a valid identifier.
+        one_to_many_records_stack.synthesize_translation_key::<A, _>(&one_to_many_records_record_name, rng)?;
+        lap!(timer, "Synthesize initial program keys");
 
-        // Add the 'credits.aleo' stack to the process.
-        process.add_stack(stack);
+        // Add the 'credits.aleo' and 'one_to_many_records.aleo' stacks to the process.
+        process.add_stack(credits_stack);
+        process.add_stack(one_to_many_records_stack);
 
         finish!(timer);
-        // Return the process.
         Ok(process)
     }
 

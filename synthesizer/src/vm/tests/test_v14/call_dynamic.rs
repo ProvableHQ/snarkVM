@@ -210,6 +210,130 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     Ok(())
 }
 
+// Tests a program with a one-to-many records function.
+#[test]
+fn test_one_to_many_records_function() -> Result<()> {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
+    let caller_address = Address::try_from(&caller_private_key)?;
+    let program = Program::<CurrentNetwork>::from_str(
+        r"
+        program one_to_many_records.aleo;
+
+        constructor:
+            assert.eq true true;
+
+        record test:
+            owner as address.private;
+            amount as u64.private;
+
+        function mint:
+            input r0 as u64.private;
+            cast self.caller r0 into r1 as test.record;
+            output r1 as test.record;
+
+        function one_to_many_records:
+            input r0 as test.record;
+            input r1 as address.private;
+            input r2 as u64.private;
+            cast r1 r2 into r3 as test.record;
+            cast r1 r2 into r4 as test.record;
+            cast r1 r2 into r5 as test.record;
+            cast r1 r2 into r6 as test.record;
+            cast r1 r2 into r7 as test.record;
+            cast r1 r2 into r8 as test.record;
+            cast r1 r2 into r9 as test.record;
+            cast r1 r2 into r10 as test.record;
+            cast r1 r2 into r11 as test.record;
+            cast r1 r2 into r12 as test.record;
+            cast r1 r2 into r13 as test.record;
+            cast r1 r2 into r14 as test.record;
+            cast r1 r2 into r15 as test.record;
+            cast r1 r2 into r16 as test.record;
+            cast r1 r2 into r17 as test.record;
+            cast r1 r2 into r18 as test.record;
+            output r3 as test.record;
+            output r4 as test.record;
+            output r5 as test.record;
+            output r6 as test.record;
+            output r7 as test.record;
+            output r8 as test.record;
+            output r9 as test.record;
+            output r10 as test.record;
+            output r11 as test.record;
+            output r12 as test.record;
+            output r13 as test.record;
+            output r14 as test.record;
+            output r15 as test.record;
+            output r16 as test.record;
+            output r17 as test.record;
+            output r18 as test.record;
+        ",
+    )?;
+
+    // Initialize the VM.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+
+    // Deploy the program.
+    println!("Deploying program: {}", program.id());
+    let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    // Print the number of constraints in the verifying key.
+    if let Transaction::Deploy(_, _, _, deployment, _) = &transaction {
+        let vk = &deployment.verifying_keys().iter().next().unwrap().1.0;
+        // Number of constraints in verifying key: CircuitInfo { num_public_inputs: 16, num_public_and_private_variables: 27468, num_constraints: 27475, num_non_zero_a: 55968, num_non_zero_b: 64642, num_non_zero_c: 41164 }
+        println!("Number of constraints in verifying key: {:?}", vk.circuit_info);
+    }
+
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block)?;
+
+    // Execute 'mint'.
+    let transaction = vm.execute(
+        &caller_private_key,
+        ("one_to_many_records.aleo", "mint"),
+        vec![Value::from_str("1000000u64")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    vm.check_transaction(&transaction, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block)?;
+
+    // Collect the record
+    ensure!(block.records().collect_vec().len() == 1, "Expected 1 record, got {}", block.records().collect_vec().len());
+    let record = block.records().collect_vec().last().unwrap().1.decrypt(&caller_view_key).unwrap();
+
+    // Execute 'one_to_many_records'.
+    let transaction = vm.execute(
+        &caller_private_key,
+        ("one_to_many_records.aleo", "one_to_many_records"),
+        vec![Value::Record(record), Value::from_str(&format!("{caller_address}"))?, Value::from_str("1000000u64")?]
+            .into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    vm.check_transaction(&transaction, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block)?;
+
+    Ok(())
+}
+
 // Tests a universal AMM swap pattern where the AMM dynamically calls transfer functions on arbitrary token programs.
 #[test]
 fn test_universal_swap() {
