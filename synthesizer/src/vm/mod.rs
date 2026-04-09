@@ -432,20 +432,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let credits_transactions = (0..Block::<N>::NUM_GENESIS_TRANSACTIONS / 2)
             .map(|_| self.execute(private_key, credits_locator, credits_inputs.iter(), None, 0, None, rng))
             .collect::<Result<Vec<_>, _>>()?;
-        let one_to_many_records_transactions = (0..Block::<N>::NUM_GENESIS_TRANSACTIONS / 2)
-            .map(|_| {
-                self.execute(
-                    private_key,
-                    one_to_many_records_locator,
-                    one_to_many_records_inputs.iter(),
-                    None,
-                    0,
-                    None,
-                    rng,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let transactions = credits_transactions.into_iter().chain(one_to_many_records_transactions).collect::<Vec<_>>();
+        let contains_one_to_many_records =
+            self.process().read().program_ids().contains(&ProgramID::from_str("one_to_many_records.aleo").unwrap());
+        let transactions = if contains_one_to_many_records {
+            let one_to_many_records_transactions = (0..Block::<N>::NUM_GENESIS_TRANSACTIONS / 2)
+                .map(|_| {
+                    self.execute(
+                        private_key,
+                        one_to_many_records_locator,
+                        one_to_many_records_inputs.iter(),
+                        None,
+                        0,
+                        None,
+                        rng,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            credits_transactions.into_iter().chain(one_to_many_records_transactions).collect::<Vec<_>>()
+        } else {
+            credits_transactions
+        };
 
         // Construct the finalize state.
         let state = FinalizeGlobalState::new_genesis::<N>()?;

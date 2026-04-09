@@ -272,6 +272,33 @@ fn test_one_to_many_records_function() -> Result<()> {
             output r18 as test.record;
         ",
     )?;
+    // Wrapper program to call the one_to_many_records function.
+    let mut wrapper_program = r"
+        import one_to_many_records.aleo;
+        program wrapper.aleo;
+
+        constructor:
+            assert.eq true true;
+
+        function call_one_to_many_records:
+            input r0 as u64.private;
+            input r1 as address.private;
+            input r2 as u64.private;"
+        .to_string();
+    // Append calls to the one_to_many_records function.
+    let call = |start_index: usize| {
+        let mut call_str = "    call one_to_many_records.aleo/one_to_many_records r0 r1 r2 into".to_string();
+        for i in start_index..start_index + 16 {
+            call_str.push_str(&format!(" r{i}"));
+        }
+        call_str.push_str(";\n");
+        call_str
+    };
+    for i in 0..30 {
+        let start_index = 3 + (i * 16);
+        wrapper_program.push_str(&call(start_index));
+    }
+    let wrapper_program = Program::from_str(&wrapper_program)?;
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
@@ -286,6 +313,20 @@ fn test_one_to_many_records_function() -> Result<()> {
         println!("Number of constraints in verifying key: {:?}", vk.circuit_info);
     }
 
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block)?;
+
+    // Deploy the wrapper program.
+    let transaction = vm.deploy(&caller_private_key, &wrapper_program, None, 0, None, rng)?;
+    // Print the number of constraints in the verifying key.
+    if let Transaction::Deploy(_, _, _, deployment, _) = &transaction {
+        let vk = &deployment.verifying_keys().iter().next().unwrap().1.0;
+        // Number of constraints in verifying key: CircuitInfo { num_public_inputs: 16, num_public_and_private_variables: 27468, num_constraints: 27475, num_non_zero_a: 55968, num_non_zero_b: 64642, num_non_zero_c: 41164 }
+        println!("Number of constraints in verifying key: {:?}", vk.circuit_info);
+    }
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
@@ -317,6 +358,28 @@ fn test_one_to_many_records_function() -> Result<()> {
     let transaction = vm.execute(
         &caller_private_key,
         ("one_to_many_records.aleo", "one_to_many_records"),
+        vec![
+            Value::from_str("1000000u64")?,
+            Value::from_str(&format!("{caller_address}"))?,
+            Value::from_str("1000000u64")?,
+        ]
+        .into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    vm.check_transaction(&transaction, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block)?;
+
+    // Execute 'call_one_to_many_records'.
+    let transaction = vm.execute(
+        &caller_private_key,
+        ("wrapper.aleo", "call_one_to_many_records"),
         vec![
             Value::from_str("1000000u64")?,
             Value::from_str(&format!("{caller_address}"))?,

@@ -1,4 +1,4 @@
-program one_to_many_records.aleo;
+program batch_one_to_many_records.aleo;
 
 record test:
     owner as address.private;

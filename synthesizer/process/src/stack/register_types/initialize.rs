@@ -450,8 +450,9 @@ impl<N: Network> RegisterTypes<N> {
                                 // Ensure the current program contains an import for this external program.
                                 if !stack.program().imports().keys().contains(program_id) {
                                     bail!(
-                                        "External program '{}' is not imported by '{program_id}'.",
-                                        locator.program_id()
+                                        "External program '{}' is not imported by '{}'.",
+                                        locator.program_id(),
+                                        stack.program_id()
                                     );
                                 }
 

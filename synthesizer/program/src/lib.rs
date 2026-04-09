@@ -316,6 +316,12 @@ impl<N: Network> ProgramCore<N> {
         Self::from_str(include_str!("./resources/one_to_many_records.aleo"))
     }
 
+    /// Initializes the batch_one_to_many_records program.
+    #[inline]
+    pub fn batch_one_to_many_records() -> Result<Self> {
+        Self::from_str(include_str!("./resources/batch_one_to_many_records.aleo"))
+    }
+
     /// Returns the ID of the program.
     pub const fn id(&self) -> &ProgramID<N> {
         &self.id
