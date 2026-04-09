@@ -235,7 +235,7 @@ fn test_one_to_many_records_function() -> Result<()> {
             output r1 as test.record;
 
         function one_to_many_records:
-            input r0 as test.record;
+            input r0 as u64.private; // dummy input
             input r1 as address.private;
             input r2 as u64.private;
             cast r1 r2 into r3 as test.record;
@@ -311,14 +311,18 @@ fn test_one_to_many_records_function() -> Result<()> {
 
     // Collect the record
     ensure!(block.records().collect_vec().len() == 1, "Expected 1 record, got {}", block.records().collect_vec().len());
-    let record = block.records().collect_vec().last().unwrap().1.decrypt(&caller_view_key).unwrap();
+    let _record = block.records().collect_vec().last().unwrap().1.decrypt(&caller_view_key).unwrap();
 
     // Execute 'one_to_many_records'.
     let transaction = vm.execute(
         &caller_private_key,
         ("one_to_many_records.aleo", "one_to_many_records"),
-        vec![Value::Record(record), Value::from_str(&format!("{caller_address}"))?, Value::from_str("1000000u64")?]
-            .into_iter(),
+        vec![
+            Value::from_str("1000000u64")?,
+            Value::from_str(&format!("{caller_address}"))?,
+            Value::from_str("1000000u64")?,
+        ]
+        .into_iter(),
         None,
         0,
         None,

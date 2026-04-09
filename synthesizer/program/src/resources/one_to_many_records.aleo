@@ -10,7 +10,7 @@ function mint:
     output r1 as test.record;
 
 function one_to_many_records:
-    input r0 as test.record;
+    input r0 as u64.private;
     input r1 as address.private;
     input r2 as u64.private;
     cast r1 r2 into r3 as test.record;
