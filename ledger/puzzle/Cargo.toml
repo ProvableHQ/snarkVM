@@ -45,6 +45,9 @@ features = [ "account", "network", "types" ]
 [dependencies.snarkvm-algorithms]
 workspace = true
 
+[dependencies.snarkvm-utilities]
+workspace = true
+
 [dependencies.aleo-std]
 workspace = true
 

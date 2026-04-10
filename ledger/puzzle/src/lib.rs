@@ -50,8 +50,10 @@ use console::{
     },
     types::U64,
 };
+use snarkvm_utilities::ensure_equals;
 
 use aleo_std::prelude::*;
+use anyhow::Context;
 use core::num::NonZeroUsize;
 use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
@@ -128,10 +130,18 @@ impl<N: Network> Puzzle<N> {
 
     /// Returns the proof target given the solution.
     pub fn get_proof_target(&self, solution: &Solution<N>) -> Result<u64> {
+        let solution_id = solution.id();
+
         // Calculate the proof target.
-        let proof_target = self.get_proof_target_unchecked(solution)?;
+        let proof_target = self
+            .get_proof_target_unchecked(solution)
+            .with_context(|| format!("Failed to get proof target for solution {solution_id}"))?;
         // Ensure the proof target matches the expected proof target.
-        ensure!(solution.target() == proof_target, "The proof target does not match the expected proof target");
+        ensure_equals!(
+            solution.target(),
+            proof_target,
+            "The proof target for solution {solution_id} does not match the expected proof target"
+        );
         // Return the proof target.
         Ok(proof_target)
     }
@@ -176,9 +186,10 @@ impl<N: Network> Puzzle<N> {
                 // If the proof target is in the cache, then store it.
                 Some(proof_target) => {
                     // Ensure that the proof target matches the expected proof target.
-                    ensure!(
-                        solution.target() == *proof_target,
-                        "The proof target does not match the cached proof target"
+                    ensure_equals!(
+                        solution.target(),
+                        *proof_target,
+                        "The proof target for solution {id} does not match the cached proof target"
                     );
                     targets[i] = *proof_target
                 }
@@ -199,9 +210,10 @@ impl<N: Network> Puzzle<N> {
                     // Get the proof target.
                     let proof_target = Self::leaves_to_proof_target(leaves)?;
                     // Ensure that the proof target matches the expected proof target.
-                    ensure!(
-                        solution.target() == proof_target,
-                        "The proof target does not match the computed proof target"
+                    ensure_equals!(
+                        solution.target(),
+                        proof_target,
+                        "The proof target for solution {solution_id} does not match the computed proof target"
                     );
                     // Insert the proof target into the cache.
                     self.proof_target_cache.write().put(*solution_id, proof_target);
@@ -258,12 +270,7 @@ impl<N: Network> Puzzle<N> {
         expected_proof_target: u64,
     ) -> Result<()> {
         // Ensure the epoch hash matches.
-        if solution.epoch_hash() != expected_epoch_hash {
-            bail!(
-                "Solution does not match the expected epoch hash (found '{}', expected '{expected_epoch_hash}')",
-                solution.epoch_hash()
-            )
-        }
+        ensure_equals!(solution.epoch_hash(), expected_epoch_hash, "Solution does not match the expected epoch hash");
         // Ensure the solution is greater than or equal to the expected proof target.
         let proof_target = self.get_proof_target(solution)?;
         if proof_target < expected_proof_target {
@@ -281,12 +288,8 @@ impl<N: Network> Puzzle<N> {
         expected_proof_target: u64,
     ) -> Result<()> {
         // Ensure the epoch hash matches.
-        if solution.epoch_hash() != expected_epoch_hash {
-            bail!(
-                "Solution does not match the expected epoch hash (found '{}', expected '{expected_epoch_hash}')",
-                solution.epoch_hash()
-            )
-        }
+        ensure_equals!(solution.epoch_hash(), expected_epoch_hash, "Solution does not match the expected epoch hash");
+
         // Calculate the proof target of the solution.
         let proof_target = self.get_proof_target_unchecked(solution)?;
 
@@ -323,9 +326,11 @@ impl<N: Network> Puzzle<N> {
 
         // Ensure the epoch hash matches.
         cfg_iter!(solutions).try_for_each(|(solution_id, solution)| {
-            if solution.epoch_hash() != expected_epoch_hash {
-                bail!("Solution '{solution_id}' did not match the expected epoch hash (found '{}', expected '{expected_epoch_hash}')", solution.epoch_hash())
-            }
+            ensure_equals!(
+                solution.epoch_hash(),
+                expected_epoch_hash,
+                "Solution {solution_id} did not match the expected epoch hash"
+            );
             Ok(())
         })?;
         lap!(timer, "Verify each epoch hash matches");
