@@ -36,6 +36,20 @@ use std::{collections::BTreeMap, mem};
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
+/// A binary Merkle tree constructed with a leaf-digest hash function and a
+/// two-to-one compressing hash function.
+///
+/// If the number of leaves is less than `2**DEPTH`, the leaf layer is first
+/// padded to the next power of 2 with the empty-hash value `e` returned by the
+/// implementation of `PathHash::hash_empty()` for `PH`, then a balanced binary
+/// tree is built. In concrete terms, at most one `e` leaf is added: the rest
+/// are only virtual in that instead nodes with the value `PH::hash_children(e,
+/// e)` are added to the next level, which is indeed full of size equal to a
+/// power of 2.
+///
+/// Padding levels are then added as needed to reach the full `DEPTH`, each of
+/// which is constructed by hashing the root of the previous level together with
+/// `e`.
 #[derive(Deserialize, Serialize)]
 #[serde(bound = "E: Serialize + DeserializeOwned, LH: Serialize + DeserializeOwned, PH: Serialize + DeserializeOwned")]
 pub struct MerkleTree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>>, const DEPTH: u8> {

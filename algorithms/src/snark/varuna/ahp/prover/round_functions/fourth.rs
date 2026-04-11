@@ -37,7 +37,7 @@ use snarkvm_utilities::ExecutionPool;
 use anyhow::Result;
 use core::convert::TryInto;
 use itertools::Itertools;
-use rand::RngCore;
+use rand::Rng;
 use std::collections::BTreeMap;
 
 type Sum<F> = F;
@@ -73,7 +73,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     }
 
     /// Output the fourth round message and the next state.
-    pub fn prover_fourth_round<'a, R: RngCore>(
+    pub fn prover_fourth_round<'a, R: Rng>(
         second_message: &verifier::SecondMessage<F>,
         third_message: &verifier::ThirdMessage<F>,
         mut state: prover::State<'a, F, SM>,

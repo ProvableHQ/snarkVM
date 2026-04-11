@@ -160,8 +160,9 @@ function test_serde_equivalence:
 
             // Execute the function.
             let trace = Trace::new();
+            let translations = Arc::new(RwLock::new(Vec::new()));
             let res_exec = stack.execute_function::<CurrentAleo, _>(
-                CallStack::execute(authorization.replicate(), Arc::new(RwLock::new(trace))).unwrap(),
+                CallStack::execute(authorization.replicate(), Arc::new(RwLock::new(trace)), translations).unwrap(),
                 None,
                 None,
                 rng,

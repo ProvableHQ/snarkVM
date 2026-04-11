@@ -36,7 +36,7 @@ mod to_fields;
 use crate::{Access, Ciphertext, Identifier, Literal, Plaintext, ProgramID, Visibility};
 use snarkvm_circuit_account::{PrivateKey, ViewKey};
 use snarkvm_circuit_network::Aleo;
-use snarkvm_circuit_types::{Boolean, Field, Group, Scalar, U8, U32, environment::prelude::*};
+use snarkvm_circuit_types::{Boolean, Field, Group, Scalar, U8, U32, environment::prelude::*, prelude::ToFields};
 
 #[derive(Clone)]
 pub struct Record<A: Aleo, Private: Visibility<A>> {
@@ -59,7 +59,12 @@ impl<A: Aleo> Inject for Record<A, Plaintext<A>> {
     fn new(_: Mode, record: Self::Primitive) -> Self {
         Self {
             owner: Owner::new(Mode::Private, record.owner().clone()),
-            data: Inject::new(Mode::Private, record.data().clone()),
+            data: record
+                .data()
+                .clone()
+                .into_iter()
+                .map(|(identifier, entry)| (Identifier::constant(identifier), Inject::new(Mode::Private, entry)))
+                .collect(),
             nonce: Group::new(Mode::Private, *record.nonce()),
             version: U8::new(Mode::Private, *record.version()),
         }
@@ -73,7 +78,12 @@ impl<A: Aleo> Inject for Record<A, Ciphertext<A>> {
     fn new(_: Mode, record: Self::Primitive) -> Self {
         Self {
             owner: Owner::new(Mode::Private, record.owner().clone()),
-            data: Inject::new(Mode::Private, record.data().clone()),
+            data: record
+                .data()
+                .clone()
+                .into_iter()
+                .map(|(identifier, entry)| (Identifier::constant(identifier), Inject::new(Mode::Private, entry)))
+                .collect(),
             nonce: Group::new(Mode::Private, *record.nonce()),
             version: U8::new(Mode::Private, *record.version()),
         }

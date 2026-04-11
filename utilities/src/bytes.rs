@@ -580,7 +580,7 @@ mod test {
     use super::*;
     use crate::TestRng;
 
-    use rand::Rng;
+    use rand::RngExt;
 
     const ITERATIONS: usize = 1000;
 
@@ -633,7 +633,7 @@ mod test {
         let mut rng = TestRng::default();
 
         for _ in 0..ITERATIONS {
-            let given_bytes: [u8; 32] = rng.r#gen();
+            let given_bytes: [u8; 32] = rng.random();
 
             let bits = bits_from_bytes_le(&given_bytes).collect::<Vec<_>>();
             let recovered_bytes = bytes_from_bits_le(&bits);
@@ -645,24 +645,24 @@ mod test {
     #[test]
     fn test_socketaddr_bytes() {
         fn random_ipv4_address(rng: &mut TestRng) -> Ipv4Addr {
-            Ipv4Addr::new(rng.r#gen(), rng.r#gen(), rng.r#gen(), rng.r#gen())
+            Ipv4Addr::new(rng.random(), rng.random(), rng.random(), rng.random())
         }
 
         fn random_ipv6_address(rng: &mut TestRng) -> Ipv6Addr {
             Ipv6Addr::new(
-                rng.r#gen(),
-                rng.r#gen(),
-                rng.r#gen(),
-                rng.r#gen(),
-                rng.r#gen(),
-                rng.r#gen(),
-                rng.r#gen(),
-                rng.r#gen(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
+                rng.random(),
             )
         }
 
         fn random_port(rng: &mut TestRng) -> u16 {
-            rng.gen_range(1025..=65535) // excluding well-known ports
+            rng.random_range(1025..=65535) // excluding well-known ports
         }
 
         let rng = &mut TestRng::default();

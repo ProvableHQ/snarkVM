@@ -22,7 +22,7 @@ use snarkvm_ledger_puzzle::PuzzleTrait;
 
 use anyhow::Result;
 use core::marker::PhantomData;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaChaRng;
 
 #[cfg(not(feature = "serial"))]
@@ -73,7 +73,7 @@ impl<N: Network> MerklePuzzle<N> {
         // Seed a random number generator from the epoch hash.
         let mut epoch_rng = ChaChaRng::seed_from_u64(seed);
         // Sample a random number of leaves.
-        Ok(epoch_rng.gen_range(MIN_NUMBER_OF_LEAVES..=MAX_NUMBER_OF_LEAVES))
+        Ok(epoch_rng.random_range(MIN_NUMBER_OF_LEAVES..=MAX_NUMBER_OF_LEAVES))
     }
 }
 

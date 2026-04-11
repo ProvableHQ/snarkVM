@@ -36,11 +36,5 @@ Use `--paginate` for REST, loop on `hasNextPage` for GraphQL.
 
 
 <claude-mem-context>
-# Recent Activity
 
-### Feb 6, 2026
-
-| ID | Time | T | Title | Read |
-|----|------|---|-------|------|
-| #92 | 1:20 PM | 🔵 | settings.local.json uses granular permission system for allowing specific bash commands and skills | ~472 |
 </claude-mem-context>

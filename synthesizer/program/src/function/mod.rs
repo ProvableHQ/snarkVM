@@ -25,7 +25,7 @@ mod parse;
 use crate::{Instruction, finalize::FinalizeCore};
 use console::{
     network::prelude::*,
-    program::{Identifier, Register, ValueType, Variant},
+    program::{Identifier, Register, ValueType},
 };
 
 use indexmap::IndexSet;
@@ -66,11 +66,6 @@ impl<N: Network> FunctionCore<N> {
         self.inputs.iter().map(|input| input.value_type()).cloned().collect()
     }
 
-    /// Returns the function input type variants.
-    pub fn input_variants(&self) -> Vec<Variant> {
-        self.inputs.iter().map(|input| input.value_type().variant()).collect()
-    }
-
     /// Returns the function instructions.
     pub fn instructions(&self) -> &[Instruction<N>] {
         &self.instructions
@@ -84,11 +79,6 @@ impl<N: Network> FunctionCore<N> {
     /// Returns the function output types.
     pub fn output_types(&self) -> Vec<ValueType<N>> {
         self.outputs.iter().map(|output| output.value_type()).cloned().collect()
-    }
-
-    /// Returns the function output type variants.
-    pub fn output_variants(&self) -> Vec<Variant> {
-        self.outputs.iter().map(|output| output.value_type().variant()).collect()
     }
 
     /// Returns the function finalize logic.

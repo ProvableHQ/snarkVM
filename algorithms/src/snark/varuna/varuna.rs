@@ -43,7 +43,6 @@ use crate::{
     },
     srs::UniversalVerifier,
 };
-use rand::RngCore;
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
 use snarkvm_utilities::{ToBytes, dev_eprintln, dev_println, to_bytes_le};
@@ -102,7 +101,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             let ck = CommitterUnionKey::union(std::iter::once(&committer_key));
 
             let commit_time = start_timer!(|| format!("Commit to index polynomials for {}", indexed_circuit.id));
-            let setup_rng = None::<&mut dyn RngCore>; // We do not randomize the commitments
+            let setup_rng = None::<&mut dyn Rng>; // We do not randomize the commitments
 
             let (mut circuit_commitments, commitment_randomnesses): (_, _) = SonicKZG10::<E, FS>::commit(
                 universal_prover,
@@ -375,11 +374,45 @@ where
         let mut public_inputs = BTreeMap::new(); // inputs need to live longer than the rest of prover_state
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
+
+        #[cfg(feature = "snark-print")]
+        {
+            // Display the batch sizes and (padded) public inputs
+            let batch_sizes = keys_to_constraints
+                .keys()
+                .map(|pk| {
+                    prover_state
+                        .batch_size(&pk.circuit)
+                        .ok_or(anyhow!("[Varuna::prove_batch] Batch not found for circuit {:?}", pk.circuit.id))
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            println!("[Varuna::prove_batch] Batch sizes: {batch_sizes:?}\n");
+
+            for (i, (key, batch_size)) in keys_to_constraints.keys().zip(batch_sizes.iter()).enumerate() {
+                println!("  - Circuit {i}: {} ({batch_size} instance(s))\n", key.circuit_verifying_key.id);
+                // Safe: `prover_state` was initialized from the same circuits as
+                // `keys_to_constraints`, so `key.circuit` is always present.
+                for (j, public_input) in prover_state.public_inputs(&key.circuit).unwrap().iter().enumerate() {
+                    println!("    - Instance {j}");
+                    // We prepend the initial constant 1 to facilitate collation with displayed
+                    // verifier inputs
+                    println!("      - 0: {}", E::Fr::one());
+                    for (k, value) in public_input.iter().enumerate() {
+                        println!("      - {}: {value}", k + 1);
+                    }
+                    println!();
+                }
+            }
+        }
+
         for pk in keys_to_constraints.keys() {
             let batch_size = prover_state.batch_size(&pk.circuit).ok_or(anyhow!("Batch size not found."))?;
             let public_input = prover_state.public_inputs(&pk.circuit).ok_or(anyhow!("Public input not found."))?;
+
             let padded_public_input =
                 prover_state.padded_public_inputs(&pk.circuit).ok_or(anyhow!("Padded public input not found."))?;
+
             let circuit_id = pk.circuit.id;
             batch_sizes.insert(circuit_id, batch_size);
             circuit_infos.insert(circuit_id, &pk.circuit_verifying_key.circuit_info);
@@ -395,7 +428,7 @@ where
 
         let circuit_commitments =
             keys_to_constraints.keys().map(|pk| pk.circuit_verifying_key.circuit_commitments.as_slice());
-
+        dev_println!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
         let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone());
 
         // --------------------------------------------------------------------
@@ -646,6 +679,7 @@ where
 
         // Compute the AHP verifier's query set.
         let (query_set, verifier_state) = AHPForR1CS::<_, SM>::verifier_query_set(verifier_state);
+        dev_println!("Final challenge gamma: {:?}", verifier_state.gamma);
         let lc_s = AHPForR1CS::<_, SM>::construct_linear_combinations(
             &public_inputs,
             &polynomials,
@@ -712,6 +746,12 @@ where
         proof.check_batch_sizes()?;
         let batch_sizes_vec = proof.batch_sizes();
         let mut batch_sizes = BTreeMap::new();
+        ensure!(
+            keys_to_inputs.len() == batch_sizes_vec.len(),
+            "[verify batch] Expected {} keys to inputs, but {} were provided.",
+            batch_sizes_vec.len(),
+            keys_to_inputs.len()
+        );
         for (i, (vk, public_inputs_i)) in keys_to_inputs.iter().enumerate() {
             batch_sizes.insert(vk.id, batch_sizes_vec[i]);
 
@@ -734,6 +774,28 @@ where
         let mut input_domains = BTreeMap::new();
         let mut circuit_infos = BTreeMap::new();
         let mut circuit_ids = Vec::with_capacity(keys_to_inputs.len());
+
+        #[cfg(feature = "snark-print")]
+        {
+            // Display the batch sizes and (padded) public inputs
+            println!(
+                "[Varuna::verify_batch] Batch sizes: {:?}\n",
+                keys_to_inputs.values().map(|instances| instances.len()).collect_vec()
+            );
+
+            for (i, (circuit, public_inputs)) in keys_to_inputs.iter().enumerate() {
+                println!("  - Circuit {i}: {} ({} instance(s))\n", circuit.id, public_inputs.len());
+                for (j, public_input) in public_inputs.iter().enumerate() {
+                    let public_input = public_input.borrow().to_field_elements()?;
+                    println!("    - Instance {j}");
+                    for (k, value) in public_input.iter().enumerate() {
+                        println!("      - {k}: {value}");
+                    }
+                    println!("\n");
+                }
+            }
+        }
+
         for (&vk, &public_inputs_i) in keys_to_inputs.iter() {
             max_num_constraints = max_num_constraints.max(vk.circuit_info.num_constraints);
             max_num_variables = max_num_variables.max(vk.circuit_info.num_public_and_private_variables);
@@ -766,15 +828,18 @@ where
                         let mut new_input = Vec::with_capacity(input_len);
                         new_input.extend_from_slice(input);
                         new_input.resize(input_len, E::Fr::zero());
-                        dev_println!("Number of padded public variables: {}", new_input.len());
+                        dev_println!("[verify Batch] Number of padded public variables: {}", new_input.len());
                         let unformatted = prover::ConstraintSystem::unformat_public_input(&new_input);
                         (new_input, unformatted)
                     })
                     .unzip()
             };
+
             let circuit_id = vk.id;
             public_inputs.insert(circuit_id, parsed_public_inputs_i);
+
             padded_public_vec.push(padded_public_inputs_i);
+
             circuit_infos.insert(circuit_id, &vk.circuit_info);
             circuit_ids.push(circuit_id);
         }
@@ -839,6 +904,24 @@ where
             LabeledCommitment::new_with_info(&third_round_info["h_1"], comms.h_1),
         ];
 
+        ensure!(
+            comms.g_a_commitments.len() == comms.g_b_commitments.len(),
+            "[verify Batch] Expected {} g_a commitments to match {} g_b commitments.",
+            comms.g_b_commitments.len(),
+            comms.g_a_commitments.len()
+        );
+        ensure!(
+            comms.g_a_commitments.len() == comms.g_c_commitments.len(),
+            "[verify Batch] Expected {} g_a commitments to match {} g_c commitments.",
+            comms.g_c_commitments.len(),
+            comms.g_a_commitments.len()
+        );
+        ensure!(
+            comms.g_a_commitments.len() == circuit_ids.len(),
+            "[verify Batch] Expected {} g_a commitments to match {} circuit ids.",
+            circuit_ids.len(),
+            comms.g_a_commitments.len()
+        );
         let fourth_round_info =
             AHPForR1CS::<E::Fr, SM>::fourth_round_polynomial_info(circuit_infos.clone().into_iter());
         let fourth_commitments = comms
@@ -860,6 +943,7 @@ where
         let fifth_commitments = [LabeledCommitment::new_with_info(&fifth_round_info["h_2"], comms.h_2)];
 
         let circuit_commitments = keys_to_inputs.keys().map(|vk| vk.circuit_commitments.as_slice());
+        dev_println!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
         let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone());
 
         // --------------------------------------------------------------------
@@ -948,6 +1032,12 @@ where
         // degree bounds because we know the committed index polynomial has the
         // correct degree.
 
+        ensure!(
+            circuit_commitments.len() == circuit_ids.len(),
+            "[verify Batch] Expected {} circuit commitments, but {} were provided.",
+            circuit_ids.len(),
+            circuit_commitments.len()
+        );
         let commitments: Vec<_> = circuit_commitments
             .into_iter()
             .flatten()
@@ -1014,7 +1104,7 @@ where
         end_timer!(pc_time);
 
         if !evaluations_are_correct {
-            dev_eprintln!("SonicKZG10::Check failed using final challenge: {:?}", verifier_state.gamma);
+            dev_eprintln!("SonicKZG10::Check failed using final challenge gamma: {:?}", verifier_state.gamma);
         }
 
         end_timer!(verifier_time, || format!(

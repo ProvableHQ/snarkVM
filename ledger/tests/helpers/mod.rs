@@ -72,7 +72,7 @@ impl TestChainBuilder {
         // Initialize the store.
         let store = ConsensusStore::<_, LedgerType<_>>::open(StorageMode::new_test(None)).unwrap();
         // Create a genesis block with a seeded RNG to reproduce the same genesis private keys.
-        let seed: u64 = rng.r#gen();
+        let seed: u64 = rng.random();
         let genesis_rng = &mut TestRng::from_seed(seed);
         let genesis_block = VM::from(store).unwrap().genesis_beacon(&private_key, genesis_rng).unwrap();
 

@@ -21,6 +21,9 @@ use std::sync::Arc;
 
 use super::R1CS;
 
+#[cfg(any(test, feature = "test"))]
+use anyhow::{Result, bail, ensure};
+
 /// A struct that contains public variable assignments, private variable assignments,
 /// and constraint assignments.
 #[derive(Clone, Debug)]
@@ -223,6 +226,79 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
 
         Ok(())
     }
+}
+
+/// Asserts whether the underlying constraints of the two assignments are equal
+/// regardless of the concrete values taken in the assignments.
+#[cfg(any(test, feature = "test"))]
+pub fn compare_constraints<F: PrimeField>(assignment_1: &Assignment<F>, assignment_2: &Assignment<F>) -> Result<()> {
+    ensure!(
+        assignment_1.num_public() == assignment_2.num_public(),
+        "Number of public variables in the assignments do not match: {} vs. {}",
+        assignment_1.num_public(),
+        assignment_2.num_public()
+    );
+    ensure!(
+        assignment_1.num_private() == assignment_2.num_private(),
+        "Number of private variables in the assignments do not match: {} vs. {}",
+        assignment_1.num_private(),
+        assignment_2.num_private()
+    );
+    ensure!(
+        assignment_1.num_constraints() == assignment_2.num_constraints(),
+        "Number of constraints in the assignments do not match: {} vs. {}",
+        assignment_1.num_constraints(),
+        assignment_2.num_constraints()
+    );
+
+    for (i, (constraint1, constraint2)) in
+        assignment_1.constraints().iter().zip(assignment_2.constraints().iter()).enumerate()
+    {
+        // Compare the scopes
+        ensure!(
+            constraint1.0 == constraint2.0,
+            "Scopes in constraint {i} do not match: {} vs. {}",
+            constraint1.0,
+            constraint2.0
+        );
+
+        // Compare the constraint terms
+        let (lc1a, lc1b, lc1c) = constraint1.to_terms();
+        let (lc2a, lc2b, lc2c) = constraint2.to_terms();
+
+        for ((lc1, lc2), letter) in [(lc1a, lc2a), (lc1b, lc2b), (lc1c, lc2c)].iter().zip(["A", "B", "C"].iter()) {
+            ensure!(
+                lc1.to_constant() == lc2.to_constant(),
+                "Constants in constraint {i} do not match: {} vs. {}",
+                lc1.to_constant(),
+                lc2.to_constant()
+            );
+
+            for (var1, var2) in lc1.to_terms().iter().zip(lc2.to_terms().iter()) {
+                ensure!(var1.1 == var2.1, "Coefficients in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}");
+                match (&var1.0, &var2.0) {
+                    (Variable::Constant(v1), Variable::Constant(v2)) => {
+                        ensure!(
+                            v1 == v2,
+                            "Constant terms in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}"
+                        );
+                    }
+                    (Variable::Public(index_value1), Variable::Public(index_value2))
+                    | (Variable::Private(index_value1), Variable::Private(index_value2)) => {
+                        ensure!(
+                            index_value1.0 == index_value2.0,
+                            "Indices in variable terms in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}"
+                        );
+                    }
+                    _ => {
+                        bail!("Terms in constraint {letter}{i} have incompatible types: {var1:?} vs. {var2:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

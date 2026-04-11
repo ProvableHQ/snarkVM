@@ -39,7 +39,7 @@ impl<A: Aleo> Inject for Access<A> {
     /// Note: Access types are always `Mode::Constant`.
     fn new(_m: Mode, plaintext: Self::Primitive) -> Self {
         match plaintext {
-            Self::Primitive::Member(identifier) => Self::Member(Identifier::new(_m, identifier)),
+            Self::Primitive::Member(identifier) => Self::Member(Identifier::constant(identifier)),
             Self::Primitive::Index(index) => Self::Index(U32::new(_m, index)),
         }
     }

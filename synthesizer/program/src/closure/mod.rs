@@ -179,8 +179,9 @@ impl<N: Network> ClosureCore<N> {
         // Ensure the maximum number of outputs has not been exceeded.
         ensure!(self.outputs.len() < N::MAX_OUTPUTS, "Cannot add more than {} outputs", N::MAX_OUTPUTS);
 
-        // Ensure the closure output register is not a record.
-        ensure!(!matches!(output.register_type(), RegisterType::Record(..)), "Output register cannot be a record");
+        // Ensure the closure output register is not a static record.
+        // ExternalRecord and DynamicRecord are checked at V15+ deployment time (see `VM::check_transaction`).
+        ensure!(!matches!(output.register_type(), RegisterType::Record(..)), "Closure outputs do not support records");
 
         // Insert the output statement.
         self.outputs.insert(output);
@@ -268,5 +269,27 @@ mod tests {
                 false => assert!(closure.add_output(output).is_err()),
             }
         }
+    }
+
+    #[test]
+    fn test_add_output_record_types_rejected() {
+        let name = Identifier::from_str("closure_core_test").unwrap();
+
+        // DynamicRecord output is allowed at parse time (gated at V15+ deployment time).
+        let mut closure = Closure::<CurrentNetwork>::new(name);
+        let output = Output::<CurrentNetwork>::from_str("output r0 as dynamic.record;").unwrap();
+        assert!(closure.add_output(output).is_ok());
+
+        // ExternalRecord output is allowed at parse time (gated at V15+ deployment time).
+        let mut closure = Closure::<CurrentNetwork>::new(name);
+        let output = Output::<CurrentNetwork>::from_str("output r0 as test_prog.aleo/token.record;").unwrap();
+        assert!(closure.add_output(output).is_ok());
+
+        // Static Record output is rejected at parse time.
+        let mut closure = Closure::<CurrentNetwork>::new(name);
+        let output = Output::<CurrentNetwork>::from_str("output r0 as token.record;").unwrap();
+        let result = closure.add_output(output);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Closure outputs do not support records"));
     }
 }

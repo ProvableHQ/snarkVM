@@ -184,7 +184,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             self.reverse_tcm_map().insert(*transition.tcm(), transition_id)?;
             // Store `scm`.
             self.scm_map().insert(transition_id, *transition.scm())?;
-
             Ok(())
         })
     }

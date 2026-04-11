@@ -37,14 +37,13 @@ use snarkvm_fields::{FftField, FftParameters, Field, batch_inversion};
 use snarkvm_utilities::max_available_threads;
 use snarkvm_utilities::{execute_with_max_available_threads, serialize::*};
 
-use rand::Rng;
+use rand::RngExt;
 use std::{borrow::Cow, fmt};
 
 use anyhow::{Result, ensure};
 
 #[cfg(feature = "serial")]
 use itertools::Itertools;
-
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
@@ -105,7 +104,7 @@ impl<F: FftField> fmt::Debug for EvaluationDomain<F> {
 
 impl<F: FftField> EvaluationDomain<F> {
     /// Sample an element that is *not* in the domain.
-    pub fn sample_element_outside_domain<R: Rng>(&self, rng: &mut R) -> F {
+    pub fn sample_element_outside_domain<R: RngExt>(&self, rng: &mut R) -> F {
         let mut t = F::rand(rng);
         while self.evaluate_vanishing_polynomial(t).is_zero() {
             t = F::rand(rng);
@@ -942,7 +941,7 @@ mod tests {
     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
     use crate::fft::domain::FFTOrder;
     use crate::fft::{DensePolynomial, EvaluationDomain};
-    use rand::Rng;
+    use rand::RngExt;
     use snarkvm_curves::bls12_377::Fr;
     use snarkvm_fields::{FftField, Field, One, Zero};
     use snarkvm_utilities::{TestRng, Uniform};
@@ -954,7 +953,7 @@ mod tests {
             let domain = EvaluationDomain::<Fr>::new(coeffs).unwrap();
             let z = domain.vanishing_polynomial();
             for _ in 0..100 {
-                let point = rng.r#gen();
+                let point = rng.random();
                 assert_eq!(z.evaluate(point), domain.evaluate_vanishing_polynomial(point))
             }
         }

@@ -169,7 +169,9 @@ impl<N: Network, O: Operation<N, Literal<N>, LiteralType, NUM_OPERANDS>, const N
                 | RegisterType::Plaintext(PlaintextType::Array(..))
                 | RegisterType::Record(..)
                 | RegisterType::ExternalRecord(..)
-                | RegisterType::Future(..) => bail!("Expected literal type, found '{input_type}'"),
+                | RegisterType::Future(..)
+                | RegisterType::DynamicRecord
+                | RegisterType::DynamicFuture => bail!("Expected literal type, found '{input_type}'"),
             })
             .collect::<Result<Vec<_>>>()?;
 

@@ -121,7 +121,7 @@ impl<N: Network> Call<N> {
     /// Returns the opcode.
     #[inline]
     pub const fn opcode() -> Opcode {
-        Opcode::Call
+        Opcode::Call("call")
     }
 
     /// Return the operator.
@@ -225,12 +225,11 @@ impl<N: Network> Call<N> {
             if closure.outputs().len() != self.destinations.len() {
                 bail!("Expected {} outputs, found {}", closure.outputs().len(), self.destinations.len())
             }
-            // Return the output register types.
+            // Retrieve the output types.
             Ok(closure
                 .output_types()
                 .into_iter()
-                // If the function is an external program, we need to qualify its structs with
-                // the appropriate `ProgramID`.
+                // If the callee is an external program, qualify its local types with its program ID.
                 .map(|output_type| if is_external { output_type.qualify(*program.id()) } else { output_type })
                 .collect::<Vec<_>>())
         }

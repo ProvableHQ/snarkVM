@@ -30,7 +30,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 self.matches_external_record(record, locator)
             }
             (Value::Future(future), ValueType::Future(locator)) => self.matches_future(future, locator),
-            _ => bail!("A value does not match its declared value type '{value_type}'"),
+            (Value::DynamicRecord(_), ValueType::DynamicRecord) => Ok(()),
+            (Value::DynamicFuture(_), ValueType::DynamicFuture) => Ok(()),
+            (value, _) => bail!("A value '{value}' does not match its declared value type '{value_type}'"),
         }
     }
 
@@ -45,7 +47,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 self.matches_external_record(record, locator)
             }
             (Value::Future(future), RegisterType::Future(locator)) => self.matches_future(future, locator),
-            _ => bail!("A value does not match its declared register type '{register_type}'"),
+            (Value::DynamicRecord(_), RegisterType::DynamicRecord) => Ok(()),
+            (Value::DynamicFuture(_), RegisterType::DynamicFuture) => Ok(()),
+            (value, _) => bail!("A value '{value}' does not match its declared register type '{register_type}'"),
         }
     }
 
@@ -69,7 +73,7 @@ impl<N: Network> StackTrait<N> for Stack<N> {
             bail!("Expected external record '{record_name}', found external record '{}'", record_type.name())
         }
 
-        self.matches_record_internal(record, record_type, 0)
+        external_stack.matches_record_internal(record, record_type, 0)
     }
 
     /// Checks that the given record matches the layout of the record type.
@@ -100,70 +104,84 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         self.matches_future_internal(future, locator, 0)
     }
 
-    /// Returns `true` if the proving key for the given function name exists.
-    fn contains_proving_key(&self, function_name: &Identifier<N>) -> bool {
-        self.proving_keys.read().contains_key(function_name)
+    /// Returns `true` if the proving key for the given name exists.
+    /// The name can be a function name or a record name (for translation keys).
+    fn contains_proving_key(&self, function_or_record_name: &Identifier<N>) -> bool {
+        self.proving_keys.read().contains_key(function_or_record_name)
     }
 
-    /// Returns the proving key for the given function name.
-    fn get_proving_key(&self, function_name: &Identifier<N>) -> Result<ProvingKey<N>> {
+    /// Returns the proving key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn get_proving_key(&self, function_or_record_name: &Identifier<N>) -> Result<ProvingKey<N>> {
         // If the program is 'credits.aleo', try to load the proving key, if it does not exist.
-        self.try_insert_credits_function_proving_key(function_name)?;
+        self.try_insert_credits_function_proving_key(function_or_record_name)?;
         // Return the proving key, if it exists.
-        match self.proving_keys.read().get(function_name) {
+        match self.proving_keys.read().get(function_or_record_name) {
             Some(pk) => Ok(pk.clone()),
-            None => bail!("Proving key not found for: {}/{}", self.program.id(), function_name),
+            None => bail!("Proving key not found for: {}/{}", self.program.id(), function_or_record_name),
         }
     }
 
-    /// Inserts the given proving key for the given function name.
-    fn insert_proving_key(&self, function_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()> {
-        // Ensure the function name exists in the program.
+    /// Inserts the given proving key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn insert_proving_key(&self, function_or_record_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()> {
+        // Ensure the name exists in the program as a function or record.
         ensure!(
-            self.program.contains_function(function_name),
-            "Function '{function_name}' does not exist in program '{}'.",
+            self.program.contains_function(function_or_record_name)
+                || self.program.contains_record(function_or_record_name),
+            "'{function_or_record_name}' does not exist as a function or record in program '{}'.",
             self.program.id()
         );
         // Insert the proving key.
-        self.proving_keys.write().insert(*function_name, proving_key);
+        self.proving_keys.write().insert(*function_or_record_name, proving_key);
         Ok(())
     }
 
-    /// Removes the proving key for the given function name.
-    fn remove_proving_key(&self, function_name: &Identifier<N>) {
-        self.proving_keys.write().shift_remove(function_name);
+    /// Removes the proving key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn remove_proving_key(&self, function_or_record_name: &Identifier<N>) {
+        self.proving_keys.write().shift_remove(function_or_record_name);
     }
 
-    /// Returns `true` if the verifying key for the given function name exists.
-    fn contains_verifying_key(&self, function_name: &Identifier<N>) -> bool {
-        self.verifying_keys.read().contains_key(function_name)
+    /// Returns `true` if the verifying key for the given name exists.
+    /// The name can be a function name or a record name (for translation keys).
+    fn contains_verifying_key(&self, function_or_record_name: &Identifier<N>) -> bool {
+        self.verifying_keys.read().contains_key(function_or_record_name)
     }
 
-    /// Returns the verifying key for the given function name.
-    fn get_verifying_key(&self, function_name: &Identifier<N>) -> Result<VerifyingKey<N>> {
+    /// Returns the verifying key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn get_verifying_key(&self, function_or_record_name: &Identifier<N>) -> Result<VerifyingKey<N>> {
         // Return the verifying key, if it exists.
-        match self.verifying_keys.read().get(function_name) {
+        match self.verifying_keys.read().get(function_or_record_name) {
             Some(vk) => Ok(vk.clone()),
-            None => bail!("Verifying key not found for: {}/{}", self.program.id(), function_name),
+            None => bail!("Verifying key not found for: {}/{}", self.program.id(), function_or_record_name),
         }
     }
 
-    /// Inserts the given verifying key for the given function name.
-    fn insert_verifying_key(&self, function_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()> {
-        // Ensure the function name exists in the program.
+    /// Inserts the given verifying key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn insert_verifying_key(
+        &self,
+        function_or_record_name: &Identifier<N>,
+        verifying_key: VerifyingKey<N>,
+    ) -> Result<()> {
+        // Ensure the name exists in the program as a function or record.
         ensure!(
-            self.program.contains_function(function_name),
-            "Function '{function_name}' does not exist in program '{}'.",
+            self.program.contains_function(function_or_record_name)
+                || self.program.contains_record(function_or_record_name),
+            "'{function_or_record_name}' does not exist as a function or record in program '{}'.",
             self.program.id()
         );
         // Insert the verifying key.
-        self.verifying_keys.write().insert(*function_name, verifying_key);
+        self.verifying_keys.write().insert(*function_or_record_name, verifying_key);
         Ok(())
     }
 
-    /// Removes the verifying key for the given function name.
-    fn remove_verifying_key(&self, function_name: &Identifier<N>) {
-        self.verifying_keys.write().shift_remove(function_name);
+    /// Removes the verifying key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn remove_verifying_key(&self, function_or_record_name: &Identifier<N>) {
+        self.verifying_keys.write().shift_remove(function_or_record_name);
     }
 
     /// Returns the program.
@@ -240,6 +258,21 @@ impl<N: Network> StackTrait<N> for Stack<N> {
             .ok_or_else(|| anyhow!("External stack for '{program_id}' does not exist"))
     }
 
+    /// Returns the stack for the given program ID.
+    ///
+    /// Attention - this function does **NOT** check that the program is imported by the current program.
+    /// This function is only to be used for resolution during dynamic dispatch.
+    fn get_stack_global(&self, program_id: &ProgramID<N>) -> Result<Arc<Stack<N>>> {
+        // Upgrade the weak reference to the process-level stack map and retrieve the external stack.
+        self.stacks
+            .upgrade()
+            .ok_or_else(|| anyhow!("Process-level stack map does not exist"))?
+            .read()
+            .get(program_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("External stack for '{program_id}' does not exist"))
+    }
+
     /// Returns the function with the given function name.
     fn get_function(&self, function_name: &Identifier<N>) -> Result<Function<N>> {
         self.program.get_function(function_name)
@@ -250,8 +283,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         self.program.get_function_ref(function_name)
     }
 
-    /// Returns the expected number of calls for the given function name.
-    fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize> {
+    /// Returns the minimum number of calls for the given function name.
+    /// In the case where there are no dynamic calls, this is equivalent to the total number of calls.
+    fn get_minimum_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize> {
         // Initialize the base number of calls.
         let mut num_calls = 1;
         // Initialize a queue of functions to check.
@@ -267,33 +301,90 @@ impl<N: Network> StackTrait<N> for Stack<N> {
             );
             // Determine the number of calls for the function.
             for instruction in stack_ref.get_function_ref(&function_name)?.instructions() {
-                if let Instruction::Call(call) = instruction {
-                    // Determine if this is a function call.
-                    if call.is_function_call(&*stack_ref)? {
-                        // Increment by the number of calls.
-                        num_calls += 1;
-                        // Add the function to the queue.
-                        match call.operator() {
-                            CallOperator::Locator(locator) => {
-                                // If the locator matches the program ID of the provided stack, use it directly.
-                                // Otherwise, retrieve the external stack.
-                                let stack = if locator.program_id() == self.program().id() {
-                                    StackRef::Internal(self)
-                                } else {
-                                    StackRef::External(stack_ref.get_external_stack(locator.program_id())?)
-                                };
-                                queue.push((stack, *locator.resource()));
-                            }
-                            CallOperator::Resource(resource) => {
-                                queue.push((stack_ref.clone(), *resource));
+                match instruction {
+                    Instruction::Call(call) => {
+                        // Determine if this is a function call.
+                        if call.is_function_call(&*stack_ref)? {
+                            // Increment the number of calls.
+                            num_calls += 1;
+                            // Add the function to the queue.
+                            match call.operator() {
+                                CallOperator::Locator(locator) => {
+                                    // If the locator matches the program ID of the provided stack, use it directly.
+                                    // Otherwise, retrieve the external stack.
+                                    let stack = if locator.program_id() == self.program().id() {
+                                        StackRef::Internal(self)
+                                    } else {
+                                        StackRef::External(stack_ref.get_external_stack(locator.program_id())?)
+                                    };
+                                    queue.push((stack, *locator.resource()));
+                                }
+                                CallOperator::Resource(resource) => {
+                                    queue.push((stack_ref.clone(), *resource));
+                                }
                             }
                         }
                     }
+                    Instruction::CallDynamic(_) => {
+                        // Increment the number of calls.
+                        num_calls += 1
+                    }
+                    _ => (),
                 }
             }
         }
         // Return the number of calls.
         Ok(num_calls)
+    }
+
+    /// Returns whether or not a function has a dynamic call in its execution.
+    fn contains_dynamic_call(&self, function_name: &Identifier<N>) -> Result<bool> {
+        // Initialize the base number of calls.
+        let mut num_calls = 1;
+        // Initialize a queue of functions to check.
+        let mut queue = vec![(StackRef::Internal(self), *function_name)];
+        // Iterate over the queue.
+        while let Some((stack_ref, function_name)) = queue.pop() {
+            // Ensure that the number of calls does not exceed the maximum.
+            // Note that one transition is reserved for the fee.
+            ensure!(
+                num_calls < Transaction::<N>::MAX_TRANSITIONS,
+                "Number of calls must be less than '{}'",
+                Transaction::<N>::MAX_TRANSITIONS
+            );
+            // Determine the number of calls for the function.
+            for instruction in stack_ref.get_function_ref(&function_name)?.instructions() {
+                match instruction {
+                    Instruction::Call(call) => {
+                        // Determine if this is a function call.
+                        if call.is_function_call(&*stack_ref)? {
+                            // Increment by the number of calls.
+                            num_calls += 1;
+                            // Add the function to the queue.
+                            match call.operator() {
+                                CallOperator::Locator(locator) => {
+                                    // If the locator matches the program ID of the provided stack, use it directly.
+                                    // Otherwise, retrieve the external stack.
+                                    let stack = if locator.program_id() == self.program().id() {
+                                        StackRef::Internal(self)
+                                    } else {
+                                        StackRef::External(stack_ref.get_external_stack(locator.program_id())?)
+                                    };
+                                    queue.push((stack, *locator.resource()));
+                                }
+                                CallOperator::Resource(resource) => {
+                                    queue.push((stack_ref.clone(), *resource));
+                                }
+                            }
+                        }
+                    }
+                    Instruction::CallDynamic(_) => return Ok(true),
+                    _ => (),
+                }
+            }
+        }
+        // No dynamic calls have been found.
+        Ok(false)
     }
 
     /// Returns a value for the given register type.
@@ -317,6 +408,8 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 Ok(Value::Record(stack.sample_record(burner_address, locator.resource(), Group::rand(rng), rng)?))
             }
             RegisterType::Future(locator) => Ok(Value::Future(self.sample_future(locator, rng)?)),
+            RegisterType::DynamicRecord => Ok(Value::DynamicRecord(self.sample_dynamic_record(rng)?)),
+            RegisterType::DynamicFuture => Ok(Value::DynamicFuture(self.sample_dynamic_future(rng)?)),
         }
     }
 
@@ -578,14 +671,20 @@ impl<N: Network> Stack<N> {
         ensure!(future.arguments().len() == inputs.len(), "Future arguments do not match");
 
         // Check that the arguments match the inputs.
+        // Use the external stack if the future is from an external program.
         for (argument, input) in future.arguments().iter().zip_eq(inputs.iter()) {
             match (argument, input.finalize_type()) {
-                (Argument::Plaintext(plaintext), FinalizeType::Plaintext(plaintext_type)) => {
-                    self.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?
-                }
-                (Argument::Future(future), FinalizeType::Future(locator)) => {
-                    self.matches_future_internal(future, locator, depth + 1)?
-                }
+                (Argument::Plaintext(plaintext), FinalizeType::Plaintext(plaintext_type)) => match &external_stack {
+                    Some(external_stack) => {
+                        external_stack.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?
+                    }
+                    None => self.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?,
+                },
+                (Argument::Future(future), FinalizeType::Future(locator)) => match &external_stack {
+                    Some(external_stack) => external_stack.matches_future_internal(future, locator, depth + 1)?,
+                    None => self.matches_future_internal(future, locator, depth + 1)?,
+                },
+                (Argument::DynamicFuture(_), FinalizeType::DynamicFuture) => {}
                 (_, input_type) => {
                     bail!("Argument type does not match input type: expected '{input_type}'")
                 }
@@ -593,5 +692,91 @@ impl<N: Network> Stack<N> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::MainnetV0;
+    use snarkvm_synthesizer_program::Program;
+
+    type CurrentNetwork = MainnetV0;
+
+    // This test verifies that `contains_dynamic_call` returns `false` for a function
+    // that contains only static `call` instructions (no `call.dynamic`).
+    #[test]
+    fn test_contains_dynamic_call_with_static_calls() {
+        // `Process::load` always includes `credits.aleo`, which has no dynamic calls.
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        let stack = process.get_stack("credits.aleo").unwrap();
+        // `transfer_public` uses only static operations — no `call.dynamic`.
+        let function_name = Identifier::from_str("transfer_public").unwrap();
+        assert!(!stack.contains_dynamic_call(&function_name).unwrap());
+    }
+
+    // This test verifies that `contains_dynamic_call` returns `true` for a function
+    // that directly contains a `call.dynamic` instruction.
+    #[test]
+    fn test_contains_dynamic_call_with_dynamic_calls() {
+        // Define a program with a function that issues a bare `call.dynamic` (no inputs or outputs).
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+program dynamic_test.aleo;
+
+function dynamic_func:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    call.dynamic r0 r1 r2;",
+        )
+        .unwrap();
+        // Add the program to a fresh process (no deployment needed for stack inspection).
+        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        process.add_program(&program).unwrap();
+        let stack = process.get_stack("dynamic_test.aleo").unwrap();
+        // `dynamic_func` contains a `call.dynamic` instruction and must be detected.
+        let function_name = Identifier::from_str("dynamic_func").unwrap();
+        assert!(stack.contains_dynamic_call(&function_name).unwrap());
+    }
+
+    // This test verifies that `contains_dynamic_call` returns `true` for a function that
+    // transitively reaches a `call.dynamic` via a static external call.
+    #[test]
+    fn test_contains_dynamic_call_transitive() {
+        // Define a helper program whose function issues `call.dynamic`.
+        let helper_program = Program::<CurrentNetwork>::from_str(
+            r"
+program helper.aleo;
+
+function dynamic_helper:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    call.dynamic r0 r1 r2;",
+        )
+        .unwrap();
+        // Define a caller program that statically calls `helper.aleo/dynamic_helper`.
+        let caller_program = Program::<CurrentNetwork>::from_str(
+            r"
+import helper.aleo;
+
+program caller.aleo;
+
+function caller_func:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    call helper.aleo/dynamic_helper r0 r1 r2;",
+        )
+        .unwrap();
+        // Add programs in dependency order: helper first, then caller.
+        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        process.add_program(&helper_program).unwrap();
+        process.add_program(&caller_program).unwrap();
+        let stack = process.get_stack("caller.aleo").unwrap();
+        // `caller_func` transitively reaches `call.dynamic` via `helper.aleo/dynamic_helper`.
+        let function_name = Identifier::from_str("caller_func").unwrap();
+        assert!(stack.contains_dynamic_call(&function_name).unwrap());
     }
 }

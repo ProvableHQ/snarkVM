@@ -33,7 +33,7 @@ use snarkvm_utilities::{BitIteratorBE, cfg_iter, cfg_iter_mut, rand::Uniform};
 use anyhow::{Result, anyhow, ensure};
 use core::{marker::PhantomData, ops::Mul};
 use itertools::Itertools;
-use rand::RngCore;
+use rand::Rng;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -100,7 +100,7 @@ impl<E: PairingEngine> KZG10<E> {
         powers: &Powers<E>,
         polynomial: &Polynomial<'_, E::Fr>,
         hiding_bound: Option<usize>,
-        rng: Option<&mut dyn RngCore>,
+        rng: Option<&mut dyn Rng>,
     ) -> Result<(KZGCommitment<E>, KZGRandomness<E>), PCError> {
         Self::check_degree_is_too_large(polynomial.degree(), powers.size())?;
 
@@ -161,7 +161,7 @@ impl<E: PairingEngine> KZG10<E> {
         lagrange_basis: &LagrangeBasis<E>,
         evaluations: &[E::Fr],
         hiding_bound: Option<usize>,
-        rng: Option<&mut dyn RngCore>,
+        rng: Option<&mut dyn Rng>,
     ) -> Result<(KZGCommitment<E>, KZGRandomness<E>), PCError> {
         Self::check_degree_is_too_large(evaluations.len() - 1, lagrange_basis.size())?;
         assert_eq!(
@@ -349,7 +349,7 @@ impl<E: PairingEngine> KZG10<E> {
 
     /// Check that each `proof_i` in `proofs` is a valid proof of evaluation for
     /// `commitment_i` at `point_i`.
-    pub fn batch_check<R: RngCore>(
+    pub fn batch_check<R: Rng>(
         vk: &VerifierKey<E>,
         commitments: &[KZGCommitment<E>],
         points: &[E::Fr],
@@ -484,6 +484,7 @@ mod tests {
     use snarkvm_curves::bls12_377::{Bls12_377, Fr};
     use snarkvm_utilities::{FromBytes, ToBytes, rand::TestRng};
 
+    use rand::RngExt;
     use std::borrow::Cow;
 
     type KZG_Bls12_377 = KZG10<Bls12_377>;
@@ -538,10 +539,7 @@ mod tests {
     fn end_to_end_test_template<E: PairingEngine>() -> Result<(), PCError> {
         let rng = &mut TestRng::default();
         for _ in 0..100 {
-            let mut degree = 0;
-            while degree <= 1 {
-                degree = usize::rand(rng) % 20;
-            }
+            let degree = rng.random_range(2..20);
             let pp = KZG10::<E>::load_srs(degree)?;
             let hiding_bound = Some(1);
             let (ck, vk) = KZG10::trim(&pp, degree, hiding_bound);
@@ -588,10 +586,7 @@ mod tests {
         let rng = &mut TestRng::default();
         for _ in 0..10 {
             let hiding_bound = Some(1);
-            let mut degree = 0;
-            while degree <= 1 {
-                degree = usize::rand(rng) % 20;
-            }
+            let degree = rng.random_range(2..20);
             let pp = KZG10::<E>::load_srs(degree)?;
             let (ck, vk) = KZG10::trim(&pp, degree, hiding_bound);
 

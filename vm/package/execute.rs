@@ -62,6 +62,8 @@ impl<N: Network> Package<N> {
         let function = program.get_function(&function_name)?;
         // Save all the prover and verifier files for any function calls that are made.
         for instruction in function.instructions() {
+            // Note: `CallDynamic` is not handled here because its targets are resolved at runtime,
+            // so we cannot preload prover/verifier files for dynamic calls at execution time.
             if let Instruction::Call(call) = instruction {
                 // Retrieve the external stack and resource.
                 let (external_stack, resource) = match call.operator() {
@@ -121,6 +123,14 @@ impl<N: Network> Package<N> {
         };
         // Prepare the trace.
         trace.prepare(&query)?;
+
+        // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+        // function in the execution, all DynamicRecords and ExternalRecords
+        // received as inputs or from callees exist on the ledger at the end of
+        // the execution (whether spent or not).
+        if consensus_version >= ConsensusVersion::V15 {
+            process.ensure_records_exist(trace.transitions().iter(), trace.call_graph())?;
+        }
 
         // Prove the execution.
         let execution = trace.prove_execution::<A, R>(&locator.to_string(), varuna_version, rng)?;

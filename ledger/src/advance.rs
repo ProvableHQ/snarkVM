@@ -289,8 +289,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                         let prover_address = solution.address();
                         let num_accepted_solutions = accepted_solutions.get(&prover_address).copied().unwrap_or(0);
                         // Check if the prover has reached their solution limit.
-                        if self.is_solution_limit_reached_inner(previous_block, &prover_address, num_accepted_solutions)
-                        {
+                        if self.is_solution_limit_reached_at_timestamp(
+                            &prover_address,
+                            num_accepted_solutions,
+                            previous_block.timestamp(),
+                        ) {
                             return false;
                         }
                         // Check if the solution is valid and update the number of accepted solutions.

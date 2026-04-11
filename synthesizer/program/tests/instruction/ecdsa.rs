@@ -51,7 +51,10 @@ use snarkvm_synthesizer_program::{
     RegistersTrait as _,
 };
 
-use k256::ecdsa::{SigningKey, VerifyingKey, signature::hazmat::PrehashSigner};
+use k256::{
+    ecdsa::{SigningKey, VerifyingKey, signature::hazmat::PrehashSigner},
+    elliptic_curve::Generate,
+};
 use snarkvm_utilities::bytes_from_bits_le;
 
 type CurrentNetwork = MainnetV0;
@@ -228,7 +231,7 @@ fn check_ecdsa<const VARIANT: u8, H: Hash<Input = bool, Output = Vec<bool>>>(
     rng: &mut TestRng,
 ) {
     // Generate the ecdsa signing keys.
-    let signing_key = SigningKey::random(rng);
+    let signing_key = SigningKey::generate_from_rng(rng);
     let verifying_key = VerifyingKey::from(&signing_key);
 
     let (expected_length, vk) = if matches!(VARIANT, 1 | 4 | 7 | 10 | 13 | 16 | 19) || opcode.ends_with("eth") {
@@ -236,7 +239,7 @@ fn check_ecdsa<const VARIANT: u8, H: Hash<Input = bool, Output = Vec<bool>>>(
         (20, ECDSASignature::ethereum_address_from_public_key(&verifying_key).unwrap().to_vec())
     } else {
         // Non-Ethereum address variant expects a compressed verifying key.
-        (ECDSASignature::VERIFYING_KEY_SIZE_IN_BYTES, verifying_key.to_encoded_point(true).as_bytes().to_vec())
+        (ECDSASignature::VERIFYING_KEY_SIZE_IN_BYTES, verifying_key.to_sec1_point(true).as_bytes().to_vec())
     };
 
     println!("Checking '{opcode}' for message type '{message_type}.{mode}'");

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Identifier, StructType};
+use crate::{DynamicFuture, Identifier, StructType};
 
 use super::*;
 
@@ -111,6 +111,7 @@ impl<N: Network> FinalizeType<N> {
 
                 Ok(size)
             }
+            Self::DynamicFuture => DynamicFuture::<N>::size_in_bits(),
         }
     }
 

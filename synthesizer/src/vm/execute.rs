@@ -82,7 +82,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             true => {
                 // Compute the minimum execution cost.
                 let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-                let (minimum_execution_cost, (_, _)) =
+                let (minimum_execution_cost, _) =
                     execution_cost(&self.process().read(), &execution, consensus_version)?;
                 // Compute the execution ID.
                 let execution_id = execution.to_execution_id()?;
@@ -211,6 +211,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
 
+                // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+                // function in the execution, all DynamicRecords and ExternalRecords
+                // received as inputs or from callees exist on the ledger at the end of
+                // the execution (whether spent or not).
+                if consensus_version >= ConsensusVersion::V15 {
+                    $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph())?;
+                    lap!(timer, "Check record existence");
+                }
+
                 // Compute the proof and construct the execution.
                 let execution = trace.prove_execution::<$aleo, _>(&locator, varuna_version, rng)?;
                 lap!(timer, "Compute the proof");
@@ -259,6 +268,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Prepare the assignments.
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
+
+                // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+                // function in the execution, all DynamicRecords and ExternalRecords
+                // received as inputs or from callees exist on the ledger at the end of
+                // the execution (whether spent or not).
+                if consensus_version >= ConsensusVersion::V15 {
+                    $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph())?;
+                    lap!(timer, "Check record existence");
+                }
 
                 // Compute the proof and construct the fee.
                 let fee = trace.prove_fee::<$aleo, _>(varuna_version, rng)?;

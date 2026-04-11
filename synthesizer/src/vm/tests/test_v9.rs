@@ -288,7 +288,7 @@ fn test_editions_are_sequential() -> Result<()> {
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
 
-    // Initialize two VMs.
+    // Initialize two VMs at V9 (required for constructor support).
     let off_chain_vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
     let on_chain_vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
 

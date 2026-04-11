@@ -24,7 +24,7 @@ use snarkvm_utilities::{
 
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    distr::{Distribution, StandardUniform},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -327,7 +327,7 @@ impl<P: Fp2Parameters> Neg for Fp2<P> {
     }
 }
 
-impl<P: Fp2Parameters> Distribution<Fp2<P>> for Standard {
+impl<P: Fp2Parameters> Distribution<Fp2<P>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Fp2<P> {
         Fp2::new(Uniform::rand(rng), Uniform::rand(rng))

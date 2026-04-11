@@ -63,6 +63,18 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     fn set_tvk(&mut self, tvk: Field<N>) {
         self.tvk = Some(tvk);
     }
+
+    /// Returns the request.
+    #[inline]
+    fn request(&self) -> Result<&crate::Request<N>> {
+        self.request.as_ref().ok_or_else(|| anyhow!("Caller request is not set in the registers."))
+    }
+
+    /// Sets the caller request.
+    #[inline]
+    fn set_request(&mut self, request: crate::Request<N>) {
+        self.request = Some(request);
+    }
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<N, A> {
@@ -143,6 +155,10 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<
                     },
                     // Retrieve the argument from the future.
                     Value::Future(future) => future.find(path)?,
+                    // A dynamic record cannot be accessed directly.
+                    Value::DynamicRecord(dynamic_record) => dynamic_record.find(path)?,
+                    // A dynamic future cannot be accessed directly.
+                    Value::DynamicFuture(_) => bail!("Cannot invoke `find` on a dynamic future value"),
                 }
             }
         };

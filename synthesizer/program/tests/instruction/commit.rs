@@ -26,12 +26,18 @@ use console::{
 use snarkvm_synthesizer_process::{Process, Stack};
 use snarkvm_synthesizer_program::{
     CommitBHP256,
+    CommitBHP256Raw,
     CommitBHP512,
+    CommitBHP512Raw,
     CommitBHP768,
+    CommitBHP768Raw,
     CommitBHP1024,
+    CommitBHP1024Raw,
     CommitInstruction,
     CommitPED64,
+    CommitPED64Raw,
     CommitPED128,
+    CommitPED128Raw,
     Opcode,
     Operand,
     Program,
@@ -230,6 +236,11 @@ test_commit!(commit_bhp512, CommitBHP512);
 test_commit!(commit_bhp768, CommitBHP768);
 test_commit!(commit_bhp1024, CommitBHP1024);
 
+test_commit!(commit_bhp256_raw, CommitBHP256Raw);
+test_commit!(commit_bhp512_raw, CommitBHP512Raw);
+test_commit!(commit_bhp768_raw, CommitBHP768Raw);
+test_commit!(commit_bhp1024_raw, CommitBHP1024Raw);
+
 // Note this test must be explicitly written, instead of using the macro, because CommitPED64 and CommitToGroupPED64 fails on certain input types.
 #[test]
 fn test_commit_ped64_is_consistent() {
@@ -332,4 +343,108 @@ fn test_commit_ped128_is_consistent() {
         };
     }
     check_commit!(CommitPED128);
+}
+
+// Note this test must be explicitly written, instead of using the macro, because CommitPED64Raw fails on certain input types.
+#[test]
+fn test_commit_ped64_raw_is_consistent() {
+    // Prepare the rng.
+    let mut rng = TestRng::default();
+
+    // Prepare the test.
+    let modes_a = [circuit::Mode::Public, circuit::Mode::Private];
+    let modes_b = [circuit::Mode::Public, circuit::Mode::Private];
+
+    macro_rules! check_commit {
+        ($operation:tt) => {
+            for _ in 0..ITERATIONS {
+                let literals_a = [
+                    Literal::Boolean(console::types::Boolean::rand(&mut rng)),
+                    Literal::I8(console::types::I8::rand(&mut rng)),
+                    Literal::I16(console::types::I16::rand(&mut rng)),
+                    Literal::I32(console::types::I32::rand(&mut rng)),
+                    Literal::U8(console::types::U8::rand(&mut rng)),
+                    Literal::U16(console::types::U16::rand(&mut rng)),
+                    Literal::U32(console::types::U32::rand(&mut rng)),
+                ];
+                let literals_b = vec![Literal::Scalar(console::types::Scalar::rand(&mut rng))];
+                for literal_a in &literals_a {
+                    for literal_b in &literals_b {
+                        for mode_a in &modes_a {
+                            for mode_b in &modes_b {
+                                for destination_type in valid_destination_types() {
+                                    check_commit(
+                                        |operands, destination, destination_type| {
+                                            $operation::<CurrentNetwork>::new(operands, destination, destination_type)
+                                                .unwrap()
+                                        },
+                                        $operation::<CurrentNetwork>::opcode(),
+                                        literal_a,
+                                        literal_b,
+                                        mode_a,
+                                        mode_b,
+                                        *destination_type,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+    check_commit!(CommitPED64Raw);
+}
+
+// Note this test must be explicitly written, instead of using the macro, because CommitPED128Raw fails on certain input types.
+#[test]
+fn test_commit_ped128_raw_is_consistent() {
+    // Prepare the rng.
+    let mut rng = TestRng::default();
+
+    // Prepare the test.
+    let modes_a = [circuit::Mode::Public, circuit::Mode::Private];
+    let modes_b = [circuit::Mode::Public, circuit::Mode::Private];
+
+    macro_rules! check_commit {
+        ($operation:tt) => {
+            for _ in 0..ITERATIONS {
+                let literals_a = [
+                    Literal::Boolean(console::types::Boolean::rand(&mut rng)),
+                    Literal::I8(console::types::I8::rand(&mut rng)),
+                    Literal::I16(console::types::I16::rand(&mut rng)),
+                    Literal::I32(console::types::I32::rand(&mut rng)),
+                    Literal::I64(console::types::I64::rand(&mut rng)),
+                    Literal::U8(console::types::U8::rand(&mut rng)),
+                    Literal::U16(console::types::U16::rand(&mut rng)),
+                    Literal::U32(console::types::U32::rand(&mut rng)),
+                    Literal::U64(console::types::U64::rand(&mut rng)),
+                ];
+                let literals_b = vec![Literal::Scalar(console::types::Scalar::rand(&mut rng))];
+                for literal_a in &literals_a {
+                    for literal_b in &literals_b {
+                        for mode_a in &modes_a {
+                            for mode_b in &modes_b {
+                                for destination_type in valid_destination_types() {
+                                    check_commit(
+                                        |operands, destination, destination_type| {
+                                            $operation::<CurrentNetwork>::new(operands, destination, destination_type)
+                                                .unwrap()
+                                        },
+                                        $operation::<CurrentNetwork>::opcode(),
+                                        literal_a,
+                                        literal_b,
+                                        mode_a,
+                                        mode_b,
+                                        *destination_type,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+    check_commit!(CommitPED128Raw);
 }

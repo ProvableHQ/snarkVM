@@ -34,7 +34,7 @@ pub const MAX_SNARK_VERIFY_CIRCUITS: u32 = 1 << 5; // 32
 /// Note: This limit is independent to the total number of circuit instances that may exist in an `Execution` proof.
 pub const MAX_SNARK_VERIFY_INSTANCES: u32 = 1 << 7; // 128
 
-/// Which hash function to use.
+/// Which verification variant to use (single-proof or batch).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SnarkVerifyVariant {
     Varuna,
@@ -47,6 +47,7 @@ impl SnarkVerifyVariant {
         match variant {
             0 => Self::Varuna,
             1 => Self::VarunaBatch,
+            // Only `SnarkVerify` (VARIANT=0) and `SnarkVerifyBatch` (VARIANT=1) are publicly exposed.
             _ => panic!("Invalid 'snark.verify' instruction opcode"),
         }
     }
@@ -198,10 +199,17 @@ macro_rules! do_snark_verification {
             SnarkVerifyVariant::VarunaBatch => {
                 let vks = verifying_keys()?;
                 let batch_inputs_vec = batch_inputs()?;
+                // Ensure the number of verifying keys matches the number of input batches.
+                ensure!(
+                    vks.len() == batch_inputs_vec.len(),
+                    "The number of verifying keys ({}) does not match the number of input batches ({})",
+                    vks.len(),
+                    batch_inputs_vec.len()
+                );
                 // Validate and trim each instance against its verifying key
                 let trimmed_batch: Vec<Vec<Vec<N::Field>>> = vks
                     .iter()
-                    .zip(batch_inputs_vec.iter())
+                    .zip_eq(batch_inputs_vec.iter())
                     .map(|(vk, instances)| {
                         instances
                             .iter()
@@ -212,7 +220,7 @@ macro_rules! do_snark_verification {
                 VerifyingKey::verify_batch(
                     $function_name,
                     varuna_version()?,
-                    vks.into_iter().zip(trimmed_batch).collect(),
+                    vks.into_iter().zip_eq(trimmed_batch).collect(),
                     &varuna_proof()?
                 ).is_ok()
             }
@@ -341,7 +349,8 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
         let (result, expected_type, num_vks) = match variant {
             SnarkVerifyVariant::Varuna => (check_nd_array_type(&input_types[0], LiteralType::U8, 1), "a byte array", 1),
             SnarkVerifyVariant::VarunaBatch => {
-                // For batch verification, ensure it's a 2-dimensional array of bytes with non-zero length.
+                // For batch verification, extract the number of circuits from the outer array dimension.
+                // Zero is allowed here; non-zero is enforced later when comparing against num_circuits.
                 let num_vks = match &input_types[0] {
                     RegisterType::Plaintext(PlaintextType::Array(array_type)) => **array_type.length(),
                     _ => 0,
@@ -413,7 +422,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
             "Instruction '{}' expects the number of circuits ({num_circuits}) to match the number of verifying keys ({num_vks}).",
             Self::opcode()
         );
-        // Check that the number of circuit is properly bound.
+        // Check that the number of circuits is properly bound.
         ensure!(
             num_circuits <= MAX_SNARK_VERIFY_CIRCUITS,
             "Instruction '{}' supports a maximum of {MAX_SNARK_VERIFY_CIRCUITS} batched circuits, found {num_circuits} circuits.",

@@ -32,7 +32,8 @@ use anyhow::Result;
 use num_bigint::BigUint;
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    RngExt,
+    distr::{Distribution, StandardUniform},
 };
 use zeroize::Zeroize;
 
@@ -327,9 +328,9 @@ impl PartialOrd for BigInteger384 {
         Some(self.cmp(other))
     }
 }
-impl Distribution<BigInteger384> for Standard {
+impl Distribution<BigInteger384> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BigInteger384 {
-        BigInteger384(rng.r#gen())
+        BigInteger384(rng.random())
     }
 }
 impl AsMut<[u64]> for BigInteger384 {

@@ -94,7 +94,10 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         let selector_time = start_timer!(|| "Compute selector without remainder witness");
 
         let (mut h_i, remainder) = poly.divide_by_vanishing_poly(*src_domain)?;
-        ensure!(remainder.is_zero(), "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})");
+        ensure!(
+            remainder.is_zero(),
+            "[No remainder witness] Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
+        );
 
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
         h_i.coeffs.iter_mut().for_each(|c| *c *= multiplier);
@@ -120,7 +123,10 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
 
         let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
-        ensure!(remainder.is_zero(), "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})");
+        ensure!(
+            remainder.is_zero(),
+            "[Returning remainder witness] Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
+        );
 
         end_timer!(selector_time);
         Ok((h_i, Some(xg_i)))

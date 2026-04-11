@@ -778,7 +778,7 @@ mod tests {
         let mut rng = TestRng::default();
 
         // Ensure that a block height of `TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap()` uses block reward V2.
-        let time_since_last_block = rng.gen_range(1..=V2_MAX_BLOCK_INTERVAL);
+        let time_since_last_block = rng.random_range(1..=V2_MAX_BLOCK_INTERVAL);
         let reward = block_reward::<TestnetV0>(
             TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap(),
             TestnetV0::STARTING_SUPPLY,
@@ -793,7 +793,7 @@ mod tests {
 
         for _ in 0..100 {
             // Check that the block reward is correct for the first consensus version.
-            let consensus_v1_height = rng.gen_range(0..TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap());
+            let consensus_v1_height = rng.random_range(0..TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap());
             let consensus_v1_reward = block_reward::<TestnetV0>(
                 consensus_v1_height,
                 TestnetV0::STARTING_SUPPLY,
@@ -807,10 +807,10 @@ mod tests {
             assert_eq!(consensus_v1_reward, expected_reward);
 
             // Check that the block reward is correct for the second consensus version.
-            let consensus_v2_height = rng.gen_range(
+            let consensus_v2_height = rng.random_range(
                 TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap()..TestnetV0::MAX_SUPPLY_LIMIT_HEIGHT,
             );
-            let time_since_last_block = rng.gen_range(1..=V2_MAX_BLOCK_INTERVAL);
+            let time_since_last_block = rng.random_range(1..=V2_MAX_BLOCK_INTERVAL);
             let consensus_v2_reward = block_reward::<TestnetV0>(
                 consensus_v2_height,
                 TestnetV0::STARTING_SUPPLY,
@@ -824,7 +824,7 @@ mod tests {
             assert_eq!(consensus_v2_reward, expected_reward);
 
             // Check that the block reward is 0 after the max supply limit height.
-            let after_max_supply_limit_height = rng.gen_range(TestnetV0::MAX_SUPPLY_LIMIT_HEIGHT..u32::MAX);
+            let after_max_supply_limit_height = rng.random_range(TestnetV0::MAX_SUPPLY_LIMIT_HEIGHT..u32::MAX);
             let block_reward = block_reward::<TestnetV0>(
                 after_max_supply_limit_height,
                 TestnetV0::STARTING_SUPPLY,
@@ -906,7 +906,7 @@ mod tests {
 
         for _ in 0..10 {
             // Randomly sample the time factor.
-            let factor = rng.gen_range(1..10);
+            let factor = rng.random_range(1..10);
 
             // Ensure that scaling the time elapsed down scales the reward down proportionally.
             let shorter_time = CurrentNetwork::BLOCK_TIME / factor;
@@ -965,7 +965,7 @@ mod tests {
 
         for _ in 0..100 {
             // Check that the block reward is correct for the first consensus version.
-            let consensus_v1_height = rng.gen_range(0..TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap());
+            let consensus_v1_height = rng.random_range(0..TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap());
             let block_timestamp = TestnetV0::GENESIS_TIMESTAMP
                 .saturating_add(consensus_v1_height.saturating_mul(TestnetV0::BLOCK_TIME as u32) as i64);
             let consensus_v1_reward = coinbase_reward::<TestnetV0>(
@@ -994,7 +994,7 @@ mod tests {
             assert_eq!(consensus_v1_reward, expected_reward);
 
             // Check that the block reward is correct for the second consensus version.
-            let consensus_v2_height = rng.gen_range(
+            let consensus_v2_height = rng.random_range(
                 TestnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap()..TestnetV0::MAX_SUPPLY_LIMIT_HEIGHT,
             );
             let block_timestamp = TestnetV0::GENESIS_TIMESTAMP
@@ -1025,7 +1025,7 @@ mod tests {
             assert_eq!(consensus_v2_reward, expected_reward);
 
             // Check that the coinbase reward is 0 after the max supply limit height.
-            let after_max_supply_limit_height = rng.gen_range(TestnetV0::MAX_SUPPLY_LIMIT_HEIGHT..u32::MAX);
+            let after_max_supply_limit_height = rng.random_range(TestnetV0::MAX_SUPPLY_LIMIT_HEIGHT..u32::MAX);
             let coinbase_reward = coinbase_reward::<TestnetV0>(
                 after_max_supply_limit_height,
                 block_timestamp,
@@ -1231,7 +1231,7 @@ mod tests {
         }
 
         // Sample the starting conditions.
-        let coinbase_target: u64 = rng.gen_range(1_000_000..1_000_000_000_000_000);
+        let coinbase_target: u64 = rng.random_range(1_000_000..1_000_000_000_000_000);
         let cumulative_proof_target = coinbase_target / 2;
         let combined_proof_target = coinbase_target / 4;
         let reward = compute_coinbase_reward(combined_proof_target, cumulative_proof_target, coinbase_target);
@@ -1242,7 +1242,7 @@ mod tests {
             // Intuition: Staying below the coinbase target preserves the reward for the combined proof target.
             let equivalent_reward = compute_coinbase_reward(
                 combined_proof_target,
-                rng.gen_range(0..(coinbase_target - combined_proof_target)),
+                rng.random_range(0..(coinbase_target - combined_proof_target)),
                 coinbase_target,
             );
             assert_eq!(reward, equivalent_reward);
@@ -1251,7 +1251,7 @@ mod tests {
             // Intuition: Overflowing the coinbase target crowds out the combined proof target, leading to less reward for the combined proof target.
             let lower_reward = compute_coinbase_reward(
                 combined_proof_target,
-                rng.gen_range((coinbase_target - combined_proof_target + 1)..coinbase_target),
+                rng.random_range((coinbase_target - combined_proof_target + 1)..coinbase_target),
                 coinbase_target,
             );
             assert!(lower_reward < reward);
@@ -1259,7 +1259,7 @@ mod tests {
             // Check that increasing the combined proof target increases the reward.
             // Intuition: If a prover contributes more proof target, they should be rewarded more.
             let larger_reward = compute_coinbase_reward(
-                rng.gen_range(combined_proof_target + 1..u64::MAX),
+                rng.random_range(combined_proof_target + 1..u64::MAX),
                 cumulative_proof_target,
                 coinbase_target,
             );
@@ -1289,7 +1289,7 @@ mod tests {
         }
 
         // Sample the starting conditions.
-        let coinbase_target: u64 = rng.gen_range(1_000_000..1_000_000_000_000_000);
+        let coinbase_target: u64 = rng.random_range(1_000_000..1_000_000_000_000_000);
         let cumulative_proof_target = coinbase_target / 2;
         let combined_proof_target = coinbase_target / 4;
         let reward = compute_coinbase_reward(combined_proof_target, cumulative_proof_target, coinbase_target);
@@ -1300,7 +1300,7 @@ mod tests {
             // Intuition: Staying below the coinbase target preserves the reward for the combined proof target.
             let equivalent_reward = compute_coinbase_reward(
                 combined_proof_target,
-                rng.gen_range(0..(coinbase_target - combined_proof_target)),
+                rng.random_range(0..(coinbase_target - combined_proof_target)),
                 coinbase_target,
             );
             assert_eq!(reward, equivalent_reward);
@@ -1309,7 +1309,7 @@ mod tests {
             // Intuition: Overflowing the coinbase target crowds out the combined proof target, leading to less reward for the combined proof target.
             let lower_reward = compute_coinbase_reward(
                 combined_proof_target,
-                rng.gen_range((coinbase_target - combined_proof_target + 1)..coinbase_target),
+                rng.random_range((coinbase_target - combined_proof_target + 1)..coinbase_target),
                 coinbase_target,
             );
             assert!(lower_reward < reward);
@@ -1317,7 +1317,7 @@ mod tests {
             // Check that increasing the combined proof target increases the reward.
             // Intuition: If a prover contributes more proof target, they should be rewarded more.
             let larger_reward = compute_coinbase_reward(
-                rng.gen_range(combined_proof_target + 1..u64::MAX),
+                rng.random_range(combined_proof_target + 1..u64::MAX),
                 cumulative_proof_target,
                 coinbase_target,
             );
@@ -1474,10 +1474,10 @@ mod tests {
 
         // Check that the subsequent blocks have an anchor reward of 19 and reward less than or equal to 19.
         for _ in 0..ITERATIONS {
-            let block_height: u32 = rng.gen_range(block_height_at_year_10..block_height_at_year_10 * 10);
-            let coinbase_target = rng.gen_range(1_000_000..1_000_000_000_000_000);
-            let cumulative_proof_target = rng.gen_range(0..coinbase_target);
-            let combined_proof_target = rng.gen_range(0..coinbase_target as u128);
+            let block_height: u32 = rng.random_range(block_height_at_year_10..block_height_at_year_10 * 10);
+            let coinbase_target = rng.random_range(1_000_000..1_000_000_000_000_000);
+            let cumulative_proof_target = rng.random_range(0..coinbase_target);
+            let combined_proof_target = rng.random_range(0..coinbase_target as u128);
 
             let anchor_reward = anchor_block_reward_at_height(
                 block_height,
@@ -1522,10 +1522,10 @@ mod tests {
 
         // Check that the subsequent blocks have an anchor reward of 19 and reward less than or equal to 19.
         for _ in 0..ITERATIONS {
-            let timestamp: i64 = rng.gen_range(timestamp_at_year_10..timestamp_at_year_10 * 10);
-            let coinbase_target = rng.gen_range(1_000_000..1_000_000_000_000_000);
-            let cumulative_proof_target = rng.gen_range(0..coinbase_target);
-            let combined_proof_target = rng.gen_range(0..coinbase_target as u128);
+            let timestamp: i64 = rng.random_range(timestamp_at_year_10..timestamp_at_year_10 * 10);
+            let coinbase_target = rng.random_range(1_000_000..1_000_000_000_000_000);
+            let cumulative_proof_target = rng.random_range(0..coinbase_target);
+            let combined_proof_target = rng.random_range(0..coinbase_target as u128);
 
             let anchor_reward = anchor_block_reward_at_timestamp(
                 timestamp,
@@ -1619,14 +1619,14 @@ mod tests {
         let minimum_coinbase_target: u64 = 2u64.pow(10) - 1;
 
         fn test_new_targets(rng: &mut TestRng, minimum_coinbase_target: u64) {
-            let previous_coinbase_target: u64 = rng.gen_range(minimum_coinbase_target..u64::MAX);
+            let previous_coinbase_target: u64 = rng.random_range(minimum_coinbase_target..u64::MAX);
             let previous_prover_target = proof_target(
                 previous_coinbase_target,
                 CurrentNetwork::GENESIS_PROOF_TARGET,
                 CurrentNetwork::MAX_SOLUTIONS_AS_POWER_OF_TWO,
             );
 
-            let previous_timestamp = rng.r#gen();
+            let previous_timestamp = rng.random();
 
             // Targets stay the same when the drift is as expected.
             let next_timestamp = previous_timestamp + CurrentNetwork::ANCHOR_TIME as i64;
@@ -1699,8 +1699,8 @@ mod tests {
         let minimum_coinbase_target: u64 = 2u64.pow(10) - 1;
 
         for _ in 0..ITERATIONS {
-            let previous_coinbase_target: u64 = rng.gen_range(minimum_coinbase_target..u64::MAX);
-            let previous_timestamp = rng.r#gen();
+            let previous_coinbase_target: u64 = rng.random_range(minimum_coinbase_target..u64::MAX);
+            let previous_timestamp = rng.random();
 
             let half_life = CurrentNetwork::NUM_BLOCKS_PER_EPOCH
                 .saturating_div(2)
@@ -1761,8 +1761,8 @@ mod tests {
 
         let minimum_coinbase_target: u64 = 2u64.pow(10) - 1;
 
-        let initial_coinbase_target: u64 = rng.gen_range(minimum_coinbase_target..u64::MAX / 2);
-        let initial_timestamp: i64 = rng.r#gen();
+        let initial_coinbase_target: u64 = rng.random_range(minimum_coinbase_target..u64::MAX / 2);
+        let initial_timestamp: i64 = rng.random();
 
         let mut previous_coinbase_target: u64 = initial_coinbase_target;
         let mut previous_timestamp = initial_timestamp;
@@ -1805,17 +1805,17 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             // Sample the initial values.
-            let latest_coinbase_target = rng.gen_range(minimum_coinbase_target..u64::MAX / 2);
+            let latest_coinbase_target = rng.random_range(minimum_coinbase_target..u64::MAX / 2);
             let threshold = latest_coinbase_target as u128 / 2;
-            let last_coinbase_target = rng.gen_range(minimum_coinbase_target..latest_coinbase_target);
-            let last_coinbase_timestamp = rng.gen_range(0..i64::MAX / 2);
+            let last_coinbase_target = rng.random_range(minimum_coinbase_target..latest_coinbase_target);
+            let last_coinbase_timestamp = rng.random_range(0..i64::MAX / 2);
             let next_timestamp = last_coinbase_timestamp + 100;
-            let latest_cumulative_weight = rng.gen_range(0..u128::MAX / 2);
+            let latest_cumulative_weight = rng.random_range(0..u128::MAX / 2);
 
             // Sample a cumulative proof target and combined proof target pair that meets the threshold.
-            let latest_cumulative_proof_target = rng.gen_range(0..threshold);
+            let latest_cumulative_proof_target = rng.random_range(0..threshold);
             let combined_proof_target =
-                rng.gen_range(threshold.saturating_sub(latest_cumulative_proof_target)..u128::MAX);
+                rng.random_range(threshold.saturating_sub(latest_cumulative_proof_target)..u128::MAX);
 
             assert!(latest_cumulative_proof_target.saturating_add(combined_proof_target) >= threshold);
 
@@ -1859,16 +1859,16 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             // Sample the initial values.
-            let latest_coinbase_target = rng.gen_range(minimum_coinbase_target..u64::MAX / 2);
+            let latest_coinbase_target = rng.random_range(minimum_coinbase_target..u64::MAX / 2);
             let threshold = latest_coinbase_target as u128 / 2;
-            let last_coinbase_target = rng.gen_range(minimum_coinbase_target..latest_coinbase_target);
-            let last_coinbase_timestamp = rng.gen_range(0..i64::MAX / 2);
+            let last_coinbase_target = rng.random_range(minimum_coinbase_target..latest_coinbase_target);
+            let last_coinbase_timestamp = rng.random_range(0..i64::MAX / 2);
             let next_timestamp = last_coinbase_timestamp + 100;
-            let latest_cumulative_weight = rng.gen_range(0..u128::MAX / 2);
+            let latest_cumulative_weight = rng.random_range(0..u128::MAX / 2);
 
             // Sample a cumulative proof target and combined proof target pair that meets the threshold.
-            let latest_cumulative_proof_target = rng.gen_range(0..threshold);
-            let combined_proof_target = rng.gen_range(0..threshold.saturating_sub(latest_cumulative_proof_target));
+            let latest_cumulative_proof_target = rng.random_range(0..threshold);
+            let combined_proof_target = rng.random_range(0..threshold.saturating_sub(latest_cumulative_proof_target));
 
             assert!(latest_cumulative_proof_target.saturating_add(combined_proof_target) < threshold);
 

@@ -114,6 +114,12 @@ pub enum DeploymentMap {
     Checksum = DataID::DeploymentChecksumMap as u16,
     VerifyingKey = DataID::DeploymentVerifyingKeyMap as u16,
     Certificate = DataID::DeploymentCertificateMap as u16,
+    AmendmentNextIndex = DataID::DeploymentAmendmentCountMap as u16,
+    AmendmentID = DataID::DeploymentAmendmentIDMap as u16,
+    ReverseAmendmentID = DataID::DeploymentReverseAmendmentIDMap as u16,
+    AmendmentVerifyingKey = DataID::DeploymentAmendmentVerifyingKeyMap as u16,
+    AmendmentCertificate = DataID::DeploymentAmendmentCertificateMap as u16,
+    AmendmentOwner = DataID::DeploymentAmendmentOwnerMap as u16,
 }
 
 /// The RocksDB map prefix for execution-related entries.
@@ -151,6 +157,8 @@ pub enum TransitionInputMap {
     Record = DataID::InputRecordMap as u16,
     RecordTag = DataID::InputRecordTagMap as u16,
     ExternalRecord = DataID::InputExternalRecordMap as u16,
+    DynamicRecord = DataID::InputDynamicRecordMap as u16,
+    DynamicID = DataID::InputDynamicIDMap as u16,
 }
 
 /// The RocksDB map prefix for transition output entries.
@@ -169,6 +177,8 @@ pub enum TransitionOutputMap {
     RecordSender = DataID::OutputRecordSenderMap as u16,
     ExternalRecord = DataID::OutputExternalRecordMap as u16,
     Future = DataID::OutputFutureMap as u16,
+    DynamicRecord = DataID::OutputDynamicRecordMap as u16,
+    DynamicID = DataID::OutputDynamicIDMap as u16,
 }
 
 /// The RocksDB map prefix for transaction-related entries.
@@ -312,6 +322,24 @@ enum DataID {
     MappingUpdateHeightsMap,
     /// Historical staking rewards.
     StakingRewardsMap,
+
+    // Track dynamic record inputs.
+    InputDynamicRecordMap,
+    // Track dynamic record outputs.
+    OutputDynamicRecordMap,
+
+    // Track dynamic IDs for inputs.
+    InputDynamicIDMap,
+    // Track dynamic IDs for outputs.
+    OutputDynamicIDMap,
+
+    // Amendment maps.
+    DeploymentAmendmentCountMap,
+    DeploymentAmendmentIDMap,
+    DeploymentReverseAmendmentIDMap,
+    DeploymentAmendmentVerifyingKeyMap,
+    DeploymentAmendmentCertificateMap,
+    DeploymentAmendmentOwnerMap,
 
     // Testing
     #[cfg(test)]

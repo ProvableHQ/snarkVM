@@ -22,7 +22,7 @@ use snarkvm_utilities::{cfg_iter_mut, serialize::*};
 
 use anyhow::Result;
 use num_traits::CheckedDiv;
-use rand::Rng;
+use rand::RngExt;
 use std::{
     fmt,
     ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -118,7 +118,7 @@ impl<F: Field> DensePolynomial<F> {
     /// coefficient is sampled uniformly at random from R and the leading
     /// coefficient is sampled uniformly at random from among the non-zero
     /// elements of R.
-    pub fn rand<R: Rng>(d: usize, rng: &mut R) -> Self {
+    pub fn rand<R: RngExt>(d: usize, rng: &mut R) -> Self {
         let mut random_coeffs = (0..(d + 1)).map(|_| F::rand(rng)).collect_vec();
         while random_coeffs[d].is_zero() {
             // In the extremely unlikely event, sample again.
@@ -516,7 +516,7 @@ mod tests {
     use snarkvm_fields::{Field, One, Zero};
     use snarkvm_utilities::rand::{TestRng, Uniform};
 
-    use rand::RngCore;
+    use rand::Rng;
 
     #[test]
     fn double_polynomials_random() {

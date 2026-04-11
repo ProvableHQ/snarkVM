@@ -70,38 +70,26 @@ macro_rules! impl_store_and_remote_fetch {
 
         #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
-            let mut easy = curl::easy::Easy::new();
-            easy.follow_location(true)?;
-            easy.url(url)?;
+            #[cfg(not(feature = "no_std_out"))]
+            {
+                use colored::*;
+                let output = format!("{:>15} - Downloading \"{}\"", "Installation", url);
+                println!("{}", output.dimmed());
+            }
+
+            let response = reqwest::blocking::get(url)?;
+            let bytes = response.bytes()?;
+            buffer.extend_from_slice(&bytes);
 
             #[cfg(not(feature = "no_std_out"))]
             {
                 use colored::*;
-
-                let output = format!("{:>15} - Downloading \"{}\"", "Installation", url);
+                let size_in_megabytes = bytes.len() as u64 / 1_048_576;
+                let output = format!("{:>15} - Download complete ({} MB)", "Installation", size_in_megabytes);
                 println!("{}", output.dimmed());
-
-                easy.progress(true)?;
-                easy.progress_function(|total_download, current_download, _, _| {
-                    // avoid division by zero.
-                    if total_download == 0.0 {
-                        return true;
-                    }
-                    let percent = (current_download / total_download) * 100.0;
-                    let size_in_megabytes = total_download as u64 / 1_048_576;
-                    let output =
-                        format!("\r{:>15} - {:.2}% complete ({:#} MB total)", "Installation", percent, size_in_megabytes);
-                    print!("{}", output.dimmed());
-                    true
-                })?;
             }
 
-            let mut transfer = easy.transfer();
-            transfer.write_function(|data| {
-                buffer.extend_from_slice(data);
-                Ok(data.len())
-            })?;
-            Ok(transfer.perform()?)
+            Ok(())
         }
 
         #[cfg(feature = "wasm")]

@@ -15,15 +15,6 @@
 
 use super::*;
 
-use crate::vm::test_helpers::*;
-
-use console::{
-    account::{Address, PrivateKey},
-    network::ConsensusVersion,
-    program::{Identifier, Literal, Plaintext, ProgramID, Value},
-};
-use snarkvm_utilities::TestRng;
-
 // The number of blocks that must pass before an unbond can be claimed before V15.
 const UNBOND_BLOCKS_BEFORE_V15: u32 = 360;
 // The number of blocks that must pass before an unbond can be claimed at and after V15.

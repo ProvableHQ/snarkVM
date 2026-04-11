@@ -31,7 +31,7 @@ use snarkvm_utilities::{
 use crate::srs::{UniversalProver, UniversalVerifier};
 use anyhow::Result;
 use core::ops::{Add, AddAssign};
-use rand::RngCore;
+use rand::Rng;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -359,7 +359,7 @@ impl<E: PairingEngine> KZGRandomness<E> {
         Self { blinding_polynomial: DensePolynomial::zero() }
     }
 
-    pub fn rand<R: RngCore>(hiding_bound: usize, _: bool, rng: &mut R) -> Self {
+    pub fn rand<R: Rng>(hiding_bound: usize, _: bool, rng: &mut R) -> Self {
         let mut randomness = KZGRandomness::empty();
         let hiding_poly_degree = Self::calculate_hiding_polynomial_degree(hiding_bound);
         randomness.blinding_polynomial = DensePolynomial::rand(hiding_poly_degree, rng);

@@ -31,6 +31,7 @@ use console::{
         Record,
         Register,
         RegisterType,
+        Request,
         StructType,
         Value,
         ValueType,
@@ -44,29 +45,41 @@ use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 ///
 /// We make it a trait only to avoid circular dependencies.
 pub trait StackTrait<N: Network> {
-    /// Returns `true` if the proving key for the given function name exists.
-    fn contains_proving_key(&self, function_name: &Identifier<N>) -> bool;
+    /// Returns `true` if the proving key for the given name exists.
+    /// The name can be a function name or a record name (for translation keys).
+    fn contains_proving_key(&self, function_or_record_name: &Identifier<N>) -> bool;
 
-    /// Returns the proving key for the given function name.
-    fn get_proving_key(&self, function_name: &Identifier<N>) -> Result<ProvingKey<N>>;
+    /// Returns the proving key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn get_proving_key(&self, function_or_record_name: &Identifier<N>) -> Result<ProvingKey<N>>;
 
-    /// Inserts the proving key for the given function name.
-    fn insert_proving_key(&self, function_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()>;
+    /// Inserts the proving key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn insert_proving_key(&self, function_or_record_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()>;
 
-    /// Removes the proving key for the given function name.
-    fn remove_proving_key(&self, function_name: &Identifier<N>);
+    /// Removes the proving key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn remove_proving_key(&self, function_or_record_name: &Identifier<N>);
 
-    /// Returns `true` if the verifying key for the given function name exists.
-    fn contains_verifying_key(&self, function_name: &Identifier<N>) -> bool;
+    /// Returns `true` if the verifying key for the given name exists.
+    /// The name can be a function name or a record name (for translation keys).
+    fn contains_verifying_key(&self, function_or_record_name: &Identifier<N>) -> bool;
 
-    /// Returns the verifying key for the given function name.
-    fn get_verifying_key(&self, function_name: &Identifier<N>) -> Result<VerifyingKey<N>>;
+    /// Returns the verifying key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn get_verifying_key(&self, function_or_record_name: &Identifier<N>) -> Result<VerifyingKey<N>>;
 
-    /// Inserts the verifying key for the given function name.
-    fn insert_verifying_key(&self, function_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()>;
+    /// Inserts the verifying key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn insert_verifying_key(
+        &self,
+        function_or_record_name: &Identifier<N>,
+        verifying_key: VerifyingKey<N>,
+    ) -> Result<()>;
 
-    /// Removes the verifying key for the given function name.
-    fn remove_verifying_key(&self, function_name: &Identifier<N>);
+    /// Removes the verifying key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn remove_verifying_key(&self, function_or_record_name: &Identifier<N>);
 
     /// Checks that the given value matches the layout of the value type.
     fn matches_value_type(&self, value: &Value<N>, value_type: &ValueType<N>) -> Result<()>;
@@ -114,14 +127,26 @@ pub trait StackTrait<N: Network> {
     /// Returns the external stack for the given program ID.
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
 
+    /// Returns the external stack for the given program ID, without checking that:
+    ///
+    /// - The program ID is different from the current program ID.
+    /// - The program ID is imported by the current program.
+    ///
+    /// This function is only to be used for resolution during dynamic dispatch.
+    fn get_stack_global(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
+
     /// Returns the function with the given function name.
     fn get_function(&self, function_name: &Identifier<N>) -> Result<Function<N>>;
 
     /// Returns a reference to the function with the given function name.
     fn get_function_ref(&self, function_name: &Identifier<N>) -> Result<&Function<N>>;
 
-    /// Returns the expected number of calls for the given function name.
-    fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
+    /// Returns the minimum number of calls for the given function name.
+    /// Note: In a static call graph (no dynamic dispatch), the minimum is the actual count.
+    fn get_minimum_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
+
+    /// Returns whether or not a function has a dynamic call in its execution.
+    fn contains_dynamic_call(&self, function_name: &Identifier<N>) -> Result<bool>;
 
     /// Samples a value for the given value_type.
     fn sample_value<R: Rng + CryptoRng>(
@@ -292,6 +317,12 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
 
     /// Sets the transition view key.
     fn set_tvk(&mut self, tvk: Field<N>);
+
+    /// Returns the request.
+    fn request(&self) -> Result<&Request<N>>;
+
+    /// Sets the request.
+    fn set_request(&mut self, request: Request<N>);
 }
 
 pub trait RegistersTrait<N: Network> {
@@ -314,7 +345,9 @@ pub trait RegistersTrait<N: Network> {
             Value::Plaintext(Plaintext::Struct(..))
             | Value::Plaintext(Plaintext::Array(..))
             | Value::Record(..)
-            | Value::Future(..) => {
+            | Value::Future(..)
+            | Value::DynamicRecord(..)
+            | Value::DynamicFuture(..) => {
                 bail!("Operand must be a literal")
             }
         }
@@ -329,7 +362,9 @@ pub trait RegistersTrait<N: Network> {
     fn load_plaintext(&self, stack: &impl StackTrait<N>, operand: &Operand<N>) -> Result<Plaintext<N>> {
         match self.load(stack, operand)? {
             Value::Plaintext(plaintext) => Ok(plaintext),
-            Value::Record(..) | Value::Future(..) => bail!("Operand must be a plaintext"),
+            Value::Record(..) | Value::Future(..) | Value::DynamicRecord(..) | Value::DynamicFuture(..) => {
+                bail!("Operand must be a plaintext")
+            }
         }
     }
 
@@ -399,7 +434,9 @@ pub trait RegistersCircuit<N: Network, A: circuit::Aleo<Network = N>> {
             circuit::Value::Plaintext(circuit::Plaintext::Struct(..))
             | circuit::Value::Plaintext(circuit::Plaintext::Array(..))
             | circuit::Value::Record(..)
-            | circuit::Value::Future(..) => bail!("Operand must be a literal"),
+            | circuit::Value::Future(..)
+            | circuit::Value::DynamicRecord(..)
+            | circuit::Value::DynamicFuture(..) => bail!("Operand must be a literal"),
         }
     }
 
@@ -416,7 +453,10 @@ pub trait RegistersCircuit<N: Network, A: circuit::Aleo<Network = N>> {
     ) -> Result<circuit::Plaintext<A>> {
         match self.load_circuit(stack, operand)? {
             circuit::Value::Plaintext(plaintext) => Ok(plaintext),
-            circuit::Value::Record(..) | circuit::Value::Future(..) => bail!("Operand must be a plaintext"),
+            circuit::Value::Record(..)
+            | circuit::Value::Future(..)
+            | circuit::Value::DynamicRecord(..)
+            | circuit::Value::DynamicFuture(..) => bail!("Operand must be a plaintext"),
         }
     }
 

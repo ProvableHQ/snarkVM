@@ -15,23 +15,23 @@
 
 use super::*;
 
-impl<E: Environment> Distribution<IdentifierLiteral<E>> for Standard {
+impl<E: Environment> Distribution<IdentifierLiteral<E>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IdentifierLiteral<E> {
         // Sample a random length between 1 and the maximum bytes.
-        let num_bytes = rng.gen_range(1..=SIZE_IN_BYTES);
+        let num_bytes = rng.random_range(1..=SIZE_IN_BYTES);
         // Generate a random string: first character is alphabetic, rest are alphanumeric or underscore.
-        let first_char = if rng.gen_bool(0.5) {
+        let first_char = if rng.random_bool(0.5) {
             // Uppercase letter.
-            char::from(b'A' + rng.gen_range(0..26))
+            char::from(b'A' + rng.random_range(0..26))
         } else {
             // Lowercase letter.
-            char::from(b'a' + rng.gen_range(0..26))
+            char::from(b'a' + rng.random_range(0..26))
         };
         let rest: String = (0..num_bytes - 1)
             .map(|_| {
                 // Choose from [a-zA-Z0-9_].
-                let idx = rng.gen_range(0..63);
+                let idx = rng.random_range(0..63);
                 // Safety: idx is in range 0..63, so conversion to u8 always succeeds.
                 match idx {
                     0..26 => char::from(b'a' + u8::try_from(idx).unwrap()),

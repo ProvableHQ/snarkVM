@@ -672,7 +672,7 @@ fn test_bond_validator_below_min_stake_fails() {
 
     /* Ensure bonding as a validator below the MIN_VALIDATOR_STAKE fails. */
     test_atomic_finalize!(store, FinalizeMode::RealRun, {
-        let amount = rng.gen_range(1_000_000..MIN_VALIDATOR_STAKE);
+        let amount = rng.random_range(1_000_000..MIN_VALIDATOR_STAKE);
         let result =
             bond_validator(&process, &store, validator_private_key, withdrawal_address, amount, TEST_COMMISSION, rng);
         assert!(result.is_err());
@@ -1073,7 +1073,7 @@ fn test_bond_delegator_below_min_stake_fails() {
         .unwrap();
 
         // Bond the delegator.
-        let delegator_amount = rng.gen_range(1_000_000..MIN_DELEGATOR_STAKE);
+        let delegator_amount = rng.random_range(1_000_000..MIN_DELEGATOR_STAKE);
         let result = bond_public(
             &process,
             &store,
@@ -1571,7 +1571,7 @@ fn test_unbond_validator() {
 
         // Perform the first unbond.
         let unbond_amount_1 = MIN_VALIDATOR_STAKE;
-        let block_height_1 = rng.gen_range(1..100);
+        let block_height_1 = rng.random_range(1..100);
         unbond_public(
             &process,
             &store,
@@ -1602,7 +1602,7 @@ fn test_unbond_validator() {
 
         // Perform the second unbond.
         let unbond_amount_2 = MIN_VALIDATOR_STAKE;
-        let block_height_2 = rng.gen_range(block_height_1..1000);
+        let block_height_2 = rng.random_range(block_height_1..1000);
         unbond_public(
             &process,
             &store,
@@ -1634,7 +1634,7 @@ fn test_unbond_validator() {
 
         // Perform the third unbond, which should unbond all remaining stake.
         let unbond_amount_3 = 1; // Notice: This is 1 credit, when the remaining is MIN_VALIDATOR_STAKE.
-        let block_height_3 = rng.gen_range(block_height_2..10000);
+        let block_height_3 = rng.random_range(block_height_2..10000);
         unbond_public(
             &process,
             &store,
@@ -1661,7 +1661,7 @@ fn test_unbond_validator() {
 
         // Perform the fourth unbond, which should fail (as there is no stake left).
         let unbond_amount_4 = 1;
-        let block_height_4 = rng.gen_range(block_height_3..100000);
+        let block_height_4 = rng.random_range(block_height_3..100000);
         let result = unbond_public(
             &process,
             &store,
@@ -1718,7 +1718,7 @@ fn test_bond_validator_fails_if_unbonding_state() {
         assert_eq!(withdraw_state(&store, validator_address).unwrap(), Some(*withdrawal_address));
 
         // Perform the unbond
-        let block_height = rng.gen_range(1..100);
+        let block_height = rng.random_range(1..100);
         unbond_public(&process, &store, withdrawal_private_key, validator_address, validator_amount, block_height, rng)
             .unwrap();
 
@@ -1802,7 +1802,7 @@ fn test_unbond_validator_fails_if_unbonding_beyond_their_stake() {
     test_atomic_finalize!(store, FinalizeMode::RealRun, {
         // Perform the unbond.
         let unbond_amount = validator_amount + 1;
-        let block_height = rng.gen_range(1..100);
+        let block_height = rng.random_range(1..100);
         let result = unbond_public(
             &process,
             &store,
@@ -1839,7 +1839,7 @@ fn test_unbond_validator_fails_if_unbonding_beyond_their_stake() {
     test_atomic_finalize!(store, FinalizeMode::RealRun, {
         // Perform the unbond.
         let unbond_amount = validator_amount + 1;
-        let block_height = rng.gen_range(1..100);
+        let block_height = rng.random_range(1..100);
         let result = unbond_public(
             &process,
             &store,
@@ -1905,7 +1905,7 @@ fn test_unbond_validator_continues_if_there_is_a_delegator() {
     test_atomic_finalize!(store, FinalizeMode::RealRun, {
         // Perform the first unbond.
         let unbond_amount_1 = MIN_VALIDATOR_STAKE;
-        let block_height_1 = rng.gen_range(1..100);
+        let block_height_1 = rng.random_range(1..100);
         unbond_public(
             &process,
             &store,
@@ -1919,7 +1919,7 @@ fn test_unbond_validator_continues_if_there_is_a_delegator() {
 
         // Perform the second unbond.
         let unbond_amount_2 = MIN_DELEGATOR_STAKE + 2;
-        let block_height_2 = rng.gen_range(block_height_1..1000);
+        let block_height_2 = rng.random_range(block_height_1..1000);
         let result = unbond_public(
             &process,
             &store,
@@ -1987,7 +1987,7 @@ fn test_unbond_delegator() {
 
         // Perform the first unbond.
         let unbond_amount_1 = MIN_DELEGATOR_STAKE;
-        let block_height_1 = rng.gen_range(1..100);
+        let block_height_1 = rng.random_range(1..100);
         unbond_public(&process, &store, delegator_private_key, delegator_address, unbond_amount_1, block_height_1, rng)
             .unwrap();
 
@@ -2017,7 +2017,7 @@ fn test_unbond_delegator() {
 
         // Perform the second unbond.
         let unbond_amount_2 = MIN_DELEGATOR_STAKE;
-        let block_height_2 = rng.gen_range(block_height_1..1000);
+        let block_height_2 = rng.random_range(block_height_1..1000);
         unbond_public(&process, &store, delegator_private_key, delegator_address, unbond_amount_2, block_height_2, rng)
             .unwrap();
 
@@ -2048,7 +2048,7 @@ fn test_unbond_delegator() {
 
         // Perform the third unbond, which should unbond all remaining stake.
         let unbond_amount_3 = 1; // Notice: This is 1 credit, when the remaining is MIN_DELEGATOR_STAKE.
-        let block_height_3 = rng.gen_range(block_height_2..10000);
+        let block_height_3 = rng.random_range(block_height_2..10000);
         unbond_public(&process, &store, delegator_private_key, delegator_address, unbond_amount_3, block_height_3, rng)
             .unwrap();
 
@@ -2076,7 +2076,7 @@ fn test_unbond_delegator() {
 
         // Perform the fourth unbond, which should fail (as there is no stake left).
         let unbond_amount_4 = 1;
-        let block_height_4 = rng.gen_range(block_height_3..100000);
+        let block_height_4 = rng.random_range(block_height_3..100000);
         let result = unbond_public(
             &process,
             &store,
@@ -2133,7 +2133,7 @@ fn test_unbond_delegator_without_validator() {
     /* Ensure the delegator can unbond their entire balance. */
     test_atomic_finalize!(store, FinalizeMode::RealRun, {
         // Perform the unbond.
-        let block_height = rng.gen_range(1..100);
+        let block_height = rng.random_range(1..100);
         unbond_public(&process, &store, delegator_private_key, delegator_address, delegator_amount, block_height, rng)
             .unwrap();
 
@@ -2204,7 +2204,7 @@ fn test_unbond_delegator_removes_validator_with_insufficient_stake() {
         assert_eq!(withdraw_state(&store, validator_address).unwrap(), Some(*withdrawal_address));
         assert_eq!(withdraw_state(&store, delegator_address).unwrap(), Some(*delegator_address));
 
-        let block_height = rng.gen_range(1..100);
+        let block_height = rng.random_range(1..100);
         unbond_public(&process, &store, delegator_private_key, delegator_address, delegator_amount, block_height, rng)
             .unwrap();
 
@@ -2291,7 +2291,7 @@ fn test_unbond_delegator_as_validator() {
     /* Ensure unbonding a delegator for another closed validator fails. */
 
     // Ensure that unbonding a delegator as an open validator fails.
-    let block_height = rng.gen_range(1..100);
+    let block_height = rng.random_range(1..100);
 
     assert!(
         unbond_public(&process, &finalize_store, &withdrawal_private_key_2, delegator_address, 0u64, block_height, rng)
@@ -3124,6 +3124,7 @@ mod sanity_checks {
             root_tvk,
             is_root,
             program_checksum,
+            false,
             rng,
         )
         .unwrap();

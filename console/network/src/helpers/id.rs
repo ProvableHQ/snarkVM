@@ -205,7 +205,7 @@ impl<F: FieldTrait, const PREFIX: u16> Into<Vec<F>> for AleoID<F, PREFIX> {
     }
 }
 
-impl<F: FieldTrait, const PREFIX: u16> Distribution<AleoID<F, PREFIX>> for Standard {
+impl<F: FieldTrait, const PREFIX: u16> Distribution<AleoID<F, PREFIX>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> AleoID<F, PREFIX> {
         AleoID::<F, PREFIX>(Uniform::rand(rng))

@@ -352,7 +352,7 @@ pub(crate) mod tests {
 
         for _ in 0..ITERATIONS {
             // Sample the epoch hash.
-            let epoch_hash = rng.r#gen();
+            let epoch_hash = rng.random();
 
             // Initialize the register table.
             let mut register_table = RegisterTable::new();
@@ -379,7 +379,7 @@ pub(crate) mod tests {
 
         for _ in 0..ITERATIONS {
             // Sample the epoch hash.
-            let epoch_hash = rng.r#gen();
+            let epoch_hash = rng.random();
 
             // Initialize the register table.
             let mut register_table = RegisterTable::new();
@@ -424,7 +424,7 @@ pub(crate) mod tests {
             let mut rng = TestRng::fixed(seed);
 
             // Sample the epoch hash.
-            let epoch_hash = rng.r#gen();
+            let epoch_hash = rng.random();
 
             // Initialize the register table.
             let mut register_table = RegisterTable::new();

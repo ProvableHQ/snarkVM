@@ -898,7 +898,7 @@ mod tests {
                 .map(|_| {
                     PlaintextType::Array(
                         ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(
-                            u32::try_from(rng.gen_range(1..=CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS())).unwrap(),
+                            u32::try_from(rng.random_range(1..=CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS())).unwrap(),
                         )])
                         .unwrap(),
                     )

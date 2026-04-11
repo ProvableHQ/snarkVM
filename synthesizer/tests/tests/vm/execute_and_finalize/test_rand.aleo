@@ -1,5 +1,5 @@
 /*
-randomness: 479283
+randomness: 4792831234
 cases:
   - program: test_rand.aleo
     function: rand_chacha_with_literals
@@ -9,10 +9,10 @@ cases:
     inputs: ["{ first: 0field, second: 0field, third: 0field, fourth: 0field, fifth: 0field }"]
   - program: test_rand.aleo
     function: rand_chacha_check
-    inputs: [1field, false]
+    inputs: [1field, true]
   - program: test_rand.aleo
     function: rand_chacha_check
-    inputs: [4field, true]
+    inputs: [4field, false]
 */
 
 program test_rand.aleo;

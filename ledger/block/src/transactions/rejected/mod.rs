@@ -106,6 +106,7 @@ pub mod test_helpers {
     pub(crate) fn sample_rejected_deployment(
         version: u8,
         edition: u16,
+        has_translation_keys: bool,
         is_fee_private: bool,
         rng: &mut TestRng,
     ) -> Rejected<CurrentNetwork> {
@@ -113,6 +114,7 @@ pub mod test_helpers {
         let deployment = match crate::transaction::test_helpers::sample_deployment_transaction(
             version,
             edition,
+            has_translation_keys,
             is_fee_private,
             rng,
         ) {
@@ -147,14 +149,14 @@ pub mod test_helpers {
         let rng = &mut TestRng::default();
 
         vec![
-            sample_rejected_deployment(1, 0, true, rng),
-            sample_rejected_deployment(1, 0, false, rng),
-            sample_rejected_deployment(2, 0, true, rng),
-            sample_rejected_deployment(2, 0, false, rng),
-            sample_rejected_deployment(1, 1, true, rng),
-            sample_rejected_deployment(1, 1, false, rng),
-            sample_rejected_deployment(2, 1, true, rng),
-            sample_rejected_deployment(2, 1, false, rng),
+            sample_rejected_deployment(1, 0, false, false, rng),
+            sample_rejected_deployment(1, 0, false, true, rng),
+            sample_rejected_deployment(2, 0, false, false, rng),
+            sample_rejected_deployment(2, 0, false, true, rng),
+            sample_rejected_deployment(1, 1, false, false, rng),
+            sample_rejected_deployment(1, 1, false, true, rng),
+            sample_rejected_deployment(2, 1, true, false, rng),
+            sample_rejected_deployment(2, 1, true, true, rng),
             sample_rejected_execution(true, rng),
             sample_rejected_execution(false, rng),
         ]

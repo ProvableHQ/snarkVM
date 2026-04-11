@@ -28,11 +28,11 @@ use snarkvm_utilities::{
     serialize::{CanonicalDeserialize, Flags, SWFlags},
 };
 
-use rand::Rng;
+use rand::RngExt;
 
 pub const ITERATIONS: u32 = 10;
 
-fn random_negation_tests<F: Field, R: Rng>(rng: &mut R) {
+fn random_negation_tests<F: Field, R: RngExt>(rng: &mut R) {
     for _ in 0..ITERATIONS {
         let a = F::rand(rng);
         let mut b = -a;
@@ -42,7 +42,7 @@ fn random_negation_tests<F: Field, R: Rng>(rng: &mut R) {
     }
 }
 
-fn random_addition_tests<F: Field, R: Rng>(rng: &mut R) {
+fn random_addition_tests<F: Field, R: RngExt>(rng: &mut R) {
     for _ in 0..ITERATIONS {
         let a = F::rand(rng);
         let b = F::rand(rng);
@@ -59,7 +59,7 @@ fn random_addition_tests<F: Field, R: Rng>(rng: &mut R) {
     }
 }
 
-fn random_subtraction_tests<F: Field, R: Rng>(rng: &mut R) {
+fn random_subtraction_tests<F: Field, R: RngExt>(rng: &mut R) {
     for _ in 0..ITERATIONS {
         let a = F::rand(rng);
         let b = F::rand(rng);
@@ -76,7 +76,7 @@ fn random_subtraction_tests<F: Field, R: Rng>(rng: &mut R) {
     }
 }
 
-fn random_multiplication_tests<F: Field, R: Rng>(rng: &mut R) {
+fn random_multiplication_tests<F: Field, R: RngExt>(rng: &mut R) {
     for _ in 0..ITERATIONS {
         let a = F::rand(rng);
         let b = F::rand(rng);
@@ -99,7 +99,7 @@ fn random_multiplication_tests<F: Field, R: Rng>(rng: &mut R) {
     }
 }
 
-fn random_inversion_tests<F: Field, R: Rng>(rng: &mut R) {
+fn random_inversion_tests<F: Field, R: RngExt>(rng: &mut R) {
     assert!(F::zero().inverse().is_none());
 
     for _ in 0..ITERATIONS {
@@ -111,7 +111,7 @@ fn random_inversion_tests<F: Field, R: Rng>(rng: &mut R) {
     }
 }
 
-fn random_doubling_tests<F: Field, R: Rng>(rng: &mut R) {
+fn random_doubling_tests<F: Field, R: RngExt>(rng: &mut R) {
     for _ in 0..ITERATIONS {
         let mut a = F::rand(rng);
         let mut b = a;
@@ -122,7 +122,7 @@ fn random_doubling_tests<F: Field, R: Rng>(rng: &mut R) {
     }
 }
 
-fn random_squaring_tests<F: Field, R: Rng>(rng: &mut R) {
+fn random_squaring_tests<F: Field, R: RngExt>(rng: &mut R) {
     for _ in 0..ITERATIONS {
         let mut a = F::rand(rng);
         let mut b = a;
@@ -133,7 +133,7 @@ fn random_squaring_tests<F: Field, R: Rng>(rng: &mut R) {
     }
 }
 
-fn random_expansion_tests<F: Field, R: Rng>(rng: &mut R) {
+fn random_expansion_tests<F: Field, R: RngExt>(rng: &mut R) {
     for _ in 0..ITERATIONS {
         // Compare (a + b)(c + d) and (a*c + b*c + a*d + b*d)
 
@@ -199,7 +199,7 @@ fn random_string_tests<F: PrimeField>(rng: &mut TestRng) {
     assert!(F::from_str("00000000000").is_err());
 
     for _ in 0..ITERATIONS {
-        let n: u64 = rng.r#gen();
+        let n: u64 = rng.random();
 
         let a = F::from_str(&format!("{n}")).map_err(|_| ()).unwrap();
         let b = F::from_bigint(n.into()).unwrap();

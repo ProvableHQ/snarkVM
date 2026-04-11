@@ -39,8 +39,10 @@ impl<N: Network> Process<N> {
         let root_tvk = None;
         // Initialize the trace.
         let trace = Arc::new(RwLock::new(Trace::new()));
+        // Initialize the translations.
+        let translations = Arc::new(RwLock::new(Vec::new()));
         // Initialize the call stack.
-        let call_stack = CallStack::execute(authorization, trace.clone())?;
+        let call_stack = CallStack::execute(authorization, trace.clone(), translations)?;
         lap!(timer, "Initialize call stack");
 
         // Retrieve the stack.
@@ -50,11 +52,13 @@ impl<N: Network> Process<N> {
         lap!(timer, "Execute the function");
 
         // Extract the trace.
-        let trace = Arc::try_unwrap(trace).unwrap().into_inner();
+        let mut trace = Arc::try_unwrap(trace).unwrap().into_inner();
         // Ensure the trace is not empty.
         if trace.transitions().is_empty() {
             return Err(anyhow!("Execution of '{locator}' is empty").into());
         }
+        // Construct the call graph.
+        trace.construct_call_graph(self)?;
 
         finish!(timer);
         Ok((response, trace))
@@ -81,9 +85,9 @@ mod tests {
         let owner = Address::try_from(private_key).unwrap();
 
         // Sample a base fee in microcredits.
-        let base_fee_in_microcredits = rng.gen_range(1_000_000..u64::MAX / 2);
+        let base_fee_in_microcredits = rng.random_range(1_000_000..u64::MAX / 2);
         // Sample a priority fee in microcredits.
-        let priority_fee_in_microcredits = rng.gen_range(0..u64::MAX / 2);
+        let priority_fee_in_microcredits = rng.random_range(0..u64::MAX / 2);
         // Sample a deployment or execution ID.
         let deployment_or_execution_id = Field::rand(rng);
 
@@ -131,9 +135,9 @@ mod tests {
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
         // Sample a base fee in microcredits.
-        let base_fee_in_microcredits = rng.gen_range(1_000_000..u64::MAX / 2);
+        let base_fee_in_microcredits = rng.random_range(1_000_000..u64::MAX / 2);
         // Sample a priority fee in microcredits.
-        let priority_fee_in_microcredits = rng.gen_range(0..u64::MAX / 2);
+        let priority_fee_in_microcredits = rng.random_range(0..u64::MAX / 2);
         // Sample a deployment or execution ID.
         let deployment_or_execution_id = Field::rand(rng);
 

@@ -65,7 +65,7 @@ use snarkvm_algorithms::{
     snark::varuna::{CircuitProvingKey, CircuitVerifyingKey, VarunaHidingMode},
     srs::{UniversalProver, UniversalVerifier},
 };
-use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon2, Poseidon4};
+use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon2, Poseidon4, Poseidon8};
 use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
 use snarkvm_console_types::{Field, Group, Scalar};
 use snarkvm_curves::PairingEngine;
@@ -152,6 +152,8 @@ pub trait Network:
     const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
     /// The maximum number of constraints in a deployment.
     const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
+    /// The maximum number of instances to verify in a batch proof.
+    const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
     /// A list of consensus versions and their corresponding transaction spend limits in microcredits.
@@ -393,6 +395,17 @@ pub trait Network:
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
 
+    #[cfg(not(feature = "wasm"))]
+    /// Returns the `proving key` for the translation circuit.
+    fn translation_credits_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
+
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the translation circuit.
+    fn translation_credits_proving_key(bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>>;
+
+    /// Returns the `verifying key` for the translation circuit.
+    fn translation_credits_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
+
     /// Returns the powers of `G`.
     fn g_powers() -> &'static Vec<Group<Self>>;
 
@@ -567,6 +580,12 @@ pub trait Network:
         root: &Field<Self>,
         leaf: &Vec<Field<Self>>,
     ) -> bool;
+
+    /// Returns the Poseidon leaf hasher for dynamic records (rate 8).
+    fn dynamic_record_leaf_hasher() -> &'static Poseidon8<Self>;
+
+    /// Returns the Poseidon path hasher for dynamic records (rate 2).
+    fn dynamic_record_path_hasher() -> &'static Poseidon2<Self>;
 }
 
 /// Returns the consensus version heights, initializing them if necessary.

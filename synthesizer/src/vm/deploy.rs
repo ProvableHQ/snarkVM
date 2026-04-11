@@ -54,6 +54,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
             deployment.set_program_owner_raw(Some(Address::try_from(private_key)?));
         }
+        // Before V14: remove record verifying keys from the deployment.
+        if consensus_version < ConsensusVersion::V14 {
+            let record_names: Vec<_> = deployment.program().records().keys().cloned().collect();
+            deployment.remove_verifying_keys(&record_names);
+        }
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id()?;
         // Construct the owner.

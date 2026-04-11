@@ -74,7 +74,7 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             // Sample a new solution ID.
-            let expected = SolutionID::<CurrentNetwork>::from(rng.r#gen::<u64>());
+            let expected = SolutionID::<CurrentNetwork>::from(rng.random::<u64>());
 
             // Check the string representation.
             let candidate = format!("{expected}");
@@ -90,7 +90,7 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             // Sample a new solution ID.
-            let expected = SolutionID::<CurrentNetwork>::from(rng.r#gen::<u64>());
+            let expected = SolutionID::<CurrentNetwork>::from(rng.random::<u64>());
 
             let candidate = expected.to_string();
             assert_eq!(format!("{expected}"), candidate);

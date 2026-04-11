@@ -146,6 +146,9 @@ impl<N: Network> Transaction<N> {
         match deployment.version() {
             Ok(DeploymentVersion::V1) => Self::deployment_tree_v1(deployment),
             Ok(DeploymentVersion::V2) => Self::deployment_tree_v2(deployment),
+            // Note: We use the same method for computing the deployment tree for V2 and V3.
+            // This is safe because the tree root contains a hash of all bytes in the deployment and V3 is guaranteed to have no owner.
+            Ok(DeploymentVersion::V3) => Self::deployment_tree_v2(deployment),
             Err(e) => bail!("Malformed deployment - {e}"),
         }
     }
@@ -186,16 +189,16 @@ impl<N: Network> Transaction<N> {
         let program = deployment.program();
         // Retrieve the functions.
         let functions = program.functions();
-        // Retrieve the verifying keys.
-        let verifying_keys = deployment.verifying_keys();
+        // Retrieve the function verifying keys.
+        let function_verifying_keys = deployment.function_verifying_keys();
         // Retrieve the number of functions.
         let num_functions = functions.len();
 
-        // Ensure the number of functions and verifying keys match.
+        // Ensure the number of functions and function verifying keys match.
         ensure!(
-            num_functions == verifying_keys.len(),
-            "Number of functions ('{num_functions}') and verifying keys ('{}') do not match",
-            verifying_keys.len()
+            num_functions == function_verifying_keys.len(),
+            "Number of functions ('{num_functions}') and function verifying keys ('{}') do not match",
+            function_verifying_keys.len()
         );
         // Ensure there are functions.
         ensure!(num_functions != 0, "Deployment must contain at least one function");
@@ -205,10 +208,22 @@ impl<N: Network> Transaction<N> {
             "Deployment must contain at most {} functions, found {num_functions}",
             N::MAX_FUNCTIONS,
         );
-        // Ensure the number of functions is within the allowed range.
+
+        // If translation verifying keys are present, ensure the count is within bounds.
+        if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
+            let num_records = translation_verifying_keys.len();
+            ensure!(
+                num_records <= N::MAX_RECORDS,
+                "Deployment must contain at most {} records, found {num_records}",
+                N::MAX_RECORDS,
+            );
+        }
+
+        // Ensure the number of function verifying keys fits in the transaction tree.
+        // Note: Record verifying keys do not occupy transition leaves.
         ensure!(
             num_functions < Self::MAX_TRANSITIONS, // Note: Observe we hold back 1 for the fee.
-            "Deployment must contain less than {} functions, found {num_functions}",
+            "Deployment must contain less than {} function verifying keys, found {num_functions}",
             Self::MAX_TRANSITIONS,
         );
         Ok(())

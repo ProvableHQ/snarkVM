@@ -1,12 +1,17 @@
 [package]
 name = "snarkvm-console-program"
-version = "4.4.0"
+version = "4.6.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Program operations for a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"
 license = "Apache-2.0"
 edition = "2024"
+
+[[bench]]
+name = "dynamic_data"
+path = "benches/dynamic_data.rs"
+harness = false
 
 [features]
 default = [ ]
@@ -58,4 +63,7 @@ features = [ "preserve_order" ]
 version = "0.3"
 
 [dev-dependencies.bincode]
+workspace = true
+
+[dev-dependencies.criterion]
 workspace = true

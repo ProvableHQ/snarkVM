@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-committee"
-version = "4.4.0"
+version = "4.6.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A committee for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -28,7 +28,7 @@ default = [ ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 metrics = [ "dep:snarkvm-metrics" ]
-prop-tests = [ "rand", "rand_chacha", "test-strategy", "proptest", "anyhow" ]
+prop-tests = [ "dep:rand", "dep:rand_chacha", "test-strategy", "dep:anyhow", "dep:proptest" ]
 test-helpers = [ "prop-tests", "rand_distr" ]
 
 [dependencies.snarkvm-console]
@@ -55,7 +55,7 @@ workspace = true
 optional = true
 
 [dependencies.proptest]
-version = "1.0.0"
+version = "1.11"
 optional = true
 
 [dependencies.rand]
@@ -67,7 +67,7 @@ workspace = true
 optional = true
 
 [dependencies.rand_distr]
-version = "0.4"
+version = "0.6"
 optional = true
 
 [dependencies.rayon]
@@ -84,7 +84,7 @@ workspace = true
 workspace = true
 
 [dev-dependencies.rand_distr]
-version = "0.4"
+version = "0.6"
 
 [dev-dependencies.rayon]
 workspace = true

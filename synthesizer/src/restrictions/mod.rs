@@ -425,9 +425,9 @@ mod tests {
             indexmap!( ArgumentLocator::new(true, index) => indexmap!( literal.clone() => range )),
         );
 
-        let input = Input::Public(rng.r#gen(), Some(literal.into()));
+        let input = Input::Public(rng.random(), Some(literal.into()));
         let transition =
-            Transition::new(program_id, function_id, vec![input], vec![], rng.r#gen(), rng.r#gen(), rng.r#gen())
+            Transition::new(program_id, function_id, vec![input], vec![], rng.random(), rng.random(), rng.random())
                 .unwrap();
         assert!(!restrictions.is_argument_restricted(&transition, 5));
         assert!(restrictions.is_argument_restricted(&transition, 10));

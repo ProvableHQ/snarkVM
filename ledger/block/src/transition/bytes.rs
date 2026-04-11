@@ -20,9 +20,9 @@ impl<N: Network> FromBytes for Transition<N> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
-        // Ensure the version is valid.
+        // Validate the version.
         if version != 1 {
-            return Err(error("Invalid transition version"));
+            return Err(error(format!("Invalid transition version: {version}")));
         }
 
         // Read the transition ID.
@@ -112,7 +112,9 @@ impl<N: Network> ToBytes for Transition<N> {
         // Write the transition commitment.
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
-        self.scm.write_le(&mut writer)
+        self.scm.write_le(&mut writer)?;
+
+        Ok(())
     }
 }
 

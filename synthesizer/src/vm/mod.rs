@@ -49,6 +49,7 @@ use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
     Deployment,
+    DeploymentVersion,
     Execution,
     Fee,
     Header,
@@ -1491,8 +1492,8 @@ function call_fee_private:
         vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
 
         // Execute the programs.
-        let internal_base_fee_amount: u64 = rng.gen_range(1..1000);
-        let internal_priority_fee_amount: u64 = rng.gen_range(1..1000);
+        let internal_base_fee_amount: u64 = rng.random_range(1..1000);
+        let internal_priority_fee_amount: u64 = rng.random_range(1..1000);
 
         // Ensure that the transaction that calls `fee_public` internally cannot be generated.
         let inputs = [
@@ -2432,6 +2433,21 @@ finalize transfer_public_to_private:
         // Update the VM.
         vm.add_next_block(&block).unwrap();
 
+        // Check the balance of the caller.
+        let balance = match vm
+            .finalize_store()
+            .get_value_confirmed(
+                credits_program_id,
+                account_mapping_name,
+                &Plaintext::from(Literal::Address(caller_address)),
+            )
+            .unwrap()
+        {
+            Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
+            _ => panic!("Expected a valid balance"),
+        };
+        assert_eq!(balance, 182_499_995_767_962, "Update me if the initial balance changes.");
+
         // Call the wrapper program to transfer credits from the caller to the recipient.
         let transaction = vm
             .execute(
@@ -3020,7 +3036,7 @@ function add_thrice:
         let vm = sample_vm();
 
         // Ensure this call succeeds.
-        vm.puzzle.prove(rng.r#gen(), rng.r#gen(), rng.r#gen(), None).unwrap();
+        vm.puzzle.prove(rng.random(), rng.random(), rng.random(), None).unwrap();
     }
 
     #[test]

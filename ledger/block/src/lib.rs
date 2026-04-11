@@ -778,7 +778,7 @@ mod tests {
 
         // Ensure the transaction is not found.
         for _ in 0..10 {
-            let transition_id = &rng.r#gen();
+            let transition_id = &rng.random();
             assert_eq!(block.find_transaction_for_transition_id(transition_id), None);
             assert_eq!(transactions.find_transaction_for_transition_id(transition_id), None);
         }
@@ -803,7 +803,7 @@ mod tests {
 
         // Ensure the commitments are not found.
         for _ in 0..10 {
-            let commitment = &rng.r#gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_transaction_for_commitment(commitment), None);
             assert_eq!(transactions.find_transaction_for_commitment(commitment), None);
         }
@@ -829,7 +829,7 @@ mod tests {
 
         // Ensure the transitions are not found.
         for _ in 0..10 {
-            let transition_id = &rng.r#gen();
+            let transition_id = &rng.random();
             assert_eq!(block.find_transition(transition_id), None);
             assert_eq!(transactions.find_transition(transition_id), None);
             assert_eq!(transaction.find_transition(transition_id), None);
@@ -862,7 +862,7 @@ mod tests {
 
         // Ensure the commitments are not found.
         for _ in 0..10 {
-            let commitment = &rng.r#gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_transition_for_commitment(commitment), None);
             assert_eq!(transactions.find_transition_for_commitment(commitment), None);
             assert_eq!(transaction.find_transition_for_commitment(commitment), None);
@@ -889,7 +889,7 @@ mod tests {
 
         // Ensure the records are not found.
         for _ in 0..10 {
-            let commitment = &rng.r#gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_record(commitment), None);
             assert_eq!(transactions.find_record(commitment), None);
             assert_eq!(transaction.find_record(commitment), None);

@@ -13,29 +13,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::convert::Infallible;
 use rand::{
     Rng,
+    RngExt,
     SeedableRng,
-    distributions::{Distribution, Standard},
-    rngs::StdRng,
+    TryCryptoRng,
+    TryRng,
+    distr::{Distribution, StandardUniform},
 };
 use rand_xorshift::XorShiftRng;
 
 /// A trait for a uniform random number generator.
 pub trait Uniform: Sized {
     /// Samples a random value from a uniform distribution.
-    fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self;
+    fn rand<R: RngExt + ?Sized>(rng: &mut R) -> Self;
 }
 
 impl<T> Uniform for T
 where
-    Standard: Distribution<T>,
+    StandardUniform: Distribution<T>,
 {
     #[inline]
-    fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        rng.sample(Standard)
+    fn rand<R: RngExt + ?Sized>(rng: &mut R) -> Self {
+        rng.random()
     }
 }
+
+// The rand 0.8 default implementation.
+pub trait UniformExt: Uniform {
+    /// Generates a random Option<Self> (50/50 chance of Some or None)
+    fn rand_option<R: Rng + ?Sized>(rng: &mut R) -> Option<Self> {
+        if rng.random() { Some(Self::rand(rng)) } else { None }
+    }
+}
+
+// Blanket implement it for anything that already implements Uniform
+impl<T: Uniform> UniformExt for T {}
 
 /// A fast RNG used **solely** for testing and benchmarking, **not** for any real world purposes.
 pub struct TestRng {
@@ -47,7 +61,7 @@ pub struct TestRng {
 impl Default for TestRng {
     fn default() -> Self {
         // Obtain the initial seed using entropy provided by the OS.
-        let seed = StdRng::from_entropy().r#gen();
+        let seed: u64 = rand::random();
 
         // Use it as the basis for the underlying Rng.
         Self::fixed(seed)
@@ -126,36 +140,34 @@ impl TestRng {
 
         let range = match is_fixed_size {
             true => 0..max_bytes,
-            false => 0..self.gen_range(0..max_bytes),
+            false => 0..self.random_range(0..max_bytes),
         };
 
-        range.map(|_| self.r#gen::<char>()).map(adjust_unsafe_char).map(adjust_backslash_and_doublequote).collect()
+        range.map(|_| self.random::<char>()).map(adjust_unsafe_char).map(adjust_backslash_and_doublequote).collect()
     }
 }
 
-impl rand::RngCore for TestRng {
-    fn next_u32(&mut self) -> u32 {
+impl TryRng for TestRng {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
         self.calls += 1;
-        self.rng.next_u32()
+        Ok(self.rng.next_u32())
     }
 
-    fn next_u64(&mut self) -> u64 {
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
         self.calls += 1;
-        self.rng.next_u64()
+        Ok(self.rng.next_u64())
     }
 
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
         self.calls += 1;
-        self.rng.fill_bytes(dest)
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
-        self.calls += 1;
-        self.rng.try_fill_bytes(dest)
+        self.rng.fill_bytes(dest);
+        Ok(())
     }
 }
 
-impl rand::CryptoRng for TestRng {}
+impl TryCryptoRng for TestRng {}
 
 impl Drop for TestRng {
     fn drop(&mut self) {

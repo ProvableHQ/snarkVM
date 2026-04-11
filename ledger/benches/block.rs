@@ -115,7 +115,7 @@ fn transition_serialization(c: &mut Criterion) {
 
 fn signature_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
-    let data = rng.r#gen();
+    let data = rng.random();
 
     let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap();
     let signature = private_key.sign(&[data], &mut rng).unwrap();

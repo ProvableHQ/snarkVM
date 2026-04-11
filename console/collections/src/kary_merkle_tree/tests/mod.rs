@@ -273,7 +273,7 @@ fn test_kary_merkle_tree_bhp() -> Result<()> {
 
         for i in 0..ITERATIONS {
             // Determine the number of leaves.
-            let num_leaves = rng.gen_range(0..100u128).min(max_leaves);
+            let num_leaves = rng.random_range(0..100u128).min(max_leaves);
             println!("Iteration {i} - Testing a depth {DEPTH} arity {ARITY} tree with {num_leaves} leaves");
 
             // Check the Merkle tree.
@@ -319,7 +319,7 @@ fn test_kary_merkle_tree_poseidon() -> Result<()> {
 
         for i in 0..ITERATIONS {
             // Determine the number of leaves.
-            let num_leaves = rng.gen_range(0..100u128).min(max_leaves);
+            let num_leaves = rng.random_range(0..100u128).min(max_leaves);
             println!("Iteration {i} - Testing a depth {DEPTH} arity {ARITY} tree with {num_leaves} leaves");
 
             // Check the Merkle tree.
@@ -363,7 +363,7 @@ fn test_kary_merkle_tree_keccak() -> Result<()> {
 
         for i in 0..ITERATIONS {
             // Determine the number of leaves.
-            let num_leaves = rng.gen_range(0..10_000u128).min(max_leaves);
+            let num_leaves = rng.random_range(0..10_000u128).min(max_leaves);
             println!("Iteration {i} - Testing a depth {DEPTH} arity {ARITY} tree with {num_leaves} leaves");
 
             // Check the Merkle tree.
@@ -409,7 +409,7 @@ fn test_kary_merkle_tree_sha3() -> Result<()> {
 
         for i in 0..ITERATIONS {
             // Determine the number of leaves.
-            let num_leaves = rng.gen_range(0..10_000u128).min(max_leaves);
+            let num_leaves = rng.random_range(0..10_000u128).min(max_leaves);
             println!("Iteration {i} - Testing a depth {DEPTH} arity {ARITY} tree with {num_leaves} leaves");
 
             // Check the Merkle tree.

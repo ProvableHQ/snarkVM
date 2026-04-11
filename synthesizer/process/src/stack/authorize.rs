@@ -57,6 +57,7 @@ impl<N: Network> Stack<N> {
             root_tvk,
             is_root,
             program_checksum,
+            false,
             rng,
         )?;
         lap!(timer, "Compute the request");
@@ -113,6 +114,7 @@ impl<N: Network> Stack<N> {
             root_tvk,
             is_root,
             program_checksum,
+            false,
             rng,
         )?;
         lap!(timer, "Compute the request");
@@ -123,6 +125,56 @@ impl<N: Network> Stack<N> {
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
         finish!(timer, "Construct the authorization from the function");
+
+        // Return the authorization.
+        Ok(authorization)
+    }
+
+    /// Produces a mocked `Authorization` for a call to the given function on
+    /// the supplied inputs using the provided caller address. The resulting
+    /// `Authorization` has the same size as the one which would be produced
+    /// (and signed) using the private key corresponding to that address and can
+    /// therefore be used to compute the cost of the associated `Execution`, but
+    /// many of its values (such as the input IDs in the `Request`s) may not be
+    /// correct. This method does not check circuit satisfiability or `Request`
+    /// validity.
+    #[inline]
+    pub fn sample_authorization<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        address: Address<A::Network>,
+        program_id: ProgramID<A::Network>,
+        function_name: Identifier<A::Network>,
+        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
+        rng: &mut R,
+    ) -> Result<Authorization<N>, StackAuthError> {
+        let timer = timer!("Stack::sample_authorization");
+
+        if program_id != *self.program.id() {
+            return Err(anyhow!("Program ID mismatch").into());
+        }
+
+        // Get the program ID.
+        let program_id = *self.program.id();
+        // Retrieve the input types.
+        let input_types = self.get_function(&function_name)?.input_types();
+        lap!(timer, "Retrieve the input types");
+
+        // This is the root request and does not have a caller.
+        let caller = None;
+        // This is the root request and we do not have a root_tvk to pass on.
+        let root_tvk = None;
+
+        // Compute the mock request.
+        let mocked_request = Request::sample(address, program_id, function_name, inputs, &input_types, false, rng)?;
+
+        lap!(timer, "Compute the mocked request");
+        // Initialize the authorization.
+        let authorization = Authorization::new(mocked_request.clone());
+        // Construct the call stack.
+        let call_stack = CallStack::AuthorizeMocked(vec![mocked_request], address, authorization.clone());
+        // Construct the authorization from the function.
+        let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
+        finish!(timer, "Construct the mocked authorization from the function");
 
         // Return the authorization.
         Ok(authorization)

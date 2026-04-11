@@ -32,7 +32,8 @@ use core::fmt::{Debug, Display};
 use num_bigint::BigUint;
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    RngExt,
+    distr::{Distribution, StandardUniform},
 };
 use zeroize::Zeroize;
 
@@ -333,9 +334,9 @@ impl PartialOrd for BigInteger256 {
     }
 }
 
-impl Distribution<BigInteger256> for Standard {
+impl Distribution<BigInteger256> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BigInteger256 {
-        BigInteger256(rng.r#gen())
+        BigInteger256(rng.random())
     }
 }
 

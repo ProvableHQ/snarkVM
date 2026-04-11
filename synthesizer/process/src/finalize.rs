@@ -34,77 +34,123 @@ impl<N: Network> Process<N> {
     ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>)> {
         let timer = timer!("Process::finalize_deployment");
 
-        // Compute the program stack.
-        let mut stack = Stack::new(self, deployment.program())?;
-        lap!(timer, "Compute the stack");
+        // Get the deployment version.
+        let version = deployment.version()?;
 
-        // Set the program owner.
-        // Note: The program owner is only enforced to be `Some` after `ConsensusVersion::V9`
-        // and is `None` for all programs deployed before the `V9` migration.
-        stack.set_program_owner(deployment.program_owner());
+        // Finalize the deployment based on its version.
+        match version {
+            DeploymentVersion::V1 | DeploymentVersion::V2 => {
+                // Compute the program stack.
+                let mut stack = Stack::new(self, deployment.program())?;
+                lap!(timer, "Compute the stack");
 
-        // Insert the verifying keys.
-        for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-            stack.insert_verifying_key(function_name, verifying_key.clone())?;
-        }
-        lap!(timer, "Insert the verifying keys");
+                // Set the program owner.
+                stack.set_program_owner(deployment.program_owner());
 
-        // Determine which mappings must be initialized.
-        let mappings = match deployment.edition().is_zero() {
-            true => deployment.program().mappings().values().collect::<Vec<_>>(),
-            false => {
+                // Insert all verifying keys (unified: functions + records).
+                for (name, (verifying_key, _)) in deployment.verifying_keys() {
+                    stack.insert_verifying_key(name, verifying_key.clone())?;
+                }
+                lap!(timer, "Insert the verifying keys");
+
+                // Determine which mappings must be initialized.
+                let mappings = match deployment.edition().is_zero() {
+                    true => deployment.program().mappings().values().collect::<Vec<_>>(),
+                    false => {
+                        // Get the existing stack.
+                        let existing_stack = self.get_stack(deployment.program_id())?;
+                        // Get the existing mappings.
+                        let existing_mappings = existing_stack.program().mappings();
+                        // Determine and return the new mappings
+                        let mut new_mappings = Vec::new();
+                        for mapping in deployment.program().mappings().values() {
+                            if !existing_mappings.contains_key(mapping.name()) {
+                                new_mappings.push(mapping);
+                            }
+                        }
+                        new_mappings
+                    }
+                };
+                lap!(timer, "Retrieve the mappings to initialize");
+
+                // Initialize the mappings, and store their finalize operations.
+                atomic_batch_scope!(store, {
+                    // Initialize a list for the finalize operations.
+                    let mut finalize_operations = Vec::with_capacity(deployment.program().mappings().len());
+
+                    /* Finalize the fee. */
+
+                    // Retrieve the fee stack.
+                    let fee_stack = self.get_stack(fee.program_id())?;
+                    // Finalize the fee transition.
+                    finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
+                    lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+
+                    /* Finalize the deployment. */
+
+                    // Retrieve the program ID.
+                    let program_id = deployment.program_id();
+                    // Iterate over the mappings that must be initialized.
+                    for mapping in mappings {
+                        // Initialize the mapping.
+                        finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
+                    }
+                    lap!(timer, "Initialize the program mappings");
+
+                    // If the program has a constructor, execute it and extend the finalize operations.
+                    // This must happen after the mappings are initialized as the constructor may depend on them.
+                    if deployment.program().contains_constructor() {
+                        let operations = finalize_constructor(state, store, &stack, N::TransitionID::default())?;
+                        finalize_operations.extend(operations);
+                        lap!(timer, "Execute the constructor");
+                    }
+
+                    finish!(timer, "Finished finalizing the deployment");
+                    // Return the stack and finalize operations.
+                    Ok((stack, finalize_operations))
+                })
+            }
+            DeploymentVersion::V3 => {
+                // Ensure that the program is not `credits.aleo`.
+                ensure!(
+                    deployment.program_id() != &ProgramID::credits(),
+                    "The 'credits.aleo' program cannot be deployed with DeploymentVersion::V3"
+                );
+
                 // Get the existing stack.
                 let existing_stack = self.get_stack(deployment.program_id())?;
-                // Get the existing mappings.
-                let existing_mappings = existing_stack.program().mappings();
-                // Determine and return the new mappings
-                let mut new_mappings = Vec::new();
-                for mapping in deployment.program().mappings().values() {
-                    if !existing_mappings.contains_key(mapping.name()) {
-                        new_mappings.push(mapping);
-                    }
+
+                // Compute a new stack with the same program and edition.
+                // Note: `Stack::new` cannot be used here because it would increment the edition.
+                // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
+                let mut stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
+                stack.initialize_and_check(self)?;
+                lap!(timer, "Compute the stack");
+
+                // Set the program owner to the existing owner.
+                stack.set_program_owner(*existing_stack.program_owner());
+
+                // Insert all verifying keys (unified: functions + records).
+                for (name, (verifying_key, _)) in deployment.verifying_keys() {
+                    stack.insert_verifying_key(name, verifying_key.clone())?;
                 }
-                new_mappings
+                lap!(timer, "Insert the verifying keys");
+
+                // Finalize the fee (amendments don't initialize mappings or run constructors).
+                atomic_batch_scope!(store, {
+                    let mut finalize_operations = Vec::new();
+
+                    // Retrieve the fee stack.
+                    let fee_stack = self.get_stack(fee.program_id())?;
+                    // Finalize the fee transition.
+                    finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
+                    lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+
+                    finish!(timer, "Finished finalizing the V3 deployment");
+                    Ok((stack, finalize_operations))
+                })
             }
-        };
-        lap!(timer, "Retrieve the mappings to initialize");
-
-        // Initialize the mappings, and store their finalize operations.
-        atomic_batch_scope!(store, {
-            // Initialize a list for the finalize operations.
-            let mut finalize_operations = Vec::with_capacity(deployment.program().mappings().len());
-
-            /* Finalize the fee. */
-
-            // Retrieve the fee stack.
-            let fee_stack = self.get_stack(fee.program_id())?;
-            // Finalize the fee transition.
-            finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
-            lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
-
-            /* Finalize the deployment. */
-
-            // Retrieve the program ID.
-            let program_id = deployment.program_id();
-            // Iterate over the mappings that must be initialized.
-            for mapping in mappings {
-                // Initialize the mapping.
-                finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
-            }
-            lap!(timer, "Initialize the program mappings");
-
-            // If the program has a constructor, execute it and extend the finalize operations.
-            // This must happen after the mappings are initialized as the constructor may depend on them.
-            if deployment.program().contains_constructor() {
-                let operations = finalize_constructor(state, store, &stack, N::TransitionID::default())?;
-                finalize_operations.extend(operations);
-                lap!(timer, "Execute the constructor");
-            }
-
-            finish!(timer, "Finished finalizing the deployment");
-            // Return the stack and finalize operations.
-            Ok((stack, finalize_operations))
-        })
+        }
     }
 
     /// Finalizes the execution and fee.
@@ -128,19 +174,50 @@ impl<N: Network> Process<N> {
         let transition = execution.peek()?;
         // Retrieve the stack.
         let stack = self.get_stack(transition.program_id())?;
-        // Ensure the number of calls matches the number of transitions.
-        let number_of_calls = stack.get_number_of_calls(transition.function_name())?;
-        ensure!(
-            number_of_calls == execution.len(),
-            "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
-            execution.len()
-        );
+        // Calculate the minimum number of calls for the root transition.
+        let minimum_number_of_calls = stack.get_minimum_number_of_calls(transition.function_name())?;
+        // If the root transition contains a dynamic call,
+        // - ensure that the number of calls is less than or equal to the number of transitions.
+        // - otherwise, ensure that the number of calls matches the number of transitions.
+        if stack.contains_dynamic_call(transition.function_name())? {
+            ensure!(
+                minimum_number_of_calls <= execution.len(),
+                "The number of transitions in the execution is incorrect. Expected at least {minimum_number_of_calls}, but found {}",
+                execution.len()
+            );
+        } else {
+            ensure!(
+                minimum_number_of_calls == execution.len(),
+                "The number of transitions in the execution is incorrect. Expected {minimum_number_of_calls}, but found {}",
+                execution.len()
+            );
+        }
         lap!(timer, "Verify the number of transitions");
+
+        // Collect all of the futures in the execution's transitions and compute their corresponding dynamic future keys.
+        // The key is (program_name, program_network, function_name, checksum). Futures with identical program,
+        // function, and arguments produce the same key and the same checksum by design — they represent the same
+        // logical future, so the map correctly de-duplicates them.
+        let dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>> = execution
+            .transitions()
+            .filter_map(|transition| {
+                transition.outputs().last().and_then(|output| output.future()).and_then(|future| {
+                    let dynamic_future = DynamicFuture::from_future(future).ok()?;
+                    let key = (
+                        *dynamic_future.program_name(),
+                        *dynamic_future.program_network(),
+                        *dynamic_future.function_name(),
+                        *dynamic_future.checksum(),
+                    );
+                    Some((key, future))
+                })
+            })
+            .collect();
 
         // Construct the call graph.
         let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
         let call_graph = match (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
-            true => self.construct_call_graph(execution)?,
+            true => self.construct_call_graph(execution.transitions())?,
             // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
             false => HashMap::new(),
         };
@@ -149,10 +226,10 @@ impl<N: Network> Process<N> {
             // Finalize the root transition.
             // Note that this will result in all the remaining transitions being finalized, since the number
             // of calls matches the number of transitions.
-            let mut finalize_operations = finalize_transition(state, store, &stack, transition, call_graph)?;
+            let mut finalize_operations =
+                finalize_transition(state, store, &stack, transition, call_graph, dynamic_future_to_future)?;
 
             /* Finalize the fee. */
-
             if let Some(fee) = fee {
                 // Retrieve the fee stack.
                 let fee_stack = self.get_stack(fee.program_id())?;
@@ -207,7 +284,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     };
 
     // Finalize the transition.
-    match finalize_transition(state, store, stack, fee, call_graph) {
+    match finalize_transition(state, store, stack, fee, call_graph, Default::default()) {
         // If the evaluation succeeds, return the finalize operations.
         Ok(finalize_operations) => Ok(finalize_operations),
         // If the evaluation fails, bail and return the error.
@@ -244,6 +321,9 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
     // Initialize the finalize registers.
     let mut registers = FinalizeRegisters::new(state, transition_id, *program_id.name(), constructor_types, nonce);
 
+    // Determine the scope name.
+    let scope_name = Identifier::<N>::from_str("constructor")?;
+
     // Initialize a counter for the commands.
     let mut counter = 0;
 
@@ -264,6 +344,7 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
                 command,
                 &mut counter,
                 &mut finalize_operations,
+                &scope_name,
             )?,
         };
     }
@@ -279,6 +360,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     stack: &Arc<Stack<N>>,
     transition: &Transition<N>,
     call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
+    dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>>,
 ) -> Result<Vec<FinalizeOperation<N>>> {
     // Retrieve the program ID.
     let program_id = transition.program_id();
@@ -309,9 +391,11 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     // Initialize a nonce for the finalize registers.
     // Note that this nonce must be unique for each sub-transition being finalized.
     let mut nonce = 0;
+    // Top-level outputs are always static futures.
+    let is_dynamic = false;
 
     // Initialize the top-level finalize state.
-    states.push(initialize_finalize_state(state, future, stack, *transition.id(), nonce)?);
+    states.push(initialize_finalize_state(state, future, stack, *transition.id(), nonce, is_dynamic)?);
 
     // While there are active finalize states, finalize them.
     'outer: while let Some(FinalizeState { mut counter, mut registers, stack, mut call_counter, mut awaited }) =
@@ -325,6 +409,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                 registers.function_name()
             )
         };
+        // Determine the scope name.
+        let scope_name = *registers.function_name();
         // Evaluate the commands.
         while counter < finalize.commands().len() {
             // Retrieve the command.
@@ -372,7 +458,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                         &stack,
                         &registers,
                         transition_id,
-                        nonce
+                        nonce,
+                        &dynamic_future_to_future,
                     )) {
                         Ok(Ok(callee_state)) => callee_state,
                         // If the evaluation fails, bail and return the error.
@@ -406,13 +493,16 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     command,
                     &mut counter,
                     &mut finalize_operations,
+                    &scope_name,
                 )?,
             };
         }
         // Check that all future registers have been awaited.
         let mut unawaited = Vec::new();
         for input in finalize.inputs() {
-            if matches!(input.finalize_type(), FinalizeType::Future(_)) && !awaited.contains(input.register()) {
+            if matches!(input.finalize_type(), FinalizeType::Future(_) | FinalizeType::DynamicFuture)
+                && !awaited.contains(input.register())
+            {
                 unawaited.push(input.register().clone());
             }
         }
@@ -441,18 +531,20 @@ struct FinalizeState<N: Network> {
     awaited: HashSet<Register<N>>,
 }
 
-// A helper function to initialize the finalize state.
+// A helper function to initialize the finalize state for transitions (not constructors).
 fn initialize_finalize_state<N: Network>(
     state: FinalizeGlobalState,
     future: &Future<N>,
     stack: &Arc<Stack<N>>,
     transition_id: N::TransitionID,
     nonce: u64,
+    is_dynamic: bool,
 ) -> Result<FinalizeState<N>> {
     // Get the stack.
-    let stack = match stack.program_id() == future.program_id() {
-        true => stack.clone(),
-        false => stack.get_external_stack(future.program_id())?,
+    let stack = match (stack.program_id() == future.program_id(), is_dynamic) {
+        (true, _) => stack.clone(),
+        (false, true) => stack.get_stack_global(future.program_id())?,
+        (false, false) => stack.get_external_stack(future.program_id())?,
     };
     // Get the finalize logic and check that it exists.
     let Some(finalize) = stack.get_function_ref(future.function_name())?.finalize_logic() else {
@@ -471,7 +563,8 @@ fn initialize_finalize_state<N: Network>(
         nonce,
     );
 
-    // Store the inputs.
+    // Store the inputs. The argument count is guaranteed to match the finalize's declared inputs
+    // because the Future was validated against the finalize type signature at execution time.
     finalize.inputs().iter().map(|i| i.register()).zip_eq(future.arguments().iter()).try_for_each(
         |(register, input)| {
             // Assign the input value to the register.
@@ -492,6 +585,7 @@ fn finalize_command_except_await<N: Network>(
     command: &Command<N>,
     counter: &mut usize,
     finalize_operations: &mut Vec<FinalizeOperation<N>>,
+    scope_name: &Identifier<N>,
 ) -> Result<()> {
     // Finalize the command.
     match &command {
@@ -502,9 +596,9 @@ fn finalize_command_except_await<N: Network>(
                     *counter = new_counter;
                 }
                 // If the evaluation fails, bail and return the error.
-                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                Ok(Err(error)) => bail!("'{scope_name}' failed to evaluate command ({command}): {error}"),
                 // If the evaluation fails, bail and return the error.
-                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+                Err(_) => bail!("'{scope_name}' failed to evaluate command ({command})"),
             }
         }
         Command::BranchNeq(branch_neq) => {
@@ -514,9 +608,9 @@ fn finalize_command_except_await<N: Network>(
                     *counter = new_counter;
                 }
                 // If the evaluation fails, bail and return the error.
-                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                Ok(Err(error)) => bail!("'{scope_name}' failed to evaluate command ({command}): {error}"),
                 // If the evaluation fails, bail and return the error.
-                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+                Err(_) => bail!("'{scope_name}' failed to evaluate command ({command})"),
             }
         }
         Command::Await(_) => {
@@ -530,9 +624,9 @@ fn finalize_command_except_await<N: Network>(
                 // If the evaluation succeeds with no operation, continue.
                 Ok(Ok(None)) => {}
                 // If the evaluation fails, bail and return the error.
-                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                Ok(Err(error)) => bail!("'{scope_name}' failed to evaluate command ({command}): {error}"),
                 // If the evaluation fails, bail and return the error.
-                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+                Err(_) => bail!("'{scope_name}' failed to evaluate command ({command})"),
             }
             *counter += 1;
         }
@@ -549,14 +643,29 @@ fn setup_await<N: Network>(
     registers: &FinalizeRegisters<N>,
     transition_id: N::TransitionID,
     nonce: u64,
+    dynamic_future_to_future: &HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>>,
 ) -> Result<FinalizeState<N>> {
     // Retrieve the input as a future.
-    let future = match registers.load(stack.deref(), &Operand::Register(await_.register().clone()))? {
-        Value::Future(future) => future,
-        _ => bail!("The input to 'await' is not a future"),
+    let (future, is_dynamic) = match registers.load(stack.deref(), &Operand::Register(await_.register().clone()))? {
+        Value::Future(future) => (future, false),
+        Value::DynamicFuture(dynamic_future) => {
+            // Construct the key from the dynamic future's program name, network, function name, and checksum.
+            let key = (
+                *dynamic_future.program_name(),
+                *dynamic_future.program_network(),
+                *dynamic_future.function_name(),
+                *dynamic_future.checksum(),
+            );
+            // Look up the corresponding future from the dynamic future key.
+            match dynamic_future_to_future.get(&key) {
+                Some(future) => ((*future).clone(), true),
+                None => bail!("Dynamic future '{key:?}' not found in dynamic-future-to-future map"),
+            }
+        }
+        _ => bail!("The input to 'await' is not a future or dynamic future"),
     };
     // Initialize the state.
-    initialize_finalize_state(state, &future, stack, transition_id, nonce)
+    initialize_finalize_state(state, &future, stack, transition_id, nonce, is_dynamic)
 }
 
 // A helper function that returns the index to branch to.

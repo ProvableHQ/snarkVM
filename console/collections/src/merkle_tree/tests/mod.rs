@@ -17,6 +17,7 @@ use super::*;
 
 mod append;
 mod remove;
+mod test_print;
 mod update;
 mod update_many;
 

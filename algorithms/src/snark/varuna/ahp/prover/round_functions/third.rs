@@ -39,7 +39,7 @@ use snarkvm_utilities::ExecutionPool;
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
-use rand::RngCore;
+use rand::Rng;
 use std::collections::BTreeMap;
 
 struct LinevalInstance<F: PrimeField> {
@@ -66,7 +66,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     }
 
     /// Output the third round message and the next state.
-    pub fn prover_third_round<'a, R: RngCore>(
+    pub fn prover_third_round<'a, R: Rng>(
         verifier_first_message: &verifier::FirstMessage<F>,
         verifier_second_message: &verifier::SecondMessage<F>,
         verifier_prepare_third_message: &Option<verifier::PrepareThirdMessage<F>>,
@@ -157,6 +157,24 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // Compute lineval sumcheck witnesses
         let mut job_pool = ExecutionPool::with_capacity(total_instances * 3);
         // Iterate for each circuit in the batch.
+        ensure!(
+            state.circuit_specific_states.len() == third_round_batch_combiners.len(),
+            "[calculate Lineval Sumcheck Witness] Expected {} circuit specific states, but {} were provided.",
+            third_round_batch_combiners.len(),
+            state.circuit_specific_states.len()
+        );
+        ensure!(
+            state.circuit_specific_states.len() == assignments.len(),
+            "[calculate Lineval Sumcheck Witness] Expected {} assignments, but {} were provided.",
+            assignments.len(),
+            state.circuit_specific_states.len()
+        );
+        ensure!(
+            state.circuit_specific_states.len() == matrix_transposes.len(),
+            "[calculate Lineval Sumcheck Witness] Expected {} matrix transposes, but {} were provided.",
+            matrix_transposes.len(),
+            state.circuit_specific_states.len()
+        );
         for ((((circuit, circuit_specific_state), batch_combiner), assignments_i), matrix_transposes_i) in state
             .circuit_specific_states
             .iter_mut()

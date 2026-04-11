@@ -52,9 +52,10 @@ pub enum ConsensusVersion {
     /// V14: Increase the program size limit to 512 kB, the transaction size limit to 540 kB,
     ///      the array size limit to 2048, and the `Future` argument bit size to 32 bits.
     ///      Introduces `aleo::GENERATOR`, `aleo::GENERATOR_POWERS`, `snark.verify` opcodes,
-    ///      and identifier literal types.
+    ///      and dynamic dispatch, and identifier literal types.
     V14 = 14,
-    /// V15: Introduce `redelegate` to `credits.aleo` and update the unbonding period.
+    /// V15: Introduces the record-existence check, `commit.*.raw` instruction variants,
+    ///      and `redelegate` to `credits.aleo`, and updates the unbonding period.
     V15 = 15,
 }
 
@@ -118,8 +119,8 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V10, 8_600_000),
     (ConsensusVersion::V11, 9_510_000),
     (ConsensusVersion::V12, 10_030_000),
-    (ConsensusVersion::V13, u32::MAX - 2),
-    (ConsensusVersion::V14, u32::MAX - 1),
+    (ConsensusVersion::V13, 10_881_000),
+    (ConsensusVersion::V14, 11_960_000),
     (ConsensusVersion::V15, u32::MAX),
 ];
 
@@ -137,8 +138,8 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V10, 11_205_000),
     (ConsensusVersion::V11, 12_870_000),
     (ConsensusVersion::V12, 13_815_000),
-    (ConsensusVersion::V13, u32::MAX - 2),
-    (ConsensusVersion::V14, u32::MAX - 1),
+    (ConsensusVersion::V13, 16_850_000),
+    (ConsensusVersion::V14, 17_700_000),
     (ConsensusVersion::V15, u32::MAX),
 ];
 
@@ -156,8 +157,8 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V10, 10_525_000),
     (ConsensusVersion::V11, 11_952_000),
     (ConsensusVersion::V12, 12_669_000),
-    (ConsensusVersion::V13, u32::MAX - 2),
-    (ConsensusVersion::V14, u32::MAX - 1),
+    (ConsensusVersion::V13, 14_906_000),
+    (ConsensusVersion::V14, 15_370_000),
     (ConsensusVersion::V15, u32::MAX),
 ];
 

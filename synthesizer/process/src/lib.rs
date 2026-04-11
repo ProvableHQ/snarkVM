@@ -47,9 +47,11 @@ use console::{
     account::PrivateKey,
     network::prelude::*,
     program::{
+        DynamicFuture,
         Identifier,
         Literal,
         Locator,
+        OutputID,
         Plaintext,
         PlaintextType,
         ProgramID,
@@ -57,19 +59,23 @@ use console::{
         Request,
         Response,
         Value,
+        ValueType,
         compute_function_id,
     },
     types::{Field, U16, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
-use snarkvm_ledger_block::{Deployment, Execution, Fee, Input, Output, Transaction, Transition};
+use snarkvm_ledger_block::{Deployment, DeploymentVersion, Execution, Fee, Input, Output, Transaction, Transition};
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use snarkvm_synthesizer_program::{
     Branch,
+    CastType,
     Command,
     FinalizeGlobalState,
     FinalizeOperation,
+    Function,
     Instruction,
+    Operand,
     Program,
     StackTrait,
 };
@@ -77,13 +83,19 @@ use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 use snarkvm_utilities::{defer, dev_println};
 
 use aleo_std::prelude::{finish, lap, timer};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
+
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
+// Note: a `Process` and all of its fields are meant to be completely stateless. They have no
+// notion of block height or consensus version.
 #[derive(Clone)]
 pub struct Process<N: Network> {
     /// The universal SRS.
@@ -118,6 +130,9 @@ impl<N: Network> Process<N> {
             stack.synthesize_key::<A, _>(function_name, rng)?;
             lap!(timer, "Synthesize circuit keys for {function_name}");
         }
+        let rng = &mut rand::rng();
+        let credits_record_name = Identifier::<N>::from_str("credits").unwrap(); // Safe: "credits" is always a valid identifier.
+        stack.synthesize_translation_key::<A, _>(&credits_record_name, rng)?;
         lap!(timer, "Synthesize credits program keys");
 
         // Add the 'credits.aleo' stack to the process.
@@ -475,6 +490,17 @@ impl<N: Network> Process<N> {
     ) -> Result<()> {
         // Synthesize the proving and verifying key.
         self.get_stack(program_id)?.synthesize_key::<A, R>(function_name, rng)
+    }
+
+    /// Synthesizes the translation key for the given record name.
+    #[inline]
+    pub fn synthesize_translation_key<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        program_id: &ProgramID<N>,
+        record_name: &Identifier<N>,
+        rng: &mut R,
+    ) -> Result<()> {
+        self.get_stack(program_id)?.synthesize_translation_key::<A, R>(record_name, rng)
     }
 }
 

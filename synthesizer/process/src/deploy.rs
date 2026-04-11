@@ -45,18 +45,42 @@ impl<N: Network> Process<N> {
     pub fn load_deployment(&mut self, deployment: &Deployment<N>) -> Result<()> {
         let timer = timer!("Process::load_deployment");
 
-        // Compute the program stack.
-        let mut stack = Stack::new(self, deployment.program())?;
-        lap!(timer, "Compute the stack");
+        // Get the deployment version.
+        let version = deployment.version()?;
 
-        // Set the program owner.
-        // Note: The program owner is only enforced to be `Some` after `ConsensusVersion::V9`
-        // and is `None` for all programs deployed before the `V9` migration.
-        stack.set_program_owner(deployment.program_owner());
+        // Load the deployment based on its version.
+        let stack = match version {
+            DeploymentVersion::V1 | DeploymentVersion::V2 => {
+                // Compute the program stack.
+                let mut stack = Stack::new(self, deployment.program())?;
+                lap!(timer, "Compute the stack");
 
-        // Insert the verifying keys.
-        for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-            stack.insert_verifying_key(function_name, verifying_key.clone())?;
+                // Set the program owner.
+                stack.set_program_owner(deployment.program_owner());
+
+                stack
+            }
+            DeploymentVersion::V3 => {
+                // V3 is an amendment — get the existing stack.
+                let existing_stack = self.get_stack(deployment.program_id())?;
+
+                // Compute a new stack with the same program and edition.
+                // Note: `Stack::new` cannot be used here because it would increment the edition.
+                // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
+                let mut stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
+                stack.initialize_and_check(self)?;
+                lap!(timer, "Compute the stack");
+
+                // Set the program owner to the existing owner.
+                stack.set_program_owner(*existing_stack.program_owner());
+
+                stack
+            }
+        };
+
+        // Insert all verifying keys (unified: functions + records).
+        for (name, (verifying_key, _)) in deployment.verifying_keys() {
+            stack.insert_verifying_key(name, verifying_key.clone())?;
         }
         lap!(timer, "Insert the verifying keys");
 
