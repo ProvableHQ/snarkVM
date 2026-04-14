@@ -391,7 +391,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         z_m_at_alpha: Option<DensePolynomial<F>>,
     ) -> Result<LinevalInstance<F>> {
         let mut z_m_at_alpha = z_m_at_alpha.ok_or(anyhow::anyhow!(format!("Expected z_{_matrix_label}_at_alpha")))?;
-        let sum = z_m_at_alpha.evaluate_over_domain_by_ref(*variable_domain).evaluations.into_iter().sum::<F>();
+        // sum_{h∈H} p(h) = n*(c_0 + c_n) for deg(p) < 2n: sum_{h∈H} h^k = n iff n|k, else 0,
+        // and in [0, 2n-2] only k=0 and k=n are multiples of n. Avoids an O(n log n) FFT.
+        let n = variable_domain.size_as_field_element;
+        let c_0 = z_m_at_alpha.coeffs.first().copied().unwrap_or_default();
+        let c_n = z_m_at_alpha.coeffs.get(variable_domain.size()).copied().unwrap_or_default();
+        let sum = n * (c_0 + c_n);
 
         let (h_1_i, xg_1_i) =
             apply_randomized_selector(&mut z_m_at_alpha, combiner, max_variable_domain, variable_domain, true)?;

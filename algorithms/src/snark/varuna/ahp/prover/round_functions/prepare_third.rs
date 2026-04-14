@@ -132,11 +132,12 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                             matrix_transpose,
                             *alpha,
                         )?;
-                        let sum = z_m_at_alpha
-                            .evaluate_over_domain_by_ref(circuit_specific_state.variable_domain)
-                            .evaluations
-                            .into_iter()
-                            .sum::<F>();
+                        // sum_{h∈H} p(h) = n*(c_0 + c_n) for deg(p) < 2n: sum_{h∈H} h^k = n iff n|k, else 0,
+                        // and in [0, 2n-2] only k=0 and k=n are multiples of n. Avoids an O(n log n) FFT.
+                        let n = circuit_specific_state.variable_domain.size_as_field_element;
+                        let c_0 = z_m_at_alpha.coeffs.first().copied().unwrap_or_default();
+                        let c_n = z_m_at_alpha.coeffs.get(circuit_specific_state.variable_domain.size()).copied().unwrap_or_default();
+                        let sum = n * (c_0 + c_n);
                         Ok((circuit, LinevalPrepInstance { z_m_at_alpha, sum }))
                     });
                 }
