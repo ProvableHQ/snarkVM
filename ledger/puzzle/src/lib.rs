@@ -131,16 +131,24 @@ impl<N: Network> Puzzle<N> {
     /// Returns the proof target given the solution.
     pub fn get_proof_target(&self, solution: &Solution<N>) -> Result<u64> {
         let address = solution.address();
+        let solution_id = solution.id();
+        let expected_target = solution.target();
 
         // Calculate the proof target.
         let proof_target = self
             .get_proof_target_unchecked(solution)
             .with_context(|| format!("Failed to get proof target for solution {address}"))?;
+
+        // Construct the leaves of the Merkle tree.
+        let leaves = self.get_leaves(solution.partial_solution())?;
+        // Get the proof target.
+        let proof_target_without_cache = Self::leaves_to_proof_target(&leaves)?;
+
         // Ensure the proof target matches the expected proof target.
         ensure_equals!(
-            solution.target(),
+            expected_target,
             proof_target,
-            "The proof target for solution {address} match the expected proof target"
+            "The proof target for solution {solution_id} match the expected proof target. Expected: {expected_target}, Actual: {proof_target}, without cache: {proof_target_without_cache}"
         );
         // Return the proof target.
         Ok(proof_target)
@@ -350,7 +358,7 @@ impl<N: Network> Puzzle<N> {
     }
 
     /// A helper function that takes leaves of a Merkle tree and returns the proof target.
-    fn leaves_to_proof_target(leaves: &[Vec<bool>]) -> Result<u64> {
+    pub fn leaves_to_proof_target(leaves: &[Vec<bool>]) -> Result<u64> {
         // Construct the Merkle tree.
         let merkle_tree = MerkleTree::new(&Sha3_256::default(), &Sha3_256::default(), leaves)?;
         // Retrieve the Merkle tree root.
