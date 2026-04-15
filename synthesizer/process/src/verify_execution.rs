@@ -294,8 +294,12 @@ impl<N: Network> Process<N> {
         }
 
         // Verify the execution proof.
+        // Start timer.
+        let start_time = std::time::Instant::now();
         Trace::verify_execution_proof(&locator, varuna_version, inclusion_version, verifier_inputs, execution)?;
-
+        let end_time = std::time::Instant::now();
+        let duration = end_time.duration_since(start_time);
+        println!("Execution proof verification time: {:?}", duration.as_millis());
         lap!(timer, "Verify the proof");
 
         finish!(timer);

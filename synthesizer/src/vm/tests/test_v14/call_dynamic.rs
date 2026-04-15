@@ -213,7 +213,7 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
 // Tests a program with a one-to-many records function.
 #[test]
 fn test_one_to_many_records_function() -> Result<()> {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(1234567890);
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
@@ -343,7 +343,12 @@ fn test_one_to_many_records_function() -> Result<()> {
         None,
         rng,
     )?;
+    // Start timer.
+    let start_time = std::time::Instant::now();
     vm.check_transaction(&transaction, None, rng)?;
+    let end_time = std::time::Instant::now();
+    let duration = end_time.duration_since(start_time);
+    println!("Mint transaction check time: {:?}", duration.as_millis());
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
@@ -391,7 +396,19 @@ fn test_one_to_many_records_function() -> Result<()> {
         None,
         rng,
     )?;
+    // Save transaction to a file.
+    let file_path = "transaction.json";
+    let file = std::fs::File::create(file_path)?;
+    let mut writer = std::io::BufWriter::new(file);
+    serde_json::to_writer_pretty(&mut writer, &transaction)?;
+    writer.flush()?;
+    println!("Transaction saved to {}", file_path);
+    // Start timer.
+    let start_time = std::time::Instant::now();
     vm.check_transaction(&transaction, None, rng)?;
+    let end_time = std::time::Instant::now();
+    let duration = end_time.duration_since(start_time);
+    println!("Transaction check time: {:?}", duration.as_millis());
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
