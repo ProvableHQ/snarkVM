@@ -409,7 +409,7 @@ pub fn proof_size<E: PairingEngine>(
 
     match varuna_version {
         VarunaVersion::V1 => Err(anyhow!("Proof-size calculation not implemented for Varuna version V1")),
-        VarunaVersion::V2 => {
+        VarunaVersion::V2 | VarunaVersion::V3 => {
             // All fields are serialised in Compressed mode The breakdown is as
             // follows:
             // - batch sizes: one `usize` (which is serialised as a `u64`) for each batch
