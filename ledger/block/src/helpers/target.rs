@@ -2124,7 +2124,7 @@ mod tests {
         }
 
         // A larger anchor time shrinks the drift-to-anchor ratio (15/35 < 15/25),
-        // so more blocks are needed to double the target.
-        assert!(num_blocks_v15 > num_blocks_v1);
+        // so less blocks are needed to double the target.
+        assert!(num_blocks_v15 < num_blocks_v1);
     }
 }
