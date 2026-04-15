@@ -6,6 +6,7 @@
 **/*.prover.*
 **/*.verifier.*
 *.usrs
+flamegraph.svg
 !**/powers-of-beta-15.usrs*
 !**/shifted-powers-of-beta-15.usrs*
 !**/powers-of-beta-16.usrs*
