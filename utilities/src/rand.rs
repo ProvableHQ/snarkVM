@@ -174,3 +174,25 @@ impl Drop for TestRng {
         println!("Called TestRng with seed {} {} times", self.seed, self.calls);
     }
 }
+
+/// This impl is Lemire's method with approximate zone. It reproduces rand 0.8's
+/// `rng.gen_range(low..=high)` for `usize` on 64-bit. It mustn't be modified.
+pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -> usize {
+    debug_assert!(low <= high);
+
+    let range = high.wrapping_sub(low).wrapping_add(1);
+
+    // Approximate zone: conservative but avoids division.
+    let zone = (range << range.leading_zeros()).wrapping_sub(1);
+
+    loop {
+        let v = rng.next_u64() as usize;
+        // Widening multiply: v * range as u128, split into (hi, lo).
+        let wide = (v as u128) * (range as u128);
+        let hi = (wide >> 64) as usize;
+        let lo = wide as usize;
+        if lo <= zone {
+            return low.wrapping_add(hi);
+        }
+    }
+}
