@@ -233,18 +233,16 @@ fn snark_batch_verify_scaling(c: &mut Criterion) {
 
     let rng = &mut TestRng::default();
 
-    use criterion::BenchmarkId;
-
     let batch_specs = vec![
-        // (num of criterion samples, [many x (batch_size, num_constraints, num_variables, num_public_inputs)])
-        (20, vec![(1, 10_000, 5_000, 16)]),
-        (20, vec![(1, 50_000, 25_000, 64)]),
-        (20, vec![(30, 50_000, 25_000, 64)]),
-        (10, vec![(30, 50_000, 25_000, 64), (1, 5_000_000, 5_000_000, 1024)]),
+        // [many x (batch_size, num_constraints, num_variables, num_public_inputs)])
+        vec![(1, 10_000, 5_000, 16)],
+        vec![(1, 50_000, 25_000, 64)],
+        vec![(30, 50_000, 25_000, 64)],
+        vec![(30, 50_000, 25_000, 64), (1, 5_000_000, 5_000_000, 1024)],
     ];
 
-    let max_vars = *batch_specs.iter().map(|(_, batches)| batches.iter().map(|(_, _, num_variables, _)| num_variables).max().unwrap()).max().unwrap();
-    let max_constraints = *batch_specs.iter().map(|(_, batches)| batches.iter().map(|(_, num_constraints, _, _)| num_constraints).max().unwrap()).max().unwrap();
+    let max_vars = *batch_specs.iter().map(|batches| batches.iter().map(|(_, _, num_variables, _)| num_variables).max().unwrap()).max().unwrap();
+    let max_constraints = *batch_specs.iter().map(|batches| batches.iter().map(|(_, num_constraints, _, _)| num_constraints).max().unwrap()).max().unwrap();
     let max_density = 2 * max_constraints;
 
     let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(max_constraints, max_vars, max_density).unwrap();
@@ -255,7 +253,7 @@ fn snark_batch_verify_scaling(c: &mut Criterion) {
 
     let varuna_version = VarunaVersion::V3;
 
-    for (n_samples, batch_spec) in batch_specs {
+    for batch_spec in batch_specs {
 
         let batch_str = batch_spec.iter().map(|(batch_size, num_constraints, _, num_public_inputs)| {
             format!("({batch_size} x [{num_public_inputs}, {num_constraints}])")
@@ -274,24 +272,11 @@ fn snark_batch_verify_scaling(c: &mut Criterion) {
         let pks_to_circuits = circuits_and_inputs.iter().map(|((pk, _), circuits, _)| (pk, circuits.as_slice())).collect::<BTreeMap<_, _>>();
         let vks_to_inputs = circuits_and_inputs.iter().map(|((_, vk), _, inputs)| (vk, inputs.as_slice())).collect::<BTreeMap<_, _>>();
 
-        // TODO (Antonio)
-        // for ((_, vk), _, _) in circuits_and_inputs.iter() {
-        //     let circuit_info = vk.circuit_info;
-        //     println!("circuit_info:");
-        //     println!(" - num_public_inputs: {}", circuit_info.num_public_inputs);
-        //     println!(" - num_public_and_private_variables: {}", circuit_info.num_public_and_private_variables);
-        //     println!(" - num_constraints: {}", circuit_info.num_constraints);
-        //     println!(" - num_non_zero_a: {}", circuit_info.num_non_zero_a);
-        //     println!(" - num_non_zero_b: {}", circuit_info.num_non_zero_b);
-        //     println!(" - num_non_zero_c: {}", circuit_info.num_non_zero_c);
-        //     println!("");
-        // }
-
         let proof =
             VarunaInst::prove_batch(universal_prover, &fs_parameters, varuna_version, &pks_to_circuits, rng)
                 .unwrap();
 
-        c.bench_function(&format!("snark_batch_verify/{}", batch_str), |b| {
+        c.bench_function(&format!("snark_batch_verify_scaling/{}", batch_str), |b| {
             b.iter(|| {
                 let verification = VarunaInst::verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof).unwrap();
                 assert!(verification);
@@ -415,119 +400,7 @@ fn snark_certificate_verify(c: &mut Criterion) {
 criterion_group! {
     name = varuna_snark;
     config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
+    targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_verify, snark_batch_prove, snark_batch_verify, snark_batch_verify_scaling, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
 }
 
-// TODO (Antonio) clean up
-criterion_group! {
-    name = varuna_snark_scaling;
-    config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = snark_batch_verify_scaling,
-}
-
-// TODO (Antonio) re-introduce
-// criterion_main!(varuna_snark);
-// criterion_main!(varuna_snark_scaling);
-
-// TODO remove
-use snarkvm_algorithms::snark::varuna::Proof;
-use snarkvm_algorithms::srs::UniversalVerifier;
-
-fn main() {
-
-    let REGENERATE = false;
-    let TMP_DIR = "/Users/antonio/Desktop/tmp";
-
-    use snarkvm_utilities::{FromBytes, ToBytes};
-
-    let rng = &mut TestRng::default();
-
-    use criterion::BenchmarkId;
-
-    let batch_specs = vec![
-        // (10, vec![(30, 50_000, 25_000, 64), (1, 5_000_000, 5_000_000, 1024)]),
-        (1000, vec![(100, 50_000, 25_000, 64)]),
-    ];
-
-    let max_vars = *batch_specs.iter().map(|(_, batches)| batches.iter().map(|(_, _, num_variables, _)| num_variables).max().unwrap()).max().unwrap();
-    let max_constraints = *batch_specs.iter().map(|(_, batches)| batches.iter().map(|(_, num_constraints, _, _)| num_constraints).max().unwrap()).max().unwrap();
-    let max_density = 2 * max_constraints;
-
-    let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(max_constraints, max_vars, max_density).unwrap();
-    let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
-    let universal_prover = &universal_srs.to_universal_prover().unwrap();
-    let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
-    let fs_parameters = FS::sample_parameters();
-
-    let varuna_version = VarunaVersion::V3;
-
-    for (n_samples, batch_spec) in batch_specs {
-
-        let vk_path = format!("{TMP_DIR}/vk.bin");
-        let inputs_path = format!("{TMP_DIR}/inputs.bin");
-        let proof_path = format!("{TMP_DIR}/proof.bin");
-
-        if REGENERATE {
-
-            let batch_str = batch_spec.iter().map(|(batch_size, num_constraints, _, num_public_inputs)| {
-                format!("({batch_size} x [{num_public_inputs}, {num_constraints}])")
-            }).collect::<Vec<_>>().join(" + ");
-
-            let circuits_and_inputs = batch_spec.iter().map(|&batch| {
-                let (batch_size, num_constraints, num_variables, num_public_inputs) = batch;
-                let (circuit, public_inputs) = TestCircuit::gen_rand(num_public_inputs, num_constraints, num_variables, rng);
-                (
-                    VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap(),
-                    vec![circuit; batch_size],
-                    vec![public_inputs; batch_size]
-                )
-            }).collect::<Vec<_>>();
-
-            let pks_to_circuits = circuits_and_inputs.iter().map(|((pk, _), circuits, _)| (pk, circuits.as_slice())).collect::<BTreeMap<_, _>>();
-            let vks_to_inputs = circuits_and_inputs.iter().map(|((_, vk), _, inputs)| (vk, inputs.as_slice())).collect::<BTreeMap<_, _>>();
-
-            let proof =
-                VarunaInst::prove_batch(universal_prover, &fs_parameters, varuna_version, &pks_to_circuits, rng)
-                    .unwrap();
-
-            let vk = *vks_to_inputs.keys().next().unwrap();
-            let inputs = *vks_to_inputs.values().next().unwrap();
-
-            std::fs::write(&vk_path, vk.to_bytes_le().unwrap()).unwrap();
-            
-            let mut buf = Vec::new();
-            CanonicalSerialize::serialize_uncompressed(&inputs, &mut buf).unwrap();
-            std::fs::write(&inputs_path, buf).unwrap();
-            
-            std::fs::write(&proof_path, proof.to_bytes_le().unwrap()).unwrap();
-        }
-        
-        let vk = CircuitVerifyingKey::<Bls12_377>::read_le(&*std::fs::read(&vk_path).unwrap()).unwrap();
-        let inputs: Vec<Vec<Fr>> = CanonicalDeserialize::deserialize_uncompressed(&*std::fs::read(&inputs_path).unwrap()).unwrap();
-        let proof = Proof::<Bls12_377>::read_le(&*std::fs::read(&proof_path).unwrap()).unwrap();
-
-        let vks_to_inputs = BTreeMap::from([(&vk, inputs.as_slice())]);
-        
-        println!("Verifying...");
-        if REGENERATE {
-            custom_verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof);
-        } else {
-            for i in 0..n_samples {
-                custom_verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof);
-            }
-        }
-        println!("Verification successful");
-    }
-}
-
-#[inline(never)]
-fn custom_verify_batch(
-    universal_verifier: &UniversalVerifier<Bls12_377>,
-    fs_parameters: &<FS as AlgebraicSponge<Fq, 2>>::Parameters,
-    varuna_version: VarunaVersion,
-    vks_to_inputs: &BTreeMap<&CircuitVerifyingKey<Bls12_377>, &[Vec<Fr>]>,
-    proof: &Proof<Bls12_377>,
-) {
-    let verification = VarunaInst::verify_batch(universal_verifier, fs_parameters, varuna_version, vks_to_inputs, proof).unwrap();
-    assert!(verification);
-}
+criterion_main!(varuna_snark);

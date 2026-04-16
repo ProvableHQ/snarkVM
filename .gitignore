@@ -5,6 +5,7 @@
 **storage_db
 **/*.prover.*
 **/*.verifier.*
+**/varuna_verifier_artifacts/
 *.usrs
 flamegraph.svg
 !**/powers-of-beta-15.usrs*
