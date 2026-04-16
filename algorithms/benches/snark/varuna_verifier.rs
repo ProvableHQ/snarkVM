@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+<<<<<<< HEAD
 // Performs time measurements on the verification of test circuits with selected
 // batch sizes and parameters.
 // - Generate artifacts with: cargo bench --bench varuna_verifier --features
@@ -24,10 +25,13 @@
 //   parallelism.
 // - Flamegraph with: cargo flamegraph --bench varuna_verifier --features serial
 
+=======
+>>>>>>> 7ea17aefb (added missing file)
 use snarkvm_algorithms::{
     AlgebraicSponge,
     SNARK,
     crypto_hash::PoseidonSponge,
+<<<<<<< HEAD
     snark::varuna::{
         CircuitVerifyingKey,
         Proof,
@@ -40,17 +44,35 @@ use snarkvm_algorithms::{
 };
 use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
 use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, FromBytes, TestRng, ToBytes};
+=======
+    snark::varuna::{CircuitVerifyingKey, Proof, TestCircuit, VarunaHidingMode, VarunaSNARK, VarunaVersion, ahp::AHPForR1CS},
+};
+use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
+use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, TestRng, FromBytes, ToBytes};
+>>>>>>> 7ea17aefb (added missing file)
 
 use std::{collections::BTreeMap, env, path::Path, time::Instant};
 
 type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
 type FS = PoseidonSponge<Fq, 2, 1>;
 
+<<<<<<< HEAD
 fn main() {
+=======
+// This function allows profiling of the Varuna verifier (e.g. with a tool such
+// as flamegraph) by loading from disk a the proof, the verifying key and the
+// public inputs. To generate those files, run the benchmark with
+// "... -- --generate". They will be stored in the "varuna_verifier_artifacts"
+// directory. To profile the verifier loading those object from disk, run the
+// benchmark without the "--profile" flag.
+fn main() {
+    
+>>>>>>> 7ea17aefb (added missing file)
     /////////////////////////// User defined
     // The number of samples indicates how many times batch_verify is called. A
     // larger number helps flamegraph get more precise measurements.
     let n_samples = 10;
+<<<<<<< HEAD
     // Each batch is specified as: (batch_size, num_constraints, num_variables,
     // num_public_inputs)
     let batches = [(30, 50_000, 25_000, 64), (1, 5_000_000, 5_000_000, 1024)];
@@ -79,6 +101,25 @@ fn main() {
         std::fs::create_dir(&artifact_path).unwrap();
     }
 
+=======
+    // Each batch is specified as: (batch_size, num_constraints, num_variables, num_public_inputs)
+
+
+    // let batches = vec![(1, 10_000, 5_000, 16)];
+    // let batches = vec![(1, 50_000, 25_000, 64)];
+    let batches = vec![(30, 50_000, 25_000, 64)];
+
+    // let batches = vec![
+    //     (30, 50_000, 25_000, 64),
+    //     (1, 5_000_000, 5_000_000, 1024)
+    // ];
+
+    ///////////////////////////
+
+    let generate = env::args().into_iter().any(|arg| arg == "--generate");
+    let artifact_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("benches/snark/varuna_verifier_artifacts");
+
+>>>>>>> 7ea17aefb (added missing file)
     let rng = &mut TestRng::default();
 
     let max_vars = *batches.iter().map(|(_, _, num_variables, _)| num_variables).max().unwrap();
@@ -93,6 +134,7 @@ fn main() {
 
     let varuna_version = VarunaVersion::V2;
 
+<<<<<<< HEAD
     let batch_str = batches
         .iter()
         .map(|(batch_size, num_constraints, _, num_public_inputs)| {
@@ -100,6 +142,13 @@ fn main() {
         })
         .collect::<Vec<_>>()
         .join(" + ");
+=======
+    let batch_str = batches.iter().map(|(batch_size, num_constraints, _, num_public_inputs)| {
+        format!("({batch_size} x [{num_public_inputs}, {num_constraints}])")
+    }).collect::<Vec<_>>().join(" + ");
+
+    println!("Batches: {}", batch_str);
+>>>>>>> 7ea17aefb (added missing file)
 
     let sanitized_batch_str = batch_str.replace(" ", "_");
 
@@ -108,6 +157,7 @@ fn main() {
     let proof_path = artifact_path.join(format!("proof_{sanitized_batch_str}.bin"));
 
     if generate {
+<<<<<<< HEAD
         println!("Generating artifacts for {batch_str}...");
         let circuits_and_inputs = batches
             .iter()
@@ -132,6 +182,24 @@ fn main() {
 
         let proof =
             VarunaInst::prove_batch(universal_prover, &fs_parameters, varuna_version, &pks_to_circuits, rng).unwrap();
+=======
+        let circuits_and_inputs = batches.iter().map(|&batch| {
+            let (batch_size, num_constraints, num_variables, num_public_inputs) = batch;
+            let (circuit, public_inputs) = TestCircuit::gen_rand(num_public_inputs, num_constraints, num_variables, rng);
+            (
+                VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap(),
+                vec![circuit; batch_size],
+                vec![public_inputs; batch_size]
+            )
+        }).collect::<Vec<_>>();
+
+        let pks_to_circuits = circuits_and_inputs.iter().map(|((pk, _), circuits, _)| (pk, circuits.as_slice())).collect::<BTreeMap<_, _>>();
+        let vks_to_inputs = circuits_and_inputs.iter().map(|((_, vk), _, inputs)| (vk, inputs.as_slice())).collect::<BTreeMap<_, _>>();
+
+        let proof =
+            VarunaInst::prove_batch(universal_prover, &fs_parameters, varuna_version, &pks_to_circuits, rng)
+                .unwrap();
+>>>>>>> 7ea17aefb (added missing file)
 
         let vks = vks_to_inputs.keys().map(|vk| (*vk).clone()).collect::<Vec<_>>();
         let inputs = vks_to_inputs.values().cloned().collect::<Vec<_>>();
@@ -144,6 +212,7 @@ fn main() {
         std::fs::write(&inputs_path, inputs_buf).expect("Failed to write inputs");
         std::fs::write(&proof_path, proof.to_bytes_le().unwrap()).expect("Failed to write proof");
     }
+<<<<<<< HEAD
 
     // Even if we just generated the files, we load them from disk in order
     // to ensure storage and verification are correct.
@@ -154,10 +223,18 @@ fn main() {
     let inputs: Vec<Vec<Vec<Fr>>> =
         CanonicalDeserialize::deserialize_uncompressed(&*std::fs::read(&inputs_path).expect("Failed to read inputs"))
             .unwrap();
+=======
+    
+    // Even if we just generated the files, we load them from disk in order
+    // to ensure storage and verification are correct.
+    let vks: Vec<CircuitVerifyingKey<Bls12_377>> = CanonicalDeserialize::deserialize_uncompressed(&*std::fs::read(&vk_path).expect("Failed to read verifying keys")).unwrap();
+    let inputs: Vec<Vec<Vec<Fr>>> = CanonicalDeserialize::deserialize_uncompressed(&*std::fs::read(&inputs_path).expect("Failed to read inputs")).unwrap();
+>>>>>>> 7ea17aefb (added missing file)
     let proof = Proof::<Bls12_377>::read_le(&*std::fs::read(&proof_path).expect("Failed to read proof")).unwrap();
     let vks_to_inputs: BTreeMap<_, _> = vks.iter().zip(inputs.iter()).map(|(vk, inp)| (vk, inp.as_slice())).collect();
 
     if generate {
+<<<<<<< HEAD
         println!("Verifying generated proof for {batch_str}...");
         assert!(
             VarunaInst::verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof)
@@ -172,6 +249,16 @@ fn main() {
                 VarunaInst::verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof)
                     .unwrap()
             );
+=======
+        println!("Verifying generated {}...", batch_str);
+        assert!(VarunaInst::verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof).unwrap());
+        println!("Verification successful");
+    } else {
+        println!("Verifying {} {} times...", batch_str, n_samples);
+        let timer = Instant::now();
+        for _ in 0..n_samples {
+            assert!(VarunaInst::verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof).unwrap());
+>>>>>>> 7ea17aefb (added missing file)
         }
         let elapsed = timer.elapsed().as_micros() as f64 / 1000.0;
         let elapsed_avg = elapsed / n_samples as f64;
