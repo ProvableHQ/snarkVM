@@ -167,8 +167,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             (&arithmetization.row, &arithmetization.col, &arithmetization.row_col_val);
         let R_size_C_size = constraint_domain.size_as_field_element * variable_domain.size_as_field_element;
 
-        // Precompute (alpha - row[i]) * (beta - col[i]) once and reuse for both b_poly evals
-        // and f inverses, saving K redundant field multiplications per matrix.
+        // Precompute (alpha - row[i]) * (beta - col[i]) once and reuse for both b_poly
+        // evals and f inverses, saving K redundant field multiplications per
+        // matrix.
         let cross_products: Vec<F> = row_on_K
             .evaluations
             .iter()
@@ -201,7 +202,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let [a_poly, b_poly]: [_; 2] = job_pool.execute_all().try_into().unwrap();
 
         let f_evals_time = start_timer!(|| format!("Computing f evals on K for {label}"));
-        // Move cross_products directly into inverses - no second pass over row/col needed.
+        // Move cross_products directly into inverses - no second pass over row/col
+        // needed.
         let mut inverses = cross_products;
 
         let matrix_sumcheck_constants = v_R_i_alpha_v_C_i_beta * constraint_domain.size_inv * variable_domain.size_inv;
