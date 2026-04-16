@@ -161,9 +161,9 @@ pub trait Field:
 
         // TODO (Antonio)
         let mut bits = BitIteratorBE::new_without_leading_zeros(exp);
-        
+
         if bits.next().is_none() {
-            return Self::one()
+            Self::one()
         } else {
             let mut res = *self;
 

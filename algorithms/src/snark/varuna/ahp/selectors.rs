@@ -116,7 +116,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // That's what we're computing here.
         let selector_time = start_timer!(|| "Compute selector with remainder witness");
 
-        let multiplier = if src_domain.size == target_domain.size { 
+        let multiplier = if src_domain.size == target_domain.size {
             combiner
         } else {
             combiner * src_domain.size_as_field_element * target_domain.size_inv
@@ -132,7 +132,7 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // skip this step.
         let updated_xg_i = if src_domain.size == target_domain.size {
             xg_i
-        }else {
+        } else {
             xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
 
             let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;

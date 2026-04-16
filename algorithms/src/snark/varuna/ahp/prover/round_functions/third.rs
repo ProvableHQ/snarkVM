@@ -229,13 +229,15 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                                 Some(z_m_at_alpha),
                             )
                         }
-                        VarunaVersion::V2 | VarunaVersion::V3 => Self::calculate_lineval_sumcheck_instance_witness_polys(
-                            label,
-                            variable_domain,
-                            max_variable_domain,
-                            combiner,
-                            z_m_at_alpha,
-                        ),
+                        VarunaVersion::V2 | VarunaVersion::V3 => {
+                            Self::calculate_lineval_sumcheck_instance_witness_polys(
+                                label,
+                                variable_domain,
+                                max_variable_domain,
+                                combiner,
+                                z_m_at_alpha,
+                            )
+                        }
                     });
                 }
             }

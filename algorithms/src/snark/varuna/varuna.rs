@@ -140,8 +140,9 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
         varuna_version: VarunaVersion,
     ) -> FS {
         match varuna_version {
+            // Before version V3, we absorb the public parameters and public
+            // inputs into the sponge directly
             VarunaVersion::V1 | VarunaVersion::V2 => {
-
                 let mut sponge = FS::new_with_parameters(fs_parameters);
 
                 sponge.absorb_bytes(Self::PROTOCOL_NAME);
@@ -155,9 +156,11 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
                     sponge.absorb_native_field_elements(circuit_specific_commitments);
                 }
                 sponge
-            },
+            }
+            // Starting with version V3, we digest the values into a single
+            // field element using SHA-256 and then absorb that element into the
+            // sponge
             VarunaVersion::V3 => {
-
                 let mut sponge = FS::new_with_parameters(fs_parameters);
 
                 let mut preimage = Vec::new();
@@ -176,14 +179,10 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
                 }
                 for commitment in circuit_commitments {
                     preimage.extend_from_slice(&commitment.to_bytes_le().unwrap());
-
                 }
 
-                // TODO (Antonio)
                 use crate::crypto_hash::sha256::sha256;
                 let hash = sha256(&preimage);
-                // use blake2::{Blake2s256, Digest};
-                // let hash = Blake2s256::digest(&preimage);
 
                 sponge.absorb_bytes(&hash);
 
@@ -469,7 +468,8 @@ where
         let circuit_commitments =
             keys_to_constraints.keys().map(|pk| pk.circuit_verifying_key.circuit_commitments.as_slice());
         dev_println!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
-        let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone(), varuna_version);
+        let mut sponge =
+            Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone(), varuna_version);
 
         // --------------------------------------------------------------------
         // First round
@@ -984,7 +984,8 @@ where
 
         let circuit_commitments = keys_to_inputs.keys().map(|vk| vk.circuit_commitments.as_slice());
         dev_println!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
-        let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone(), varuna_version);
+        let mut sponge =
+            Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone(), varuna_version);
 
         // --------------------------------------------------------------------
         // First round
