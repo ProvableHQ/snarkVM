@@ -70,6 +70,11 @@ name = "kary_merkle_tree"
 path = "benches/kary_merkle_tree.rs"
 harness = false
 
+[[bench]]
+name = "verifier"
+path = "benches/verifier/verifier.rs"
+harness = false
+
 [dependencies.snarkvm-algorithms]
 workspace = true
 
