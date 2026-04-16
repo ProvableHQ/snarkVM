@@ -132,7 +132,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                             matrix_transpose,
                             *alpha,
                         )?;
-                        // sum_{h∈H} p(h) = n*(c_0 + c_n) for deg(p) < 2n: sum_{h∈H} h^k = n iff n|k, else 0,
+                        // sum_{h in H} f(h) = n*(c_0 + c_n) for deg(p) < 2n, where c_0 and c_n are the coeffs of f at degree 0 and n, resp.
                         // and in [0, 2n-2] only k=0 and k=n are multiples of n. Avoids an O(n log n) FFT.
                         let n = circuit_specific_state.variable_domain.size_as_field_element;
                         let c_0 = z_m_at_alpha.coeffs.first().copied().unwrap_or_default();

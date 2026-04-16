@@ -116,31 +116,36 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // That's what we're computing here.
         let selector_time = start_timer!(|| "Compute selector with remainder witness");
 
-        // Fast path: when src and target domains are equal, the selector polynomial is 1.
-        // The multiplier simplifies to `combiner` (size/size = 1), and the subsequent
-        // mul_by_vanishing_poly(target) + divide_by_vanishing_poly(src) round-trip
-        // cancels exactly since v_target == v_src. This fires on every single-circuit proof.
-        if src_domain.size == target_domain.size {
-            poly.coeffs.iter_mut().for_each(|c| *c *= combiner);
-            let (h_i, xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;
-            end_timer!(selector_time);
-            return Ok((h_i, Some(xg_i)));
-        }
+        let multiplier = if src_domain.size == target_domain.size {
+            combiner
+        } else {
+            combiner * src_domain.size_as_field_element * target_domain.size_inv
+        };
 
-        let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
         poly.coeffs.iter_mut().for_each(|c| *c *= multiplier);
 
-        let (h_i, mut xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;
-        xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
+        let (h_i, xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;
 
-        let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
-        ensure!(
-            remainder.is_zero(),
-            "[Returning remainder witness] Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
-        );
+        // Computing xg_i * s_i with s_i = (v_H / v_H_i) * (H_i.size() /
+        // H.size()) without the last constant, which was already incorporated
+        // into the multiplier. If the two domains are equal, s_i = 1 and we
+        // skip this step.
+        let updated_xg_i = if src_domain.size == target_domain.size {
+            xg_i
+        } else {
+            let xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
+
+            let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
+            ensure!(
+                remainder.is_zero(),
+                "[Returning remainder witness] Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
+            );
+
+            xg_i
+        };
 
         end_timer!(selector_time);
-        Ok((h_i, Some(xg_i)))
+        Ok((h_i, Some(updated_xg_i)))
     }
 }
 
