@@ -196,3 +196,37 @@ pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -
         }
     }
 }
+
+/// This impl reproduces rand 0.8's `slice.choose_weighted(rng, weight_fn)` for u16 weights.
+/// It mustn't be modified.
+pub fn choose_weighted_legacy<'a, T, R: Rng>(slice: &'a [T], weight_fn: impl Fn(&T) -> u16, rng: &mut R) -> &'a T {
+    // WeightedIndex::new.
+    let mut cumulative: Vec<u16> = Vec::with_capacity(slice.len());
+    let mut total: u16 = 0;
+    for item in slice {
+        total = total.checked_add(weight_fn(item)).unwrap();
+        cumulative.push(total);
+    }
+    assert!(total > 0);
+
+    // Uniform::new(0u16, total) -> new_inclusive(0, total - 1)
+    // range as u16, then promoted to u32 for zone math.
+    let range = total as u32;
+    let ints_to_reject = (u32::MAX - range + 1) % range;
+    let zone = u32::MAX - ints_to_reject;
+
+    // Uniform::sample (exact Lemire, u32 sample space).
+    let chosen: u16 = loop {
+        let v = rng.next_u32();
+        let wide = (v as u64) * (range as u64);
+        let hi = (wide >> 32) as u32;
+        let lo = wide as u32;
+        if lo <= zone {
+            break hi as u16;
+        }
+    };
+
+    // Binary search (partition_point).
+    let idx = cumulative.partition_point(|w| *w <= chosen);
+    &slice[idx]
+}
