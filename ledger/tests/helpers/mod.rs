@@ -297,4 +297,16 @@ impl TestChainBuilder {
     pub fn genesis_block(&self) -> &Block<CurrentNetwork> {
         &self.genesis_block
     }
+
+    /// Returns the index into `private_keys` of the elected leader for the given round,
+    /// or `None` if the round has no committee or the leader is not among the known keys.
+    pub fn get_leader_index(&self, round: u64) -> Option<usize> {
+        let committee = self.ledger.get_committee_lookback_for_round(round).ok()??;
+        let leader = committee.get_leader(round).ok()?;
+        self.private_keys
+            .iter()
+            .enumerate()
+            .find(|(_, key)| Address::try_from(*key).unwrap() == leader)
+            .map(|(idx, _)| idx)
+    }
 }
