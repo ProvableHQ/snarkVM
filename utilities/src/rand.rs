@@ -176,7 +176,10 @@ impl Drop for TestRng {
 }
 
 /// This impl is Lemire's method with approximate zone. It reproduces rand 0.8's
-/// `rng.gen_range(low..=high)` for `usize` on 64-bit. It mustn't be modified.
+/// `rng.gen_range(low..=high)` for `usize` on 64-bit. It mustn't be modified
+/// to maintain backwards compatibility. It is a direct reimplementation of
+/// `sample_single_inclusive` for a concrete type (`usize`) an inlined widening multiply
+/// from https://github.com/rust-random/rand/blob/937320c/src/distributions/uniform.rs.
 pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -> usize {
     debug_assert!(low <= high);
 
@@ -198,7 +201,9 @@ pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -
 }
 
 /// This impl reproduces rand 0.8's `slice.choose_weighted(rng, weight_fn)` for u16 weights.
-/// It mustn't be modified.
+/// It mustn't be modified to maintain backwards compatibility. It is a direct, "collapsed"
+/// reimplementation of `WeightedIndex::new(weights).sample(rng)` specifically for `u16` weights
+/// from https://github.com/rust-random/rand/blob/937320c/src/distributions/weighted_index.rs.
 pub fn choose_weighted_legacy<'a, T, R: Rng>(slice: &'a [T], weight_fn: impl Fn(&T) -> u16, rng: &mut R) -> &'a T {
     // WeightedIndex::new.
     let mut cumulative: Vec<u16> = Vec::with_capacity(slice.len());
