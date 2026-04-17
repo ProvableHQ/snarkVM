@@ -167,7 +167,9 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
 
                 preimage.extend_from_slice(Self::PROTOCOL_NAME);
 
-                // TODO absorb number of proofs?
+                // TODO (Antonio)
+                // TODO (fast-pp-hash)
+                // absorb number of proofs?
 
                 for (batch_size, inputs) in inputs_and_batch_sizes.values() {
                     preimage.extend_from_slice(&(*batch_size as u64).to_le_bytes());

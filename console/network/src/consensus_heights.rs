@@ -16,6 +16,7 @@
 use crate::{FromBytes, ToBytes, io_error};
 
 use enum_iterator::{Sequence, last};
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use std::io;
 
 /// The different consensus versions.
@@ -289,6 +290,20 @@ macro_rules! consensus_config_value_by_version {
             }
         }
     };
+}
+
+/// Returns the Varuna version for the specified consensus version.
+pub fn varuna_version_from_consensus(consensus_version: ConsensusVersion) -> VarunaVersion {
+    if consensus_version < ConsensusVersion::V4 {
+        VarunaVersion::V1
+    // TODO (Antonio)
+    // TODO (fast-pp-hash)
+    // V15 is likely incorrect, prob need to introduce V16
+    } else if consensus_version < ConsensusVersion::V15 {
+        VarunaVersion::V2
+    } else {
+        VarunaVersion::V3
+    }
 }
 
 #[cfg(test)]

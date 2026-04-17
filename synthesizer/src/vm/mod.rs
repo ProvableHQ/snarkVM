@@ -44,7 +44,6 @@ use console::{
     },
     types::{Field, Group, U16, U64},
 };
-use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
