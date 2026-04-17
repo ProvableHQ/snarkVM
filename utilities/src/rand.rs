@@ -184,6 +184,10 @@ pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -
     debug_assert!(low <= high);
 
     let range = high.wrapping_sub(low).wrapping_add(1);
+    // The range is 0..=usize::MAX.
+    if range == 0 {
+        return rng.random::<u64>() as usize;
+    }
 
     // Approximate zone: conservative but avoids division.
     let zone = (range << range.leading_zeros()).wrapping_sub(1);
@@ -206,11 +210,13 @@ pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -
 /// from https://github.com/rust-random/rand/blob/937320c/src/distributions/weighted_index.rs.
 pub fn choose_weighted_legacy<'a, T, R: Rng>(slice: &'a [T], weight_fn: impl Fn(&T) -> u16, rng: &mut R) -> &'a T {
     // WeightedIndex::new.
-    let mut cumulative: Vec<u16> = Vec::with_capacity(slice.len());
-    let mut total: u16 = 0;
-    for item in slice {
-        total = total.checked_add(weight_fn(item)).unwrap();
+    let mut iter = slice.iter();
+    let first = iter.next().unwrap();
+    let mut total: u16 = weight_fn(first);
+    let mut cumulative: Vec<u16> = Vec::with_capacity(slice.len() - 1);
+    for item in iter {
         cumulative.push(total);
+        total += weight_fn(item);
     }
     assert!(total > 0);
 
