@@ -775,7 +775,7 @@ jobs:
 
   ledger-narwhal-data:
     executor: rust-docker
-    resource_class: << pipeline.parameters.small >>
+    resource_class: << pipeline.parameters.medium >>
     steps:
       - run_test:
           workspace_member: snarkvm-ledger-narwhal-data
