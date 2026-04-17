@@ -76,9 +76,13 @@ impl TestChainBuilder {
         let genesis_rng = &mut TestRng::from_seed(seed);
         let genesis_block = VM::from(store).unwrap().genesis_beacon(&private_key, genesis_rng).unwrap();
 
-        // Extract the private keys from the genesis committee by using the same RNG to sample private keys.
+        // Reconstruct the private keys of the genesis committee.  genesis_beacon uses `private_key`
+        // as the first member, then samples (committee_size - 1) more from the seeded RNG.
         let genesis_rng = &mut TestRng::from_seed(seed);
-        let private_keys = (0..committee_size).map(|_| PrivateKey::new(genesis_rng).unwrap()).collect();
+        let mut private_keys = vec![private_key];
+        for _ in 1..committee_size {
+            private_keys.push(PrivateKey::new(genesis_rng).unwrap());
+        }
 
         Self::from_genesis(private_keys, genesis_block)
     }
