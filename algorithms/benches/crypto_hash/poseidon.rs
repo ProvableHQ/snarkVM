@@ -26,26 +26,26 @@ use std::time::Duration;
 
 fn sponge_2_1_absorb_100_native(c: &mut Criterion) {
     let rng = &mut TestRng::default();
-    let mut sponge = PoseidonSponge::<Fq, 2, 1>::new();
+    let mut sponge = PoseidonSponge::<Fq, 2, 3>::new();
 
     let mut input = Vec::with_capacity(100);
     for _ in 0..100 {
         input.push(Fq::rand(rng));
     }
-    c.bench_function("PoseidonSponge<2, 1> Absorb 100 native", move |b| {
+    c.bench_function("PoseidonSponge<2, 3> Absorb 100 native", move |b| {
         b.iter(|| sponge.absorb_native_field_elements(&input))
     });
 }
 
 fn sponge_2_1_absorb_100_nonnative(c: &mut Criterion) {
     let rng = &mut TestRng::default();
-    let mut sponge = PoseidonSponge::<Fq, 2, 1>::new();
+    let mut sponge = PoseidonSponge::<Fq, 2, 3>::new();
 
     let mut input = Vec::with_capacity(100);
     for _ in 0..100 {
         input.push(Fp384::<FqParameters>::rand(rng));
     }
-    c.bench_function("PoseidonSponge<2, 1> Absorb 100 nonnative", move |b| {
+    c.bench_function("PoseidonSponge<2, 3> Absorb 100 nonnative", move |b| {
         b.iter(|| sponge.absorb_nonnative_field_elements(input.clone()))
     });
 }

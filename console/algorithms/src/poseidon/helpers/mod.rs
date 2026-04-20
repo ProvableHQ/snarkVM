@@ -26,7 +26,7 @@ use smallvec::SmallVec;
 /// The interface for a cryptographic sponge.
 /// A sponge can `absorb` or take in inputs and later `squeeze` or output bytes or field elements.
 /// The outputs are dependent on previous `absorb` and `squeeze` calls.
-pub trait AlgebraicSponge<E: Environment, const RATE: usize, const CAPACITY: usize>: Clone + Debug {
+pub trait AlgebraicSponge<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize>: Clone + Debug {
     /// Parameters used by the sponge.
     type Parameters;
 

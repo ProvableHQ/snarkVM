@@ -51,11 +51,12 @@ fn test_grain_lfsr_consistency() -> Result<()> {
 #[test]
 fn test_poseidon_sponge_consistency() {
     const RATE: usize = 2;
-    let sponge_param = Arc::new(Fr::default_poseidon_parameters::<RATE>().unwrap());
+    const CAPACITY_PLUS_RATE: usize = RATE + 1;
+    let sponge_param = Arc::new(Fr::default_poseidon_parameters::<RATE, CAPACITY_PLUS_RATE>().unwrap());
     for absorb in 0..10 {
         for squeeze in 0..10 {
             let iteration_name = format!("Absorb {absorb} and Squeeze {squeeze}");
-            let mut sponge = PoseidonSponge::<Fr, RATE, 1>::new_with_parameters(&sponge_param);
+            let mut sponge = PoseidonSponge::<Fr, RATE, CAPACITY_PLUS_RATE>::new_with_parameters(&sponge_param);
             sponge.absorb_native_field_elements(&vec![Fr::from(1237812u64); absorb]);
             let next_absorb_index = if absorb % RATE != 0 || absorb == 0 { absorb % RATE } else { RATE };
             assert_eq!(sponge.mode, DuplexSpongeMode::Absorbing { next_absorb_index }, "{iteration_name}");
@@ -72,18 +73,18 @@ fn test_poseidon_sponge_consistency() {
 
 #[test]
 fn bls12_377_fr_poseidon_default_parameters_test() {
-    fn single_rate_test<const RATE: usize>() {
-        let params = Fr::default_poseidon_parameters::<RATE>().unwrap();
+    fn single_rate_test<const RATE: usize, const CAPACITY_PLUS_RATE: usize>() {
+        let params = Fr::default_poseidon_parameters::<RATE, CAPACITY_PLUS_RATE>().unwrap();
         let name = format!("rate {RATE} and optimize_for_weights false");
         expect_file_with_name("Ark for ".to_string() + &name, params.ark);
         expect_file_with_name("MDS for ".to_string() + &name, params.mds);
     }
     // Optimize for constraints
-    single_rate_test::<2>();
-    single_rate_test::<3>();
-    single_rate_test::<4>();
-    single_rate_test::<5>();
-    single_rate_test::<6>();
-    single_rate_test::<7>();
-    single_rate_test::<8>();
+    single_rate_test::<2, 3>();
+    single_rate_test::<3, 4>();
+    single_rate_test::<4, 5>();
+    single_rate_test::<5, 6>();
+    single_rate_test::<6, 7>();
+    single_rate_test::<7, 8>();
+    single_rate_test::<8, 9>();
 }

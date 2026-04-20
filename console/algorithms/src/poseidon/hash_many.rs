@@ -15,7 +15,9 @@
 
 use super::*;
 
-impl<E: Environment, const RATE: usize> HashMany for Poseidon<E, RATE> {
+impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> HashMany
+    for Poseidon<E, RATE, CAPACITY_PLUS_RATE>
+{
     type Input = Field<E>;
     type Output = Field<E>;
 
@@ -30,7 +32,7 @@ impl<E: Environment, const RATE: usize> HashMany for Poseidon<E, RATE> {
         preimage.resize(RATE, Field::<E>::zero()); // Pad up to RATE.
         preimage.extend_from_slice(input);
 
-        let mut sponge = PoseidonSponge::<E, RATE, CAPACITY>::new(&self.parameters);
+        let mut sponge = PoseidonSponge::<E, RATE, CAPACITY_PLUS_RATE>::new(&self.parameters);
         sponge.absorb(&preimage);
         sponge.squeeze(num_outputs).into_vec()
     }

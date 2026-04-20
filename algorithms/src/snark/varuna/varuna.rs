@@ -57,11 +57,11 @@ use crate::srs::UniversalProver;
 
 /// The Varuna proof system.
 #[derive(Clone, Debug)]
-pub struct VarunaSNARK<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode>(
+pub struct VarunaSNARK<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2, 3>, SM: SNARKMode>(
     #[doc(hidden)] PhantomData<(E, FS, SM)>,
 );
 
-impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK<E, FS, SM> {
+impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2, 3>, SM: SNARKMode> VarunaSNARK<E, FS, SM> {
     /// The personalization string for this protocol.
     /// Used to personalize the Fiat-Shamir RNG.
     pub const PROTOCOL_NAME: &'static [u8] = b"VARUNA-2023";
@@ -243,7 +243,7 @@ impl<E: PairingEngine, FS, SM> SNARK for VarunaSNARK<E, FS, SM>
 where
     E::Fr: PrimeField,
     E::Fq: PrimeField,
-    FS: AlgebraicSponge<E::Fq, 2>,
+    FS: AlgebraicSponge<E::Fq, 2, 3>,
     SM: SNARKMode,
 {
     type BaseField = E::Fq;

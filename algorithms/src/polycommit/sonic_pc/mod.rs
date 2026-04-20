@@ -52,11 +52,11 @@ pub use polynomial::*;
 /// [al]: https://eprint.iacr.org/2019/601
 /// [marlin]: https://eprint.iacr.org/2019/1047
 #[derive(Clone, Debug)]
-pub struct SonicKZG10<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> {
+pub struct SonicKZG10<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2, 3>> {
     _engine: PhantomData<(E, S)>,
 }
 
-impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
+impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2, 3>> SonicKZG10<E, S> {
     pub fn load_srs(max_degree: usize) -> Result<UniversalParams<E>, PCError> {
         kzg10::KZG10::load_srs(max_degree)
     }
@@ -549,7 +549,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     }
 }
 
-impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
+impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2, 3>> SonicKZG10<E, S> {
     fn combine_polynomials<'a, B: Borrow<DensePolynomial<E::Fr>>>(
         coeffs_polys_rands: impl IntoIterator<Item = (E::Fr, B, &'a Randomness<E>)>,
     ) -> (DensePolynomial<E::Fr>, Randomness<E>) {
@@ -582,7 +582,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
     }
 }
 
-impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
+impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2, 3>> SonicKZG10<E, S> {
     #[allow(clippy::too_many_arguments)]
     fn accumulate_elems<'a>(
         combined_comms: &mut BTreeMap<Option<usize>, E::G1Projective>,
@@ -696,7 +696,7 @@ mod tests {
 
     use rand::distr::Distribution;
 
-    type Sponge = PoseidonSponge<Fq, 2, 1>;
+    type Sponge = PoseidonSponge<Fq, 2, 3>;
     type PC_Bls12_377 = SonicKZG10<Bls12_377, Sponge>;
 
     #[test]

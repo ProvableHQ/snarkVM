@@ -23,7 +23,7 @@ use core::fmt::Debug;
 /// A sponge can `absorb` or take in inputs and later `squeeze` or output bytes
 /// or field elements. The outputs are dependent on previous `absorb` and
 /// `squeeze` calls.
-pub trait AlgebraicSponge<F: PrimeField, const RATE: usize>: Clone + Debug {
+pub trait AlgebraicSponge<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize>: Clone + Debug {
     /// Parameters used by the sponge.
     type Parameters;
 

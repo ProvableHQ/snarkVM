@@ -416,8 +416,8 @@ fn test_merkle_tree_bhp() -> Result<()> {
 #[test]
 fn test_merkle_tree_poseidon() -> Result<()> {
     fn run_test<const DEPTH: u8>(rng: &mut TestRng) -> Result<()> {
-        type LH = Poseidon<CurrentEnvironment, 4>;
-        type PH = Poseidon<CurrentEnvironment, 2>;
+        type LH = Poseidon<CurrentEnvironment, 4, 5>;
+        type PH = Poseidon<CurrentEnvironment, 2, 3>;
 
         let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
         let path_hasher = PH::setup("AleoMerkleTreeTest1")?;
@@ -485,8 +485,8 @@ fn test_merkle_tree_depth_2_bhp() -> Result<()> {
 
 #[test]
 fn test_merkle_tree_depth_2_poseidon() -> Result<()> {
-    type LH = Poseidon<CurrentEnvironment, 4>;
-    type PH = Poseidon<CurrentEnvironment, 2>;
+    type LH = Poseidon<CurrentEnvironment, 4, 5>;
+    type PH = Poseidon<CurrentEnvironment, 2, 3>;
 
     let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
     let path_hasher = PH::setup("AleoMerkleTreeTest1")?;
@@ -522,8 +522,8 @@ fn test_merkle_tree_depth_3_bhp() -> Result<()> {
 
 #[test]
 fn test_merkle_tree_depth_3_poseidon() -> Result<()> {
-    type LH = Poseidon<CurrentEnvironment, 4>;
-    type PH = Poseidon<CurrentEnvironment, 2>;
+    type LH = Poseidon<CurrentEnvironment, 4, 5>;
+    type PH = Poseidon<CurrentEnvironment, 2, 3>;
 
     let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
     let path_hasher = PH::setup("AleoMerkleTreeTest1")?;
@@ -560,8 +560,8 @@ fn test_merkle_tree_depth_4_bhp() -> Result<()> {
 
 #[test]
 fn test_merkle_tree_depth_4_poseidon() -> Result<()> {
-    type LH = Poseidon<CurrentEnvironment, 4>;
-    type PH = Poseidon<CurrentEnvironment, 2>;
+    type LH = Poseidon<CurrentEnvironment, 4, 5>;
+    type PH = Poseidon<CurrentEnvironment, 2, 3>;
 
     let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
     let path_hasher = PH::setup("AleoMerkleTreeTest1")?;

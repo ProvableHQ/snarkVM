@@ -39,7 +39,7 @@ mod varuna {
         rand::{TestRng, Uniform},
     };
 
-    type FS = crate::crypto_hash::PoseidonSponge<Fq, 2, 1>;
+    type FS = crate::crypto_hash::PoseidonSponge<Fq, 2, 3>;
 
     type VarunaSonicInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
     type VarunaSonicPoSWInst = VarunaSNARK<Bls12_377, FS, VarunaNonHidingMode>;
@@ -370,7 +370,7 @@ mod varuna_hiding {
     use std::str::FromStr;
 
     type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
-    type FS = PoseidonSponge<Fq, 2, 1>;
+    type FS = PoseidonSponge<Fq, 2, 3>;
 
     fn test_circuit_n_times(
         num_constraints: usize,
@@ -780,7 +780,7 @@ mod varuna_test_vectors {
     use snarkvm_fields::One;
     use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf, str::FromStr, sync::Arc};
 
-    type FS = crate::crypto_hash::PoseidonSponge<Fq, 2, 1>;
+    type FS = crate::crypto_hash::PoseidonSponge<Fq, 2, 3>;
     type MM = VarunaNonHidingMode;
     type VarunaSonicInst = VarunaSNARK<Bls12_377, FS, MM>;
 

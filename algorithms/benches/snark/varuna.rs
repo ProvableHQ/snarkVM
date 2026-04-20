@@ -29,7 +29,7 @@ use criterion::Criterion;
 use std::{collections::BTreeMap, time::Duration};
 
 type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
-type FS = PoseidonSponge<Fq, 2, 1>;
+type FS = PoseidonSponge<Fq, 2, 3>;
 
 fn snark_universal_setup(c: &mut Criterion) {
     let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(1000000, 1000000, 1000000).unwrap();

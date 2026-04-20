@@ -25,54 +25,59 @@ use std::{
 };
 
 #[derive(Copy, Clone, Debug)]
-pub struct State<F: PrimeField, const RATE: usize, const CAPACITY: usize> {
-    capacity_state: [F; CAPACITY],
-    rate_state: [F; RATE],
+pub struct State<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize> {
+    // TODO (Antonio document)
+    state: [F; CAPACITY_PLUS_RATE],
 }
 
-impl<F: PrimeField, const RATE: usize, const CAPACITY: usize> Default for State<F, RATE, CAPACITY> {
+impl<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Default for State<F, RATE, CAPACITY_PLUS_RATE> {
     fn default() -> Self {
-        Self { capacity_state: [F::zero(); CAPACITY], rate_state: [F::zero(); RATE] }
+        Self { state: [F::zero(); CAPACITY_PLUS_RATE] }
     }
 }
 
 impl<F: PrimeField, const RATE: usize, const CAPACITY: usize> State<F, RATE, CAPACITY> {
     /// Returns an immutable iterator over the state.
     pub fn iter(&self) -> impl Iterator<Item = &F> + Clone {
-        self.capacity_state.iter().chain(self.rate_state.iter())
+        self.state.iter()
     }
 
     /// Returns a mutable iterator over the state.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut F> {
-        self.capacity_state.iter_mut().chain(self.rate_state.iter_mut())
+        self.state.iter_mut()
     }
 }
 
-impl<F: PrimeField, const RATE: usize, const CAPACITY: usize> Index<usize> for State<F, RATE, CAPACITY> {
+impl<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Index<usize>
+    for State<F, RATE, CAPACITY_PLUS_RATE>
+{
     type Output = F;
 
     fn index(&self, index: usize) -> &Self::Output {
-        assert!(index < RATE + CAPACITY, "Index out of bounds: index is {} but length is {}", index, RATE + CAPACITY);
-        if index < CAPACITY { &self.capacity_state[index] } else { &self.rate_state[index - CAPACITY] }
+        assert!(index < CAPACITY_PLUS_RATE, "Index out of bounds: index is {index} but length is {CAPACITY_PLUS_RATE}");
+        &self.state[index]
     }
 }
 
-impl<F: PrimeField, const RATE: usize, const CAPACITY: usize> IndexMut<usize> for State<F, RATE, CAPACITY> {
+impl<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize> IndexMut<usize>
+    for State<F, RATE, CAPACITY_PLUS_RATE>
+{
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        assert!(index < RATE + CAPACITY, "Index out of bounds: index is {} but length is {}", index, RATE + CAPACITY);
-        if index < CAPACITY { &mut self.capacity_state[index] } else { &mut self.rate_state[index - CAPACITY] }
+        assert!(index < CAPACITY_PLUS_RATE, "Index out of bounds: index is {index} but length is {CAPACITY_PLUS_RATE}");
+        &mut self.state[index]
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Poseidon<F: PrimeField, const RATE: usize> {
-    parameters: Arc<PoseidonParameters<F, RATE, 1>>,
+pub struct Poseidon<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize> {
+    parameters: Arc<PoseidonParameters<F, RATE, CAPACITY_PLUS_RATE>>,
 }
 
-impl<F: PrimeField, const RATE: usize> Poseidon<F, RATE> {
+impl<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Poseidon<F, RATE, CAPACITY_PLUS_RATE> {
     /// Initializes a new instance of the cryptographic hash function.
     pub fn setup() -> Self {
-        Self { parameters: Arc::new(F::default_poseidon_parameters::<RATE>().unwrap()) }
+        debug_assert!(CAPACITY_PLUS_RATE == RATE + 1, "In Poseidon, CAPACITY_PLUS_RATE must equal RATE + 1");
+        Self { parameters: Arc::new(F::default_poseidon_parameters::<RATE, CAPACITY_PLUS_RATE>().unwrap()) }
     }
 
     /// Evaluate the cryptographic hash function over a list of field elements
@@ -85,7 +90,7 @@ impl<F: PrimeField, const RATE: usize> Poseidon<F, RATE> {
     /// as input, and returns the specified number of field elements as
     /// output.
     pub fn evaluate_many(&self, input: &[F], num_outputs: usize) -> Vec<F> {
-        let mut sponge = PoseidonSponge::<F, RATE, 1>::new_with_parameters(&self.parameters);
+        let mut sponge = PoseidonSponge::<F, RATE, CAPACITY_PLUS_RATE>::new_with_parameters(&self.parameters);
         sponge.absorb_native_field_elements(input);
         sponge.squeeze_native_field_elements(num_outputs).to_vec()
     }
@@ -96,7 +101,7 @@ impl<F: PrimeField, const RATE: usize> Poseidon<F, RATE> {
         self.evaluate(&[vec![F::from(input.len() as u128)], input.to_vec()].concat())
     }
 
-    pub fn parameters(&self) -> &Arc<PoseidonParameters<F, RATE, 1>> {
+    pub fn parameters(&self) -> &Arc<PoseidonParameters<F, RATE, CAPACITY_PLUS_RATE>> {
         &self.parameters
     }
 }
@@ -108,22 +113,26 @@ impl<F: PrimeField, const RATE: usize> Poseidon<F, RATE> {
 ///
 /// [cos]: https://eprint.iacr.org/2019/1076
 #[derive(Clone, Debug)]
-pub struct PoseidonSponge<F: PrimeField, const RATE: usize, const CAPACITY: usize> {
+pub struct PoseidonSponge<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize> {
     /// Sponge Parameters
-    parameters: Arc<PoseidonParameters<F, RATE, CAPACITY>>,
+    parameters: Arc<PoseidonParameters<F, RATE, CAPACITY_PLUS_RATE>>,
     /// Current sponge's state (current elements in the permutation block)
-    state: State<F, RATE, CAPACITY>,
+    state: State<F, RATE, CAPACITY_PLUS_RATE>,
     /// Current mode (whether its absorbing or squeezing)
     pub mode: DuplexSpongeMode,
     /// A persistent lookup table used when compressing elements.
     adjustment_factor_lookup_table: Arc<[F]>,
 }
 
-impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSponge<F, RATE, 1> {
-    type Parameters = Arc<PoseidonParameters<F, RATE, 1>>;
+impl<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize> AlgebraicSponge<F, RATE, CAPACITY_PLUS_RATE>
+    for PoseidonSponge<F, RATE, CAPACITY_PLUS_RATE>
+{
+    type Parameters = Arc<PoseidonParameters<F, RATE, CAPACITY_PLUS_RATE>>;
 
     fn sample_parameters() -> Self::Parameters {
-        Arc::new(F::default_poseidon_parameters::<RATE>().unwrap())
+        debug_assert!(CAPACITY_PLUS_RATE == RATE + 1, "In Poseidon, CAPACITY_PLUS_RATE must equal RATE + 1");
+
+        Arc::new(F::default_poseidon_parameters::<RATE, CAPACITY_PLUS_RATE>().unwrap())
     }
 
     fn new_with_parameters(parameters: &Self::Parameters) -> Self {
@@ -209,7 +218,7 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
     }
 }
 
-impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
+impl<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize> PoseidonSponge<F, RATE, CAPACITY_PLUS_RATE> {
     #[inline]
     fn apply_ark(&mut self, round_number: usize) {
         for (state_elem, ark_elem) in self.state.iter_mut().zip(&self.parameters.ark[round_number]) {
@@ -236,9 +245,8 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
     #[inline]
     fn apply_mds(&mut self) {
         let mut new_state = State::default();
-        let curr_state: Vec<F> = self.state.iter().copied().collect::<Vec<_>>();
         new_state.iter_mut().zip(&self.parameters.mds).for_each(|(new_elem, mds_row)| {
-            *new_elem = F::sum_of_products(&curr_state, mds_row);
+            *new_elem = F::sum_of_products(&self.state.state, mds_row);
         });
         self.state = new_state;
     }
@@ -280,7 +288,9 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
             // Absorb the input elements, `RATE` elements at a time, except for the first
             // chunk, which is of size `RATE - rate_start`.
             for (i, chunk) in std::iter::once(first_chunk).chain(rest_chunks).enumerate() {
-                for (element, state_elem) in chunk.iter().zip(&mut self.state.rate_state[rate_start..]) {
+                for (element, state_elem) in
+                    chunk.iter().zip(&mut self.state.state[CAPACITY_PLUS_RATE - RATE + rate_start..])
+                {
                     *state_elem += element;
                 }
                 // Are we in the last chunk?
@@ -318,13 +328,14 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
             // Absorb the input output, `RATE` output at a time, except for the first chunk,
             // which is of size `RATE - rate_start`.
             for (i, chunk) in std::iter::once(first_chunk).chain(rest_chunks).enumerate() {
-                let range = rate_start..(rate_start + chunk.len());
+                let range =
+                    (CAPACITY_PLUS_RATE - RATE + rate_start)..(CAPACITY_PLUS_RATE - RATE + rate_start + chunk.len());
                 debug_assert_eq!(
                     chunk.len(),
-                    self.state.rate_state[range.clone()].len(),
+                    self.state.state[range.clone()].len(),
                     "failed with squeeze {output_size} at rate {RATE} and rate_start {rate_start}"
                 );
-                chunk.copy_from_slice(&self.state.rate_state[range]);
+                chunk.copy_from_slice(&self.state.state[range]);
                 // Are we in the last chunk?
                 // If so, let's wrap up.
                 if i == total_num_chunks - 1 {

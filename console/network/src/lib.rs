@@ -81,8 +81,8 @@ pub type PoseidonMerkleTree<N, const DEPTH: u8> = MerkleTree<N, Poseidon4<N>, Po
 
 /// Helper types for the Varuna parameters.
 type Fq<N> = <<N as Environment>::PairingCurve as PairingEngine>::Fq;
-pub type FiatShamir<N> = PoseidonSponge<Fq<N>, 2, 1>;
-pub type FiatShamirParameters<N> = <FiatShamir<N> as AlgebraicSponge<Fq<N>, 2>>::Parameters;
+pub type FiatShamir<N> = PoseidonSponge<Fq<N>, 2, 3>;
+pub type FiatShamirParameters<N> = <FiatShamir<N> as AlgebraicSponge<Fq<N>, 2, 3>>::Parameters;
 
 /// Helper types for the Varuna proving and verifying key.
 pub(crate) type VarunaProvingKey<N> = CircuitProvingKey<<N as Environment>::PairingCurve, VarunaHidingMode>;

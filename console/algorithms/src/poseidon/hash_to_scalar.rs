@@ -15,7 +15,9 @@
 
 use super::*;
 
-impl<E: Environment, const RATE: usize> HashToScalar for Poseidon<E, RATE> {
+impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> HashToScalar
+    for Poseidon<E, RATE, CAPACITY_PLUS_RATE>
+{
     type Input = Field<E>;
     type Output = Scalar<E>;
 

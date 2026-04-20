@@ -27,26 +27,25 @@ use snarkvm_fields::{PoseidonDefaultField, PoseidonParameters};
 
 use std::sync::Arc;
 
-const CAPACITY: usize = 1;
-
 /// Poseidon2 is a cryptographic hash function of input rate 2.
-pub type Poseidon2<E> = Poseidon<E, 2>;
+pub type Poseidon2<E> = Poseidon<E, 2, 3>;
 /// Poseidon4 is a cryptographic hash function of input rate 4.
-pub type Poseidon4<E> = Poseidon<E, 4>;
+pub type Poseidon4<E> = Poseidon<E, 4, 5>;
 /// Poseidon8 is a cryptographic hash function of input rate 8.
-pub type Poseidon8<E> = Poseidon<E, 8>;
+pub type Poseidon8<E> = Poseidon<E, 8, 9>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Poseidon<E: Environment, const RATE: usize> {
+pub struct Poseidon<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> {
     /// The domain separator for the Poseidon hash function.
     domain: Field<E>,
     /// The Poseidon parameters for hashing.
-    parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>,
+    parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY_PLUS_RATE>>,
 }
 
-impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
+impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Poseidon<E, RATE, CAPACITY_PLUS_RATE> {
     /// Initializes a new instance of Poseidon.
     pub fn setup(domain: &str) -> Result<Self> {
+        debug_assert!(CAPACITY_PLUS_RATE == RATE + 1, "In Poseidon, CAPACITY_PLUS_RATE must equal RATE + 1");
         // Ensure the given domain is within the allowed size in bits.
         let num_bits = domain.len().saturating_mul(8);
         let max_bits = Field::<E>::size_in_data_bits();
@@ -54,7 +53,7 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
 
         Ok(Self {
             domain: Field::<E>::new_domain_separator(domain),
-            parameters: Arc::new(E::Field::default_poseidon_parameters::<RATE>()?),
+            parameters: Arc::new(E::Field::default_poseidon_parameters::<RATE, CAPACITY_PLUS_RATE>()?),
         })
     }
 
@@ -64,7 +63,7 @@ impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
     }
 
     /// Returns the Poseidon parameters for hashing.
-    pub fn parameters(&self) -> &Arc<PoseidonParameters<E::Field, RATE, CAPACITY>> {
+    pub fn parameters(&self) -> &Arc<PoseidonParameters<E::Field, RATE, CAPACITY_PLUS_RATE>> {
         &self.parameters
     }
 }
@@ -132,13 +131,14 @@ mod tests {
     #[test]
     fn test_sponge() {
         const RATE: usize = 2;
-        let parameters = Arc::new(Fq::default_poseidon_parameters::<RATE>().unwrap());
+        const CAPACITY_PLUS_RATE: usize = RATE + 1;
+        let parameters = Arc::new(Fq::default_poseidon_parameters::<RATE, CAPACITY_PLUS_RATE>().unwrap());
 
         for absorb in 0..10 {
             for squeeze in 0..10 {
                 let iteration = format!("absorb_{absorb}_squeeze_{squeeze}");
 
-                let mut sponge = PoseidonSponge::<CurrentEnvironment, RATE, CAPACITY>::new(&parameters);
+                let mut sponge = PoseidonSponge::<CurrentEnvironment, RATE, CAPACITY_PLUS_RATE>::new(&parameters);
                 sponge.absorb(&vec![Field::<CurrentEnvironment>::from_u64(1237812u64); absorb]);
 
                 let next_absorb_index = if absorb % RATE != 0 || absorb == 0 { absorb % RATE } else { RATE };
@@ -157,19 +157,19 @@ mod tests {
 
     #[test]
     fn test_parameters() {
-        fn single_rate_test<const RATE: usize>() {
-            let parameters = Fq::default_poseidon_parameters::<RATE>().unwrap();
+        fn single_rate_test<const RATE: usize, const CAPACITY_PLUS_RATE: usize>() {
+            let parameters = Fq::default_poseidon_parameters::<RATE, CAPACITY_PLUS_RATE>().unwrap();
             assert_snapshot("test_parameters", format!("rate_{RATE}_ark"), parameters.ark);
             assert_snapshot("test_parameters", format!("rate_{RATE}_mds"), parameters.mds);
         }
         // Optimized for constraints.
-        single_rate_test::<2>();
-        single_rate_test::<3>();
-        single_rate_test::<4>();
-        single_rate_test::<5>();
-        single_rate_test::<6>();
-        single_rate_test::<7>();
-        single_rate_test::<8>();
+        single_rate_test::<2, 3>();
+        single_rate_test::<3, 4>();
+        single_rate_test::<4, 5>();
+        single_rate_test::<5, 6>();
+        single_rate_test::<6, 7>();
+        single_rate_test::<7, 8>();
+        single_rate_test::<8, 9>();
     }
 
     #[test]
