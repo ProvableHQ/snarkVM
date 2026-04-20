@@ -93,6 +93,14 @@ fn sample_next_block<R: Rng + CryptoRng>(
 }
 
 fn main() {
+    /////////////////////////// User defined
+
+    // Number of times to verify the transaction (when not in --generate mode).
+    // A higher number helps flamegraph get more precise measurements.
+    let n_samples = 1;
+
+    ///////////////////////////
+
     let generate = env::args().any(|arg| arg == "--generate");
     let clean = env::args().any(|arg| arg == "--clean");
     let artifact_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("benches/verifier/artifacts");
@@ -277,47 +285,53 @@ fn main() {
     }
 
     // Load or execute wrapper call
-    let transaction_path = artifact_path.join("transaction.bin");
     if generate {
-        println!("Executing wrapper call (generating block)");
+        println!("Executing wrapper call (generating transaction) {n_samples} times...");
 
-        let transaction = vm
-            .execute(
-                &private_key,
-                ("wrapper.aleo", "call_one_to_many_records"),
-                vec![
-                    Value::from_str("1000000u64").unwrap(),
-                    Value::from_str(&format!("{address}")).unwrap(),
-                    Value::from_str("1000000u64").unwrap(),
-                ]
-                .into_iter(),
-                None,
-                0,
-                None,
-                rng,
-            )
-            .unwrap();
+        for i in 0..n_samples {
 
-        // Save transaction to a file
-        println!("Saving transaction to file");
-        std::fs::write(&transaction_path, transaction.to_bytes_le().unwrap()).unwrap();
-    }
+            let transaction_path = artifact_path.join("transactions").join(format!("transaction_{i}.bin"));
 
-    let transaction =
-        Transaction::from_bytes_le(&std::fs::read(transaction_path).expect("Transaction not found")).unwrap();
+            let value1_str = format!("{}u64", i);
+            let value2_str = format!("{}u64", 10_000 + i);
 
-    if generate {
-        println!("Checking transaction");
-        assert!(vm.check_transaction(&transaction, None, rng).is_ok());
+            let transaction = vm
+                .execute(
+                    &private_key,
+                    ("wrapper.aleo", "call_one_to_many_records"),
+                    vec![
+                        Value::from_str(&value1_str).unwrap(),
+                        Value::from_str(&format!("{address}")).unwrap(),
+                        Value::from_str(&value2_str).unwrap(),
+                    ]
+                    .into_iter(),
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap();
+
+            assert!(vm.check_transaction(&transaction, None, rng).is_ok());
+
+            std::fs::write(&transaction_path, transaction.to_bytes_le().unwrap()).unwrap();
+        }
     } else {
-        println!("Checking transaction {n_samples} times...");
+
+        println!("Loading {n_samples} transactions...");
+
+        let transactions = (0..n_samples).map(|i|
+            Transaction::from_bytes_le(&std::fs::read(artifact_path.join("transactions").join(format!("transaction_{i}.bin"))).expect(format!("Transaction {i} not found").as_str())).unwrap()
+        ).collect::<Vec<_>>();
+
+        println!("Checking {n_samples} transactions...");
 
         let timer = Instant::now();
-        for _ in 0..n_samples {
-            assert!(vm.check_transaction(&transaction, None, rng).is_ok());
+        for i in 0..n_samples {
+            assert!(vm.check_transaction(&transactions[i], None, rng).is_ok());
         }
         let elapsed = timer.elapsed().as_micros() as f64 / 1000.0;
         let elapsed_avg = elapsed / n_samples as f64;
-        println!("Transaction checked in {elapsed:.2} ms ({elapsed_avg:.2} ms per sample)");
+        println!("Transactions checked in {elapsed:.2} ms ({elapsed_avg:.2} ms per transaction)");
     }
 }
