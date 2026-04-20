@@ -37,7 +37,10 @@ pub struct BHPHasher<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u
     bases_lookup: Arc<Vec<Vec<[Group<E>; BHP_LOOKUP_SIZE]>>>,
     // TODO (Antonio)
     // TODO (Antonio) also: type
+<<<<<<< HEAD
     #[allow(clippy::type_complexity)]
+=======
+>>>>>>> 73958b10c (introduced preprocessed paired BHP bases)
     bases_double_lookup: Option<Arc<Vec<Vec<Vec<Vec<Group<E>>>>>>>,
     /// The random base for the BHP commitment.
     random_base: Arc<Vec<Group<E>>>,
@@ -130,6 +133,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         );
 
         // TODO(Antonio)
+<<<<<<< HEAD
         let bases_double_lookup = if (NUM_WINDOWS == 8 && WINDOW_SIZE == 54) || (NUM_WINDOWS == 6 && WINDOW_SIZE == 43)
         {
             Some(Arc::new(
@@ -149,16 +153,39 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
                     })
                     .collect::<Vec<Vec<Vec<Vec<Group<E>>>>>>(),
             ))
+=======
+        let bases_double_lookup = if (NUM_WINDOWS == 8 && WINDOW_SIZE == 54) || (NUM_WINDOWS == 6 && WINDOW_SIZE == 43) {
+            // TODO (Antonio)
+            println!("Setting up for BHP1024");
+            Some(
+                Arc::new(
+                    // TODO handle slices, windows...properly
+                    bases_lookup.iter().map(|window|
+                        window.chunks_exact(2).map(|pair| {
+                            pair[0].iter().map(|p1|
+                                pair[1].iter().map(|p2|
+                                    *p1 + p2
+                                ).collect::<Vec<Group<E>>>()
+                            ).collect::<Vec<Vec<Group<E>>>>()
+                        }).collect::<Vec<Vec<Vec<Group<E>>>>>()
+                    ).collect::<Vec<Vec<Vec<Vec<Group<E>>>>>>()
+                )
+            )
+>>>>>>> 73958b10c (introduced preprocessed paired BHP bases)
         } else {
             None
         };
 
+<<<<<<< HEAD
         Ok(Self {
             bases: Arc::new(bases),
             bases_lookup: Arc::new(bases_lookup),
             bases_double_lookup,
             random_base: Arc::new(random_base),
         })
+=======
+        Ok(Self { bases: Arc::new(bases), bases_lookup: Arc::new(bases_lookup), bases_double_lookup, random_base: Arc::new(random_base) })
+>>>>>>> 73958b10c (introduced preprocessed paired BHP bases)
     }
 
     /// Returns the bases.
