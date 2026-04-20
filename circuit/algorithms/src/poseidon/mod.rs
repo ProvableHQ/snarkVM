@@ -28,11 +28,13 @@ use crate::{Elligator2, Hash, HashMany, HashToGroup, HashToScalar, PRF};
 use snarkvm_circuit_types::{Field, Group, Scalar, environment::prelude::*};
 
 /// Poseidon2 is a cryptographic hash function of input rate 2.
-pub type Poseidon2<E> = Poseidon<E, 2, 3>;
+pub type Poseidon2<E> = Poseidon<E, 2>;
 /// Poseidon4 is a cryptographic hash function of input rate 4.
-pub type Poseidon4<E> = Poseidon<E, 4, 5>;
+pub type Poseidon4<E> = Poseidon<E, 4>;
 /// Poseidon8 is a cryptographic hash function of input rate 8.
-pub type Poseidon8<E> = Poseidon<E, 8, 9>;
+pub type Poseidon8<E> = Poseidon<E, 8>;
+
+const CAPACITY: usize = 1;
 
 /// The mode structure for duplex sponges.
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -50,7 +52,7 @@ pub enum DuplexSpongeMode {
 }
 
 #[derive(Clone)]
-pub struct Poseidon<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> {
+pub struct Poseidon<E: Environment, const RATE: usize> {
     /// The domain separator for the Poseidon hash function.
     domain: Field<E>,
     /// The number of rounds in a full-round operation.
@@ -66,14 +68,10 @@ pub struct Poseidon<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE:
     mds: Vec<Vec<Field<E>>>,
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Inject
-    for Poseidon<E, RATE, CAPACITY_PLUS_RATE>
-{
-    type Primitive = console::Poseidon<E::Network, RATE, CAPACITY_PLUS_RATE>;
+impl<E: Environment, const RATE: usize> Inject for Poseidon<E, RATE> {
+    type Primitive = console::Poseidon<E::Network, RATE>;
 
     fn new(_mode: Mode, poseidon: Self::Primitive) -> Self {
-        debug_assert!(CAPACITY_PLUS_RATE == RATE + 1, "In Poseidon, CAPACITY_PLUS_RATE must equal RATE + 1");
-
         // Initialize the domain separator.
         let domain = Field::constant(poseidon.domain());
 
@@ -89,25 +87,15 @@ impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Inject
             .iter()
             .take(full_rounds + partial_rounds)
             .map(|round| {
-                round
-                    .iter()
-                    .take(CAPACITY_PLUS_RATE)
-                    .copied()
-                    .map(|field| Field::constant(console::Field::new(field)))
-                    .collect()
+                round.iter().take(RATE + 1).copied().map(|field| Field::constant(console::Field::new(field))).collect()
             })
             .collect();
         let mds = parameters
             .mds
             .iter()
-            .take(CAPACITY_PLUS_RATE)
+            .take(RATE + 1)
             .map(|round| {
-                round
-                    .iter()
-                    .take(CAPACITY_PLUS_RATE)
-                    .copied()
-                    .map(|field| Field::constant(console::Field::new(field)))
-                    .collect()
+                round.iter().take(RATE + 1).copied().map(|field| Field::constant(console::Field::new(field))).collect()
             })
             .collect();
 

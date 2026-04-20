@@ -47,7 +47,7 @@ use std::collections::BTreeMap;
 impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
     /// Sample the batch combiners based on the number of circuits and
     /// instances.
-    fn sample_batch_combiners<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2, 3>>(
+    fn sample_batch_combiners<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
         batch_sizes: &BTreeMap<CircuitId, usize>,
         circuit_infos: &BTreeMap<CircuitId, &CircuitInfo>,
         fs_rng: &mut R,
@@ -77,7 +77,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
     }
 
     /// Output the first message and next round state.
-    pub fn verifier_first_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2, 3>>(
+    pub fn verifier_first_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
         batch_sizes: &BTreeMap<CircuitId, usize>,
         circuit_infos: &BTreeMap<CircuitId, &CircuitInfo>,
         max_constraint_domain: EvaluationDomain<TargetField>,
@@ -152,7 +152,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
     }
 
     /// Output the second message and next round state.
-    pub fn verifier_second_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2, 3>>(
+    pub fn verifier_second_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
         mut state: State<TargetField, SM>,
         fs_rng: &mut R,
         varuna_version: VarunaVersion,
@@ -182,7 +182,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
     }
 
     /// Output the prep third message and next round state.
-    pub fn verifier_prepare_third_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2, 3>>(
+    pub fn verifier_prepare_third_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
         mut state: State<TargetField, SM>,
         batch_sizes: &BTreeMap<CircuitId, usize>,
         circuit_infos: &BTreeMap<CircuitId, &CircuitInfo>,
@@ -203,7 +203,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
     }
 
     /// Output the third message and next round state.
-    pub fn verifier_third_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2, 3>>(
+    pub fn verifier_third_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
         mut state: State<TargetField, SM>,
         fs_rng: &mut R,
     ) -> Result<(ThirdMessage<TargetField>, State<TargetField, SM>)> {
@@ -218,7 +218,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
     }
 
     /// Output the fourth message and next round state.
-    pub fn verifier_fourth_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2, 3>>(
+    pub fn verifier_fourth_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
         mut state: State<TargetField, SM>,
         fs_rng: &mut R,
     ) -> Result<(FourthMessage<TargetField>, State<TargetField, SM>)> {
@@ -243,7 +243,7 @@ impl<TargetField: PrimeField, SM: SNARKMode> AHPForR1CS<TargetField, SM> {
     }
 
     /// Output the next round state.
-    pub fn verifier_fifth_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2, 3>>(
+    pub fn verifier_fifth_round<BaseField: PrimeField, R: AlgebraicSponge<BaseField, 2>>(
         mut state: State<TargetField, SM>,
         fs_rng: &mut R,
     ) -> Result<State<TargetField, SM>> {

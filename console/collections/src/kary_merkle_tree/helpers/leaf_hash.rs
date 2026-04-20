@@ -53,9 +53,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> LeafHash for 
     }
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> LeafHash
-    for Poseidon<E, RATE, CAPACITY_PLUS_RATE>
-{
+impl<E: Environment, const RATE: usize> LeafHash for Poseidon<E, RATE> {
     type Hash = Field<E>;
     type Leaf = Vec<Self::Hash>;
 

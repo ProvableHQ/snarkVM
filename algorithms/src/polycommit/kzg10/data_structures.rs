@@ -415,7 +415,7 @@ pub struct KZGProof<E: PairingEngine> {
 }
 
 impl<E: PairingEngine> KZGProof<E> {
-    pub fn absorb_into_sponge(&self, sponge: &mut impl AlgebraicSponge<E::Fq, 2, 3>) {
+    pub fn absorb_into_sponge(&self, sponge: &mut impl AlgebraicSponge<E::Fq, 2>) {
         sponge.absorb_native_field_elements(&self.w.to_field_elements().unwrap());
         if let Some(random_v) = self.random_v {
             sponge.absorb_nonnative_field_elements([random_v]);

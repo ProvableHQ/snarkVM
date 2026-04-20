@@ -56,9 +56,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> PathHash for 
     }
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> PathHash
-    for Poseidon<E, RATE, CAPACITY_PLUS_RATE>
-{
+impl<E: Environment, const RATE: usize> PathHash for Poseidon<E, RATE> {
     type Hash = Field<E>;
 
     /// Returns the hash of the given child nodes.

@@ -46,7 +46,7 @@ use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, FromBytes, Tes
 use std::{collections::BTreeMap, env, path::Path, time::Instant};
 
 type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
-type FS = PoseidonSponge<Fq, 2, 3>;
+type FS = PoseidonSponge<Fq, 2, 1>;
 
 fn main() {
     /////////////////////////// User defined

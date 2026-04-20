@@ -39,42 +39,32 @@ pub struct PoseidonParameters<F: PrimeField, const RATE: usize, const CAPACITY: 
 pub trait PoseidonDefaultField {
     /// Obtain the default Poseidon parameters for this rate and for this prime field,
     /// with a specific optimization goal.
-    fn default_poseidon_parameters<const RATE: usize, const CAPACITY_PLUS_RATE: usize>()
-    -> Result<PoseidonParameters<Self, RATE, CAPACITY_PLUS_RATE>>
+    fn default_poseidon_parameters<const RATE: usize>() -> Result<PoseidonParameters<Self, RATE, 1>>
     where
         Self: PrimeField,
     {
-        debug_assert!(CAPACITY_PLUS_RATE == RATE + 1, "In Poseidon, CAPACITY_PLUS_RATE must equal RATE + 1");
-
-        // TODO (Antonio) is RATE used?
-
         /// Internal function that computes the ark and mds from the Poseidon Grain LFSR.
         #[allow(clippy::type_complexity)]
-        fn find_poseidon_ark_and_mds<F: PrimeField, const RATE: usize, const CAPACITY_PLUS_RATE: usize>(
+        fn find_poseidon_ark_and_mds<F: PrimeField, const RATE: usize>(
             full_rounds: u64,
             partial_rounds: u64,
             skip_matrices: u64,
         ) -> Result<(Vec<Vec<F>>, Vec<Vec<F>>)> {
             let lfsr_time = start_timer!(|| "LFSR Init");
-            let mut lfsr = PoseidonGrainLFSR::new(
-                false,
-                F::size_in_bits() as u64,
-                CAPACITY_PLUS_RATE as u64,
-                full_rounds,
-                partial_rounds,
-            );
+            let mut lfsr =
+                PoseidonGrainLFSR::new(false, F::size_in_bits() as u64, (RATE + 1) as u64, full_rounds, partial_rounds);
             end_timer!(lfsr_time);
 
             let ark_time = start_timer!(|| "Constructing ARK");
             let mut ark = Vec::with_capacity((full_rounds + partial_rounds) as usize);
             for _ in 0..(full_rounds + partial_rounds) {
-                ark.push(lfsr.get_field_elements_rejection_sampling(CAPACITY_PLUS_RATE)?);
+                ark.push(lfsr.get_field_elements_rejection_sampling(RATE + 1)?);
             }
             end_timer!(ark_time);
 
             let skip_time = start_timer!(|| "Skipping matrices");
             for _ in 0..skip_matrices {
-                let _ = lfsr.get_field_elements_mod_p::<F>(2 * CAPACITY_PLUS_RATE)?;
+                let _ = lfsr.get_field_elements_mod_p::<F>(2 * (RATE + 1))?;
             }
             end_timer!(skip_time);
 
@@ -83,20 +73,18 @@ pub trait PoseidonDefaultField {
             // - There is no i and j such that x[i] + y[j] = p.
             // - There resultant MDS passes all three tests.
 
-            let xs = lfsr.get_field_elements_mod_p::<F>(CAPACITY_PLUS_RATE)?;
-            let ys = lfsr.get_field_elements_mod_p::<F>(CAPACITY_PLUS_RATE)?;
+            let xs = lfsr.get_field_elements_mod_p::<F>(RATE + 1)?;
+            let ys = lfsr.get_field_elements_mod_p::<F>(RATE + 1)?;
 
             let mds_time = start_timer!(|| "Construct MDS");
-            let mut mds_flattened = vec![F::zero(); CAPACITY_PLUS_RATE * CAPACITY_PLUS_RATE];
-            for (x, mds_row_i) in
-                xs.iter().take(CAPACITY_PLUS_RATE).zip_eq(mds_flattened.chunks_mut(CAPACITY_PLUS_RATE))
-            {
-                for (y, e) in ys.iter().take(CAPACITY_PLUS_RATE).zip_eq(mds_row_i) {
+            let mut mds_flattened = vec![F::zero(); (RATE + 1) * (RATE + 1)];
+            for (x, mds_row_i) in xs.iter().take(RATE + 1).zip_eq(mds_flattened.chunks_mut(RATE + 1)) {
+                for (y, e) in ys.iter().take(RATE + 1).zip_eq(mds_row_i) {
                     *e = *x + y;
                 }
             }
             serial_batch_inversion_and_mul(&mut mds_flattened, &F::one());
-            let mds = mds_flattened.chunks(CAPACITY_PLUS_RATE).map(|row| row.to_vec()).collect();
+            let mds = mds_flattened.chunks(RATE + 1).map(|row| row.to_vec()).collect();
             end_timer!(mds_time);
 
             Ok((ark, mds))
@@ -104,7 +92,7 @@ pub trait PoseidonDefaultField {
 
         match Self::Parameters::PARAMS_OPT_FOR_CONSTRAINTS.iter().find(|entry| entry.rate == RATE) {
             Some(entry) => {
-                let (ark, mds) = find_poseidon_ark_and_mds::<Self, RATE, CAPACITY_PLUS_RATE>(
+                let (ark, mds) = find_poseidon_ark_and_mds::<Self, RATE>(
                     entry.full_rounds as u64,
                     entry.partial_rounds as u64,
                     entry.skip_matrices as u64,

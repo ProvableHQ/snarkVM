@@ -15,9 +15,7 @@
 
 use super::*;
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Hash
-    for Poseidon<E, RATE, CAPACITY_PLUS_RATE>
-{
+impl<E: Environment, const RATE: usize> Hash for Poseidon<E, RATE> {
     type Input = Field<E>;
     type Output = Field<E>;
 

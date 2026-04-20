@@ -254,8 +254,8 @@ fn test_merkle_tree_bhp() -> Result<()> {
 #[test]
 fn test_merkle_tree_poseidon() -> Result<()> {
     fn run_test<const DEPTH: u8>(rng: &mut TestRng) -> Result<()> {
-        type LH = Poseidon<CurrentEnvironment, 4, 5>;
-        type PH = Poseidon<CurrentEnvironment, 2, 3>;
+        type LH = Poseidon<CurrentEnvironment, 4>;
+        type PH = Poseidon<CurrentEnvironment, 2>;
 
         let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
         let path_hasher = PH::setup("AleoMerkleTreeTest1")?;
@@ -338,8 +338,8 @@ fn test_merkle_tree_bhp_update_many_is_consistent() -> Result<()> {
 #[test]
 fn test_merkle_tree_poseidon_update_many_is_consistent() -> Result<()> {
     fn run_test<const DEPTH: u8>(rng: &mut TestRng) -> Result<()> {
-        type LH = Poseidon<CurrentEnvironment, 4, 5>;
-        type PH = Poseidon<CurrentEnvironment, 2, 3>;
+        type LH = Poseidon<CurrentEnvironment, 4>;
+        type PH = Poseidon<CurrentEnvironment, 2>;
 
         let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
         let path_hasher = PH::setup("AleoMerkleTreeTest1")?;
@@ -437,8 +437,8 @@ fn test_merkle_tree_bhp_update_and_update_many_match() -> Result<()> {
 #[test]
 fn test_merkle_tree_poseidon_update_and_update_many_match() -> Result<()> {
     fn run_test<const DEPTH: u8>(rng: &mut TestRng) -> Result<()> {
-        type LH = Poseidon<CurrentEnvironment, 4, 5>;
-        type PH = Poseidon<CurrentEnvironment, 2, 3>;
+        type LH = Poseidon<CurrentEnvironment, 4>;
+        type PH = Poseidon<CurrentEnvironment, 2>;
 
         let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
         let path_hasher = PH::setup("AleoMerkleTreeTest1")?;
@@ -492,8 +492,8 @@ fn test_merkle_tree_poseidon_update_and_update_many_match() -> Result<()> {
 
 #[test]
 fn test_merkle_tree_depth_3_poseidon() -> Result<()> {
-    type LH = Poseidon<CurrentEnvironment, 4, 5>;
-    type PH = Poseidon<CurrentEnvironment, 2, 3>;
+    type LH = Poseidon<CurrentEnvironment, 4>;
+    type PH = Poseidon<CurrentEnvironment, 2>;
 
     let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
     let path_hasher = PH::setup("AleoMerkleTreeTest1")?;

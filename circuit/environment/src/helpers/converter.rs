@@ -258,7 +258,7 @@ mod tests {
         use snarkvm_curves::bls12_377::{Bls12_377, Fq};
         use snarkvm_utilities::rand::TestRng;
 
-        type FS = PoseidonSponge<Fq, 2, 3>;
+        type FS = PoseidonSponge<Fq, 2, 1>;
         type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
 
         let rng = &mut TestRng::default();

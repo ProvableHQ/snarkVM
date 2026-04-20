@@ -30,22 +30,21 @@ use std::{ops::DerefMut, sync::Arc};
 ///
 /// [cos]: https://eprint.iacr.org/2019/1076
 #[derive(Clone, Debug)]
-pub struct PoseidonSponge<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> {
+pub struct PoseidonSponge<E: Environment, const RATE: usize, const CAPACITY: usize> {
     /// Sponge Parameters
-    parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY_PLUS_RATE>>,
+    parameters: Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>,
     /// Current sponge's state (current elements in the permutation block)
-    state: State<E, RATE, CAPACITY_PLUS_RATE>,
+    state: State<E, RATE, CAPACITY>,
     /// Current mode (whether its absorbing or squeezing)
     pub(in crate::poseidon) mode: DuplexSpongeMode,
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> AlgebraicSponge<E, RATE, CAPACITY_PLUS_RATE>
-    for PoseidonSponge<E, RATE, CAPACITY_PLUS_RATE>
+impl<E: Environment, const RATE: usize, const CAPACITY: usize> AlgebraicSponge<E, RATE, CAPACITY>
+    for PoseidonSponge<E, RATE, CAPACITY>
 {
-    type Parameters = Arc<PoseidonParameters<E::Field, RATE, CAPACITY_PLUS_RATE>>;
+    type Parameters = Arc<PoseidonParameters<E::Field, RATE, CAPACITY>>;
 
     fn new(parameters: &Self::Parameters) -> Self {
-        debug_assert!(CAPACITY_PLUS_RATE == RATE + 1, "In Poseidon, CAPACITY_PLUS_RATE must equal RATE + 1");
         Self {
             parameters: parameters.clone(),
             state: State::default(),
@@ -100,36 +99,38 @@ impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Algebra
     }
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> PoseidonSponge<E, RATE, CAPACITY_PLUS_RATE> {
+impl<E: Environment, const RATE: usize, const CAPACITY: usize> PoseidonSponge<E, RATE, CAPACITY> {
     #[inline]
     fn apply_ark(&mut self, round_number: usize) {
         for (state_elem, ark_elem) in self.state.iter_mut().zip(&self.parameters.ark[round_number]) {
-            *state_elem.deref_mut() += ark_elem;
+            *state_elem += Field::<E>::new(*ark_elem);
         }
     }
 
     #[inline]
     fn apply_s_box(&mut self, is_full_round: bool) {
+        // Full rounds apply the S Box (x^alpha) to every element of state
         if is_full_round {
             for elem in self.state.iter_mut() {
                 let e = elem.deref_mut();
                 *e = e.pow([self.parameters.alpha]);
             }
-        } else {
+        }
+        // Partial rounds apply the S Box (x^alpha) to just the first element of state
+        else {
             let e = self.state[0].deref_mut();
             *e = e.pow([self.parameters.alpha]);
         }
     }
 
-    /// Applies the MDS matrix to the state in-place, using `scratch` to avoid heap allocation.
     #[inline]
-    fn apply_mds(&mut self, scratch: &mut [E::Field; CAPACITY_PLUS_RATE]) {
-        for (dst, src) in scratch.iter_mut().zip(self.state.iter()) {
-            *dst = **src;
-        }
-        for (state_elem, mds_row) in self.state.iter_mut().zip(&self.parameters.mds) {
-            *state_elem.deref_mut() = E::Field::sum_of_products(scratch, mds_row);
-        }
+    fn apply_mds(&mut self) {
+        let mut new_state = State::default();
+        let curr_state: Vec<<E as Environment>::Field> = self.state.iter().map(|e| *e.deref()).collect::<Vec<_>>();
+        new_state.iter_mut().zip(&self.parameters.mds).for_each(|(new_elem, mds_row)| {
+            *new_elem = Field::new(E::Field::sum_of_products(curr_state.as_slice(), mds_row));
+        });
+        self.state = new_state;
     }
 
     #[inline]
@@ -140,13 +141,12 @@ impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Poseido
         let full_rounds_over_2 = full_rounds / 2;
         let partial_round_range = full_rounds_over_2..(full_rounds_over_2 + partial_rounds);
 
-        // Stack-allocated scratch buffer, reused across all rounds.
-        let mut scratch = [E::Field::zero(); CAPACITY_PLUS_RATE];
+        // Iterate through all rounds to permute.
         for i in 0..(partial_rounds + full_rounds) {
             let is_full_round = !partial_round_range.contains(&i);
             self.apply_ark(i);
             self.apply_s_box(is_full_round);
-            self.apply_mds(&mut scratch);
+            self.apply_mds();
         }
     }
 

@@ -15,9 +15,7 @@
 
 use super::*;
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Hash
-    for Poseidon<E, RATE, CAPACITY_PLUS_RATE>
-{
+impl<E: Environment, const RATE: usize> Hash for Poseidon<E, RATE> {
     type Input = Field<E>;
     type Output = Field<E>;
 
@@ -37,7 +35,6 @@ mod tests {
     const DOMAIN: &str = "PoseidonCircuit0";
     const ITERATIONS: usize = 10;
     const RATE: usize = 4;
-    const CAPACITY_PLUS_RATE: usize = 5;
 
     fn check_hash(
         mode: Mode,
@@ -50,8 +47,8 @@ mod tests {
     ) -> Result<()> {
         use console::Hash as H;
 
-        let native = console::Poseidon::<<Circuit as Environment>::Network, RATE, CAPACITY_PLUS_RATE>::setup(DOMAIN)?;
-        let poseidon = Poseidon::<Circuit, RATE, CAPACITY_PLUS_RATE>::constant(native.clone());
+        let native = console::Poseidon::<<Circuit as Environment>::Network, RATE>::setup(DOMAIN)?;
+        let poseidon = Poseidon::<Circuit, RATE>::constant(native.clone());
 
         for i in 0..ITERATIONS {
             // Prepare the preimage.

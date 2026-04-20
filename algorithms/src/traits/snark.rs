@@ -53,7 +53,7 @@ pub trait SNARK {
     type VerifierInput: ?Sized;
     type VerifyingKey: Clone + Send + Sync + ToBytes + FromBytes + Ord;
 
-    type FiatShamirRng: AlgebraicSponge<Self::BaseField, 2, 3, Parameters = Self::FSParameters>;
+    type FiatShamirRng: AlgebraicSponge<Self::BaseField, 2, Parameters = Self::FSParameters>;
     type FSParameters;
 
     fn universal_setup(config: usize) -> Result<Self::UniversalSRS>;

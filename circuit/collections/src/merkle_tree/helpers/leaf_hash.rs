@@ -40,9 +40,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> LeafHash<E> f
     }
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> LeafHash<E>
-    for Poseidon<E, RATE, CAPACITY_PLUS_RATE>
-{
+impl<E: Environment, const RATE: usize> LeafHash<E> for Poseidon<E, RATE> {
     type Hash = Field<E>;
     type Leaf = Vec<Field<E>>;
 

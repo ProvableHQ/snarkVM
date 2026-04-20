@@ -154,8 +154,8 @@ fn test_merkle_tree_bhp_remove() -> Result<()> {
 #[test]
 fn test_merkle_tree_poseidon_remove() -> Result<()> {
     fn run_test<const DEPTH: u8>(rng: &mut TestRng) -> Result<()> {
-        type LH = Poseidon<CurrentEnvironment, 4, 5>;
-        type PH = Poseidon<CurrentEnvironment, 2, 3>;
+        type LH = Poseidon<CurrentEnvironment, 4>;
+        type PH = Poseidon<CurrentEnvironment, 2>;
 
         let leaf_hasher = LH::setup("AleoMerkleTreeTest0")?;
         let path_hasher = PH::setup("AleoMerkleTreeTest1")?;

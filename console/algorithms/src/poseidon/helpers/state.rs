@@ -18,60 +18,53 @@ use snarkvm_console_types::{Field, prelude::*};
 use core::ops::{Index, IndexMut, Range};
 
 #[derive(Copy, Clone, Debug)]
-pub struct State<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> {
-    state: [Field<E>; CAPACITY_PLUS_RATE],
+pub struct State<E: Environment, const RATE: usize, const CAPACITY: usize> {
+    capacity_state: [Field<E>; CAPACITY],
+    rate_state: [Field<E>; RATE],
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Default
-    for State<E, RATE, CAPACITY_PLUS_RATE>
-{
+impl<E: Environment, const RATE: usize, const CAPACITY: usize> Default for State<E, RATE, CAPACITY> {
     fn default() -> Self {
-        Self { state: [Field::<E>::zero(); CAPACITY_PLUS_RATE] }
+        Self { capacity_state: [Field::<E>::zero(); CAPACITY], rate_state: [Field::<E>::zero(); RATE] }
     }
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> State<E, RATE, CAPACITY_PLUS_RATE> {
+impl<E: Environment, const RATE: usize, const CAPACITY: usize> State<E, RATE, CAPACITY> {
     /// Returns a reference to a range of the rate state.
     pub(super) fn rate_state(&self, range: Range<usize>) -> &[Field<E>] {
-        let offset = CAPACITY_PLUS_RATE - RATE;
-        &self.state[(offset + range.start)..(offset + range.end)]
+        &self.rate_state[range]
     }
 
-    /// Returns a mutable slice over the rate portion of the state.
-    pub(super) fn rate_state_mut(&mut self) -> &mut [Field<E>] {
-        let offset = CAPACITY_PLUS_RATE - RATE;
-        &mut self.state[offset..]
+    /// Returns a mutable rate state.
+    pub(super) fn rate_state_mut(&mut self) -> &mut [Field<E>; RATE] {
+        &mut self.rate_state
     }
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> State<E, RATE, CAPACITY_PLUS_RATE> {
+impl<E: Environment, const RATE: usize, const CAPACITY: usize> State<E, RATE, CAPACITY> {
     /// Returns an immutable iterator over the state.
     pub fn iter(&self) -> impl Iterator<Item = &Field<E>> + Clone {
-        self.state.iter()
+        self.capacity_state.iter().chain(self.rate_state.iter())
     }
 
-    /// Returns a mutable iterator over the state.
+    /// Returns an mutable iterator over the state.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Field<E>> {
-        self.state.iter_mut()
+        self.capacity_state.iter_mut().chain(self.rate_state.iter_mut())
     }
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Index<usize>
-    for State<E, RATE, CAPACITY_PLUS_RATE>
-{
+impl<E: Environment, const RATE: usize, const CAPACITY: usize> Index<usize> for State<E, RATE, CAPACITY> {
     type Output = Field<E>;
 
     fn index(&self, index: usize) -> &Self::Output {
-        assert!(index < CAPACITY_PLUS_RATE, "Index out of bounds: index is {index} but length is {CAPACITY_PLUS_RATE}");
-        &self.state[index]
+        assert!(index < RATE + CAPACITY, "Index out of bounds: index is {} but length is {}", index, RATE + CAPACITY);
+        if index < CAPACITY { &self.capacity_state[index] } else { &self.rate_state[index - CAPACITY] }
     }
 }
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> IndexMut<usize>
-    for State<E, RATE, CAPACITY_PLUS_RATE>
-{
+impl<E: Environment, const RATE: usize, const CAPACITY: usize> IndexMut<usize> for State<E, RATE, CAPACITY> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        assert!(index < CAPACITY_PLUS_RATE, "Index out of bounds: index is {index} but length is {CAPACITY_PLUS_RATE}");
-        &mut self.state[index]
+        assert!(index < RATE + CAPACITY, "Index out of bounds: index is {} but length is {}", index, RATE + CAPACITY);
+        if index < CAPACITY { &mut self.capacity_state[index] } else { &mut self.rate_state[index - CAPACITY] }
     }
 }

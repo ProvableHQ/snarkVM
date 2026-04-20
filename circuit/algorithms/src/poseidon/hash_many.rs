@@ -15,9 +15,7 @@
 
 use super::*;
 
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> HashMany
-    for Poseidon<E, RATE, CAPACITY_PLUS_RATE>
-{
+impl<E: Environment, const RATE: usize> HashMany for Poseidon<E, RATE> {
     type Input = Field<E>;
     type Output = Field<E>;
 
@@ -31,7 +29,7 @@ impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> HashMan
         preimage.extend_from_slice(input);
 
         // Initialize a new sponge.
-        let mut state = vec![Field::zero(); CAPACITY_PLUS_RATE];
+        let mut state = vec![Field::zero(); RATE + CAPACITY];
         let mut mode = DuplexSpongeMode::Absorbing { next_absorb_index: 0 };
 
         // Absorb the input and squeeze the output.
@@ -41,7 +39,7 @@ impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> HashMan
 }
 
 #[allow(clippy::needless_borrow)]
-impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Poseidon<E, RATE, CAPACITY_PLUS_RATE> {
+impl<E: Environment, const RATE: usize> Poseidon<E, RATE> {
     /// Absorbs the input elements into state.
     #[inline]
     fn absorb(&self, state: &mut [Field<E>], mode: &mut DuplexSpongeMode, input: &[Field<E>]) {
@@ -63,7 +61,7 @@ impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Poseido
             let mut remaining = input;
             loop {
                 // Compute the starting index.
-                let start = CAPACITY_PLUS_RATE - RATE + absorb_index;
+                let start = CAPACITY + absorb_index;
 
                 // Check if we can exit the loop.
                 if absorb_index + remaining.len() <= RATE {
@@ -118,7 +116,7 @@ impl<E: Environment, const RATE: usize, const CAPACITY_PLUS_RATE: usize> Poseido
         let mut remaining = output;
         loop {
             // Compute the starting index.
-            let start = CAPACITY_PLUS_RATE - RATE + squeeze_index;
+            let start = CAPACITY + squeeze_index;
 
             // Check if we can exit the loop.
             if squeeze_index + remaining.len() <= RATE {
@@ -206,7 +204,6 @@ mod tests {
     const DOMAIN: &str = "PoseidonCircuit0";
     const ITERATIONS: usize = 10;
     const RATE: u16 = 4;
-    const CAPACITY_PLUS_RATE: u16 = 5;
 
     fn check_hash_many(
         mode: Mode,
@@ -220,13 +217,8 @@ mod tests {
     ) -> Result<()> {
         use console::HashMany as H;
 
-        let native = console::Poseidon::<
-            <Circuit as Environment>::Network,
-            { RATE as usize },
-            { CAPACITY_PLUS_RATE as usize },
-        >::setup(DOMAIN)?;
-        let poseidon =
-            Poseidon::<Circuit, { RATE as usize }, { CAPACITY_PLUS_RATE as usize }>::constant(native.clone());
+        let native = console::Poseidon::<<Circuit as Environment>::Network, { RATE as usize }>::setup(DOMAIN)?;
+        let poseidon = Poseidon::<Circuit, { RATE as usize }>::constant(native.clone());
 
         for i in 0..ITERATIONS {
             // Prepare the preimage.
