@@ -52,10 +52,6 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
         // TODO (Antonio)
         if (NUM_WINDOWS == 8 && WINDOW_SIZE == 54) || (NUM_WINDOWS == 6 && WINDOW_SIZE == 43) {
             let bases_double_lookup = self.bases_double_lookup.as_ref().unwrap();
-<<<<<<< HEAD
-=======
-            println!("Going inside for BHP1024");
->>>>>>> 73958b10c (introduced preprocessed paired BHP bases)
 
             Ok(input
                 .chunks(WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
@@ -65,7 +61,6 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
                     let num_complete_pairs = window_bits.len() / (BHP_CHUNK_SIZE * 2);
                     let paired_bits_len = num_complete_pairs * BHP_CHUNK_SIZE * 2;
 
-<<<<<<< HEAD
                     let paired = window_bits[..paired_bits_len].chunks_exact(BHP_CHUNK_SIZE * 2).zip(double_bases).map(
                         |(chunk_bits, double_base)| {
                             let idx_1 = (chunk_bits[0] as usize)
@@ -77,30 +72,16 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
                             double_base[idx_1][idx_2]
                         },
                     );
-=======
-                    let paired = window_bits[..paired_bits_len]
-                        .chunks_exact(BHP_CHUNK_SIZE * 2)
-                        .zip(double_bases)
-                        .map(|(chunk_bits, double_base)| {
-                            let idx_1 = (chunk_bits[0] as usize) | (chunk_bits[1] as usize) << 1 | (chunk_bits[2] as usize) << 2;
-                            let idx_2 = (chunk_bits[3] as usize) | (chunk_bits[4] as usize) << 1 | (chunk_bits[5] as usize) << 2;
-                            double_base[idx_1][idx_2]
-                        });
->>>>>>> 73958b10c (introduced preprocessed paired BHP bases)
 
                     // Handle the trailing unpaired chunk (odd WINDOW_SIZE or short last window).
                     let remainder = if paired_bits_len < window_bits.len() {
                         let chunk_bits = &window_bits[paired_bits_len..];
                         let base = &single_bases[num_complete_pairs * 2];
-<<<<<<< HEAD
                         Some(
                             base[(chunk_bits[0] as usize)
                                 | (chunk_bits[1] as usize) << 1
                                 | (chunk_bits[2] as usize) << 2],
                         )
-=======
-                        Some(base[(chunk_bits[0] as usize) | (chunk_bits[1] as usize) << 1 | (chunk_bits[2] as usize) << 2])
->>>>>>> 73958b10c (introduced preprocessed paired BHP bases)
                     } else {
                         None
                     };
@@ -114,11 +95,6 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
             //
             // Note: `.zip()` is used here (as opposed to `.zip_eq()`) as the input can be less than
             // `NUM_WINDOWS * WINDOW_SIZE * BHP_CHUNK_SIZE` in length, which is the parameter size here.
-<<<<<<< HEAD
-=======
-            // TODO (Antonio) remove
-            println!("Going inside for sth other than BHP1024: {} * {} = {}", NUM_WINDOWS as usize, WINDOW_SIZE as usize, NUM_WINDOWS as usize * WINDOW_SIZE as usize);
->>>>>>> 73958b10c (introduced preprocessed paired BHP bases)
             Ok(input
                 .chunks(WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
                 .zip(&*self.bases_lookup)
