@@ -395,16 +395,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // coeffs of f at degree 0 and n, resp. and in [0, 2n-2] only k=0 and
         // k=n are multiples of n. Avoids an O(n log n) FFT.
         let n = variable_domain.size_as_field_element;
-        let c_0 = z_m_at_alpha
-            .coeffs
-            .first()
-            .copied()
-            .ok_or_else(|| anyhow::anyhow!("z_m_at_alpha has no coefficients"))?;
-        let c_n = z_m_at_alpha
-            .coeffs
-            .get(variable_domain.size())
-            .copied()
-            .ok_or_else(|| anyhow::anyhow!("z_m_at_alpha missing coefficient at index {}", variable_domain.size()))?;
+        let c_0 = z_m_at_alpha.coeffs.first().copied().unwrap_or_default();
+        let c_n = z_m_at_alpha.coeffs.get(variable_domain.size()).copied().unwrap_or_default();
         let sum = n * (c_0 + c_n);
 
         let (h_1_i, xg_1_i) =
