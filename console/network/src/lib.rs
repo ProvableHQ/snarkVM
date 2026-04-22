@@ -164,9 +164,17 @@ pub trait Network:
     const ARC_0005_COMPUTE_DISCOUNT: u64 = 25;
 
     /// The anchor height, defined as the expected number of blocks to reach the coinbase target.
-    const ANCHOR_HEIGHT: u32 = Self::ANCHOR_TIME as u32 / Self::BLOCK_TIME as u32;
-    /// The anchor time in seconds.
-    const ANCHOR_TIME: u16 = 25;
+    /// Note: The anchor height used exclusively by `coinbase_reward_v1`.
+    const ANCHOR_HEIGHT: u32 = Self::REWARD_ANCHOR_TIME as u32 / Self::BLOCK_TIME as u32;
+    /// The anchor time used specifically for calculating the coinbase reward.
+    /// We ensure that the reward anchor time matches the original ConsensusVersion::V1 anchor time
+    /// to maintain the original coinbase reward schedule.
+    const REWARD_ANCHOR_TIME: u16 = 25;
+    /// A list of (consensus_version, anchor_time_in_seconds) pairs (sparse).
+    /// Each entry takes effect at the specified version and remains active until the next entry.
+    /// The anchor time, defined as the expected time in seconds to reach the coinbase target.
+    const ANCHOR_TIMES: [(ConsensusVersion, u16); 2] =
+        [(ConsensusVersion::V1, Self::REWARD_ANCHOR_TIME), (ConsensusVersion::V15, 35)];
     /// The expected time per block in seconds.
     const BLOCK_TIME: u16 = 10;
     /// The number of blocks per epoch.

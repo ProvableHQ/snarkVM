@@ -385,6 +385,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             next_last_coinbase_target,
             next_last_coinbase_timestamp,
         ) = to_next_targets::<N>(
+            N::CONSENSUS_VERSION(next_height)?,
             latest_cumulative_proof_target,
             combined_proof_target,
             latest_coinbase_target,
@@ -400,7 +401,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             next_timestamp,
             N::GENESIS_TIMESTAMP,
             N::STARTING_SUPPLY,
-            N::ANCHOR_TIME,
+            N::REWARD_ANCHOR_TIME,
             N::ANCHOR_HEIGHT,
             N::BLOCK_TIME,
             combined_proof_target,

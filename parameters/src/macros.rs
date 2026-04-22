@@ -77,14 +77,31 @@ macro_rules! impl_store_and_remote_fetch {
                 println!("{}", output.dimmed());
             }
 
-            let response = reqwest::blocking::get(url)?;
-            let bytes = response.bytes()?;
-            buffer.extend_from_slice(&bytes);
+            let host = url.split('/').nth(2).unwrap_or_default().to_string();
+            let retry_policy = reqwest::retry::for_host(host)
+                .max_retries_per_request(3)
+                .classify_fn(|req_rep| {
+                    if req_rep.error().is_some() {
+                        return req_rep.retryable();
+                    }
+                    match req_rep.status() {
+                        Some(status) if status.is_server_error() || status.as_u16() == 429 => req_rep.retryable(),
+                        _ => req_rep.success(),
+                    }
+                });
+
+            let client = reqwest::blocking::Client::builder()
+                .redirect(reqwest::redirect::Policy::limited(10)) // Limit to 10 redirects.
+                .retry(retry_policy)
+                .build()?;
+
+            let mut response = client.get(url).send()?.error_for_status()?;
+            response.copy_to(buffer)?;
 
             #[cfg(not(feature = "no_std_out"))]
             {
                 use colored::*;
-                let size_in_megabytes = bytes.len() as u64 / 1_048_576;
+                let size_in_megabytes = buffer.len() as u64 / 1_048_576;
                 let output = format!("{:>15} - Download complete ({} MB)", "Installation", size_in_megabytes);
                 println!("{}", output.dimmed());
             }

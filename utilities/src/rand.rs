@@ -174,3 +174,70 @@ impl Drop for TestRng {
         println!("Called TestRng with seed {} {} times", self.seed, self.calls);
     }
 }
+
+/// This impl is Lemire's method with approximate zone. It reproduces rand 0.8's
+/// `rng.gen_range(low..=high)` for `usize` on 64-bit. It mustn't be modified
+/// to maintain backwards compatibility. It is a direct reimplementation of
+/// `sample_single_inclusive` for a concrete type (`usize`) an inlined widening multiply
+/// from https://github.com/rust-random/rand/blob/937320c/src/distributions/uniform.rs.
+pub fn gen_range_inclusive_legacy(low: usize, high: usize, rng: &mut impl Rng) -> usize {
+    debug_assert!(low <= high);
+
+    let range = high.wrapping_sub(low).wrapping_add(1);
+    // The range is 0..=usize::MAX.
+    if range == 0 {
+        return rng.random::<u64>() as usize;
+    }
+
+    // Approximate zone: conservative but avoids division.
+    let zone = (range << range.leading_zeros()).wrapping_sub(1);
+
+    loop {
+        let v = rng.next_u64() as usize;
+        // Widening multiply: v * range as u128, split into (hi, lo).
+        let wide = (v as u128) * (range as u128);
+        let hi = (wide >> 64) as usize;
+        let lo = wide as usize;
+        if lo <= zone {
+            return low.wrapping_add(hi);
+        }
+    }
+}
+
+/// This impl reproduces rand 0.8's `slice.choose_weighted(rng, weight_fn)` for u16 weights.
+/// It mustn't be modified to maintain backwards compatibility. It is a direct, "collapsed"
+/// reimplementation of `WeightedIndex::new(weights).sample(rng)` specifically for `u16` weights
+/// from https://github.com/rust-random/rand/blob/937320c/src/distributions/weighted_index.rs.
+pub fn choose_weighted_legacy<'a, T, R: Rng>(slice: &'a [T], weight_fn: impl Fn(&T) -> u16, rng: &mut R) -> &'a T {
+    // WeightedIndex::new.
+    let mut iter = slice.iter();
+    let first = iter.next().unwrap();
+    let mut total: u16 = weight_fn(first);
+    let mut cumulative: Vec<u16> = Vec::with_capacity(slice.len() - 1);
+    for item in iter {
+        cumulative.push(total);
+        total += weight_fn(item);
+    }
+    assert!(total > 0);
+
+    // Uniform::new(0u16, total) -> new_inclusive(0, total - 1)
+    // range as u16, then promoted to u32 for zone math.
+    let range = total as u32;
+    let ints_to_reject = (u32::MAX - range + 1) % range;
+    let zone = u32::MAX - ints_to_reject;
+
+    // Uniform::sample (exact Lemire, u32 sample space).
+    let chosen: u16 = loop {
+        let v = rng.next_u32();
+        let wide = (v as u64) * (range as u64);
+        let hi = (wide >> 32) as u32;
+        let lo = wide as u32;
+        if lo <= zone {
+            break hi as u16;
+        }
+    };
+
+    // Binary search (partition_point).
+    let idx = cumulative.partition_point(|w| *w <= chosen);
+    &slice[idx]
+}

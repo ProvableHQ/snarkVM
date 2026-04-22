@@ -165,8 +165,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     ) -> Result<(Sum<F>, Lhs<F>, Gpoly<F>, Apoly<F>, Bpoly<F>)> {
         let (row_on_K, col_on_K, row_col_val) =
             (&arithmetization.row, &arithmetization.col, &arithmetization.row_col_val);
-        let R_size = constraint_domain.size_as_field_element;
-        let C_size = variable_domain.size_as_field_element;
+        let R_size_C_size = constraint_domain.size_as_field_element * variable_domain.size_as_field_element;
+
+        // Precompute (alpha - row[i]) * (beta - col[i]) once and reuse for both b_poly
+        // evals and f inverses, saving K redundant field multiplications per
+        // matrix.
+        let cross_products: Vec<F> = row_on_K
+            .evaluations
+            .iter()
+            .zip_eq(&col_on_K.evaluations)
+            .map(|(&r, &c)| (alpha - r) * (beta - c))
+            .collect();
 
         let mut job_pool = snarkvm_utilities::ExecutionPool::with_capacity(2);
         job_pool.add_job(|| {
@@ -182,14 +191,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         job_pool.add_job(|| {
             let b_poly_time = start_timer!(|| format!("Computing b poly for {label}"));
-            let alpha_beta = alpha * beta;
             let b_poly = {
-                let evals: Vec<F> = row_on_K
-                    .evaluations
-                    .iter()
-                    .zip_eq(&col_on_K.evaluations)
-                    .map(|(&r, &c)| R_size * C_size * (alpha_beta - beta * r - alpha * c + r * c))
-                    .collect();
+                let evals: Vec<F> = cross_products.iter().map(|&cp| R_size_C_size * cp).collect();
                 EvaluationsOnDomain::from_vec_and_domain(evals, non_zero_domain)
                     .interpolate_with_pc(ifft_precomputation)
             };
@@ -199,8 +202,9 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let [a_poly, b_poly]: [_; 2] = job_pool.execute_all().try_into().unwrap();
 
         let f_evals_time = start_timer!(|| format!("Computing f evals on K for {label}"));
-        let mut inverses: Vec<_> =
-            row_on_K.evaluations.iter().zip_eq(&col_on_K.evaluations).map(|(r, c)| (alpha - r) * (beta - c)).collect();
+        // Move cross_products directly into inverses - no second pass over row/col
+        // needed.
+        let mut inverses = cross_products;
 
         let matrix_sumcheck_constants = v_R_i_alpha_v_C_i_beta * constraint_domain.size_inv * variable_domain.size_inv;
         batch_inversion_and_mul(&mut inverses, &matrix_sumcheck_constants);

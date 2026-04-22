@@ -37,10 +37,11 @@ use console::{
     program::LiteralType,
 };
 use snarkvm_synthesizer_program::Instruction;
+use snarkvm_utilities::choose_weighted_legacy;
 
 use anyhow::Result;
 use indexmap::IndexSet;
-use rand::{SeedableRng, prelude::*};
+use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
 use std::{collections::HashMap, str::FromStr};
 
@@ -74,7 +75,7 @@ pub(crate) fn sample_instructions<N: Network>(
         }
 
         // Initialize the instruction and selected literals.
-        let (sequence, _) = instruction_set_weights.choose_weighted(&mut rng, |(_, weight)| *weight).cloned().unwrap();
+        let sequence = choose_weighted_legacy(&instruction_set_weights, |(_, weight)| *weight, &mut rng).0.clone();
 
         // Initialize a cache for the ephemeral registers.
         // This is a mapping from the locator to the one assigned to it in the instruction sequence.
@@ -341,6 +342,8 @@ pub(crate) mod tests {
 
     use console::{prelude::TestRng, program::Identifier};
     use snarkvm_synthesizer_program::Program;
+
+    use rand::RngExt;
 
     type CurrentNetwork = console::network::MainnetV0;
 
