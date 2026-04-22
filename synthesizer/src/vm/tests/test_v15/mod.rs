@@ -24,16 +24,18 @@ mod commit_raw;
 // Additional test for cost estimation without a private key.
 mod cost_for_call;
 
+// Test for upgrading to credits.aleo V2.
+mod update_credits;
+
 use super::*;
 
 use crate::vm::test_helpers::{sample_vm_at_height, *};
 
 use console::{
-    account::ViewKey,
+    account::{Address, PrivateKey, ViewKey},
     network::ConsensusVersion,
-    program::{Identifier, Value},
+    program::{Identifier, Literal, Plaintext, ProgramID, Value},
 };
-
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 

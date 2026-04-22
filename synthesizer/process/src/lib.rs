@@ -241,78 +241,62 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn load() -> Result<Self> {
         let timer = timer!("Process::load");
-
-        // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
-        lap!(timer, "Initialize process");
-
-        // Initialize the 'credits.aleo' program.
-        let program = Program::credits()?;
-        lap!(timer, "Load credits program");
-
-        // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
-        lap!(timer, "Initialize stack");
-
-        // Synthesize the 'credits.aleo' verifying keys.
-        for function_name in program.functions().keys() {
-            // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
-            // Retrieve the number of public and private variables.
-            // Note: This number does *NOT* include the number of constants. This is safe because
-            // this program is never deployed, as it is a first-class citizen of the protocol.
-            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
-            // Insert the verifying key.
-            stack.insert_verifying_key(function_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
-            lap!(timer, "Load verifying key for {function_name}");
-        }
-        lap!(timer, "Load circuit keys");
-
-        // Add the stack to the process.
-        process.add_stack(stack);
-
+        // Specify the version of credits.aleo to load.
+        let credits_version = CreditsVersion::V2;
+        // Load the process with the specified version of credits.aleo.
+        let process = Self::load_with_credits(credits_version)?;
         finish!(timer, "Process::load");
         // Return the process.
         Ok(process)
     }
 
-    /// Initializes a new process with the V0 credits.aleo verifiying keys.
+    /// Initializes a new process with the V1 version of credits.aleo.
+    #[inline]
+    pub fn load_v1() -> Result<Self> {
+        let timer = timer!("Process::load_v1");
+        // Specify the version of credits.aleo to load.
+        let credits_version = CreditsVersion::V1;
+        // Load the process with the specified version of credits.aleo.
+        let process = Self::load_with_credits(credits_version)?;
+        finish!(timer, "Process::load_v1");
+        // Return the process.
+        Ok(process)
+    }
+
+    /// Initializes a new process with the V0 version of credits.aleo.
     #[inline]
     pub fn load_v0() -> Result<Self> {
         let timer = timer!("Process::load_v0");
+        // Specify the version of credits.aleo to load.
+        let credits_version = CreditsVersion::V0;
+        // Load the process with the specified version of credits.aleo.
+        let process = Self::load_with_credits(credits_version)?;
+        finish!(timer, "Process::load_v0");
+        // Return the process.
+        Ok(process)
+    }
+
+    /// Helper function to load `credits.aleo` based on the provided version.
+    fn load_with_credits(credits_version: CreditsVersion) -> Result<Self> {
+        let timer = timer!("Process::load_with_credits");
 
         // Initialize the process.
         let mut process =
             Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
         lap!(timer, "Initialize process");
 
-        // Initialize the 'credits.aleo' program.
-        let program = Program::credits()?;
-        lap!(timer, "Load credits program");
-
         // Compute the 'credits.aleo' program stack.
-        let stack = Stack::new(&process, &program)?;
+        let stack = Stack::new_credits(&process, credits_version)?;
         lap!(timer, "Initialize stack");
 
         // Synthesize the 'credits.aleo' verifying keys.
-        for function_name in program.functions().keys() {
-            // Load the verifying key.
-            let verifying_key = N::get_credits_v0_verifying_key(function_name.to_string())?;
-            // Retrieve the number of public and private variables.
-            // Note: This number does *NOT* include the number of constants. This is safe because
-            // this program is never deployed, as it is a first-class citizen of the protocol.
-            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
-            // Insert the verifying key.
-            stack.insert_verifying_key(function_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
-            lap!(timer, "Load verifying key for {function_name}");
-        }
+        stack.insert_credits_verifying_keys(credits_version)?;
         lap!(timer, "Load circuit keys");
 
         // Add the stack to the process.
         process.add_stack(stack);
 
-        finish!(timer, "Process::load_v0");
+        finish!(timer, "Process::load_with_credits");
         // Return the process.
         Ok(process)
     }

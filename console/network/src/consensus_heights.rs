@@ -54,8 +54,9 @@ pub enum ConsensusVersion {
     ///      Introduces `aleo::GENERATOR`, `aleo::GENERATOR_POWERS`, `snark.verify` opcodes,
     ///      and dynamic dispatch, and identifier literal types.
     V14 = 14,
-    /// V15: Introduces the record-existence check and `commit.*.raw` instruction variants.
-    ///      Increase the anchor time to 35.
+    /// V15: Introduces the record-existence check, `commit.*.raw` instruction variants,
+    ///      and `redelegate` to `credits.aleo`
+    ///      Increase the anchor time to 35 and updates the unbonding period.
     V15 = 15,
 }
 

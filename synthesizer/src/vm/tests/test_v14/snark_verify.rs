@@ -15,9 +15,13 @@
 
 use super::*;
 
-use circuit::{Circuit, Environment};
-use console::algorithms::U8;
-use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS};
+use crate::vm::test_helpers::*;
+
+use circuit::{Circuit, Environment, Inject, Mode};
+use console::{algorithms::U8, network::ConsensusVersion, program::Value};
+use snarkvm_synthesizer_program::Program;
+use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
+use snarkvm_utilities::TestRng;
 
 use std::sync::OnceLock;
 

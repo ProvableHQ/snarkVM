@@ -42,6 +42,7 @@ type CurrentAleo = AleoV0;
 
 const NUM_BLOCKS_TO_UNLOCK: u32 = 360;
 const TEST_COMMISSION: u8 = 5;
+const REDELEGATE_COOLDOWN: u32 = 403_200;
 
 /// Samples a new finalize store.
 macro_rules! sample_finalize_store {
@@ -225,6 +226,36 @@ fn withdraw_state<N: Network, F: FinalizeStorage<N>>(
     Ok(Some(withdrawal_address))
 }
 
+/// Get the current redelegate state from the `redelegated` mapping for the given delegator address.
+/// Returns the `redelegate_state` as `(previous_validator, new_validator, cooldown_height)`.
+fn redelegate_state<N: Network, F: FinalizeStorage<N>>(
+    store: &FinalizeStore<N, F>,
+    address: &Address<N>,
+) -> Result<Option<(Address<N>, Address<N>, u32)>> {
+    let state = match get_mapping_value(store, "credits.aleo", "redelegated", Literal::Address(*address))? {
+        Some(Value::Plaintext(Plaintext::Struct(state, _))) => state,
+        None => return Ok(None),
+        _ => bail!("Malformed redelegate state for {address}"),
+    };
+
+    let previous_validator = match state.get(&Identifier::from_str("previous_validator")?) {
+        Some(Plaintext::Literal(Literal::Address(addr), _)) => *addr,
+        _ => bail!("`previous_validator` not found for: {address}"),
+    };
+
+    let new_validator = match state.get(&Identifier::from_str("new_validator")?) {
+        Some(Plaintext::Literal(Literal::Address(addr), _)) => *addr,
+        _ => bail!("`new_validator` not found for: {address}"),
+    };
+
+    let height = match state.get(&Identifier::from_str("height")?) {
+        Some(Plaintext::Literal(Literal::U32(height), _)) => **height,
+        _ => bail!("`height` not found for: {address}"),
+    };
+
+    Ok(Some((previous_validator, new_validator, height)))
+}
+
 /// Initialize an account with a given balance
 fn initialize_account<N: Network, F: FinalizeStorage<N>>(
     finalize_store: &FinalizeStore<N, F>,
@@ -402,6 +433,26 @@ fn unbond_public<F: FinalizeStorage<CurrentNetwork>>(
         caller_private_key,
         "unbond_public",
         &[address.to_string(), format!("{amount}_u64")],
+        Some(block_height),
+        rng,
+    )
+}
+
+/// Perform a `redelegate`.
+fn redelegate<F: FinalizeStorage<CurrentNetwork>>(
+    process: &Process<CurrentNetwork>,
+    finalize_store: &FinalizeStore<CurrentNetwork, F>,
+    caller_private_key: &PrivateKey<CurrentNetwork>,
+    new_validator_address: &Address<CurrentNetwork>,
+    block_height: u32,
+    rng: &mut TestRng,
+) -> Result<()> {
+    execute_function(
+        process,
+        finalize_store,
+        caller_private_key,
+        "redelegate",
+        &[new_validator_address.to_string()],
         Some(block_height),
         rng,
     )
@@ -2803,6 +2854,218 @@ fn test_bond_validator_with_different_commission_fails() {
         )
         .is_err()
     );
+}
+
+/// Ensure `redelegate` stores the correct bond, delegated, and redelegation state, and sets the
+/// cooldown height to `block_height + REDELEGATE_COOLDOWN`.
+#[test]
+fn test_redelegate_stores_correct_state() {
+    let rng = &mut TestRng::default();
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    let store = sample_finalize_store!();
+
+    // Initialize two validators and one delegator.
+    let (validators, delegators) = initialize_stakers(&store, 2, 1, rng).unwrap();
+    let mut validators_iter = validators.iter();
+    let (v1_key, (v1_addr, _, _, v1_withdraw)) = validators_iter.next().unwrap();
+    let (v2_key, (v2_addr, _, _, v2_withdraw)) = validators_iter.next().unwrap();
+    let (delegator_key, (delegator_addr, _)) = delegators.first().unwrap();
+
+    // Bond both validators.
+    let validator_amount = MIN_VALIDATOR_STAKE;
+    bond_validator(&process, &store, v1_key, v1_withdraw, validator_amount, TEST_COMMISSION, rng).unwrap();
+    bond_validator(&process, &store, v2_key, v2_withdraw, validator_amount, TEST_COMMISSION, rng).unwrap();
+
+    // Bond the delegator to validator 1.
+    let delegator_amount = MIN_DELEGATOR_STAKE;
+    bond_public(&process, &store, delegator_key, v1_addr, delegator_addr, delegator_amount, rng).unwrap();
+
+    // Sanity check: no redelegate state exists yet.
+    assert_eq!(redelegate_state(&store, delegator_addr).unwrap(), None);
+
+    // Redelegate from validator 1 to validator 2 at block height 1.
+    let block_height = 1u32;
+    redelegate(&process, &store, delegator_key, v2_addr, block_height, rng).unwrap();
+
+    // The bond state must point to validator 2.
+    assert_eq!(bond_state(&store, delegator_addr).unwrap(), Some((*v2_addr, delegator_amount)));
+
+    // Delegated totals must be updated: v1 loses the delegator's stake, v2 gains it.
+    assert_eq!(delegated_state(&store, v1_addr).unwrap(), Some(validator_amount));
+    assert_eq!(delegated_state(&store, v2_addr).unwrap(), Some(validator_amount + delegator_amount));
+
+    // The redelegate state must record the old validator, the new validator, and the cooldown height.
+    let (prev, next, height) = redelegate_state(&store, delegator_addr).unwrap().unwrap();
+    assert_eq!(prev, *v1_addr);
+    assert_eq!(next, *v2_addr);
+    assert_eq!(height, block_height + REDELEGATE_COOLDOWN);
+}
+
+/// Ensure that redelegating to the same validator that is currently bonded fails.
+#[test]
+fn test_redelegate_to_same_validator_fails() {
+    let rng = &mut TestRng::default();
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    let store = sample_finalize_store!();
+
+    let (validators, delegators) = initialize_stakers(&store, 1, 1, rng).unwrap();
+    let (v_key, (v_addr, _, _, v_withdraw)) = validators.first().unwrap();
+    let (delegator_key, (delegator_addr, _)) = delegators.first().unwrap();
+
+    bond_validator(&process, &store, v_key, v_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+    bond_public(&process, &store, delegator_key, v_addr, delegator_addr, MIN_DELEGATOR_STAKE, rng).unwrap();
+
+    // Redelegating to the current validator must fail.
+    assert!(redelegate(&process, &store, delegator_key, v_addr, 1, rng).is_err());
+
+    // The bond state must be unchanged.
+    assert_eq!(bond_state(&store, delegator_addr).unwrap(), Some((*v_addr, MIN_DELEGATOR_STAKE)));
+}
+
+/// Ensure that only the staker (not an unrelated address) can call `redelegate`.
+/// Since `self.caller` is used as the delegator key in finalize, any caller without a bond state is rejected.
+#[test]
+fn test_redelegate_only_staker_can_call() {
+    let rng = &mut TestRng::default();
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    let store = sample_finalize_store!();
+
+    let (validators, delegators) = initialize_stakers(&store, 2, 1, rng).unwrap();
+    let mut validators_iter = validators.iter();
+    let (v1_key, (v1_addr, _, _, v1_withdraw)) = validators_iter.next().unwrap();
+    let (v2_key, (v2_addr, _, _, v2_withdraw)) = validators_iter.next().unwrap();
+    let (delegator_key, (delegator_addr, _)) = delegators.first().unwrap();
+
+    bond_validator(&process, &store, v1_key, v1_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+    bond_validator(&process, &store, v2_key, v2_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+    bond_public(&process, &store, delegator_key, v1_addr, delegator_addr, MIN_DELEGATOR_STAKE, rng).unwrap();
+
+    // A third party with no bond state cannot redelegate on the delegator's behalf.
+    let stranger_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    assert!(redelegate(&process, &store, &stranger_key, v2_addr, 1, rng).is_err());
+
+    // The delegator's bond state must be unchanged.
+    assert_eq!(bond_state(&store, delegator_addr).unwrap(), Some((*v1_addr, MIN_DELEGATOR_STAKE)));
+}
+
+/// Ensure that a validator (who has an entry in the `committee` mapping) cannot call `redelegate`.
+#[test]
+fn test_validator_cannot_redelegate() {
+    let rng = &mut TestRng::default();
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    let store = sample_finalize_store!();
+
+    let (validators, _) = initialize_stakers(&store, 2, 0, rng).unwrap();
+    let mut validators_iter = validators.iter();
+    let (v1_key, (_, _, _, v1_withdraw)) = validators_iter.next().unwrap();
+    let (v2_key, (v2_addr, _, _, v2_withdraw)) = validators_iter.next().unwrap();
+
+    bond_validator(&process, &store, v1_key, v1_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+    bond_validator(&process, &store, v2_key, v2_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+
+    // A validator (present in the committee mapping) must be rejected by the `contains committee` check.
+    assert!(redelegate(&process, &store, v1_key, v2_addr, 1, rng).is_err());
+}
+
+/// Ensure that a second redelegation is rejected before the cooldown expires, and accepted at
+/// exactly the cooldown height.
+#[test]
+fn test_redelegate_cooldown_not_expired_fails() {
+    let rng = &mut TestRng::default();
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    let store = sample_finalize_store!();
+
+    let (validators, delegators) = initialize_stakers(&store, 3, 1, rng).unwrap();
+    let mut validators_iter = validators.iter();
+    let (v1_key, (v1_addr, _, _, v1_withdraw)) = validators_iter.next().unwrap();
+    let (v2_key, (v2_addr, _, _, v2_withdraw)) = validators_iter.next().unwrap();
+    let (v3_key, (v3_addr, _, _, v3_withdraw)) = validators_iter.next().unwrap();
+    let (delegator_key, (delegator_addr, _)) = delegators.first().unwrap();
+
+    bond_validator(&process, &store, v1_key, v1_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+    bond_validator(&process, &store, v2_key, v2_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+    bond_validator(&process, &store, v3_key, v3_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+    bond_public(&process, &store, delegator_key, v1_addr, delegator_addr, MIN_DELEGATOR_STAKE, rng).unwrap();
+
+    // First redelegate: validator 1 → validator 2 at block 1.
+    redelegate(&process, &store, delegator_key, v2_addr, 1, rng).unwrap();
+    let (_, _, cooldown_height) = redelegate_state(&store, delegator_addr).unwrap().unwrap();
+    assert_eq!(cooldown_height, 1 + REDELEGATE_COOLDOWN);
+
+    // A second redelegate one block before the cooldown expires must fail.
+    assert!(redelegate(&process, &store, delegator_key, v3_addr, cooldown_height - 1, rng).is_err());
+    assert_eq!(bond_state(&store, delegator_addr).unwrap(), Some((*v2_addr, MIN_DELEGATOR_STAKE)));
+
+    // A second redelegate at exactly the cooldown height must succeed.
+    redelegate(&process, &store, delegator_key, v3_addr, cooldown_height, rng).unwrap();
+    assert_eq!(bond_state(&store, delegator_addr).unwrap(), Some((*v3_addr, MIN_DELEGATOR_STAKE)));
+}
+
+/// Ensure that redelegation to a validator address not yet in the committee succeeds.
+/// The finalize uses `get.or_use committee[new_validator] default` where the default is open,
+/// so any address that has not explicitly closed itself is a valid target.
+#[test]
+fn test_redelegate_to_validator_not_in_committee_succeeds() {
+    let rng = &mut TestRng::default();
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    let store = sample_finalize_store!();
+
+    let (validators, delegators) = initialize_stakers(&store, 1, 1, rng).unwrap();
+    let (v_key, (v_addr, _, _, v_withdraw)) = validators.first().unwrap();
+    let (delegator_key, (delegator_addr, _)) = delegators.first().unwrap();
+
+    bond_validator(&process, &store, v_key, v_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+    bond_public(&process, &store, delegator_key, v_addr, delegator_addr, MIN_DELEGATOR_STAKE, rng).unwrap();
+
+    // A fresh address with no committee entry defaults to `is_open = true` via `get.or_use`.
+    let future_validator_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let future_validator_addr = Address::try_from(&future_validator_key).unwrap();
+
+    redelegate(&process, &store, delegator_key, &future_validator_addr, 1, rng).unwrap();
+
+    // The bond state must point to the new (non-committee) address.
+    assert_eq!(bond_state(&store, delegator_addr).unwrap(), Some((future_validator_addr, MIN_DELEGATOR_STAKE)));
+}
+
+/// Ensure that fully unbonding a delegator (and claiming the unbond) removes the `redelegated` entry.
+#[test]
+fn test_full_unbond_removes_redelegate_state() {
+    let rng = &mut TestRng::default();
+
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    let store = sample_finalize_store!();
+
+    let (validators, delegators) = initialize_stakers(&store, 2, 1, rng).unwrap();
+    let mut validators_iter = validators.iter();
+    let (v1_key, (v1_addr, _, _, v1_withdraw)) = validators_iter.next().unwrap();
+    let (v2_key, (v2_addr, _, _, v2_withdraw)) = validators_iter.next().unwrap();
+    let (delegator_key, (delegator_addr, _)) = delegators.first().unwrap();
+
+    bond_validator(&process, &store, v1_key, v1_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+    bond_validator(&process, &store, v2_key, v2_withdraw, MIN_VALIDATOR_STAKE, TEST_COMMISSION, rng).unwrap();
+    bond_public(&process, &store, delegator_key, v1_addr, delegator_addr, MIN_DELEGATOR_STAKE, rng).unwrap();
+
+    // Redelegate to validator 2 so a `redelegated` entry exists.
+    redelegate(&process, &store, delegator_key, v2_addr, 1, rng).unwrap();
+    assert!(redelegate_state(&store, delegator_addr).unwrap().is_some());
+
+    // Fully unbond the delegator from validator 2.
+    unbond_public(&process, &store, delegator_key, delegator_addr, MIN_DELEGATOR_STAKE, 2, rng).unwrap();
+    let unbond_height = unbond_state(&store, delegator_addr).unwrap().unwrap().1;
+
+    // Claim the unbond — this triggers `remove redelegated[staker]` in the finalize.
+    claim_unbond_public(&process, &store, delegator_key, delegator_addr, unbond_height, rng).unwrap();
+
+    // All delegator state must be cleared.
+    assert_eq!(redelegate_state(&store, delegator_addr).unwrap(), None);
+    assert_eq!(bond_state(&store, delegator_addr).unwrap(), None);
+    assert_eq!(unbond_state(&store, delegator_addr).unwrap(), None);
 }
 
 // Test cases:
