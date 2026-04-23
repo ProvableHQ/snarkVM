@@ -1,0 +1,22 @@
+[package]
+name = "llvm-unroll-repro"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[[bin]]
+name = "repro"
+path = "main.rs"
+
+[dependencies]
+snarkvm-algorithms = { path = "../algorithms" }
+snarkvm-curves = { path = "../curves" }
+snarkvm-fields = { path = "../fields" }
+
+# The bug requires ALL THREE of: opt-level=3, lto="thin", incremental=true.
+# Removing any one of these makes the test pass.
+[profile.release]
+opt-level = 3
+lto = "thin"
+incremental = true
