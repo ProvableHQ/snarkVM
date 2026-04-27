@@ -251,11 +251,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         lap!(timer, "Initialize genesis");
 
         // Ensure that the greatest stored height matches that of the block tree.
+        let tree_derived_block_height = ledger.vm().block_store().current_block_height();
         ensure!(
-            latest_height == ledger.vm().block_store().current_block_height(),
-            "The stored height is different than the one in the block tree; \
-            please ensure that the cached block tree is valid or delete the \
-            'block_tree' file from the ledger folder"
+            latest_height == tree_derived_block_height,
+            "The stored height ({latest_height}) is different than the one in \
+            the block tree ({tree_derived_block_height}); please ensure that \
+            the cached block tree is valid or delete the 'block_tree' file from \
+            the ledger folder"
         );
 
         // Verify that the root of the cached block tree matches the one in the storage.

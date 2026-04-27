@@ -1235,7 +1235,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         path.push("block_tree");
 
         // Create the target file.
-        let file = fs::File::create(path)?;
+        let file = fs::File::create(&path)?;
         // The block tree can become quite large, so use a BufWriter in order to
         // not have to keep the entire serialized tree in memory, and to reduce
         // the number of syscalls involved with disk writes. 1MiB should provide
@@ -1247,6 +1247,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // to perform chunking and parallel serialization. This may be useful
         // for other applications, so it should be implemented as a common
         // utility.
+
+        tracing::debug!("Cached the current block tree to {}", path.display());
 
         Ok(())
     }
