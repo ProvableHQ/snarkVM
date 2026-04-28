@@ -13,6 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Performs time measurements on the verification of the large one_to_many_records transaction.
+// - Generate artifacts (both the blocks where programs are deployed and the transactions themselves) with:
+//   cargo bench --bench check_transaction_multirecord -- --generate
+// - Artifacts are ignored by git. To clean them, run:
+//   cargo bench --bench check_transaction_multirecord -- --clean
+// - Obtain time measurements with:
+//   cargo bench --bench check_transaction_multirecord
+//   The --serial feature can be added to deactivate parallelism.
+// - Flamegraph with:
+//   cargo flamegraph --bench check_transaction_multirecord --features serial
+
 use std::{env, path::Path, time::Instant};
 
 use snarkvm_console::{
@@ -94,16 +105,15 @@ fn sample_next_block<R: Rng + CryptoRng>(
 
 fn main() {
     /////////////////////////// User defined
-
     // Number of times to verify the transaction (when not in --generate mode).
     // A higher number helps flamegraph get more precise measurements.
     let n_samples = 8;
-
     ///////////////////////////
 
     let generate = env::args().any(|arg| arg == "--generate");
     let clean = env::args().any(|arg| arg == "--clean");
     let artifact_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("benches/check_transaction_multirecord/artifacts");
+    let transaction_path = artifact_path.join("transactions");
 
     if clean {
         if generate {
@@ -112,16 +122,16 @@ fn main() {
                 the artifacts, --clean to delete them (and end), and neither to use the existing artifacts."
             );
         }
-        std::fs::remove_dir_all(&artifact_path).unwrap();
+        std::fs::remove_dir_all(&transaction_path).unwrap();
         println!("Artifacts deleted.");
         return;
     }
 
-    if !artifact_path.exists() {
+    if !transaction_path.exists() {
         if !generate {
             panic!("--generate was not passed, but artifacts were not found.");
         }
-        std::fs::create_dir(&artifact_path).unwrap();
+        std::fs::create_dir_all(&transaction_path).unwrap();
     }
 
     let rng = &mut TestRng::from_seed(160426);
@@ -285,7 +295,7 @@ fn main() {
         println!("Executing wrapper call (generating transaction) {n_samples} times...");
 
         for i in 0..n_samples {
-            let transaction_path = artifact_path.join("transactions").join(format!("transaction_{i}.bin"));
+            let current_transaction_path = transaction_path.join(format!("transaction_{i}.bin"));
 
             let value1_str = format!("{i}u64");
             let value2_str = format!("{}u64", 10_000 + i);
@@ -309,7 +319,7 @@ fn main() {
 
             assert!(vm.check_transaction(&transaction, None, rng).is_ok());
 
-            std::fs::write(&transaction_path, transaction.to_bytes_le().unwrap()).unwrap();
+            std::fs::write(&current_transaction_path, transaction.to_bytes_le().unwrap()).unwrap();
         }
     } else {
         println!("Loading {n_samples} transactions...");
@@ -317,7 +327,7 @@ fn main() {
         let transactions = (0..n_samples)
             .map(|i| {
                 Transaction::from_bytes_le(
-                    &std::fs::read(artifact_path.join("transactions").join(format!("transaction_{i}.bin")))
+                    &std::fs::read(transaction_path.join(format!("transaction_{i}.bin")))
                         .unwrap_or_else(|_| panic!("Transaction {i} not found")),
                 )
                 .unwrap()
