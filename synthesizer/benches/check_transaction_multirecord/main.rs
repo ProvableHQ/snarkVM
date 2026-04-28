@@ -107,7 +107,7 @@ fn main() {
     /////////////////////////// User defined
     // Number of times to verify the transaction (when not in --generate mode).
     // A higher number helps flamegraph get more precise measurements.
-    let n_samples = 8;
+    let n_samples = 10;
     ///////////////////////////
 
     let generate = env::args().any(|arg| arg == "--generate");
