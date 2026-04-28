@@ -26,6 +26,9 @@ use std::sync::Arc;
 pub(super) const BHP_CHUNK_SIZE: usize = 3;
 pub(super) const BHP_LOOKUP_SIZE: usize = 1 << BHP_CHUNK_SIZE;
 
+// The amount of bit triplets to preprocess together in the lookup table.
+pub(super) const BHP_NUM_COMBINED_CHUNKS: usize = 3;
+
 /// BHP is a collision-resistant hash function that takes a variable-length input.
 /// The BHP hasher is used to process one internal iteration of the BHP hash function.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -35,10 +38,8 @@ pub struct BHPHasher<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u
     bases: Arc<Vec<Vec<Group<E>>>>,
     /// The bases lookup table for the BHP hash.
     bases_lookup: Arc<Vec<Vec<[Group<E>; BHP_LOOKUP_SIZE]>>>,
-    // TODO (Antonio)
-    // TODO (Antonio) also: type
-    #[allow(clippy::type_complexity)]
-    bases_double_lookup: Option<Arc<Vec<Vec<Vec<Vec<Group<E>>>>>>>,
+    // TODO (Antonio) document
+    combined_bases_lookup: Arc<Vec<Vec<Vec<Group<E>>>>>,
     /// The random base for the BHP commitment.
     random_base: Arc<Vec<Group<E>>>,
 }
@@ -86,6 +87,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         }
 
         // Compute the bases lookup.
+        // TODO (Antonio) parallelize
         let bases_lookup = bases
             .iter()
             .map(|x| {
@@ -114,6 +116,27 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
             ensure!(window.len() == WINDOW_SIZE as usize, "Incorrect BHP lookup window size ({})", window.len());
         }
 
+        // TODO (Antonio)
+
+        let combined_bases_lookup = bases_lookup
+            .iter()
+            .map(|window| {
+                window
+                    .chunks_exact(BHP_NUM_COMBINED_CHUNKS)
+                    .map(|chunks| {
+                        chunks.iter().fold(vec![Group::<E>::zero()], |prev_sums, new_terms| {
+                            prev_sums
+                                .iter()
+                                .flat_map(|prev_sum| {
+                                    new_terms.iter().map(|new_term| *prev_sum + *new_term).collect::<Vec<Group<E>>>()
+                                })
+                                .collect::<Vec<Group<E>>>()
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<Vec<_>>>();
+
         // Next, compute the random base.
         let (generator, _, _) =
             Blake2Xs::hash_to_curve::<E::Affine>(&format!("Aleo.BHP.{NUM_WINDOWS}.{WINDOW_SIZE}.{domain}.Randomizer"));
@@ -129,34 +152,10 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
             random_base.len()
         );
 
-        // TODO(Antonio)
-        let bases_double_lookup = if (NUM_WINDOWS == 8 && WINDOW_SIZE == 54) || (NUM_WINDOWS == 6 && WINDOW_SIZE == 43)
-        {
-            Some(Arc::new(
-                // TODO (Antonio) handle slices, windows...properly
-                bases_lookup
-                    .iter()
-                    .map(|window| {
-                        window
-                            .chunks_exact(2)
-                            .map(|pair| {
-                                pair[0]
-                                    .iter()
-                                    .map(|p1| pair[1].iter().map(|p2| *p1 + p2).collect::<Vec<Group<E>>>())
-                                    .collect::<Vec<Vec<Group<E>>>>()
-                            })
-                            .collect::<Vec<Vec<Vec<Group<E>>>>>()
-                    })
-                    .collect::<Vec<Vec<Vec<Vec<Group<E>>>>>>(),
-            ))
-        } else {
-            None
-        };
-
         Ok(Self {
             bases: Arc::new(bases),
             bases_lookup: Arc::new(bases_lookup),
-            bases_double_lookup,
+            combined_bases_lookup: Arc::new(combined_bases_lookup),
             random_base: Arc::new(random_base),
         })
     }

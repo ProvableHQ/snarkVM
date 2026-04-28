@@ -50,60 +50,51 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
         };
 
         // TODO (Antonio)
-        if (NUM_WINDOWS == 8 && WINDOW_SIZE == 54) || (NUM_WINDOWS == 6 && WINDOW_SIZE == 43) {
-            let bases_double_lookup = self.bases_double_lookup.as_ref().unwrap();
+        // TODO (Antonio) parallelize window addition
+        // TODO (Antonio) during setup, parallelize LUT generation
+        // TODO (Antonio) if in depep-print mode, print and measure LUT generation time and space
+        // TODO (Antonio) test further configurations
+        let sum = input
+            .chunks(WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
+            .zip(self.combined_bases_lookup.iter())
+            .zip(self.bases_lookup.iter())
+            .flat_map(|((window_bits, combined_bases), single_bases)| {
+                // TODO (Antonio) improve constant handling
+                // TODO (Antonio) perhaps handle with chunks
+                let num_combined_bases = window_bits.len() / (BHP_CHUNK_SIZE * BHP_NUM_COMBINED_CHUNKS);
+                let num_combined_bits = num_combined_bases * BHP_CHUNK_SIZE * BHP_NUM_COMBINED_CHUNKS;
 
-            Ok(input
-                .chunks(WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
-                .zip(bases_double_lookup.iter())
-                .zip(self.bases_lookup.iter())
-                .flat_map(|((window_bits, double_bases), single_bases)| {
-                    let num_complete_pairs = window_bits.len() / (BHP_CHUNK_SIZE * 2);
-                    let paired_bits_len = num_complete_pairs * BHP_CHUNK_SIZE * 2;
-
-                    let paired = window_bits[..paired_bits_len].chunks_exact(BHP_CHUNK_SIZE * 2).zip(double_bases).map(
-                        |(chunk_bits, double_base)| {
-                            let idx_1 = (chunk_bits[0] as usize)
+                let paired = window_bits[..num_combined_bits]
+                    .chunks_exact(BHP_CHUNK_SIZE * BHP_NUM_COMBINED_CHUNKS)
+                    .zip(combined_bases)
+                    .map(|(combined_chunks_bits, combined_base)| {
+                        // Reconstruct the index as the integer represented by the bits of the combined chunks.
+                        let index = combined_chunks_bits.chunks_exact(BHP_CHUNK_SIZE).fold(0, |idx, chunk_bits| {
+                            (idx << BHP_CHUNK_SIZE)
+                                | (chunk_bits[0] as usize)
                                 | (chunk_bits[1] as usize) << 1
-                                | (chunk_bits[2] as usize) << 2;
-                            let idx_2 = (chunk_bits[3] as usize)
-                                | (chunk_bits[4] as usize) << 1
-                                | (chunk_bits[5] as usize) << 2;
-                            double_base[idx_1][idx_2]
-                        },
-                    );
+                                | (chunk_bits[2] as usize) << 2
+                        });
 
-                    // Handle the trailing unpaired chunk (odd WINDOW_SIZE or short last window).
-                    let remainder = if paired_bits_len < window_bits.len() {
-                        let chunk_bits = &window_bits[paired_bits_len..];
-                        let base = &single_bases[num_complete_pairs * 2];
-                        Some(
-                            base[(chunk_bits[0] as usize)
-                                | (chunk_bits[1] as usize) << 1
-                                | (chunk_bits[2] as usize) << 2],
-                        )
-                    } else {
-                        None
-                    };
+                        combined_base[index]
+                    });
 
-                    paired.chain(remainder)
-                })
-                .sum())
-        } else {
-            // Compute sum of h_i^{sum of (1-2*c_{i,j,2})*(1+c_{i,j,0}+2*c_{i,j,1})*2^{4*(j-1)} for all j in segment}
-            // for all i. Described in section 5.4.1.7 in the Zcash protocol specification.
-            //
-            // Note: `.zip()` is used here (as opposed to `.zip_eq()`) as the input can be less than
-            // `NUM_WINDOWS * WINDOW_SIZE * BHP_CHUNK_SIZE` in length, which is the parameter size here.
-            Ok(input
-                .chunks(WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
-                .zip(&*self.bases_lookup)
-                .flat_map(|(bits, bases)| {
-                    bits.chunks(BHP_CHUNK_SIZE).zip(bases).map(|(chunk_bits, base)| {
-                        base[(chunk_bits[0] as usize) | (chunk_bits[1] as usize) << 1 | (chunk_bits[2] as usize) << 2]
-                    })
-                })
-                .sum())
-        }
+                // TODO (Antonio) review and review comments
+                // Remaining bits are full 3-bit chunks only (input is padded to `BHP_CHUNK_SIZE`).
+                let base_offset = num_combined_bases * BHP_NUM_COMBINED_CHUNKS;
+                let trailing = &window_bits[num_combined_bits..];
+                let single_lut = single_bases;
+                let remainder =
+                    trailing.chunks_exact(BHP_CHUNK_SIZE).enumerate().map(move |(triplet_index, chunk_bits)| {
+                        let idx =
+                            (chunk_bits[0] as usize) | (chunk_bits[1] as usize) << 1 | (chunk_bits[2] as usize) << 2;
+                        single_lut[base_offset + triplet_index][idx]
+                    });
+
+                paired.chain(remainder)
+            })
+            .sum();
+
+        Ok(sum)
     }
 }
