@@ -49,6 +49,9 @@ version = "1.0"
 [dependencies.hex]
 version = "0.4"
 
+[dependencies.rayon]
+workspace = true
+
 [dependencies.k256]
 workspace = true
 
@@ -85,3 +88,4 @@ features = [ "preserve_order" ]
 
 [features]
 dev-print = [ "snarkvm-utilities/dev-print" ]
+serial = [ ]

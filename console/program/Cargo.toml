@@ -16,7 +16,11 @@ harness = false
 [features]
 default = [ ]
 test = [ ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
+dev-print = [
+  "snarkvm-utilities/dev-print",
+  "snarkvm-console-algorithms/dev-print",
+  "snarkvm-console-network/dev-print"
+]
 
 [dependencies.snarkvm-console-account]
 workspace = true

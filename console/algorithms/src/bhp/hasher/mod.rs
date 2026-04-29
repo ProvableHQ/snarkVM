@@ -19,6 +19,8 @@ use crate::Blake2Xs;
 use snarkvm_console_types::prelude::*;
 use snarkvm_utilities::BigInteger;
 
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -26,8 +28,8 @@ use std::sync::Arc;
 pub(super) const BHP_CHUNK_SIZE: usize = 3;
 pub(super) const BHP_LOOKUP_SIZE: usize = 1 << BHP_CHUNK_SIZE;
 
-// The amount of bit triplets to preprocess together in the lookup table.
-pub(super) const BHP_NUM_COMBINED_CHUNKS: usize = 3;
+// The amount of chunkks (i.e. bit triplets) to preprocess together in the lookup table.
+pub(super) const BHP_NUM_COMBINED_CHUNKS: usize = 5;
 
 /// BHP is a collision-resistant hash function that takes a variable-length input.
 /// The BHP hasher is used to process one internal iteration of the BHP hash function.
@@ -38,7 +40,10 @@ pub struct BHPHasher<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u
     bases: Arc<Vec<Vec<Group<E>>>>,
     /// The bases lookup table for the BHP hash.
     bases_lookup: Arc<Vec<Vec<[Group<E>; BHP_LOOKUP_SIZE]>>>,
-    // TODO (Antonio) document
+    /// The preprocessed combinations of elements in the bases lookup table.
+    // For each group of BHP_NUM_COMBINED_CHUNKS contigous
+    // BHP_LOOKUP_SIZE-element tuples in `bases_lookup`, this contains
+    // all possible BHP_LOOKUP_SIZE^BHP_NUM_COMBINED_CHUNKS cross-tuple sums.
     combined_bases_lookup: Arc<Vec<Vec<Vec<Group<E>>>>>,
     /// The random base for the BHP commitment.
     random_base: Arc<Vec<Group<E>>>,
@@ -52,6 +57,9 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
 
     /// Initializes a new instance of BHP with the given domain.
     pub fn setup(domain: &str) -> Result<Self> {
+        #[cfg(feature = "dev-print")]
+        let timer = std::time::Instant::now();
+
         // Calculate the maximum window size.
         let mut maximum_window_size = 0;
         let mut range = E::BigInteger::from(2_u64);
@@ -87,11 +95,10 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         }
 
         // Compute the bases lookup.
-        // TODO (Antonio) parallelize
-        let bases_lookup = bases
-            .iter()
-            .map(|x| {
-                x.iter()
+        let bases_lookup = cfg_iter!(bases)
+            .map(|window| {
+                window
+                    .iter()
                     .map(|g| {
                         let mut lookup = [Group::<E>::zero(); BHP_LOOKUP_SIZE];
                         for (i, element) in lookup.iter_mut().enumerate().take(BHP_LOOKUP_SIZE) {
@@ -116,10 +123,22 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
             ensure!(window.len() == WINDOW_SIZE as usize, "Incorrect BHP lookup window size ({})", window.len());
         }
 
-        // TODO (Antonio)
+        // Compute the preprocessed sums of contiguous base-element tuples. For
+        // instance, for BHP_NUM_COMBINED_CHUNKS = 2, if the first two three-bit
+        // groups of the input are mapped to (P1_0, ..., P1_7) and (P2_0, ...,
+        // P2_7), respectively, this code computes the vector
+        // [
+        //     P1_0 + P2_0, P1_0 + P2_1, ..., P1_0 + P2_7,
+        //     P1_1 + P2_0, P1_1 + P2_1, ..., P1_1 + P2_7,
+        //     ...,
+        //     P1_7 + P2_0, P1_7 + P2_1, ..., P1_7 + P2_7
+        // ]
 
-        let combined_bases_lookup = bases_lookup
-            .iter()
+        // corresponding to the first six bits of the input. Note that bases
+        // lookup must still be kept around since the ending bits of an input
+        // could end in the middle of any preprocessed combined chunk.
+
+        let combined_bases_lookup = cfg_iter!(bases_lookup)
             .map(|window| {
                 window
                     .chunks_exact(BHP_NUM_COMBINED_CHUNKS)
@@ -151,6 +170,40 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
             "Incorrect number of BHP random base powers ({})",
             random_base.len()
         );
+
+        #[cfg(feature = "dev-print")]
+        {
+            // Display the setup time and approximate hasher size.
+
+            let elapsed_ms = timer.elapsed().as_micros();
+            let elapsed = elapsed_ms as f64 / 1000.0;
+            println!(
+                " • BHP hasher setup (NUM_WINDOWS = {NUM_WINDOWS}, WINDOW_SIZE = {WINDOW_SIZE}, NUM_COMBINED_CHUNKS = {BHP_NUM_COMBINED_CHUNKS}, DOMAIN = '{domain}:.2'): {elapsed:.2} ms"
+            );
+
+            // The number of group elements stored in the hasher is
+            //    N (basis elements)
+            //  + N * 8 (lookup for basis elements)
+            //  + NUM_W * (W_SIZE // C) * 8^C (combined lookup for basis elements)
+            //  + S (random base)
+            // where
+            //  - NUM_W = NUM_WINDOWS,
+            //  - W_SIZE = WINDOW_SIZE,
+            //  - N = number of basis elements = NUM_W * W_SIZE,
+            //  - C = BHP_NUM_COMBINED_CHUNKS
+
+            let num_els_bases: usize = bases.iter().map(|v| v.len()).sum();
+            let num_els_bases_lookup: usize =
+                bases_lookup.iter().map(|vs| vs.iter().map(|v| v.len()).sum::<usize>()).sum();
+            let num_els_combined_bases_lookup: usize =
+                combined_bases_lookup.iter().map(|vs| vs.iter().map(|v| v.len()).sum::<usize>()).sum();
+            let num_els_random_base = random_base.len();
+
+            let bytes = (num_els_bases + num_els_bases_lookup + num_els_combined_bases_lookup + num_els_random_base)
+                * std::mem::size_of::<Group<E>>();
+
+            println!("   Approximate BHP hasher size: {bytes} B");
+        }
 
         Ok(Self {
             bases: Arc::new(bases),

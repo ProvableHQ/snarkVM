@@ -49,26 +49,24 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
             Cow::Borrowed(input)
         };
 
-        // TODO (Antonio)
-        // TODO (Antonio) parallelize window addition
-        // TODO (Antonio) during setup, parallelize LUT generation
-        // TODO (Antonio) if in depep-print mode, print and measure LUT generation time and space
-        // TODO (Antonio) test further configurations
         let sum = input
             .chunks(WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
             .zip(self.combined_bases_lookup.iter())
             .zip(self.bases_lookup.iter())
-            .flat_map(|((window_bits, combined_bases), single_bases)| {
-                // TODO (Antonio) improve constant handling
-                // TODO (Antonio) perhaps handle with chunks
+            .flat_map(|((window_bits, combined_bases), bases)| {
+                // The number of full BHP_CHUNK_SIZE-bit chunks in the window.
+                // The preprocessed points corresponding to these will looked up
+                // in combined_bases.
                 let num_combined_bases = window_bits.len() / (BHP_CHUNK_SIZE * BHP_NUM_COMBINED_CHUNKS);
+                // The number of bits in the window belonging to full chunks.
                 let num_combined_bits = num_combined_bases * BHP_CHUNK_SIZE * BHP_NUM_COMBINED_CHUNKS;
 
-                let paired = window_bits[..num_combined_bits]
+                let combined = window_bits[..num_combined_bits]
                     .chunks_exact(BHP_CHUNK_SIZE * BHP_NUM_COMBINED_CHUNKS)
                     .zip(combined_bases)
                     .map(|(combined_chunks_bits, combined_base)| {
-                        // Reconstruct the index as the integer represented by the bits of the combined chunks.
+                        // Reconstruct the index as the integer represented by the bits of the combined chunks
+                        // in a suitable order.
                         let index = combined_chunks_bits.chunks_exact(BHP_CHUNK_SIZE).fold(0, |idx, chunk_bits| {
                             (idx << BHP_CHUNK_SIZE)
                                 | (chunk_bits[0] as usize)
@@ -79,19 +77,18 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
                         combined_base[index]
                     });
 
-                // TODO (Antonio) review and review comments
-                // Remaining bits are full 3-bit chunks only (input is padded to `BHP_CHUNK_SIZE`).
+                // Trailing bits outside the last BHP_NUM_COMBINED_CHUNKS-chunk
+                // result in lookups `bases` table.
                 let base_offset = num_combined_bases * BHP_NUM_COMBINED_CHUNKS;
                 let trailing = &window_bits[num_combined_bits..];
-                let single_lut = single_bases;
                 let remainder =
                     trailing.chunks_exact(BHP_CHUNK_SIZE).enumerate().map(move |(triplet_index, chunk_bits)| {
                         let idx =
                             (chunk_bits[0] as usize) | (chunk_bits[1] as usize) << 1 | (chunk_bits[2] as usize) << 2;
-                        single_lut[base_offset + triplet_index][idx]
+                        bases[base_offset + triplet_index][idx]
                     });
 
-                paired.chain(remainder)
+                combined.chain(remainder)
             })
             .sum();
 
