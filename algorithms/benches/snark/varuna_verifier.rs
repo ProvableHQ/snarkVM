@@ -91,7 +91,7 @@ fn main() {
     let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
     let fs_parameters = FS::sample_parameters();
 
-    let varuna_version = VarunaVersion::V3;
+    let varuna_version = VarunaVersion::V2;
 
     let batch_str = batches
         .iter()
