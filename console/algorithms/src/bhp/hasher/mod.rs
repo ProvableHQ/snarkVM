@@ -133,11 +133,9 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         //     ...,
         //     P1_7 + P2_0, P1_7 + P2_1, ..., P1_7 + P2_7
         // ]
-
         // corresponding to the first six bits of the input. Note that bases
         // lookup must still be kept around since the ending bits of an input
         // could end in the middle of any preprocessed combined chunk.
-
         let combined_bases_lookup = cfg_iter!(bases_lookup)
             .map(|window| {
                 window

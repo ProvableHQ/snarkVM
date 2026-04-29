@@ -13,16 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Performs time measurements on prepare_advance_to_next_quorum_block for a block containing
-// a number of instances of the large one_to_many_records transaction.
-// - Generate artifacts with:
-//   cargo bench --bench prepare_advance_multirecord -- --generate
-// - Artifacts are ignored by git. To clean them, run:
-//   cargo bench --bench prepare_advance_multirecord -- --clean
-// - Obtain time measurements with:
-//   cargo bench --bench prepare_advance_multirecord
-//   The --serial feature can be added to deactivate parallelism.
-// - In order to run any of the above on a number of transfer_public instead, pass --transfer_public.
+/*
+Performs time measurements on prepare_advance_to_next_quorum_block for a block containing
+a number of instances of the large one_to_many_records transaction.
+ - Generate artifacts with:
+   cargo bench --bench prepare_advance_multirecord -- --generate
+ - Artifacts are ignored by git. To clean them, run:
+   cargo bench --bench prepare_advance_multirecord -- --clean
+ - Obtain time measurements with:
+   cargo bench --bench prepare_advance_multirecord
+   The --serial feature can be added to deactivate parallelism.
+ - In order to run any of the above on a number of transfer_public instead, pass --transfer_public.
+*/
 
 use std::{env, fs, io::Write, path::Path, time::Instant};
 
@@ -78,7 +80,8 @@ fn main() {
     /////////////////////////// User defined
     // Number of transactions to generate and check in each of the two cases:
     // simple (transfer_public) and complex (one_to_many_records). Right now,
-    // this is set to 8 ConsensusState::MAXIMUM_CONFIRMED_TRANSACTIONS, i.e. 8
+    // this is set to ConsensusState::MAXIMUM_CONFIRMED_TRANSACTIONS, which is 8
+    // in test environments.
     let n_transactions = 8;
     ///////////////////////////
 

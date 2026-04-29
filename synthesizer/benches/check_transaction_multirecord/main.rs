@@ -13,16 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Performs time measurements on the verification of the large one_to_many_records transaction.
-// - Generate artifacts (both the blocks where programs are deployed and the transactions themselves) with:
-//   cargo bench --bench check_transaction_multirecord -- --generate
-// - Artifacts are ignored by git. To clean them, run:
-//   cargo bench --bench check_transaction_multirecord -- --clean
-// - Obtain time measurements with:
-//   cargo bench --bench check_transaction_multirecord
-//   The --serial feature can be added to deactivate parallelism.
-// - Flamegraph with:
-//   cargo flamegraph --bench check_transaction_multirecord --features serial
+/*
+Performs time measurements on the verification of the large one_to_many_records transaction.
+ - Generate artifacts (both the blocks where programs are deployed and the transactions themselves) with:
+   cargo bench --bench check_transaction_multirecord -- --generate
+ - Artifacts are ignored by git. To clean them, run:
+   cargo bench --bench check_transaction_multirecord -- --clean
+ - Obtain time measurements with:
+   cargo bench --bench check_transaction_multirecord
+   The --serial feature can be added to deactivate parallelism.
+ - Flamegraph with:
+   cargo flamegraph --bench check_transaction_multirecord --features serial
+*/
 
 use std::{env, path::Path, time::Instant};
 
@@ -155,7 +157,7 @@ fn main() {
 
     // Advance the ledger to ConsensusV15
     let transactions: [Transaction<CurrentNetwork>; 0] = [];
-    while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap() {
+    while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap() {
         let next_block = sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
         vm.add_next_block(&next_block).unwrap();
     }

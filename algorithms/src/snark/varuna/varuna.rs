@@ -18,6 +18,7 @@ use crate::{
     AlgebraicSponge,
     SNARK,
     SNARKError,
+    crypto_hash::sha256,
     fft::EvaluationDomain,
     polycommit::sonic_pc::{
         Commitment,
@@ -166,11 +167,6 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
                 let mut preimage = Vec::new();
 
                 preimage.extend_from_slice(Self::PROTOCOL_NAME);
-
-                // TODO (Antonio)
-                // TODO (fast-pp-hash)
-                // absorb number of proofs?
-
                 for (batch_size, inputs) in inputs_and_batch_sizes.values() {
                     preimage.extend_from_slice(&(*batch_size as u64).to_le_bytes());
                     for input in inputs.iter() {
@@ -179,14 +175,13 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
                         }
                     }
                 }
-                for commitment in circuit_commitments {
-                    preimage.extend_from_slice(&commitment.to_bytes_le().unwrap());
+                for circuit_specific_commitments in circuit_commitments {
+                    preimage.extend_from_slice(&circuit_specific_commitments.to_bytes_le().unwrap());
                 }
 
-                use crate::crypto_hash::sha256::sha256;
-                let hash = sha256(&preimage);
+                let digest = sha256(&preimage);
 
-                sponge.absorb_bytes(&hash);
+                sponge.absorb_bytes(&digest);
 
                 sponge
             }

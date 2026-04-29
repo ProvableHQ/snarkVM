@@ -374,8 +374,6 @@ impl<P: Parameters> Mul<P::ScalarField> for Projective<P> {
 
         let mut found_one = false;
 
-        // TODO (Antonio) small optimization here
-
         for i in BitIteratorBE::new(other.to_bigint()) {
             if found_one {
                 res.double_in_place();

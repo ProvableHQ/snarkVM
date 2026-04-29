@@ -138,28 +138,6 @@ pub trait Field:
     /// least significant limb first.
     #[must_use]
     fn pow<S: AsRef<[u64]>>(&self, exp: S) -> Self {
-        // let mut res = Self::one();
-
-        // let mut found_one = false;
-
-        // for i in BitIteratorBE::new(exp) {
-        //     if !found_one {
-        //         if i {
-        //             found_one = true;
-        //         } else {
-        //             continue;
-        //         }
-        //     }
-
-        //     res.square_in_place();
-
-        //     if i {
-        //         res *= self;
-        //     }
-        // }
-        // res
-
-        // TODO (Antonio)
         let mut bits = BitIteratorBE::new_without_leading_zeros(exp);
 
         if bits.next().is_none() {
