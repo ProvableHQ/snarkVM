@@ -72,7 +72,6 @@ use console::{
 use snarkvm_ledger_block::{Deployment, Transaction, Transition};
 use snarkvm_synthesizer_error::*;
 use snarkvm_synthesizer_program::{
-    CallOperator,
     Closure,
     Function,
     Instruction,

@@ -13,13 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
-use crate::{FinalizeGlobalState, Function, Operand, Program};
+use crate::{CallOperator, FinalizeGlobalState, Function, Instruction, Operand, Program};
 use console::{
     account::Group,
     network::Network,
-    prelude::{Result, bail},
+    prelude::{Result, bail, ensure},
     program::{
         Future,
         Identifier,
@@ -33,6 +33,7 @@ use console::{
         RegisterType,
         Request,
         StructType,
+        TRANSACTION_DEPTH,
         Value,
         ValueType,
     },
@@ -40,6 +41,14 @@ use console::{
 };
 use rand::{CryptoRng, Rng};
 use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
+
+/// The maximum number of transitions allowed in a transaction.
+///
+/// This mirrors `snarkvm_ledger_block::Transaction::<N>::MAX_TRANSITIONS`,
+/// which lives in a downstream crate. We re-derive the same constant here so
+/// that `StackTrait::get_minimum_number_of_calls` and `StackTrait::contains_dynamic_call`
+/// can be implemented without introducing a circular dependency.
+const MAX_TRANSITIONS: usize = 1usize << TRANSACTION_DEPTH;
 
 /// This trait is intended to be implemented only by `snarkvm_synthesizer_process::Stack`.
 ///
@@ -143,10 +152,105 @@ pub trait StackTrait<N: Network> {
 
     /// Returns the minimum number of calls for the given function name.
     /// Note: In a static call graph (no dynamic dispatch), the minimum is the actual count.
-    fn get_minimum_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
+    fn get_minimum_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>
+    where
+        Self: Sized,
+    {
+        // Initialize the base number of calls.
+        let mut num_calls = 1;
+        // Initialize a queue of functions to check.
+        let mut queue = vec![(StackVisitRef::Internal(self), *function_name)];
+        // Iterate over the queue.
+        while let Some((stack_ref, function_name)) = queue.pop() {
+            // Ensure that the number of calls does not exceed the maximum.
+            // Note that one transition is reserved for the fee.
+            ensure!(num_calls < MAX_TRANSITIONS, "Number of calls must be less than '{MAX_TRANSITIONS}'");
+            // Determine the number of calls for the function.
+            for instruction in stack_ref.get_function_ref(&function_name)?.instructions() {
+                match instruction {
+                    Instruction::Call(call) => {
+                        // Determine if this is a function call.
+                        if call.is_function_call(&*stack_ref)? {
+                            // Increment the number of calls.
+                            num_calls += 1;
+                            // Add the function to the queue.
+                            match call.operator() {
+                                CallOperator::Locator(locator) => {
+                                    // If the locator matches the program ID of the provided stack, use it directly.
+                                    // Otherwise, retrieve the external stack.
+                                    let stack = if locator.program_id() == self.program().id() {
+                                        StackVisitRef::Internal(self)
+                                    } else {
+                                        StackVisitRef::External(stack_ref.get_external_stack(locator.program_id())?)
+                                    };
+                                    queue.push((stack, *locator.resource()));
+                                }
+                                CallOperator::Resource(resource) => {
+                                    queue.push((stack_ref.clone(), *resource));
+                                }
+                            }
+                        }
+                    }
+                    Instruction::CallDynamic(_) => {
+                        // Increment the number of calls.
+                        num_calls += 1
+                    }
+                    _ => (),
+                }
+            }
+        }
+        // Return the number of calls.
+        Ok(num_calls)
+    }
 
     /// Returns whether or not a function has a dynamic call in its execution.
-    fn contains_dynamic_call(&self, function_name: &Identifier<N>) -> Result<bool>;
+    fn contains_dynamic_call(&self, function_name: &Identifier<N>) -> Result<bool>
+    where
+        Self: Sized,
+    {
+        // Initialize the base number of calls.
+        let mut num_calls = 1;
+        // Initialize a queue of functions to check.
+        let mut queue = vec![(StackVisitRef::Internal(self), *function_name)];
+        // Iterate over the queue.
+        while let Some((stack_ref, function_name)) = queue.pop() {
+            // Ensure that the number of calls does not exceed the maximum.
+            // Note that one transition is reserved for the fee.
+            ensure!(num_calls < MAX_TRANSITIONS, "Number of calls must be less than '{MAX_TRANSITIONS}'");
+            // Determine the number of calls for the function.
+            for instruction in stack_ref.get_function_ref(&function_name)?.instructions() {
+                match instruction {
+                    Instruction::Call(call) => {
+                        // Determine if this is a function call.
+                        if call.is_function_call(&*stack_ref)? {
+                            // Increment by the number of calls.
+                            num_calls += 1;
+                            // Add the function to the queue.
+                            match call.operator() {
+                                CallOperator::Locator(locator) => {
+                                    // If the locator matches the program ID of the provided stack, use it directly.
+                                    // Otherwise, retrieve the external stack.
+                                    let stack = if locator.program_id() == self.program().id() {
+                                        StackVisitRef::Internal(self)
+                                    } else {
+                                        StackVisitRef::External(stack_ref.get_external_stack(locator.program_id())?)
+                                    };
+                                    queue.push((stack, *locator.resource()));
+                                }
+                                CallOperator::Resource(resource) => {
+                                    queue.push((stack_ref.clone(), *resource));
+                                }
+                            }
+                        }
+                    }
+                    Instruction::CallDynamic(_) => return Ok(true),
+                    _ => (),
+                }
+            }
+        }
+        // No dynamic calls have been found.
+        Ok(false)
+    }
 
     /// Samples a value for the given value_type.
     fn sample_value<R: Rng + CryptoRng>(
@@ -174,6 +278,38 @@ pub trait StackTrait<N: Network> {
         index: Field<N>,
         rng: &mut R,
     ) -> Result<Record<N, Plaintext<N>>>;
+}
+
+/// A helper enum used by the default `get_minimum_number_of_calls` and
+/// `contains_dynamic_call` trait bodies to traverse a call graph without cloning.
+///
+/// Either references the stack on which traversal began, or owns a reference-counted
+/// pointer to an external stack obtained via `StackTrait::get_external_stack`.
+enum StackVisitRef<'a, S> {
+    /// The starting stack, borrowed for the duration of the traversal.
+    Internal(&'a S),
+    /// An external stack returned by `get_external_stack`.
+    External(Arc<S>),
+}
+
+impl<S> Clone for StackVisitRef<'_, S> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Internal(stack) => Self::Internal(*stack),
+            Self::External(stack) => Self::External(stack.clone()),
+        }
+    }
+}
+
+impl<S> Deref for StackVisitRef<'_, S> {
+    type Target = S;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Internal(stack) => stack,
+            Self::External(stack) => stack,
+        }
+    }
 }
 
 /// Are the two types either the same, or both structurally equivalent `PlaintextType`s?
