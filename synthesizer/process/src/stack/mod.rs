@@ -37,6 +37,9 @@ mod evaluate;
 mod execute;
 mod helpers;
 
+mod verification_stack;
+pub use verification_stack::*;
+
 use crate::{CallMetrics, Process, Trace, TranslationAssignment, compute_console_dynamic_or_external_record_id};
 use console::{
     account::{Address, PrivateKey},
