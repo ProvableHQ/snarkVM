@@ -87,7 +87,9 @@ members = [
   "synthesizer/snark",
   "utilities",
   "utilities/derives",
-  "wasm"
+  "wasm",
+  "plugins/slipstream_plugin_interface",
+  "plugins/slipstream_plugin_manager"
 ]
 
 [lib]
@@ -129,6 +131,7 @@ async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "snarkvm-synthesizer/history" ]
 history-staking-rewards = [ "snarkvm-synthesizer/history-staking-rewards" ]
+slipstream-plugins = [ "snarkvm-synthesizer/slipstream-plugins" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
 locktick = [
   "snarkvm-console?/locktick",
@@ -389,6 +392,14 @@ default-features = false
 
 [workspace.dependencies.snarkvm-ledger-store]
 path = "ledger/store"
+version = "=4.6.0"
+
+[workspace.dependencies.snarkvm-slipstream-plugin-interface]
+path = "plugins/slipstream_plugin_interface"
+version = "=4.6.0"
+
+[workspace.dependencies.snarkvm-slipstream-plugin-manager]
+path = "plugins/slipstream_plugin_manager"
 version = "=4.6.0"
 
 [workspace.dependencies.snarkvm-ledger-test-helpers]

@@ -35,6 +35,7 @@ async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "snarkvm-ledger-store/history" ]
 history-staking-rewards = [ "snarkvm-ledger-store/history-staking-rewards" ]
+slipstream-plugins = [ "snarkvm-ledger-store/slipstream-plugins" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",

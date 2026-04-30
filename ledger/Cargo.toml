@@ -76,6 +76,10 @@ history-staking-rewards = [
   "snarkvm-ledger-store/history-staking-rewards",
   "snarkvm-synthesizer/history-staking-rewards",
 ]
+slipstream-plugins = [
+  "snarkvm-ledger-store/slipstream-plugins",
+  "snarkvm-synthesizer/slipstream-plugins",
+]
 locktick = [
   "dep:locktick",
   "snarkvm-ledger-puzzle/locktick",

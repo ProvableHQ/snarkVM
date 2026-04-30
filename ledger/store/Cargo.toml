@@ -20,6 +20,7 @@ edition = "2024"
 default = [ "indexmap/rayon" ]
 history = [ ]
 history-staking-rewards = [ ]
+slipstream-plugins = [ "dep:snarkvm-slipstream-plugin-manager" ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
 rocks = [ "rocksdb", "smallvec" ]
 serial = [
@@ -41,6 +42,10 @@ wasm = [
   "snarkvm-synthesizer-snark/wasm"
 ]
 test = [ ]
+
+[dependencies.snarkvm-slipstream-plugin-manager]
+workspace = true
+optional = true
 
 [dependencies.snarkvm-console]
 workspace = true

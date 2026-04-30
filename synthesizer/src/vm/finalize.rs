@@ -654,8 +654,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .current_block_height()
             .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
+        // Signal to Slipstream plugins that canonical finalize is starting.
+        #[cfg(feature = "slipstream-plugins")]
+        {
+            self.store.finalize_store().is_finalize_mode().store(true, std::sync::atomic::Ordering::SeqCst);
+            self.store
+                .finalize_store()
+                .slipstream_block_height()
+                .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
+        }
+
         // Perform the finalize operation on the preset finalize mode.
-        atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
+        let finalize_result = atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
             // Initialize an iterator for ratifications before finalize.
             let pre_ratifications = ratifications.iter().filter(|r| match r {
                 Ratify::Genesis(_, _, _) => true,
@@ -876,7 +886,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
 
             Ok(ratified_finalize_operations)
-        })
+        });
+
+        // Reset the canonical finalize flag regardless of whether finalize succeeded or failed.
+        #[cfg(feature = "slipstream-plugins")]
+        {
+            self.store.finalize_store().is_finalize_mode().store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        finalize_result
     }
 
     /// Returns `Some(reason)` if the transaction is aborted. Otherwise, returns `None`.
@@ -1405,12 +1423,29 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                     #[cfg(feature = "history-staking-rewards")]
                     {
+                        let height = state.block_height();
                         for (curr_stake, (staker, (validator, new_stake))) in
                             current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
                         {
                             let reward = new_stake - curr_stake;
-                            let height = state.block_height();
                             store.staking_rewards_map().insert((*staker, height), (*validator, reward, *new_stake))?;
+                            // Notify Slipstream plugins of the staking reward, if in canonical finalize mode.
+                            #[cfg(feature = "slipstream-plugins")]
+                            if IS_FINALIZE {
+                                store.notify_staking_reward(staker, validator, reward, *new_stake, height);
+                            }
+                        }
+                    }
+
+                    // When history-staking-rewards is disabled, notify Slipstream plugins directly.
+                    #[cfg(all(feature = "slipstream-plugins", not(feature = "history-staking-rewards")))]
+                    if IS_FINALIZE {
+                        let height = state.block_height();
+                        for (curr_stake, (staker, (validator, new_stake))) in
+                            current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
+                        {
+                            let reward = new_stake - curr_stake;
+                            store.notify_staking_reward(staker, validator, reward, *new_stake, height);
                         }
                     }
 

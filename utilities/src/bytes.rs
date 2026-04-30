@@ -525,7 +525,7 @@ pub fn bits_from_bytes_le(bytes: &[u8]) -> impl DoubleEndedIterator<Item = bool>
 
 #[inline]
 pub fn bytes_from_bits_le(bits: &[bool]) -> Vec<u8> {
-    let desired_size = if bits.len() % 8 == 0 { bits.len() / 8 } else { bits.len() / 8 + 1 };
+    let desired_size = if bits.len().is_multiple_of(8) { bits.len() / 8 } else { bits.len() / 8 + 1 };
 
     let mut bytes = Vec::with_capacity(desired_size);
     for bits in bits.chunks(8) {
