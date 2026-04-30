@@ -49,19 +49,61 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
             Cow::Borrowed(input)
         };
 
-        // Compute sum of h_i^{sum of (1-2*c_{i,j,2})*(1+c_{i,j,0}+2*c_{i,j,1})*2^{4*(j-1)} for all j in segment}
-        // for all i. Described in section 5.4.1.7 in the Zcash protocol specification.
-        //
-        // Note: `.zip()` is used here (as opposed to `.zip_eq()`) as the input can be less than
-        // `NUM_WINDOWS * WINDOW_SIZE * BHP_CHUNK_SIZE` in length, which is the parameter size here.
-        Ok(input
-            .chunks(WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
-            .zip(&*self.bases_lookup)
-            .flat_map(|(bits, bases)| {
-                bits.chunks(BHP_CHUNK_SIZE).zip(bases).map(|(chunk_bits, base)| {
-                    base[(chunk_bits[0] as usize) | (chunk_bits[1] as usize) << 1 | (chunk_bits[2] as usize) << 2]
+        // TODO (Antonio)
+        if (NUM_WINDOWS == 8 && WINDOW_SIZE == 54) || (NUM_WINDOWS == 6 && WINDOW_SIZE == 43) {
+            let bases_double_lookup = self.bases_double_lookup.as_ref().unwrap();
+
+            Ok(input
+                .chunks(WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
+                .zip(bases_double_lookup.iter())
+                .zip(self.bases_lookup.iter())
+                .flat_map(|((window_bits, double_bases), single_bases)| {
+                    let num_complete_pairs = window_bits.len() / (BHP_CHUNK_SIZE * 2);
+                    let paired_bits_len = num_complete_pairs * BHP_CHUNK_SIZE * 2;
+
+                    let paired = window_bits[..paired_bits_len].chunks_exact(BHP_CHUNK_SIZE * 2).zip(double_bases).map(
+                        |(chunk_bits, double_base)| {
+                            let idx_1 = (chunk_bits[0] as usize)
+                                | (chunk_bits[1] as usize) << 1
+                                | (chunk_bits[2] as usize) << 2;
+                            let idx_2 = (chunk_bits[3] as usize)
+                                | (chunk_bits[4] as usize) << 1
+                                | (chunk_bits[5] as usize) << 2;
+                            double_base[idx_1][idx_2]
+                        },
+                    );
+
+                    // Handle the trailing unpaired chunk (odd WINDOW_SIZE or short last window).
+                    let remainder = if paired_bits_len < window_bits.len() {
+                        let chunk_bits = &window_bits[paired_bits_len..];
+                        let base = &single_bases[num_complete_pairs * 2];
+                        Some(
+                            base[(chunk_bits[0] as usize)
+                                | (chunk_bits[1] as usize) << 1
+                                | (chunk_bits[2] as usize) << 2],
+                        )
+                    } else {
+                        None
+                    };
+
+                    paired.chain(remainder)
                 })
-            })
-            .sum())
+                .sum())
+        } else {
+            // Compute sum of h_i^{sum of (1-2*c_{i,j,2})*(1+c_{i,j,0}+2*c_{i,j,1})*2^{4*(j-1)} for all j in segment}
+            // for all i. Described in section 5.4.1.7 in the Zcash protocol specification.
+            //
+            // Note: `.zip()` is used here (as opposed to `.zip_eq()`) as the input can be less than
+            // `NUM_WINDOWS * WINDOW_SIZE * BHP_CHUNK_SIZE` in length, which is the parameter size here.
+            Ok(input
+                .chunks(WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
+                .zip(&*self.bases_lookup)
+                .flat_map(|(bits, bases)| {
+                    bits.chunks(BHP_CHUNK_SIZE).zip(bases).map(|(chunk_bits, base)| {
+                        base[(chunk_bits[0] as usize) | (chunk_bits[1] as usize) << 1 | (chunk_bits[2] as usize) << 2]
+                    })
+                })
+                .sum())
+        }
     }
 }

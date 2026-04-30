@@ -35,6 +35,10 @@ pub struct BHPHasher<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u
     bases: Arc<Vec<Vec<Group<E>>>>,
     /// The bases lookup table for the BHP hash.
     bases_lookup: Arc<Vec<Vec<[Group<E>; BHP_LOOKUP_SIZE]>>>,
+    // TODO (Antonio)
+    // TODO (Antonio) also: type
+    #[allow(clippy::type_complexity)]
+    bases_double_lookup: Option<Arc<Vec<Vec<Vec<Vec<Group<E>>>>>>>,
     /// The random base for the BHP commitment.
     random_base: Arc<Vec<Group<E>>>,
 }
@@ -125,7 +129,36 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
             random_base.len()
         );
 
-        Ok(Self { bases: Arc::new(bases), bases_lookup: Arc::new(bases_lookup), random_base: Arc::new(random_base) })
+        // TODO(Antonio)
+        let bases_double_lookup = if (NUM_WINDOWS == 8 && WINDOW_SIZE == 54) || (NUM_WINDOWS == 6 && WINDOW_SIZE == 43)
+        {
+            Some(Arc::new(
+                // TODO (Antonio) handle slices, windows...properly
+                bases_lookup
+                    .iter()
+                    .map(|window| {
+                        window
+                            .chunks_exact(2)
+                            .map(|pair| {
+                                pair[0]
+                                    .iter()
+                                    .map(|p1| pair[1].iter().map(|p2| *p1 + p2).collect::<Vec<Group<E>>>())
+                                    .collect::<Vec<Vec<Group<E>>>>()
+                            })
+                            .collect::<Vec<Vec<Vec<Group<E>>>>>()
+                    })
+                    .collect::<Vec<Vec<Vec<Vec<Group<E>>>>>>(),
+            ))
+        } else {
+            None
+        };
+
+        Ok(Self {
+            bases: Arc::new(bases),
+            bases_lookup: Arc::new(bases_lookup),
+            bases_double_lookup,
+            random_base: Arc::new(random_base),
+        })
     }
 
     /// Returns the bases.
