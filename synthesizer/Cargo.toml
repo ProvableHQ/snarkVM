@@ -71,8 +71,8 @@ path = "benches/kary_merkle_tree.rs"
 harness = false
 
 [[bench]]
-name = "verifier"
-path = "benches/verifier/verifier.rs"
+name = "check_transaction_multirecord"
+path = "benches/check_transaction_multirecord/check_transaction_multirecord.rs"
 harness = false
 
 [dependencies.snarkvm-algorithms]
