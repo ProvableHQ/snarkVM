@@ -231,7 +231,7 @@ commands:
 
             export PATH="$HOME/.cargo/bin:$PATH"
             if ! command -v cargo-nextest >/dev/null 2>&1; then
-              cargo install cargo-nextest --locked --version "0.9.114"
+              cargo install cargo-nextest --locked --version "0.9.133"
             fi
 
       - run:
