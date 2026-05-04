@@ -124,7 +124,7 @@ fn main() {
                 the artifacts, --clean to delete them (and end), and neither to use the existing artifacts."
             );
         }
-        std::fs::remove_dir_all(&transaction_path).unwrap();
+        std::fs::remove_dir_all(&artifact_path).unwrap();
         println!("Artifacts deleted.");
         return;
     }
@@ -155,7 +155,7 @@ fn main() {
     // Add the genesis block.
     vm.add_next_block(&genesis).unwrap();
 
-    // Advance the ledger to ConsensusV15
+    // Advance the ledger to ConsensusV16
     let transactions: [Transaction<CurrentNetwork>; 0] = [];
     while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap() {
         let next_block = sample_next_block(&vm, &private_key, &transactions, rng).unwrap();

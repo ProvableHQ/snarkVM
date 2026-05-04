@@ -17,11 +17,8 @@ use super::*;
 
 use circuit::{Circuit, Environment};
 use console::algorithms::U8;
-use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS};
-// TODO (Antonio)
-// TODO (fast-pp-hash)
-// This will need fixing unless we bump VarunaVersion::V3 to ConsensusVersion::V16
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
+use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS};
 
 use std::sync::OnceLock;
 

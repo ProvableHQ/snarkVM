@@ -18,7 +18,6 @@ use crate::{
     AlgebraicSponge,
     SNARK,
     SNARKError,
-    crypto_hash::sha256,
     fft::EvaluationDomain,
     polycommit::sonic_pc::{
         Commitment,
@@ -44,6 +43,7 @@ use crate::{
     },
     srs::UniversalVerifier,
 };
+use sha2::{Digest, Sha256};
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
 use snarkvm_utilities::{ToBytes, dev_eprintln, dev_println, to_bytes_le};
@@ -164,24 +164,22 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             VarunaVersion::V3 => {
                 let mut sponge = FS::new_with_parameters(fs_parameters);
 
-                let mut preimage = Vec::new();
+                let mut digest = Sha256::new();
 
-                preimage.extend_from_slice(Self::PROTOCOL_NAME);
+                digest.update(Self::PROTOCOL_NAME);
                 for (batch_size, inputs) in inputs_and_batch_sizes.values() {
-                    preimage.extend_from_slice(&(*batch_size as u64).to_le_bytes());
+                    digest.update((*batch_size as u64).to_le_bytes());
                     for input in inputs.iter() {
                         for val in input.to_bytes_le().unwrap() {
-                            preimage.push(val);
+                            digest.update([val]);
                         }
                     }
                 }
                 for circuit_specific_commitments in circuit_commitments {
-                    preimage.extend_from_slice(&circuit_specific_commitments.to_bytes_le().unwrap());
+                    digest.update(circuit_specific_commitments.to_bytes_le().unwrap());
                 }
 
-                let digest = sha256(&preimage);
-
-                sponge.absorb_bytes(&digest);
+                sponge.absorb_bytes(&digest.finalize());
 
                 sponge
             }

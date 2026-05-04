@@ -15,6 +15,9 @@
 
 mod hash_uncompressed;
 
+#[cfg(test)]
+mod tests;
+
 use crate::Blake2Xs;
 use snarkvm_console_types::prelude::*;
 use snarkvm_utilities::BigInteger;
@@ -28,7 +31,7 @@ use std::sync::Arc;
 pub(super) const BHP_CHUNK_SIZE: usize = 3;
 pub(super) const BHP_LOOKUP_SIZE: usize = 1 << BHP_CHUNK_SIZE;
 
-// The amount of chunkks (i.e. bit triplets) to preprocess together in the lookup table.
+// The amount of chunks (i.e. bit triplets) to preprocess together in the lookup table.
 pub(super) const BHP_NUM_COMBINED_CHUNKS: usize = 5;
 
 /// BHP is a collision-resistant hash function that takes a variable-length input.
@@ -41,7 +44,7 @@ pub struct BHPHasher<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u
     /// The bases lookup table for the BHP hash.
     bases_lookup: Arc<Vec<Vec<[Group<E>; BHP_LOOKUP_SIZE]>>>,
     /// The preprocessed combinations of elements in the bases lookup table.
-    // For each group of BHP_NUM_COMBINED_CHUNKS contigous
+    // For each group of BHP_NUM_COMBINED_CHUNKS contiguous
     // BHP_LOOKUP_SIZE-element tuples in `bases_lookup`, this contains
     // all possible BHP_LOOKUP_SIZE^BHP_NUM_COMBINED_CHUNKS cross-tuple sums.
     combined_bases_lookup: Arc<Vec<Vec<Vec<Group<E>>>>>,
@@ -144,9 +147,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
                         chunks.iter().fold(vec![Group::<E>::zero()], |prev_sums, new_terms| {
                             prev_sums
                                 .iter()
-                                .flat_map(|prev_sum| {
-                                    new_terms.iter().map(|new_term| *prev_sum + *new_term).collect::<Vec<Group<E>>>()
-                                })
+                                .flat_map(|prev_sum| new_terms.iter().map(|new_term| *prev_sum + *new_term))
                                 .collect::<Vec<Group<E>>>()
                         })
                     })
@@ -173,10 +174,10 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         {
             // Display the setup time and approximate hasher size.
 
-            let elapsed_ms = timer.elapsed().as_micros();
-            let elapsed = elapsed_ms as f64 / 1000.0;
+            let elapsed = timer.elapsed().as_micros() as f64 / 1000.0;
+
             println!(
-                " • BHP hasher setup (NUM_WINDOWS = {NUM_WINDOWS}, WINDOW_SIZE = {WINDOW_SIZE}, NUM_COMBINED_CHUNKS = {BHP_NUM_COMBINED_CHUNKS}, DOMAIN = '{domain}:.2'): {elapsed:.2} ms"
+                " • BHP hasher setup (NUM_WINDOWS = {NUM_WINDOWS}, WINDOW_SIZE = {WINDOW_SIZE}, NUM_COMBINED_CHUNKS = {BHP_NUM_COMBINED_CHUNKS}, DOMAIN = '{domain}'): {elapsed:.2} ms"
             );
 
             // The number of group elements stored in the hasher is

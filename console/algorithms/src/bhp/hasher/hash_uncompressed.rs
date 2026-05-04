@@ -29,7 +29,12 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
     /// the BHP commitment scheme, as it is typically not used by applications.
     fn hash_uncompressed(&self, input: &[Self::Input]) -> Result<Self::Output> {
         // Ensure the input size is at least the window size.
-        ensure!(input.len() > Self::MIN_BITS, "Inputs to this BHP must be greater than {} bits", Self::MIN_BITS);
+        ensure!(
+            input.len() > Self::MIN_BITS,
+            "Inputs to this BHP must be greater than {} bits (window size: {WINDOW_SIZE}, num windows: {NUM_WINDOWS}), actual bits: {}",
+            Self::MIN_BITS,
+            input.len()
+        );
         // Ensure the input size is within the parameter size,
         ensure!(
             input.len() <= Self::MAX_BITS,
@@ -55,8 +60,8 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
             .zip(self.bases_lookup.iter())
             .flat_map(|((window_bits, combined_bases), bases)| {
                 // The number of full BHP_CHUNK_SIZE-bit chunks in the window.
-                // The preprocessed points corresponding to these will looked up
-                // in combined_bases.
+                // The preprocessed points corresponding to these will be looked
+                // up in combined_bases.
                 let num_combined_bases = window_bits.len() / (BHP_CHUNK_SIZE * BHP_NUM_COMBINED_CHUNKS);
                 // The number of bits in the window belonging to full chunks.
                 let num_combined_bits = num_combined_bases * BHP_CHUNK_SIZE * BHP_NUM_COMBINED_CHUNKS;

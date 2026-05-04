@@ -302,12 +302,13 @@ macro_rules! consensus_config_value_by_version {
 
 /// Returns the Varuna version for the specified consensus version.
 pub fn varuna_version_from_consensus(consensus_version: ConsensusVersion) -> VarunaVersion {
-    if consensus_version < ConsensusVersion::V4 {
-        VarunaVersion::V1
-    } else if consensus_version < ConsensusVersion::V16 {
+    // If new varuna versions are added, test_varuna_version_from_consensus below must be updated accordingly.
+    if consensus_version >= ConsensusVersion::V16 {
+        VarunaVersion::V3
+    } else if consensus_version >= ConsensusVersion::V4 {
         VarunaVersion::V2
     } else {
-        VarunaVersion::V3
+        VarunaVersion::V1
     }
 }
 
@@ -571,5 +572,15 @@ mod tests {
         assert_eq!(MainnetV0::REWARD_ANCHOR_TIME, MainnetV0::ANCHOR_TIMES.first().unwrap().1);
         assert_eq!(TestnetV0::REWARD_ANCHOR_TIME, TestnetV0::ANCHOR_TIMES.first().unwrap().1);
         assert_eq!(CanaryV0::REWARD_ANCHOR_TIME, CanaryV0::ANCHOR_TIMES.first().unwrap().1);
+    }
+
+    #[test]
+    fn test_varuna_version_from_consensus() {
+        // First boundary: V4
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V3), VarunaVersion::V1);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V4), VarunaVersion::V2);
+        // Second boundary: V16
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V15), VarunaVersion::V2);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V16), VarunaVersion::V3);
     }
 }
