@@ -16,6 +16,7 @@
 use crate::{FromBytes, ToBytes, io_error};
 
 use enum_iterator::{Sequence, last};
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use std::io;
 
 /// The different consensus versions.
@@ -57,6 +58,8 @@ pub enum ConsensusVersion {
     /// V15: Introduces the record-existence check and `commit.*.raw` instruction variants.
     ///      Increase the anchor time to 35.
     V15 = 15,
+    /// V16: Switches to the use of SHA256 to digest circuit public parameters and inputs.
+    V16 = 16,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -84,6 +87,7 @@ impl FromBytes for ConsensusVersion {
             13 => Ok(Self::V13),
             14 => Ok(Self::V14),
             15 => Ok(Self::V15),
+            16 => Ok(Self::V16),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -121,7 +125,8 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V12, 10_030_000),
     (ConsensusVersion::V13, 10_881_000),
     (ConsensusVersion::V14, 11_960_000),
-    (ConsensusVersion::V15, u32::MAX),
+    (ConsensusVersion::V15, u32::MAX - 1),
+    (ConsensusVersion::V16, u32::MAX),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -140,7 +145,8 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V12, 13_815_000),
     (ConsensusVersion::V13, 16_850_000),
     (ConsensusVersion::V14, 17_700_000),
-    (ConsensusVersion::V15, u32::MAX),
+    (ConsensusVersion::V15, u32::MAX - 1),
+    (ConsensusVersion::V16, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -159,7 +165,8 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V12, 12_669_000),
     (ConsensusVersion::V13, 14_906_000),
     (ConsensusVersion::V14, 15_370_000),
-    (ConsensusVersion::V15, u32::MAX),
+    (ConsensusVersion::V15, u32::MAX - 1),
+    (ConsensusVersion::V16, u32::MAX),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -179,6 +186,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V13, 16),
     (ConsensusVersion::V14, 17),
     (ConsensusVersion::V15, 18),
+    (ConsensusVersion::V16, 19),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
@@ -290,6 +298,18 @@ macro_rules! consensus_config_value_by_version {
             }
         }
     };
+}
+
+/// Returns the Varuna version for the specified consensus version.
+pub fn varuna_version_from_consensus(consensus_version: ConsensusVersion) -> VarunaVersion {
+    // If new varuna versions are added, test_varuna_version_from_consensus below must be updated accordingly.
+    if consensus_version >= ConsensusVersion::V16 {
+        VarunaVersion::V3
+    } else if consensus_version >= ConsensusVersion::V4 {
+        VarunaVersion::V2
+    } else {
+        VarunaVersion::V1
+    }
 }
 
 #[cfg(test)]
@@ -552,5 +572,15 @@ mod tests {
         assert_eq!(MainnetV0::REWARD_ANCHOR_TIME, MainnetV0::ANCHOR_TIMES.first().unwrap().1);
         assert_eq!(TestnetV0::REWARD_ANCHOR_TIME, TestnetV0::ANCHOR_TIMES.first().unwrap().1);
         assert_eq!(CanaryV0::REWARD_ANCHOR_TIME, CanaryV0::ANCHOR_TIMES.first().unwrap().1);
+    }
+
+    #[test]
+    fn test_varuna_version_from_consensus() {
+        // First boundary: V4
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V3), VarunaVersion::V1);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V4), VarunaVersion::V2);
+        // Second boundary: V16
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V15), VarunaVersion::V2);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V16), VarunaVersion::V3);
     }
 }

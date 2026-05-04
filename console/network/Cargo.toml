@@ -9,6 +9,7 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
+dev-print = [ "snarkvm-console-algorithms/dev-print", "snarkvm-console-network-environment/dev-print" ]
 filesystem = [ "snarkvm-parameters/filesystem" ]
 wasm = [
   "snarkvm-parameters/wasm"
