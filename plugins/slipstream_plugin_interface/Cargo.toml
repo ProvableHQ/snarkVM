@@ -10,6 +10,3 @@ edition = "2024"
 
 [dependencies.anyhow]
 workspace = true
-
-[dependencies.tracing]
-workspace = true

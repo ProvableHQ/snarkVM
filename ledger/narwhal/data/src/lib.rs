@@ -188,8 +188,9 @@ impl<T: FromBytes + ToBytes + Serialize + Send + 'static> Serialize for Data<T> 
                         data.serialize_field("type", "buffer")?;
 
                         // Encode to bech32m.
-                        let buffer = bech32::encode(PREFIX, buffer.to_vec().to_base32(), bech32::Variant::Bech32m)
-                            .map_err(|_| S::Error::custom("Failed to encode data into bech32m"))?;
+                        let buffer =
+                            bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(PREFIX), buffer.as_ref())
+                                .map_err(|_| S::Error::custom("Failed to encode data into bech32m"))?;
 
                         // Add the bech32m string.
                         data.serialize_field("data", &buffer)?;
@@ -221,17 +222,17 @@ impl<'de, T: FromBytes + ToBytes + DeserializeOwned + Send + 'static> Deserializ
                         let encoding: String = DeserializeExt::take_from_value::<D>(&mut data, "data")?;
 
                         // Decode from bech32m.
-                        let (hrp, data, variant) = bech32::decode(&encoding).map_err(de::Error::custom)?;
-                        if hrp != PREFIX {
+                        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(&encoding)
+                            .map_err(de::Error::custom)?;
+                        let hrp = checked.hrp();
+                        let data: Vec<u8> = checked.byte_iter().collect();
+                        if hrp.as_str() != PREFIX {
                             return Err(de::Error::custom(error(format!("Invalid data HRP - {hrp}"))));
                         };
                         if data.is_empty() {
                             return Err(de::Error::custom(error("Invalid bech32m data (empty)")));
                         }
-                        if variant != bech32::Variant::Bech32m {
-                            return Err(de::Error::custom(error("Invalid data - variant is not bech32m")));
-                        }
-                        Ok(Self::Buffer(Bytes::from(Vec::from_base32(&data).map_err(de::Error::custom)?)))
+                        Ok(Self::Buffer(Bytes::from(data)))
                     }
                     _ => Err(de::Error::custom(error(format!("Invalid data type - {type_}")))),
                 }

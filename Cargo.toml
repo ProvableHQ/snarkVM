@@ -535,7 +535,7 @@ version = "1.0"
 version = "2.0"
 
 [workspace.dependencies.sha2]
-version = "0.10"
+version = "0.11"
 default-features = false
 
 [workspace.dependencies.smallvec]

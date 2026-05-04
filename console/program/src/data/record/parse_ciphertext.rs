@@ -40,16 +40,16 @@ impl<N: Network> FromStr for Record<N, Ciphertext<N>> {
     /// Reads in the ciphertext string.
     fn from_str(ciphertext: &str) -> Result<Self, Self::Err> {
         // Decode the ciphertext string from bech32m.
-        let (hrp, data, variant) = bech32::decode(ciphertext)?;
-        if hrp != RECORD_CIPHERTEXT_PREFIX {
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(ciphertext)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
+        if hrp.as_str() != RECORD_CIPHERTEXT_PREFIX {
             bail!("Failed to decode record ciphertext: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
             bail!("Failed to decode record ciphertext: data field is empty")
-        } else if variant != bech32::Variant::Bech32m {
-            bail!("Found a record ciphertext that is not bech32m encoded: {ciphertext}");
         }
-        // Decode the record ciphertext data from u5 to u8, and into the record ciphertext.
-        Ok(Self::read_le(&Vec::from_base32(&data)?[..])?)
+        // Decode the record ciphertext data into the record ciphertext.
+        Ok(Self::read_le(&data[..])?)
     }
 }
 
@@ -65,7 +65,7 @@ impl<N: Network> Display for Record<N, Ciphertext<N>> {
         // Convert the ciphertext to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string = bech32::encode(RECORD_CIPHERTEXT_PREFIX, bytes.to_base32(), bech32::Variant::Bech32m)
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(RECORD_CIPHERTEXT_PREFIX), &bytes)
             .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)

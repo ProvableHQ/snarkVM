@@ -134,7 +134,7 @@ pub mod prelude {
     };
 
     pub use anyhow::{Error, Result, anyhow, bail, ensure};
-    pub use bech32::{self, FromBase32, ToBase32};
+    pub use bech32;
     pub use itertools::Itertools;
     pub use nom::{
         Err,
