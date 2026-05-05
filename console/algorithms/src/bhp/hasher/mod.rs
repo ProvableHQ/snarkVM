@@ -32,7 +32,7 @@ pub(super) const BHP_CHUNK_SIZE: usize = 3;
 pub(super) const BHP_LOOKUP_SIZE: usize = 1 << BHP_CHUNK_SIZE;
 
 // The amount of chunks (i.e. bit triplets) to preprocess together in the lookup table.
-pub(super) const BHP_NUM_COMBINED_CHUNKS: usize = 5;
+pub(super) const BHP_NUM_COMBINED_CHUNKS: usize = 4;
 
 /// BHP is a collision-resistant hash function that takes a variable-length input.
 /// The BHP hasher is used to process one internal iteration of the BHP hash function.
