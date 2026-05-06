@@ -99,9 +99,15 @@ workspace = true
 workspace = true
 
 [dependencies.rocksdb]
-version = "0.21"
+version = "0.23"
 default-features = false
 features = [ "lz4" ]
+optional = true
+
+[target.'cfg(target_env = "musl")'.dependencies.rocksdb]
+version = "0.23"
+default-features = false
+features = [ "bindgen-static", "lz4" ]
 optional = true
 
 [dependencies.serde]
