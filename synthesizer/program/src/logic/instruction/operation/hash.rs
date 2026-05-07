@@ -581,7 +581,10 @@ fn evaluate_hash_internal<N: Network>(
     input: &Value<N>,
     destination_type: &PlaintextType<N>,
 ) -> Result<Plaintext<N>> {
-    Ok(do_hash!(N, variant, destination_type, input, Plaintext::<N>, Literal::<N>, |x| x))
+    let hash = do_hash!(N, variant, destination_type, input, Plaintext::<N>, Literal::<N>, |x| x);
+
+    println!("HASH OUTPUT IS: {}", hash.to_string());
+    Ok(hash)
 }
 
 impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {

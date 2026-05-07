@@ -16,6 +16,8 @@
 // Tests for the record-existence check.
 mod record_existence;
 
+// Tests the blinded-address commitment pattern used by leo_amm.
+mod blinded_address;
 // Tests on the input/output behaviour of closures and related functionality.
 mod closure_records;
 // Tests on the use of `commit_*_raw` instruction variants.

@@ -20,6 +20,8 @@ impl<N: Network> ToFieldsRaw for Plaintext<N> {
     fn to_fields_raw(&self) -> Result<Vec<Self::Field>> {
         // Encode the data as little-endian bits without variant or identifier bits.
         let bits_le = self.to_bits_raw_le();
+
+        println!("Field::<N>::size_in_data_bits(): {}", Field::<N>::size_in_data_bits());
         // Pack the bits into field elements.
         let fields = bits_le
             .chunks(Field::<N>::size_in_data_bits())

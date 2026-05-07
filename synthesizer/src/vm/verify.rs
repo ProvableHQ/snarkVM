@@ -1887,6 +1887,7 @@ function compute:
 #[cfg(feature = "test")]
 #[cfg(test)]
 mod credits_migration_tests {
+    use std::sync::OnceLock;
     use super::*;
 
     use console::{
@@ -2490,5 +2491,198 @@ function transfer:
             vm.execute(&private_key, ("token.aleo", "transfer"), inputs, None, 0, None, rng).unwrap()
         };
         assert!(vm.check_transaction(&transfer_2, None, rng).is_ok());
+    }
+
+    /// Tests that `deriveBlindedAddress` in the JS SDK produces the same result as the
+    /// equivalent Rust operations.
+    ///
+    /// Fill in the placeholder variables with hardcoded values from the JS side, then run:
+    ///   cargo test -p snarkvm-synthesizer -- test_derive_blinded_address --nocapture
+    #[test]
+    fn test_derive_blinded_address_1() { // CORRECT
+        use console::{
+            network::TestnetV0,
+            types::{Scalar, U32},
+        };
+
+        type N = TestnetV0;
+
+        let private_key = PrivateKey::<TestnetV0>::from_str(
+            "APrivateKey1zkp8CZNn3yeCseEtxuVPbDCwSyhGW6yZKUYKfgXmcpoGPWH").unwrap();
+        let view_key = ViewKey::<TestnetV0>::try_from(&private_key).unwrap();
+        let signer_address = Address::try_from(&private_key).unwrap();
+
+        // ── Inputs ────────────────────────────────────────────────────────────────────
+        // Paste hardcoded values from the JS side here.
+        let contract_address: &str = "aleo1nqgg0aj6ruk9w67gx4ehg4278uj3sgjlgxlmaf7jdwl4amxy5spq06psk5";            // JS: contractAddress (program address, "aleo1...")
+        let counter_value: u32 = 100;                 // JS: counterValue    (u32 integer)
+        let expected_blinded_address: &str = "aleo1x8y7kew7upx5vr9sy44h9usq5cts6pd2jd5vuqwlrt4lvze7rq8q3jkew9";    // JS: return value of deriveBlindedAddress
+
+        // ── Step 1: contract address → group → x-coordinate (field) ──────────────────
+        // JS: Address.from_string(contractAddress).toGroup().toXCoordinate()
+        let contract_addr_group = *Address::<N>::from_str(contract_address).unwrap().to_group();
+        let contract_addr_field = contract_addr_group.to_x_coordinate();
+        println!("contract_addr_field : {contract_addr_field}");
+
+        // ── Step 2: view key scalar → field ──────────────────────────────────────────
+        // JS: Scalar.fromString(viewKeyScalar).toField()
+        let view_key_field = view_key.deref().to_field().unwrap();
+        println!("view_key_field      : {view_key_field}");
+
+        println!("signer_address      : {signer_address}");
+
+        // ── Step 3: counter (u32) → scalar → field ───────────────────────────────────
+        // JS: U32.fromString(counterValue + "u32").toScalar().toField()
+        let counter_field =
+            U32::<N>::from_str(&format!("{counter_value}u32")).unwrap().to_scalar().to_field().unwrap();
+        println!("counter_field       : {counter_field}");
+
+        // ── Step 4: domain separator ──────────────────────────────────────────────────
+        // JS: domainSeparator (already a Field)
+        let domain_sep = Field::<N>::one();
+        println!("domain_sep          : {domain_sep}");
+
+        // ── Step 5: Poseidon4::hash_to_scalar ─────────────────────────────────────────
+        // JS: poseidon4.hashToScalar([contractAddrField, domainSeparator, viewKeyField, counterField])
+        let hash_input = Plaintext::<TestnetV0>::Array(
+            vec![
+                Plaintext::from(Literal::Field(contract_addr_field)),
+                Plaintext::from(Literal::Field(domain_sep)),
+                Plaintext::from(Literal::Field(view_key_field)),
+                Plaintext::from(Literal::Field(counter_field)),
+            ],
+            OnceLock::new(),
+        );
+
+        println!("R scalar hash input fields: {hash_input}");
+        println!("R scalar hash input fields raw: {:?}", hash_input.to_fields_raw().unwrap());
+
+        let r_field = TestnetV0::hash_psd4(&hash_input.to_fields_raw().unwrap()).unwrap();
+        println!("r_field             : {r_field}");
+        let r_scalar =
+            Scalar::<TestnetV0>::from_field_lossy(&r_field);
+        println!("r_scalar            : {r_scalar}");
+
+        // ── Step 6: BHP256::commit_to_group ───────────────────────────────────────────
+        // JS: bhp256.commitToGroup(signerValue.toBitsLe(), rScalar)
+        let signer_value = Value::<TestnetV0>::try_from(signer_address.to_string()).unwrap();
+        let blinded_group = TestnetV0::commit_to_group_bhp256(&signer_value.to_bits_le(), &r_scalar).unwrap();
+        println!("blinded_group       : {blinded_group}");
+
+
+
+        // ── Step 6: BHP256::commit_to_group ───────────────────────────────────────────
+        // JS: bhp256.commitToGroup(signerValue.toBitsLe(), rScalar)
+        let signer_value = Value::<TestnetV0>::try_from(signer_address.to_string()).unwrap();
+        let blinded_group = N::commit_to_group_bhp256(&signer_value.to_bits_le(), &r_scalar).unwrap();
+        println!("blinded_group       : {blinded_group}");
+
+        // ── Step 7: group → address ───────────────────────────────────────────────────
+        // JS: Address.fromGroup(blindedGroup).toString()
+        let blinded_address = Address::<N>::new(blinded_group).to_string();
+        println!("blinded_address     : {blinded_address}");
+
+
+
+        // contractAddress:  aleo1nqgg0aj6ruk9w67gx4ehg4278uj3sgjlgxlmaf7jdwl4amxy5spq06psk5
+        // contractAddrField:  1195747730599673728983299172212634796511534717895854557016861533415619891352field
+        // View Key:  334926304971763782347498121479281870911723639068413954564748091722770623877scalar
+        // View Key Field: 334926304971763782347498121479281870911723639068413954564748091722770623877field
+        // Signer Address:  aleo1rhgdu77hgyqd3xjj8ucu3jj9r2krwz6mnzyd80gncr5fxcwlh5rsvzp9px
+        // Counter value:  100
+        // Counter Field:  100field
+        // rScalar:  309168300562102088075840658801013900727390842867613304070511786695956920830scalar
+        // blindedGroup:  2832556485304577360329315942759290450535541855923054498006983058988958402821group
+        // Derived blinded address:  aleo1qhymv5ac33x2feem5nzq3sus20t9k273yzwdgp6c5rn9lretgvrqwgttrp
+
+
+        // Execution error: Stack evaluation failed: Instruction (assert.eq r21 r3;) at index 6 failed: 'assert.eq' failed: 'aleo1x8y7kew7upx5vr9sy44h9usq5cts6pd2jd5vuqwlrt4lvze7rq8q3jkew9' is not equal to 'aleo1qhymv5ac33x2feem5nzq3sus20t9k273yzwdgp6c5rn9lretgvrqwgttrp' (should be equal)
+
+
+
+        assert_eq!(blinded_address, expected_blinded_address);
+
+
+    }
+
+    #[test]
+    fn test_derive_blinded_address_2() { // INCORRECT
+        use console::{
+            network::TestnetV0,
+            types::{Scalar, U32},
+        };
+
+        type N = TestnetV0;
+
+        let private_key = PrivateKey::<TestnetV0>::from_str(
+            "APrivateKey1zkp8CZNn3yeCseEtxuVPbDCwSyhGW6yZKUYKfgXmcpoGPWH").unwrap();
+        let view_key = ViewKey::<TestnetV0>::try_from(&private_key).unwrap();
+        let signer_address = Address::try_from(&private_key).unwrap();
+
+        // ── Inputs ────────────────────────────────────────────────────────────────────
+        // Paste hardcoded values from the JS side here.
+        let contract_address: &str = "aleo1nqgg0aj6ruk9w67gx4ehg4278uj3sgjlgxlmaf7jdwl4amxy5spq06psk5";            // JS: contractAddress (program address, "aleo1...")
+        let counter_value: u32 = 100;                 // JS: counterValue    (u32 integer)
+        let expected_blinded_address: &str = "aleo1x8y7kew7upx5vr9sy44h9usq5cts6pd2jd5vuqwlrt4lvze7rq8q3jkew9";    // JS: return value of deriveBlindedAddress
+
+        // ── Step 1: contract address → group → x-coordinate (field) ──────────────────
+        // JS: Address.from_string(contractAddress).toGroup().toXCoordinate()
+        let contract_addr_group = *Address::<N>::from_str(contract_address).unwrap().to_group();
+        let contract_addr_field = contract_addr_group.to_x_coordinate();
+        println!("contract_addr_field : {contract_addr_field}");
+
+        // ── Step 2: view key scalar → field ──────────────────────────────────────────
+        // JS: Scalar.fromString(viewKeyScalar).toField()
+        let view_key_field = view_key.deref().to_field().unwrap();
+        println!("view_key_field      : {view_key_field}");
+
+        println!("signer_address      : {signer_address}");
+
+        // ── Step 3: counter (u32) → scalar → field ───────────────────────────────────
+        // JS: U32.fromString(counterValue + "u32").toScalar().toField()
+        let counter_field =
+            U32::<N>::from_str(&format!("{counter_value}u32")).unwrap().to_scalar().to_field().unwrap();
+        println!("counter_field       : {counter_field}");
+
+        // ── Step 4: domain separator ──────────────────────────────────────────────────
+        // JS: domainSeparator (already a Field)
+        let domain_sep = Field::<N>::one();
+        println!("domain_sep          : {domain_sep}");
+
+        // ── Step 5: Poseidon4::hash_to_scalar ─────────────────────────────────────────
+        // JS: poseidon4.hashToScalar([contractAddrField, domainSeparator, viewKeyField, counterField])
+        let fields = [contract_addr_field, domain_sep, view_key_field, counter_field];
+        let r_scalar = N::hash_to_scalar_psd4(&fields).unwrap();
+        println!("r_scalar            : {r_scalar}");
+
+        // ── Step 6: BHP256::commit_to_group ───────────────────────────────────────────
+        // JS: bhp256.commitToGroup(signerValue.toBitsLe(), rScalar)
+        let signer_value = Value::<TestnetV0>::try_from(signer_address.to_string()).unwrap();
+        let blinded_group = N::commit_to_group_bhp256(&signer_value.to_bits_le(), &r_scalar).unwrap();
+        println!("blinded_group       : {blinded_group}");
+
+        // ── Step 7: group → address ───────────────────────────────────────────────────
+        // JS: Address.fromGroup(blindedGroup).toString()
+        let blinded_address = Address::<N>::new(blinded_group).to_string();
+        println!("blinded_address     : {blinded_address}");
+
+
+        // contractAddress:  aleo1nqgg0aj6ruk9w67gx4ehg4278uj3sgjlgxlmaf7jdwl4amxy5spq06psk5
+        // contractAddrField:  1195747730599673728983299172212634796511534717895854557016861533415619891352field
+        // View Key:  334926304971763782347498121479281870911723639068413954564748091722770623877scalar
+        // View Key Field: 334926304971763782347498121479281870911723639068413954564748091722770623877field
+        // Signer Address:  aleo1rhgdu77hgyqd3xjj8ucu3jj9r2krwz6mnzyd80gncr5fxcwlh5rsvzp9px
+        // Counter value:  100
+        // Counter Field:  100field
+        // rScalar:  309168300562102088075840658801013900727390842867613304070511786695956920830scalar
+        // blindedGroup:  2832556485304577360329315942759290450535541855923054498006983058988958402821group
+        // Derived blinded address:  aleo1qhymv5ac33x2feem5nzq3sus20t9k273yzwdgp6c5rn9lretgvrqwgttrp
+
+
+        // Execution error: Stack evaluation failed: Instruction (assert.eq r21 r3;) at index 6 failed: 'assert.eq' failed: 'aleo1x8y7kew7upx5vr9sy44h9usq5cts6pd2jd5vuqwlrt4lvze7rq8q3jkew9' is not equal to 'aleo1qhymv5ac33x2feem5nzq3sus20t9k273yzwdgp6c5rn9lretgvrqwgttrp' (should be equal)
+
+
+
+        assert_eq!(blinded_address, expected_blinded_address);
     }
 }
