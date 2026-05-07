@@ -258,7 +258,7 @@ fn snark_batch_verify_scaling(c: &mut Criterion) {
     let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
     let fs_parameters = FS::sample_parameters();
 
-    let varuna_version = VarunaVersion::V3;
+    let varuna_version = VarunaVersion::V2;
 
     for batch_spec in batch_specs {
         let batch_str = batch_spec

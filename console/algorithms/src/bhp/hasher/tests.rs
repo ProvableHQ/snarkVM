@@ -21,7 +21,6 @@ use snarkvm_utilities::ToBytes;
 // deterministic inputs of certain representative lengths. The second element of
 // each pair is the x-coordinate of the hash.
 
-// TODO (Antonio) specify
 // Display new expectations with:
 // cargo test -p snarkvm-console-algorithms print_bhp_expectations -- --ignored --nocapture
 

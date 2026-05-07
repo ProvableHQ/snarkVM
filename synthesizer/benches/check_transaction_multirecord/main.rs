@@ -157,7 +157,7 @@ fn main() {
 
     // Advance the ledger to ConsensusV16
     let transactions: [Transaction<CurrentNetwork>; 0] = [];
-    while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap() {
+    while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap() {
         let next_block = sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
         vm.add_next_block(&next_block).unwrap();
     }
