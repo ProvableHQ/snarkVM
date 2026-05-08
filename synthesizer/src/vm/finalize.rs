@@ -666,8 +666,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             tracing::debug!("\t VM::atomic_finalize history {} took {elapsed} ms", state.block_height());
         }
 
+        let mut batch_write_timer = std::time::Instant::now();
+
         // Perform the finalize operation on the preset finalize mode.
-        atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
+        let result = atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
             let pre_ratify_timer = std::time::Instant::now();
             // Initialize an iterator for ratifications before finalize.
             let pre_ratifications = ratifications.iter().filter(|r| match r {
@@ -916,8 +918,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
 
+            batch_write_timer = std::time::Instant::now();
+
             Ok(ratified_finalize_operations)
-        })
+        });
+
+        let elapsed = batch_write_timer.elapsed().as_millis();
+        tracing::debug!("\t VM::atomic_finalize Writing batch (block {}) took {elapsed} ms", state.block_height());
+
+        result
     }
 
     /// Returns `Some(reason)` if the transaction is aborted. Otherwise, returns `None`.

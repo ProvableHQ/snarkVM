@@ -287,11 +287,12 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
                 // Ensure the update height history does not already exist.
                 let height_update_key = (program_id, mapping_name, key.clone());
-                if self.mapping_update_heights_map().contains_key_speculative(&height_update_key)? {
-                    bail!(
-                        "Illegal operation: the history of height updates for '{program_id}/{mapping_name}/{key}' already exists in storage"
-                    );
-                }
+                // Comment out slow code.
+                // if self.mapping_update_heights_map().contains_key_speculative(&height_update_key)? {
+                //     bail!(
+                //         "Illegal operation: the history of height updates for '{program_id}/{mapping_name}/{key}' already exists in storage"
+                //     );
+                // }
 
                 // Insert the first historical update height.
                 self.mapping_update_heights_map().insert(height_update_key, vec![current_height])?;
@@ -405,15 +406,23 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         let timer = std::time::Instant::now();
         let num_entries = entries.len();
 
+        let mut total_remove_map_time = 0;
+        let mut total_history_time = 0;
+        let mut total_insert_time = 0;
+
         atomic_batch_scope!(self, {
             // Remove the existing key-value entries.
+            let remove_timer = std::time::Instant::now();
             self.key_value_map().remove_map(&(program_id, mapping_name))?;
+            total_remove_map_time += remove_timer.elapsed().as_millis();
 
             // Insert the new key-value entries.
             for (key, value) in entries {
                 // Update the historical maps.
                 #[cfg(feature = "history")]
                 {
+                    let history_timer = std::time::Instant::now();
+
                     let current_height = self.current_block_height().load(Ordering::SeqCst);
 
                     // Register the updated value at the current height.
@@ -428,10 +437,13 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
                     // Extend the historical update heights with the current height.
                     update_heights.push(current_height);
                     self.mapping_update_heights_map().insert(key, update_heights)?;
+                    total_history_time += history_timer.elapsed().as_millis();
                 }
 
                 // Insert the key-value entry.
+                let insert_timer = std::time::Instant::now();
                 self.key_value_map().insert((program_id, mapping_name), key, value)?;
+                total_insert_time += insert_timer.elapsed().as_millis();
             }
 
             Ok(())
@@ -439,6 +451,21 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
         let elapsed = timer.elapsed().as_millis();
         tracing::debug!("\t\t\t Replace mapping {mapping_name} for {num_entries} entries took {elapsed} ms");
+
+        let avg_history = total_history_time / num_entries as u128;
+        tracing::debug!(
+            "\t\t\t\t Replace mapping {mapping_name} for {num_entries}: history took avg {avg_history} ms per entry"
+        );
+
+        let avg_remove = total_remove_map_time / num_entries as u128;
+        tracing::debug!(
+            "\t\t\t\t Replace mapping {mapping_name} for {num_entries}: remove mapping took avg {avg_remove} ms per entry"
+        );
+
+        let avg_insert = total_insert_time / num_entries as u128;
+        tracing::debug!(
+            "\t\t\t\t Replace mapping {mapping_name} for {num_entries}: insert took avg {avg_insert} ms per entry"
+        );
 
         // Return the finalize operation.
         Ok(FinalizeOperation::ReplaceMapping(to_mapping_id(&program_id, &mapping_name)?))
