@@ -860,6 +860,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
 
             /* Perform the ratifications after finalize. */
+            let post_ratify_timer = std::time::Instant::now();
 
             match Self::atomic_post_ratify::<true>(&self.puzzle, store, state, post_ratifications, solutions) {
                 // Store the finalize operations from the post-ratify.
@@ -867,6 +868,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Note: This will abort the entire atomic batch.
                 Err(e) => return Err(format!("Failed to post-ratify - {e}")),
             }
+
+            let elapsed = post_ratify_timer.elapsed().as_millis();
+            tracing::debug!("\t VM::atomic_post_ratify for block {} took {elapsed} ms", state.block_height());
 
             /* Start the commit process. */
 
@@ -1400,8 +1404,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Ensure the committee matches the bonded mapping.
                     ensure_stakers_matches(&current_committee, &current_stakers)?;
 
+                    let timer = std::time::Instant::now();
+
                     // Compute the updated stakers, using the committee and block reward.
                     let next_stakers = staking_rewards(&current_stakers, &current_committee, *block_reward);
+
+                    let elapsed = timer.elapsed().as_millis();
+                    tracing::debug!("\t Post-ratify staking rewards computation took {elapsed} ms");
+
+                    let timer = std::time::Instant::now();
 
                     #[cfg(feature = "history-staking-rewards")]
                     {
@@ -1424,6 +1435,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     let (next_committee_map, next_bonded_map, next_delegated_map) =
                         to_next_committee_bonded_delegated_map(&next_committee, &next_stakers, &next_delegated);
 
+                    let elapsed = timer.elapsed().as_millis();
+                    tracing::debug!("\t Post-ratify next committee computation took {elapsed} ms");
+
+                    let timer = std::time::Instant::now();
+
                     // Insert the next committee into storage.
                     store.committee_store().insert(state.block_height(), next_committee)?;
 
@@ -1436,6 +1452,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Replace the bonded mapping in storage.
                         store.replace_mapping(program_id, bonded_mapping, next_bonded_map)?,
                     ]);
+
+                    let elapsed = timer.elapsed().as_millis();
+                    tracing::debug!("\t Post-ratify committee storing took {elapsed} ms");
 
                     // Set the block reward ratification flag.
                     is_block_reward_ratified = true;

@@ -488,6 +488,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// This function panics if not called from the sequential operation thread.
     #[inline]
     pub(crate) fn add_next_block_inner(&self, block: Block<N>) -> Result<()> {
+        let timer = std::time::Instant::now();
+        let block_height = block.height();
+
         self.ensure_sequential_processing();
 
         // Determine if the block timestamp should be included.
@@ -521,6 +524,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             return Err(insert_error);
         };
 
+        let elapsed = timer.elapsed().as_millis();
+        tracing::debug!("add_next_block_inner::block_store().insert for block {block_height} took {elapsed} ms");
+
+        let finalize_timer = std::time::Instant::now();
+
         // Next, finalize the transactions.
         match self.finalize(state, block.ratifications(), block.solutions(), block.transactions()) {
             Ok(_ratified_finalize_operations) => {
@@ -541,6 +549,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }) {
                     self.partially_verified_transactions().write().clear();
                 }
+
+                let elapsed = finalize_timer.elapsed().as_millis();
+                tracing::debug!("\t add_next_block_inner::finalize for block {block_height} took {elapsed} ms");
+
+                let elapsed = timer.elapsed().as_millis();
+                tracing::debug!("add_next_block_inner for block {block_height} took {elapsed} ms");
+
                 Ok(())
             }
             Err(finalize_error) => {
