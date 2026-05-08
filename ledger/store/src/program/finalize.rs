@@ -402,6 +402,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             bail!("Illegal operation: '{program_id}/{mapping_name}' is not initialized - cannot replace mapping.")
         }
 
+        let timer = std::time::Instant::now();
+        let num_entries = entries.len();
+
         atomic_batch_scope!(self, {
             // Remove the existing key-value entries.
             self.key_value_map().remove_map(&(program_id, mapping_name))?;
@@ -433,6 +436,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
             Ok(())
         })?;
+
+        let elapsed = timer.elapsed().as_millis();
+        tracing::debug!("\t\t\t Replace mapping {mapping_name} for {num_entries} entries took {elapsed} ms");
 
         // Return the finalize operation.
         Ok(FinalizeOperation::ReplaceMapping(to_mapping_id(&program_id, &mapping_name)?))

@@ -136,6 +136,7 @@ pub trait CommitteeStorage<N: Network>: 'static + Clone + Send + Sync {
             Ok(current_round) => current_round + 1,
         };
 
+        let timer = std::time::Instant::now();
         // Start an atomic batch.
         atomic_batch_scope!(self, {
             // Store the next round.
@@ -155,7 +156,11 @@ pub trait CommitteeStorage<N: Network>: 'static + Clone + Send + Sync {
             // Store the committee.
             self.committee_map().insert(next_height, committee)?;
             Ok(())
-        })
+        })?;
+        let elapsed = timer.elapsed().as_millis();
+        tracing::debug!("\t\t\t Committee insertion for block {next_height} took {elapsed} ms");
+
+        Ok(())
     }
 
     /// Removes the committee for the given `height`, in the process

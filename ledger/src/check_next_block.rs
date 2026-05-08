@@ -168,9 +168,20 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// # Panics
     /// This function panics if called from an async context.
     pub fn check_next_block<R: CryptoRng + Rng>(&self, block: &Block<N>, rng: &mut R) -> Result<()> {
+        let timer = std::time::Instant::now();
         self.check_block_subdag_inner(block, &[]).map_err(|err| err.into_anyhow())?;
+        tracing::debug!(
+            "check_next_block::subdag_inner for block {} took {} ms",
+            block.height(),
+            timer.elapsed().as_millis()
+        );
         self.check_block_content_inner(block, rng).map_err(|err| err.into_anyhow())?;
-
+        let timer = std::time::Instant::now();
+        tracing::debug!(
+            "check_next_block::contents_inner for block {} took {} ms",
+            block.height(),
+            timer.elapsed().as_millis()
+        );
         Ok(())
     }
 
@@ -243,6 +254,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
         // Ensure speculation over the unconfirmed transactions is correct and ensure each transaction is well-formed and unique.
         let time_since_last_block = block.timestamp().saturating_sub(latest_block_timestamp);
+        let timer = std::time::Instant::now();
         let ratified_finalize_operations = self.vm.check_speculate(
             state,
             time_since_last_block,
@@ -251,6 +263,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             block.transactions(),
             rng,
         )?;
+        tracing::debug!(
+            "\tcheck_next_block::check_speculate for block {} took {} ms",
+            block.height(),
+            timer.elapsed().as_millis()
+        );
+
+        let timer = std::time::Instant::now();
 
         // Retrieve the committee lookback.
         let committee_lookback = self
@@ -318,6 +337,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 return Err(CheckBlockError::PreviousTransactionNotFound { transaction_id: existing_transaction_id });
             }
         }
+
+        tracing::debug!(
+            "\tcheck_next_block::remaining checks for block {} took {} ms",
+            block.height(),
+            timer.elapsed().as_millis()
+        );
 
         Ok(())
     }

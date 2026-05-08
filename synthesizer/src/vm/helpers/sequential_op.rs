@@ -37,11 +37,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Perform the queued operation.
                 let ret = match op {
                     SequentialOperation::AddNextBlock(block) => {
+                        let timer = std::time::Instant::now();
+                        let block_height = block.height();
                         let ret = vm.add_next_block_inner(block);
+                        let elapsed = timer.elapsed().as_millis();
+                        tracing::debug!("VM::add_next_block_inner for block {block_height} took {elapsed} ms");
                         SequentialOperationResult::AddNextBlock(ret)
                     }
                     SequentialOperation::AtomicSpeculate(a, b, c, d, e, f) => {
+                        let timer = std::time::Instant::now();
                         let ret = vm.atomic_speculate_inner(a, b, c, d, e, f);
+                        let elapsed = timer.elapsed().as_millis();
+                        tracing::debug!("VM::atomic_speculate_inner for block {} took {elapsed} ms", a.block_height());
                         SequentialOperationResult::AtomicSpeculate(ret)
                     }
                 };

@@ -641,21 +641,34 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         solutions: &Solutions<N>,
         transactions: &Transactions<N>,
     ) -> Result<Vec<FinalizeOperation<N>>> {
+        let sequential_timer = std::time::Instant::now();
         // The tests may run this method ad-hoc, outside of the context of add_next_block.
         #[cfg(not(test))]
         self.ensure_sequential_processing();
+
+        let elapsed = sequential_timer.elapsed().as_millis();
+        tracing::debug!(
+            "\t VM::atomic_finalize sequential_processing (block {}) took {elapsed} ms",
+            state.block_height()
+        );
 
         let timer = timer!("VM::atomic_finalize");
 
         // Update the block height used for the purposes of historical mapping accounting.
         #[cfg(feature = "history")]
-        self.store
-            .finalize_store()
-            .current_block_height()
-            .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
+        {
+            let history_timer = std::time::Instant::now();
+            self.store
+                .finalize_store()
+                .current_block_height()
+                .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
+            let elapsed = history_timer.elapsed().as_millis();
+            tracing::debug!("\t VM::atomic_finalize history {} took {elapsed} ms", state.block_height());
+        }
 
         // Perform the finalize operation on the preset finalize mode.
         atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
+            let pre_ratify_timer = std::time::Instant::now();
             // Initialize an iterator for ratifications before finalize.
             let pre_ratifications = ratifications.iter().filter(|r| match r {
                 Ratify::Genesis(_, _, _) => true,
@@ -682,7 +695,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Err(e) => return Err(format!("Failed to pre-ratify - {e}")),
             }
 
+            let elapsed = pre_ratify_timer.elapsed().as_millis();
+            tracing::debug!("\t VM::atomic_finalize pre_ratify (block {}) took {elapsed} ms", state.block_height());
+
             /* Perform the atomic finalize over the transactions. */
+
+            let revert_stacks_timer = std::time::Instant::now();
 
             // Acquire the write lock on the process.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
@@ -695,6 +713,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             defer! {
                 process.revert_stacks();
             }
+
+            let elapsed = revert_stacks_timer.elapsed().as_millis();
+            tracing::debug!("\t VM::atomic_finalize pre_ratify (block {}) took {elapsed} ms", state.block_height());
+
+            let transactions_timer = std::time::Instant::now();
 
             // Finalize the transactions.
             for (index, transaction) in transactions.iter().enumerate() {
@@ -859,6 +882,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }
             }
 
+            let elapsed = transactions_timer.elapsed().as_millis();
+            tracing::debug!(
+                "\t VM::atomic_finalize transactions ({} txes) {} took {elapsed} ms",
+                transactions.len(),
+                state.block_height()
+            );
+
             /* Perform the ratifications after finalize. */
             let post_ratify_timer = std::time::Instant::now();
 
@@ -870,12 +900,19 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
 
             let elapsed = post_ratify_timer.elapsed().as_millis();
-            tracing::debug!("\t VM::atomic_post_ratify for block {} took {elapsed} ms", state.block_height());
+            tracing::debug!(
+                "\t VM::atomic_finalize::atomic_post_ratify (block {}) took {elapsed} ms",
+                state.block_height()
+            );
 
             /* Start the commit process. */
+            let commmit_stacks_timer = std::time::Instant::now();
 
             // Commit all the stacks to the process.
             process.commit_stacks();
+
+            let elapsed = commmit_stacks_timer.elapsed().as_millis();
+            tracing::debug!("\t VM::atomic_finalize commit stacks (block {}) took {elapsed} ms", state.block_height());
 
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
 
@@ -1410,7 +1447,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     let next_stakers = staking_rewards(&current_stakers, &current_committee, *block_reward);
 
                     let elapsed = timer.elapsed().as_millis();
-                    tracing::debug!("\t Post-ratify staking rewards computation took {elapsed} ms");
+                    tracing::debug!(
+                        "\t\t Post-ratify<{IS_FINALIZE}> staking rewards computation for block {} took {elapsed} ms",
+                        state.block_height()
+                    );
 
                     let timer = std::time::Instant::now();
 
@@ -1436,7 +1476,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         to_next_committee_bonded_delegated_map(&next_committee, &next_stakers, &next_delegated);
 
                     let elapsed = timer.elapsed().as_millis();
-                    tracing::debug!("\t Post-ratify next committee computation took {elapsed} ms");
+                    tracing::debug!(
+                        "\t\t Post-ratify<{IS_FINALIZE}> next committee computation for block {} took {elapsed} ms",
+                        state.block_height()
+                    );
 
                     let timer = std::time::Instant::now();
 
@@ -1454,12 +1497,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     ]);
 
                     let elapsed = timer.elapsed().as_millis();
-                    tracing::debug!("\t Post-ratify committee storing took {elapsed} ms");
+                    tracing::debug!(
+                        "\t\t Post-ratify<{IS_FINALIZE}> committee storing for block {} took {elapsed} ms",
+                        state.block_height()
+                    );
 
                     // Set the block reward ratification flag.
                     is_block_reward_ratified = true;
                 }
                 Ratify::PuzzleReward(puzzle_reward) => {
+                    let timer = std::time::Instant::now();
                     // Ensure the puzzle reward has not been ratified yet.
                     ensure!(!is_puzzle_reward_ratified, "Ratify::PuzzleReward(..) has already been ratified");
 
@@ -1496,6 +1543,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let operation = store.update_key_value(program_id, account_mapping, key, next_value)?;
                         finalize_operations.push(operation);
                     }
+
+                    let elapsed = timer.elapsed().as_millis();
+                    tracing::debug!(
+                        "\t\t Post-ratify<{IS_FINALIZE}> puzzle reward for block {} took {elapsed} ms",
+                        state.block_height()
+                    );
 
                     // Set the puzzle reward ratification flag.
                     is_puzzle_reward_ratified = true;
