@@ -63,7 +63,9 @@ impl<N: Network> Process<N> {
 ///
 /// Caveat: the live `Stack` has interior mutability, so a concurrent redeploy of the same
 /// program could perturb its structural caches mid-query. Mapping values are pinned at
-/// `height`; program structure is not. Known gap — see `VM::evaluate_query_at_height`.
+/// `height`; program structure is not. This caveat applies to external query evaluation only:
+/// query calls from within finalize blocks run serially (one transaction at a time). Known
+/// gap — see `VM::evaluate_query_at_height`.
 ///
 /// Available only with `--features history`.
 pub fn evaluate_query_at_height<N: Network, P: FinalizeStorage<N>>(
