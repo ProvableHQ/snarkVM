@@ -35,7 +35,6 @@ use itertools::Itertools;
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::Transaction;
 use snarkvm_ledger_query::Query;
-use snarkvm_synthesizer_error::VmCheckBlockContentError;
 use snarkvm_synthesizer_process::{Authorization, Process, execution_cost};
 use snarkvm_utilities::TestRng;
 
@@ -197,8 +196,8 @@ fn execution_transfer_tpk(tx: &Transaction<CurrentNetwork>) -> Group<CurrentNetw
 }
 
 /// Exercises the PoC end-to-end: colliding execute `tcm` / distinct `tpk`, `Request::verify`, full txs,
-/// per-tx `check_transaction`, beacon block with both candidates, `VM::check_block_content_from_tip`,
-/// then `VM::add_next_block`.
+/// per-tx `check_transaction`, then candidate block builds with the second tx aborted on duplicate `tcm`.
+/// Verifies `check_block_content_from_tip` and `add_next_block` against that block.
 #[test]
 fn duplicate_tcm_splice_transfer_public_distinct_inputs_reachable() {
     let rng = &mut TestRng::fixed(0xc0_de_42);
@@ -252,32 +251,21 @@ fn duplicate_tcm_splice_transfer_public_distinct_inputs_reachable() {
     vm.check_transaction(&tx1, None, rng).expect("check_transaction tx1");
     vm.check_transaction(&tx2, None, rng).expect("check_transaction tx2");
 
-    // `should_abort_transaction` only dedupes `tpk`, not `tcm` (see `finalize.rs`), so both txs can be confirmed
-    // in the same candidate block despite sharing a transition commitment.
+    let tx2_id = tx2.id();
+    // Duplicate `tcm` is rejected in `should_abort_transaction` (same objects as `verify_transactions`),
+    // so the second execute aborts during speculation.
     let block = sample_next_block(&vm, &private_key, &[tx1, tx2], rng).expect("sample_next_block");
+    assert_eq!(block.transactions().num_accepted(), 1, "first execute confirms; second aborts on duplicate tcm");
     assert_eq!(
-        block.transactions().num_accepted(),
-        2,
-        "expected both attacker txs to pass speculate; duplicate-tcm detection is block-level"
-    );
-    assert!(
-        block.aborted_transaction_ids().is_empty(),
-        "unexpected aborted txs: {:?}",
-        block.aborted_transaction_ids()
+        block.aborted_transaction_ids().as_slice(),
+        &[tx2_id],
+        "second tx must abort for duplicate transition commitment"
     );
 
     let dup_tcm_in_block = block.transition_commitments().filter(|t| **t == pair.tcm).count();
-    assert_eq!(dup_tcm_in_block, 2, "colliding execute transitions should repeat the same tcm in the block");
+    assert_eq!(dup_tcm_in_block, 1, "only one transition with the colliding tcm is included");
 
-    let verify_err = vm
-        .check_block_content_from_tip(&block, rng)
-        .expect_err("duplicate transition commitments must fail VM::check_block_content_from_tip");
-    match verify_err {
-        VmCheckBlockContentError::Verification(e) => {
-            assert!(e.to_string().contains("duplicate transition commitment"), "unexpected verify error: {e}")
-        }
-        err => panic!("expected Verification error, got {err:?}"),
-    }
+    vm.check_block_content_from_tip(&block, rng).expect("check_block_content_from_tip should succeed");
 
     let height_before = vm.block_store().max_height().expect("max_height");
     vm.add_next_block(&block).expect("VM::add_next_block should succeed for this test harness");
@@ -287,7 +275,7 @@ fn duplicate_tcm_splice_transfer_public_distinct_inputs_reachable() {
     let stored = vm.block_store().get_block(&block_hash).unwrap().unwrap();
     assert_eq!(
         stored.transition_commitments().filter(|t| **t == pair.tcm).count(),
-        2,
-        "stored block should still carry both colliding commitments"
+        1,
+        "stored block retains a single transition with the PoC tcm"
     );
 }

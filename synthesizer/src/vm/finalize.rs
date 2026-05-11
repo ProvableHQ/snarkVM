@@ -514,8 +514,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut input_ids: IndexSet<Field<N>> = IndexSet::new();
             // Initialize a list of created output IDs.
             let mut output_ids: IndexSet<Field<N>> = IndexSet::new();
+            // Initialize the set of serial numbers spent by record inputs in this block.
+            let mut serial_numbers: IndexSet<Field<N>> = IndexSet::new();
+            // Initialize the set of tags from record inputs in this block.
+            let mut tags: IndexSet<Field<N>> = IndexSet::new();
+            // Initialize the set of record output commitments in this block.
+            let mut commitments: IndexSet<Field<N>> = IndexSet::new();
+            // Initialize the set of record output nonces in this block.
+            let mut nonces: IndexSet<Group<N>> = IndexSet::new();
             // Initialize the list of created transition public keys.
             let mut tpks: IndexSet<Group<N>> = IndexSet::new();
+            // Initialize the list of transition commitments (`tcm`) in this block.
+            let mut tcms: IndexSet<Field<N>> = IndexSet::new();
             // Initialize the list of deployment payers.
             let mut deployment_payers: IndexSet<Address<N>> = IndexSet::new();
             // Initialize a list of the successful deployments.
@@ -538,7 +548,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     &transition_ids,
                     &input_ids,
                     &output_ids,
+                    &serial_numbers,
+                    &tags,
+                    &commitments,
+                    &nonces,
                     &tpks,
+                    &tcms,
                     &deployment_payers,
                     &deployments,
                 ) {
@@ -689,14 +704,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 match outcome {
                     // If the transaction succeeded, store it and continue to the next transaction.
                     Ok(confirmed_transaction) => {
-                        // Add the transition IDs to the set of produced transition IDs.
+                        // Add the transaction components to the sets.
                         transition_ids.extend(confirmed_transaction.transaction().transition_ids());
-                        // Add the input IDs to the set of spent input IDs.
                         input_ids.extend(confirmed_transaction.transaction().input_ids());
-                        // Add the output IDs to the set of produced output IDs.
                         output_ids.extend(confirmed_transaction.transaction().output_ids());
-                        // Add the transition public keys to the set of produced transition public keys.
+                        serial_numbers.extend(confirmed_transaction.transaction().serial_numbers().copied());
+                        tags.extend(confirmed_transaction.transaction().tags().copied());
+                        commitments.extend(confirmed_transaction.transaction().commitments().copied());
+                        nonces.extend(confirmed_transaction.transaction().nonces().copied());
                         tpks.extend(confirmed_transaction.transaction().transition_public_keys());
+                        tcms.extend(confirmed_transaction.transaction().transition_commitments().copied());
                         // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
                         if let Transaction::Deploy(_, _, _, deployment, fee) = confirmed_transaction.transaction() {
                             fee.payer().map(|payer| deployment_payers.insert(payer));
@@ -1059,6 +1076,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is double-spending an input
     /// - The transaction is producing a duplicate output
     /// - The transaction is producing a duplicate transition public key
+    /// - The transaction is producing a duplicate serial number
+    /// - The transaction is producing a duplicate tag
+    /// - The transaction is producing a duplicate commitment
+    /// - The transaction is producing a duplicate nonce
+    /// - The transaction is producing a duplicate transition commitment
     /// - The transaction is another deployment in the block from the same public fee payer.
     /// - The transaction contains a transition that has been deployed or upgraded in this block.
     ///
@@ -1071,23 +1093,27 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         transition_ids: &IndexSet<N::TransitionID>,
         input_ids: &IndexSet<Field<N>>,
         output_ids: &IndexSet<Field<N>>,
+        serial_numbers: &IndexSet<Field<N>>,
+        tags: &IndexSet<Field<N>>,
+        commitments: &IndexSet<Field<N>>,
+        nonces: &IndexSet<Group<N>>,
         tpks: &IndexSet<Group<N>>,
+        tcms: &IndexSet<Field<N>>,
         deployment_payers: &IndexSet<Address<N>>,
         deployments: &IndexSet<ProgramID<N>>,
     ) -> Option<String> {
-        // Ensure that:
-        //  - the transaction is not producing a duplicate transition.
-        //  - the programs in the component transitions haven't been deployed or upgraded in this block.
+        // Ensure that the transaction is not producing duplicate transitions, and that programs are not redeployed.
+        let mut transition_ids_in_transaction = IndexSet::new();
         for transition in transaction.transitions() {
-            // Get the transition ID.
             let transition_id = transition.id();
-            // If the transition ID is already produced in this block or previous blocks, abort the transaction.
+            if !transition_ids_in_transaction.insert(*transition_id) {
+                return Some(format!("Duplicate transition {transition_id} in transaction"));
+            }
             if transition_ids.contains(transition_id)
                 || self.transition_store().contains_transition_id(transition_id).unwrap_or(true)
             {
                 return Some(format!("Duplicate transition {transition_id}"));
             }
-            // If the transition's program is being deployed or redeployed in this block, abort the transaction.
             if deployments.contains(transition.program_id()) {
                 return Some(format!(
                     "Program {} is being deployed or redeployed in this block",
@@ -1097,33 +1123,94 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Ensure that the transaction is not double-spending an input.
+        let mut input_ids_in_transaction = IndexSet::new();
         for input_id in transaction.input_ids() {
-            // If the input ID is already spent in this block or previous blocks, abort the transaction.
+            if !input_ids_in_transaction.insert(*input_id) {
+                return Some(format!("Double-spending input {input_id} in transaction"));
+            }
             if input_ids.contains(input_id) || self.transition_store().contains_input_id(input_id).unwrap_or(true) {
                 return Some(format!("Double-spending input {input_id}"));
             }
         }
 
         // Ensure that the transaction is not producing a duplicate output.
+        let mut output_ids_in_transaction = IndexSet::new();
         for output_id in transaction.output_ids() {
-            // If the output ID is already produced in this block or previous blocks, abort the transaction.
+            if !output_ids_in_transaction.insert(*output_id) {
+                return Some(format!("Duplicate output {output_id} in transaction"));
+            }
             if output_ids.contains(output_id) || self.transition_store().contains_output_id(output_id).unwrap_or(true) {
                 return Some(format!("Duplicate output {output_id}"));
             }
         }
 
-        // Ensure that the transaction is not producing a duplicate transition public key.
-        // Note that the tpk and tcm are corresponding, so a uniqueness check for just the tpk is sufficient.
+        // Ensure record spends are unique within the transaction and across the block / chain.
+        let mut serial_numbers_in_transaction = IndexSet::new();
+        for serial_number in transaction.serial_numbers() {
+            if !serial_numbers_in_transaction.insert(*serial_number) {
+                return Some(format!("Duplicate serial number {serial_number} in transaction"));
+            }
+            if serial_numbers.contains(serial_number)
+                || self.transition_store().contains_serial_number(serial_number).unwrap_or(true)
+            {
+                return Some(format!("Duplicate serial number {serial_number}"));
+            }
+        }
+
+        let mut tags_in_transaction = IndexSet::new();
+        for tag in transaction.tags() {
+            if !tags_in_transaction.insert(*tag) {
+                return Some(format!("Duplicate tag {tag} in transaction"));
+            }
+            if tags.contains(tag) || self.transition_store().contains_tag(tag).unwrap_or(true) {
+                return Some(format!("Duplicate tag {tag}"));
+            }
+        }
+
+        let mut commitments_in_transaction = IndexSet::new();
+        for commitment in transaction.commitments() {
+            if !commitments_in_transaction.insert(*commitment) {
+                return Some(format!("Duplicate commitment {commitment} in transaction"));
+            }
+            if commitments.contains(commitment)
+                || self.transition_store().contains_commitment(commitment).unwrap_or(true)
+            {
+                return Some(format!("Duplicate commitment {commitment}"));
+            }
+        }
+
+        let mut nonces_in_transaction = IndexSet::new();
+        for nonce in transaction.nonces() {
+            if !nonces_in_transaction.insert(*nonce) {
+                return Some(format!("Duplicate nonce {nonce} in transaction"));
+            }
+            if nonces.contains(nonce) || self.transition_store().contains_nonce(nonce).unwrap_or(true) {
+                return Some(format!("Duplicate nonce {nonce}"));
+            }
+        }
+
+        // Ensure transition public keys and transition commitments are unique (`tpk` and `tcm` are not 1:1).
+        let mut tpks_in_transaction = IndexSet::new();
         for tpk in transaction.transition_public_keys() {
-            // If the transition public key is already produced in this block or previous blocks, abort the transaction.
+            if !tpks_in_transaction.insert(*tpk) {
+                return Some(format!("Duplicate transition public key {tpk} in transaction"));
+            }
             if tpks.contains(tpk) || self.transition_store().contains_tpk(tpk).unwrap_or(true) {
                 return Some(format!("Duplicate transition public key {tpk}"));
             }
         }
 
-        // If the transaction is a deployment, ensure that it is not another deployment in the block from the same public fee payer.
+        let mut tcms_in_transaction = IndexSet::new();
+        for tcm in transaction.transition_commitments() {
+            if !tcms_in_transaction.insert(*tcm) {
+                return Some(format!("Duplicate transition commitment {tcm} in transaction"));
+            }
+            if tcms.contains(tcm) || self.transition_store().contains_tcm(tcm).unwrap_or(true) {
+                return Some(format!("Duplicate transition commitment {tcm}"));
+            }
+        }
+
         if let Transaction::Deploy(_, _, _, _, fee) = transaction {
-            // If any public deployment payer has already deployed in this block, abort the transaction.
             if let Some(payer) = fee.payer() {
                 if deployment_payers.contains(&payer) {
                     return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
@@ -1131,7 +1218,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
-        // Return `None` because the transaction is well-formed.
         None
     }
 
@@ -1157,8 +1243,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut input_ids: IndexSet<Field<N>> = Default::default();
         // Initialize a list of created output IDs.
         let mut output_ids: IndexSet<Field<N>> = Default::default();
+        // Initialize serial numbers, tags, commitments, and nonces for `verify_transactions` parity.
+        let mut serial_numbers: IndexSet<Field<N>> = Default::default();
+        let mut tags: IndexSet<Field<N>> = Default::default();
+        let mut commitments: IndexSet<Field<N>> = Default::default();
+        let mut nonces: IndexSet<Group<N>> = Default::default();
         // Initialize the list of created transition public keys.
         let mut tpks: IndexSet<Group<N>> = Default::default();
+        let mut tcms: IndexSet<Field<N>> = Default::default();
         // Initialize the list of deployment payers.
         let mut deployment_payers: IndexSet<Address<N>> = Default::default();
         // Initialize a list of the successful deployments.
@@ -1179,7 +1271,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 &transition_ids,
                 &input_ids,
                 &output_ids,
+                &serial_numbers,
+                &tags,
+                &commitments,
+                &nonces,
                 &tpks,
+                &tcms,
                 &deployment_payers,
                 &deployments,
             ) {
@@ -1187,14 +1284,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Some(reason) => aborted_transactions.push((*transaction, reason.to_string())),
                 // Track the transaction state.
                 None => {
-                    // Add the transition IDs to the set of produced transition IDs.
+                    // Add the transaction components to the sets.
                     transition_ids.extend(transaction.transition_ids());
-                    // Add the input IDs to the set of spent input IDs.
                     input_ids.extend(transaction.input_ids());
-                    // Add the output IDs to the set of produced output IDs.
                     output_ids.extend(transaction.output_ids());
-                    // Add the transition public keys to the set of produced transition public keys.
+                    serial_numbers.extend(transaction.serial_numbers().copied());
+                    tags.extend(transaction.tags().copied());
+                    commitments.extend(transaction.commitments().copied());
+                    nonces.extend(transaction.nonces().copied());
                     tpks.extend(transaction.transition_public_keys());
+                    tcms.extend(transaction.transition_commitments().copied());
                     // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
                     if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
                         fee.payer().map(|payer| deployment_payers.insert(payer));
