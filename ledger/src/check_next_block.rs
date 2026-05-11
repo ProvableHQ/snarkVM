@@ -19,6 +19,8 @@ use crate::{narwhal::BatchHeader, puzzle::SolutionID};
 
 use anyhow::{Context, bail};
 
+use snarkvm_synthesizer_error::VmCheckBlockContentError;
+
 /// Wrapper for a block that has a valid subDAG, but where the block header,
 /// solutions, and transmissions have not been verified yet.
 ///
@@ -228,38 +230,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             }
         }
 
-        // Determine if the block timestamp should be included.
-        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
-            .then_some(block.timestamp());
-        // Determine the block's spend limit.
-        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
-            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
-        } else {
-            (None, None)
-        };
-
-        // Construct the finalize state.
-        let state = FinalizeGlobalState::new::<N>(
-            block.round(),
-            block.height(),
-            block_timestamp,
-            block.cumulative_weight(),
-            block.cumulative_proof_target(),
-            block.previous_hash(),
-            block_spend_limit,
-            block_synthesis_limit,
-        )?;
-        // Ensure speculation over the unconfirmed transactions is correct and ensure each transaction is well-formed and unique.
-        let time_since_last_block = block.timestamp().saturating_sub(latest_block_timestamp);
-        let ratified_finalize_operations = self.vm.check_speculate(
-            state,
-            time_since_last_block,
-            block.ratifications(),
-            block.solutions(),
-            block.transactions(),
-            rng,
-        )?;
-
         // Retrieve the committee lookback.
         let committee_lookback = self
             .get_committee_lookback_for_round(block.round())?
@@ -280,19 +250,27 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             None => self.get_epoch_hash(latest_block.height())?,
         };
 
-        // Ensure the block is correct.
-        let (expected_existing_solution_ids, expected_existing_transaction_ids) = block
-            .verify(
+        let (expected_existing_solution_ids, expected_existing_transaction_ids) =
+            match self.vm.check_block_content_inner(
+                block,
                 &latest_block,
+                latest_block_timestamp,
                 self.latest_state_root(),
                 &previous_committee_lookback,
                 &committee_lookback,
                 self.puzzle(),
                 latest_epoch_hash,
                 OffsetDateTime::now_utc().unix_timestamp(),
-                ratified_finalize_operations,
-            )
-            .map_err(|err| CheckBlockError::VerificationFailed { inner: err })?;
+                rng,
+            ) {
+                Ok(ids) => ids,
+                Err(VmCheckBlockContentError::Speculation(inner)) => {
+                    return Err(CheckBlockError::SpeculationFailed { inner });
+                }
+                Err(VmCheckBlockContentError::Verification(inner)) => {
+                    return Err(CheckBlockError::VerificationFailed { inner });
+                }
+            };
 
         // Ensure that the provers are within their stake bounds.
         if let Some(solutions) = block.solutions().deref() {

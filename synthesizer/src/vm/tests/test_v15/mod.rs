@@ -31,6 +31,8 @@ mod views;
 // Tests for restricted keywords at V15.
 mod restricted_keywords;
 
+// Duplicate transition-commitment splice PoC.
+
 use super::*;
 
 use console::{
