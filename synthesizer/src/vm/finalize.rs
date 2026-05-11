@@ -1889,32 +1889,9 @@ finalize transfer_public:
         let finalize_state =
             FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
 
-        // Expected coinbase for puzzle-free blocks must match `Block::verify` so reward ratifications are present.
-        let combined_proof_target = 0u128;
-        let cumulative_proof_target = u64::try_from(previous_block.cumulative_proof_target())?;
-        let expected_coinbase_reward = snarkvm_ledger_block::coinbase_reward::<CurrentNetwork>(
-            next_block_height,
-            next_block_timestamp,
-            CurrentNetwork::GENESIS_TIMESTAMP,
-            CurrentNetwork::STARTING_SUPPLY,
-            CurrentNetwork::REWARD_ANCHOR_TIME,
-            CurrentNetwork::ANCHOR_HEIGHT,
-            CurrentNetwork::BLOCK_TIME,
-            combined_proof_target,
-            cumulative_proof_target,
-            previous_block.coinbase_target(),
-        )?;
-
         // Speculate on the candidate ratifications, solutions, and transactions.
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
-            finalize_state,
-            time_since_last_block,
-            Some(expected_coinbase_reward),
-            vec![],
-            &None.into(),
-            transactions.iter(),
-            rng,
-        )?;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
+            vm.speculate(finalize_state, time_since_last_block, None, vec![], &None.into(), transactions.iter(), rng)?;
 
         // Construct the metadata associated with the block.
         let metadata = Metadata::new(
