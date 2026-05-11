@@ -30,6 +30,9 @@ mod queries;
 // Tests for restricted keywords at V15.
 mod restricted_keywords;
 
+// Duplicate transition-commitment splice PoC.
+mod duplicate_tcm_poc;
+
 use super::*;
 
 use crate::vm::test_helpers::{sample_vm_at_height, *};
