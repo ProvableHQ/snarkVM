@@ -293,6 +293,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
             rejected_reasons.clear();
         }
+        // Clear out any pending rejection diagnostics from the previous iteration.
+        // These are transient, in-memory only, populated during speculation and consumed
+        // by test frameworks / wallet pre-flight tools before the next speculation pass.
+        self.pending_rejection_diagnostics.write().clear();
 
         // Update the block height used for the purposes of historical mapping accounting.
         #[cfg(feature = "history")]
@@ -414,7 +418,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let process_rejected_deployment =
                             |fee: &Fee<N>,
                              deployment: Deployment<N>,
-                             rejected_reason: RejectedReason<N>|
+                             rejected_reason: RejectedReason<N>,
+                             diagnostics: Option<crate::vm::RejectionDiagnostics<N>>|
                              -> Result<Result<ConfirmedTransaction<N>, String>> {
                                 process
                                     .finalize_fee(state, store, fee)
@@ -430,6 +435,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                                 self.pending_rejected_reasons
                                                     .write()
                                                     .insert(confirmed_tx.id(), rejected_reason.clone());
+                                                // Store the transient diagnostics, if any (resolved
+                                                // `assert.* with <reason>` value + error message).
+                                                if let Some(diag) = diagnostics {
+                                                    self.pending_rejection_diagnostics
+                                                        .write()
+                                                        .insert(confirmed_tx.id(), diag);
+                                                }
                                                 store
                                                     .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
                                                     .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
@@ -444,7 +456,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             // If the program has already been deployed, construct the rejected deploy transaction.
                             true => {
                                 let rejected_reason = RejectedReason::DuplicateProgramID(*deployment.program_id());
-                                match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
+                                match process_rejected_deployment(fee, *deployment.clone(), rejected_reason, None) {
                                     Ok(result) => result,
                                     Err(error) => {
                                         // Note: On failure, skip this transaction, and continue speculation.
@@ -469,8 +481,19 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 Err(error) => {
                                     dev_eprintln!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
+                                    // Capture diagnostics (resolved reason + error message) before
+                                    // `from_indexed_finalize_error` consumes the structured error.
+                                    let diagnostics = crate::vm::RejectionDiagnostics {
+                                        resolved_reason: crate::vm::extract_assert_reason(&error),
+                                        error_message: format!("{error}"),
+                                    };
                                     let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
-                                    match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
+                                    match process_rejected_deployment(
+                                        fee,
+                                        *deployment.clone(),
+                                        rejected_reason,
+                                        Some(diagnostics),
+                                    ) {
                                         Ok(result) => result,
                                         Err(error) => {
                                             // Note: On failure, skip this transaction, and continue speculation.
@@ -502,6 +525,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             Err(error) => {
                                 dev_eprintln!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
+                                // Capture diagnostics (resolved reason + error message) before
+                                // `from_indexed_finalize_error` consumes the structured error.
+                                let diagnostics = crate::vm::RejectionDiagnostics {
+                                    resolved_reason: crate::vm::extract_assert_reason(&error),
+                                    error_message: format!("{error}"),
+                                };
                                 let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                 match fee {
                                     // Finalize the fee, to ensure it is valid.
@@ -524,6 +553,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                                     self.pending_rejected_reasons
                                                         .write()
                                                         .insert(confirmed_tx.id(), rejected_reason.clone());
+                                                    // Store the transient diagnostics for this tx.
+                                                    self.pending_rejection_diagnostics
+                                                        .write()
+                                                        .insert(confirmed_tx.id(), diagnostics);
                                                     store
                                                         .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
                                                         .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;

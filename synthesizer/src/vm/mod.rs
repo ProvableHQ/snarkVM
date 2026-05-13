@@ -122,6 +122,46 @@ use rayon::prelude::*;
 // must include program metadata in addition to the checksum.
 pub type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<([U8<N>; 32], u16, u64)>);
 
+/// Per-transaction diagnostics captured during speculation for rejected transactions.
+///
+/// This is purely transient, in-memory state populated for the most recent speculation
+/// pass. It complements the persistent `RejectedReason` (which records location only)
+/// with the *resolved* reason value from `assert.* with <reason>` opcodes — the value
+/// is extracted from the failure error chain at the rejection site and discarded as
+/// soon as the next speculation begins. It is **never** written to disk or committed
+/// to chain state. Consumers (test frameworks, wallet pre-flight) opt in by reading
+/// `VM::pending_rejection_diagnostics`; production validators that ignore the field
+/// pay nothing beyond the cheap chain-walk extraction.
+#[derive(Clone, Debug)]
+pub struct RejectionDiagnostics<N: Network> {
+    /// The resolved reason from `assert.* with <reason>`, if the failing command
+    /// carried one and the reason can be reparsed as a plaintext value. Always `None`
+    /// for failures that don't originate from a with-reason assert.
+    pub resolved_reason: Option<console::program::Plaintext<N>>,
+    /// The full formatted error message from the failing finalize execution. Useful
+    /// for surfacing to developers (test output, wallet pre-flight feedback).
+    pub error_message: String,
+}
+
+/// Extracts the resolved reason plaintext from an `assert.* with <reason>` failure, if
+/// the indexed error originated from one. Walks the known FinalizeError → EvalError →
+/// AssertError variant chain directly rather than relying on `std::error::Error::source`,
+/// because the existing `#[error(transparent)]` forwards skip past the inner variants in
+/// the source iterator.
+pub(crate) fn extract_assert_reason<N: Network>(
+    error: &snarkvm_synthesizer_error::IndexedFinalizeError<N, Command<N>>,
+) -> Option<console::program::Plaintext<N>> {
+    use snarkvm_synthesizer_error::{AssertError, EvalError, FinalizeError};
+    let FinalizeError::Eval(eval) = &error.error else { return None };
+    let EvalError::Assert(assert_err) = eval else { return None };
+    match assert_err {
+        AssertError::EqWithReason { reason, .. } | AssertError::NeqWithReason { reason, .. } => {
+            console::program::Plaintext::<N>::from_str(reason).ok()
+        }
+        _ => None,
+    }
+}
+
 #[derive(Clone)]
 pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// The process.
@@ -137,6 +177,11 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// The list of rejection reasons for pending confirmed transactions.
     /// TODO: it would be cleaner if these are passed along as an argument to `add_next_block`, but this requires a bigger refactor.
     pending_rejected_reasons: Arc<RwLock<HashMap<N::TransactionID, RejectedReason<N>>>>,
+    /// Per-tx diagnostics populated alongside `pending_rejected_reasons` during
+    /// speculation. Holds the resolved `assert.* with <reason>` value (if any) and
+    /// the full error message for the most recent speculation pass. Transient,
+    /// in-memory, never persisted.
+    pending_rejection_diagnostics: Arc<RwLock<HashMap<N::TransactionID, RejectionDiagnostics<N>>>>,
     /// A sender to the channel for operations that must be performed sequentially.
     sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
     /// The handle to the thread which processes operations sequentially.
@@ -240,6 +285,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             restrictions: Restrictions::load()?,
             sequential_ops_tx: Default::default(),
             pending_rejected_reasons: Default::default(),
+            pending_rejection_diagnostics: Default::default(),
             sequential_ops_thread: Default::default(),
         };
 
@@ -305,6 +351,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub fn transaction_store(&self) -> &TransactionStore<N, C::TransactionStorage> {
         self.store.transaction_store()
+    }
+
+    /// Returns the transient diagnostics captured for a rejected transaction during the most
+    /// recent speculation pass, or `None` if the transaction was not rejected (or speculation
+    /// has since been cleared). The diagnostics carry the resolved `assert.* with <reason>`
+    /// plaintext (if any) plus the full error message — intended for test frameworks and
+    /// wallet pre-flight tools. Cleared automatically at the start of each speculation.
+    #[inline]
+    pub fn pending_rejection_diagnostic(&self, transaction_id: &N::TransactionID) -> Option<RejectionDiagnostics<N>> {
+        self.pending_rejection_diagnostics.read().get(transaction_id).cloned()
     }
 
     /// Builds a `FinalizeGlobalState` from the block at the given `height`.

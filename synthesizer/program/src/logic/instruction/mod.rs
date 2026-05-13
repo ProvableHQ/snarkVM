@@ -71,6 +71,10 @@ pub enum Instruction<N: Network> {
     AssertEq(AssertEq<N>),
     /// Asserts `first` and `second` are **not** equal.
     AssertNeq(AssertNeq<N>),
+    /// Asserts `first` and `second` are equal, with a plaintext reason surfaced on failure.
+    AssertEqWithReason(AssertEqWithReason<N>),
+    /// Asserts `first` and `second` are **not** equal, with a plaintext reason surfaced on failure.
+    AssertNeqWithReason(AssertNeqWithReason<N>),
     /// Calls a finalize asynchronously on the operands.
     Async(Async<N>),
     /// Calls a closure or function on the operands.
@@ -482,6 +486,12 @@ macro_rules! instruction {
             CommitPED64Raw,
             CommitPED128Raw,
 
+            // Prototype: with-reason assert variants (not yet gated behind a consensus version).
+            // Placed late in the list so the alt parser tries them before the bare `assert.eq`/`assert.neq`
+            // forms — they fail-fast when no `with` tail is present, and the alt then falls back.
+            AssertEqWithReason,
+            AssertNeqWithReason,
+
             // New opcodes should be added here, with a comment on which consensus version they were added in.
         }}
     };
@@ -705,7 +715,7 @@ mod tests {
         // Sanity check the number of instructions is unchanged.
         // Note that the number of opcodes **MUST NOT** exceed u16::MAX.
         assert_eq!(
-            129,
+            131,
             Instruction::<CurrentNetwork>::OPCODES.len(),
             "Update me if the number of instructions changes."
         );

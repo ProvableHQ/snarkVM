@@ -24,45 +24,83 @@ use snarkvm_synthesizer_error::*;
 pub type AssertEq<N> = AssertInstruction<N, { Variant::AssertEq as u8 }>;
 /// Asserts two operands are **not** equal to each other.
 pub type AssertNeq<N> = AssertInstruction<N, { Variant::AssertNeq as u8 }>;
+/// Asserts two operands are equal, attaching a plaintext reason that surfaces on failure.
+pub type AssertEqWithReason<N> = AssertInstruction<N, { Variant::AssertEqWithReason as u8 }>;
+/// Asserts two operands are **not** equal, attaching a plaintext reason that surfaces on failure.
+pub type AssertNeqWithReason<N> = AssertInstruction<N, { Variant::AssertNeqWithReason as u8 }>;
 
+#[allow(clippy::enum_variant_names)]
 enum Variant {
     AssertEq,
     AssertNeq,
+    AssertEqWithReason,
+    AssertNeqWithReason,
 }
 
-/// Asserts an operation on two operands.
+/// Asserts an operation on two operands. The `WithReason` variants carry a third plaintext
+/// operand whose value is surfaced in the failure message.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct AssertInstruction<N: Network, const VARIANT: u8> {
-    /// The operands.
+    /// The operands. Length is 2 for the bare variants and 3 for the with-reason variants
+    /// (the third operand is the reason plaintext).
     operands: Vec<Operand<N>>,
 }
 
 impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
+    /// Returns the expected number of operands for this variant.
+    const fn arity() -> usize {
+        match VARIANT {
+            0 | 1 => 2,
+            2 | 3 => 3,
+            _ => panic!("Invalid 'assert' instruction VARIANT"),
+        }
+    }
+
+    /// Returns true if this variant checks for inequality (assert.neq family).
+    const fn is_neq() -> bool {
+        matches!(VARIANT, 1 | 3)
+    }
+
+    /// Returns true if this variant carries a reason operand.
+    const fn has_reason() -> bool {
+        matches!(VARIANT, 2 | 3)
+    }
+
     /// Initializes a new `assert` instruction.
     #[inline]
     pub fn new(operands: Vec<Operand<N>>) -> Result<Self> {
-        // Sanity check that the operands is exactly two inputs.
-        ensure!(operands.len() == 2, "Assert instructions must have two operands");
-        // Return the instruction.
+        ensure!(operands.len() == Self::arity(), "Assert instruction expects {} operands", Self::arity());
         Ok(Self { operands })
     }
 
-    /// Returns the opcode.
+    /// Returns the opcode. The bare and with-reason variants get distinct internal opcode
+    /// strings (required by the wire format, which dispatches by opcode-string lookup).
+    /// The surface keyword used in Aleo source is shared and managed by the parser/display.
     #[inline]
     pub const fn opcode() -> Opcode {
         match VARIANT {
             0 => Opcode::Assert("assert.eq"),
             1 => Opcode::Assert("assert.neq"),
+            2 => Opcode::Assert("assert.eq.with_reason"),
+            3 => Opcode::Assert("assert.neq.with_reason"),
             _ => panic!("Invalid 'assert' instruction opcode"),
+        }
+    }
+
+    /// Returns the surface keyword used in Aleo source (`assert.eq` or `assert.neq`),
+    /// which is identical for the bare and with-reason variants of the same comparison.
+    const fn surface_keyword() -> &'static str {
+        match VARIANT {
+            0 | 2 => "assert.eq",
+            1 | 3 => "assert.neq",
+            _ => panic!("Invalid 'assert' instruction VARIANT"),
         }
     }
 
     /// Returns the operands in the operation.
     #[inline]
     pub fn operands(&self) -> &[Operand<N>] {
-        // Sanity check that the operands is exactly two inputs.
-        debug_assert!(self.operands.len() == 2, "Assert operations must have two operands");
-        // Return the operands.
+        debug_assert!(self.operands.len() == Self::arity(), "Assert operations have a fixed arity per variant");
         &self.operands
     }
 
@@ -86,33 +124,46 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
         stack: &impl StackTrait<N>,
         registers: &mut impl RegistersTrait<N>,
     ) -> Result<(), EvalError> {
-        // Ensure the number of operands is correct.
-        if self.operands.len() != 2 {
+        if self.operands.len() != Self::arity() {
             return Err(anyhow!(
-                "Instruction '{}' expects 2 operands, found {} operands",
+                "Instruction '{}' expects {} operands, found {} operands",
                 Self::opcode(),
+                Self::arity(),
                 self.operands.len()
             )
             .into());
         }
 
-        // Retrieve the inputs.
         let input_a = registers.load(stack, &self.operands[0])?;
         let input_b = registers.load(stack, &self.operands[1])?;
 
-        // Assert the inputs.
-        match VARIANT {
-            0 => {
-                if input_a != input_b {
-                    return Err(AssertError::Eq { lhs: format!("{input_a}"), rhs: format!("{input_b}") }.into());
-                }
+        let failed = match Self::is_neq() {
+            false => input_a != input_b,
+            true => input_a == input_b,
+        };
+
+        if failed {
+            let lhs = format!("{input_a}");
+            let rhs = format!("{input_b}");
+
+            if Self::has_reason() {
+                // Resolve the reason plaintext at runtime and surface it in the speculation
+                // error message via the AssertError variant. The reason is not persisted to
+                // chain state — only `RejectedReason::Finalize.command` records *where* the
+                // failure happened. Consumers wanting the resolved value recover it via
+                // local replay.
+                let reason = registers.load_plaintext(stack, &self.operands[2])?;
+                let reason = format!("{reason}");
+                return Err(match Self::is_neq() {
+                    false => AssertError::EqWithReason { lhs, rhs, reason }.into(),
+                    true => AssertError::NeqWithReason { lhs, rhs, reason }.into(),
+                });
             }
-            1 => {
-                if input_a == input_b {
-                    return Err(AssertError::Neq { lhs: format!("{input_a}"), rhs: format!("{input_b}") }.into());
-                }
-            }
-            _ => return Err(AssertError::Invalid { variant: VARIANT }.into()),
+
+            return Err(match Self::is_neq() {
+                false => AssertError::Eq { lhs, rhs }.into(),
+                true => AssertError::Neq { lhs, rhs }.into(),
+            });
         }
         Ok(())
     }
@@ -123,25 +174,24 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
         stack: &impl StackTrait<N>,
         registers: &mut impl RegistersCircuit<N, A>,
     ) -> Result<(), ExecError> {
-        // Ensure the number of operands is correct.
-        if self.operands.len() != 2 {
+        if self.operands.len() != Self::arity() {
             return Err(anyhow!(
-                "Instruction '{}' expects 2 operands, found {} operands",
+                "Instruction '{}' expects {} operands, found {} operands",
                 Self::opcode(),
+                Self::arity(),
                 self.operands.len()
             )
             .into());
         }
 
-        // Retrieve the inputs.
         let input_a = registers.load_circuit(stack, &self.operands[0])?;
         let input_b = registers.load_circuit(stack, &self.operands[1])?;
 
-        // Assert the inputs.
-        match VARIANT {
-            0 => A::assert(input_a.is_equal(&input_b))?,
-            1 => A::assert(input_a.is_not_equal(&input_b))?,
-            _ => return Err(anyhow!("Invalid 'assert' variant: {VARIANT}").into()),
+        // For with-reason variants, the reason operand is intentionally ignored in circuit
+        // context; circuit-side printing on failure lands in phase 4.
+        match Self::is_neq() {
+            false => A::assert(input_a.is_equal(&input_b))?,
+            true => A::assert(input_a.is_not_equal(&input_b))?,
         }
         Ok(())
     }
@@ -163,11 +213,15 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
         stack: &impl StackTrait<N>,
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
-        // Ensure the number of input types is correct.
-        if input_types.len() != 2 {
-            bail!("Instruction '{}' expects 2 inputs, found {} inputs", Self::opcode(), input_types.len())
+        if input_types.len() != Self::arity() {
+            bail!(
+                "Instruction '{}' expects {} inputs, found {} inputs",
+                Self::opcode(),
+                Self::arity(),
+                input_types.len()
+            )
         }
-        // Ensure the operands have equivalent types.
+        // The first two operands must have equivalent types (they're being compared).
         if !register_types_equivalent(stack, &input_types[0], stack, &input_types[1])? {
             bail!(
                 "Instruction '{}' expects inputs of equivalent types. Found inputs of type '{}' and '{}'",
@@ -176,31 +230,39 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
                 input_types[1]
             )
         }
-        // Ensure the number of operands is correct.
-        if self.operands.len() != 2 {
-            bail!("Instruction '{}' expects 2 operands, found {} operands", Self::opcode(), self.operands.len())
+        if self.operands.len() != Self::arity() {
+            bail!(
+                "Instruction '{}' expects {} operands, found {} operands",
+                Self::opcode(),
+                Self::arity(),
+                self.operands.len()
+            )
         }
-
-        match VARIANT {
-            0 | 1 => Ok(vec![]),
-            _ => bail!("Invalid 'assert' variant: {VARIANT}"),
-        }
+        // The third operand (reason) is only constrained to exist; its type is not constrained
+        // further (any plaintext is fine).
+        Ok(vec![])
     }
 }
 
 impl<N: Network, const VARIANT: u8> Parser for AssertInstruction<N, VARIANT> {
-    /// Parses a string into an operation.
+    /// Parses a string into an operation. The surface keyword in Aleo source is shared
+    /// between the bare and with-reason variants; the optional ` with <reason>` tail
+    /// disambiguates and is required for with-reason variants.
     fn parse(string: &str) -> ParserResult<Self> {
-        // Parse the opcode from the string.
-        let (string, _) = tag(*Self::opcode())(string)?;
-        // Parse the whitespace from the string.
+        let (string, _) = tag(Self::surface_keyword())(string)?;
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the first operand from the string.
         let (string, first) = Operand::parse(string)?;
-        // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the second operand from the string.
         let (string, second) = Operand::parse(string)?;
+
+        if Self::has_reason() {
+            // Parse `with <reason>` tail.
+            let (string, _) = Sanitizer::parse_whitespaces(string)?;
+            let (string, _) = tag("with")(string)?;
+            let (string, _) = Sanitizer::parse_whitespaces(string)?;
+            let (string, reason) = Operand::parse(string)?;
+            return Ok((string, Self { operands: vec![first, second, reason] }));
+        }
 
         Ok((string, Self { operands: vec![first, second] }))
     }
@@ -231,29 +293,28 @@ impl<N: Network, const VARIANT: u8> Debug for AssertInstruction<N, VARIANT> {
 }
 
 impl<N: Network, const VARIANT: u8> Display for AssertInstruction<N, VARIANT> {
-    /// Prints the operation to a string.
+    /// Prints the operation to a string using the surface keyword (`assert.eq` / `assert.neq`),
+    /// regardless of whether the variant carries an internal `.with_reason` opcode tag.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        // Ensure the number of operands is 2.
-        if self.operands.len() != 2 {
+        if self.operands.len() != Self::arity() {
             return Err(fmt::Error);
         }
-        // Print the operation.
-        write!(f, "{}", Self::opcode())?;
-        self.operands.iter().try_for_each(|operand| write!(f, " {operand}"))
+        write!(f, "{}", Self::surface_keyword())?;
+        write!(f, " {} {}", self.operands[0], self.operands[1])?;
+        if Self::has_reason() {
+            write!(f, " with {}", self.operands[2])?;
+        }
+        Ok(())
     }
 }
 
 impl<N: Network, const VARIANT: u8> FromBytes for AssertInstruction<N, VARIANT> {
     /// Reads the operation from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Initialize the vector for the operands.
-        let mut operands = Vec::with_capacity(2);
-        // Read the operands.
-        for _ in 0..2 {
+        let mut operands = Vec::with_capacity(Self::arity());
+        for _ in 0..Self::arity() {
             operands.push(Operand::read_le(&mut reader)?);
         }
-
-        // Return the operation.
         Ok(Self { operands })
     }
 }
@@ -261,11 +322,13 @@ impl<N: Network, const VARIANT: u8> FromBytes for AssertInstruction<N, VARIANT> 
 impl<N: Network, const VARIANT: u8> ToBytes for AssertInstruction<N, VARIANT> {
     /// Writes the operation to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        // Ensure the number of operands is 2.
-        if self.operands.len() != 2 {
-            return Err(error(format!("The number of operands must be 2, found {}", self.operands.len())));
+        if self.operands.len() != Self::arity() {
+            return Err(error(format!(
+                "The number of operands must be {}, found {}",
+                Self::arity(),
+                self.operands.len()
+            )));
         }
-        // Write the operands.
         self.operands.iter().try_for_each(|operand| operand.write_le(&mut writer))
     }
 }
@@ -278,7 +341,7 @@ mod tests {
     type CurrentNetwork = MainnetV0;
 
     #[test]
-    fn test_parse() {
+    fn test_parse_bare() {
         let (string, assert) = AssertEq::<CurrentNetwork>::parse("assert.eq r0 r1").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(assert.operands.len(), 2, "The number of operands is incorrect");
@@ -290,5 +353,37 @@ mod tests {
         assert_eq!(assert.operands.len(), 2, "The number of operands is incorrect");
         assert_eq!(assert.operands[0], Operand::Register(Register::Locator(0)), "The first operand is incorrect");
         assert_eq!(assert.operands[1], Operand::Register(Register::Locator(1)), "The second operand is incorrect");
+    }
+
+    #[test]
+    fn test_parse_with_reason() {
+        let (string, assert) = AssertEqWithReason::<CurrentNetwork>::parse("assert.eq r0 r1 with r2").unwrap();
+        assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+        assert_eq!(assert.operands.len(), 3, "The number of operands is incorrect");
+        assert_eq!(assert.operands[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(assert.operands[1], Operand::Register(Register::Locator(1)));
+        assert_eq!(assert.operands[2], Operand::Register(Register::Locator(2)));
+
+        let (string, assert) = AssertNeqWithReason::<CurrentNetwork>::parse("assert.neq r3 r4 with r5").unwrap();
+        assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+        assert_eq!(assert.operands.len(), 3);
+        assert_eq!(assert.operands[2], Operand::Register(Register::Locator(5)));
+    }
+
+    #[test]
+    fn test_display_with_reason() {
+        let assert = AssertEqWithReason::<CurrentNetwork>::from_str("assert.eq r0 r1 with r2").unwrap();
+        assert_eq!(assert.to_string(), "assert.eq r0 r1 with r2");
+
+        let assert = AssertNeqWithReason::<CurrentNetwork>::from_str("assert.neq r3 r4 with r5").unwrap();
+        assert_eq!(assert.to_string(), "assert.neq r3 r4 with r5");
+    }
+
+    #[test]
+    fn test_bytes_with_reason() {
+        let assert = AssertEqWithReason::<CurrentNetwork>::from_str("assert.eq r0 r1 with r2").unwrap();
+        let bytes = assert.to_bytes_le().unwrap();
+        let decoded = AssertEqWithReason::<CurrentNetwork>::read_le(&bytes[..]).unwrap();
+        assert_eq!(assert, decoded);
     }
 }

@@ -56,6 +56,12 @@ pub enum ExecError {
 }
 
 /// An error occurred during an assert instruction.
+///
+/// The `*WithReason` variants additionally carry the user-provided reason plaintext
+/// (formatted via `Display`) for the `assert.* with <reason>` opcode. The reason is
+/// surfaced in the speculation error message; it is **not** persisted to chain state —
+/// only the failing command's location is recorded by `RejectedReason`. Consumers
+/// wanting the resolved reason value recover it via local replay.
 #[derive(Debug, Error)]
 pub enum AssertError {
     /// The assert.eq instruction failed because the operands are not equal.
@@ -73,6 +79,26 @@ pub enum AssertError {
         lhs: String,
         /// The right-hand side operand.
         rhs: String,
+    },
+    /// The `assert.eq … with <reason>` instruction failed.
+    #[error("'assert.eq' failed: '{lhs}' is not equal to '{rhs}' (should be equal) (reason: {reason})")]
+    EqWithReason {
+        /// The left-hand side operand.
+        lhs: String,
+        /// The right-hand side operand.
+        rhs: String,
+        /// The user-provided reason plaintext, formatted via `Display`.
+        reason: String,
+    },
+    /// The `assert.neq … with <reason>` instruction failed.
+    #[error("'assert.neq' failed: '{lhs}' is equal to '{rhs}' (should not be equal) (reason: {reason})")]
+    NeqWithReason {
+        /// The left-hand side operand.
+        lhs: String,
+        /// The right-hand side operand.
+        rhs: String,
+        /// The user-provided reason plaintext, formatted via `Display`.
+        reason: String,
     },
     /// An invalid assert variant was specified.
     #[error("Invalid 'assert' variant: {variant}")]

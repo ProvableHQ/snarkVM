@@ -741,3 +741,146 @@ constructor:
     let expected = Plaintext::<CurrentNetwork>::from(Literal::U64(U64::new(42)));
     assert_eq!(emit_events[0], &expected, "EmitEvent payload did not match emitted value");
 }
+
+#[test]
+#[test_log::test]
+fn test_finalize_assert_with_reason() {
+    // Initialize VM and genesis above V9 height so the `constructor:` syntax is accepted.
+    let rng = &mut TestRng::fixed(987654321);
+    let genesis_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let (vm, _) = initialize_vm(&genesis_private_key, 20, rng);
+
+    // Program whose finalize body asserts the two inputs are equal, attaching a reason.
+    let program_source = r#"program assert_reason_test.aleo;
+
+function check_match:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    input r2 as u64.public;
+    async check_match r0 r1 r2 into r3;
+    output r3 as assert_reason_test.aleo/check_match.future;
+
+finalize check_match:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    input r2 as u64.public;
+    assert.eq r0 r1 with r2;
+
+constructor:
+    assert.eq edition 0u16;
+"#;
+    let program = Program::<CurrentNetwork>::from_str(program_source).unwrap();
+
+    // Deploy.
+    let time = CurrentNetwork::BLOCK_TIME as i64;
+    let deploy_tx = vm.deploy(&genesis_private_key, &program, None, 0, None, rng).unwrap();
+    let (ratifications, transactions, aborted, ratified_ops) = vm
+        .speculate(
+            construct_finalize_global_state(&vm, time),
+            time,
+            Some(0u64),
+            vec![],
+            &None.into(),
+            [deploy_tx].iter(),
+            rng,
+        )
+        .unwrap();
+    assert!(aborted.is_empty(), "deploy was aborted");
+    let block =
+        construct_next_block(&vm, time, &genesis_private_key, ratifications, transactions, aborted, ratified_ops, rng)
+            .unwrap();
+    vm.add_next_block(&block).unwrap();
+
+    // Case 1: matching inputs — assertion passes, transaction is accepted.
+    {
+        let inputs = [
+            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(7)))),
+            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(7)))),
+            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(99)))),
+        ];
+        let exec_tx = vm
+            .execute(
+                &genesis_private_key,
+                ("assert_reason_test.aleo", "check_match"),
+                inputs.iter(),
+                None,
+                0u64,
+                None,
+                rng,
+            )
+            .unwrap();
+        let (_r, transactions, aborted, _ro) = vm
+            .speculate(
+                construct_finalize_global_state(&vm, time),
+                time,
+                Some(0u64),
+                vec![],
+                &None.into(),
+                [exec_tx].iter(),
+                rng,
+            )
+            .unwrap();
+        assert!(aborted.is_empty(), "passing-assertion execution was aborted");
+        let confirmed = transactions.iter().next().expect("expected one confirmed transaction");
+        assert!(
+            matches!(confirmed, ConfirmedTransaction::AcceptedExecute(_, _, _)),
+            "matching inputs must be accepted, got {confirmed:?}"
+        );
+    }
+
+    // Case 2: mismatched inputs — assertion fails, transaction is rejected.
+    {
+        let inputs = [
+            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(7)))),
+            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(8)))),
+            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(99)))),
+        ];
+        let exec_tx = vm
+            .execute(
+                &genesis_private_key,
+                ("assert_reason_test.aleo", "check_match"),
+                inputs.iter(),
+                None,
+                0u64,
+                None,
+                rng,
+            )
+            .unwrap();
+        let (_r, transactions, aborted, _ro) = vm
+            .speculate(
+                construct_finalize_global_state(&vm, time),
+                time,
+                Some(0u64),
+                vec![],
+                &None.into(),
+                [exec_tx].iter(),
+                rng,
+            )
+            .unwrap();
+        assert!(aborted.is_empty(), "failing-assertion execution was aborted from speculation");
+        let confirmed = transactions.iter().next().expect("expected one confirmed transaction");
+        assert!(
+            matches!(confirmed, ConfirmedTransaction::RejectedExecute(_, _, _, _)),
+            "mismatched inputs must be rejected, got {confirmed:?}"
+        );
+
+        // Speculation populates `pending_rejection_diagnostics` with the resolved reason
+        // value extracted from the failing `assert.* with <reason>` error chain. The
+        // diagnostics are transient (in-memory, never persisted) and intended for test
+        // frameworks and wallet pre-flight tools to surface developer-friendly failure info.
+        let diagnostics = vm
+            .pending_rejection_diagnostic(&confirmed.id())
+            .expect("expected rejection diagnostics for the rejected tx");
+        let expected_reason = Plaintext::<CurrentNetwork>::from(Literal::U64(U64::new(99)));
+        assert_eq!(
+            diagnostics.resolved_reason.as_ref(),
+            Some(&expected_reason),
+            "resolved reason did not match the assert.eq `with` operand"
+        );
+        assert!(
+            diagnostics.error_message.contains("(reason: 99u64)"),
+            "error message should surface the resolved reason: {}",
+            diagnostics.error_message
+        );
+    }
+}

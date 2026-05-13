@@ -542,6 +542,10 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::And(_)) => Ok(500),
         Command::Instruction(Instruction::AssertEq(_)) => Ok(500),
         Command::Instruction(Instruction::AssertNeq(_)) => Ok(500),
+        // Phase 3a prototype: same base cost as the bare variants; the reason-byte cost will
+        // be folded in when phase 3b lifts the reason to a structured rejection field.
+        Command::Instruction(Instruction::AssertEqWithReason(_)) => Ok(500),
+        Command::Instruction(Instruction::AssertNeqWithReason(_)) => Ok(500),
         Command::Instruction(Instruction::Async(_)) => bail!("'async' is not supported in finalize"),
         Command::Instruction(Instruction::Call(_)) => bail!("'call' is not supported in finalize"),
         Command::Instruction(Instruction::CallDynamic(_)) => {

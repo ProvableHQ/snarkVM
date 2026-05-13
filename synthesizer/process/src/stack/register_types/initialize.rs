@@ -417,6 +417,14 @@ impl<N: Network> RegisterTypes<N> {
                     matches!(instruction, Instruction::AssertNeq(..)),
                     "Instruction '{instruction}' is not for opcode '{opcode}'."
                 ),
+                "assert.eq.with_reason" => ensure!(
+                    matches!(instruction, Instruction::AssertEqWithReason(..)),
+                    "Instruction '{instruction}' is not for opcode '{opcode}'."
+                ),
+                "assert.neq.with_reason" => ensure!(
+                    matches!(instruction, Instruction::AssertNeqWithReason(..)),
+                    "Instruction '{instruction}' is not for opcode '{opcode}'."
+                ),
                 _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
             },
             Opcode::Async => {
