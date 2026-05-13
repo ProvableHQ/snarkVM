@@ -80,7 +80,17 @@ impl<N: Network> FromBits for FinalizeOperation<N> {
                 // Return the finalize operation.
                 Ok(Self::RemoveMapping(mapping_id))
             }
-            6.. => bail!("Invalid finalize operation variant '{variant}'"),
+            6 => {
+                // Read the bit length of the plaintext (length-prefixed as u32 = 32 bits).
+                let bit_len = u32::from_bits_le(&next_bits(32)?)? as usize;
+                // Read the plaintext bits.
+                let plaintext_bits = next_bits(bit_len)?;
+                // Parse the plaintext.
+                let plaintext = Plaintext::from_bits_le(&plaintext_bits)?;
+                // Return the finalize operation.
+                Ok(Self::EmitEvent(Box::new(plaintext)))
+            }
+            7.. => bail!("Invalid finalize operation variant '{variant}'"),
         }
     }
 
@@ -148,7 +158,17 @@ impl<N: Network> FromBits for FinalizeOperation<N> {
                 // Return the finalize operation.
                 Ok(Self::RemoveMapping(mapping_id))
             }
-            6.. => bail!("Invalid finalize operation variant '{variant}'"),
+            6 => {
+                // Read the bit length of the plaintext (length-prefixed as u32 = 32 bits).
+                let bit_len = u32::from_bits_be(&next_bits(32)?)? as usize;
+                // Read the plaintext bits.
+                let plaintext_bits = next_bits(bit_len)?;
+                // Parse the plaintext.
+                let plaintext = Plaintext::from_bits_be(&plaintext_bits)?;
+                // Return the finalize operation.
+                Ok(Self::EmitEvent(Box::new(plaintext)))
+            }
+            7.. => bail!("Invalid finalize operation variant '{variant}'"),
         }
     }
 }
@@ -203,6 +223,17 @@ impl<N: Network> ToBits for FinalizeOperation<N> {
                 // Write the mapping ID.
                 mapping_id.write_bits_le(vec);
             }
+            Self::EmitEvent(plaintext) => {
+                // Write the variant.
+                6u8.write_bits_le(vec);
+                // Compute the plaintext bits.
+                let plaintext_bits = plaintext.to_bits_le();
+                // Write the bit length (u32 = 32 bits).
+                let bit_len = u32::try_from(plaintext_bits.len()).expect("EmitEvent plaintext exceeds u32::MAX bits");
+                bit_len.write_bits_le(vec);
+                // Write the plaintext bits.
+                vec.extend_from_slice(&plaintext_bits);
+            }
         }
     }
 
@@ -254,6 +285,17 @@ impl<N: Network> ToBits for FinalizeOperation<N> {
                 5u8.write_bits_be(vec);
                 // Write the mapping ID.
                 mapping_id.write_bits_be(vec);
+            }
+            Self::EmitEvent(plaintext) => {
+                // Write the variant.
+                6u8.write_bits_be(vec);
+                // Compute the plaintext bits.
+                let plaintext_bits = plaintext.to_bits_be();
+                // Write the bit length (u32 = 32 bits).
+                let bit_len = u32::try_from(plaintext_bits.len()).expect("EmitEvent plaintext exceeds u32::MAX bits");
+                bit_len.write_bits_be(vec);
+                // Write the plaintext bits.
+                vec.extend_from_slice(&plaintext_bits);
             }
         }
     }

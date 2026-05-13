@@ -925,6 +925,9 @@ pub fn cost_per_command<N: Network>(
         Command::Set(command) => {
             cost_in_size(stack, finalize_types, [command.key(), command.value()], SET_PER_BYTE_COST, SET_BASE_COST)
         }
+        Command::Emit(command) => {
+            cost_in_size(stack, finalize_types, [command.value()], SET_PER_BYTE_COST, SET_BASE_COST)
+        }
         Command::BranchEq(_) | Command::BranchNeq(_) => Ok(500),
         Command::Position(_) => Ok(100),
     }

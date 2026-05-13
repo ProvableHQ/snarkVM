@@ -20,11 +20,16 @@ mod string;
 
 use console::{
     network::{error, prelude::*},
+    program::Plaintext,
     types::Field,
 };
 
-/// Enum to represent the allowed set of Merkle tree operations.
-#[derive(Copy, Clone, PartialEq, Eq)]
+/// Enum to represent the operations produced by finalize execution.
+///
+/// Most variants represent Merkle tree mutations against program/mapping state.
+/// `EmitEvent` is an append-only event captured during finalize; it carries the
+/// raw plaintext rather than a Merkle-tree ID.
+#[derive(Clone, PartialEq, Eq)]
 pub enum FinalizeOperation<N: Network> {
     /// Appends a mapping to the program tree, as (`mapping ID`).
     InitializeMapping(Field<N>),
@@ -41,6 +46,9 @@ pub enum FinalizeOperation<N: Network> {
     ReplaceMapping(Field<N>),
     /// Removes a mapping from the program tree, as (`mapping ID`).
     RemoveMapping(Field<N>),
+    /// Emits a plaintext event captured during finalize execution.
+    /// Boxed to keep enum variant sizes uniform.
+    EmitEvent(Box<Plaintext<N>>),
 }
 
 #[cfg(test)]
@@ -80,6 +88,12 @@ pub(crate) mod test_helpers {
         FinalizeOperation::RemoveMapping(Uniform::rand(rng))
     }
 
+    /// Samples a fixed `EmitEvent` with a small struct plaintext.
+    pub(crate) fn sample_emit_event() -> FinalizeOperation<CurrentNetwork> {
+        let plaintext = console::program::Plaintext::<CurrentNetwork>::from_str("42u64").unwrap();
+        FinalizeOperation::EmitEvent(Box::new(plaintext))
+    }
+
     /// Samples a list of random `FinalizeOperation`.
     pub(crate) fn sample_finalize_operations() -> Vec<FinalizeOperation<CurrentNetwork>> {
         let rng = &mut TestRng::default();
@@ -97,6 +111,7 @@ pub(crate) mod test_helpers {
             sample_remove_key_value(rng),
             sample_replace_mapping(rng),
             sample_remove_mapping(rng),
+            sample_emit_event(),
         ]
     }
 }

@@ -35,7 +35,7 @@ use snarkvm_ledger_block::{
 use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
 use snarkvm_synthesizer::{Authorization, VM, program::FinalizeOperation};
 use snarkvm_synthesizer_process::{execution_cost, execution_cost_for_authorization, execution_cost_for_call};
-use snarkvm_synthesizer_program::FinalizeGlobalState;
+use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
 
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -652,4 +652,92 @@ fn construct_finalize_global_state<C: ConsensusStorage<CurrentNetwork>>(
         latest_block.hash(),
     )
     .unwrap()
+}
+
+#[test]
+#[test_log::test]
+fn test_finalize_emit_event() {
+    // Initialize VM and genesis. Start past V9 height so `constructor:` syntax is accepted.
+    // Under `--features test`, V9 activates at height 12.
+    let rng = &mut TestRng::fixed(123456789);
+    let genesis_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let (vm, _) = initialize_vm(&genesis_private_key, 20, rng);
+
+    // Define a program whose finalize body emits its public input.
+    let program_source = r#"program emit_test.aleo;
+
+function emit_value:
+    input r0 as u64.public;
+    async emit_value r0 into r1;
+    output r1 as emit_test.aleo/emit_value.future;
+
+finalize emit_value:
+    input r0 as u64.public;
+    emit r0;
+
+constructor:
+    assert.eq edition 0u16;
+"#;
+    let program = Program::<CurrentNetwork>::from_str(program_source).unwrap();
+
+    // Deploy the program.
+    let time = CurrentNetwork::BLOCK_TIME as i64;
+    let deploy_tx = vm.deploy(&genesis_private_key, &program, None, 0, None, rng).unwrap();
+    let (ratifications, transactions, aborted, ratified_ops) = vm
+        .speculate(
+            construct_finalize_global_state(&vm, time),
+            time,
+            Some(0u64),
+            vec![],
+            &None.into(),
+            [deploy_tx].iter(),
+            rng,
+        )
+        .unwrap();
+    assert!(aborted.is_empty(), "deploy was aborted");
+    let block =
+        construct_next_block(&vm, time, &genesis_private_key, ratifications, transactions, aborted, ratified_ops, rng)
+            .unwrap();
+    vm.add_next_block(&block).unwrap();
+
+    // Execute `emit_value(42u64)`.
+    let input = Value::Plaintext(Plaintext::from(Literal::U64(U64::new(42))));
+    let exec_tx = vm
+        .execute(&genesis_private_key, ("emit_test.aleo", "emit_value"), [input].iter(), None, 0u64, None, rng)
+        .unwrap();
+
+    // Speculate to obtain a `ConfirmedTransaction`.
+    let (_ratifications, transactions, aborted, _ratified_ops) = vm
+        .speculate(
+            construct_finalize_global_state(&vm, time),
+            time,
+            Some(0u64),
+            vec![],
+            &None.into(),
+            [exec_tx].iter(),
+            rng,
+        )
+        .unwrap();
+    assert!(aborted.is_empty(), "execution was aborted");
+
+    // The confirmed transaction must be accepted (not rejected).
+    let confirmed = transactions.iter().next().expect("expected one confirmed transaction");
+    assert!(
+        matches!(confirmed, ConfirmedTransaction::AcceptedExecute(_, _, _)),
+        "execution must be accepted, got {confirmed:?}"
+    );
+
+    // Inspect finalize operations: expect exactly one `EmitEvent` with the input plaintext.
+    let finalize_ops = confirmed.finalize_operations();
+    let emit_events: Vec<&Plaintext<CurrentNetwork>> = finalize_ops
+        .iter()
+        .filter_map(|op| match op {
+            FinalizeOperation::EmitEvent(plaintext) => Some(plaintext.as_ref()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(emit_events.len(), 1, "expected exactly one EmitEvent, got {finalize_ops:#?}");
+
+    let expected = Plaintext::<CurrentNetwork>::from(Literal::U64(U64::new(42)));
+    assert_eq!(emit_events[0], &expected, "EmitEvent payload did not match emitted value");
 }

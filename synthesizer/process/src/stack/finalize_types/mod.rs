@@ -42,6 +42,7 @@ use snarkvm_synthesizer_program::{
     Constructor,
     Contains,
     ContainsDynamic,
+    Emit,
     Finalize,
     Get,
     GetDynamic,

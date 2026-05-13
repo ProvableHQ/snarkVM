@@ -253,6 +253,7 @@ impl<N: Network> FinalizeTypes<N> {
             Command::RandChaCha(rand_chacha) => self.check_rand_chacha(stack, rand_chacha)?,
             Command::Remove(remove) => self.check_remove(stack, remove)?,
             Command::Set(set) => self.check_set(stack, set)?,
+            Command::Emit(emit) => self.check_emit(stack, emit)?,
             Command::BranchEq(branch_eq) => self.check_branch(stack, positions, branch_eq)?,
             Command::BranchNeq(branch_neq) => self.check_branch(stack, positions, branch_neq)?,
             // Note that the `Position`s are checked for uniqueness when constructing `Finalize` or `Constructor`.
@@ -777,6 +778,18 @@ impl<N: Network> FinalizeTypes<N> {
             )
         }
         Ok(())
+    }
+
+    /// Ensures the given `emit` command is well-formed: the operand must resolve to a plaintext.
+    #[inline]
+    fn check_emit(&self, stack: &Stack<N>, emit: &Emit<N>) -> Result<()> {
+        match self.get_type_from_operand(stack, emit.value())? {
+            FinalizeType::Plaintext(_) => Ok(()),
+            FinalizeType::Future(..) => bail!("A future cannot be used as the value in an `emit` command"),
+            FinalizeType::DynamicFuture => {
+                bail!("A dynamic future cannot be used as the value in an `emit` command")
+            }
+        }
     }
 
     /// Ensures the given `remove` command is well-formed.

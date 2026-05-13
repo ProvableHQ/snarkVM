@@ -1367,7 +1367,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Insert the next committee into storage.
                     store.committee_store().insert(state.block_height(), *(committee.clone()))?;
                     // Store the finalize operations for updating the committee and bonded mapping.
-                    finalize_operations.extend(&[
+                    finalize_operations.extend([
                         // Replace the committee mapping in storage.
                         store.replace_mapping(program_id, committee_mapping, next_committee_map)?,
                         // Replace the delegated mapping in storage.
@@ -1379,7 +1379,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     ]);
 
                     // Update the number of validators.
-                    finalize_operations.extend(&[
+                    finalize_operations.extend([
                         // Update the number of validators in the metadata mapping.
                         store.update_key_value(
                             program_id,
@@ -1390,7 +1390,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     ]);
 
                     // Update the number of delegators.
-                    finalize_operations.extend(&[
+                    finalize_operations.extend([
                         // Update the number of delegators in the metadata mapping.
                         store.update_key_value(
                             program_id,
@@ -1412,7 +1412,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         .collect::<Vec<_>>();
 
                     // Update the public balances.
-                    finalize_operations.extend(&[
+                    finalize_operations.extend([
                         // Update the public balances in storage.
                         store.replace_mapping(program_id, account_mapping, public_balances)?,
                     ]);
@@ -1527,7 +1527,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     store.committee_store().insert(state.block_height(), next_committee)?;
 
                     // Store the finalize operations for updating the committee and bonded mapping.
-                    finalize_operations.extend(&[
+                    finalize_operations.extend([
                         // Replace the committee mapping in storage.
                         store.replace_mapping(program_id, committee_mapping, next_committee_map)?,
                         // Replace the delegated mapping in storage.

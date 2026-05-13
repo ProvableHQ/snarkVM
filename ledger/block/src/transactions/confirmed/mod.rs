@@ -116,11 +116,12 @@ impl<N: Network> ConfirmedTransaction<N> {
     ) -> Result<Self> {
         // Ensure the finalize operations contain the correct types.
         for operation in finalize_operations.iter() {
-            // Ensure the finalize operation is an insert or update key-value operation.
+            // Ensure the finalize operation is an insert, update, remove key-value, or emit event.
             match operation {
                 FinalizeOperation::InsertKeyValue(..)
                 | FinalizeOperation::UpdateKeyValue(..)
-                | FinalizeOperation::RemoveKeyValue(..) => (),
+                | FinalizeOperation::RemoveKeyValue(..)
+                | FinalizeOperation::EmitEvent(..) => (),
                 FinalizeOperation::InitializeMapping(..)
                 | FinalizeOperation::ReplaceMapping(..)
                 | FinalizeOperation::RemoveMapping(..) => {
@@ -147,13 +148,15 @@ impl<N: Network> ConfirmedTransaction<N> {
         // Ensure the finalize operations contain the correct types.
         for operation in finalize_operations.iter() {
             // Ensure the finalize operation is an insert or update key-value operation.
+            // Rejected paths cannot contain emitted events; events are purged on rejection.
             match operation {
                 FinalizeOperation::InsertKeyValue(..)
                 | FinalizeOperation::UpdateKeyValue(..)
                 | FinalizeOperation::RemoveKeyValue(..) => (),
                 FinalizeOperation::InitializeMapping(..)
                 | FinalizeOperation::ReplaceMapping(..)
-                | FinalizeOperation::RemoveMapping(..) => {
+                | FinalizeOperation::RemoveMapping(..)
+                | FinalizeOperation::EmitEvent(..) => {
                     bail!("Transaction '{}' (fee) contains an invalid finalize operation type", transaction.id())
                 }
             }
@@ -183,13 +186,15 @@ impl<N: Network> ConfirmedTransaction<N> {
         // Ensure the finalize operations contain the correct types.
         for operation in finalize_operations.iter() {
             // Ensure the finalize operation is an insert or update key-value operation.
+            // Rejected paths cannot contain emitted events; events are purged on rejection.
             match operation {
                 FinalizeOperation::InsertKeyValue(..)
                 | FinalizeOperation::UpdateKeyValue(..)
                 | FinalizeOperation::RemoveKeyValue(..) => (),
                 FinalizeOperation::InitializeMapping(..)
                 | FinalizeOperation::ReplaceMapping(..)
-                | FinalizeOperation::RemoveMapping(..) => {
+                | FinalizeOperation::RemoveMapping(..)
+                | FinalizeOperation::EmitEvent(..) => {
                     bail!("Transaction '{}' (fee) contains an invalid finalize operation type", transaction.id())
                 }
             }

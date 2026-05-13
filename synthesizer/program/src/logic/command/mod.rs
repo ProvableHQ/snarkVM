@@ -22,6 +22,9 @@ pub use branch::*;
 mod contains;
 pub use contains::*;
 
+mod emit;
+pub use emit::*;
+
 mod get;
 pub use get::*;
 
@@ -81,6 +84,8 @@ pub enum Command<N: Network> {
     Remove(Remove<N>),
     /// Sets the value stored at the `key` operand in the `mapping` to `value`.
     Set(Set<N>),
+    /// Emits the plaintext value of the operand as an event in the finalize output.
+    Emit(Emit<N>),
     /// Jumps to the `position`, if `first` equals `second`.
     BranchEq(BranchEq<N>),
     /// Jumps to the `position`, if `first` does **not** equal `second`.
@@ -175,7 +180,8 @@ impl<N: Network> Command<N> {
             | Command::BranchNeq(_)
             | Command::Position(_)
             | Command::Remove(_)
-            | Command::Set(_) => vec![],
+            | Command::Set(_)
+            | Command::Emit(_) => vec![],
         }
     }
 
@@ -194,6 +200,7 @@ impl<N: Network> Command<N> {
             Command::RandChaCha(c) => c.operands(),
             Command::Remove(c) => c.operands(),
             Command::Set(c) => c.operands(),
+            Command::Emit(c) => c.operands(),
             Command::BranchEq(c) => c.operands(),
             Command::BranchNeq(c) => c.operands(),
             Command::Position(_) => Default::default(),
@@ -240,6 +247,8 @@ impl<N: Network> Command<N> {
             Command::Remove(remove) => remove.finalize(stack, store, registers).map_err(Into::into),
             // Finalize the 'set' command, and return the finalize operation.
             Command::Set(set) => set.finalize(stack, store, registers).map(Some).map_err(Into::into),
+            // Finalize the 'emit' command, and return the emit-event finalize operation.
+            Command::Emit(emit) => emit.finalize(stack, registers).map(Some).map_err(Into::into),
             // 'branch.eq' and 'branch.neq' commands are processed by the caller of this method.
             Command::BranchEq(_) | Command::BranchNeq(_) => {
                 Err(FinalizeError::Anyhow(anyhow!("`branch` commands cannot be finalized directly.")))
@@ -264,6 +273,7 @@ impl<N: Network> Command<N> {
             Command::RandChaCha(c) => c.contains_external_struct(),
             Command::Remove(c) => c.contains_external_struct(),
             Command::Set(c) => c.contains_external_struct(),
+            Command::Emit(c) => c.contains_external_struct(),
             Command::BranchEq(c) => c.contains_external_struct(),
             Command::BranchNeq(c) => c.contains_external_struct(),
             Command::Position(c) => c.contains_external_struct(),
@@ -326,8 +336,10 @@ impl<N: Network> FromBytes for Command<N> {
             12 => Ok(Self::GetDynamic(GetDynamic::read_le(&mut reader)?)),
             // Read the `get.or_use.dynamic` command.
             13 => Ok(Self::GetOrUseDynamic(GetOrUseDynamic::read_le(&mut reader)?)),
+            // Read the `emit` command.
+            14 => Ok(Self::Emit(Emit::read_le(&mut reader)?)),
             // Invalid variant.
-            14.. => Err(error(format!("Invalid command variant: {variant}"))),
+            15.. => Err(error(format!("Invalid command variant: {variant}"))),
         }
     }
 }
@@ -420,6 +432,12 @@ impl<N: Network> ToBytes for Command<N> {
                 // Write the `get.or_use.dynamic` command.
                 get_or_use_dynamic.write_le(&mut writer)
             }
+            Self::Emit(emit) => {
+                // Write the variant.
+                14u8.write_le(&mut writer)?;
+                // Write the `emit` command.
+                emit.write_le(&mut writer)
+            }
         }
     }
 }
@@ -441,6 +459,7 @@ impl<N: Network> Parser for Command<N> {
             map(RandChaCha::parse, |rand_chacha| Self::RandChaCha(rand_chacha)),
             map(Remove::parse, |remove| Self::Remove(remove)),
             map(Set::parse, |set| Self::Set(set)),
+            map(Emit::parse, |emit| Self::Emit(emit)),
             map(BranchEq::parse, |branch_eq| Self::BranchEq(branch_eq)),
             map(BranchNeq::parse, |branch_neq| Self::BranchNeq(branch_neq)),
             map(Position::parse, |position| Self::Position(position)),
@@ -489,6 +508,7 @@ impl<N: Network> Display for Command<N> {
             Self::RandChaCha(rand_chacha) => Display::fmt(rand_chacha, f),
             Self::Remove(remove) => Display::fmt(remove, f),
             Self::Set(set) => Display::fmt(set, f),
+            Self::Emit(emit) => Display::fmt(emit, f),
             Self::BranchEq(branch_eq) => Display::fmt(branch_eq, f),
             Self::BranchNeq(branch_neq) => Display::fmt(branch_neq, f),
             Self::Position(position) => Display::fmt(position, f),
@@ -581,6 +601,12 @@ mod tests {
 
         // Set
         let expected = "set r0 into object[r1];";
+        let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
+        let bytes = command.to_bytes_le().unwrap();
+        assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
+
+        // Emit
+        let expected = "emit r0;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         let bytes = command.to_bytes_le().unwrap();
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
@@ -678,6 +704,12 @@ mod tests {
         let expected = "set r0 into object[r1];";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         assert_eq!(Command::Set(Set::from_str(expected).unwrap()), command);
+        assert_eq!(expected, command.to_string());
+
+        // Emit
+        let expected = "emit r0;";
+        let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
+        assert_eq!(Command::Emit(Emit::from_str(expected).unwrap()), command);
         assert_eq!(expected, command.to_string());
 
         // BranchEq

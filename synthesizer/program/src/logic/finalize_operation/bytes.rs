@@ -68,7 +68,13 @@ impl<N: Network> FromBytes for FinalizeOperation<N> {
                 // Return the finalize operation.
                 Ok(Self::RemoveMapping(mapping_id))
             }
-            6.. => Err(error(format!("Failed to decode finalize operation variant {variant}"))),
+            6 => {
+                // Read the plaintext.
+                let plaintext = Plaintext::read_le(&mut reader)?;
+                // Return the finalize operation.
+                Ok(Self::EmitEvent(Box::new(plaintext)))
+            }
+            7.. => Err(error(format!("Failed to decode finalize operation variant {variant}"))),
         }
     }
 }
@@ -122,6 +128,12 @@ impl<N: Network> ToBytes for FinalizeOperation<N> {
                 5u8.write_le(&mut writer)?;
                 // Write the mapping ID.
                 mapping_id.write_le(&mut writer)?;
+            }
+            Self::EmitEvent(plaintext) => {
+                // Write the variant.
+                6u8.write_le(&mut writer)?;
+                // Write the plaintext.
+                plaintext.write_le(&mut writer)?;
             }
         }
         Ok(())
