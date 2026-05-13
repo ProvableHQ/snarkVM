@@ -3178,6 +3178,8 @@ dependencies = [
  "snarkvm-ledger",
  "snarkvm-metrics",
  "snarkvm-parameters",
+ "snarkvm-slipstream-plugin-interface",
+ "snarkvm-slipstream-plugin-manager",
  "snarkvm-synthesizer",
  "snarkvm-utilities",
  "snarkvm-wasm",

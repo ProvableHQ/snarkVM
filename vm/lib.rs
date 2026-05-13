@@ -44,6 +44,10 @@ pub use snarkvm_synthesizer as synthesizer;
 pub use snarkvm_utilities as utilities;
 #[cfg(feature = "wasm")]
 pub use snarkvm_wasm as wasm;
+#[cfg(feature = "slipstream-plugins")]
+pub use snarkvm_slipstream_plugin_interface as slipstream_plugin_interface;
+#[cfg(feature = "slipstream-plugins")]
+pub use snarkvm_slipstream_plugin_manager as slipstream_plugin_manager;
 
 pub mod prelude {
     #[cfg(feature = "console")]

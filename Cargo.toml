@@ -131,7 +131,7 @@ async = [ "snarkvm-ledger/async", "snarkvm-synthesizer/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "snarkvm-synthesizer/history" ]
 history-staking-rewards = [ "snarkvm-synthesizer/history-staking-rewards" ]
-slipstream-plugins = [ "snarkvm-synthesizer/slipstream-plugins" ]
+slipstream-plugins = [ "snarkvm-synthesizer/slipstream-plugins", "dep:snarkvm-slipstream-plugin-interface", "dep:snarkvm-slipstream-plugin-manager" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
 locktick = [
   "snarkvm-console?/locktick",
@@ -592,6 +592,14 @@ workspace = true
 optional = true
 
 [dependencies.snarkvm-parameters]
+workspace = true
+optional = true
+
+[dependencies.snarkvm-slipstream-plugin-interface]
+workspace = true
+optional = true
+
+[dependencies.snarkvm-slipstream-plugin-manager]
 workspace = true
 optional = true
 
