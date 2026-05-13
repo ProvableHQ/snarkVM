@@ -381,9 +381,48 @@ mod tests {
 
     #[test]
     fn test_bytes_with_reason() {
-        let assert = AssertEqWithReason::<CurrentNetwork>::from_str("assert.eq r0 r1 with r2").unwrap();
-        let bytes = assert.to_bytes_le().unwrap();
+        let eq = AssertEqWithReason::<CurrentNetwork>::from_str("assert.eq r0 r1 with r2").unwrap();
+        let bytes = eq.to_bytes_le().unwrap();
         let decoded = AssertEqWithReason::<CurrentNetwork>::read_le(&bytes[..]).unwrap();
-        assert_eq!(assert, decoded);
+        assert_eq!(eq, decoded);
+
+        let neq = AssertNeqWithReason::<CurrentNetwork>::from_str("assert.neq r3 r4 with r5").unwrap();
+        let bytes = neq.to_bytes_le().unwrap();
+        let decoded = AssertNeqWithReason::<CurrentNetwork>::read_le(&bytes[..]).unwrap();
+        assert_eq!(neq, decoded);
+    }
+
+    /// Regression test for the opcode-collision bug: the bare and with-reason variants
+    /// share the surface keyword (`assert.eq` / `assert.neq`) but must have distinct
+    /// internal opcode strings so that `Instruction`-level bytes serialization dispatches
+    /// to the correct read path. If the with-reason variants ever share an opcode string
+    /// with their bare counterparts, this round-trip will deserialize back to the wrong
+    /// arity and the display will drop the `with` tail.
+    #[test]
+    fn test_instruction_bytes_roundtrip() {
+        use crate::Instruction;
+        let cases = ["assert.eq r0 r1;", "assert.neq r0 r1;", "assert.eq r0 r1 with r2;", "assert.neq r0 r1 with r2;"];
+        for source in cases {
+            let expected = Instruction::<CurrentNetwork>::from_str(source).unwrap();
+            let bytes = expected.to_bytes_le().unwrap();
+            let decoded = Instruction::<CurrentNetwork>::read_le(&bytes[..]).unwrap();
+            assert_eq!(
+                format!("{decoded}"),
+                format!("{expected}"),
+                "Instruction-level bytes roundtrip dropped/altered operands for '{source}'"
+            );
+        }
+    }
+
+    /// The reason operand may be either a register or a literal — both are valid
+    /// `Operand` shapes. Verify the literal form parses and round-trips through bytes,
+    /// since Leo's `require(cond, MyReason { ... })` could lower to either shape.
+    #[test]
+    fn test_with_reason_literal_operand() {
+        let eq = AssertEqWithReason::<CurrentNetwork>::from_str("assert.eq r0 r1 with 99u64").unwrap();
+        assert_eq!(eq.to_string(), "assert.eq r0 r1 with 99u64");
+        let bytes = eq.to_bytes_le().unwrap();
+        let decoded = AssertEqWithReason::<CurrentNetwork>::read_le(&bytes[..]).unwrap();
+        assert_eq!(eq, decoded);
     }
 }

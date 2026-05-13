@@ -750,7 +750,9 @@ fn test_finalize_assert_with_reason() {
     let genesis_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let (vm, _) = initialize_vm(&genesis_private_key, 20, rng);
 
-    // Program whose finalize body asserts the two inputs are equal, attaching a reason.
+    // Program exercising the with-reason branches: bare vs with-reason, eq vs neq,
+    // reason as register vs literal. Each function/finalize pair is grouped (the Aleo IR
+    // parser expects them interleaved, not all functions then all finalizes).
     let program_source = r#"program assert_reason_test.aleo;
 
 function check_match:
@@ -765,6 +767,41 @@ finalize check_match:
     input r1 as u64.public;
     input r2 as u64.public;
     assert.eq r0 r1 with r2;
+
+function check_distinct:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    input r2 as u64.public;
+    async check_distinct r0 r1 r2 into r3;
+    output r3 as assert_reason_test.aleo/check_distinct.future;
+
+finalize check_distinct:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    input r2 as u64.public;
+    assert.neq r0 r1 with r2;
+
+function bare_check:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    async bare_check r0 r1 into r2;
+    output r2 as assert_reason_test.aleo/bare_check.future;
+
+finalize bare_check:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    assert.eq r0 r1;
+
+function check_literal_reason:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    async check_literal_reason r0 r1 into r2;
+    output r2 as assert_reason_test.aleo/check_literal_reason.future;
+
+finalize check_literal_reason:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    assert.eq r0 r1 with 12345u64;
 
 constructor:
     assert.eq edition 0u16;
@@ -791,25 +828,12 @@ constructor:
             .unwrap();
     vm.add_next_block(&block).unwrap();
 
-    // Case 1: matching inputs — assertion passes, transaction is accepted.
-    {
-        let inputs = [
-            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(7)))),
-            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(7)))),
-            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(99)))),
-        ];
+    // Helper: speculate a single execution and return its confirmed transaction.
+    let speculate_one = |function: &str, inputs: Vec<Value<CurrentNetwork>>, rng: &mut TestRng| {
         let exec_tx = vm
-            .execute(
-                &genesis_private_key,
-                ("assert_reason_test.aleo", "check_match"),
-                inputs.iter(),
-                None,
-                0u64,
-                None,
-                rng,
-            )
+            .execute(&genesis_private_key, ("assert_reason_test.aleo", function), inputs.iter(), None, 0u64, None, rng)
             .unwrap();
-        let (_r, transactions, aborted, _ro) = vm
+        let (_, transactions, aborted, _) = vm
             .speculate(
                 construct_finalize_global_state(&vm, time),
                 time,
@@ -820,61 +844,38 @@ constructor:
                 rng,
             )
             .unwrap();
-        assert!(aborted.is_empty(), "passing-assertion execution was aborted");
-        let confirmed = transactions.iter().next().expect("expected one confirmed transaction");
+        assert!(aborted.is_empty(), "speculation aborted '{function}'");
+        transactions.iter().next().expect("expected one confirmed transaction").clone()
+    };
+
+    let u64_literal = |v: u64| Value::Plaintext(Plaintext::from(Literal::U64(U64::new(v))));
+
+    // Case 1: assert.eq matches → accepted; diagnostics map has no entry for this tx.
+    {
+        let confirmed = speculate_one("check_match", vec![u64_literal(7), u64_literal(7), u64_literal(99)], rng);
         assert!(
             matches!(confirmed, ConfirmedTransaction::AcceptedExecute(_, _, _)),
             "matching inputs must be accepted, got {confirmed:?}"
         );
+        assert!(
+            vm.pending_rejection_diagnostic(&confirmed.id()).is_none(),
+            "accepted tx should have no rejection diagnostics"
+        );
     }
 
-    // Case 2: mismatched inputs — assertion fails, transaction is rejected.
+    // Case 2: assert.eq mismatch with register reason → rejected; diagnostics has resolved reason.
     {
-        let inputs = [
-            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(7)))),
-            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(8)))),
-            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(99)))),
-        ];
-        let exec_tx = vm
-            .execute(
-                &genesis_private_key,
-                ("assert_reason_test.aleo", "check_match"),
-                inputs.iter(),
-                None,
-                0u64,
-                None,
-                rng,
-            )
-            .unwrap();
-        let (_r, transactions, aborted, _ro) = vm
-            .speculate(
-                construct_finalize_global_state(&vm, time),
-                time,
-                Some(0u64),
-                vec![],
-                &None.into(),
-                [exec_tx].iter(),
-                rng,
-            )
-            .unwrap();
-        assert!(aborted.is_empty(), "failing-assertion execution was aborted from speculation");
-        let confirmed = transactions.iter().next().expect("expected one confirmed transaction");
+        let confirmed = speculate_one("check_match", vec![u64_literal(7), u64_literal(8), u64_literal(99)], rng);
         assert!(
             matches!(confirmed, ConfirmedTransaction::RejectedExecute(_, _, _, _)),
             "mismatched inputs must be rejected, got {confirmed:?}"
         );
-
-        // Speculation populates `pending_rejection_diagnostics` with the resolved reason
-        // value extracted from the failing `assert.* with <reason>` error chain. The
-        // diagnostics are transient (in-memory, never persisted) and intended for test
-        // frameworks and wallet pre-flight tools to surface developer-friendly failure info.
         let diagnostics = vm
             .pending_rejection_diagnostic(&confirmed.id())
             .expect("expected rejection diagnostics for the rejected tx");
-        let expected_reason = Plaintext::<CurrentNetwork>::from(Literal::U64(U64::new(99)));
         assert_eq!(
             diagnostics.resolved_reason.as_ref(),
-            Some(&expected_reason),
+            Some(&Plaintext::<CurrentNetwork>::from(Literal::U64(U64::new(99)))),
             "resolved reason did not match the assert.eq `with` operand"
         );
         assert!(
@@ -883,4 +884,61 @@ constructor:
             diagnostics.error_message
         );
     }
+
+    // Case 3: assert.neq distinct inputs (7 != 8) → accepted; no diagnostics.
+    {
+        let confirmed = speculate_one("check_distinct", vec![u64_literal(7), u64_literal(8), u64_literal(42)], rng);
+        assert!(
+            matches!(confirmed, ConfirmedTransaction::AcceptedExecute(_, _, _)),
+            "distinct inputs to assert.neq must be accepted, got {confirmed:?}"
+        );
+        assert!(vm.pending_rejection_diagnostic(&confirmed.id()).is_none());
+    }
+
+    // Case 4: assert.neq with equal inputs → rejected; diagnostics has resolved reason.
+    {
+        let confirmed = speculate_one("check_distinct", vec![u64_literal(7), u64_literal(7), u64_literal(42)], rng);
+        assert!(matches!(confirmed, ConfirmedTransaction::RejectedExecute(_, _, _, _)));
+        let diagnostics = vm.pending_rejection_diagnostic(&confirmed.id()).expect("expected diagnostics");
+        assert_eq!(
+            diagnostics.resolved_reason.as_ref(),
+            Some(&Plaintext::<CurrentNetwork>::from(Literal::U64(U64::new(42)))),
+            "neq-with-reason failure should surface the third operand as the reason"
+        );
+        assert!(diagnostics.error_message.contains("(reason: 42u64)"));
+    }
+
+    // Case 5: bare assert.eq mismatch → rejected; diagnostics present but resolved_reason is None.
+    // The error message does NOT mention a reason (no phantom reason from bare asserts).
+    {
+        let confirmed = speculate_one("bare_check", vec![u64_literal(7), u64_literal(8)], rng);
+        assert!(matches!(confirmed, ConfirmedTransaction::RejectedExecute(_, _, _, _)));
+        let diagnostics = vm.pending_rejection_diagnostic(&confirmed.id()).expect("expected diagnostics");
+        assert!(
+            diagnostics.resolved_reason.is_none(),
+            "bare assert.eq failures must not surface a resolved reason, got {:?}",
+            diagnostics.resolved_reason
+        );
+        assert!(
+            !diagnostics.error_message.contains("reason:"),
+            "bare assert.eq error message should not mention a reason: {}",
+            diagnostics.error_message
+        );
+    }
+
+    // Case 6: with-reason using a literal operand (no register indirection).
+    {
+        let confirmed = speculate_one("check_literal_reason", vec![u64_literal(7), u64_literal(8)], rng);
+        assert!(matches!(confirmed, ConfirmedTransaction::RejectedExecute(_, _, _, _)));
+        let diagnostics = vm.pending_rejection_diagnostic(&confirmed.id()).expect("expected diagnostics");
+        assert_eq!(
+            diagnostics.resolved_reason.as_ref(),
+            Some(&Plaintext::<CurrentNetwork>::from(Literal::U64(U64::new(12345)))),
+            "literal-operand reason should be captured verbatim"
+        );
+    }
+
+    // Note: struct-shaped reasons (the typed-error use case) are not exercised here. The
+    // multi-function program above already stretches the deploy path; struct reasons should
+    // land in their own dedicated test program as a follow-up.
 }
