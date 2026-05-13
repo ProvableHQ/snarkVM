@@ -751,9 +751,13 @@ fn test_finalize_assert_with_reason() {
     let (vm, _) = initialize_vm(&genesis_private_key, 20, rng);
 
     // Program exercising the with-reason branches: bare vs with-reason, eq vs neq,
-    // reason as register vs literal. Each function/finalize pair is grouped (the Aleo IR
-    // parser expects them interleaved, not all functions then all finalizes).
+    // reason as register vs literal vs struct. Each function/finalize pair is grouped
+    // (the Aleo IR parser expects them interleaved, not all functions then all finalizes).
     let program_source = r#"program assert_reason_test.aleo;
+
+struct Reason:
+    code as u64;
+    severity as u64;
 
 function check_match:
     input r0 as u64.public;
@@ -802,6 +806,21 @@ finalize check_literal_reason:
     input r0 as u64.public;
     input r1 as u64.public;
     assert.eq r0 r1 with 12345u64;
+
+function check_struct_reason:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    input r2 as u64.public;
+    input r3 as u64.public;
+    cast r2 r3 into r4 as Reason;
+    async check_struct_reason r0 r1 r4 into r5;
+    output r5 as assert_reason_test.aleo/check_struct_reason.future;
+
+finalize check_struct_reason:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    input r2 as Reason.public;
+    assert.eq r0 r1 with r2;
 
 constructor:
     assert.eq edition 0u16;
@@ -938,7 +957,99 @@ constructor:
         );
     }
 
-    // Note: struct-shaped reasons (the typed-error use case) are not exercised here. The
-    // multi-function program above already stretches the deploy path; struct reasons should
-    // land in their own dedicated test program as a follow-up.
+    // Case 7: struct-shaped reason — the typed-error use case. The function constructs a
+    // `Reason { code, severity }` struct from u64 inputs and passes it to finalize, where
+    // the failing assert attaches it as the reason. Verifies the diagnostics carry the
+    // resolved struct plaintext (not just a primitive).
+    {
+        let confirmed = speculate_one(
+            "check_struct_reason",
+            vec![u64_literal(7), u64_literal(8), u64_literal(5), u64_literal(9)],
+            rng,
+        );
+        assert!(matches!(confirmed, ConfirmedTransaction::RejectedExecute(_, _, _, _)));
+        let diagnostics = vm.pending_rejection_diagnostic(&confirmed.id()).expect("expected diagnostics");
+        let expected_struct = Plaintext::<CurrentNetwork>::from_str("{ code: 5u64, severity: 9u64 }").unwrap();
+        assert_eq!(
+            diagnostics.resolved_reason.as_ref(),
+            Some(&expected_struct),
+            "struct reason should roundtrip through Display → from_str"
+        );
+    }
+
+    // Case 8: multiple rejected txs in a single speculation — verify the diagnostics map
+    // keys each rejection independently (no aliasing, no clobbering).
+    {
+        let tx_a = vm
+            .execute(
+                &genesis_private_key,
+                ("assert_reason_test.aleo", "check_match"),
+                [u64_literal(1), u64_literal(2), u64_literal(111)].iter(),
+                None,
+                0u64,
+                None,
+                rng,
+            )
+            .unwrap();
+        let tx_b = vm
+            .execute(
+                &genesis_private_key,
+                ("assert_reason_test.aleo", "check_distinct"),
+                [u64_literal(7), u64_literal(7), u64_literal(222)].iter(),
+                None,
+                0u64,
+                None,
+                rng,
+            )
+            .unwrap();
+        let (_, transactions, aborted, _) = vm
+            .speculate(
+                construct_finalize_global_state(&vm, time),
+                time,
+                Some(0u64),
+                vec![],
+                &None.into(),
+                [tx_a, tx_b].iter(),
+                rng,
+            )
+            .unwrap();
+        assert!(aborted.is_empty(), "multi-tx speculation aborted");
+        // Both must be rejected. Rejected-execute confirmed txs use the fee tx's id as
+        // their confirmed id, so we don't try to map original→confirmed; instead we
+        // gather the resolved reasons via the diagnostics map and assert the set.
+        let mut reasons: Vec<String> = Vec::new();
+        for confirmed in transactions.iter() {
+            assert!(
+                matches!(confirmed, ConfirmedTransaction::RejectedExecute(_, _, _, _)),
+                "expected RejectedExecute, got {confirmed:?}"
+            );
+            let diagnostics =
+                vm.pending_rejection_diagnostic(&confirmed.id()).expect("expected diagnostics for each rejection");
+            let reason = diagnostics.resolved_reason.as_ref().expect("expected a resolved reason");
+            reasons.push(reason.to_string());
+        }
+        reasons.sort();
+        assert_eq!(
+            reasons,
+            vec!["111u64".to_string(), "222u64".to_string()],
+            "both rejected txs must surface their reasons in the same pass"
+        );
+    }
+
+    // Case 9: diagnostics are cleared at the start of each new speculation — a stale entry
+    // from a prior pass must not leak into the next.
+    {
+        // Speculate one rejection, capture its tx id.
+        let stale = speculate_one("check_match", vec![u64_literal(3), u64_literal(4), u64_literal(555)], rng);
+        assert!(matches!(stale, ConfirmedTransaction::RejectedExecute(_, _, _, _)));
+        let stale_id = stale.id();
+        assert!(vm.pending_rejection_diagnostic(&stale_id).is_some(), "stale diagnostic must be present pre-clear");
+
+        // Speculate another tx (any kind); the previous diagnostic must be gone.
+        let _next = speculate_one("check_match", vec![u64_literal(9), u64_literal(9), u64_literal(0)], rng);
+        assert!(
+            vm.pending_rejection_diagnostic(&stale_id).is_none(),
+            "diagnostic from the previous speculation pass must be cleared"
+        );
+    }
 }
