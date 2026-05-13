@@ -337,8 +337,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         authorization.push(callee_request.clone())?;
 
                         // Execute the callee's request.
-                        let callee_response =
-                            target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
+                        let Some(callee_response) =
+                            target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?
+                        else {
+                            return Err(anyhow!("Response should be present in `Authorize` mode.").into());
+                        };
 
                         // Convert the callee's outputs to the caller's context.
                         let caller_response_outputs = callee_response.to_dynamic_outputs()?;
@@ -467,8 +470,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         call_stack.push(callee_request.clone())?;
 
                         // Evaluate the callee's request.
-                        let callee_response =
-                            target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
+                        let Some(callee_response) =
+                            target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?
+                        else {
+                            return Err(anyhow!("Response should be present in `PackageRun` mode.").into());
+                        };
 
                         // Convert the callee's outputs to the caller's context.
                         let caller_response_outputs = callee_response.to_dynamic_outputs()?;
@@ -511,12 +517,15 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             rng,
                         )?;
                         // Execute the request.
-                        let callee_response = target.substack().execute_function::<A, R>(
+                        let Some(callee_response) = target.substack().execute_function::<A, R>(
                             registers.call_stack(),
                             console_caller,
                             root_tvk,
                             rng,
-                        )?;
+                        )?
+                        else {
+                            return Err(anyhow!("Response should be present in `Execute` mode.").into());
+                        };
 
                         // Ensure the values are equal.
                         if console_callee_response.outputs() != callee_response.outputs() {

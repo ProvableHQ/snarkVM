@@ -27,6 +27,9 @@ mod cost_for_call;
 // Tests for the externally-callable `query` function prototype.
 mod queries;
 
+// Tests with Aleo functions which output scalars.
+mod scalar_outputs;
+
 // Tests for restricted keywords at V15.
 mod restricted_keywords;
 

@@ -990,10 +990,7 @@ mod tests {
 
     #[cfg(feature = "test")]
     use console::algorithms::{ECDSASignature, Keccak256};
-    use console::{
-        account::Address,
-        types::{Field, U8},
-    };
+    use console::{account::Address, types::Field};
     use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
     #[cfg(feature = "test")]
     use snarkvm_utilities::bytes_from_bits_le;
