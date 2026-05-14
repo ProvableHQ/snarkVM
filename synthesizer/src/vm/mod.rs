@@ -1280,7 +1280,7 @@ function a:
             // Note: `deployment_transaction_ids` is sorted lexicographically by transaction ID, so the order may change if we update internal methods.
             assert_eq!(
                 deployment_transaction_ids,
-                vec![deployment_1.id(), deployment_2.id(), deployment_4.id(), deployment_3.id()],
+                vec![deployment_4.id(), deployment_1.id(), deployment_3.id(), deployment_2.id()],
                 "Update me if serialization has changed"
             );
         }
