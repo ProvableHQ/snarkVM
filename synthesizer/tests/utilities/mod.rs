@@ -33,3 +33,6 @@ pub use expectation::*;
 
 pub mod tests;
 pub use tests::*;
+
+pub mod vm;
+pub use vm::*;

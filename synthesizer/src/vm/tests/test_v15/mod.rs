@@ -30,6 +30,18 @@ mod views;
 // Tests for restricted keywords at V15.
 mod restricted_keywords;
 
+// Tests for `emit <operand>;` in `finalize` bodies (FinalizeOperation::EmitEvent).
+mod emit_in_finalize;
+
+// Tests for `emit <operand>;` in transition function bodies (circuit-side debug print).
+mod emit_in_circuit;
+
+// Tests for `assert.eq/neq <a> <b> with <reason>;` in `finalize` bodies.
+mod assert_reason_in_finalize;
+
+// Tests for `assert.eq/neq <a> <b> with <reason>;` in transition function bodies.
+mod assert_reason_in_circuit;
+
 use super::*;
 
 use crate::vm::test_helpers::{sample_vm_at_height, *};
