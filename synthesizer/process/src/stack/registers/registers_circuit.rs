@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use circuit::Eject;
-use console::program::{EntryType, FinalizeType, Identifier, Locator, RecordType};
+use console::program::{EntryType, FinalizeType, Identifier, Locator, PlaintextType, RecordType, RegisterType};
 use snarkvm_synthesizer_program::Program;
 
 use super::*;

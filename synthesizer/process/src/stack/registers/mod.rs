@@ -19,7 +19,7 @@ mod registers_trait;
 use crate::{CallStack, RegisterTypes};
 use console::{
     network::prelude::*,
-    program::{Entry, Literal, Plaintext, PlaintextType, Register, RegisterType, Request, Value},
+    program::{Entry, Literal, Plaintext, Register, Request, Value},
     types::{Address, Field},
 };
 use snarkvm_synthesizer_program::{Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
