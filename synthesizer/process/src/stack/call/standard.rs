@@ -331,7 +331,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         // Synthesize the circuit. Note the response will be empty.
                         let response = substack.execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
-                        // TODO (Antonio) here
+                        // TODO (Antonio) only place affected, sort out
 
                         if response.is_some() {
                             return Err(anyhow!(

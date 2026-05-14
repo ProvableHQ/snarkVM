@@ -55,7 +55,6 @@ fn test_vm_execute_and_finalize() {
 
     // Run each test and compare it against its corresponding expectation.
     tests.iter().for_each(|test| {
-        println!("Running test: {:?}", test.path());
         // Run the test.
         let output = run_test(test);
         // Check against the expected output.
