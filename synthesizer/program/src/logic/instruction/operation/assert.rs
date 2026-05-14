@@ -187,8 +187,28 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
         let input_a = registers.load_circuit(stack, &self.operands[0])?;
         let input_b = registers.load_circuit(stack, &self.operands[1])?;
 
-        // For with-reason variants, the reason operand is intentionally ignored in circuit
-        // context; circuit-side printing on failure lands in phase 4.
+        // For with-reason variants, surface the resolved reason to stderr when the
+        // constraint is about to be unsatisfiable. Prover-side only — validators never
+        // execute the circuit body, so this print never reaches them. Always-on (no
+        // feature gate) because the dev who wrote `with <reason>` is asking for this
+        // output by construction.
+        if Self::has_reason() {
+            use circuit::Eject;
+            let lhs = input_a.eject_value();
+            let rhs = input_b.eject_value();
+            let failed = match Self::is_neq() {
+                false => lhs != rhs,
+                true => lhs == rhs,
+            };
+            if failed {
+                if let Ok(reason) = registers.load_plaintext_circuit(stack, &self.operands[2]) {
+                    let reason = reason.eject_value();
+                    let (op, cmp) = if Self::is_neq() { ("assert.neq", "==") } else { ("assert.eq", "!=") };
+                    eprintln!("'{op}' failed in circuit: '{lhs}' {cmp} '{rhs}' (reason: {reason})");
+                }
+            }
+        }
+
         match Self::is_neq() {
             false => A::assert(input_a.is_equal(&input_b))?,
             true => A::assert(input_a.is_not_equal(&input_b))?,

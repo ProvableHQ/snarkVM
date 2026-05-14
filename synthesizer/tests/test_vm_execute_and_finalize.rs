@@ -1053,3 +1053,87 @@ constructor:
         );
     }
 }
+
+#[test]
+#[test_log::test]
+fn test_circuit_assert_with_reason_in_function() {
+    // Exercises `assert.* with <reason>` in a pure-circuit transition function body (not
+    // finalize). On failure, the constraint is unsatisfiable so the prover cannot generate
+    // a valid proof. The resolved reason is printed to the prover's stderr as a developer
+    // aid — verified manually (capturing stderr in Rust integration tests is non-trivial).
+    let rng = &mut TestRng::fixed(789012345);
+    let genesis_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let (vm, _) = initialize_vm(&genesis_private_key, 20, rng);
+
+    let program_source = r#"program circuit_assert_test.aleo;
+
+function check_in_circuit:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    input r2 as u64.public;
+    assert.eq r0 r1 with r2;
+    output r0 as u64.public;
+
+constructor:
+    assert.eq edition 0u16;
+"#;
+    let program = Program::<CurrentNetwork>::from_str(program_source).unwrap();
+
+    // Deploy.
+    let time = CurrentNetwork::BLOCK_TIME as i64;
+    let deploy_tx = vm.deploy(&genesis_private_key, &program, None, 0, None, rng).unwrap();
+    let (ratifications, transactions, aborted, ratified_ops) = vm
+        .speculate(
+            construct_finalize_global_state(&vm, time),
+            time,
+            Some(0u64),
+            vec![],
+            &None.into(),
+            [deploy_tx].iter(),
+            rng,
+        )
+        .unwrap();
+    assert!(aborted.is_empty(), "deploy was aborted");
+    let block =
+        construct_next_block(&vm, time, &genesis_private_key, ratifications, transactions, aborted, ratified_ops, rng)
+            .unwrap();
+    vm.add_next_block(&block).unwrap();
+
+    let u64_literal = |v: u64| Value::Plaintext(Plaintext::from(Literal::U64(U64::new(v))));
+
+    // Matching inputs → the constraint is satisfied; the prover produces a valid proof.
+    let _ok = vm
+        .execute(
+            &genesis_private_key,
+            ("circuit_assert_test.aleo", "check_in_circuit"),
+            [u64_literal(7), u64_literal(7), u64_literal(99)].iter(),
+            None,
+            0u64,
+            None,
+            rng,
+        )
+        .expect("matching inputs must produce a valid proof in circuit context");
+
+    // Mismatched inputs → execution fails. snarkVM's evaluate path runs before circuit
+    // synthesis to compute the function's outputs, so the failure surfaces there via
+    // `AssertError::EqWithReason`'s Display — the user gets the reason in the returned
+    // error message. The circuit-side `execute` path also `eprintln!`s the reason as a
+    // fallback for flows that skip evaluate, but the evaluate-message channel is the
+    // primary developer-facing surface.
+    let err = vm
+        .execute(
+            &genesis_private_key,
+            ("circuit_assert_test.aleo", "check_in_circuit"),
+            [u64_literal(7), u64_literal(8), u64_literal(99)].iter(),
+            None,
+            0u64,
+            None,
+            rng,
+        )
+        .expect_err("mismatched inputs in circuit context must fail execution");
+    let err_str = err.to_string();
+    assert!(
+        err_str.contains("not equal to") && err_str.contains("reason: 99u64"),
+        "expected the assert failure to surface the resolved reason, got: {err}"
+    );
+}
