@@ -119,6 +119,9 @@ pub enum Instruction<N: Network> {
     DivWrapped(DivWrapped<N>),
     /// Doubles `first`, storing the outcome in `destination`.
     Double(Double<N>),
+    /// Prints the resolved plaintext to stderr — circuit-side debug emit. Zero constraints,
+    /// never reaches the verifier.
+    EmitLog(EmitLog<N>),
     /// Computes whether `signature` is valid for the given `signer` and `digest` using ECDSA.
     ECDSAVerifyDigest(ECDSAVerifyDigest<N>),
     /// Computes whether `signature` is valid for the given Ethereum `address` and `digest` using ECDSA.
@@ -492,6 +495,9 @@ macro_rules! instruction {
             AssertEqWithReason,
             AssertNeqWithReason,
 
+            // Prototype: circuit-side debug emit (not yet gated behind a consensus version).
+            EmitLog,
+
             // New opcodes should be added here, with a comment on which consensus version they were added in.
         }}
     };
@@ -715,7 +721,7 @@ mod tests {
         // Sanity check the number of instructions is unchanged.
         // Note that the number of opcodes **MUST NOT** exceed u16::MAX.
         assert_eq!(
-            131,
+            132,
             Instruction::<CurrentNetwork>::OPCODES.len(),
             "Update me if the number of instructions changes."
         );

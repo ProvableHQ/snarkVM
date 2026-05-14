@@ -979,6 +979,13 @@ impl<N: Network> FinalizeTypes<N> {
                 bail!("Fatal error: Cannot check command '{opcode}' as an instruction.")
             }
             Opcode::Commit(opcode) => RegisterTypes::check_commit_opcode(opcode, instruction)?,
+            Opcode::Emit(opcode) => match opcode {
+                "emit" => ensure!(
+                    matches!(instruction, Instruction::EmitLog(..)),
+                    "Instruction '{instruction}' is not for opcode '{opcode}'."
+                ),
+                _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
+            },
             Opcode::Deserialize(opcode) => RegisterTypes::check_deserialize_opcode(opcode, instruction)?,
             Opcode::ECDSA(opcode) => RegisterTypes::check_ecdsa_opcode(opcode, instruction)?,
             Opcode::GetRecordDynamic(_) => {

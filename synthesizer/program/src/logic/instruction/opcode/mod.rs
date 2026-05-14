@@ -30,6 +30,9 @@ pub enum Opcode {
     Command(&'static str),
     /// The opcode is for a commit operation (i.e. `commit.psd4`).
     Commit(&'static str),
+    /// The opcode is for a debug-emit operation (i.e. `emit`) — prover-side stderr print,
+    /// zero constraints, never reaches the verifier.
+    Emit(&'static str),
     /// The opcdode is a for a deserialize operation (i.e. `deserialize.bytes.raw`).
     Deserialize(&'static str),
     /// The opcode is for ECDSA signature verification (i.e. `ecdsa.verify.keccak`).
@@ -62,6 +65,7 @@ impl Deref for Opcode {
             Opcode::Cast(opcode) => opcode,
             Opcode::Command(opcode) => opcode,
             Opcode::Commit(opcode) => opcode,
+            Opcode::Emit(opcode) => opcode,
             Opcode::Deserialize(opcode) => opcode,
             Opcode::ECDSA(opcode) => opcode,
             Opcode::GetRecordDynamic(opcode) => opcode,
@@ -92,6 +96,7 @@ impl Display for Opcode {
             Self::Cast(opcode) => write!(f, "{opcode}"),
             Self::Command(opcode) => write!(f, "{opcode}"),
             Self::Commit(opcode) => write!(f, "{opcode}"),
+            Self::Emit(opcode) => write!(f, "{opcode}"),
             Self::Deserialize(opcode) => write!(f, "{opcode}"),
             Self::ECDSA(opcode) => write!(f, "{opcode}"),
             Self::GetRecordDynamic(opcode) => write!(f, "{opcode}"),

@@ -634,6 +634,10 @@ pub fn cost_per_command<N: Network>(
         }
         Command::Instruction(Instruction::DivWrapped(_)) => Ok(500),
         Command::Instruction(Instruction::Double(_)) => Ok(500),
+        // Prototype: debug emit is rare in finalize (the surface keyword parses to
+        // Command::Emit there). Wrapping it via Command::Instruction is only reachable
+        // by programmatic construction; charge a small flat cost.
+        Command::Instruction(Instruction::EmitLog(_)) => Ok(100),
         Command::Instruction(Instruction::ECDSAVerifyDigest(_)) => Ok(ECDSA_VERIFY_BASE_COST),
         Command::Instruction(Instruction::ECDSAVerifyDigestEth(_)) => Ok(ECDSA_VERIFY_ETH_BASE_COST),
         Command::Instruction(Instruction::ECDSAVerifyKeccak256(ecdsa)) => {

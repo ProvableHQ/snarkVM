@@ -601,6 +601,13 @@ impl<N: Network> RegisterTypes<N> {
                 bail!("Forbidden operation: Instruction '{instruction}' cannot invoke command '{opcode}'.");
             }
             Opcode::Commit(opcode) => Self::check_commit_opcode(opcode, instruction)?,
+            Opcode::Emit(opcode) => match opcode {
+                "emit" => ensure!(
+                    matches!(instruction, Instruction::EmitLog(..)),
+                    "Instruction '{instruction}' is not for opcode '{opcode}'."
+                ),
+                _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
+            },
             Opcode::Deserialize(opcode) => Self::check_deserialize_opcode(opcode, instruction)?,
             Opcode::ECDSA(opcode) => {
                 bail!("Forbidden operation: Instruction '{instruction}' cannot invoke command '{opcode}'.")

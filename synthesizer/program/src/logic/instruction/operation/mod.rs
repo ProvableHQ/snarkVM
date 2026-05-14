@@ -31,6 +31,9 @@ pub use commit::*;
 mod deserialize;
 pub use deserialize::*;
 
+mod emit;
+pub use emit::*;
+
 mod ecdsa_verify;
 pub use ecdsa_verify::*;
 

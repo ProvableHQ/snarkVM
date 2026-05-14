@@ -26,6 +26,10 @@ edition = "2024"
 [features]
 default = [ ]
 serial = [ "snarkvm-console/serial" ]
+# Enables structural capture of `Instruction::EmitLog` outputs into a per-thread buffer
+# (drained via `drain_recent_emits()`) so integration tests can assert on emitted values.
+# No effect on production builds — the capture path is cfg-compiled away.
+test = [ ]
 wasm = [ "snarkvm-console/wasm" ]
 
 [dependencies.snarkvm-algorithms]
