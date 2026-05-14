@@ -437,10 +437,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                                     .insert(confirmed_tx.id(), rejected_reason.clone());
                                                 // Store the transient diagnostics, if any (resolved
                                                 // `assert.* with <reason>` value + error message).
+                                                // Keyed by the unconfirmed tx id (the id the caller
+                                                // of `vm.speculate` holds for the submitted tx) —
+                                                // for rejected deploy, `confirmed_tx.id()` is the
+                                                // fee-transition id, which the caller does not have
+                                                // a handle on.
                                                 if let Some(diag) = diagnostics {
+                                                    let unconfirmed_id =
+                                                        confirmed_tx.to_unconfirmed_transaction_id()?;
                                                     self.pending_rejection_diagnostics
                                                         .write()
-                                                        .insert(confirmed_tx.id(), diag);
+                                                        .insert(unconfirmed_id, diag);
                                                 }
                                                 store
                                                     .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
@@ -553,10 +560,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                                     self.pending_rejected_reasons
                                                         .write()
                                                         .insert(confirmed_tx.id(), rejected_reason.clone());
-                                                    // Store the transient diagnostics for this tx.
+                                                    // Store the transient diagnostics keyed by the
+                                                    // unconfirmed tx id (the id the caller of
+                                                    // `vm.speculate` holds for the submitted tx).
+                                                    // For rejected execute, `confirmed_tx.id()` is
+                                                    // the fee-transition id, which the caller does
+                                                    // not have a handle on.
+                                                    let unconfirmed_id =
+                                                        confirmed_tx.to_unconfirmed_transaction_id()?;
                                                     self.pending_rejection_diagnostics
                                                         .write()
-                                                        .insert(confirmed_tx.id(), diagnostics);
+                                                        .insert(unconfirmed_id, diagnostics);
                                                     store
                                                         .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
                                                         .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
