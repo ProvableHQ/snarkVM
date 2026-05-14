@@ -1396,12 +1396,20 @@ impl<N: Network> ProgramCore<N> {
     /// This includes:
     /// 1. `commit.*.raw` opcodes (raw commit variants).
     /// 2. `view` blocks (new on-disk component variant 6).
+    /// 3. `emit` instructions (the circuit-side debug-print opcode).
+    /// 4. `assert.eq` / `assert.neq` instructions carrying a `with <reason>` operand.
+    /// 5. `Command::Emit` (the finalize-side structured-event command).
     ///
     /// This is enforced to be `false` for programs before `ConsensusVersion::V15`.
     #[inline]
     pub fn contains_v15_syntax(&self) -> bool {
-        // Helper to check if an opcode is a raw commit variant.
-        let has_op = |opcode: &str| opcode.starts_with("commit.") && opcode.ends_with(".raw");
+        // Helper to check if an instruction opcode is gated to V15.
+        let has_op = |opcode: &str| {
+            (opcode.starts_with("commit.") && opcode.ends_with(".raw"))
+                || opcode == "emit"
+                || opcode == "assert.eq.with_reason"
+                || opcode == "assert.neq.with_reason"
+        };
 
         // Determine if any function instructions contain the new syntax.
         let function_contains = cfg_iter!(self.functions())
@@ -1418,7 +1426,13 @@ impl<N: Network> ProgramCore<N> {
             .flat_map(|(_, function)| function.finalize_logic().map(|finalize| finalize.commands()))
             .flatten()
             .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
-            .any(|command| matches!(command, Command::Instruction(instruction) if has_op(*instruction.opcode())));
+            .any(|command| match command {
+                // Wrapped instruction in finalize / constructor.
+                Command::Instruction(instruction) => has_op(*instruction.opcode()),
+                // `Command::Emit` is its own variant; matches the finalize surface keyword `emit`.
+                Command::Emit(_) => true,
+                _ => false,
+            });
 
         function_contains || closure_contains || command_contains || !self.views.is_empty()
     }
@@ -1927,6 +1941,97 @@ constructor:
     assert.eq aleo::GENERATOR aleo::GENERATOR;",
         )?;
         assert!(constructor_v14.contains_v14_syntax()?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_contains_v15_syntax() -> Result<()> {
+        // Baseline: a program with no V15 syntax.
+        let no_v15 = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as u64.public;
+    output r0 as u64.public;",
+        )?;
+        assert!(!no_v15.contains_v15_syntax());
+
+        // `commit.*.raw` instruction (existing V15 gate, sanity check).
+        let commit_raw = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as scalar.public;
+    input r1 as scalar.public;
+    commit.bhp256.raw r0 r1 into r2 as field;
+    output r2 as field.public;",
+        )?;
+        assert!(commit_raw.contains_v15_syntax());
+
+        // Circuit-side `emit` instruction in a transition body.
+        let emit_in_function = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as u64.public;
+    emit r0;
+    output r0 as u64.public;",
+        )?;
+        assert!(emit_in_function.contains_v15_syntax());
+
+        // Finalize-side `emit` (parses to `Command::Emit`, a distinct variant).
+        let emit_in_finalize = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as u64.public;
+    async foo r0 into r1;
+    output r1 as test.aleo/foo.future;
+finalize foo:
+    input r0 as u64.public;
+    emit r0;",
+        )?;
+        assert!(emit_in_finalize.contains_v15_syntax());
+
+        // `assert.eq ... with <reason>` in a transition body.
+        let assert_eq_with_reason = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as u64.public;
+    assert.eq r0 0u64 with 42u64;
+    output r0 as u64.public;",
+        )?;
+        assert!(assert_eq_with_reason.contains_v15_syntax());
+
+        // `assert.neq ... with <reason>` in a transition body.
+        let assert_neq_with_reason = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as u64.public;
+    assert.neq r0 1u64 with 42u64;
+    output r0 as u64.public;",
+        )?;
+        assert!(assert_neq_with_reason.contains_v15_syntax());
+
+        // `assert.eq ... with <reason>` inside a finalize body.
+        let assert_in_finalize = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as u64.public;
+    async foo r0 into r1;
+    output r1 as test.aleo/foo.future;
+finalize foo:
+    input r0 as u64.public;
+    assert.eq r0 0u64 with 7u64;",
+        )?;
+        assert!(assert_in_finalize.contains_v15_syntax());
+
+        // Bare `assert.eq` (no reason) must NOT trigger the gate.
+        let bare_assert = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as u64.public;
+    assert.eq r0 0u64;
+    output r0 as u64.public;",
+        )?;
+        assert!(!bare_assert.contains_v15_syntax());
 
         Ok(())
     }
