@@ -304,7 +304,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     }
                     // If the circuit is in authorize mocked mode, throw an error.
                     CallStack::AuthorizeMocked(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'authorize mocked' mode.").into());
+                        return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into());
                     }
                     // If the proving key is missing, build real sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) if pk_missing => {
@@ -335,7 +335,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
 
                         if response.is_some() {
                             return Err(anyhow!(
-                                "execute_function should return an empty Response in Synthesize mode."
+                                "execute_function should return an empty Response in 'Synthesize' mode."
                             )
                             .into());
                         }
@@ -391,7 +391,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     }
                     // If the circuit is in evaluate mode, then throw an error.
                     CallStack::Evaluate(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'evaluate' mode.").into());
+                        return Err(anyhow!("Cannot 'execute' a function in 'Evaluate' mode.").into());
                     }
                     // If the circuit is in execute mode, then evaluate and execute the instructions.
                     CallStack::Execute(authorization, ..) => {
@@ -422,7 +422,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         let Some(response) =
                             substack.execute_function::<A, R>(registers.call_stack(), console_caller, root_tvk, rng)?
                         else {
-                            return Err(anyhow!("Response should be present in `Execute` mode.").into());
+                            return Err(anyhow!("Response should be present in 'Execute' mode.").into());
                         };
 
                         // Ensure the values are equal.
@@ -511,7 +511,9 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 // are relevant, so we sample them instead.
                 CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
                     if response.is_some() {
-                        return Err(anyhow!("Response should be empty in Synthesize and CheckDeployment modes.").into());
+                        return Err(
+                            anyhow!("Response should be empty in 'Synthesize' and 'CheckDeployment' modes.").into()
+                        );
                     }
 
                     let address = Address::try_from(private_key)?;
@@ -548,7 +550,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         response.outputs().to_vec()
                     } else {
                         return Err(anyhow!(
-                            "Response should be populated in all modes except Synthesize and CheckDeployment."
+                            "Response should be populated in all modes except 'Synthesize' and 'CheckDeployment'."
                         )
                         .into());
                     }

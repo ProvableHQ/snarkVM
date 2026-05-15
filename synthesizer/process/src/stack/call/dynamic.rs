@@ -351,7 +351,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     }
                     // In `AuthorizeMocked` mode, throw an error.
                     CallStack::AuthorizeMocked(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into());
+                        return Err(anyhow!("Cannot 'execute' a function in `AuthorizeMocked` mode.").into());
                     }
                     // In `Synthesize` or `CheckDeployment` mode, we use dummy inputs and outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
@@ -484,7 +484,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     }
                     // In `Evaluate` mode, throw an error.
                     CallStack::Evaluate(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'evaluate' mode.").into());
+                        return Err(anyhow!("Cannot 'execute' a function in 'Evaluate' mode.").into());
                     }
                     // In `Execute` mode, evaluate and execute the instructions.
                     CallStack::Execute(authorization, _, translations) => {

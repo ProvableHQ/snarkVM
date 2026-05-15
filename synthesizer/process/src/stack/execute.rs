@@ -544,8 +544,8 @@ impl<N: Network> Stack<N> {
         // Eject the response.
         let console_response =
             if matches!(registers.call_stack_ref(), CallStack::Synthesize(..) | CallStack::CheckDeployment(..)) {
-                // When synthesizing proving/verifying keys or checking the latter,
-                // the values in the Response object are not relevant, and neither is its console counterpart.
+                // When synthesizing proving/verifying keys or checking the latter, the values in
+                // the Response object are not relevant, and neither is its console counterpart.
                 None
             } else {
                 let console_response = response.eject_value();
