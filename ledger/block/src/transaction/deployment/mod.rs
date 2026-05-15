@@ -293,6 +293,60 @@ impl<N: Network> Deployment<N> {
         Ok(num_combined_constraints)
     }
 
+    /// Returns the total density of the function and record-translation circuits in this deployment.
+    pub fn combined_density(&self) -> Result<u64> {
+        self.combined_function_density()?
+            .checked_add(self.combined_translation_density()?)
+            .ok_or_else(|| anyhow!("Overflow when computing total circuit density for '{}'", self.program_id()))
+    }
+
+    /// Returns the total density of the function circuits in this deployment.
+    pub fn combined_function_density(&self) -> Result<u64> {
+        // Initialize the accumulator.
+        let mut combined_function_density = 0u64;
+
+        let overflow = || anyhow!("Overflow when computing total function-circuit density for '{}'", self.program_id());
+        
+        // Iterate over the function verifying keys.
+        for (_, (vk, _)) in self.function_verifying_keys() {
+            let info = vk.circuit_info;
+            
+            let circuit_density = (info.num_non_zero_a as u64)
+                .checked_add(info.num_non_zero_b as u64)
+                .and_then(|sum| sum.checked_add(info.num_non_zero_c as u64))
+                .ok_or_else(&overflow)?;
+
+            combined_function_density =
+                combined_function_density.checked_add(circuit_density).ok_or_else(&overflow)?;
+        }
+        // Return the total density across function circuits.
+        Ok(combined_function_density)
+    }
+
+    /// Returns the total density of the record-translation circuits in this deployment.
+    pub fn combined_translation_density(&self) -> Result<u64> {
+        // Initialize the accumulator.
+        let mut combined_translation_density = 0u64;
+
+        let overflow = || anyhow!("Overflow when computing total translation-circuit density for '{}'", self.program_id());
+
+        // Iterate over the record verifying keys, if any.
+        if let Some(record_vks) = self.translation_verifying_keys() {
+            for (_, (vk, _)) in record_vks {
+                let info = vk.circuit_info;
+                let circuit_density = (info.num_non_zero_a as u64)
+                    .checked_add(info.num_non_zero_b as u64)
+                    .and_then(|sum| sum.checked_add(info.num_non_zero_c as u64))
+                    .ok_or_else(&overflow)?;
+
+                combined_translation_density =
+                    combined_translation_density.checked_add(circuit_density).ok_or_else(&overflow)?;
+            }
+        }
+        // Return the total density across translation circuits.
+        Ok(combined_translation_density)
+    }
+
     /// Returns the deployment ID.
     pub fn to_deployment_id(&self) -> Result<Field<N>> {
         Ok(*Transaction::deployment_tree(self)?.root())

@@ -149,18 +149,20 @@ pub trait Network:
     const EXECUTION_STORAGE_PENALTY_THRESHOLD: u64 = 5000;
     /// The cost in microcredits per constraint for the deployment transaction.
     const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
-    /// The maximum number of variables in a deployment. These limit were enforced at the transaction level.
-    /// This corresponds to ~0.5 second single-threaded runtime at mainnet launch reference validator hardware.
-    const MAX_DEPLOYMENT_VARIABLES_V0: u64 = 1 << 21; // 2,097,152 variables
-    /// The maximum number of constraints in a deployment. These limit were enforced at the transaction level.
-    /// This corresponds to ~0.5 second single-threaded runtime at mainnet launch reference validator hardware.
-    const MAX_DEPLOYMENT_CONSTRAINTS_V0: u64 = 1 << 21; // 2,097,152 constraints
-    /// The maximum number of variables in a deployment. These limits are enforced at the block level.
-    /// This corresponds to ~4 seconds single-threaded runtime at mainnet launch reference validator hardware.
-    const MAX_DEPLOYMENT_VARIABLES_V1: u64 = 1 << 24; // 16,777,216 variables
-    /// The maximum number of constraints in a deployment. These limits are enforced at the block level.
-    /// This corresponds to ~4 seconds single-threaded runtime at mainnet launch reference validator hardware.
-    const MAX_DEPLOYMENT_CONSTRAINTS_V1: u64 = 1 << 24; // 16,777,216 constraints
+    /// The maximum number of variables in a deployment. This limit was enforced at the transaction level up to
+    /// consensus version V15 (inclusive). This corresponds to ~0.5 second single-threaded runtime at
+    /// mainnet launch reference validator hardware.
+    const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
+    /// The maximum number of constraints in a deployment. This limit was enforced at the transaction level up to
+    /// consensus version V15 (inclusive). This corresponds to ~0.5 second single-threaded runtime at mainnet
+    /// launch reference validator hardware.
+    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
+    /// The maximum number of non-zero entries across matrices of all deployments in a block. This limit is
+    /// enforced starting at consensus version V16 and overrides per-transaction limits.
+    // As an additional sanity check, the total number of constraints and variables of each individual
+    // function is also limited to this bound (at >= V16).
+    // TODO (Antonio) time estimation
+    const MAX_DEPLOYMENT_DENSITY_PER_BLOCK: u64 = 1 << 24; // 16,777,216 non-zero entries.
     /// The maximum number of instances to verify in a batch proof.
     const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.

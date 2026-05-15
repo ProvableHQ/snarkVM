@@ -226,6 +226,7 @@ pub fn deployment_cost_v2<N: Network>(
     let program_id = deployment.program_id();
     // Determine the number of characters in the program ID.
     let num_characters = u32::try_from(program_id.name().to_string().len())?;
+    // TODO (Antonio) does this need to be updated?
     // Compute the number of combined variables in the program.
     let num_combined_variables = deployment.num_combined_variables()?;
     // Compute the number of combined constraints in the program.

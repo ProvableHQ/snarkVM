@@ -121,11 +121,12 @@ impl<N: Network> Stack<N> {
         let program_id = self.program.id();
 
         // TODO (Antonio) used to be V12
+        // TODO (Antonio) also, this is surely not how it was handled before, right?
         if consensus_version <= ConsensusVersion::V11 {
             // Check that the number of combined variables does not exceed the deployment limit.
-            ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES_V0);
+            ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
             // Check that the number of combined constraints does not exceed the deployment limit.
-            ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS_V0);
+            ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
         }
 
         // Construct the call stacks and assignments used to verify the certificates.

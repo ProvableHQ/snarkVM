@@ -379,9 +379,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Initialize a list of the successful deployments.
             let mut deployments = IndexSet::new();
             // Initialize a counter for the deployment constraints seen.
-            let mut deployment_constraints_seen = 0u64;
-            // Initialize a counter for the deployment variables seen.
-            let mut deployment_variables_seen = 0u64;
+            let mut total_deployment_density_seen = 0u64;
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
@@ -396,12 +394,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                 // Determine if the transaction should be aborted.
                 if let Some(reason) = self.should_abort_transaction(
-<<<<<<< HEAD
                     consensus_version,
-                    transaction,
-=======
                     &transaction,
->>>>>>> staging
                     &transition_ids,
                     &input_ids,
                     &output_ids,
@@ -409,7 +403,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     &deployment_payers,
                     &deployments,
                     deployment_constraints_seen,
-                    deployment_variables_seen,
                 ) {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), reason));
@@ -599,12 +592,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         tpks.extend(confirmed_transaction.transaction().transition_public_keys());
                         // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
                         if let Transaction::Deploy(_, _, _, deployment, fee) = confirmed_transaction.transaction() {
+                            // TODO (Antonio) add check of variables and constraints
                             fee.payer().map(|payer| deployment_payers.insert(payer));
                             deployments.insert(*deployment.program_id());
-                            deployment_constraints_seen = deployment_constraints_seen
-                                .saturating_add(deployment.num_combined_constraints().map_err(|e| e.to_string())?);
-                            deployment_variables_seen = deployment_variables_seen
-                                .saturating_add(deployment.num_combined_variables().map_err(|e| e.to_string())?);
+                            total_deployment_density_seen = total_deployment_density_seen
+                                .saturating_add(deployment.combined_density().map_err(|e| e.to_string())?);
                         }
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
@@ -965,6 +957,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         finalize_result
     }
 
+    // TODO (Antonio) modify doc
     /// Returns `Some(reason)` if the transaction is aborted. Otherwise, returns `None`.
     ///
     /// The transaction will be aborted if any of the following conditions are met:
@@ -989,8 +982,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         tpks: &IndexSet<Group<N>>,
         deployment_payers: &IndexSet<Address<N>>,
         deployments_seen: &IndexSet<ProgramID<N>>,
-        deployment_constraints_seen: u64,
-        deployment_variables_seen: u64,
+        deployment_total_density_seen: u64,
     ) -> Option<String> {
         // Ensure that:
         //  - the transaction is not producing a duplicate transition.
@@ -1048,18 +1040,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
-        if consensus_version >= ConsensusVersion::V12 {
+        if consensus_version >= ConsensusVersion::V16 {
             // If the transaction is a deployment, ensure that it is not exceeding the deployment constraints or variables limit.
             if let Transaction::Deploy(_, _, _, deployment, _) = transaction {
-                let Ok(num_combined_constraints) = deployment.num_combined_constraints() else {
-                    return Some("Failed to compute the number of combined constraints for a deployment".to_string());
+                let Ok(total_density) = deployment.combined_density() else {
+                    return Some("Failed to compute the total density for a deployment".to_string());
                 };
-                let num_combined_constraints = num_combined_constraints.saturating_add(deployment_constraints_seen);
-                let Ok(num_combined_variables) = deployment.num_combined_variables() else {
-                    return Some("Failed to compute the number of combined variables for a deployment".to_string());
-                };
+                // TODO (Antonio) add here the reason for rejection based on single-function variables or constraints
+                
                 let num_combined_variables = num_combined_variables.saturating_add(deployment_variables_seen);
-                // If the deployment constraints or variables are already seen, abort the transaction.
+                // If total number of non-zero entries seen surpasses the limit, abort the transaction.
                 if num_combined_constraints >= N::MAX_DEPLOYMENT_CONSTRAINTS_V1
                     || num_combined_variables >= N::MAX_DEPLOYMENT_VARIABLES_V1
                 {

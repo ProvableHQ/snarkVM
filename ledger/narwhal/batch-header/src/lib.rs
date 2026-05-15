@@ -352,7 +352,7 @@ mod tests {
     #[test]
     fn test_max_synthesis_cost_below_batch_spend_limit() {
         fn max_synthesis_cost_valid_v0<N: Network>() {
-            let max_synthesis_cost = N::MAX_DEPLOYMENT_VARIABLES_V0.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS_V0)
+            let max_synthesis_cost = N::MAX_DEPLOYMENT_VARIABLES.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS)
                 * N::SYNTHESIS_FEE_MULTIPLIER
                 / N::ARC_0005_COMPUTE_DISCOUNT;
             for (_, height) in N::CONSENSUS_VERSION_HEIGHTS().iter() {
@@ -361,7 +361,9 @@ mod tests {
         }
 
         fn max_synthesis_cost_valid_v1<N: Network>() {
-            let max_synthesis_cost = N::MAX_DEPLOYMENT_VARIABLES_V1.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS_V1)
+            // TODO (Antonio) ask how to modify
+            // let max_synthesis_cost = N::MAX_DEPLOYMENT_VARIABLES_V1.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS_V1)
+            let max_synthesis_cost = N::MAX_DEPLOYMENT_DENSITY_PER_BLOCK
                 * N::SYNTHESIS_FEE_MULTIPLIER
                 / N::ARC_0005_COMPUTE_DISCOUNT;
             for (_, height) in N::CONSENSUS_VERSION_HEIGHTS().iter() {
