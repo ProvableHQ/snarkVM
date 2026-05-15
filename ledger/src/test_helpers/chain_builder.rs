@@ -213,12 +213,20 @@ impl TestChainBuilder {
         self.generate_block_with_opts(GenerateBlockOptions::default(), rng)
     }
 
-    /// Same as `generate_block` but with additional options/parameters.
-    pub fn generate_block_with_opts(
+    /// Simulate Narwhal rounds up to the next anchor and produce the inputs to
+    /// [`Ledger::prepare_advance_to_next_quorum_block`].
+    ///
+    /// This updates the builder's internal certificate maps the same way as
+    /// [`Self::generate_block_with_opts`], but does not call the ledger yet.
+    pub fn build_quorum_subdag_and_transmissions_for_next_block(
         &mut self,
         options: GenerateBlockOptions,
         rng: &mut TestRng,
-    ) -> Result<Block<CurrentNetwork>> {
+    ) -> Result<(
+        Subdag<CurrentNetwork>,
+        IndexMap<TransmissionID<CurrentNetwork>, Transmission<CurrentNetwork>>,
+        BatchCertificate<CurrentNetwork>,
+    )> {
         assert!(
             options.skip_nodes.len() * 3 < self.private_keys.len(),
             "Cannot mark more than f nodes as unavailable/skipped"
@@ -384,18 +392,40 @@ impl TestChainBuilder {
         subdag_map.insert(commit_round, [leader_certificate.clone()].into());
         self.last_committed_batch_round.insert(leader_idx, commit_round);
 
-        // Construct the block.
         let subdag = Subdag::from(subdag_map).unwrap();
+        Ok((subdag, transmissions, leader_certificate))
+    }
+
+    /// Same as `generate_block` but with additional options/parameters.
+    pub fn generate_block_with_opts(
+        &mut self,
+        options: GenerateBlockOptions,
+        rng: &mut TestRng,
+    ) -> Result<Block<CurrentNetwork>> {
+        let (subdag, transmissions, leader_certificate) =
+            self.build_quorum_subdag_and_transmissions_for_next_block(options, rng)?;
         let block = self.ledger.prepare_advance_to_next_quorum_block(subdag, transmissions, rng)?;
-        self.ledger.check_next_block(&block, rng).with_context(|| "Failed to (internally) check generated block")?;
-
-        // Update the ledger state.
-        self.ledger
-            .advance_to_next_block(&block)
-            .with_context(|| "Failed to (internally) advance to generated block")?;
-        self.previous_leader_certificate = Some(leader_certificate.clone());
-
+        self.finalize_generated_quorum_block(&block, &leader_certificate, rng)?;
         Ok(block)
+    }
+
+    /// Run [`Ledger::check_next_block`] and [`Ledger::advance_to_next_block`], and update the
+    /// builder state after a successful [`Ledger::prepare_advance_to_next_quorum_block`].
+    pub fn finalize_generated_quorum_block(
+        &mut self,
+        block: &Block<CurrentNetwork>,
+        leader_certificate: &BatchCertificate<CurrentNetwork>,
+        rng: &mut TestRng,
+    ) -> Result<()> {
+        self.ledger.check_next_block(block, rng).with_context(|| "Failed to (internally) check generated block")?;
+        self.ledger.advance_to_next_block(block).with_context(|| "Failed to (internally) advance to generated block")?;
+        self.previous_leader_certificate = Some(leader_certificate.clone());
+        Ok(())
+    }
+
+    /// Mutable access to the builder's ledger (for benchmarks and advanced tests).
+    pub fn ledger_mut(&mut self) -> &mut Ledger<CurrentNetwork, LedgerType<CurrentNetwork>> {
+        &mut self.ledger
     }
 
     /// Return the genesis block associated with the test chain

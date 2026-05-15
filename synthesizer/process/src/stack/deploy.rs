@@ -83,7 +83,8 @@ impl<N: Network> Stack<N> {
         // Get the program ID.
         let program_id = self.program.id();
 
-        if consensus_version <= ConsensusVersion::V12 {
+        // TODO (Antonio) used to be V12
+        if consensus_version <= ConsensusVersion::V11 {
             // Check that the number of combined variables does not exceed the deployment limit.
             ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES_V0);
             // Check that the number of combined constraints does not exceed the deployment limit.

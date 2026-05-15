@@ -44,6 +44,11 @@ name = "transaction"
 path = "benches/transaction.rs"
 harness = false
 
+[[bench]]
+name = "total_deployment_verification"
+path = "benches/total_deployment_verification.rs"
+harness = false
+
 [features]
 default = [ "async", "indexmap/rayon", ]
 async = [
@@ -168,7 +173,7 @@ workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true
-features = [ "filesystem" ]
+features = [ "filesystem", "test" ]
 
 [dev-dependencies.snarkvm-ledger]
 workspace = true
