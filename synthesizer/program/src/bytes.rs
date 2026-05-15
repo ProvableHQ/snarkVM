@@ -56,8 +56,8 @@ impl<N: Network> FromBytes for ProgramCore<N> {
                 4 => program.add_function(FunctionCore::read_le(&mut reader)?).map_err(error)?,
                 // Read the constructor.
                 5 => program.add_constructor(ConstructorCore::read_le(&mut reader)?).map_err(error)?,
-                // Read the query function.
-                6 => program.add_query(QueryCore::read_le(&mut reader)?).map_err(error)?,
+                // Read the view function.
+                6 => program.add_view(ViewCore::read_le(&mut reader)?).map_err(error)?,
                 // Invalid variant.
                 _ => return Err(error(format!("Failed to parse program. Invalid component variant '{variant}'"))),
             }
@@ -147,14 +147,14 @@ impl<N: Network> ToBytes for ProgramCore<N> {
                             }
                             None => return Err(error(format!("Function '{identifier}' is not defined."))),
                         },
-                        ProgramDefinition::Query => match self.queries.get(identifier) {
-                            Some(query) => {
+                        ProgramDefinition::View => match self.views.get(identifier) {
+                            Some(view) => {
                                 // Write the variant.
                                 6u8.write_le(&mut writer)?;
-                                // Write the query function.
-                                query.write_le(&mut writer)?;
+                                // Write the view function.
+                                view.write_le(&mut writer)?;
                             }
-                            None => return Err(error(format!("Query '{identifier}' is not defined."))),
+                            None => return Err(error(format!("View '{identifier}' is not defined."))),
                         },
                     }
                 }
@@ -173,9 +173,9 @@ mod tests {
     type CurrentNetwork = MainnetV0;
 
     #[test]
-    fn test_bytes_with_query() -> Result<()> {
+    fn test_bytes_with_view() -> Result<()> {
         let program = r"
-program token_with_query.aleo;
+program token_with_view.aleo;
 
 mapping balances:
     key as address.public;
@@ -185,7 +185,7 @@ function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query total_balance:
+view total_balance:
     input r0 as address.public;
     get.or_use balances[r0] 0u64 into r1;
     output r1 as u64.public;";

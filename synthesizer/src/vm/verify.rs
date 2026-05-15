@@ -988,6 +988,7 @@ mod tests {
     use crate::vm::test_helpers::sample_finalize_state;
     use console::account::ViewKey;
 
+    use console::{account::Address, types::Field};
     #[cfg(feature = "test")]
     use console::algorithms::{ECDSASignature, Keccak256};
     use console::{account::Address, types::Field};

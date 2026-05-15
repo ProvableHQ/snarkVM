@@ -15,17 +15,17 @@
 
 use super::*;
 
-impl<N: Network> Parser for QueryCore<N> {
-    /// Parses a string into a query function.
+impl<N: Network> Parser for ViewCore<N> {
+    /// Parses a string into a view function.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the 'query' keyword from the string.
+        // Parse the 'view' keyword from the string.
         let (string, _) = tag(Self::type_name())(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the query name from the string.
+        // Parse the view name from the string.
         let (string, name) = Identifier::<N>::parse(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
@@ -40,16 +40,16 @@ impl<N: Network> Parser for QueryCore<N> {
         let (string, outputs) = many1(Output::parse)(string)?;
 
         map_res(take(0usize), move |_| {
-            let mut query = Self::new(name);
-            inputs.iter().cloned().try_for_each(|input| query.add_input(input))?;
-            commands.iter().cloned().try_for_each(|command| query.add_command(command))?;
-            outputs.iter().cloned().try_for_each(|output| query.add_output(output))?;
-            Ok::<_, Error>(query)
+            let mut view = Self::new(name);
+            inputs.iter().cloned().try_for_each(|input| view.add_input(input))?;
+            commands.iter().cloned().try_for_each(|command| view.add_command(command))?;
+            outputs.iter().cloned().try_for_each(|output| view.add_output(output))?;
+            Ok::<_, Error>(view)
         })(string)
     }
 }
 
-impl<N: Network> FromStr for QueryCore<N> {
+impl<N: Network> FromStr for ViewCore<N> {
     type Err = Error;
 
     fn from_str(string: &str) -> Result<Self> {
@@ -63,13 +63,13 @@ impl<N: Network> FromStr for QueryCore<N> {
     }
 }
 
-impl<N: Network> Debug for QueryCore<N> {
+impl<N: Network> Debug for ViewCore<N> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network> Display for QueryCore<N> {
+impl<N: Network> Display for ViewCore<N> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{} {}:", Self::type_name(), self.name)?;
         self.inputs.iter().try_for_each(|input| write!(f, "\n    {input}"))?;
@@ -86,10 +86,10 @@ mod tests {
     type CurrentNetwork = MainnetV0;
 
     #[test]
-    fn test_query_parse() {
-        let query = QueryCore::<CurrentNetwork>::parse(
+    fn test_view_parse() {
+        let view = ViewCore::<CurrentNetwork>::parse(
             r"
-query foo:
+view foo:
     input r0 as field.public;
     input r1 as field.public;
     add r0 r1 into r2;
@@ -97,44 +97,44 @@ query foo:
         )
         .unwrap()
         .1;
-        assert_eq!("foo", query.name().to_string());
-        assert_eq!(2, query.inputs().len());
-        assert_eq!(1, query.commands().len());
-        assert_eq!(1, query.outputs().len());
+        assert_eq!("foo", view.name().to_string());
+        assert_eq!(2, view.inputs().len());
+        assert_eq!(1, view.commands().len());
+        assert_eq!(1, view.outputs().len());
     }
 
     #[test]
-    fn test_query_parse_no_inputs() {
-        let query = QueryCore::<CurrentNetwork>::parse(
+    fn test_view_parse_no_inputs() {
+        let view = ViewCore::<CurrentNetwork>::parse(
             r"
-query foo:
+view foo:
     add 1u64 2u64 into r0;
     output r0 as u64.public;",
         )
         .unwrap()
         .1;
-        assert_eq!("foo", query.name().to_string());
-        assert_eq!(0, query.inputs().len());
-        assert_eq!(1, query.commands().len());
-        assert_eq!(1, query.outputs().len());
+        assert_eq!("foo", view.name().to_string());
+        assert_eq!(0, view.inputs().len());
+        assert_eq!(1, view.commands().len());
+        assert_eq!(1, view.outputs().len());
     }
 
     #[test]
-    fn test_query_display() {
-        let expected = r"query foo:
+    fn test_view_display() {
+        let expected = r"view foo:
     input r0 as field.public;
     input r1 as field.public;
     add r0 r1 into r2;
     output r2 as field.public;";
-        let query = QueryCore::<CurrentNetwork>::parse(expected).unwrap().1;
-        assert_eq!(expected, format!("{query}"));
+        let view = ViewCore::<CurrentNetwork>::parse(expected).unwrap().1;
+        assert_eq!(expected, format!("{view}"));
     }
 
     #[test]
-    fn test_query_parse_fails() {
-        // Missing 'query' keyword.
+    fn test_view_parse_fails() {
+        // Missing 'view' keyword.
         assert!(
-            QueryCore::<CurrentNetwork>::from_str(
+            ViewCore::<CurrentNetwork>::from_str(
                 r"
 foo:
     add 1u64 2u64 into r0;
@@ -142,39 +142,39 @@ foo:
             )
             .is_err()
         );
-        // Missing colon after the query name.
+        // Missing colon after the view name.
         assert!(
-            QueryCore::<CurrentNetwork>::from_str(
+            ViewCore::<CurrentNetwork>::from_str(
                 r"
-query foo
+view foo
     add 1u64 2u64 into r0;
     output r0 as u64.public;"
             )
             .is_err()
         );
-        // Missing output (a query must have at least one).
+        // Missing output (a view must have at least one).
         assert!(
-            QueryCore::<CurrentNetwork>::from_str(
+            ViewCore::<CurrentNetwork>::from_str(
                 r"
-query foo:
+view foo:
     add 1u64 2u64 into r0;"
             )
             .is_err()
         );
-        // Missing commands (a query must have at least one).
+        // Missing commands (a view must have at least one).
         assert!(
-            QueryCore::<CurrentNetwork>::from_str(
+            ViewCore::<CurrentNetwork>::from_str(
                 r"
-query foo:
+view foo:
     output r0 as u64.public;"
             )
             .is_err()
         );
-        // 'set' is forbidden in a query.
+        // 'set' is forbidden in a view.
         assert!(
-            QueryCore::<CurrentNetwork>::from_str(
+            ViewCore::<CurrentNetwork>::from_str(
                 r"
-query foo:
+view foo:
     input r0 as u64.public;
     set r0 into balances[r0];
     output r0 as u64.public;"

@@ -32,13 +32,13 @@ use console::{
 use indexmap::IndexSet;
 use std::collections::HashMap;
 
-/// A query function: a top-level, externally-callable, read-only block that returns typed values.
+/// A view function: a top-level, externally-callable, read-only block that returns typed values.
 ///
-/// Queries share the finalize command set (so they can `get`, `get.or_use`, `contains` against
+/// Views share the finalize command set (so they can `get`, `get.or_use`, `contains` against
 /// mappings), but cannot mutate state, schedule futures, or call other functions.
 #[derive(Clone, PartialEq, Eq)]
-pub struct QueryCore<N: Network> {
-    /// The name of the query function.
+pub struct ViewCore<N: Network> {
+    /// The name of the view function.
     name: Identifier<N>,
     /// The input statements, added in order of the input registers.
     inputs: IndexSet<Input<N>>,
@@ -50,8 +50,8 @@ pub struct QueryCore<N: Network> {
     positions: HashMap<Identifier<N>, usize>,
 }
 
-impl<N: Network> QueryCore<N> {
-    /// Initializes a new query function with the given name.
+impl<N: Network> ViewCore<N> {
+    /// Initializes a new view function with the given name.
     pub fn new(name: Identifier<N>) -> Self {
         Self {
             name,
@@ -62,32 +62,32 @@ impl<N: Network> QueryCore<N> {
         }
     }
 
-    /// Returns the name of the query function.
+    /// Returns the name of the view function.
     pub const fn name(&self) -> &Identifier<N> {
         &self.name
     }
 
-    /// Returns the query inputs.
+    /// Returns the view inputs.
     pub const fn inputs(&self) -> &IndexSet<Input<N>> {
         &self.inputs
     }
 
-    /// Returns the query input types.
+    /// Returns the view input types.
     pub fn input_types(&self) -> Vec<FinalizeType<N>> {
         self.inputs.iter().map(|input| input.finalize_type()).cloned().collect()
     }
 
-    /// Returns the query commands.
+    /// Returns the view commands.
     pub fn commands(&self) -> &[Command<N>] {
         &self.commands
     }
 
-    /// Returns the query outputs.
+    /// Returns the view outputs.
     pub const fn outputs(&self) -> &IndexSet<Output<N>> {
         &self.outputs
     }
 
-    /// Returns the query output types.
+    /// Returns the view output types.
     pub fn output_types(&self) -> Vec<FinalizeType<N>> {
         self.outputs.iter().map(|output| output.finalize_type()).cloned().collect()
     }
@@ -97,8 +97,8 @@ impl<N: Network> QueryCore<N> {
         &self.positions
     }
 
-    /// Returns `true` if the query contains an array type with a size that exceeds the given maximum.
-    /// Mirrors `Finalize::exceeds_max_array_size` and additionally walks `outputs`, since queries
+    /// Returns `true` if the view contains an array type with a size that exceeds the given maximum.
+    /// Mirrors `Finalize::exceeds_max_array_size` and additionally walks `outputs`, since views
     /// declare typed outputs.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
         self.inputs.iter().any(|input| {
@@ -109,7 +109,7 @@ impl<N: Network> QueryCore<N> {
             })
     }
 
-    /// Returns `true` if the query refers to an external struct in its inputs, body, or outputs.
+    /// Returns `true` if the view refers to an external struct in its inputs, body, or outputs.
     pub fn contains_external_struct(&self) -> bool {
         self.inputs
             .iter()
@@ -123,7 +123,7 @@ impl<N: Network> QueryCore<N> {
             )
     }
 
-    /// Returns `true` if the query contains a string type. Mirrors `Finalize::contains_string_type`
+    /// Returns `true` if the view contains a string type. Mirrors `Finalize::contains_string_type`
     /// and additionally walks `outputs`.
     pub fn contains_string_type(&self) -> bool {
         self.inputs
@@ -137,8 +137,8 @@ impl<N: Network> QueryCore<N> {
     }
 }
 
-impl<N: Network> QueryCore<N> {
-    /// Adds the input statement to the query.
+impl<N: Network> ViewCore<N> {
+    /// Adds the input statement to the view.
     #[inline]
     fn add_input(&mut self, input: Input<N>) -> Result<()> {
         // Ensure there are no commands or outputs in memory.
@@ -150,10 +150,10 @@ impl<N: Network> QueryCore<N> {
         // Ensure the input statement was not previously added.
         ensure!(!self.inputs.contains(&input), "Cannot add duplicate input statement");
 
-        // Queries are externally-callable; futures and dynamic futures are not meaningful here.
+        // Views are externally-callable; futures and dynamic futures are not meaningful here.
         ensure!(
             matches!(input.finalize_type(), FinalizeType::Plaintext(..)),
-            "Query inputs must be plaintext (futures are forbidden)"
+            "View inputs must be plaintext (futures are forbidden)"
         );
 
         // Ensure the input register is a locator.
@@ -163,7 +163,7 @@ impl<N: Network> QueryCore<N> {
         Ok(())
     }
 
-    /// Adds the given command to the query.
+    /// Adds the given command to the view.
     #[inline]
     pub fn add_command(&mut self, command: Command<N>) -> Result<()> {
         // Ensure there are no outputs already.
@@ -173,13 +173,13 @@ impl<N: Network> QueryCore<N> {
         ensure!(self.commands.len() < N::MAX_COMMANDS, "Cannot add more than {} commands", N::MAX_COMMANDS);
 
         // Reject any state-mutating or non-deterministic command.
-        ensure!(!command.is_write(), "Forbidden operation: query functions cannot use 'set' or 'remove'");
-        ensure!(!command.is_async(), "Forbidden operation: query functions cannot invoke an 'async' instruction");
-        ensure!(!command.is_await(), "Forbidden operation: query functions cannot 'await' a future");
-        ensure!(!command.is_call(), "Forbidden operation: query functions cannot 'call' another function");
-        ensure!(!command.is_instruction_for_record(), "Forbidden operation: query functions cannot operate on records");
+        ensure!(!command.is_write(), "Forbidden operation: view functions cannot use 'set' or 'remove'");
+        ensure!(!command.is_async(), "Forbidden operation: view functions cannot invoke an 'async' instruction");
+        ensure!(!command.is_await(), "Forbidden operation: view functions cannot 'await' a future");
+        ensure!(!command.is_call(), "Forbidden operation: view functions cannot 'call' another function");
+        ensure!(!command.is_instruction_for_record(), "Forbidden operation: view functions cannot operate on records");
         // `rand.chacha` is only meaningful with finalize global state.
-        ensure!(!command.is_rand_chacha(), "Forbidden operation: query functions cannot use 'rand.chacha'");
+        ensure!(!command.is_rand_chacha(), "Forbidden operation: view functions cannot use 'rand.chacha'");
 
         // Check the destination registers.
         for register in command.destinations() {
@@ -201,16 +201,16 @@ impl<N: Network> QueryCore<N> {
         Ok(())
     }
 
-    /// Adds the output statement to the query.
+    /// Adds the output statement to the view.
     #[inline]
     fn add_output(&mut self, output: Output<N>) -> Result<()> {
         // Ensure the maximum number of outputs has not been exceeded.
         ensure!(self.outputs.len() < N::MAX_OUTPUTS, "Cannot add more than {} outputs", N::MAX_OUTPUTS);
 
-        // Queries return plaintext only.
+        // Views return plaintext only.
         ensure!(
             matches!(output.finalize_type(), FinalizeType::Plaintext(..)),
-            "Query outputs must be plaintext (futures are forbidden)"
+            "View outputs must be plaintext (futures are forbidden)"
         );
 
         self.outputs.insert(output);
@@ -218,10 +218,10 @@ impl<N: Network> QueryCore<N> {
     }
 }
 
-impl<N: Network> TypeName for QueryCore<N> {
+impl<N: Network> TypeName for ViewCore<N> {
     #[inline]
     fn type_name() -> &'static str {
-        "query"
+        "view"
     }
 }
 
@@ -233,102 +233,102 @@ mod tests {
 
     #[test]
     fn test_add_input() {
-        let name = Identifier::from_str("query_core_test").unwrap();
-        let mut query = QueryCore::<CurrentNetwork>::new(name);
+        let name = Identifier::from_str("view_core_test").unwrap();
+        let mut view = ViewCore::<CurrentNetwork>::new(name);
 
         let input = Input::<CurrentNetwork>::from_str("input r0 as field.public;").unwrap();
-        assert!(query.add_input(input.clone()).is_ok());
-        assert!(query.add_input(input).is_err());
+        assert!(view.add_input(input.clone()).is_ok());
+        assert!(view.add_input(input).is_err());
     }
 
     #[test]
     fn test_reject_set_command() {
-        let name = Identifier::from_str("query_core_test").unwrap();
-        let mut query = QueryCore::<CurrentNetwork>::new(name);
+        let name = Identifier::from_str("view_core_test").unwrap();
+        let mut view = ViewCore::<CurrentNetwork>::new(name);
 
         let cmd = Command::<CurrentNetwork>::from_str("set 1u64 into balances[0u64];").unwrap();
-        let err = query.add_command(cmd).unwrap_err();
+        let err = view.add_command(cmd).unwrap_err();
         assert!(err.to_string().contains("'set' or 'remove'"));
     }
 
     #[test]
     fn test_reject_remove_command() {
-        let name = Identifier::from_str("query_core_test").unwrap();
-        let mut query = QueryCore::<CurrentNetwork>::new(name);
+        let name = Identifier::from_str("view_core_test").unwrap();
+        let mut view = ViewCore::<CurrentNetwork>::new(name);
 
         let cmd = Command::<CurrentNetwork>::from_str("remove balances[0u64];").unwrap();
-        let err = query.add_command(cmd).unwrap_err();
+        let err = view.add_command(cmd).unwrap_err();
         assert!(err.to_string().contains("'set' or 'remove'"));
     }
 
     #[test]
     fn test_reject_rand_chacha() {
-        let name = Identifier::from_str("query_core_test").unwrap();
-        let mut query = QueryCore::<CurrentNetwork>::new(name);
+        let name = Identifier::from_str("view_core_test").unwrap();
+        let mut view = ViewCore::<CurrentNetwork>::new(name);
 
         let cmd = Command::<CurrentNetwork>::from_str("rand.chacha into r0 as u64;").unwrap();
-        let err = query.add_command(cmd).unwrap_err();
+        let err = view.add_command(cmd).unwrap_err();
         assert!(err.to_string().contains("rand.chacha"));
     }
 
     #[test]
     fn test_reject_await_command() {
-        let name = Identifier::from_str("query_core_test").unwrap();
-        let mut query = QueryCore::<CurrentNetwork>::new(name);
+        let name = Identifier::from_str("view_core_test").unwrap();
+        let mut view = ViewCore::<CurrentNetwork>::new(name);
 
         let cmd = Command::<CurrentNetwork>::from_str("await r0;").unwrap();
-        let err = query.add_command(cmd).unwrap_err();
+        let err = view.add_command(cmd).unwrap_err();
         assert!(err.to_string().contains("'await'"));
     }
 
     #[test]
     fn test_reject_call_instruction() {
-        let name = Identifier::from_str("query_core_test").unwrap();
-        let mut query = QueryCore::<CurrentNetwork>::new(name);
+        let name = Identifier::from_str("view_core_test").unwrap();
+        let mut view = ViewCore::<CurrentNetwork>::new(name);
 
         let cmd = Command::<CurrentNetwork>::from_str("call foo r0 into r1;").unwrap();
-        let err = query.add_command(cmd).unwrap_err();
+        let err = view.add_command(cmd).unwrap_err();
         assert!(err.to_string().contains("'call'"));
     }
 
     #[test]
     fn test_reject_cast_to_record() {
-        let name = Identifier::from_str("query_core_test").unwrap();
-        let mut query = QueryCore::<CurrentNetwork>::new(name);
+        let name = Identifier::from_str("view_core_test").unwrap();
+        let mut view = ViewCore::<CurrentNetwork>::new(name);
 
         let cmd =
             Command::<CurrentNetwork>::from_str("cast r0.owner r0.token_amount into r1 as token.record;").unwrap();
-        let err = query.add_command(cmd).unwrap_err();
+        let err = view.add_command(cmd).unwrap_err();
         assert!(err.to_string().contains("operate on records"));
     }
 
     #[test]
     fn test_reject_cast_to_dynamic_record() {
-        let name = Identifier::from_str("query_core_test").unwrap();
-        let mut query = QueryCore::<CurrentNetwork>::new(name);
+        let name = Identifier::from_str("view_core_test").unwrap();
+        let mut view = ViewCore::<CurrentNetwork>::new(name);
 
         let cmd = Command::<CurrentNetwork>::from_str("cast r0 into r1 as dynamic.record;").unwrap();
-        let err = query.add_command(cmd).unwrap_err();
+        let err = view.add_command(cmd).unwrap_err();
         assert!(err.to_string().contains("operate on records"));
     }
 
     #[test]
     fn test_reject_get_record_dynamic() {
-        let name = Identifier::from_str("query_core_test").unwrap();
-        let mut query = QueryCore::<CurrentNetwork>::new(name);
+        let name = Identifier::from_str("view_core_test").unwrap();
+        let mut view = ViewCore::<CurrentNetwork>::new(name);
 
         let cmd = Command::<CurrentNetwork>::from_str("get.record.dynamic r0.x into r1 as bool;").unwrap();
-        let err = query.add_command(cmd).unwrap_err();
+        let err = view.add_command(cmd).unwrap_err();
         assert!(err.to_string().contains("operate on records"));
     }
 
     #[test]
     fn test_reject_async_instruction() {
-        let name = Identifier::from_str("query_core_test").unwrap();
-        let mut query = QueryCore::<CurrentNetwork>::new(name);
+        let name = Identifier::from_str("view_core_test").unwrap();
+        let mut view = ViewCore::<CurrentNetwork>::new(name);
 
         let cmd = Command::<CurrentNetwork>::from_str("async foo r0 r1 into r3;").unwrap();
-        let err = query.add_command(cmd).unwrap_err();
+        let err = view.add_command(cmd).unwrap_err();
         assert!(err.to_string().contains("'async'"));
     }
 }

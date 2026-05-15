@@ -259,16 +259,16 @@ pub fn deployment_cost_v2<N: Network>(
         );
     }
 
-    // Bound each query function's worst-case compute. Queries are off-consensus and have no
+    // Bound each view function's worst-case compute. Views are off-consensus and have no
     // dedicated fee component beyond what is already counted in `storage_cost` (their bytes
     // contribute to `size_in_bytes`). The bound below is purely a deploy-time sanity check
-    // to keep pathological queries from being accepted.
-    for query in deployment.program().queries().values() {
-        let query_cost = query_cost_for_single_query(&stack, query.name(), ConsensusFeeVersion::V3)?;
+    // to keep pathological views from being accepted.
+    for view in deployment.program().views().values() {
+        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3)?;
         ensure!(
-            query_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
-            "Query '{}' has a cost '{query_cost}' which exceeds the transaction spend limit '{}'",
-            query.name(),
+            view_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "View '{}' has a cost '{view_cost}' which exceeds the transaction spend limit '{}'",
+            view.name(),
             N::TRANSACTION_SPEND_LIMIT[1].1
         );
     }
@@ -1014,28 +1014,28 @@ fn finalize_cost_for_single_function_raw<N: Network>(
     Ok(finalize_cost)
 }
 
-/// Returns the maximum compute cost (in microcredits) of a single query function's body.
+/// Returns the maximum compute cost (in microcredits) of a single view function's body.
 ///
-/// Queries do not run as part of consensus, so this cost is not paid by anyone — it is only
+/// Views do not run as part of consensus, so this cost is not paid by anyone — it is only
 /// used as a deploy-time sanity bound (mirrors the per-function `TRANSACTION_SPEND_LIMIT`
-/// check) to prevent deploying queries whose worst-case compute is unreasonable.
-fn query_cost_for_single_query<N: Network>(
+/// check) to prevent deploying views whose worst-case compute is unreasonable.
+fn view_cost_for_single_view<N: Network>(
     stack: &Stack<N>,
-    query_name: &Identifier<N>,
+    view_name: &Identifier<N>,
     consensus_fee_version: ConsensusFeeVersion,
 ) -> Result<u64> {
-    let query = stack.program().get_query_ref(query_name)?;
+    let view = stack.program().get_view_ref(view_name)?;
 
-    // Query types are not cached on the stack today; recompute them here for the cost walk.
-    let query_types = FinalizeTypes::from_query(stack, query)?;
+    // View types are not cached on the stack today; recompute them here for the cost walk.
+    let view_types = FinalizeTypes::from_view(stack, view)?;
 
-    let mut query_cost = 0u64;
-    for command in query.commands() {
-        query_cost = query_cost
-            .checked_add(cost_per_command(stack, &query_types, command, consensus_fee_version)?)
-            .ok_or(anyhow!("Query cost overflowed"))?;
+    let mut view_cost = 0u64;
+    for command in view.commands() {
+        view_cost = view_cost
+            .checked_add(cost_per_command(stack, &view_types, command, consensus_fee_version)?)
+            .ok_or(anyhow!("View cost overflowed"))?;
     }
-    Ok(query_cost)
+    Ok(view_cost)
 }
 
 /// Returns the total finalize cost for an execution by iterating over all concrete transitions.

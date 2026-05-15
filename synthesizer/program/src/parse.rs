@@ -27,7 +27,7 @@ impl<N: Network> Parser for ProgramCore<N> {
             R(RecordType<N>),
             C(ClosureCore<N>),
             F(FunctionCore<N>),
-            Q(QueryCore<N>),
+            V(ViewCore<N>),
         }
 
         // Parse the imports from the string.
@@ -61,8 +61,8 @@ impl<N: Network> Parser for ProgramCore<N> {
                 map(ClosureCore::parse, |closure| P::<N>::C(closure))(string)
             } else if string.starts_with(FunctionCore::<N>::type_name()) {
                 map(FunctionCore::parse, |function| P::<N>::F(function))(string)
-            } else if string.starts_with(QueryCore::<N>::type_name()) {
-                map(QueryCore::parse, |query| P::<N>::Q(query))(string)
+            } else if string.starts_with(ViewCore::<N>::type_name()) {
+                map(ViewCore::parse, |view| P::<N>::V(view))(string)
             } else {
                 Err(Err::Error(make_error(string, ErrorKind::Alt)))
             }
@@ -102,7 +102,7 @@ impl<N: Network> Parser for ProgramCore<N> {
                 P::R(record) => program.add_record(record),
                 P::C(closure) => program.add_closure(closure),
                 P::F(function) => program.add_function(function),
-                P::Q(query) => program.add_query(query),
+                P::V(view) => program.add_view(view),
             };
 
             match result {
@@ -193,8 +193,8 @@ impl<N: Network> Display for ProgramCore<N> {
                         Some(function) => writeln!(f, "{function}")?,
                         None => return Err(fmt::Error),
                     },
-                    ProgramDefinition::Query => match self.queries.get(identifier) {
-                        Some(query) => writeln!(f, "{query}")?,
+                    ProgramDefinition::View => match self.views.get(identifier) {
+                        Some(view) => writeln!(f, "{view}")?,
                         None => return Err(fmt::Error),
                     },
                 },
@@ -246,7 +246,7 @@ function compute:
     }
 
     #[test]
-    fn test_program_parse_with_query_zero_inputs() -> Result<()> {
+    fn test_program_parse_with_view_zero_inputs() -> Result<()> {
         let program = Program::<CurrentNetwork>::from_str(
             r"
 program qy_zeroin.aleo;
@@ -255,19 +255,19 @@ function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query fixed_value:
+view fixed_value:
     add 0u64 1234u64 into r0;
     output r0 as u64.public;",
         )?;
-        assert_eq!(program.queries().len(), 1);
+        assert_eq!(program.views().len(), 1);
         Ok(())
     }
 
     #[test]
-    fn test_program_parse_with_query() -> Result<()> {
+    fn test_program_parse_with_view() -> Result<()> {
         let (string, program) = Program::<CurrentNetwork>::parse(
             r"
-program token_with_query.aleo;
+program token_with_view.aleo;
 
 mapping balances:
     key as address.public;
@@ -277,7 +277,7 @@ function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query total_balance:
+view total_balance:
     input r0 as address.public;
     get.or_use balances[r0] 0u64 into r1;
     output r1 as u64.public;",
@@ -285,73 +285,73 @@ query total_balance:
         .unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
-        // The program should expose the query by name.
-        let query_name = Identifier::from_str("total_balance")?;
-        assert!(program.contains_query(&query_name));
-        assert_eq!(1, program.queries().len());
-        let query = program.get_query_ref(&query_name)?;
-        assert_eq!(1, query.inputs().len());
-        assert_eq!(1, query.commands().len());
-        assert_eq!(1, query.outputs().len());
+        // The program should expose the view by name.
+        let view_name = Identifier::from_str("total_balance")?;
+        assert!(program.contains_view(&view_name));
+        assert_eq!(1, program.views().len());
+        let view = program.get_view_ref(&view_name)?;
+        assert_eq!(1, view.inputs().len());
+        assert_eq!(1, view.commands().len());
+        assert_eq!(1, view.outputs().len());
 
         Ok(())
     }
 
     #[test]
-    fn test_program_query_rejects_writes() {
+    fn test_program_view_rejects_writes() {
         let result = Program::<CurrentNetwork>::from_str(
             r"
-program bad_query.aleo;
+program bad_view.aleo;
 
 mapping balances:
     key as address.public;
     value as u64.public;
 
-query mutate:
+view mutate:
     input r0 as address.public;
     set 1u64 into balances[r0];
     output r0 as address.public;",
         );
-        assert!(result.is_err(), "expected program parse to fail when query contains 'set'");
+        assert!(result.is_err(), "expected program parse to fail when view contains 'set'");
     }
 
     #[test]
-    fn test_program_query_rejects_call() {
+    fn test_program_view_rejects_call() {
         let result = Program::<CurrentNetwork>::from_str(
             r"
-program bad_query.aleo;
+program bad_view.aleo;
 
 closure helper:
     input r0 as field;
     output r0 as field;
 
-query uses_call:
+view uses_call:
     input r0 as field.public;
     call helper r0 into r1;
     output r1 as field.public;",
         );
-        assert!(result.is_err(), "expected program parse to fail when query contains 'call'");
+        assert!(result.is_err(), "expected program parse to fail when view contains 'call'");
     }
 
     #[test]
-    fn test_program_rejects_duplicate_query_names() {
+    fn test_program_rejects_duplicate_view_names() {
         let result = Program::<CurrentNetwork>::from_str(
             r"
-program dup_query.aleo;
+program dup_view.aleo;
 
-query foo:
+view foo:
     add 0u64 1u64 into r0;
     output r0 as u64.public;
 
-query foo:
+view foo:
     add 0u64 2u64 into r0;
     output r0 as u64.public;",
         );
-        assert!(result.is_err(), "expected program parse to fail with two queries named 'foo'");
+        assert!(result.is_err(), "expected program parse to fail with two views named 'foo'");
     }
 
     #[test]
-    fn test_program_rejects_query_name_colliding_with_function() {
+    fn test_program_rejects_view_name_colliding_with_function() {
         let result = Program::<CurrentNetwork>::from_str(
             r"
 program qf_collision.aleo;
@@ -360,15 +360,15 @@ function foo:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query foo:
+view foo:
     add 0u64 1u64 into r0;
     output r0 as u64.public;",
         );
-        assert!(result.is_err(), "expected program parse to fail when a query reuses a function name");
+        assert!(result.is_err(), "expected program parse to fail when a view reuses a function name");
     }
 
     #[test]
-    fn test_program_rejects_query_name_colliding_with_closure() {
+    fn test_program_rejects_view_name_colliding_with_closure() {
         let result = Program::<CurrentNetwork>::from_str(
             r"
 program qc_collision.aleo;
@@ -381,11 +381,11 @@ function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query foo:
+view foo:
     add 0u64 1u64 into r0;
     output r0 as u64.public;",
         );
-        assert!(result.is_err(), "expected program parse to fail when a query reuses a closure name");
+        assert!(result.is_err(), "expected program parse to fail when a view reuses a closure name");
     }
 
     #[test]

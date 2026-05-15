@@ -89,9 +89,9 @@ impl<N: Network> RandChaCha<N> {
         // If the height is greater than or equal to consensus V3, then use the new preimage definition.
         // The difference is that a nonce is also included in the new definition.
         //
-        // `transition_id` and `nonce` are `Option`s on the trait — the query path leaves both as
-        // `None`. Queries already reject `rand.chacha` at construction, so reaching this code on
-        // a query is unreachable, but we surface a clear runtime error here as a defense in depth.
+        // `transition_id` and `nonce` are `Option`s on the trait — the view path leaves both as
+        // `None`. Views already reject `rand.chacha` at construction, so reaching this code on
+        // a view is unreachable, but we surface a clear runtime error here as a defense in depth.
         let consensus_version = N::CONSENSUS_VERSION(registers.state().block_height())?;
         let transition_id = registers
             .transition_id()

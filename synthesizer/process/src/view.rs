@@ -19,42 +19,48 @@ use console::{
     program::{Identifier, ProgramID, Value},
 };
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore};
-use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, RegistersTrait, StackTrait};
+use snarkvm_synthesizer_program::{
+    FinalizeGlobalState,
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    RegistersTrait,
+    StackTrait,
+};
 
 impl<N: Network> Process<N> {
-    /// Evaluates a query function against historic finalize-store state at the given block
+    /// Evaluates a view function against historic finalize-store state at the given block
     /// height. Routes mapping reads through the finalize store's historical update map (per-key
-    /// values keyed by `(program, mapping, key, height)`), so all reads in the query body are
+    /// values keyed by `(program, mapping, key, height)`), so all reads in the view body are
     /// pinned to `height` — block production advancing past `height` during evaluation cannot
-    /// disturb the result. The caller (typically `VM::evaluate_query_at_height`) constructs
-    /// `state` from the historic block at `height` so query operands reading block metadata
+    /// disturb the result. The caller (typically `VM::evaluate_view_at_height`) constructs
+    /// `state` from the historic block at `height` so view operands reading block metadata
     /// see the historic block's values.
     ///
-    /// **No transitions are produced and no finalize-store writes occur** — queries are
+    /// **No transitions are produced and no finalize-store writes occur** — views are
     /// read-only by construction (`add_command` rejects `set` / `remove` / `async` / `await` /
     /// `call` / `rand.chacha` / record-touching ops), and the adapter additionally bails on
     /// every write entry point.
     ///
     /// Available only when snarkVM is built with `--features history`. snarkOS calls this with
-    /// `current_block_height()` for "latest", or any earlier height for historic queries.
+    /// `current_block_height()` for "latest", or any earlier height for historic views.
     #[inline]
-    pub fn evaluate_query_at_height<P: FinalizeStorage<N>>(
+    pub fn evaluate_view_at_height<P: FinalizeStorage<N>>(
         &self,
         state: FinalizeGlobalState,
         store: &FinalizeStore<N, P>,
         program_id: impl TryInto<ProgramID<N>>,
-        query_name: impl TryInto<Identifier<N>>,
+        view_name: impl TryInto<Identifier<N>>,
         inputs: Vec<Value<N>>,
         height: u32,
     ) -> Result<Vec<Value<N>>> {
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
-        let query_name = query_name.try_into().map_err(|_| anyhow!("Invalid query function name"))?;
+        let view_name = view_name.try_into().map_err(|_| anyhow!("Invalid view function name"))?;
         let stack = self.get_stack(program_id)?;
-        evaluate_query_at_height(state, store, &stack, &query_name, inputs, height)
+        evaluate_view_at_height(state, store, &stack, &view_name, inputs, height)
     }
 }
 
-/// Evaluates a query function against historic finalize-store state at the given block
+/// Evaluates a view function against historic finalize-store state at the given block
 /// `height`. Mapping reads route through `FinalizeStore::get_historical_mapping_value` and
 /// are snapshot-consistent at `height` without contending with block finalization.
 ///
@@ -62,25 +68,25 @@ impl<N: Network> Process<N> {
 /// so block-metadata operands reflect that block.
 ///
 /// Caveat: the live `Stack` has interior mutability, so a concurrent redeploy of the same
-/// program could perturb its structural caches mid-query. Mapping values are pinned at
-/// `height`; program structure is not. Known gap — see `VM::evaluate_query_at_height`.
+/// program could perturb its structural caches mid-view. Mapping values are pinned at
+/// `height`; program structure is not. Known gap — see `VM::evaluate_view_at_height`.
 ///
 /// Available only with `--features history`.
-pub fn evaluate_query_at_height<N: Network, P: FinalizeStorage<N>>(
+pub fn evaluate_view_at_height<N: Network, P: FinalizeStorage<N>>(
     state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
     stack: &Stack<N>,
-    query_name: &Identifier<N>,
+    view_name: &Identifier<N>,
     inputs: Vec<Value<N>>,
     height: u32,
 ) -> Result<Vec<Value<N>>> {
     let historic = HistoricFinalizeStore { store, height };
-    evaluate_query_inner(state, &historic, stack, query_name, inputs)
+    evaluate_view_inner(state, &historic, stack, view_name, inputs)
 }
 
 /// Read-only `FinalizeStoreTrait` adapter that routes mapping reads through the finalize
 /// store's historical update map at a fixed `height`. Writes bail — they are unreachable on
-/// the query path (queries reject `set` / `remove` at construction), but bailing here
+/// the view path (views reject `set` / `remove` at construction), but bailing here
 /// preserves that invariant if the adapter is ever passed to other code.
 struct HistoricFinalizeStore<'a, N: Network, P: FinalizeStorage<N>> {
     store: &'a FinalizeStore<N, P>,
@@ -94,7 +100,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
         mapping_name: &Identifier<N>,
     ) -> Result<bool> {
         // Mapping existence is not versioned per height. Delegate to the underlying store:
-        // if the mapping exists now, queries at any height return per-key historic values
+        // if the mapping exists now, views at any height return per-key historic values
         // (or `None` for keys that had no value at that height).
         self.store.contains_mapping_confirmed(program_id, mapping_name)
     }
@@ -135,7 +141,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
         _key: console::program::Plaintext<N>,
         _value: Value<N>,
     ) -> Result<snarkvm_synthesizer_program::FinalizeOperation<N>> {
-        bail!("Forbidden operation: query path cannot write to the finalize store ('insert_key_value')")
+        bail!("Forbidden operation: view path cannot write to the finalize store ('insert_key_value')")
     }
 
     fn update_key_value(
@@ -145,7 +151,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
         _key: console::program::Plaintext<N>,
         _value: Value<N>,
     ) -> Result<snarkvm_synthesizer_program::FinalizeOperation<N>> {
-        bail!("Forbidden operation: query path cannot write to the finalize store ('update_key_value')")
+        bail!("Forbidden operation: view path cannot write to the finalize store ('update_key_value')")
     }
 
     fn remove_key_value(
@@ -154,42 +160,42 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
         _mapping_name: Identifier<N>,
         _key: &console::program::Plaintext<N>,
     ) -> Result<Option<snarkvm_synthesizer_program::FinalizeOperation<N>>> {
-        bail!("Forbidden operation: query path cannot write to the finalize store ('remove_key_value')")
+        bail!("Forbidden operation: view path cannot write to the finalize store ('remove_key_value')")
     }
 }
 
-/// Inner evaluation of a query. Generic over the store; the public path
-/// ([`evaluate_query_at_height`]) wraps the underlying `FinalizeStore` in a
+/// Inner evaluation of a view. Generic over the store; the public path
+/// ([`evaluate_view_at_height`]) wraps the underlying `FinalizeStore` in a
 /// [`HistoricFinalizeStore`] adapter that pins reads to a fixed height.
-fn evaluate_query_inner<N: Network>(
+fn evaluate_view_inner<N: Network>(
     state: FinalizeGlobalState,
     store: &impl FinalizeStoreTrait<N>,
     stack: &Stack<N>,
-    query_name: &Identifier<N>,
+    view_name: &Identifier<N>,
     inputs: Vec<Value<N>>,
 ) -> Result<Vec<Value<N>>> {
-    // Resolve the query function in the stack's program.
-    let query = stack.program().get_query_ref(query_name)?;
+    // Resolve the view function in the stack's program.
+    let view = stack.program().get_view_ref(view_name)?;
 
-    // Compute the register types for the query body.
-    let types = FinalizeTypes::from_query(stack, query)?;
+    // Compute the register types for the view body.
+    let types = FinalizeTypes::from_view(stack, view)?;
 
-    // Queries are read-only and externally-callable: no transition is associated. Pass `None`
+    // Views are read-only and externally-callable: no transition is associated. Pass `None`
     // for `transition_id` and `nonce` — the only consumer (rand.chacha) is rejected by
     // `add_command`, so any future reader of these fields must handle the `None` case
     // explicitly (the trait surface makes this a compile-time obligation).
-    let mut registers = FinalizeRegisters::new(state, None, *query.name(), types, None);
+    let mut registers = FinalizeRegisters::new(state, None, *view.name(), types, None);
 
     // Validate the input arity.
     ensure!(
-        query.inputs().len() == inputs.len(),
-        "Query '{}' expects {} inputs, got {}",
-        query.name(),
-        query.inputs().len(),
+        view.inputs().len() == inputs.len(),
+        "View '{}' expects {} inputs, got {}",
+        view.name(),
+        view.inputs().len(),
         inputs.len(),
     );
 
-    // Reject non-plaintext inputs up-front. Query input statements are typed
+    // Reject non-plaintext inputs up-front. View input statements are typed
     // `FinalizeType::Plaintext` at construction, so the per-register store would reject
     // these as well — but with a generic type-mismatch error. Surfacing the kind here
     // gives a clearer UX.
@@ -201,54 +207,56 @@ fn evaluate_query_inner<N: Network>(
             Value::DynamicRecord(_) => "dynamic record",
             Value::DynamicFuture(_) => "dynamic future",
         };
-        bail!("Query '{}' input #{i} must be a plaintext value, got a {kind}", query.name());
+        bail!("View '{}' input #{i} must be a plaintext value, got a {kind}", view.name());
     }
 
     // Store the inputs.
-    for (input_stmt, value) in query.inputs().iter().zip(inputs.into_iter()) {
+    for (input_stmt, value) in view.inputs().iter().zip(inputs.into_iter()) {
         registers.store(stack, input_stmt.register(), value)?;
     }
 
-    // Evaluate the commands. Queries reject `await` at construction (`add_command`), so the
+    // Evaluate the commands. Views reject `await` at construction (`add_command`), so the
     // dispatch is identical to `Finalize` / `Constructor` — we share `finalize_command_except_await`
-    // directly to avoid drift. `try_vm_runtime!` inside that helper also gives queries panic-catch
+    // directly to avoid drift. `try_vm_runtime!` inside that helper also gives views panic-catch
     // protection, which is desirable on the off-consensus / RPC-exposed path.
     //
     // Termination & cost bounds (prototype):
-    //   - The loop is bounded by `query.commands().len()`, which is itself bounded by
+    //   - The loop is bounded by `view.commands().len()`, which is itself bounded by
     //     `N::MAX_COMMANDS` (= `u16::MAX`).
     //   - `branch_to` (used by the helper) permits forward jumps only, so the counter
     //     strictly advances and no command can re-execute. Termination is guaranteed.
-    //   - Deploy-time, `query_cost_for_single_query` enforces that the worst-case body
-    //     cost is `<= TRANSACTION_SPEND_LIMIT`, so a deployed query cannot register an
+    //   - Deploy-time, `view_cost_for_single_view` enforces that the worst-case body
+    //     cost is `<= TRANSACTION_SPEND_LIMIT`, so a deployed view cannot register an
     //     unboundedly expensive body.
     //   - There is intentionally NO smaller per-call runtime budget below the deploy
-    //     bound. A node serving repeated external query calls can therefore consume up
+    //     bound. A node serving repeated external view calls can therefore consume up
     //     to the deploy bound per call. Rate-limiting and indexing are expected to be
     //     handled at the snarkOS RPC layer, not here.
     let mut counter = 0;
     let mut finalize_operations: Vec<snarkvm_synthesizer_program::FinalizeOperation<N>> = Vec::new();
-    while counter < query.commands().len() {
-        let command = &query.commands()[counter];
+    while counter < view.commands().len() {
+        let command = &view.commands()[counter];
         crate::finalize::finalize_command_except_await(
+            Some((*stack.program_id(), *stack.program_edition())),
+            Some(*registers.function_name()),
             store,
             stack,
             &mut registers,
-            query.positions(),
+            view.positions(),
             command,
             &mut counter,
             &mut finalize_operations,
-            query.name(),
+            view.name(),
         )?;
     }
-    // Defensive: queries reject all write-producing commands at construction, so no finalize
+    // Defensive: views reject all write-producing commands at construction, so no finalize
     // operations should ever be emitted. Catches any future regression that allows a write
     // through the type-check path.
-    debug_assert!(finalize_operations.is_empty(), "query produced finalize operations: {finalize_operations:?}");
+    debug_assert!(finalize_operations.is_empty(), "view produced finalize operations: {finalize_operations:?}");
 
     // Load the outputs.
-    let mut outputs = Vec::with_capacity(query.outputs().len());
-    for output in query.outputs() {
+    let mut outputs = Vec::with_capacity(view.outputs().len());
+    for output in view.outputs() {
         outputs.push(registers.load(stack, output.operand())?);
     }
     Ok(outputs)
@@ -270,7 +278,7 @@ mod tests {
     type CurrentNetwork = MainnetV0;
 
     /// Builds a synthetic `FinalizeGlobalState` for tests. Production callers go through
-    /// `VM::evaluate_query`, which constructs the state from a real block at the call site.
+    /// `VM::evaluate_view`, which constructs the state from a real block at the call site.
     fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
         // Use `from` to avoid the BHP hash done by `new`. The seed is irrelevant for these
         // tests (no rand.chacha) and the round/timestamp aren't read either.
@@ -278,11 +286,11 @@ mod tests {
     }
 
     #[test]
-    fn test_evaluate_query_simple() -> Result<()> {
-        // A program with a mapping and a query function that sums two mappings for an address.
+    fn test_evaluate_view_simple() -> Result<()> {
+        // A program with a mapping and a view function that sums two mappings for an address.
         let program = Program::<CurrentNetwork>::from_str(
             r"
-program token_with_query.aleo;
+program token_with_view.aleo;
 
 mapping balances:
     key as address.public;
@@ -296,7 +304,7 @@ function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query total_balance:
+view total_balance:
     input r0 as address.public;
     get.or_use balances[r0] 0u64 into r1;
     get.or_use staked[r0] 0u64 into r2;
@@ -334,9 +342,9 @@ query total_balance:
             Value::Plaintext(Plaintext::from(Literal::U64(U64::new(2)))),
         )?;
 
-        // Evaluate the query at height 0 (the default `current_block_height` for the in-memory
+        // Evaluate the view at height 0 (the default `current_block_height` for the in-memory
         // store; `update_key_value` records the historic entries at that height).
-        let outputs = evaluate_query_at_height(
+        let outputs = evaluate_view_at_height(
             sample_finalize_state(0),
             &finalize_store,
             &stack,
@@ -356,11 +364,11 @@ query total_balance:
     }
 
     #[test]
-    fn test_evaluate_query_uses_or_default_when_key_missing() -> Result<()> {
-        // Same program, but query an address that's never been stored.
+    fn test_evaluate_view_uses_or_default_when_key_missing() -> Result<()> {
+        // Same program, but view an address that's never been stored.
         let program = Program::<CurrentNetwork>::from_str(
             r"
-program token_with_query.aleo;
+program token_with_view.aleo;
 
 mapping balances:
     key as address.public;
@@ -370,7 +378,7 @@ function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query fetch_balance:
+view fetch_balance:
     input r0 as address.public;
     get.or_use balances[r0] 7u64 into r1;
     output r1 as u64.public;",
@@ -387,7 +395,7 @@ query fetch_balance:
         let address = console::account::Address::try_from(&private_key)?;
         let address_key = Plaintext::from(Literal::Address(address));
 
-        let outputs = evaluate_query_at_height(
+        let outputs = evaluate_view_at_height(
             sample_finalize_state(0),
             &finalize_store,
             &stack,
@@ -405,13 +413,13 @@ query fetch_balance:
     }
 
     #[test]
-    fn test_evaluate_query_errors_when_mapping_not_initialized() -> Result<()> {
+    fn test_evaluate_view_errors_when_mapping_not_initialized() -> Result<()> {
         // Same shape of program as the other tests, but the finalize store is intentionally not
         // initialized for `balances`. The runtime path must surface the existing
         // "Mapping ... does not exist" error rather than panic or silently succeed.
         let program = Program::<CurrentNetwork>::from_str(
             r"
-program token_with_query.aleo;
+program token_with_view.aleo;
 
 mapping balances:
     key as address.public;
@@ -421,7 +429,7 @@ function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query fetch_balance:
+view fetch_balance:
     input r0 as address.public;
     get.or_use balances[r0] 7u64 into r1;
     output r1 as u64.public;",
@@ -438,7 +446,7 @@ query fetch_balance:
         let address = console::account::Address::try_from(&private_key)?;
         let address_key = Plaintext::from(Literal::Address(address));
 
-        let result = evaluate_query_at_height(
+        let result = evaluate_view_at_height(
             sample_finalize_state(0),
             &finalize_store,
             &stack,
@@ -453,19 +461,19 @@ query fetch_balance:
     }
 
     #[test]
-    fn test_evaluate_query_rejects_non_plaintext_input() -> Result<()> {
-        // A query that takes a single plaintext input. We then call it with a `Value::Future`
+    fn test_evaluate_view_rejects_non_plaintext_input() -> Result<()> {
+        // A view that takes a single plaintext input. We then call it with a `Value::Future`
         // and expect the entry-point pre-validation to reject with a clear "must be a plaintext
         // value, got a future" error rather than a generic store-mismatch.
         let program = Program::<CurrentNetwork>::from_str(
             r"
-program qy_input_kind.aleo;
+program vw_input_kind.aleo;
 
 function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query echo:
+view echo:
     input r0 as u64.public;
     add r0 0u64 into r1;
     output r1 as u64.public;",
@@ -480,7 +488,7 @@ query echo:
         let future_value =
             Value::Future(console::program::Future::new(*program.id(), Identifier::from_str("noop")?, vec![]));
 
-        let result = evaluate_query_at_height(
+        let result = evaluate_view_at_height(
             sample_finalize_state(0),
             &finalize_store,
             &stack,
@@ -499,14 +507,14 @@ query echo:
     }
 
     #[test]
-    fn test_evaluate_query_ignores_pending_writes() -> Result<()> {
-        // The query path uses the `ConfirmedFinalizeStore` adapter, so reads bypass the
+    fn test_evaluate_view_ignores_pending_writes() -> Result<()> {
+        // The view path uses the `ConfirmedFinalizeStore` adapter, so reads bypass the
         // atomic-batch pending state. This test simulates an in-flight finalize batch by
-        // staging a write inside an atomic batch (without committing) and then querying:
-        // the pending write must NOT be visible to the query.
+        // staging a write inside an atomic batch (without committing) and then viewing:
+        // the pending write must NOT be visible to the view.
         let program = Program::<CurrentNetwork>::from_str(
             r"
-program qy_pending_isolate.aleo;
+program vw_pending_isolate.aleo;
 
 mapping balances:
     key as address.public;
@@ -516,7 +524,7 @@ function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query lookup:
+view lookup:
     input r0 as address.public;
     get.or_use balances[r0] 0u64 into r1;
     output r1 as u64.public;",
@@ -547,10 +555,10 @@ query lookup:
         )?;
         assert!(finalize_store.is_atomic_in_progress());
 
-        // Query with the batch still open: the historic adapter reads from the per-height
+        // View with the batch still open: the historic adapter reads from the per-height
         // update map via `get_confirmed`, which skips pending atomic-batch writes. So the
-        // query sees the mapping's default (0), not the pending 99.
-        let outputs = evaluate_query_at_height(
+        // view sees the mapping's default (0), not the pending 99.
+        let outputs = evaluate_view_at_height(
             sample_finalize_state(0),
             &finalize_store,
             &stack,
@@ -566,7 +574,7 @@ query lookup:
         match &outputs[0] {
             Value::Plaintext(Plaintext::Literal(Literal::U64(v), _)) => assert_eq!(
                 **v, 0,
-                "query should observe confirmed state (default 0), not the pending in-batch write (99)"
+                "view should observe confirmed state (default 0), not the pending in-batch write (99)"
             ),
             other => panic!("unexpected output: {other}"),
         }
@@ -574,19 +582,19 @@ query lookup:
     }
 
     #[test]
-    fn test_query_can_read_block_timestamp() -> Result<()> {
-        // Queries get a real `FinalizeGlobalState` from the calling VM (built from the
-        // current/historic block), so `block.timestamp` is a valid operand inside a query body.
+    fn test_view_can_read_block_timestamp() -> Result<()> {
+        // Views get a real `FinalizeGlobalState` from the calling VM (built from the
+        // current/historic block), so `block.timestamp` is a valid operand inside a view body.
         // Drive it directly here at the process layer with a synthetic state.
         let program = Program::<CurrentNetwork>::from_str(
             r"
-program qy_block_ts.aleo;
+program vw_block_ts.aleo;
 
 function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query reads_ts:
+view reads_ts:
     add block.timestamp 0i64 into r0;
     output r0 as i64.public;",
         )?;
@@ -598,7 +606,7 @@ query reads_ts:
         // Build a state with a non-trivial timestamp, mimicking what a real VM would supply.
         let state = FinalizeGlobalState::from(1, 1, Some(1234567890), [0u8; 32]);
         let outputs =
-            evaluate_query_at_height(state, &finalize_store, &stack, &Identifier::from_str("reads_ts")?, vec![], 1)?;
+            evaluate_view_at_height(state, &finalize_store, &stack, &Identifier::from_str("reads_ts")?, vec![], 1)?;
 
         assert_eq!(outputs.len(), 1);
         match &outputs[0] {
@@ -609,14 +617,14 @@ query reads_ts:
     }
 
     /// Drives a value through two updates at different block heights and asserts that
-    /// `evaluate_query_at_height` returns the value applicable at each height.
+    /// `evaluate_view_at_height` returns the value applicable at each height.
     #[test]
-    fn test_evaluate_query_at_height_returns_historic_value() -> Result<()> {
+    fn test_evaluate_view_at_height_returns_historic_value() -> Result<()> {
         use std::sync::atomic::Ordering;
 
         let program = Program::<CurrentNetwork>::from_str(
             r"
-program qy_history.aleo;
+program vw_history.aleo;
 
 mapping balances:
     key as address.public;
@@ -626,7 +634,7 @@ function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query lookup:
+view lookup:
     input r0 as address.public;
     get balances[r0] into r1;
     output r1 as u64.public;",
@@ -668,10 +676,10 @@ query lookup:
             other => panic!("expected u64, got: {other}"),
         };
 
-        // Sanity: querying at the latest height (5) reflects the LAST write (V2 = 55). Historic
-        // queries below must therefore return 11 (not 55) at heights ≤ 4, distinguishing the
+        // Sanity: viewing at the latest height (5) reflects the LAST write (V2 = 55). Historic
+        // views below must therefore return 11 (not 55) at heights ≤ 4, distinguishing the
         // historic path from any accidental fall-through to current state.
-        let outputs = evaluate_query_at_height(
+        let outputs = evaluate_view_at_height(
             sample_finalize_state(5),
             &finalize_store,
             &stack,
@@ -681,8 +689,8 @@ query lookup:
         )?;
         assert_eq!(extract(outputs), 55, "current state should reflect the most recent write");
 
-        // Query at height 1 → V1.
-        let outputs = evaluate_query_at_height(
+        // View at height 1 → V1.
+        let outputs = evaluate_view_at_height(
             sample_finalize_state(1),
             &finalize_store,
             &stack,
@@ -692,8 +700,8 @@ query lookup:
         )?;
         assert_eq!(extract(outputs), 11, "expected historic value at height 1");
 
-        // Query at height 5 → V2.
-        let outputs = evaluate_query_at_height(
+        // View at height 5 → V2.
+        let outputs = evaluate_view_at_height(
             sample_finalize_state(5),
             &finalize_store,
             &stack,
@@ -703,9 +711,9 @@ query lookup:
         )?;
         assert_eq!(extract(outputs), 55, "expected historic value at height 5");
 
-        // Query at height 3 (between the two updates) → V1, since the binary-search picks
+        // View at height 3 (between the two updates) → V1, since the binary-search picks
         // the most recent applicable height.
-        let outputs = evaluate_query_at_height(
+        let outputs = evaluate_view_at_height(
             sample_finalize_state(3),
             &finalize_store,
             &stack,

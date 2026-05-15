@@ -20,7 +20,7 @@ use crate::Operand;
 
 use console::{network::prelude::*, program::FinalizeType};
 
-/// An output statement defines an output of a query function.
+/// An output statement defines an output of a view function.
 /// An output statement is of the form `output {operand} as {finalize_type};`.
 ///
 /// The finalize type carries the same plaintext-only constraints as finalize inputs:

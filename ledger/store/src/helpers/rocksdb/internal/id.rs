@@ -215,6 +215,7 @@ pub enum ProgramMap {
     MappingUpdate = DataID::MappingUpdateMap as u16,
     MappingUpdateHeights = DataID::MappingUpdateHeightsMap as u16,
     StakingRewards = DataID::StakingRewardsMap as u16,
+    RejectedReason = DataID::RejectedReasonMap as u16,
 }
 
 /// The RocksDB map prefix for test-related entries.
@@ -340,6 +341,9 @@ enum DataID {
     DeploymentAmendmentVerifyingKeyMap,
     DeploymentAmendmentCertificateMap,
     DeploymentAmendmentOwnerMap,
+
+    // Track rejection reasons for rejected transactions
+    RejectedReasonMap,
 
     // Testing
     #[cfg(test)]

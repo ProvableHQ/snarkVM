@@ -41,10 +41,10 @@ pub use function::*;
 mod import;
 pub use import::*;
 
-pub mod query;
-pub use query::QueryCore;
+pub mod view;
+pub use view::ViewCore;
 
-pub type Query<N> = crate::QueryCore<N>;
+pub type View<N> = crate::ViewCore<N>;
 
 pub mod logic;
 pub use logic::*;
@@ -150,8 +150,8 @@ enum ProgramDefinition {
     Closure,
     /// A program function.
     Function,
-    /// A program query function.
-    Query,
+    /// A program view function.
+    View,
 }
 
 #[derive(Clone)]
@@ -174,8 +174,8 @@ pub struct ProgramCore<N: Network> {
     closures: IndexMap<Identifier<N>, ClosureCore<N>>,
     /// A map of the declared functions for the program.
     functions: IndexMap<Identifier<N>, FunctionCore<N>>,
-    /// A map of the declared query functions for the program.
-    queries: IndexMap<Identifier<N>, QueryCore<N>>,
+    /// A map of the declared view functions for the program.
+    views: IndexMap<Identifier<N>, ViewCore<N>>,
 }
 
 impl<N: Network> PartialEq for ProgramCore<N> {
@@ -200,7 +200,7 @@ impl<N: Network> PartialEq for ProgramCore<N> {
             && self.records == other.records
             && self.closures == other.closures
             && self.functions == other.functions
-            && self.queries == other.queries
+            && self.views == other.views
     }
 }
 
@@ -293,7 +293,7 @@ impl<N: Network> ProgramCore<N> {
     pub const RESTRICTED_KEYWORDS: &'static [(ConsensusVersion, &'static [&'static str])] = &[
         (ConsensusVersion::V6, &["constructor"]),
         (ConsensusVersion::V14, &["dynamic", "identifier"]),
-        (ConsensusVersion::V15, &["query"]),
+        (ConsensusVersion::V15, &["view"]),
     ];
 
     /// Initializes an empty program.
@@ -312,7 +312,7 @@ impl<N: Network> ProgramCore<N> {
             records: IndexMap::new(),
             closures: IndexMap::new(),
             functions: IndexMap::new(),
-            queries: IndexMap::new(),
+            views: IndexMap::new(),
         })
     }
 
@@ -362,9 +362,9 @@ impl<N: Network> ProgramCore<N> {
         &self.functions
     }
 
-    /// Returns the query functions in the program.
-    pub const fn queries(&self) -> &IndexMap<Identifier<N>, QueryCore<N>> {
-        &self.queries
+    /// Returns the view functions in the program.
+    pub const fn views(&self) -> &IndexMap<Identifier<N>, ViewCore<N>> {
+        &self.views
     }
 
     /// Returns `true` if the program contains an import with the given program ID.
@@ -402,9 +402,9 @@ impl<N: Network> ProgramCore<N> {
         self.functions.contains_key(name)
     }
 
-    /// Returns `true` if the program contains a query function with the given name.
-    pub fn contains_query(&self, name: &Identifier<N>) -> bool {
-        self.queries.contains_key(name)
+    /// Returns `true` if the program contains a view function with the given name.
+    pub fn contains_view(&self, name: &Identifier<N>) -> bool {
+        self.views.contains_key(name)
     }
 
     /// Returns the mapping with the given name.
@@ -483,19 +483,19 @@ impl<N: Network> ProgramCore<N> {
         Ok(function)
     }
 
-    /// Returns the query function with the given name.
-    pub fn get_query(&self, name: &Identifier<N>) -> Result<QueryCore<N>> {
-        self.get_query_ref(name).cloned()
+    /// Returns the view function with the given name.
+    pub fn get_view(&self, name: &Identifier<N>) -> Result<ViewCore<N>> {
+        self.get_view_ref(name).cloned()
     }
 
-    /// Returns a reference to the query function with the given name.
-    pub fn get_query_ref(&self, name: &Identifier<N>) -> Result<&QueryCore<N>> {
-        let query = self.queries.get(name).ok_or(anyhow!("Query '{}/{name}' is not defined.", self.id))?;
-        ensure!(query.name() == name, "Expected query '{name}', but found query '{}'", query.name());
-        ensure!(query.inputs().len() <= N::MAX_INPUTS, "Query exceeds maximum number of inputs");
-        ensure!(query.commands().len() <= N::MAX_COMMANDS, "Query exceeds maximum number of commands");
-        ensure!(query.outputs().len() <= N::MAX_OUTPUTS, "Query exceeds maximum number of outputs");
-        Ok(query)
+    /// Returns a reference to the view function with the given name.
+    pub fn get_view_ref(&self, name: &Identifier<N>) -> Result<&ViewCore<N>> {
+        let view = self.views.get(name).ok_or(anyhow!("View '{}/{name}' is not defined.", self.id))?;
+        ensure!(view.name() == name, "Expected view '{name}', but found view '{}'", view.name());
+        ensure!(view.inputs().len() <= N::MAX_INPUTS, "View exceeds maximum number of inputs");
+        ensure!(view.commands().len() <= N::MAX_COMMANDS, "View exceeds maximum number of commands");
+        ensure!(view.outputs().len() <= N::MAX_OUTPUTS, "View exceeds maximum number of outputs");
+        Ok(view)
     }
 
     /// Adds a new import statement to the program.
@@ -834,32 +834,32 @@ impl<N: Network> ProgramCore<N> {
         Ok(())
     }
 
-    /// Adds a new query function to the program.
+    /// Adds a new view function to the program.
     ///
     /// # Errors
-    /// This method will halt if the query function name is already in use in the program.
-    /// This method will halt if the query function name is a reserved opcode or keyword.
+    /// This method will halt if the view function name is already in use in the program.
+    /// This method will halt if the view function name is a reserved opcode or keyword.
     #[inline]
-    fn add_query(&mut self, query: QueryCore<N>) -> Result<()> {
-        let query_name = *query.name();
+    fn add_view(&mut self, view: ViewCore<N>) -> Result<()> {
+        let view_name = *view.name();
 
-        ensure!(self.queries.len() < N::MAX_QUERIES, "Program exceeds the maximum number of query functions.");
+        ensure!(self.views.len() < N::MAX_VIEWS, "Program exceeds the maximum number of view functions.");
 
-        ensure!(self.is_unique_name(&query_name), "'{query_name}' is already in use.");
-        ensure!(!Self::is_reserved_opcode(&query_name.to_string()), "'{query_name}' is a reserved opcode.");
-        ensure!(!Self::is_reserved_keyword(&query_name), "'{query_name}' is a reserved keyword.");
+        ensure!(self.is_unique_name(&view_name), "'{view_name}' is already in use.");
+        ensure!(!Self::is_reserved_opcode(&view_name.to_string()), "'{view_name}' is a reserved opcode.");
+        ensure!(!Self::is_reserved_keyword(&view_name), "'{view_name}' is a reserved keyword.");
 
-        // Queries must have at least one command and at least one output.
-        ensure!(!query.commands().is_empty(), "Cannot evaluate a query function without commands");
-        ensure!(!query.outputs().is_empty(), "A query function must declare at least one output");
-        ensure!(query.inputs().len() <= N::MAX_INPUTS, "Query exceeds maximum number of inputs");
-        ensure!(query.outputs().len() <= N::MAX_OUTPUTS, "Query exceeds maximum number of outputs");
+        // Views must have at least one command and at least one output.
+        ensure!(!view.commands().is_empty(), "Cannot evaluate a view function without commands");
+        ensure!(!view.outputs().is_empty(), "A view function must declare at least one output");
+        ensure!(view.inputs().len() <= N::MAX_INPUTS, "View exceeds maximum number of inputs");
+        ensure!(view.outputs().len() <= N::MAX_OUTPUTS, "View exceeds maximum number of outputs");
 
-        if self.components.insert(ProgramLabel::Identifier(query_name), ProgramDefinition::Query).is_some() {
-            bail!("'{query_name}' already exists in the program.")
+        if self.components.insert(ProgramLabel::Identifier(view_name), ProgramDefinition::View).is_some() {
+            bail!("'{view_name}' already exists in the program.")
         }
-        if self.queries.insert(query_name, query).is_some() {
-            bail!("'{query_name}' already exists in the program.")
+        if self.views.insert(view_name, view).is_some() {
+            bail!("'{view_name}' already exists in the program.")
         }
         Ok(())
     }
@@ -1057,7 +1057,7 @@ impl<N: Network> ProgramCore<N> {
             || self.closures.values().any(|closure| closure.contains_external_struct())
             || self.functions.values().any(|function| function.contains_external_struct())
             || self.constructor.iter().any(|constructor| constructor.contains_external_struct())
-            || self.queries.values().any(|query| query.contains_external_struct())
+            || self.views.values().any(|view| view.contains_external_struct())
     }
 
     /// Returns `true` if this program violates pre-V13 rules for external records
@@ -1180,7 +1180,7 @@ impl<N: Network> ProgramCore<N> {
             || self.closures.values().any(|closure| closure.exceeds_max_array_size(max_array_size))
             || self.functions.values().any(|function| function.exceeds_max_array_size(max_array_size))
             || self.constructor.iter().any(|constructor| constructor.exceeds_max_array_size(max_array_size))
-            || self.queries.values().any(|query| query.exceeds_max_array_size(max_array_size))
+            || self.views.values().any(|view| view.exceeds_max_array_size(max_array_size))
     }
 
     /// Returns `true` if a program contains any V11 syntax.
@@ -1395,7 +1395,7 @@ impl<N: Network> ProgramCore<N> {
     /// Returns `true` if a program contains any V15 syntax.
     /// This includes:
     /// 1. `commit.*.raw` opcodes (raw commit variants).
-    /// 2. `query` blocks (new on-disk component variant 6).
+    /// 2. `view` blocks (new on-disk component variant 6).
     ///
     /// This is enforced to be `false` for programs before `ConsensusVersion::V15`.
     #[inline]
@@ -1420,7 +1420,7 @@ impl<N: Network> ProgramCore<N> {
             .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
             .any(|command| matches!(command, Command::Instruction(instruction) if has_op(*instruction.opcode())));
 
-        function_contains || closure_contains || command_contains || !self.queries.is_empty()
+        function_contains || closure_contains || command_contains || !self.views.is_empty()
     }
 
     /// Returns `true` if a program contains any string type.
@@ -1434,7 +1434,7 @@ impl<N: Network> ProgramCore<N> {
             || self.closures.values().any(|closure| closure.contains_string_type())
             || self.functions.values().any(|function| function.contains_string_type())
             || self.constructor.iter().any(|constructor| constructor.contains_string_type())
-            || self.queries.values().any(|query| query.contains_string_type())
+            || self.views.values().any(|view| view.contains_string_type())
     }
 }
 

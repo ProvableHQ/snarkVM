@@ -21,10 +21,10 @@ use console::{
     program::{FinalizeType, Register},
 };
 
-/// An input statement defines an input argument to a query function, of the form
+/// An input statement defines an input argument to a view function, of the form
 /// `input {register} as {finalize_type};`.
 ///
-/// Query inputs reuse the finalize input shape because query bodies share the finalize
+/// View inputs reuse the finalize input shape because view bodies share the finalize
 /// command set and therefore the same plaintext-only register model.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Input<N: Network> {

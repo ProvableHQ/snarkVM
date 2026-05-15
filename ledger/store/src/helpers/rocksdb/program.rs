@@ -26,7 +26,9 @@ use console::types::Address;
 use console::{
     prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
+    types::Field,
 };
+use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
 
 use aleo_std_storage::StorageMode;
@@ -43,6 +45,8 @@ pub struct FinalizeDB<N: Network> {
     program_id_map: DataMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
     key_value_map: NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
+    /// The rejection reason map.
+    rejected_reason_map: DataMap<Field<N>, RejectedReason<N>>,
     /// The historical mapping map.
     #[cfg(feature = "history")]
     mapping_update_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>,
@@ -64,6 +68,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type CommitteeStorage = CommitteeDB<N>;
     type ProgramIDMap = DataMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedDataMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    type RejectedReasonMap = DataMap<Field<N>, RejectedReason<N>>;
     #[cfg(feature = "history")]
     type MappingUpdateMap = DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>;
     #[cfg(feature = "history")]
@@ -81,6 +86,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             committee_store,
             program_id_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::ProgramID))?,
             key_value_map: rocksdb::RocksDB::open_nested_map(N::ID, storage.clone(), MapID::Program(ProgramMap::KeyValueID))?,
+            rejected_reason_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::RejectedReason))?,
             #[cfg(feature = "history")]
             mapping_update_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::MappingUpdate))?,
             #[cfg(feature = "history")]
@@ -106,6 +112,11 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap {
         &self.key_value_map
+    }
+
+    /// Returns the rejection reason map.
+    fn rejected_reason_map(&self) -> &Self::RejectedReasonMap {
+        &self.rejected_reason_map
     }
 
     /// Returns the historical value map.

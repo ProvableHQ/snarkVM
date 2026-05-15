@@ -226,8 +226,8 @@ pub trait Network:
     const MAX_RECORDS: usize = 10 * Self::MAX_FUNCTIONS;
     /// The maximum number of closures in a program.
     const MAX_CLOSURES: usize = 2 * Self::MAX_FUNCTIONS;
-    /// The maximum number of query functions in a program.
-    const MAX_QUERIES: usize = 2 * Self::MAX_FUNCTIONS;
+    /// The maximum number of view functions in a program.
+    const MAX_VIEWS: usize = 2 * Self::MAX_FUNCTIONS;
     /// The maximum number of operands in an instruction.
     const MAX_OPERANDS: usize = Self::MAX_INPUTS;
     /// The maximum number of instructions in a closure or function.

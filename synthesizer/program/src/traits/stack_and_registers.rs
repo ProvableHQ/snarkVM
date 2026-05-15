@@ -290,15 +290,15 @@ pub trait FinalizeRegistersState<N: Network>: RegistersTrait<N> {
     fn state(&self) -> &FinalizeGlobalState;
 
     /// Returns the transition ID for the finalize scope, if one is associated with this scope.
-    /// Query functions are externally-callable and have no associated transition, so this is
-    /// `None` on the query path; finalize and constructor scopes always have `Some(...)`.
+    /// View functions are externally-callable and have no associated transition, so this is
+    /// `None` on the view path; finalize and constructor scopes always have `Some(...)`.
     fn transition_id(&self) -> Option<&N::TransitionID>;
 
     /// Returns the function name for the finalize scope.
     fn function_name(&self) -> &Identifier<N>;
 
     /// Returns the nonce for the finalize registers, if one is associated with this scope.
-    /// `None` on the query path (no transition → no nonce); always `Some(...)` on finalize.
+    /// `None` on the view path (no transition → no nonce); always `Some(...)` on finalize.
     fn nonce(&self) -> Option<u64>;
 }
 

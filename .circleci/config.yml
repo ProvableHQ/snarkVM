@@ -905,8 +905,8 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer
-          # `history` enables the per-key historical update map that the `query` evaluation path
-          # depends on; gating it here ensures the v15 query tests are exercised in CI.
+          # `history` enables the per-key historical update map that the `view` evaluation path
+          # depends on; gating it here ensures the v15 view tests are exercised in CI.
           flags: >
             --lib --bins --features test,history
             --partition count:1/2

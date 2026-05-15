@@ -15,17 +15,17 @@
 
 use super::*;
 
-impl<N: Network> FromBytes for QueryCore<N> {
-    /// Reads the query function from a buffer.
+impl<N: Network> FromBytes for ViewCore<N> {
+    /// Reads the view function from a buffer.
     #[inline]
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the query function name.
+        // Read the view function name.
         let name = Identifier::<N>::read_le(&mut reader)?;
 
         // Read the inputs.
         let num_inputs = u16::read_le(&mut reader)?;
         if num_inputs > u16::try_from(N::MAX_INPUTS).map_err(error)? {
-            return Err(error(format!("Failed to deserialize query: too many inputs ({num_inputs})")));
+            return Err(error(format!("Failed to deserialize view: too many inputs ({num_inputs})")));
         }
         let mut inputs = Vec::with_capacity(num_inputs as usize);
         for _ in 0..num_inputs {
@@ -35,10 +35,10 @@ impl<N: Network> FromBytes for QueryCore<N> {
         // Read the commands.
         let num_commands = u16::read_le(&mut reader)?;
         if num_commands.is_zero() {
-            return Err(error("Failed to deserialize query: needs at least one command".to_string()));
+            return Err(error("Failed to deserialize view: needs at least one command".to_string()));
         }
         if num_commands > u16::try_from(N::MAX_COMMANDS).map_err(error)? {
-            return Err(error(format!("Failed to deserialize query: too many commands ({num_commands})")));
+            return Err(error(format!("Failed to deserialize view: too many commands ({num_commands})")));
         }
         let mut commands = Vec::with_capacity(num_commands as usize);
         for _ in 0..num_commands {
@@ -48,31 +48,31 @@ impl<N: Network> FromBytes for QueryCore<N> {
         // Read the outputs.
         let num_outputs = u16::read_le(&mut reader)?;
         if num_outputs.is_zero() {
-            return Err(error("Failed to deserialize query: needs at least one output".to_string()));
+            return Err(error("Failed to deserialize view: needs at least one output".to_string()));
         }
         if num_outputs > u16::try_from(N::MAX_OUTPUTS).map_err(error)? {
-            return Err(error(format!("Failed to deserialize query: too many outputs ({num_outputs})")));
+            return Err(error(format!("Failed to deserialize view: too many outputs ({num_outputs})")));
         }
         let mut outputs = Vec::with_capacity(num_outputs as usize);
         for _ in 0..num_outputs {
             outputs.push(Output::read_le(&mut reader)?);
         }
 
-        // Initialize a new query.
-        let mut query = Self::new(name);
-        inputs.into_iter().try_for_each(|input| query.add_input(input)).map_err(error)?;
-        commands.into_iter().try_for_each(|command| query.add_command(command)).map_err(error)?;
-        outputs.into_iter().try_for_each(|output| query.add_output(output)).map_err(error)?;
+        // Initialize a new view.
+        let mut view = Self::new(name);
+        inputs.into_iter().try_for_each(|input| view.add_input(input)).map_err(error)?;
+        commands.into_iter().try_for_each(|command| view.add_command(command)).map_err(error)?;
+        outputs.into_iter().try_for_each(|output| view.add_output(output)).map_err(error)?;
 
-        Ok(query)
+        Ok(view)
     }
 }
 
-impl<N: Network> ToBytes for QueryCore<N> {
-    /// Writes the query function to a buffer.
+impl<N: Network> ToBytes for ViewCore<N> {
+    /// Writes the view function to a buffer.
     #[inline]
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        // Write the query function name.
+        // Write the view function name.
         self.name.write_le(&mut writer)?;
 
         // Write the number of inputs.

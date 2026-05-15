@@ -379,11 +379,11 @@ impl<N: Network> Stack<N> {
             }
         }
 
-        // Type-check every query function. The result is not cached on the stack here;
-        // it is recomputed by the query evaluator. This is acceptable for the prototype
-        // and ensures that ill-typed queries are rejected at deploy time.
-        for query in self.program.queries().values() {
-            let _ = FinalizeTypes::from_query(self, query)?;
+        // Type-check every view function. The result is not cached on the stack here;
+        // it is recomputed by the view evaluator. This is acceptable for the prototype
+        // and ensures that ill-typed views are rejected at deploy time.
+        for view in self.program.views().values() {
+            let _ = FinalizeTypes::from_view(self, view)?;
         }
 
         // Drop the locks since the types have been initialized.

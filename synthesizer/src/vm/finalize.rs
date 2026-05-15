@@ -18,6 +18,7 @@ use super::*;
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
 #[cfg(feature = "history-staking-rewards")]
 use snarkvm_ledger_store::helpers::Map;
+use snarkvm_synthesizer_error::{FinalizeError, IndexedFinalizeError, IntoIndexedFinalize, indexed_finalize_bail};
 use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -284,6 +285,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine the maximum number of aborted transactions allowed in a block.
         let max_aborted_transactions = Transactions::<N>::max_aborted_transactions();
 
+        // Clear out any pending rejection reasons in case of errors in the previous iteration.
+        {
+            let mut rejected_reasons = self.pending_rejected_reasons.write();
+            if !rejected_reasons.is_empty() {
+                error!("There are pending rejection reasons, clearing them up: {:?}", &*rejected_reasons);
+            }
+            rejected_reasons.clear();
+        }
+
         // Update the block height used for the purposes of historical mapping accounting.
         #[cfg(feature = "history")]
         self.store
@@ -403,16 +413,28 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Define the closure for processing a rejected deployment.
                         let process_rejected_deployment =
                             |fee: &Fee<N>,
-                             deployment: Deployment<N>|
+                             deployment: Deployment<N>,
+                             rejected_reason: RejectedReason<N>|
                              -> Result<Result<ConfirmedTransaction<N>, String>> {
                                 process
                                     .finalize_fee(state, store, fee)
+                                    .map_err(anyhow::Error::from)
                                     .and_then(|finalize| {
                                         Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
                                     })
                                     .map(|(fee_tx, finalize)| {
                                         let rejected = Rejected::new_deployment(*program_owner, deployment);
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
+                                            .and_then(|confirmed_tx| {
+                                                // Store the rejection reason.
+                                                self.pending_rejected_reasons
+                                                    .write()
+                                                    .insert(confirmed_tx.id(), rejected_reason.clone());
+                                                store
+                                                    .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
+                                                    .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
+                                                Ok(confirmed_tx)
+                                            })
                                             .map_err(|e| e.to_string())
                                     })
                             };
@@ -420,17 +442,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Check if the program has already been deployed in this block.
                         match deployments.contains(deployment.program_id()) {
                             // If the program has already been deployed, construct the rejected deploy transaction.
-                            true => match process_rejected_deployment(fee, *deployment.clone()) {
-                                Ok(result) => result,
-                                Err(error) => {
-                                    // Note: On failure, skip this transaction, and continue speculation.
-                                    dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
-                                    // Store the aborted transaction.
-                                    aborted.push((transaction.clone(), error.to_string()));
-                                    // Continue to the next transaction.
-                                    continue 'outer;
+                            true => {
+                                let rejected_reason = RejectedReason::DuplicateProgramID(*deployment.program_id());
+                                match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
+                                    Ok(result) => result,
+                                    Err(error) => {
+                                        // Note: On failure, skip this transaction, and continue speculation.
+                                        dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                        // Store the aborted transaction.
+                                        aborted.push((transaction.clone(), error.to_string()));
+                                        // Continue to the next transaction.
+                                        continue 'outer;
+                                    }
                                 }
-                            },
+                            }
                             // If the program has not yet been deployed, attempt to deploy it.
                             false => match process.finalize_deployment(state, store, deployment, fee) {
                                 // Construct the accepted deploy transaction.
@@ -444,7 +469,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 Err(error) => {
                                     dev_eprintln!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
-                                    match process_rejected_deployment(fee, *deployment.clone()) {
+                                    let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
+                                    match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
                                         Ok(result) => result,
                                         Err(error) => {
                                             // Note: On failure, skip this transaction, and continue speculation.
@@ -463,7 +489,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // and update the respective leaves of the finalize tree.
                     Transaction::Execute(_, _, execution, fee) => {
                         // Determine if the transaction is safe for execution, and proceed to execute it.
-                        match Self::prepare_for_execution(state, store, execution)
+                        match self
+                            .prepare_for_execution(state, store, execution)
                             .and_then(|_| process.finalize_execution(state, store, execution, fee.as_ref()))
                         {
                             // Construct the accepted execute transaction.
@@ -475,12 +502,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             Err(error) => {
                                 dev_eprintln!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
+                                let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                 match fee {
                                     // Finalize the fee, to ensure it is valid.
                                     Some(fee) => {
-                                        match process.finalize_fee(state, store, fee).and_then(|finalize| {
-                                            Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
-                                        }) {
+                                        match process
+                                            .finalize_fee(state, store, fee)
+                                            .map_err(anyhow::Error::from)
+                                            .and_then(|finalize| {
+                                                Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
+                                            }) {
                                             Ok((fee_tx, finalize)) => {
                                                 // Construct the rejected execution.
                                                 let rejected = Rejected::new_execution(*execution.clone());
@@ -488,6 +519,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                                 ConfirmedTransaction::rejected_execute(
                                                     counter, fee_tx, rejected, finalize,
                                                 )
+                                                .and_then(|confirmed_tx| {
+                                                    // Store the rejection reason.
+                                                    self.pending_rejected_reasons
+                                                        .write()
+                                                        .insert(confirmed_tx.id(), rejected_reason.clone());
+                                                    store
+                                                        .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
+                                                        .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
+                                                    Ok(confirmed_tx)
+                                                })
                                                 .map_err(|e| e.to_string())
                                             }
                                             Err(error) => {
@@ -658,11 +699,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         #[cfg(feature = "slipstream-plugins")]
         {
             self.store.finalize_store().is_finalize_mode().store(true, std::sync::atomic::Ordering::SeqCst);
-            self.store
-                .finalize_store()
-                .slipstream_block_height()
-                .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
         }
+        self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
         // Perform the finalize operation on the preset finalize mode.
         let finalize_result = atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
@@ -773,7 +811,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         }
                         Ok(())
                     }
-                    ConfirmedTransaction::RejectedDeploy(_, Transaction::Fee(_, fee), rejected, finalize) => {
+                    ConfirmedTransaction::RejectedDeploy(_, Transaction::Fee(fee_tx_id, fee), rejected, finalize) => {
                         // Extract the rejected deployment.
                         let Some(deployment) = rejected.deployment() else {
                             // Note: This will abort the entire atomic batch.
@@ -804,6 +842,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         "Mismatch in finalize operations for a rejected deploy - (found: {finalize_operations:?}, expected: {finalize:?})"
                                     ));
                                 }
+
+                                if let Some(rejected_reason) = self.pending_rejected_reasons.write().remove(fee_tx_id) {
+                                    store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
+                                        |_| "Couldn't store the reason behind a rejected deployment".to_string(),
+                                    )?;
+                                }
                             }
                             // Note: This will abort the entire atomic batch.
                             Err(_e) => {
@@ -812,7 +856,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         }
                         Ok(())
                     }
-                    ConfirmedTransaction::RejectedExecute(_, Transaction::Fee(_, fee), rejected, finalize) => {
+                    ConfirmedTransaction::RejectedExecute(_, Transaction::Fee(fee_tx_id, fee), rejected, finalize) => {
                         // Extract the rejected execution.
                         let Some(execution) = rejected.execution() else {
                             // Note: This will abort the entire atomic batch.
@@ -842,6 +886,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     return Err(format!(
                                         "Mismatch in finalize operations for a rejected execute - (found: {finalize_operations:?}, expected: {finalize:?})"
                                     ));
+                                }
+
+                                if let Some(rejected_reason) = self.pending_rejected_reasons.write().remove(fee_tx_id) {
+                                    store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
+                                        |_| "Couldn't store the reason behind a rejected execute".to_string(),
+                                    )?;
                                 }
                             }
                             // Note: This will abort the entire atomic batch.
@@ -1091,18 +1141,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Performs precondition checks on the transaction prior to execution.
     ///
     /// This method is used to check the following conditions:
-    /// - If the transaction contains a `credits.aleo/bond_public` transition,
+    /// - If the transaction contains a `credits.aleo/bond_validator` transition,
     ///   then the outcome should not exceed the maximum committee size.
     #[inline]
     fn prepare_for_execution(
+        &self,
         state: FinalizeGlobalState,
         store: &FinalizeStore<N, C::FinalizeStorage>,
         execution: &Execution<N>,
-    ) -> Result<()> {
+    ) -> Result<(), IndexedFinalizeError<N, Command<N>>> {
         // Construct the program ID.
         let program_id = ProgramID::from_str("credits.aleo")?;
         // Construct the committee mapping name.
         let committee_mapping = Identifier::from_str("committee")?;
+        // Construct the bond_validator resource name.
+        let bond_validator = Identifier::from_str("bond_validator")?;
 
         // Check if the execution has any `bond_validator` transitions, and collect
         // the unique validator addresses if so.
@@ -1134,7 +1187,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         Plaintext::Literal(Literal::Address(address), _) => Ok(address),
                         _ => Err(anyhow!("Invalid committee key (missing address) - {key}")),
                     })
-                    .collect::<Result<HashSet<_>>>()?;
+                    .collect::<Result<HashSet<_>>>()
+                    .into_indexed(
+                        Some((program_id, self.process().get_latest_edition_for_program(&program_id))),
+                        Some(committee_mapping),
+                        None::<(usize, Command<N>)>,
+                    )?;
+                // Retrieve the latest edition for error context.
+                let program_edition = self.process().get_latest_edition_for_program(&program_id);
                 // Get the number of new validators being bonded to.
                 let num_new_validators =
                     bond_validator_addresses.into_iter().filter(|address| !committee_members.contains(address)).count();
@@ -1145,7 +1205,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     .ok_or(anyhow!("Failed to retrieve the maximum committee size"))?;
                 // Check that the number of new validators being bonded does not exceed the maximum number of validators.
                 match next_committee_size > max_committee_size as usize {
-                    true => Err(anyhow!("Call to 'credits.aleo/bond_public' exceeds the committee size")),
+                    true => indexed_finalize_bail!(
+                        Some((program_id, program_edition)),
+                        Some(bond_validator),
+                        "Call to '{program_id}/bond_validator' exceeds the committee size"
+                    ),
                     false => Ok(()),
                 }
             }
@@ -1636,8 +1700,15 @@ finalize transfer_public:
             FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
 
         // Speculate on the candidate ratifications, solutions, and transactions.
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            vm.speculate(finalize_state, time_since_last_block, None, vec![], &None.into(), transactions.iter(), rng)?;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
+            finalize_state,
+            time_since_last_block,
+            Some(0u64),
+            vec![],
+            &None.into(),
+            transactions.iter(),
+            rng,
+        )?;
 
         // Construct the metadata associated with the block.
         let metadata = Metadata::new(
@@ -3157,6 +3228,12 @@ finalize compute:
         // Add the genesis block to the VM.
         vm_2.add_next_block(&genesis_2).unwrap();
 
+        println!("[VM2] Generating the next block.");
+        let next_block =
+            sample_next_block(&vm_2, validators.keys().next().unwrap(), &[], &genesis_2, &mut vec![], rng).unwrap();
+        println!("[VM2] Adding the next block to the VM to simulate block rewards.");
+        vm_2.add_next_block(&next_block).unwrap();
+
         println!("Checking that all mappings in `credits.aleo` are equal across the two VMs.");
 
         // Check that all mappings in `credits.aleo` are equal across the two VMs.
@@ -3660,5 +3737,93 @@ finalize compute:
         for entry in actual_withdraw.iter() {
             assert!(expected_withdraw.contains(entry));
         }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_rejection_reason_storage() {
+        let rng = &mut TestRng::default();
+
+        // Sample a private key.
+        let private_key = test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the vm.
+        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+
+        // Deploy a new program.
+        let genesis =
+            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+
+        // Get the unspent records.
+        let mut unspent_records = genesis
+            .transitions()
+            .cloned()
+            .flat_map(Transition::into_records)
+            .map(|(_, record)| record)
+            .collect::<Vec<_>>();
+
+        // Construct the deployment block.
+        let deployment_block = {
+            let program = Program::<CurrentNetwork>::from_str(
+                "
+program testing.aleo;
+
+mapping entries:
+    key as address.public;
+    value as u8.public;
+
+function compute:
+    input r0 as u8.public;
+    async compute self.caller r0 into r1;
+    output r1 as testing.aleo/compute.future;
+
+finalize compute:
+    input r0 as address.public;
+    input r1 as u8.public;
+    get.or_use entries[r0] r1 into r2;
+    add r1 r2 into r3;
+    set r3 into entries[r0];
+    get entries[r0] into r4;
+    add r4 r1 into r5;
+    set r5 into entries[r0];
+",
+            )
+            .unwrap();
+
+            // Prepare the additional fee.
+            let view_key = ViewKey::<CurrentNetwork>::try_from(private_key).unwrap();
+            let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
+
+            // Deploy.
+            let transaction = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
+
+            // Construct the new block.
+            sample_next_block(&vm, &private_key, &[transaction], &genesis, &mut unspent_records, rng).unwrap()
+        };
+
+        // Add the deployment block to the VM.
+        vm.add_next_block(&deployment_block).unwrap();
+
+        // Create an execution transaction, that will be rejected.
+        let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
+        let rejected_tx =
+            create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
+
+        // Construct the next block with the rejected transaction.
+        let next_block =
+            sample_next_block(&vm, &private_key, &[rejected_tx], &deployment_block, &mut unspent_records, rng).unwrap();
+
+        // Check that the transaction was rejected.
+        assert_eq!(next_block.transactions().len(), 1);
+        let rejected_transaction = next_block.transactions().iter().next().unwrap();
+        assert!(rejected_transaction.is_rejected());
+
+        // Add the next block to the VM.
+        vm.add_next_block(&next_block).unwrap();
+
+        // Check that the rejection reason was stored.
+        let tx_id = *rejected_transaction.id();
+        let rejection_reason = vm.finalize_store().get_rejected_reason(&tx_id).unwrap();
+        assert!(rejection_reason.is_some(), "Rejection reason should be stored");
     }
 }

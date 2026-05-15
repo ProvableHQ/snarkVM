@@ -15,18 +15,18 @@
 
 use super::*;
 
-/// Tests that "query" cannot be used as a function name at V15.
+/// Tests that "view" cannot be used as a function name at V15.
 #[test]
-fn test_restricted_keyword_query_function_name() {
+fn test_restricted_keyword_view_function_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
         r"
-program query_function_test.aleo;
+program view_function_test.aleo;
 
-function query:
+function view:
     input r0 as u64.private;
     output r0 as u64.private;
 ",
@@ -39,24 +39,24 @@ function query:
     assert_eq!(block.aborted_transaction_ids().len(), 1);
 }
 
-/// Tests that "query" cannot be used as a struct name at V15.
+/// Tests that "view" cannot be used as a struct name at V15.
 #[test]
-fn test_restricted_keyword_query_struct_name() {
+fn test_restricted_keyword_view_struct_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
         r"
-program query_struct_test.aleo;
+program view_struct_test.aleo;
 
-struct query:
+struct view:
     amount as u64;
 
 function test:
     input r0 as u64.private;
-    cast r0 into r1 as query;
-    output r1 as query.private;
+    cast r0 into r1 as view;
+    output r1 as view.private;
 ",
     )
     .unwrap();
@@ -67,18 +67,18 @@ function test:
     assert_eq!(block.aborted_transaction_ids().len(), 1);
 }
 
-/// Tests that "query" cannot be used as a mapping name at V15.
+/// Tests that "view" cannot be used as a mapping name at V15.
 #[test]
-fn test_restricted_keyword_query_mapping_name() {
+fn test_restricted_keyword_view_mapping_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
         r"
-program query_mapping_test.aleo;
+program view_mapping_test.aleo;
 
-mapping query:
+mapping view:
     key as address.public;
     value as u64.public;
 
@@ -95,18 +95,18 @@ function test:
     assert_eq!(block.aborted_transaction_ids().len(), 1);
 }
 
-/// Tests that "query" cannot be used as a record name at V15.
+/// Tests that "view" cannot be used as a record name at V15.
 #[test]
-fn test_restricted_keyword_query_record_name() {
+fn test_restricted_keyword_view_record_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
         r"
-program query_record_test.aleo;
+program view_record_test.aleo;
 
-record query:
+record view:
     owner as address.private;
     amount as u64.private;
 
@@ -123,16 +123,16 @@ function test:
     assert_eq!(block.aborted_transaction_ids().len(), 1);
 }
 
-/// Tests that "query" cannot be used as a program name at V15.
+/// Tests that "view" cannot be used as a program name at V15.
 #[test]
-fn test_restricted_keyword_query_program_name() {
+fn test_restricted_keyword_view_program_name() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
     let program = Program::from_str(
         r"
-program query.aleo;
+program view.aleo;
 
 function test:
     input r0 as u64.private;

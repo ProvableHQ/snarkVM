@@ -37,9 +37,9 @@ mod evaluate;
 mod execute;
 mod finalize;
 #[cfg(feature = "history")]
-mod query;
+mod view;
 #[cfg(feature = "history")]
-pub use query::evaluate_query_at_height;
+pub use view::evaluate_view_at_height;
 mod verify_deployment;
 mod verify_execution;
 mod verify_fee;
@@ -510,6 +510,12 @@ impl<N: Network> Process<N> {
         ensure!(stack.program_id() == &program_id, "Expected program '{}', found '{program_id}'", stack.program_id());
         // Return the stack.
         Ok(stack)
+    }
+
+    /// Returns the latest deployed edition for the given program ID, defaulting to 0 if unknown.
+    #[inline]
+    pub fn get_latest_edition_for_program(&self, program_id: &ProgramID<N>) -> u16 {
+        self.get_stack(program_id).ok().map(|s| *s.program_edition()).unwrap_or(0u16)
     }
 
     /// Returns the proving key for the given program ID and function name.

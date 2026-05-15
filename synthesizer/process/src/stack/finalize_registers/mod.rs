@@ -30,7 +30,7 @@ pub struct FinalizeRegisters<N: Network> {
     /// The global state for the finalize scope.
     state: FinalizeGlobalState,
     /// The transition ID for the finalize scope.
-    /// `None` on the query path (queries have no associated transition); always `Some(...)`
+    /// `None` on the view path (views have no associated transition); always `Some(...)`
     /// on the finalize / constructor paths.
     transition_id: Option<N::TransitionID>,
     /// The function name for the finalize scope.
@@ -41,7 +41,7 @@ pub struct FinalizeRegisters<N: Network> {
     /// The mapping of assigned registers to their values.
     registers: IndexMap<u64, Value<N>>,
     /// A nonce for finalize registers.
-    /// `None` on the query path; always `Some(...)` on the finalize / constructor paths.
+    /// `None` on the view path; always `Some(...)` on the finalize / constructor paths.
     nonce: Option<u64>,
     /// The tracker for the last register locator.
     last_register: Option<u64>,
@@ -51,7 +51,7 @@ impl<N: Network> FinalizeRegisters<N> {
     /// Initializes a new set of registers, given the finalize types.
     ///
     /// `transition_id` and `nonce` are `Option`s so that callers can express "no transition is
-    /// associated with this scope" (the query path) without needing a sentinel default value.
+    /// associated with this scope" (the view path) without needing a sentinel default value.
     /// On the finalize / constructor paths, both are always `Some(...)` and the absence of a
     /// transition ID at any read site (e.g. `rand.chacha`) is treated as a runtime error.
     #[inline]

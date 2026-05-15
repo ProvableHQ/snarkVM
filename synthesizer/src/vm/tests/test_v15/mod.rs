@@ -24,8 +24,8 @@ mod commit_raw;
 // Additional test for cost estimation without a private key.
 mod cost_for_call;
 
-// Tests for the externally-callable `query` function prototype.
-mod queries;
+// Tests for the externally-callable `view` function prototype.
+mod views;
 
 // Tests with Aleo functions which output scalars.
 mod scalar_outputs;

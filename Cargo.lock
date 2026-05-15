@@ -3749,6 +3749,7 @@ dependencies = [
  "snarkvm-ledger-puzzle",
  "snarkvm-ledger-query",
  "snarkvm-ledger-store",
+ "snarkvm-synthesizer-error",
  "snarkvm-synthesizer-process",
  "snarkvm-synthesizer-program",
  "snarkvm-synthesizer-snark",
@@ -4087,6 +4088,7 @@ dependencies = [
  "anyhow",
  "snarkvm-circuit-environment",
  "snarkvm-console-network",
+ "snarkvm-console-program",
  "thiserror 2.0.18",
 ]
 
@@ -4095,6 +4097,7 @@ name = "snarkvm-synthesizer-process"
 version = "4.6.0"
 dependencies = [
  "aleo-std",
+ "anyhow",
  "bincode",
  "colored 3.1.1",
  "criterion",
