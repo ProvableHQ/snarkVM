@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,6 +50,31 @@ impl<N: Network> ConstructorCore<N> {
     pub const fn positions(&self) -> &HashMap<Identifier<N>, usize> {
         &self.positions
     }
+
+    /// Returns whether this constructor refers to an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        self.commands.iter().any(|command| command.contains_external_struct())
+    }
+
+    /// Returns `true` if the constructor commands contain a string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.commands.iter().any(|command| command.contains_string_type())
+    }
+
+    /// Returns `true` if the constructor contains an identifier type in its cast types.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        for command in &self.commands {
+            if command.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Returns `true` if the constructor contains an array type with a size that exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        self.commands.iter().any(|command| command.exceeds_max_array_size(max_array_size))
+    }
 }
 
 impl<N: Network> ConstructorCore<N> {
@@ -64,9 +89,9 @@ impl<N: Network> ConstructorCore<N> {
         // Ensure the number of write commands has not been exceeded.
         if command.is_write() {
             ensure!(
-                self.num_writes < N::MAX_WRITES,
+                self.num_writes < N::LATEST_MAX_WRITES(),
                 "Cannot add more than {} 'set' & 'remove' commands",
-                N::MAX_WRITES
+                N::LATEST_MAX_WRITES()
             );
         }
 
@@ -74,8 +99,8 @@ impl<N: Network> ConstructorCore<N> {
         ensure!(!command.is_async(), "Forbidden operation: Constructor cannot invoke an 'async' instruction");
         // Ensure the command is not a call instruction.
         ensure!(!command.is_call(), "Forbidden operation: Constructor cannot invoke a 'call'");
-        // Ensure the command is not a cast to record instruction.
-        ensure!(!command.is_cast_to_record(), "Forbidden operation: Constructor cannot cast to a record");
+        // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
+        ensure!(!command.is_instruction_for_record(), "Forbidden operation: Constructor cannot operate on records");
         // Ensure the command is not an await command.
         ensure!(!command.is_await(), "Forbidden operation: Constructor cannot 'await'");
 
@@ -161,10 +186,10 @@ mod tests {
             positions: Default::default(),
         };
 
-        for _ in 0..CurrentNetwork::MAX_WRITES * 2 {
+        for _ in 0..CurrentNetwork::LATEST_MAX_WRITES() * 2 {
             let command = Command::<CurrentNetwork>::from_str("remove object[r0];").unwrap();
 
-            match constructor.commands.len() < CurrentNetwork::MAX_WRITES as usize {
+            match constructor.commands.len() < CurrentNetwork::LATEST_MAX_WRITES() as usize {
                 true => assert!(constructor.add_command(command).is_ok()),
                 false => assert!(constructor.add_command(command).is_err()),
             }

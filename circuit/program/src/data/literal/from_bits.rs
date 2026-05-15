@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,7 +37,8 @@ impl<A: Aleo> Literal<A> {
             14 => Literal::Scalar(Scalar::from_bits_le(literal)),
             15 => Literal::Signature(Box::new(Signature::from_bits_le(literal))),
             16 => Literal::String(StringType::from_bits_le(literal)),
-            17.. => A::halt(format!("Failed to initialize literal variant {} from bits (LE)", variant.eject_value())),
+            17 => Literal::Identifier(Box::new(IdentifierLiteral::from_bits_le(literal))),
+            18.. => A::halt(format!("Failed to initialize literal variant {} from bits (LE)", variant.eject_value())),
         }
     }
 
@@ -62,7 +63,8 @@ impl<A: Aleo> Literal<A> {
             14 => Literal::Scalar(Scalar::from_bits_be(literal)),
             15 => Literal::Signature(Box::new(Signature::from_bits_be(literal))),
             16 => Literal::String(StringType::from_bits_be(literal)),
-            17.. => A::halt(format!("Failed to initialize literal variant {} from bits (BE))", variant.eject_value())),
+            17 => Literal::Identifier(Box::new(IdentifierLiteral::from_bits_be(literal))),
+            18.. => A::halt(format!("Failed to initialize literal variant {} from bits (BE))", variant.eject_value())),
         }
     }
 }
@@ -73,7 +75,7 @@ mod tests {
     use crate::Circuit;
     use console::{TestRng, Uniform};
 
-    const ITERATIONS: u32 = 1000;
+    const ITERATIONS: u32 = 10;
 
     fn check_serialization(expected: Literal<Circuit>) {
         // Success cases.

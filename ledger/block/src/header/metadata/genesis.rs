@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -63,11 +63,7 @@ impl<N: Network> Metadata<N> {
         );
         ensure_equals!(self.timestamp, N::GENESIS_TIMESTAMP, "Invalid timestamp");
         ensure_equals!(self.last_coinbase_timestamp, N::GENESIS_TIMESTAMP, "Invalid last coinbase timestamp");
-        ensure_equals!(
-            self.coinbase_target,
-            N::GENESIS_COINBASE_TARGET,
-            "Invalid coinsbase target for genesis block expected {expected}."
-        );
+        ensure_equals!(self.coinbase_target, N::GENESIS_COINBASE_TARGET, "Invalid coinbase target for genesis block");
         ensure_equals!(
             self.last_coinbase_target,
             N::GENESIS_COINBASE_TARGET,

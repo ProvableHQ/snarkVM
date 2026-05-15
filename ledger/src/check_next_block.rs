@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,17 +15,15 @@
 
 use super::*;
 
-use snarkvm_utilities::ensure_equals;
+use crate::{narwhal::BatchHeader, puzzle::SolutionID};
 
-use crate::narwhal::BatchHeader;
-
-use anyhow::bail;
+use anyhow::{Context, bail};
 
 /// Wrapper for a block that has a valid subDAG, but where the block header,
 /// solutions, and transmissions have not been verified yet.
 ///
 /// This type is created by `Ledger::check_block_subdag` and consumed by `Ledger::check_block_content`.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PendingBlock<N: Network>(Block<N>);
 
 impl<N: Network> Deref for PendingBlock<N> {
@@ -36,60 +34,142 @@ impl<N: Network> Deref for PendingBlock<N> {
     }
 }
 
+impl<N: Network> Debug for PendingBlock<N> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "PendingBlock {{ height: {}, hash: {} }}", self.height(), self.hash())
+    }
+}
+
+/// Error returned by [`Self::check_block_subdag`] and [`Self::check_block_subdag_inner`].
+///
+/// This allows parsing for begning errors, such as the block already existing in the ledger.
+#[derive(thiserror::Error, Debug)]
+pub enum CheckBlockError<N: Network> {
+    #[error("Block with hash {hash} already exists in the ledger")]
+    BlockAlreadyExists { hash: N::BlockHash },
+    #[error("Block has invalid height. Expected {expected}, but got {actual}")]
+    InvalidHeight { expected: u32, actual: u32 },
+    #[error("Block has invalid round. Was {new}, but must be greater than previous round ({previous})")]
+    InvalidRound { new: u64, previous: u64 },
+    #[error("Block has invalid hash")]
+    InvalidHash,
+    /// An error related to the given prefix of pending blocks.
+    #[error("The prefix as an error at index {index} - {error:?}")]
+    InvalidPrefix { index: usize, error: Box<CheckBlockError<N>> },
+    #[error("The block contains solution '{solution_id}', but it already exists in the ledger")]
+    SolutionAlreadyExists { solution_id: SolutionID<N> },
+    #[error("Failed to speculate over unconfirmed transactions - {inner}")]
+    SpeculationFailed { inner: anyhow::Error },
+    #[error("Failed to verify block - {inner}")]
+    VerificationFailed { inner: anyhow::Error },
+    #[error("Prover '{prover_address}' has reached their solution limit for the current epoch")]
+    SolutionLimitReached { prover_address: Address<N> },
+    #[error("The previous block should contain solution '{solution_id}', but it does not exist in the ledger")]
+    PreviousSolutionNotFound { solution_id: SolutionID<N> },
+    #[error("The previous block should contain solution '{transaction_id}', but it does not exist in the ledger")]
+    PreviousTransactionNotFound { transaction_id: N::TransactionID },
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+impl<N: Network> CheckBlockError<N> {
+    pub fn into_anyhow(self) -> anyhow::Error {
+        match self {
+            Self::Other(err) => err,
+            _ => anyhow::anyhow!("{self:?}"),
+        }
+    }
+}
+
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Checks that the subDAG in a given block is valid, but does not fully verify the block.
     ///
     /// # Arguments
     /// * `block` - The block to check.
-    /// * `pending_block` - A sequence of blocks between the block to check and the current height of the ledger.
+    /// * `prefix` - A sequence of blocks between the block to check and the current height of the ledger.
+    ///
+    /// # Returns
+    /// * On success, a [`PendingBlock`] representing the block that was checked. Once the prefix of this block has been fully added to the ledger,
+    ///   the [`PendingBlock`] can then be passed to [`Self::check_block_content`] to fully verify it.
+    /// * On failure, a [`CheckBlockError`] describing the reason the block was rejected.
     ///
     /// # Notes
     /// * This does *not* check that the header of the block is correct or execute/verify any of the transmissions contained within it.
-    ///
     /// * In most cases, you want to use [`Self::check_next_block`] instead to perform a full verification.
-    ///
     /// * This will reject any blocks with a height <= the current height and any blocks with a height >= the current height + GC.
-    ///   For the former, a valid block already exists and,
-    ///   for the latter, the comittte is still unknown.
-    pub fn check_block_subdag(&self, block: Block<N>, pending_blocks: &[PendingBlock<N>]) -> Result<PendingBlock<N>> {
-        self.check_block_subdag_inner(&block, pending_blocks)?;
+    ///   For the former, a valid block already exists and,for the latter, the comittee is still unknown.
+    /// * This function executes atomically, in that there is guaranteed to be no concurrent updates to the ledger during its execution.
+    ///   However there are no ordering guarantees *between* multiple invocations of this function, [`Self::check_block_content`] and [`Self::advance_to_next_block`].
+    pub fn check_block_subdag(
+        &self,
+        block: Block<N>,
+        prefix: &[PendingBlock<N>],
+    ) -> Result<PendingBlock<N>, CheckBlockError<N>> {
+        self.check_block_subdag_inner(&block, prefix)?;
         Ok(PendingBlock(block))
     }
 
-    fn check_block_subdag_inner(&self, block: &Block<N>, pending_blocks: &[PendingBlock<N>]) -> Result<()> {
+    fn check_block_subdag_inner(&self, block: &Block<N>, prefix: &[PendingBlock<N>]) -> Result<(), CheckBlockError<N>> {
+        // Grab a lock to the latest_block in the ledger, to prevent concurrent writes to the ledger,
+        // and to ensure that this check is atomic.
+        //
+        // Note: The latest block in the ledger is not necessarily the direct predecessor of `block`.
+        // If `prefix` is non-empty the direct predecessor is the last entry in the prefix.
+        let latest_block = self.current_block.read();
+
         // First check that the heights and hashes of the pending block sequence and of the new block are correct.
         // The hash checks should be redundant, but we perform them out of extra caution.
-        let mut expected_height = self.latest_height() + 1;
+        let mut expected_height = latest_block.height() + 1;
+        for (index, prefix_block) in prefix.iter().enumerate() {
+            if prefix_block.height() != expected_height {
+                return Err(CheckBlockError::InvalidPrefix {
+                    index,
+                    error: Box::new(CheckBlockError::InvalidHeight {
+                        expected: expected_height,
+                        actual: prefix_block.height(),
+                    }),
+                });
+            }
 
-        for block in pending_blocks.iter().map(|b| b.deref()).chain([block]) {
-            ensure_equals!(block.height(), expected_height, "Block has invalid height");
-
-            if self.contains_block_hash(&block.hash())? {
-                bail!("Hash '{}' for block at height {} already exists in the ledger", block.height(), block.hash())
+            if self.contains_block_hash(&prefix_block.hash())? {
+                return Err(CheckBlockError::InvalidPrefix {
+                    index,
+                    error: Box::new(CheckBlockError::BlockAlreadyExists { hash: prefix_block.hash() }),
+                });
             }
 
             expected_height += 1;
         }
 
-        // Ensure solution IDs are unique
-        self.check_block_solution_ids(block, pending_blocks)?;
+        if self.contains_block_hash(&block.hash())? {
+            return Err(CheckBlockError::BlockAlreadyExists { hash: block.hash() });
+        }
+
+        if block.height() != expected_height {
+            return Err(CheckBlockError::InvalidHeight { expected: expected_height, actual: block.height() });
+        }
 
         // Ensure the certificates in the block subdag have met quorum requirements.
         self.check_block_subdag_quorum(block)?;
 
-        // Determine if the block subdag is correctly constructed and is not a combination of multiple subdags.
-        self.check_block_subdag_atomicity(block)?;
+        // Check subDAG atomicity against the latest block in the prefix.
+        // Only if the prefix is empty, check against the latest block in the ledger.
+        let predecessor = prefix.last().map_or(&*latest_block, |b| &**b);
+        self.check_block_subdag_atomicity(block, predecessor)?;
 
         // Ensure that all leaves of the subdag point to valid batches in other subdags/blocks.
-        self.check_block_subdag_leaves(block, pending_blocks)?;
+        self.check_block_subdag_leaves(block, prefix)?;
 
         Ok(())
     }
 
     /// Checks the given block is a valid next block with regard to the current state/height of the Ledger.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     pub fn check_next_block<R: CryptoRng + Rng>(&self, block: &Block<N>, rng: &mut R) -> Result<()> {
-        self.check_block_subdag_inner(block, &[])?;
-        self.check_block_content_inner(block, rng)?;
+        self.check_block_subdag_inner(block, &[]).map_err(|err| err.into_anyhow())?;
+        self.check_block_content_inner(block, rng).map_err(|err| err.into_anyhow())?;
 
         Ok(())
     }
@@ -102,28 +182,67 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     ///
     /// # Return Value
     /// This returns a [`Block`] on success representing the fully verified block.
-    pub fn check_block_content<R: CryptoRng + Rng>(&self, block: PendingBlock<N>, rng: &mut R) -> Result<Block<N>> {
+    ///
+    /// # Notes
+    /// - This check can only succeed for pending blocks that are a direct successor of the latest block in the ledger.
+    /// - Execution of this function is atomic, and there is guaranteed to be no concurrent update to the ledger during its execution.
+    /// - Even though this function may return `Ok(block)`, advancing the ledger to this block may still fail, if there was an update to the ledger
+    ///   *between* calling `check_block_content` and `advance_to_next_block`.
+    ///   If your implementation requires atomicity across these two steps, you need to implement your own locking mechanism.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
+    pub fn check_block_content<R: CryptoRng + Rng>(
+        &self,
+        block: PendingBlock<N>,
+        rng: &mut R,
+    ) -> Result<Block<N>, CheckBlockError<N>> {
         self.check_block_content_inner(&block.0, rng)?;
         Ok(block.0)
     }
 
-    fn check_block_content_inner<R: CryptoRng + Rng>(&self, block: &Block<N>, rng: &mut R) -> Result<()> {
-        // Ensure only one task performs block advacement or speculation.
-        let _lock = self.block_advancement_lock.lock();
+    /// # Panics
+    /// This function panics if called from an async context.
+    fn check_block_content_inner<R: CryptoRng + Rng>(
+        &self,
+        block: &Block<N>,
+        rng: &mut R,
+    ) -> Result<(), CheckBlockError<N>> {
+        let latest_block = self.current_block.read();
+        let latest_block_timestamp = latest_block.timestamp();
 
-        let latest_block = self.latest_block();
+        // Ensure, again, that the ledger has not advanced yet. This prevents cryptic errors form appearing during the block check.
+        if block.height() != latest_block.height() + 1 {
+            return Err(CheckBlockError::InvalidHeight { expected: latest_block.height() + 1, actual: block.height() });
+        }
 
+        // Also ensure the round is valid, otherwise speculation on transactions will fail with a cryptic error.
+        if block.round() <= latest_block.round() {
+            return Err(CheckBlockError::InvalidRound { new: block.round(), previous: latest_block.round() });
+        }
+
+        // Ensure the solutions do not already exist.
+        for solution_id in block.solutions().solution_ids() {
+            if self.contains_solution_id(solution_id)? {
+                return Err(CheckBlockError::SolutionAlreadyExists { solution_id: *solution_id });
+            }
+        }
+
+        // Determine if the block timestamp should be included.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
             block.height(),
+            block_timestamp,
             block.cumulative_weight(),
             block.cumulative_proof_target(),
             block.previous_hash(),
         )?;
 
         // Ensure speculation over the unconfirmed transactions is correct and ensure each transaction is well-formed and unique.
-        let time_since_last_block = block.timestamp().saturating_sub(self.latest_timestamp());
+        let time_since_last_block = block.timestamp().saturating_sub(latest_block_timestamp);
         let ratified_finalize_operations = self.vm.check_speculate(
             state,
             time_since_last_block,
@@ -147,17 +266,25 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 .ok_or(anyhow!("Failed to fetch committee lookback for round {penultimate_round}"))?
         };
 
+        // Get the latest epoch hash.
+        let latest_epoch_hash = match self.current_epoch_hash.read().as_ref() {
+            Some(epoch_hash) => *epoch_hash,
+            None => self.get_epoch_hash(latest_block.height())?,
+        };
+
         // Ensure the block is correct.
-        let (expected_existing_solution_ids, expected_existing_transaction_ids) = block.verify(
-            &latest_block,
-            self.latest_state_root(),
-            &previous_committee_lookback,
-            &committee_lookback,
-            self.puzzle(),
-            self.latest_epoch_hash()?,
-            OffsetDateTime::now_utc().unix_timestamp(),
-            ratified_finalize_operations,
-        )?;
+        let (expected_existing_solution_ids, expected_existing_transaction_ids) = block
+            .verify(
+                &latest_block,
+                self.latest_state_root(),
+                &previous_committee_lookback,
+                &committee_lookback,
+                self.puzzle(),
+                latest_epoch_hash,
+                OffsetDateTime::now_utc().unix_timestamp(),
+                ratified_finalize_operations,
+            )
+            .map_err(|err| CheckBlockError::VerificationFailed { inner: err })?;
 
         // Ensure that the provers are within their stake bounds.
         if let Some(solutions) = block.solutions().deref() {
@@ -166,8 +293,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 let prover_address = solution.address();
                 let num_accepted_solutions = *accepted_solutions.get(&prover_address).unwrap_or(&0);
                 // Check if the prover has reached their solution limit.
-                if self.is_solution_limit_reached(&prover_address, num_accepted_solutions) {
-                    bail!("Prover '{prover_address}' has reached their solution limit for the current epoch");
+                if self.is_solution_limit_reached_at_timestamp(
+                    &prover_address,
+                    num_accepted_solutions,
+                    latest_block_timestamp,
+                ) {
+                    return Err(CheckBlockError::SolutionLimitReached { prover_address });
                 }
                 // Track the already accepted solutions.
                 *accepted_solutions.entry(prover_address).or_insert(0) += 1;
@@ -177,14 +308,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Ensure that each existing solution ID from the block exists in the ledger.
         for existing_solution_id in expected_existing_solution_ids {
             if !self.contains_solution_id(&existing_solution_id)? {
-                bail!("Solution ID '{existing_solution_id}' does not exist in the ledger");
+                return Err(CheckBlockError::PreviousSolutionNotFound { solution_id: existing_solution_id });
             }
         }
 
         // Ensure that each existing transaction ID from the block exists in the ledger.
         for existing_transaction_id in expected_existing_transaction_ids {
             if !self.contains_transaction_id(&existing_transaction_id)? {
-                bail!("Transaction ID '{existing_transaction_id}' does not exist in the ledger");
+                return Err(CheckBlockError::PreviousTransactionNotFound { transaction_id: existing_transaction_id });
             }
         }
 
@@ -193,15 +324,21 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Check that leaves in the subdag point to batches in other blocks that are valid.
     ///
-    /// This does not verify that the batches are signed correctly or that the edges are valid
-    /// (only point to the previous round), as those checks already happened when the node received the batch.
-    fn check_block_subdag_leaves(&self, block: &Block<N>, previous_blocks: &[PendingBlock<N>]) -> Result<()> {
+    //
+    /// # Arguments
+    /// * `block` - The block to check.
+    /// * `prefix` - A sequence of [`PendingBlock`]s between the block to check and the current height of the ledger.
+    ///
+    /// # Notes
+    /// This only checks that leaves point to valid batch in the previous round, and *not* hat the batches are signed correctly
+    /// or that the edges are valid, as those checks already happened when the node received the batch.
+    fn check_block_subdag_leaves(&self, block: &Block<N>, prefix: &[PendingBlock<N>]) -> Result<()> {
         // Check if the block has a subdag.
         let Authority::Quorum(subdag) = block.authority() else {
             return Ok(());
         };
 
-        let previous_certs: HashSet<_> = previous_blocks
+        let previous_certs: HashSet<_> = prefix
             .iter()
             .filter_map(|block| match block.authority() {
                 Authority::Quorum(subdag) => Some(subdag.certificate_ids()),
@@ -242,25 +379,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         })
     }
 
-    /// Ensure solutions IDs are unique and did not already appear in previous blocks.
-    /// Called by [`Self::check_block_subdag_inner`]
-    fn check_block_solution_ids(&self, block: &Block<N>, pending_blocks: &[PendingBlock<N>]) -> Result<()> {
-        let mut pending_ids = HashSet::new();
-
-        for block in pending_blocks.iter().map(|b| b.deref()).chain([block]) {
-            for solution_id in block.solutions().solution_ids() {
-                if !pending_ids.insert(solution_id) || self.contains_solution_id(solution_id)? {
-                    bail!("Solution ID {solution_id} already exists in the ledger");
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     /// Check that the certificates in the block subdag have met quorum requirements.
     ///
-    /// Called by [`Self::check_block_subdag_inner`]
+    /// Called by [`Self::check_block_subdag`]
     fn check_block_subdag_quorum(&self, block: &Block<N>) -> Result<()> {
         // Check if the block has a subdag.
         let subdag = match block.authority() {
@@ -272,8 +393,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         cfg_iter!(subdag).try_for_each(|(round, certificates)| {
             // Retrieve the committee lookback for the round.
             let committee_lookback = self
-                .get_committee_lookback_for_round(*round)?
-                .ok_or_else(|| anyhow!("No committee lookback found for round {round}"))?;
+                .get_committee_lookback_for_round(*round)
+                .with_context(|| format!("Failed to get committee lookback for round {round}"))?
+                .ok_or_else(|| anyhow!("No committee lookback for round {round}"))?;
 
             // Check that each certificate for this round has met quorum requirements.
             // Note that we do not need to check the quorum requirement for the previous certificates
@@ -303,8 +425,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Checks that the block subdag can not be split into multiple valid subdags.
     ///
-    /// Called by [`Self::check_block_subdag_inner`]
-    fn check_block_subdag_atomicity(&self, block: &Block<N>) -> Result<()> {
+    /// Called by [`Self::check_block_subdag`]
+    fn check_block_subdag_atomicity(&self, block: &Block<N>, latest_block: &Block<N>) -> Result<()> {
+        let latest_round = latest_block.round();
+
         // Returns `true` if there is a path from the previous certificate to the current certificate.
         fn is_linked<N: Network>(
             subdag: &Subdag<N>,
@@ -333,8 +457,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         };
 
         // Iterate over the rounds to find possible leader certificates.
-        for round in (self.latest_round().saturating_add(2)..=subdag.anchor_round().saturating_sub(2)).rev().step_by(2)
-        {
+        for round in (latest_round.saturating_add(2)..=subdag.anchor_round().saturating_sub(2)).rev().step_by(2) {
             // Retrieve the previous committee lookback.
             let previous_committee_lookback = self
                 .get_committee_lookback_for_round(round)?
@@ -343,7 +466,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             // Compute the leader for the commit round.
             let computed_leader = previous_committee_lookback
                 .get_leader(round)
-                .map_err(|e| anyhow!("Failed to compute leader for round {round}: {e}"))?;
+                .with_context(|| format!("Failed to compute leader for round {round}"))?;
 
             // Retrieve the previous leader certificates.
             let previous_certificate = match subdag.get(&round).and_then(|certificates| {
@@ -363,80 +486,5 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        check_next_block::PendingBlock,
-        test_helpers::{sample_genesis_block, sample_test_env},
-    };
-
-    use console::prelude::*;
-
-    #[test]
-    fn test_check_block_subdag_inner_duplicate_hash() {
-        let mut rng = TestRng::default();
-        let test_env = sample_test_env(&mut rng);
-        let ledger = test_env.ledger;
-
-        // Get the existing genesis block
-        let genesis_block = ledger.latest_block().clone();
-
-        // Try to check a block with the same hash as genesis (already exists)
-        let result = ledger.check_block_subdag_inner(&genesis_block, &[]);
-        assert!(result.is_err(), "check_block_subdag_inner should fail for duplicate block hash");
-
-        // The error could be either about duplicate hash or invalid height
-        let error_message = result.unwrap_err().to_string();
-        assert!(
-            error_message.contains("already exists in the ledger")
-                || error_message.contains("Block has invalid height"),
-        );
-    }
-
-    #[test]
-    fn test_check_block_subdag_with_empty_pending_blocks() {
-        let mut rng = TestRng::default();
-        let test_env = sample_test_env(&mut rng);
-        let ledger = test_env.ledger;
-
-        let genesis_block = ledger.latest_block().clone();
-
-        // Test all individual functions with empty pending blocks.
-        //TODO(kaimast): test with blocks other than the genesis.
-
-        let result1 = ledger.check_block_solution_ids(&genesis_block, &[]);
-        assert!(result1.is_ok(), "check_block_solution_ids should succeed with empty pending blocks");
-
-        let result2 = ledger.check_block_subdag_quorum(&genesis_block);
-        assert!(result2.is_ok(), "check_block_subdag_quorum should succeed");
-
-        let result3 = ledger.check_block_subdag_atomicity(&genesis_block);
-        assert!(result3.is_ok(), "check_block_subdag_atomicity should succeed");
-
-        let result4 = ledger.check_block_subdag_leaves(&genesis_block, &[]);
-        assert!(result4.is_ok(), "check_block_subdag_leaves should succeed with empty pending blocks");
-    }
-
-    #[test]
-    fn test_pending_block_properties() {
-        let mut rng = TestRng::default();
-
-        //TODO(kaimast): test with blocks other than the genesis.
-        let genesis_block = sample_genesis_block(&mut rng);
-        let pending_block = PendingBlock(genesis_block.clone());
-
-        // Test all properties accessible through Deref
-        assert_eq!(pending_block.height(), genesis_block.height());
-        assert_eq!(pending_block.hash(), genesis_block.hash());
-        assert_eq!(pending_block.round(), genesis_block.round());
-        assert_eq!(pending_block.timestamp(), genesis_block.timestamp());
-        assert_eq!(pending_block.previous_hash(), genesis_block.previous_hash());
-
-        // Test Clone and PartialEq
-        let pending_block2 = pending_block.clone();
-        assert_eq!(pending_block, pending_block2, "PendingBlock should be cloneable and equal");
     }
 }

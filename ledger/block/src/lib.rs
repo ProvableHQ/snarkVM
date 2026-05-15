@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -145,7 +145,7 @@ impl<N: Network> Block<N> {
 
     /// Initializes a new block from the given previous block hash, block header, authority,
     /// ratifications, solutions, aborted solution IDs, transactions, and aborted transaction IDs.
-    pub fn from(
+    fn from(
         previous_hash: N::BlockHash,
         header: Header<N>,
         authority: Authority<N>,
@@ -156,11 +156,11 @@ impl<N: Network> Block<N> {
         aborted_transaction_ids: Vec<N::TransactionID>,
     ) -> Result<Self> {
         // Ensure the number of aborted solutions IDs is within the allowed range.
-        if aborted_solution_ids.len() > Solutions::<N>::max_aborted_solutions()? {
+        if aborted_solution_ids.len() > Solutions::<N>::max_aborted_solutions() {
             bail!(
                 "Cannot initialize a block with {} aborted solutions IDs which exceed the maximum {}",
                 aborted_solution_ids.len(),
-                Solutions::<N>::max_aborted_solutions()?
+                Solutions::<N>::max_aborted_solutions()
             );
         }
 
@@ -178,11 +178,11 @@ impl<N: Network> Block<N> {
         // specifically in [`PuzzleSolutions::new()`].
 
         // Ensure the number of aborted transaction IDs is within the allowed range.
-        if aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
+        if aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions() {
             bail!(
                 "Cannot initialize a block with {} aborted transaction IDs which exceed the maximum {}",
                 aborted_transaction_ids.len(),
-                Transactions::<N>::max_aborted_transactions()?
+                Transactions::<N>::max_aborted_transactions()
             );
         }
 
@@ -778,7 +778,7 @@ mod tests {
 
         // Ensure the transaction is not found.
         for _ in 0..10 {
-            let transition_id = &rng.r#gen();
+            let transition_id = &rng.random();
             assert_eq!(block.find_transaction_for_transition_id(transition_id), None);
             assert_eq!(transactions.find_transaction_for_transition_id(transition_id), None);
         }
@@ -803,7 +803,7 @@ mod tests {
 
         // Ensure the commitments are not found.
         for _ in 0..10 {
-            let commitment = &rng.r#gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_transaction_for_commitment(commitment), None);
             assert_eq!(transactions.find_transaction_for_commitment(commitment), None);
         }
@@ -829,7 +829,7 @@ mod tests {
 
         // Ensure the transitions are not found.
         for _ in 0..10 {
-            let transition_id = &rng.r#gen();
+            let transition_id = &rng.random();
             assert_eq!(block.find_transition(transition_id), None);
             assert_eq!(transactions.find_transition(transition_id), None);
             assert_eq!(transaction.find_transition(transition_id), None);
@@ -862,7 +862,7 @@ mod tests {
 
         // Ensure the commitments are not found.
         for _ in 0..10 {
-            let commitment = &rng.r#gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_transition_for_commitment(commitment), None);
             assert_eq!(transactions.find_transition_for_commitment(commitment), None);
             assert_eq!(transaction.find_transition_for_commitment(commitment), None);
@@ -889,7 +889,7 @@ mod tests {
 
         // Ensure the records are not found.
         for _ in 0..10 {
-            let commitment = &rng.r#gen();
+            let commitment = &rng.random();
             assert_eq!(block.find_record(commitment), None);
             assert_eq!(transactions.find_record(commitment), None);
             assert_eq!(transaction.find_record(commitment), None);

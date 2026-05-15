@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +33,7 @@ impl<N: Network> EpochProgram<N> {
         ensure!(num_inputs == console_inputs.len(), "Expected {num_inputs} inputs, found {}", console_inputs.len());
 
         // Initialize the registers.
-        let call_stack = CallStack::PackageRun(vec![], PrivateKey::new(&mut rand::thread_rng())?, Default::default());
+        let call_stack = CallStack::PackageRun(vec![], PrivateKey::new(&mut rand::rng())?, Default::default());
         let mut registers = Registers::<N, A>::new(call_stack, register_types);
         lap!(timer, "Initialize the registers");
 

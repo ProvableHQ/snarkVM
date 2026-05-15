@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,7 +42,7 @@ mod tests {
     fn test_bytes() -> Result<()> {
         let mut rng = TestRng::default();
         // Sample a new solution ID.
-        let expected = SolutionID::<CurrentNetwork>::from(rng.r#gen::<u64>());
+        let expected = SolutionID::<CurrentNetwork>::from(rng.random::<u64>());
 
         // Check the byte representation.
         let expected_bytes = expected.to_bytes_le()?;

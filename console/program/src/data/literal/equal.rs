@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,6 +44,7 @@ impl<N: Network> core::hash::Hash for Literal<N> {
             Self::Scalar(a) => a.hash(state),
             Self::Signature(a) => a.hash(state),
             Self::String(a) => a.hash(state),
+            Self::Identifier(a) => a.hash(state),
         }
     }
 }
@@ -71,6 +72,7 @@ impl<N: Network> Equal for Literal<N> {
             (Self::Scalar(a), Self::Scalar(b)) => a.is_equal(b),
             (Self::Signature(a), Self::Signature(b)) => a.is_equal(b),
             (Self::String(a), Self::String(b)) => a.is_equal(b),
+            (Self::Identifier(a), Self::Identifier(b)) => a.is_equal(b),
             _ => Boolean::new(false),
         }
     }
@@ -95,6 +97,7 @@ impl<N: Network> Equal for Literal<N> {
             (Self::Scalar(a), Self::Scalar(b)) => a.is_not_equal(b),
             (Self::Signature(a), Self::Signature(b)) => a.is_not_equal(b),
             (Self::String(a), Self::String(b)) => a.is_not_equal(b),
+            (Self::Identifier(a), Self::Identifier(b)) => a.is_not_equal(b),
             _ => Boolean::new(true),
         }
     }

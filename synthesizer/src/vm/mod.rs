@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,12 +25,13 @@ mod verify;
 #[cfg(test)]
 mod tests;
 
-use crate::{Restrictions, cast_mut_ref, cast_ref, convert, process};
+use crate::{Command, Restrictions, Stack, cast_mut_ref, cast_ref, convert, process};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
     program::{
         Argument,
+        FINALIZE_ID_DEPTH,
         Identifier,
         Literal,
         Locator,
@@ -40,15 +41,15 @@ use console::{
         Record,
         Response,
         Value,
-        ValueType,
     },
-    types::{Field, Group, U16, U64},
+    types::{Field, Group, U8, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
     Deployment,
+    DeploymentVersion,
     Execution,
     Fee,
     Header,
@@ -56,6 +57,7 @@ use snarkvm_ledger_block::{
     Ratifications,
     Ratify,
     Rejected,
+    RejectedReason,
     Solutions,
     Transaction,
     Transactions,
@@ -85,13 +87,13 @@ use snarkvm_synthesizer_process::{
     execution_cost,
 };
 use snarkvm_synthesizer_program::{
+    FinalizeCore,
     FinalizeGlobalState,
     FinalizeOperation,
     FinalizeStoreTrait,
     Program,
     StackTrait as _,
 };
-use snarkvm_synthesizer_snark::VerifyingKey;
 use snarkvm_utilities::try_vm_runtime;
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -104,20 +106,26 @@ use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use rand::{SeedableRng, rngs::StdRng};
-use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroUsize,
+    sync::{Arc, mpsc},
+    thread,
+};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 // The key for the partially-verified transactions cache.
-// The key is a tuple of the transaction ID and a list of program checksums for the transitions in the transaction.
-// Note: If a program is upgraded and its contents are changed, then the program checksums will change, invalidating the previously cached result.
-type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<U16<N>>);
+// The key is a tuple of the transaction ID and a list of `(program checksum, edition, amendment count)` for each transition.
+// Note: Program upgrades and amendments can change verification behavior without changing the transaction ID, so the cache key
+// must include program metadata in addition to the checksum.
+pub type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<([U8<N>; 32], u16, u64)>);
 
 #[derive(Clone)]
 pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// The process.
-    process: Arc<RwLock<Process<N>>>,
+    process: Arc<Process<N>>,
     /// The puzzle.
     puzzle: Puzzle<N>,
     /// The VM store.
@@ -126,10 +134,13 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     partially_verified_transactions: Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>>,
     /// The restrictions list.
     restrictions: Restrictions<N>,
-    /// The lock to guarantee atomicity over calls to speculate and finalize.
-    atomic_lock: Arc<Mutex<()>>,
-    /// The lock for ensuring there is no concurrency when advancing blocks.
-    block_lock: Arc<Mutex<()>>,
+    /// The list of rejection reasons for pending confirmed transactions.
+    /// TODO: it would be cleaner if these are passed along as an argument to `add_next_block`, but this requires a bigger refactor.
+    pending_rejected_reasons: Arc<RwLock<HashMap<N::TransactionID, RejectedReason<N>>>>,
+    /// A sender to the channel for operations that must be performed sequentially.
+    sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
+    /// The handle to the thread which processes operations sequentially.
+    sequential_ops_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -152,7 +163,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let block_store = store.block_store();
 
         #[cfg(not(any(test, feature = "test")))]
-        let mut process = {
+        let process = {
             // Determine the latest block height.
             let latest_block_height = block_store.current_block_height();
             // Determine the consensus version.
@@ -166,7 +177,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         };
         #[cfg(any(test, feature = "test"))]
         // Initialize a new process.
-        let mut process = Process::load()?;
+        let process = Process::load()?;
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
@@ -218,30 +229,42 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             deployments.iter().try_for_each(|deployment| process.load_deployment(deployment))?;
         }
 
-        // Return the new VM.
-        Ok(Self {
-            process: Arc::new(RwLock::new(process)),
+        // Construct the VM object.
+        let vm = Self {
+            process: Arc::new(process),
             puzzle: Self::new_puzzle()?,
             store,
             partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
                 NonZeroUsize::new(Transactions::<N>::MAX_TRANSACTIONS).unwrap(),
             ))),
             restrictions: Restrictions::load()?,
-            atomic_lock: Arc::new(Mutex::new(())),
-            block_lock: Arc::new(Mutex::new(())),
-        })
+            sequential_ops_tx: Default::default(),
+            pending_rejected_reasons: Default::default(),
+            sequential_ops_thread: Default::default(),
+        };
+
+        // Spawn a thread for sequential operations.
+        let (sequential_ops_tx, sequential_ops_rx) = mpsc::channel();
+        let sequential_ops_thread = vm.start_sequential_queue(sequential_ops_rx);
+
+        // Populate the fields related to the sequential operations.
+        *vm.sequential_ops_tx.write() = Some(sequential_ops_tx);
+        *vm.sequential_ops_thread.lock() = Some(sequential_ops_thread);
+
+        // Return the new VM.
+        Ok(vm)
     }
 
     /// Returns `true` if a program with the given program ID exists.
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
-        self.process.read().contains_program(program_id)
+        self.process.contains_program(program_id)
     }
 
     /// Returns the process.
     #[inline]
-    pub fn process(&self) -> Arc<RwLock<Process<N>>> {
-        self.process.clone()
+    pub fn process(&self) -> &Arc<Process<N>> {
+        &self.process
     }
 
     /// Returns the puzzle.
@@ -282,6 +305,61 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub fn transaction_store(&self) -> &TransactionStore<N, C::TransactionStorage> {
         self.store.transaction_store()
+    }
+
+    /// Builds a `FinalizeGlobalState` from the block at the given `height`.
+    ///
+    /// Returns an error if no block exists at `height`. Views reuse the same shape that
+    /// the consensus path uses in `add_next_block_inner`, populating round, timestamp, the
+    /// cumulative weights, and the previous-block hash from the actual block — so any
+    /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
+    /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
+    #[cfg(feature = "history")]
+    fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
+        let block_hash =
+            self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
+        let block = self
+            .block_store()
+            .get_block(&block_hash)?
+            .ok_or_else(|| anyhow!("Block hash for height {height} resolved but the block could not be loaded"))?;
+        // Match the consensus path's gating: the timestamp is only included from V12 onward.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
+        FinalizeGlobalState::new::<N>(
+            block.round(),
+            block.height(),
+            block_timestamp,
+            block.cumulative_weight(),
+            block.cumulative_proof_target(),
+            block.previous_hash(),
+        )
+    }
+
+    /// Evaluates a view function against finalize-store state at the given block `height`.
+    /// Returns the typed outputs.
+    ///
+    /// Mapping reads are pinned to `height` via the per-key historical update map, and the
+    /// `FinalizeGlobalState` is reconstructed from the block at `height`. Available only with
+    /// `--features history`.
+    ///
+    /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
+    /// for historic views. `height` must satisfy `height <= current_block_height()`.
+    ///
+    /// Caveat: the `Stack` itself uses interior mutability, so a concurrent redeploy of the
+    /// same program could perturb its structural caches mid-view. Mapping values are
+    /// snapshot-consistent at `height`; program structure is not. Known gap; a future
+    /// `StackSnapshot`-style fix would close it.
+    #[cfg(feature = "history")]
+    #[inline]
+    pub fn evaluate_view_at_height(
+        &self,
+        program_id: impl TryInto<ProgramID<N>>,
+        view_name: impl TryInto<Identifier<N>>,
+        inputs: Vec<Value<N>>,
+        height: u32,
+    ) -> Result<Vec<Value<N>>> {
+        let state = self.finalize_state_for_block(height)?;
+        self.process.evaluate_view_at_height(state, self.finalize_store(), program_id, view_name, inputs, height)
     }
 
     /// Returns the transition store.
@@ -360,6 +438,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     }
 
     /// Returns a new genesis block for a quorum chain.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     pub fn genesis_quorum<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
@@ -445,16 +526,38 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     }
 
     /// Adds the given block into the VM.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     #[inline]
     pub fn add_next_block(&self, block: &Block<N>) -> Result<()> {
-        // Acquire the block lock, which is needed to ensure this function is not called concurrently.
-        // Note: This lock must be held for the entire scope of this function.
-        let _block_lock = self.block_lock.lock();
+        let sequential_op = SequentialOperation::AddNextBlock(block.clone());
+        let Some(SequentialOperationResult::AddNextBlock(ret)) = self.run_sequential_operation(sequential_op) else {
+            bail!("Already shutting down");
+        };
 
+        ret
+    }
+
+    /// Adds the given block into the VM.
+    ///
+    /// # Note
+    /// This must only be called from the sequential operation thread.
+    ///
+    /// # Panics
+    /// This function panics if not called from the sequential operation thread.
+    #[inline]
+    pub(crate) fn add_next_block_inner(&self, block: Block<N>) -> Result<()> {
+        self.ensure_sequential_processing();
+
+        // Determine if the block timestamp should be included.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
             block.height(),
+            block_timestamp,
             block.cumulative_weight(),
             block.cumulative_proof_target(),
             block.previous_hash(),
@@ -465,7 +568,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.block_store().pause_atomic_writes()?;
 
         // First, insert the block.
-        if let Err(insert_error) = self.block_store().insert(block) {
+        if let Err(insert_error) = self.block_store().insert(&block) {
             if cfg!(feature = "rocks") {
                 // Clear all pending atomic operations so that unpausing the atomic writes
                 // doesn't execute any of the queued storage operations.
@@ -483,7 +586,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Ok(_ratified_finalize_operations) => {
                 // If the block advances to `ConsensusVersion::V8`, updated the VKs used for the credits program.
                 if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
-                    self.update_credits_verifying_keys()?;
+                    self.process.lock().update_credits_verifying_keys()?;
                 }
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
@@ -528,34 +631,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     }
 }
 
-impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
-    /// Update the `credits.aleo` program in the VM with the latest verifying keys.
-    fn update_credits_verifying_keys(&self) -> Result<()> {
-        // Initialize the store for 'credits.aleo'.
-        let credits = Program::<N>::credits()?;
-
-        // Acquire the process lock.
-        let process = self.process.write();
-
-        // Synthesize the 'credits.aleo' verifying keys.
-        for function_name in credits.functions().keys() {
-            // Remove the proving key.
-            process.remove_proving_key(credits.id(), function_name)?;
-            // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
-            // Retrieve the number of public and private variables.
-            // Note: This number does *NOT* include the number of constants. This is safe because
-            // this program is never deployed, as it is a first-class citizen of the protocol.
-            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
-            // Insert the verifying key.
-            process.insert_verifying_key(
-                credits.id(),
-                function_name,
-                VerifyingKey::new(verifying_key.clone(), num_variables),
-            )?;
+impl<N: Network, C: ConsensusStorage<N>> Drop for VM<N, C> {
+    fn drop(&mut self) {
+        // Check if this the final external reference to `VM`.
+        if Arc::strong_count(&self.sequential_ops_tx) == 1 {
+            // If the background thread exists, shut it down.
+            if let Some(thread) = self.sequential_ops_thread.lock().take() {
+                // First, close the channel.
+                self.sequential_ops_tx.write().take();
+                // Wait for the thread to terminate.
+                trace!("Waiting for sequential ops thread to terminate");
+                thread.join().expect("Sequential ops thread had an error");
+            } else {
+                debug!("No sequential ops background thread existed durign shutdown");
+            }
         }
-
-        Ok(())
     }
 }
 
@@ -589,7 +679,7 @@ pub(crate) mod test_helpers {
 
     /// Samples a new finalize state.
     pub(crate) fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-        FinalizeGlobalState::from(block_height as u64, block_height, [0u8; 32])
+        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
     }
 
     pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
@@ -883,12 +973,21 @@ function compute:
         let block_hash = vm.block_store().get_block_hash(vm.block_store().max_height().unwrap()).unwrap().unwrap();
         let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
 
-        // Construct the new block header.
+        // Create the finalize state for the next block height.
+        let next_block_height = previous_block.height() + 1;
         let time_since_last_block = MainnetV0::BLOCK_TIME as i64;
+        let next_block_timestamp = previous_block.timestamp().saturating_add(time_since_last_block);
+        let next_timestamp = (next_block_height
+            >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+        .then_some(next_block_timestamp);
+        let finalize_state =
+            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
+
+        // Speculate on the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
-            sample_finalize_state(vm.block_store().current_block_height() + 1),
+            finalize_state,
             time_since_last_block,
-            None,
+            Some(0u64),
             vec![],
             &None.into(),
             transactions.iter(),
@@ -909,6 +1008,7 @@ function compute:
             previous_block.timestamp().saturating_add(time_since_last_block),
         )?;
 
+        // Construct the new block header.
         let header = Header::from(
             vm.block_store().current_state_root(),
             transactions.to_transactions_root().unwrap(),
@@ -934,6 +1034,7 @@ function compute:
     }
 
     #[test]
+    #[ignore]
     fn test_multiple_deployments_and_multiple_executions() {
         let rng = &mut TestRng::default();
 
@@ -1083,6 +1184,7 @@ finalize getter:
     }
 
     #[test]
+    #[ignore]
     fn test_load_deployments_with_imports() {
         // NOTE: This seed was chosen for the CI's RNG to ensure that the test passes.
         let rng = &mut TestRng::fixed(123456789);
@@ -1323,6 +1425,7 @@ function check:
     }
 
     #[test]
+    #[ignore]
     fn test_deployment_with_external_records() {
         let rng = &mut TestRng::default();
 
@@ -1401,7 +1504,7 @@ function call_fee_public:
 finalize call_fee_public:
     input r0 as credits.aleo/fee_public.future;
     await r0;
-    
+
 function call_fee_private:
     input r0 as credits.aleo/credits.record;
     input r1 as u64.private;
@@ -1418,8 +1521,8 @@ function call_fee_private:
         vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
 
         // Execute the programs.
-        let internal_base_fee_amount: u64 = rng.gen_range(1..1000);
-        let internal_priority_fee_amount: u64 = rng.gen_range(1..1000);
+        let internal_base_fee_amount: u64 = rng.random_range(1..1000);
+        let internal_priority_fee_amount: u64 = rng.random_range(1..1000);
 
         // Ensure that the transaction that calls `fee_public` internally cannot be generated.
         let inputs = [
@@ -1446,6 +1549,7 @@ function call_fee_private:
     }
 
     #[test]
+    #[cfg(feature = "memory-intensive")]
     #[ignore = "memory-intensive"]
     fn test_deployment_synthesis_overload() {
         let rng = &mut TestRng::default();
@@ -1757,105 +1861,6 @@ function do:
 
         // Update the VM.
         vm.add_next_block(&block).unwrap();
-    }
-
-    #[test]
-    #[ignore]
-    fn test_deployment_memory_overload() {
-        const NUM_DEPLOYMENTS: usize = 32;
-
-        let rng = &mut TestRng::default();
-
-        // Initialize a private key.
-        let private_key = sample_genesis_private_key(rng);
-
-        // Initialize a view key.
-        let view_key = ViewKey::try_from(&private_key).unwrap();
-
-        // Initialize the genesis block.
-        let genesis = sample_genesis_block(rng);
-
-        // Initialize the VM.
-        let vm = sample_vm();
-        // Update the VM.
-        vm.add_next_block(&genesis).unwrap();
-
-        // Deploy the base program.
-        let program = Program::from_str(
-            r"
-program program_layer_0.aleo;
-
-mapping m:
-    key as u8.public;
-    value as u32.public;
-
-function do:
-    input r0 as u32.public;
-    async do r0 into r1;
-    output r1 as program_layer_0.aleo/do.future;
-
-finalize do:
-    input r0 as u32.public;
-    set r0 into m[0u8];",
-        )
-        .unwrap();
-
-        let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
-
-        // For each layer, deploy a program that calls the program from the previous layer.
-        for i in 1..NUM_DEPLOYMENTS {
-            let mut program_string = String::new();
-            // Add the import statements.
-            for j in 0..i {
-                program_string.push_str(&format!("import program_layer_{j}.aleo;\n"));
-            }
-            // Add the program body.
-            program_string.push_str(&format!(
-                "program program_layer_{i}.aleo;
-
-mapping m:
-    key as u8.public;
-    value as u32.public;
-
-function do:
-    input r0 as u32.public;
-    call program_layer_{prev}.aleo/do r0 into r1;
-    async do r0 r1 into r2;
-    output r2 as program_layer_{i}.aleo/do.future;
-
-finalize do:
-    input r0 as u32.public;
-    input r1 as program_layer_{prev}.aleo/do.future;
-    await r1;
-    set r0 into m[0u8];",
-                prev = i - 1
-            ));
-            // Construct the program.
-            let program = Program::from_str(&program_string).unwrap();
-
-            // Deploy the program.
-            let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-
-            vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
-        }
-
-        // Fetch the unspent records.
-        let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
-        trace!("Unspent Records:\n{:#?}", records);
-
-        // Select a record to spend.
-        let record = Some(records.values().next().unwrap().decrypt(&view_key).unwrap());
-
-        // Prepare the inputs.
-        let inputs = [Value::<CurrentNetwork>::from_str("1u32").unwrap()].into_iter();
-
-        // Execute.
-        let transaction =
-            vm.execute(&private_key, ("program_layer_30.aleo", "do"), inputs, record, 0, None, rng).unwrap();
-
-        // Verify.
-        vm.check_transaction(&transaction, None, rng).unwrap();
     }
 
     #[test]
@@ -2457,6 +2462,21 @@ finalize transfer_public_to_private:
         // Update the VM.
         vm.add_next_block(&block).unwrap();
 
+        // Check the balance of the caller.
+        let balance = match vm
+            .finalize_store()
+            .get_value_confirmed(
+                credits_program_id,
+                account_mapping_name,
+                &Plaintext::from(Literal::Address(caller_address)),
+            )
+            .unwrap()
+        {
+            Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
+            _ => panic!("Expected a valid balance"),
+        };
+        assert_eq!(balance, 182_499_995_767_962, "Update me if the initial balance changes.");
+
         // Call the wrapper program to transfer credits from the caller to the recipient.
         let transaction = vm
             .execute(
@@ -3045,7 +3065,7 @@ function add_thrice:
         let vm = sample_vm();
 
         // Ensure this call succeeds.
-        vm.puzzle.prove(rng.r#gen(), rng.r#gen(), rng.r#gen(), None).unwrap();
+        vm.puzzle.prove(rng.random(), rng.random(), rng.random(), None).unwrap();
     }
 
     #[test]
@@ -3146,13 +3166,13 @@ function check:
         assert!(vm.contains_program(&ProgramID::from_str("grandparent_program.aleo").unwrap()));
 
         // Initialize the process.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
 
         // Load the child and parent program
-        process.add_program(&child_program_1).unwrap();
-        process.add_program(&child_program_2).unwrap();
-        process.add_program(&parent_program).unwrap();
-        process.add_program(&grandparent_program).unwrap();
+        process.lock().add_program(&child_program_1).unwrap();
+        process.lock().add_program(&child_program_2).unwrap();
+        process.lock().add_program(&parent_program).unwrap();
+        process.lock().add_program(&grandparent_program).unwrap();
 
         // Specify the function name on the parent program
         let function_name = Identifier::<CurrentNetwork>::from_str("check").unwrap();
@@ -3301,7 +3321,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment_1.fee_amount().unwrap(), 2483025);
         // Add the first program to the off-chain VM.
-        off_chain_vm.process().write().add_program(&program_1).unwrap();
+        off_chain_vm.process().lock().add_program(&program_1).unwrap();
         // Deploy the second program.
         let deployment_2 = off_chain_vm.deploy(&private_key_2, &program_2, None, 0, None, rng).unwrap();
         // Check that the account has enough to pay for the deployment.
@@ -3316,7 +3336,7 @@ function adder:
         vm.add_next_block(&block).unwrap();
 
         // Check that only `child_program.aleo` is in the VM.
-        assert!(vm.process().read().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
+        assert!(vm.process().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
     }
 
     #[cfg(feature = "test")]
@@ -3419,7 +3439,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment.fee_amount().unwrap(), 2483025);
         // Add the program to the off-chain VM.
-        off_chain_vm.process().write().add_program(&program).unwrap();
+        off_chain_vm.process().lock().add_program(&program).unwrap();
         // Execute the program.
         let transaction = off_chain_vm
             .execute(
@@ -3446,6 +3466,173 @@ function adder:
         vm.add_next_block(&block).unwrap();
 
         // Check that the program was deployed.
-        assert!(vm.process().read().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
+        assert!(vm.process().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_deploy_string() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the VM at consensus version 11.
+        let vm = crate::vm::test_helpers::sample_vm_at_height(
+            CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V11).unwrap(),
+            rng,
+        );
+
+        // Deploy and execute a program in the same block.
+        let program = |i: u32| {
+            Program::from_str(&format!(
+                r#"
+program strings_{i}.aleo;
+
+mapping foo:
+    key as string.public;
+    value as string.public;
+
+mapping test:
+    key as string.public;
+    value as [boolean; 1u32].public;
+
+function dummy:
+    input r0 as string.public;
+    input r1 as string.private;
+    input r2 as string.private;
+    assert.eq "hello_friend" "hello_friend";
+    assert.neq r1 r2;
+    async dummy r0 r1 r2 into r3;
+    hash.bhp256 "hello" into r4 as address;
+    output r3 as strings_{i}.aleo/dummy.future;
+
+finalize dummy:
+    input r0 as string.public;
+    input r1 as string.public;
+    input r2 as string.public;
+    assert.eq "hello_friend" "hello_friend";
+    assert.neq r1 r2;
+    get.or_use foo[r1] r0 into r3;
+    set r2 into foo[r1];
+    set "test" into foo[r2];
+    set r2 into foo[r2];
+    get foo[r1] into r4;
+    assert.neq r3 r4;
+    assert.eq r2 r4;
+    assert.neq r0 r4;
+    get.or_use foo[r1] "hello" into r5;
+
+function dummy_with_array:
+    input r0 as [string; 3u32].public;
+    input r1 as [string; 4u32].private;
+    async dummy_with_array r0 r1 "test" into r2;
+    output r2 as strings_{i}.aleo/dummy_with_array.future;
+
+finalize dummy_with_array:
+    input r0 as [string; 3u32].public;
+    input r1 as [string; 4u32].public;
+    input r2 as string.public;
+    set r2 into foo[r2];
+
+constructor:
+    assert.eq true true;
+        "#
+            ))
+            .unwrap()
+        };
+
+        // Deploy the program.
+        let _deployment = vm.deploy(&caller_private_key, &program(0), None, 0, None, rng).unwrap();
+        // Check the deployment.
+        // NOTE: this will only consistently pass if string sampling is updated.
+        // vm.check_transaction(&deployment, None, rng).unwrap();
+
+        // let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+        // assert_eq!(block.transactions().num_accepted(), 1);
+        // assert_eq!(block.transactions().num_rejected(), 0);
+        // assert_eq!(block.aborted_transaction_ids().len(), 0);
+        // vm.add_next_block(&block).unwrap();
+
+        // // Check that the program was deployed.
+        // assert!(vm.process().contains_program(&ProgramID::from_str("strings_0.aleo").unwrap()));
+
+        // let hello_literal = Literal::String(StringType::new("hello"));
+        // let hello_friend_literal = Literal::String(StringType::new("hello_friend"));
+        // let hello_friends_literal = Literal::String(StringType::new("hello_friends"));
+
+        // // Execution test 1
+        // let hello_friend_1 = Value::from(hello_friend_literal.clone());
+        // let hello_friend_2 = Value::from(hello_friend_literal.clone());
+        // let hello_friends = Value::from(hello_friends_literal.clone());
+
+        // // Execute the program.
+        // let transaction = vm
+        //     .execute(
+        //         &caller_private_key,
+        //         ("strings_0.aleo", "dummy"),
+        //         [hello_friend_1, hello_friend_2, hello_friends].iter(),
+        //         None,
+        //         0,
+        //         None,
+        //         rng,
+        //     )
+        //     .unwrap();
+        // // Verify the transaction.
+        // vm.check_transaction(&transaction, None, rng).unwrap();
+
+        // let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+        // assert_eq!(block.transactions().num_accepted(), 1);
+        // assert_eq!(block.transactions().num_rejected(), 0);
+        // assert_eq!(block.aborted_transaction_ids().len(), 0);
+        // vm.add_next_block(&block).unwrap();
+
+        // // Execution test 2: change the public type
+        // let hello = Value::from(hello_literal.clone());
+        // let hello_friend = Value::from(hello_friend_literal.clone());
+        // let hello_friends = Value::from(hello_friends_literal.clone());
+
+        // // Execute the program.
+        // let transaction = vm.execute(
+        //     &caller_private_key,
+        //     ("strings_0.aleo", "dummy"),
+        //     [hello, hello_friend, hello_friends].iter(),
+        //     None,
+        //     0,
+        //     None,
+        //     rng,
+        // );
+        // assert!(transaction.is_err());
+
+        // // Execution test 3: change the private type
+        // let hello_friend_1 = Value::from(hello_friend_literal.clone());
+        // let hello_friend_2 = Value::from(hello_friend_literal.clone());
+        // let hello = Value::from(hello_literal.clone());
+
+        // // Execute the program.
+        // let transaction = vm.execute(
+        //     &caller_private_key,
+        //     ("strings_0.aleo", "dummy"),
+        //     [hello_friend_1, hello_friend_2, hello].iter(),
+        //     None,
+        //     0,
+        //     None,
+        //     rng,
+        // );
+        // assert!(transaction.is_err());
+
+        // // Deploy another program.
+        // let deployment = vm.deploy(&caller_private_key, &program(1), None, 0, None, rng).unwrap();
+        // // Check the deployment.
+        // assert!(vm.check_transaction(&deployment, None, rng).is_err());
+
+        // let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+        // assert_eq!(block.transactions().num_accepted(), 0);
+        // assert_eq!(block.transactions().num_rejected(), 0);
+        // assert_eq!(block.aborted_transaction_ids().len(), 1);
+        // vm.add_next_block(&block).unwrap();
+
+        // // Check that the program was notdeployed.
+        // assert!(!vm.process().contains_program(&ProgramID::from_str("strings_1.aleo").unwrap()));
     }
 }

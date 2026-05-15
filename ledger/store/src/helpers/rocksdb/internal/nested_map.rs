@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,9 @@
 use super::*;
 use crate::helpers::{NestedMap, NestedMapRead};
 use console::prelude::{FromBytes, anyhow, cfg_into_iter};
-use snarkvm_utilities::bytes::unchecked_deserialize;
+use snarkvm_utilities::{bytes::unchecked_deserialize, flatten_error};
 
+use anyhow::Context;
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering};
 use tracing::error;
@@ -60,10 +61,11 @@ impl<M: Serialize + DeserializeOwned, K: Serialize + DeserializeOwned, V: Serial
     fn create_prefixed_map(&self, map: &M) -> Result<Vec<u8>> {
         let mut raw_map = self.context.clone();
 
-        let map_size: u32 = bincode::serialized_size(&map)?.try_into()?;
+        let map_size: u32 =
+            bincode::serialized_size(&map).with_context(|| "Failed to get size of serialize map")?.try_into()?;
         raw_map.extend_from_slice(&map_size.to_le_bytes());
 
-        bincode::serialize_into(&mut raw_map, map)?;
+        bincode::serialize_into(&mut raw_map, map).with_context(|| "Failed to serialize map")?;
         Ok(raw_map)
     }
 
@@ -204,14 +206,14 @@ impl<
         // Ensure that the atomic batch is empty.
         assert!(
             self.atomic_batch.lock().is_empty(),
-            "Cannot start an atomic operation when the atomic batch is not empty"
+            "Cannot start an atomic batch operation while another one is already in progress"
         );
         // Ensure that the database atomic batch is empty; skip this check if the atomic
         // writes are paused, as there may be pending operations.
         if !self.database.are_atomic_writes_paused() {
             assert!(
                 self.database.atomic_batch.lock().is_empty(),
-                "Cannot start an atomic operation when the database atomic batch is not empty"
+                "Cannot start a database atomic batch operation while another one is already in progress"
             );
         }
     }
@@ -347,7 +349,7 @@ impl<
             // Ensure that the database atomic batch is empty.
             assert!(
                 self.database.atomic_batch.lock().is_empty(),
-                "Database atomic batch should be empty after write operation"
+                "The database atomic batch must be empty when finishing a write batch operation"
             );
         }
 
@@ -476,14 +478,15 @@ impl<
         }
 
         // Possibly deserialize the entries in parallel.
-        Ok(cfg_into_iter!(entries)
+        cfg_into_iter!(entries)
             .map(|(k, v)| {
                 let k = unchecked_deserialize::<K>(&k);
                 let v = unchecked_deserialize::<V>(&v);
 
                 k.and_then(|k| v.map(|v| (k, v)))
             })
-            .collect::<Result<_, bincode::Error>>()?)
+            .collect::<Result<_, bincode::Error>>()
+            .with_context(|| "Failed to deserialize map entries")
     }
 
     ///
@@ -646,26 +649,29 @@ impl<
 
         // Extract the bytes belonging to the map and the key.
         let (entry_map, entry_key) = get_map_and_key(map_key)
-            .map_err(|e| {
-                error!("RocksDB NestedIter get_map_and_key error: {e}");
+            .map_err(|err| {
+                error!("{}", &flatten_error(err.context("RocksDB Iter deserialize(key) error")));
             })
             .ok()?;
 
         // Deserialize the map, key, and value.
         let map = unchecked_deserialize(entry_map)
-            .map_err(|e| {
-                error!("RocksDB NestedIter deserialize(map) error: {e}");
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB NestedIter deserialize(map) error")));
             })
             .ok()?;
         let key = unchecked_deserialize(entry_key)
-            .map_err(|e| {
-                error!("RocksDB NestedIter deserialize(key) error: {e}");
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB NestedIter deserialize(key) error")));
             })
             .ok()?;
         // Deserialize the value.
         let value = unchecked_deserialize(value)
-            .map_err(|e| {
-                error!("RocksDB NestedIter deserialize(value) error: {e}");
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB NestedIter deserialize(value) error")));
             })
             .ok()?;
 
@@ -713,20 +719,22 @@ impl<
 
         // Extract the bytes belonging to the map and the key.
         let (entry_map, entry_key) = get_map_and_key(map_key)
-            .map_err(|e| {
-                error!("RocksDB NestedKeys get_map_and_key error: {e}");
+            .map_err(|err| {
+                error!("{}", &flatten_error(err.context("RocksDB  NestedKeys get_map_and_key error")));
             })
             .ok()?;
 
         // Deserialize the map and key.
         let map = unchecked_deserialize(entry_map)
-            .map_err(|e| {
-                error!("RocksDB NestedKeys deserialize(map) error: {e}");
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB  NestedKeys deserialize(map) error")));
             })
             .ok()?;
         let key = unchecked_deserialize(entry_key)
-            .map_err(|e| {
-                error!("RocksDB NestedKeys deserialize(key) error: {e}");
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB  NestedKeys deserialize(key) error")));
             })
             .ok()?;
 
@@ -760,8 +768,9 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for NestedValues
 
         // Deserialize the value.
         let value = unchecked_deserialize(value)
-            .map_err(|e| {
-                error!("RocksDB NestedValues deserialize(value) error: {e}");
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB  NestedValues deserialize(values) error")));
             })
             .ok()?;
 

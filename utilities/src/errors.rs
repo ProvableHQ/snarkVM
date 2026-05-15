@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use colored::Colorize;
+use std::borrow::Borrow;
+
 /// Generates an `io::Error` from the given string.
+#[inline]
 pub fn io_error<S: ToString>(err: S) -> std::io::Error {
     std::io::Error::other(err.to_string())
 }
@@ -21,43 +25,31 @@ pub fn io_error<S: ToString>(err: S) -> std::io::Error {
 /// Generates an `io::Error` from the given `anyhow::Error`.
 ///
 /// This will flatten the existing error chain so that it fits in a single-line string.
+#[inline]
 pub fn into_io_error<E: Into<anyhow::Error>>(err: E) -> std::io::Error {
     let err: anyhow::Error = err.into();
-    std::io::Error::other(flatten_anyhow_error(&err))
+    std::io::Error::other(flatten_error(&err))
 }
 
-/// Helper function for `log_error` and `log_warning`.
+/// Converts an `anyhow::Error` into a single-line string.
+///
+/// This follows the existing convention in the codebase that joins errors using em dashes.
+/// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
+/// as "Invalid transaction — Proof failed".
 #[inline]
-fn flatten_anyhow_error(error: &anyhow::Error) -> String {
-    let mut output = error.to_string();
-    for next in error.chain().skip(1) {
-        output = format!("{output} — {next}");
-    }
-    output
-}
-
-/// Logs `anyhow::Error`'s its error chain using the `ERROR` log level.
-///
-/// This follows the existing convention in the codebase that joins errors using em dashes.
-/// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
-/// as "Invalid transaction — Proof failed".
-pub fn log_error(error: &anyhow::Error) {
-    tracing::error!("{}", flatten_anyhow_error(error));
-}
-
-/// Logs `anyhow::Error`'s its error chain using the `WARN` log level.
-///
-/// This follows the existing convention in the codebase that joins errors using em dashes.
-/// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
-/// as "Invalid transaction — Proof failed".
-pub fn log_warning(error: &anyhow::Error) {
-    tracing::warn!("{}", flatten_anyhow_error(error));
+pub fn flatten_error<E: Borrow<anyhow::Error>>(error: E) -> String {
+    let error = error.borrow();
+    let chain = error.chain().skip(1).map(|next| next.to_string()).collect::<Vec<String>>().join(" — ");
+    format!("{error}{}", format!(" — {chain}").dimmed())
 }
 
 /// Displays an `anyhow::Error`'s main error and its error chain to stderr.
 ///
 /// This can be used to show a "pretty" error to the end user.
-pub fn display_error(error: &anyhow::Error) {
+#[track_caller]
+#[inline]
+pub fn display_error<E: Borrow<anyhow::Error>>(error: E) {
+    let error = error.borrow();
     eprintln!("⚠️ {error}");
     error.chain().skip(1).for_each(|cause| eprintln!("     ↳ {cause}"));
 }
@@ -70,9 +62,9 @@ pub fn display_error(error: &anyhow::Error) {
 /// * `message` - A description of what was being checked
 #[macro_export]
 macro_rules! ensure_equals {
-    ($actual:expr, $expected:expr, $message:expr) => {
+    ($actual:expr, $expected:expr, $message:expr $(, $format_args:tt)*) => {
         if $actual != $expected {
-            anyhow::bail!("{}: Was {} but expected {}.", $message, $actual, $expected);
+            anyhow::bail!("{}: Was {} but expected {}.", format!($message $(, $format_args)*), $actual, $expected);
         }
     };
 }
@@ -81,8 +73,11 @@ macro_rules! ensure_equals {
 pub trait PrettyUnwrap {
     type Inner;
 
-    /// Behaves like [`std::Result::unwrap`] but will print the entire anyhow chain to stderr.
+    /// Behaves like [`std::result::Result::unwrap`] but will print the entire anyhow chain to stderr.
     fn pretty_unwrap(self) -> Self::Inner;
+
+    /// Behaves like [`std::result::Result::expect`] but will print the entire anyhow chain to stderr.
+    fn pretty_expect<S: ToString>(self, context: S) -> Self::Inner;
 }
 
 /// Helper for `PrettyUnwrap`, which creates a panic with the `anyhow::Error` nicely formatted and also logs the panic.
@@ -110,22 +105,34 @@ impl<T> PrettyUnwrap for anyhow::Result<T> {
             }
         }
     }
+
+    #[track_caller]
+    fn pretty_expect<S: ToString>(self, context: S) -> Self::Inner {
+        match self {
+            Ok(result) => result,
+            Err(error) => {
+                pretty_panic(&error.context(context.to_string()));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{PrettyUnwrap, flatten_anyhow_error, pretty_panic};
+    use super::{PrettyUnwrap, flatten_error, pretty_panic};
 
     use anyhow::{Context, Result, anyhow, bail};
+    use colored::Colorize;
 
     const ERRORS: [&str; 3] = ["Third error", "Second error", "First error"];
 
     #[test]
-    fn flatten_error() {
-        let expected = format!("{} — {} — {}", ERRORS[0], ERRORS[1], ERRORS[2]);
+    fn test_flatten_error() {
+        // First error should be printed regularly, the other two dimmed.
+        let expected = format!("{}{}", ERRORS[0], format!(" — {} — {}", ERRORS[1], ERRORS[2]).dimmed());
 
         let my_error = anyhow!(ERRORS[2]).context(ERRORS[1]).context(ERRORS[0]);
-        let result = flatten_anyhow_error(&my_error);
+        let result = flatten_error(&my_error);
 
         assert_eq!(result, expected);
     }
@@ -189,5 +196,18 @@ mod tests {
 
         assert!(result.is_ok(), "Should handle VM error gracefully");
         assert_eq!(result.unwrap(), "handled_vm_error");
+    }
+
+    // Check that format strings in the `ensure_equals!` work as expected.
+    #[test]
+    fn ensure_equals_with_format_string() {
+        let correct = "correct";
+        let error = || -> Result<()> {
+            ensure_equals!(1, 2, "Test value {} {correct}", "is not");
+            Ok(())
+        }()
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "Test value is not correct: Was 1 but expected 2.");
     }
 }

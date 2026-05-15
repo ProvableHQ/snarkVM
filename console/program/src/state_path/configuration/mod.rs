@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,7 +21,9 @@ pub const BLOCKS_DEPTH: u8 = 32;
 /// The depth of the Merkle tree for the block header.
 pub const HEADER_DEPTH: u8 = 3;
 /// The depth of the Merkle tree for finalize operations in a transaction.
-pub const FINALIZE_ID_DEPTH: u8 = TRANSACTION_DEPTH + 4; // '+ 4' is to support 16 finalize operations per transition.
+/// A transaction can include at most `2^FINALIZE_ID_DEPTH` finalize operations total (across *all* transitions).
+/// Note that `MAX_WRITES * MAX_TRANSITIONS` can exceed that Merkle-tree capacity.
+pub const FINALIZE_ID_DEPTH: u8 = TRANSACTION_DEPTH + 4; // '+ 4' is to support an average of 16 finalize operations per transition.
 /// The depth of the Merkle tree for finalize operations in a block.
 pub const FINALIZE_OPERATIONS_DEPTH: u8 = TRANSACTIONS_DEPTH;
 /// The depth of the Merkle tree for the ratifications in a block.

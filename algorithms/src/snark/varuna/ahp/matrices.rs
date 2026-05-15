@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,17 +25,18 @@ use crate::{
     },
 };
 use snarkvm_fields::{Field, PrimeField};
-use snarkvm_utilities::{cfg_into_iter, cfg_iter, cfg_iter_mut, serialize::*};
+use snarkvm_utilities::{cfg_into_iter, serialize::*};
 
 use anyhow::{Result, anyhow, ensure};
 
-#[cfg(feature = "serial")]
 use itertools::Itertools;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
-// This function converts a matrix output by Zexe's constraint infrastructure
-// to the one used in this crate.
+// This function converts a matrix output by Zexe's constraint infrastructure to
+// the one used in this crate, i. e. sparse matrices. More specifically, it
+// places private variables after public ones and, for each row, adds adds all
+// coefficients multiplying the same variable.
 pub(crate) fn into_matrix_helper<F: Field>(
     matrix: Vec<Vec<(F, VarIndex)>>,
     num_input_variables: usize,
@@ -81,7 +82,8 @@ pub(crate) fn add_randomizing_variables<F: PrimeField, CS: ConstraintSystem<F>>(
     Ok(())
 }
 
-/// Pads the public variables up to the closest power of two.
+/// Pads the public variables (including the constant 1, if present) up to the
+/// closest power of two.
 pub(crate) fn pad_input_for_indexer_and_prover<F: PrimeField, CS: ConstraintSystem<F>>(cs: &mut CS) -> Result<()> {
     let num_public_variables = cs.num_public_variables();
 
@@ -99,17 +101,26 @@ pub(crate) fn pad_input_for_indexer_and_prover<F: PrimeField, CS: ConstraintSyst
     Ok(())
 }
 
+/// Evaluations of the arithmetization of a matrix, i. e. of its `row`, `col`,
+/// `row_col` and `row_col_val` polynomials.
 #[derive(Debug, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
 pub struct MatrixEvals<F: PrimeField> {
     /// Evaluations of the `row` polynomial.
+    // The k-th entry is the r_k-th element of the constraint domain R_i, where r_k is
+    // the index of the row of the k-th non-zero entry in the matrix.
     pub row: EvaluationsOnDomain<F>,
     /// Evaluations of the `col` polynomial.
+    // The k-th entry is the c_k-th entry of the variable domain C_i, analogously
+    // to row.
     pub col: EvaluationsOnDomain<F>,
     /// Evaluations of the `row_col` polynomial.
     /// After indexing, we drop these evaluations to save space in the
     /// ProvingKey
+    // The k-th element is the product of the k-th entries of row and col.
     pub row_col: Option<EvaluationsOnDomain<F>>,
     /// Evaluations of the `row_col_val` polynomial.
+    // The k-th entry is the product of the k-th entry of row_col and the value
+    // of the k-th non-zero entry in the matrix.
     pub row_col_val: EvaluationsOnDomain<F>,
 }
 
@@ -137,6 +148,7 @@ impl<F: PrimeField> MatrixEvals<F> {
     }
 }
 
+// Arithmetize the matrix into row, col, rowcol and rowcolval polynomials
 pub(crate) fn matrix_evals<F: PrimeField>(
     matrix: &Matrix<F>,
     non_zero_domain: &EvaluationDomain<F>,
@@ -147,9 +159,10 @@ pub(crate) fn matrix_evals<F: PrimeField>(
 ) -> Result<MatrixEvals<F>> {
     let lde_evals_time = start_timer!(|| "Computing row, col and val evals");
 
-    // We are computing the arithmetization of M,
-    // where `M(α,β) = \sum_{κ∈K} val(κ)·L^R_row(κ)(α)·L^C_col(κ)(β)`
-
+    // We are computing the arithmetization of `matrix`, that is, row, col, val,
+    // rowcol and rowcolval as documented in `MatrixArithmetization`. They
+    // satisfy:     M(a,b) = \sum_{k in K} val(k) * L^{R_i}_{row(k)}(a) *
+    // L^{C_i}_{col(k)}(b)
     let mut row_indices = Vec::with_capacity(non_zero_domain.size());
     let mut col_indices = Vec::with_capacity(non_zero_domain.size());
     let mut row_col_indices = Vec::with_capacity(non_zero_domain.size());
@@ -158,6 +171,10 @@ pub(crate) fn matrix_evals<F: PrimeField>(
     for (row_index, row) in matrix.iter().enumerate() {
         for (val, input_var_index) in row {
             let row_i = constraint_domain_elems[row_index];
+            // Since the (padded) instance x lives in the subgroup C_i[x], i.
+            // e. is interleaved in the full assignment vector z which lives in
+            // C_i, the witness needs to be reindexed to occupy the remaining
+            // positions in C_i.
             let col_i = variable_domain_elems[variable_domain.reindex_by_subdomain(input_domain, *input_var_index)?];
 
             row_indices.push(row_i);
@@ -170,10 +187,11 @@ pub(crate) fn matrix_evals<F: PrimeField>(
     let non_zero_entries = row_indices.len();
 
     // Zip safety: we intentionally only multiply the first non_zero_entries
-    cfg_iter_mut!(row_col_indices).zip(&col_indices).for_each(|(rc, &col)| *rc *= col);
-    cfg_iter_mut!(row_col_vals).zip(&row_col_indices).for_each(|(v, rc)| *v *= rc);
+    row_col_indices.iter_mut().zip(&col_indices).for_each(|(rc, &col)| *rc *= col);
+    row_col_vals.iter_mut().zip(&row_col_indices).for_each(|(v, rc)| *v *= rc);
 
-    // Fill up the evaluations to the next power of two
+    // Fill up the evaluations to the next power of two with entries at row 0 (1
+    // in R_i), column 0 (1 in C_i) and value 0,
     let padding = non_zero_domain.size() - non_zero_entries;
     for _ in 0..padding {
         row_indices.push(F::one());
@@ -201,13 +219,17 @@ pub(crate) fn matrix_evals<F: PrimeField>(
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
 pub struct MatrixArithmetization<F: PrimeField> {
     /// LDE of the row indices of M^*.
+    // If the k-th non-zero entry in the matrix is in row r_k, `row` sends the
+    // k-th element of the density domain K_M to the r_k-th element of the row
+    // domain R_i.
     pub row: LabeledPolynomial<F>,
     /// LDE of the column indices of M^*.
+    // Defined analogously to `row` but taking values in the variable domain C_i.
     pub col: LabeledPolynomial<F>,
     /// LDE of the vector containing entry-wise products of `row` and `col`.
     pub row_col: LabeledPolynomial<F>,
     /// LDE of the vector containing entry-wise products of `row`, `col` and the
-    /// non-zero entries of M.
+    /// value of the non-zero entries of M.
     pub row_col_val: LabeledPolynomial<F>,
 }
 
@@ -226,7 +248,10 @@ impl<F: PrimeField> MatrixArithmetization<F> {
             row_col.clone().interpolate()
         } else {
             ensure!(matrix_evals.row.evaluations.len() == matrix_evals.col.evaluations.len());
-            let row_col_evals: Vec<F> = cfg_iter!(matrix_evals.row.evaluations)
+            let row_col_evals: Vec<F> = matrix_evals
+                .row
+                .evaluations
+                .iter()
                 .zip_eq(&matrix_evals.col.evaluations)
                 .map(|(&r, &c)| r * c)
                 .collect();

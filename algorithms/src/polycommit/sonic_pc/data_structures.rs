@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -684,6 +684,11 @@ impl<E: PairingEngine> BatchLCProof<E> {
 impl<E: PairingEngine> FromBytes for BatchLCProof<E> {
     fn read_le<R: Read>(mut reader: R) -> io::Result<Self> {
         CanonicalDeserialize::deserialize_compressed(&mut reader)
+            .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize struct")))
+    }
+
+    fn read_le_unchecked<R: Read>(mut reader: R) -> io::Result<Self> {
+        CanonicalDeserialize::deserialize_compressed_unchecked(&mut reader)
             .map_err(|err| into_io_error(anyhow::Error::from(err).context("could not deserialize struct")))
     }
 }

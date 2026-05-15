@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,12 +16,13 @@
 pub(crate) mod committee;
 pub use committee::*;
 
-#[cfg(feature = "history")]
-mod history;
-#[cfg(feature = "history")]
-pub use history::*;
-
 mod macros;
+
+mod program;
+pub use program::*;
 
 mod rewards;
 pub use rewards::*;
+
+mod sequential_op;
+pub(crate) use sequential_op::*;

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,11 @@ use std::collections::HashSet;
 use rayon::prelude::*;
 
 impl<N: Network> Block<N> {
-    /// Ensures the block is correct.
+    /// Ensures the block is well-formed and consistent with the previous block.
+    ///
+    /// # Returns
+    /// - On success, the sets of transaction and solution IDs that existed in this subDAG but were already included in the previous block.
+    /// - On failure, the error that caused verification to fail, e.g., invalid block hash, invalid block authority, or invalid transmissions.
     pub fn verify(
         &self,
         previous_block: &Block<N>,
@@ -335,7 +339,7 @@ impl<N: Network> Block<N> {
         // Ensure the number of aborted solution IDs is within the allowed range.
         // This check is redundant if the block has been created via `Block::from()`.
         ensure!(
-            self.aborted_solution_ids.len() <= Solutions::<N>::max_aborted_solutions()?,
+            self.aborted_solution_ids.len() <= Solutions::<N>::max_aborted_solutions(),
             "Block {height} contains too many aborted solution IDs (found '{}')",
             self.aborted_solution_ids.len(),
         );
@@ -383,6 +387,7 @@ impl<N: Network> Block<N> {
             expected_last_coinbase_target,
             expected_last_coinbase_timestamp,
         ) = to_next_targets::<N>(
+            N::CONSENSUS_VERSION(height)?,
             previous_block.cumulative_proof_target(),
             combined_proof_target,
             previous_block.coinbase_target(),
@@ -398,7 +403,7 @@ impl<N: Network> Block<N> {
             timestamp,
             N::GENESIS_TIMESTAMP,
             N::STARTING_SUPPLY,
-            N::ANCHOR_TIME,
+            N::REWARD_ANCHOR_TIME,
             N::ANCHOR_HEIGHT,
             N::BLOCK_TIME,
             combined_proof_target,
@@ -451,10 +456,10 @@ impl<N: Network> Block<N> {
 
         // Ensure the number of aborted transaction IDs is within the allowed range.
         // This check is redundant if the block has been created via `Block::from()`.
-        if self.aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
+        if self.aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions() {
             bail!(
                 "Cannot validate a block with more than {} aborted transaction IDs",
-                Transactions::<N>::max_aborted_transactions()?
+                Transactions::<N>::max_aborted_transactions()
             );
         }
 

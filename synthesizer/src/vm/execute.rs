@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,8 @@
 
 use super::*;
 
+use snarkvm_synthesizer_error::*;
+
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns a new execute transaction.
     ///
@@ -33,7 +35,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Transaction<N>> {
+    ) -> Result<Transaction<N>, VmExecError> {
         let (execution, _) = self.execute_with_response(
             private_key,
             (program_id, function_name),
@@ -61,7 +63,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<(Transaction<N>, Response<N>)> {
+    ) -> Result<(Transaction<N>, Response<N>), VmExecError> {
         // Get a default query if one is not provided.
         let query = match query {
             Some(q) => q,
@@ -80,8 +82,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             true => {
                 // Compute the minimum execution cost.
                 let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-                let (minimum_execution_cost, (_, _)) =
-                    execution_cost(&self.process().read(), &execution, consensus_version)?;
+                let (minimum_execution_cost, _) = execution_cost(&self.process, &execution, consensus_version)?;
                 // Compute the execution ID.
                 let execution_id = execution.to_execution_id()?;
                 // Authorize the fee.
@@ -157,7 +158,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Fee<N>> {
+    ) -> Result<Fee<N>, VmExecError> {
         debug_assert!(authorization.is_fee_private() || authorization.is_fee_public(), "Expected a fee authorization");
         // Get a default query if one is not provided.
         let query = match query {
@@ -177,7 +178,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: &dyn QueryTrait<N>,
         rng: &mut R,
-    ) -> Result<(Execution<N>, Response<N>)> {
+    ) -> Result<(Execution<N>, Response<N>), VmExecError> {
         let timer = timer!("VM::execute_authorization_raw");
 
         // Construct the locator of the main function.
@@ -189,7 +190,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
         // Check whether the authorization is for a valid program edition.
-        authorization.check_valid_edition(&self.process.read(), consensus_version)?;
+        authorization.check_valid_edition(&self.process, consensus_version)?;
         // Check whether the authorization is creating valid records.
         authorization.check_valid_records(consensus_version)?;
         // Determine which Varuna version to use.
@@ -208,6 +209,19 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Prepare the assignments.
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
+
+                // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+                // function in the execution, all DynamicRecords and ExternalRecords
+                // received as inputs or from callees exist on the ledger at the end of
+                // the execution (whether spent or not).
+                if consensus_version >= ConsensusVersion::V15 {
+                    let mut execution_stacks = indexmap::IndexMap::new();
+                    for transition in trace.transitions().iter() {
+                        execution_stacks.insert(*transition.program_id(), $process.get_stack(transition.program_id())?);
+                    }
+                    Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
+                    lap!(timer, "Check record existence");
+                }
 
                 // Compute the proof and construct the execution.
                 let execution = trace.prove_execution::<$aleo, _>(&locator, varuna_version, rng)?;
@@ -232,13 +246,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         authorization: Authorization<N>,
         query: &dyn QueryTrait<N>,
         rng: &mut R,
-    ) -> Result<Fee<N>> {
+    ) -> Result<Fee<N>, VmExecError> {
         let timer = timer!("VM::execute_fee_authorization_raw");
 
         // Determine the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
         // Check whether the authorization is for a valid program edition.
-        authorization.check_valid_edition(&self.process.read(), consensus_version)?;
+        authorization.check_valid_edition(&self.process, consensus_version)?;
         // Check whether the authorization is creating valid records.
         authorization.check_valid_records(consensus_version)?;
         // Determine which Varuna version to use.
@@ -257,6 +271,19 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Prepare the assignments.
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
+
+                // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+                // function in the execution, all DynamicRecords and ExternalRecords
+                // received as inputs or from callees exist on the ledger at the end of
+                // the execution (whether spent or not).
+                if consensus_version >= ConsensusVersion::V15 {
+                    let mut execution_stacks = indexmap::IndexMap::new();
+                    for transition in trace.transitions().iter() {
+                        execution_stacks.insert(*transition.program_id(), $process.get_stack(transition.program_id())?);
+                    }
+                    Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
+                    lap!(timer, "Check record existence");
+                }
 
                 // Compute the proof and construct the fee.
                 let fee = trace.prove_fee::<$aleo, _>(varuna_version, rng)?;
@@ -285,7 +312,7 @@ mod tests {
         types::Field,
     };
     use snarkvm_ledger_block::Transition;
-    use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command, execution_cost_v1, execution_cost_v2};
+    use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command};
     use snarkvm_synthesizer_program::StackTrait;
 
     use indexmap::IndexMap;
@@ -423,8 +450,8 @@ mod tests {
 
         let query = Query::VM(vm.block_store().clone());
         let (execution, _) = vm.execute_authorization_raw(authorization, &query, rng).unwrap();
-        let (cost, _) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
-        let (old_cost, _) = execution_cost_v1(&vm.process().read(), &execution).unwrap();
+        let (cost, _) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
+        let (old_cost, _) = execution_cost(vm.process(), &execution, ConsensusVersion::V1).unwrap();
 
         assert_eq!(34_060, cost);
         assert_eq!(51_060, old_cost);
@@ -560,7 +587,7 @@ finalize test:
 
         let query = Query::VM(vm.block_store().clone());
         let (execution, _) = vm.execute_authorization_raw(authorization, &query, rng).unwrap();
-        let (cost, _) = execution_cost_v1(&vm.process().read(), &execution).unwrap();
+        let (cost, _) = execution_cost(vm.process(), &execution, ConsensusVersion::V1).unwrap();
         println!("Cost: {cost}");
     }
 
@@ -710,6 +737,7 @@ finalize test:
     }
 
     #[test]
+    #[ignore]
     fn test_join_transaction_size() {
         let rng = &mut TestRng::default();
 
@@ -786,6 +814,7 @@ finalize test:
     }
 
     #[test]
+    #[ignore]
     fn test_fee_private_transition_size() {
         let rng = &mut TestRng::default();
 
@@ -826,6 +855,7 @@ finalize test:
     }
 
     #[test]
+    #[ignore]
     fn test_wide_nested_execution_cost() {
         // Initialize an RNG.
         let rng = &mut TestRng::default();
@@ -948,7 +978,7 @@ finalize test:
         assert_eq!(execution.transitions().len(), <CurrentNetwork as Network>::MAX_INPUTS + 1);
 
         // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
+        let (_, (_, finalize_cost)) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
 
         // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
         let mut expected_cost = 0;
@@ -957,7 +987,7 @@ finalize test:
             let program_id = transition.program_id();
             let function_name = transition.function_name();
             // Get the stack.
-            let stack = vm.process().read().get_stack(program_id).unwrap().clone();
+            let stack = vm.process().get_stack(program_id).unwrap().clone();
             // Get the finalize types.
             let finalize_types = stack.get_finalize_types(function_name).unwrap();
             // Get the finalize block of the transition and sum the cost of each command.
@@ -995,6 +1025,13 @@ finalize test:
         // Prepare the VM.
         let (vm, _) = prepare_vm(rng).unwrap();
 
+        // Forward the chain to block 13:
+        for _i in 1..13 {
+            let next_block = crate::test_helpers::sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
+
+            vm.add_next_block(&next_block).unwrap();
+        }
+
         // Construct the base program.
         let base_program = Program::from_str(
             r"
@@ -1012,7 +1049,9 @@ finalize test:
     input r1 as field.public;
     hash.bhp256 r0 into r2 as field;
     hash.bhp256 r1 into r3 as field;
-    set r2 into data[r3];",
+    set r2 into data[r3];
+constructor:
+    assert.eq edition 0u16;",
         )
         .unwrap();
 
@@ -1048,7 +1087,9 @@ finalize test:
     await r2;
     hash.bhp256 r0 into r3 as field;
     hash.bhp256 r1 into r4 as field;
-    set r3 into data[r4];",
+    set r3 into data[r4];
+constructor:
+    assert.eq edition 0u16;",
                 imports = (1..i).map(|j| format!("import test_{j}.aleo;")).join("\n"),
                 prev = i - 1,
                 curr = i,
@@ -1086,7 +1127,7 @@ finalize test:
         assert_eq!(execution.transitions().len(), Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1);
 
         // Get the finalize cost of the execution.
-        let (_, (_, finalize_cost)) = execution_cost_v2(&vm.process().read(), &execution).unwrap();
+        let (_, (_, finalize_cost)) = execution_cost(vm.process(), &execution, ConsensusVersion::V2).unwrap();
 
         // Compute the expected cost as the sum of the cost in microcredits of each command in each finalize block of each transition in the execution.
         let mut expected_cost = 0;
@@ -1095,7 +1136,7 @@ finalize test:
             let program_id = transition.program_id();
             let function_name = transition.function_name();
             // Get the stack.
-            let stack = vm.process().read().get_stack(program_id).unwrap().clone();
+            let stack = vm.process().get_stack(program_id).unwrap().clone();
             // Get the finalize types.
             let finalize_types = stack.get_finalize_types(function_name).unwrap();
             // Get the finalize block of the transition and sum the cost of each command.

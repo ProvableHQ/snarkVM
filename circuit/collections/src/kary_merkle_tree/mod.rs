@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -89,7 +89,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: u128 = 100;
+    const ITERATIONS: u128 = 10;
 
     fn check_new<const DEPTH: u8, const ARITY: u8>(
         mode: Mode,

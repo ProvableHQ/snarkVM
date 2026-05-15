@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -94,8 +94,12 @@ impl ExpectedTest for ProgramTest {
         let source = std::fs::read_to_string(&test_path).expect("Failed to read test file.");
 
         // Parse out the first comment, denoted by `/* ... */`.
-        let first_comment_start = source.find("/*").expect("test file must contain a comment");
-        let end_first_comment = source[first_comment_start + 2..].find("*/").expect("test file must contain a comment");
+        let first_comment_start =
+            source.find("/*").unwrap_or_else(|| panic!("Test file '{:?}' must contain a comment", test_path.as_ref()));
+        let end_first_comment = source[first_comment_start + 2..]
+            .find("*/")
+            .unwrap_or_else(|| panic!("Test file '{:?}' must contain a comment", test_path.as_ref()));
+
         let comment = &source[first_comment_start + 2..first_comment_start + 2 + end_first_comment];
 
         // Parse the comment into the test configuration.

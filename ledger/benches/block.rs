@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -77,7 +77,7 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
 fn block_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
 
-    let mut builder = TestChainBuilder::new(&mut rng).unwrap();
+    let mut builder = TestChainBuilder::<CurrentNetwork>::new(&mut rng).unwrap();
     let block = builder.generate_block(&mut rng).unwrap();
 
     bench_serialization(c, "Block", block);
@@ -86,7 +86,7 @@ fn block_serialization(c: &mut Criterion) {
 fn block_header_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
 
-    let mut builder = TestChainBuilder::new(&mut rng).unwrap();
+    let mut builder = TestChainBuilder::<CurrentNetwork>::new(&mut rng).unwrap();
     let block = builder.generate_block(&mut rng).unwrap();
 
     bench_serialization(c, "Header", *block.header());
@@ -115,7 +115,7 @@ fn transition_serialization(c: &mut Criterion) {
 
 fn signature_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
-    let data = rng.r#gen();
+    let data = rng.random();
 
     let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap();
     let signature = private_key.sign(&[data], &mut rng).unwrap();

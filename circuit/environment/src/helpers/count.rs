@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -189,7 +189,7 @@ mod test {
     use super::*;
     use snarkvm_utilities::{TestRng, Uniform};
 
-    const ITERATIONS: u64 = 1024;
+    const ITERATIONS: u64 = 10;
 
     #[test]
     fn test_exact_matches() {

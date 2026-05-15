@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,9 +40,9 @@ pub enum ParameterError {
 }
 
 #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
-impl From<curl::Error> for ParameterError {
-    fn from(error: curl::Error) -> Self {
-        ParameterError::Crate("curl::error", format!("{error:?}"))
+impl From<ureq::Error> for ParameterError {
+    fn from(error: ureq::Error) -> Self {
+        ParameterError::Crate("ureq", format!("{error}"))
     }
 }
 

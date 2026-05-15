@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,7 @@ use snarkvm_fields::{Field, Fp256, Fp384, PrimeField};
 use snarkvm_utilities::TestRng;
 
 use criterion::*;
-use rand::Rng;
+use rand::RngExt;
 use std::{
     hint::black_box,
     ops::{AddAssign, MulAssign, SubAssign},

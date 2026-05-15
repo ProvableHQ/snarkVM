@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -63,6 +63,18 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     fn set_tvk(&mut self, tvk: Field<N>) {
         self.tvk = Some(tvk);
     }
+
+    /// Returns the request.
+    #[inline]
+    fn request(&self) -> Result<&crate::Request<N>> {
+        self.request.as_ref().ok_or_else(|| anyhow!("Caller request is not set in the registers."))
+    }
+
+    /// Sets the caller request.
+    #[inline]
+    fn set_request(&mut self, request: crate::Request<N>) {
+        self.request = Some(request);
+    }
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<N, A> {
@@ -86,8 +98,32 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<
             Operand::Signer => return Ok(Value::Plaintext(Plaintext::from(Literal::Address(self.signer()?)))),
             // If the operand is the caller, load the value of the caller.
             Operand::Caller => return Ok(Value::Plaintext(Plaintext::from(Literal::Address(self.caller()?)))),
+            // If the operand is the Aleo generator, retrieve the Aleo generator.
+            Operand::AleoGenerator => {
+                return N::g_powers()
+                    .first()
+                    .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                    .ok_or_else(|| anyhow!("Failed to retrieve the Aleo generator."));
+            }
+            // If the operand is the generator powers, retrieve the generator powers or the indexed group.
+            Operand::AleoGeneratorPowers(index) => match index {
+                None => {
+                    return Ok(Value::Plaintext(Plaintext::Array(
+                        N::g_powers().iter().map(|element| Plaintext::from(Literal::Group(*element))).collect(),
+                        OnceLock::new(),
+                    )));
+                }
+                Some(index) => {
+                    return N::g_powers()
+                        .get(**index as usize)
+                        .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                        .ok_or_else(|| anyhow!("Index {index} out of bounds for Aleo generator"));
+                }
+            },
             // If the operand is the block height, throw an error.
             Operand::BlockHeight => bail!("Cannot load the block height in a non-finalize context"),
+            // If the operand is the block timestamp, throw an error.
+            Operand::BlockTimestamp => bail!("Cannot load the block timestamp in a non-finalize context"),
             // If the operand is the network ID, throw an error.
             Operand::NetworkID => bail!("Cannot load the network ID in a non-finalize context"),
             // If the operand is the checksum, throw an error.
@@ -119,6 +155,10 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<
                     },
                     // Retrieve the argument from the future.
                     Value::Future(future) => future.find(path)?,
+                    // A dynamic record cannot be accessed directly.
+                    Value::DynamicRecord(dynamic_record) => dynamic_record.find(path)?,
+                    // A dynamic future cannot be accessed directly.
+                    Value::DynamicFuture(_) => bail!("Cannot invoke `find` on a dynamic future value"),
                 }
             }
         };

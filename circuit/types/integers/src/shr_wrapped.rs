@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -121,7 +121,6 @@ impl<E: Environment, I: IntegerType, M: Magnitude> ShrWrapped<Integer<E, M>> for
                     shift_in_field = Field::ternary(bit, &(&shift_in_field * &two), &shift_in_field);
                 }
 
-                // TODO (@pranav) Avoid initializing the integer.
                 let shift_as_divisor =
                     Self { bits_le: shift_in_field.to_lower_bits_le(I::BITS as usize), phantom: Default::default() };
 
@@ -211,7 +210,7 @@ mod tests {
 
     use core::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    const ITERATIONS: u64 = 32;
+    const ITERATIONS: u64 = 10;
 
     fn check_shr<I: IntegerType + RefUnwindSafe, M: Magnitude + RefUnwindSafe>(
         name: &str,

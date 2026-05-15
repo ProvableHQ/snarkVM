@@ -23,8 +23,10 @@ orbs:
 executors:
   # The default docker image used in the main-workflow
   rust-docker:
-     docker:
+    docker:
       - image: cimg/rust:1.88.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    environment:
+      RUSTFLAGS: "" # override the config.toml flags
 
 commands:
   check_windows:
@@ -35,32 +37,45 @@ commands:
     steps:
       - checkout
       - restore_cache:
-          key: cargo-cache-{{ arch }}-{{ checksum "Cargo.lock" }}
+          keys:
+            - cargo-cache-{{ arch }}-{{ checksum "Cargo.lock" }}
       - run:
           name: "Install Rust"
+          no_output_timeout: 15m
           command: |
+            $ErrorActionPreference = "Stop"
             $ProgressPreference = "SilentlyContinue"
-            # Remove the version of rustc that (might be) installed already..
-            # Use non-interactive mode and force uninstall to prevent the job from getting stuck.
-            choco uninstall rust -y --force
 
-            # Install rust with rustup.
-            Invoke-WebRequest -Uri "https://win.rustup.rs/" -OutFile "C:\rustup-init.exe"
-            & C:\rustup-init.exe -y --default-toolchain "1.88.0-x86_64-pc-windows-msvc" --no-modify-path --profile minimal # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+            # Ensure rustup is installed
+            if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
+                Write-Host "rustup not found, installing..."
+                $rustupPath = "$env:TEMP\rustup-init.exe"
+                Invoke-WebRequest -Uri "https://win.rustup.rs/" -OutFile $rustupPath
+                & $rustupPath -y --default-toolchain "1.88.0-x86_64-pc-windows-msvc" --no-modify-path --profile minimal
+            } else {
+                Write-Host "rustup already installed, ensuring toolchain 1.88.0-x86_64-pc-windows-msvc is present..."
+                rustup toolchain install 1.88.0-x86_64-pc-windows-msvc
+            }
 
-            # Add cargo to PATH
-            $Env:Path += ";$Env:USERPROFILE\.cargo\bin"
+            # Put cargo/rustup first in PATH for this step and subsequent steps
+            $Env:Path = "$Env:USERPROFILE\.cargo\bin;$Env:Path"
+
+            # Select the toolchain
+            rustup default 1.88.0-x86_64-pc-windows-msvc
+
             # Verify the installation.
             cargo --version --verbose
             rustc --version | Out-File -FilePath "rust-version"
+
             if (!(Test-Path "Cargo.lock" -PathType Leaf)) {
                 cargo generate-lockfile
             }
       - run:
           name: "Run cargo check"
           command: |
-            # Add cargo to PATH
-            $Env:Path += ";$Env:USERPROFILE\.cargo\bin"
+            # Add cargo to PATH (for safety in case env is not carried perfectly)
+            $Env:Path = "$Env:USERPROFILE\.cargo\bin;$Env:Path"
+
             # Check that the given package compiles
             cd << parameters.workspace_member >>
             cargo check --examples --benches --tests
@@ -68,45 +83,59 @@ commands:
           paths:
             - C:\Users\circleci\.cargo\registry
             - C:\Users\circleci\.cargo\git
-            - target
-          key: cargo-cache-{{ arch }}-{{ checksum "rust-version" }}-{{ checksum "Cargo.lock" }}
+          key: cargo-cache-{{ arch }}-{{ checksum "Cargo.lock" }}
 
   setup_environment:
     description: "Setup testing environment"
     parameters:
       cache_key:
         type: string
-        default: v4.2.0-rust-1.88.0-snarkvm-stable-cache
+        default: v4.7.1-rust-1.88.0-snarkvm-cache
     steps:
-      - run: set -e
       - run:
           name: Prepare environment variables and install dependencies
           command: |
-            echo 'export "RUSTC_WRAPPER"="$CIRCLE_WORKING_DIRECTORY/.bin/sccache"' >> $BASH_ENV
-            echo 'export "SCCACHE_CACHE_SIZE"="20000M"' >> $BASH_ENV
+            # Make sure our local bin and cargo bin are on PATH
+            echo 'export PATH="$HOME/.cargo/bin:$CIRCLE_WORKING_DIRECTORY/.bin:$PATH"' >> "$BASH_ENV"
 
-            # Disable incremental builds so that sccache works as expected
+            # sccache settings
+            echo 'export SCCACHE_DIR="$HOME/.cache/sccache"' >> "$BASH_ENV"
+            echo 'export SCCACHE_CACHE_SIZE="2000M"' >> "$BASH_ENV"
+            echo 'export SCCACHE_IDLE_TIMEOUT=0' >> "$BASH_ENV"
+            echo 'export SCCACHE_LOG=info' >> "$BASH_ENV"
+
+            # Disable incremental builds so sccache behaves nicely
             echo 'export CARGO_INCREMENTAL=0' >> "$BASH_ENV"
+
+            # Use sccache for *all* Rust compile commands.
+            echo 'export RUSTC_WRAPPER="sccache"' >> "$BASH_ENV"
       - run:
           name: Install sccache
           command: |
-            export WORK_DIR="$CIRCLE_WORKING_DIRECTORY/.cache/sccache"
-            export SCCACHE_DIR="$CIRCLE_WORKING_DIRECTORY/.cache/sccache"
+            export WORK_DIR="$HOME/.cache/sccache"
+            export SCCACHE_DIR="$HOME/.cache/sccache"
             export SCCACHE_VERSION=v0.10.0
             export SCCACHE_PKG="sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl"
-                 
-            mkdir -p "$CIRCLE_WORKING_DIRECTORY/.bin"
-            wget "https://github.com/mozilla/sccache/releases/download/$SCCACHE_VERSION/$SCCACHE_PKG.tar.gz"
-            tar -C "$CIRCLE_WORKING_DIRECTORY/.bin" -xvf "$SCCACHE_PKG.tar.gz"
-            chmod +x "$CIRCLE_WORKING_DIRECTORY/.bin/$SCCACHE_PKG/sccache"
-            mv "$CIRCLE_WORKING_DIRECTORY/.bin/$SCCACHE_PKG/sccache" "$CIRCLE_WORKING_DIRECTORY/.bin/sccache"
-            rm -rf "$CIRCLE_WORKING_DIRECTORY/.cargo/registry"
 
+            mkdir -p "$CIRCLE_WORKING_DIRECTORY/.bin"
+            mkdir -p "$HOME/.cache/sccache"
+            if [ ! -x "$CIRCLE_WORKING_DIRECTORY/.bin/sccache" ]; then
+              wget "https://github.com/mozilla/sccache/releases/download/$SCCACHE_VERSION/$SCCACHE_PKG.tar.gz"
+              tar -C "$CIRCLE_WORKING_DIRECTORY/.bin" -xvf "$SCCACHE_PKG.tar.gz"
+              chmod +x "$CIRCLE_WORKING_DIRECTORY/.bin/$SCCACHE_PKG/sccache"
+              mv "$CIRCLE_WORKING_DIRECTORY/.bin/$SCCACHE_PKG/sccache" "$CIRCLE_WORKING_DIRECTORY/.bin/sccache"
+              rm -rf "$CIRCLE_WORKING_DIRECTORY/.cargo/registry"
+            fi
       - run:
           name: Install debian packages
           command: |
             DEBIAN_FRONTEND=noninteractive sudo apt-get update
-            DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev libssl-dev
+            DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
+              clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev libssl-dev
+      - restore_cache:
+          keys:
+            - v4.7.1-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}-
+            - v4.7.1-rust-1.88.0-deps-
       - restore_cache:
           keys:
             - << parameters.cache_key >>
@@ -116,16 +145,20 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v4.2.0-rust-1.88.0-snarkvm-stable-cache
+        default: v4.7.1-rust-1.88.0-snarkvm-cache
     steps:
-      - run: (sccache -s || true)
       - run: set +e
+      - save_cache:
+          key: v4.7.1-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}
+          paths:
+            - /home/circleci/.cache/sccache
+            - /home/circleci/.cargo/registry
+            - /home/circleci/.rustup
+            - /home/circleci/.cargo/bin
+            - /home/circleci/project/.bin
       - save_cache:
           key: << parameters.cache_key >>
           paths:
-            - /home/circleci/project/target
-            - /home/circleci/.cache/sccache
-            - /home/circleci/.cargo
             - /home/circleci/.aleo/resources
 
   run_test:
@@ -145,17 +178,265 @@ commands:
       no_output_timeout:
         type: string
         default: 10m
+      use_cache:
+        type: boolean
+        default: true
     steps:
       - checkout
-      - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
+
+      - when:
+          condition: << parameters.use_cache >>
+          steps:
+            - setup_environment:
+                cache_key: v4.7.1-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
+
+      - run:
+          name: Install debian packages (always)
+          command: |
+            DEBIAN_FRONTEND=noninteractive sudo apt-get update
+            DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
+              clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+
+      - run:
+          name: "No-cache mode: clean + disable sccache"
+          command: |
+            set -euo pipefail
+            USE_CACHE="<< parameters.use_cache >>"
+
+            if [ "$USE_CACHE" != "true" ]; then
+              echo "No-cache mode: cleaning and disabling sccache"
+              rm -rf target ~/.cache/sccache ~/.cargo/registry ~/.cargo/git || true
+
+              # Make sure later steps don't accidentally use sccache
+              echo 'unset RUSTC_WRAPPER' >> "$BASH_ENV"
+              echo 'unset SCCACHE_DIR' >> "$BASH_ENV"
+              echo 'unset SCCACHE_CACHE_SIZE' >> "$BASH_ENV"
+              echo 'unset SCCACHE_IDLE_TIMEOUT' >> "$BASH_ENV"
+              echo 'unset SCCACHE_LOG' >> "$BASH_ENV"
+
+              echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$BASH_ENV"
+
+              # If anything tries to call it directly
+              rm -rf "$CIRCLE_WORKING_DIRECTORY/.bin/sccache" || true
+            else
+              echo "Cached mode: sccache enabled by setup_environment"
+            fi
+
+      - run:
+          name: Install cargo-nextest
+          command: |
+            set -euo pipefail
+            BIN_ROOT="$CIRCLE_WORKING_DIRECTORY/.bin"
+            mkdir -p "$BIN_ROOT"
+
+            export PATH="$HOME/.cargo/bin:$PATH"
+            if ! command -v cargo-nextest >/dev/null 2>&1; then
+              cargo install cargo-nextest --locked --version "0.9.114"
+            fi
+
+      - run:
+          name: Debug rustc wrapper
+          command: |
+            set -euo pipefail
+            USE_CACHE="<< parameters.use_cache >>"
+
+            echo "USE_CACHE=$USE_CACHE"
+            echo "RUSTC_WRAPPER=${RUSTC_WRAPPER:-<unset>}"
+            which rustc || echo "rustc not found on PATH"
+
+            if [ "$USE_CACHE" = "true" ]; then
+              which sccache || echo "sccache not found on PATH"
+            else
+              echo "sccache intentionally disabled"
+            fi
+
       - run:
           name: "Run Tests"
           timeout: << parameters.timeout >>
           no_output_timeout: << parameters.no_output_timeout >>
-          command: RUST_MIN_STACK=67108864 cargo test --package=<< parameters.workspace_member >> << parameters.flags >>
-      - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
+          command: |
+            set -euo pipefail
+            export CARGO_TERM_COLOR=never
+            USE_CACHE="<< parameters.use_cache >>"
+
+            echo "[debug] USE_CACHE=$USE_CACHE"
+            echo "[debug] PATH=$PATH"
+            echo "[debug] RUSTC_WRAPPER=${RUSTC_WRAPPER:-<unset>}"
+            which rustc || echo "[debug] rustc not found on PATH"
+            if [ "$USE_CACHE" = "true" ]; then
+              which sccache || echo "[debug] sccache not found on PATH"
+              echo "[debug] SCCACHE_DIR=${SCCACHE_DIR:-<unset>}"
+              echo "[debug] SCCACHE_LOG=${SCCACHE_LOG:-<unset>}"
+              echo "[debug] SCCACHE_IDLE_TIMEOUT=${SCCACHE_IDLE_TIMEOUT:-<unset>}"
+
+              "$CIRCLE_WORKING_DIRECTORY/.bin/sccache" --zero-stats || true
+              echo "[sccache stats BEFORE nextest]"
+              "$CIRCLE_WORKING_DIRECTORY/.bin/sccache" -s || true
+            else
+              echo "[debug] sccache disabled for this run"
+            fi
+
+            # Create artifact + nextest output directories
+            mkdir -p artifacts target/nextest/ci
+
+            # Create artifact + nextest output directories
+            OUT="artifacts/<< parameters.workspace_member >>-nextest.txt"
+            CSV="artifacts/<< parameters.workspace_member >>-test-times.csv"
+            TOP="artifacts/<< parameters.workspace_member >>-slow-tests-top30.csv"
+            JUNIT="target/nextest/ci/junit.xml"
+
+            FLAGS_FULL="<< parameters.flags >>"
+            FLAGS_TRIM="$(printf '%s' "$FLAGS_FULL" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+            RIGHT_OF_SEP=""
+            if printf '%s' "$FLAGS_TRIM" | grep -q ' -- '; then
+              BUILD_FLAGS="${FLAGS_TRIM%% -- *}"
+              RIGHT_OF_SEP="${FLAGS_TRIM#* -- }"
+            elif printf '%s' "$FLAGS_TRIM" | grep -Eq '^--[[:space:]]'; then
+              BUILD_FLAGS=""
+              RIGHT_OF_SEP="${FLAGS_TRIM#-- }"
+            else
+              BUILD_FLAGS="$FLAGS_TRIM"
+            fi
+
+            WSM="<< parameters.workspace_member >>"
+
+            # Remove any --test target flags,they cause nextest build errors
+            BUILD_FLAGS_SANITIZED="$(printf '%s' "$BUILD_FLAGS" \
+              | sed -E "s/(^|[[:space:]])--test[[:space:]]+'[^']*'([[:space:]]|$)/ /g" \
+              | sed -E 's/(^|[[:space:]])--test[[:space:]]+\"[^\"]*\"([[:space:]]|$)/ /g' \
+              | sed -E 's/(^|[[:space:]])--test[[:space:]]+[^[:space:]]+([[:space:]]|$)/ /g' \
+              | tr -s ' ' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
+            )"
+
+            # Detect wildcard integration selection: `--test '*'` (with or without quotes)
+            HAS_TEST_WILDCARD=0
+            if printf '%s\n' "$BUILD_FLAGS" | grep -Eq -- '--test[[:space:]]+("\*"|'\''\*'\''|\*)'; then
+              HAS_TEST_WILDCARD=1
+            fi
+
+            # Build nextest filter expression from any --skip <pattern> arguments
+            FILTER_EXPR=""
+            if [ "$WSM" = "snarkvm-synthesizer" ] && [ "$HAS_TEST_WILDCARD" -eq 1 ]; then
+              FILTER_EXPR='test(/test_command_parse/)+test(/test_instruction_parse/)+test(/test_process_execute/)+test(/test_program_parse/)+test(/test_vm_execute_and_finalize/)'
+            fi
+
+            # Build nextest filter expression from any --skip <pattern> arguments
+            if [ -z "$FILTER_EXPR" ] && [ -n "$RIGHT_OF_SEP" ]; then
+              SKIPS="$(printf '%s\n' "$RIGHT_OF_SEP" \
+                | sed -E 's/[[:space:]]+/ /g' \
+                | grep -oE -- '--skip[[:space:]]+(\"[^\"]+\"|'\''[^'\'']+'\''|[^[:space:]]+)' || true)"
+              if [ -n "$SKIPS" ]; then
+                EXPRS=""
+                tmpf="$(mktemp)"
+                printf '%s\n' "$SKIPS" > "$tmpf"
+                while IFS= read -r line; do
+                  pat="${line#--skip }"
+                  pat="${pat%\"}"; pat="${pat#\"}"
+                  pat="${pat%\'}"; pat="${pat#\'}"
+                  pat_rx="${pat//\//\\/}"
+                  if [ -z "$EXPRS" ]; then
+                    EXPRS="test(/$pat_rx/)"
+                  else
+                    EXPRS="$EXPRS or test(/$pat_rx/)"
+                  fi
+                done < "$tmpf"
+                rm -f "$tmpf"
+                if [ -n "$EXPRS" ]; then
+                  FILTER_EXPR="not ($EXPRS)"
+                fi
+              fi
+            fi
+
+            # Detect and extract --test-threads value (used to set JOBS)
+            TEST_THREADS=""
+            if [ -n "$RIGHT_OF_SEP" ]; then
+              TEST_THREADS="$(printf '%s\n' "$RIGHT_OF_SEP" | sed -nE 's/.*--test-threads=([0-9]+).*/\1/p' | head -n1)"
+              if [ -z "$TEST_THREADS" ]; then
+                TEST_THREADS="$(printf '%s\n' "$RIGHT_OF_SEP" | sed -nE 's/.*--test-threads[[:space:]]+([0-9]+).*/\1/p' | head -n1)"
+              fi
+            fi
+
+            DEFAULT_JOBS=8
+            JOBS="${NEXTEST_JOBS:-$DEFAULT_JOBS}"
+            if [ -n "$TEST_THREADS" ]; then
+              JOBS="$TEST_THREADS"
+            fi
+
+            # Create nextest config (disable fail-fast, add slow-timeout + JUnit output)
+            SLOW_PERIOD="${NEXTEST_SLOW_PERIOD:-60s}"
+            CFG_ARGS=()
+            TMPD="$(mktemp -d)"
+            if [ -f ".config/nextest.toml" ]; then
+              CFG_ARGS+=(--config-file ".config/nextest.toml")
+            fi
+            {
+              printf '%s\n' '[profile.ci]'
+              printf '%s\n' 'fail-fast = false'
+              printf '%s\n' "slow-timeout = \"${SLOW_PERIOD}\""
+              printf '%s\n' ''
+              printf '%s\n' '[profile.ci.junit]'
+              printf '%s\n' 'path = "junit.xml"'
+            } > "$TMPD/nextest-override.toml"
+            CFG_ARGS+=(--config-file "$TMPD/nextest-override.toml")
+
+            # Print configuration summary for debugging
+            echo "==> nextest package: << parameters.workspace_member >>"
+            echo "==> build flags (sanitized): '${BUILD_FLAGS_SANITIZED}'"
+            echo "==> filter-expr: ${FILTER_EXPR:-<none>}  (right-of-sep: ${RIGHT_OF_SEP:-<none>})"
+            echo "==> test-threads override: ${TEST_THREADS:-<none>}"
+            echo "==> jobs: ${JOBS}"
+
+            # Use plain cargo test if --no-run was requested
+            # Otherwise, run tests with cargo nextest
+            if printf '%s' " $BUILD_FLAGS_SANITIZED " | grep -q ' --no-run '; then
+              RUST_MIN_STACK=67108864 cargo test --package="<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED | tee "$OUT"
+              : > "$CSV"; : > "$TOP"
+            else
+              rm -rf target
+              RUST_MIN_STACK=67108864 \
+              cargo nextest run \
+                -p "<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED \
+                --profile ci -j "${JOBS}" "${CFG_ARGS[@]}" \
+                --status-level fail --hide-progress-bar \
+                --no-tests=pass \
+                ${FILTER_EXPR:+--filter-expr "$FILTER_EXPR"} \
+                2>&1 | tee "$OUT"
+
+              if [ -f "$JUNIT" ]; then
+                awk -v RS='<testcase ' '
+                  NR>1 {
+                    name=""; classname=""; time="";
+                    start=index($0,"classname=\""); if(start>0){ start+=11; rest=substr($0,start); end=index(rest,"\""); if(end>0) classname=substr(rest,1,end-1) }
+                    start=index($0,"name=\"");      if(start>0){ start+=6;  rest=substr($0,start); end=index(rest,"\""); if(end>0) name=substr(rest,1,end-1) }
+                    start=index($0,"time=\"");      if(start>0){ start+=6;  rest=substr($0,start); end=index(rest,"\""); if(end>0) time=substr(rest,1,end-1) }
+                    if(name!="" && time!=""){ full=(classname!=""?classname"::"name:name); printf "%s,%s\n", full, time }
+                  }
+                ' "$JUNIT" > "$CSV" || true
+
+                sort -t, -k2,2nr "$CSV" | head -n 30 > "$TOP" || true
+              else
+                echo "WARN: $JUNIT not found; no timings extracted." >&2
+                : > "$CSV"; : > "$TOP"
+              fi
+            fi
+
+            if [ "$USE_CACHE" = "true" ]; then
+              echo "[sccache stats AFTER nextest]"
+              "$CIRCLE_WORKING_DIRECTORY/.bin/sccache" -s || true
+            fi
+
+      - store_artifacts:
+          path: artifacts
+          destination: test-timings/<< parameters.workspace_member >>
+      - store_test_results:
+          path: target/nextest/ci
+
+      - when:
+          condition: << parameters.use_cache >>
+          steps:
+            - clear_environment:
+                cache_key: v4.7.1-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
 
   install_rust_nightly:
     description: "Install Rust nightly toolchain"
@@ -172,21 +453,12 @@ jobs:
           workspace_member: snarkvm
 
   algorithms:
-    executor: rust-docker 
+    executor: rust-docker
     resource_class: << pipeline.parameters.large >>
     steps:
       - run_test:
           workspace_member: snarkvm-algorithms
 
-  algorithms-profiler:
-    executor: rust-docker
-    resource_class: << pipeline.parameters.medium >>
-    steps:
-      - run_test: # This runs a single test with profiler enabled
-          workspace_member: snarkvm-algorithms
-          flags: varuna::prove_and_verify_with_square_matrix --features profiler
-          cache_key_suffix: -profiler-test
-  
   circuit:
     executor: rust-docker
     resource_class: << pipeline.parameters.small >>
@@ -201,16 +473,6 @@ jobs:
       - run_test:
           workspace_member: snarkvm-circuit-account
 
-  # This checks that no `console` structs are used in core circuit logic.
-  circuit-account-noconsole:
-    executor: rust-docker
-    resource_class: << pipeline.parameters.small >>
-    steps:
-      - run_test:
-          workspace_member: snarkvm-circuit-account
-          cache_key_suffix: -noconsole
-          flags: --no-default-features
-
   circuit-algorithms:
     executor: rust-docker
     resource_class: << pipeline.parameters.medium >>
@@ -224,16 +486,6 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-circuit-collections
-
-  # This checks that no `console` structs are used in core circuit logic.
-  circuit-collections-noconsole:
-    executor: rust-docker
-    resource_class: << pipeline.parameters.xlarge >>
-    steps:
-      - run_test:
-          workspace_member: snarkvm-circuit-collections
-          cache_key_suffix: -noconsole
-          flags: --no-default-features
 
   circuit-environment:
     executor: rust-docker
@@ -434,19 +686,30 @@ jobs:
 
   ledger:
     executor: rust-docker
-    resource_class: << pipeline.parameters.xlarge >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
 
-  ledger-with-rocksdb:
+  ledger-with-rocksdb-partition1:
     executor: rust-docker
-    resource_class: << pipeline.parameters.large >>
+    resource_class: << pipeline.parameters.xlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
-          flags: --release --features=rocks -- --test-threads=2
-          timeout: 20m
+          flags: --release --features=rocks --partition count:1/2 -- --test-threads=10
+          no_output_timeout: 20m
+          timeout: 30m
+
+  ledger-with-rocksdb-partition2:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.xlarge >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-ledger
+          flags: --release --features=rocks --partition count:2/2 -- --test-threads=10
+          no_output_timeout: 20m
+          timeout: 30m
 
   ledger-with-valid-solutions:
     executor: rust-docker
@@ -456,6 +719,15 @@ jobs:
           workspace_member: snarkvm-ledger
           cache_key_suffix: -with-vaild-solutions
           flags: valid_solutions --features=test
+
+  ledger-with-valid-solutions-prerelease:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.xlarge >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-ledger
+          cache_key_suffix: -with-vaild-solutions-prerelease
+          flags: valid_solutions --features test --run-ignored ignored-only
 
   ledger-authority:
     executor: rust-docker
@@ -470,6 +742,8 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-ledger-block
+          no_output_timeout: 20m
+          timeout: 30m
 
   ledger-committee:
     executor: rust-docker
@@ -501,7 +775,7 @@ jobs:
 
   ledger-narwhal-data:
     executor: rust-docker
-    resource_class: << pipeline.parameters.small >>
+    resource_class: << pipeline.parameters.medium >>
     steps:
       - run_test:
           workspace_member: snarkvm-ledger-narwhal-data
@@ -552,10 +826,18 @@ jobs:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
-
       - run_test:
           workspace_member: snarkvm-ledger-store
           flags: --features=rocks
+
+  ledger-store-prerelease:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.twoxlarge >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-ledger-store
+          flags: --run-ignored ignored-only -- --test-threads 2
+          cache_key_suffix: -ledger-store-prerelease
 
   ledger-test-helpers:
     executor: rust-docker
@@ -580,8 +862,7 @@ jobs:
       - run_test:
           workspace_member: snarkvm-parameters
           flags: --no-run --features large_params
-          cache_key_suffix: -large
-          # Compilation can take very long and produce no output for a while.
+          use_cache: false
           no_output_timeout: 20m
           timeout: 30m
 
@@ -591,8 +872,11 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-parameters
-          flags: -- --test-threads=2 --ignored test_load_bytes_mini
+          flags: --run-ignored ignored-only -- --test-threads=2
+          use_cache: false
           cache_key_suffix: -v-{{ epoch }}
+          no_output_timeout: 20m
+          timeout: 30m
 
   synthesizer:
     executor: rust-docker
@@ -600,38 +884,58 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer
-          flags: --lib --bins
-          timeout: 20m
+          flags: --lib --bins -- --test-threads 16
+          no_output_timeout: 20m
+          timeout: 30m
 
-  synthesizer-test:
+  synthesizer-prerelease:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer
-          flags: --lib --bins --features test
-          cache_key_suffix: -test
+          flags: --features test --run-ignored ignored-only -- --test-threads 2
+          no_output_timeout: 20m
+          cache_key_suffix: -synthesizer-prerelease
+          timeout: 20m
+
+  synthesizer-test-partition1:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.twoxlarge >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-synthesizer
+          # `history` enables the per-key historical update map that the `view` evaluation path
+          # depends on; gating it here ensures the v15 view tests are exercised in CI.
+          flags: >
+            --lib --bins --features test,history
+            --partition count:1/2
+            -- --test-threads 8
+          cache_key_suffix: -test1
           timeout: 25m
 
-#  synthesizer-mem-heavy:
-#    executor: rust-docker
-#    resource_class: << pipeline.parameters.twoxlarge >>
-#    steps:
-#      - run_test:
-#          workspace_member: snarkvm-synthesizer
-#          flags: -- --ignored test_deployment_synthesis_overload test_deep_nested_execution_cost
-#          cache_key_suffix: -mem-heavy
+  synthesizer-test-partition2:
+    executor: rust-docker
+    resource_class: << pipeline.parameters.twoxlarge >>
+    steps:
+      - run_test:
+          workspace_member: snarkvm-synthesizer
+          flags: >
+            --lib --bins --features test,history
+            --partition count:2/2
+            -- --test-threads 8
+          cache_key_suffix: -test2
+          timeout: 25m
 
   synthesizer-integration:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
-          timeout: 30m
-          # test_vm_execute_and_finalize can take over 10 minutes in the current setup
+          timeout: 30m # test_vm_execute_and_finalize can take over 10 minutes in the current setup
           no_output_timeout: 20m
           workspace_member: snarkvm-synthesizer
-          flags: --test '*' --features test -- --test-threads=4 
+          flags: --test '*' --features test,dev-print,history -- --test-threads=4
           cache_key_suffix: -integration
 
   synthesizer-process:
@@ -640,7 +944,8 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-process
-          flags: -- --test-threads=8
+          # See `synthesizer-test-partition1` for why `history` is enabled.
+          flags: --features history
 
   synthesizer-process-with-rocksdb:
     executor: rust-docker
@@ -648,7 +953,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-process
-          flags: --features=rocks
+          flags: --features=rocks -- --test-threads=4
           cache_key_suffix: -with-rocksdb
 
   synthesizer-program:
@@ -665,16 +970,16 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: -- --skip keccak --skip psd --skip sha --skip instruction::is --skip instruction::equal --skip instruction::commit
+          flags: -- --skip keccak --skip psd --skip sha --skip instruction::is --skip instruction::equal --skip instruction::commit --test-threads=8
           cache_key_suffix: -integration
 
   synthesizer-program-integration-keccak:
     executor: rust-docker
-    resource_class: << pipeline.parameters.xlarge >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: keccak
+          flags: keccak -- --test-threads=4
           timeout: 30m
           no_output_timeout: 20m
           cache_key_suffix: -integration-keccak
@@ -690,11 +995,11 @@ jobs:
 
   synthesizer-program-integration-sha:
     executor: rust-docker
-    resource_class: << pipeline.parameters.xlarge >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
-          flags: sha
+          flags: sha -- --test-threads=4
           timeout: 30m
           no_output_timeout: 20m
           cache_key_suffix: -integration-sha
@@ -753,7 +1058,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-snarkvm-wasm-cache
+          cache_key: v4.7.1-rust-1.88.0-snarkvm-wasm-cache
       - run:
           no_output_timeout: 30m
           command: |
@@ -761,16 +1066,20 @@ jobs:
             # The versions of nvm and Node.js may need to be periodically updated
             # Download and install nvm
             curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+            
             # Add nvm to the path
             source /home/circleci/.profile
+            
             # Download and install Node.js
             nvm install 22
+            
             # Install wasm-pack
             curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
             # Run the tests
             cd wasm && wasm-pack test --node
       - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-snarkvm-wasm-cache
+          cache_key: v4.7.1-rust-1.88.0-snarkvm-wasm-cache
 
   check-fmt:
     executor: rust-docker
@@ -779,13 +1088,13 @@ jobs:
       - checkout
       - install_rust_nightly
       - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-snarkvm-fmt-cache
+          cache_key: v4.7.1-rust-1.88.0-snarkvm-fmt-cache
       - run:
           name: Check style
           no_output_timeout: 35m
           command: cargo +nightly fmt --all -- --check
       - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-snarkvm-fmt-cache
+          cache_key: v4.7.1-rust-1.88.0-snarkvm-fmt-cache
 
   check-unused-dependencies:
     executor: rust-docker
@@ -793,15 +1102,18 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-machete-cache
+          cache_key: v4.7.1-rust-1.88.0-machete-cache
       - run:
           name: Check for unused dependencies
           no_output_timeout: 10m
           command: |
-            cargo install cargo-machete@0.7.0
+            set -euo pipefail
+            if ! command -v cargo-machete >/dev/null 2>&1; then
+              cargo install cargo-machete@0.7.0 --locked
+            fi
             cargo machete
       - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-machete-cache
+          cache_key: v4.7.1-rust-1.88.0-machete-cache
 
   check-cargo-audit:
     executor: rust-docker
@@ -809,31 +1121,31 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-cargo-audit-cache
+          cache_key: v4.7.1-rust-1.88.0-cargo-audit-cache
       - run:
           name:  Check for security vulnerabilities
           no_output_timeout: 10m
           command: |
-            cargo install cargo-audit@0.21.2 --locked
+            cargo install cargo-audit@0.22.0 --locked --force
             cargo audit -D warnings
       - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-cargo-audit-cache
+          cache_key: v4.7.1-rust-1.88.0-cargo-audit-cache
 
   check-cargo-semver-checks:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
     steps:
-      - checkout
+      - checkout:
+          method: full
       - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
+          cache_key: v4.7.1-rust-1.88.0-cargo-semver-checks-cache
       - run:
           name: Check for semver violations
           no_output_timeout: 15m
           command: |
             bash ./.circleci/semver-checks.sh
-
       - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-cargo-semver-checks-cache
+          cache_key: v4.7.1-rust-1.88.0-cargo-semver-checks-cache
 
   check-clippy:
     executor: rust-docker
@@ -841,7 +1153,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-snarkvm-clippy-cache
+          cache_key: v4.7.1-rust-1.88.0-snarkvm-clippy-cache
       - run:
           name: Check Clippy (default features)
           timeout: 20m
@@ -853,7 +1165,7 @@ jobs:
           command: |
             cargo clippy --workspace --all-targets --all-features -- -D warnings
       - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-snarkvm-clippy-cache
+          cache_key: v4.7.1-rust-1.88.0-snarkvm-clippy-cache
 
   check-all-targets:
     executor: rust-docker
@@ -861,13 +1173,13 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.2.0-rust-1.88.0-snarkvm-all-targets-cache
+          cache_key: v4.7.1-rust-1.88.0-snarkvm-all-targets-cache
       - run:
           name: Check all targets
           no_output_timeout: 35m
           command: cargo check --release --workspace --all-targets
       - clear_environment:
-          cache_key: v4.2.0-rust-1.88.0-snarkvm-all-targets-cache
+          cache_key: v4.7.1-rust-1.88.0-snarkvm-all-targets-cache
 
   verify-windows:
     executor:
@@ -875,6 +1187,7 @@ jobs:
       size: xlarge
     environment:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      RUSTFLAGS: "" # override the config.toml flags
     parameters:
       workspace_member:
         type: string
@@ -889,19 +1202,15 @@ workflows:
     jobs:
       - check-fmt
       - check-clippy
-      - check-unused-dependencies
       - check-cargo-audit
-      - check-cargo-semver-checks
       - check-all-targets
 
   circuit-workflow:
     jobs:
       - circuit
       - circuit-account
-      - circuit-account-noconsole
       - circuit-algorithms
       - circuit-collections
-      - circuit-collections-noconsole
       - circuit-environment
       - circuit-network
       - circuit-program
@@ -935,10 +1244,8 @@ workflows:
   ledger-workflow:
     jobs:
       - ledger
-      - ledger-with-rocksdb
       - ledger-with-valid-solutions
       - ledger-authority
-      - ledger-block
       - ledger-committee
       - ledger-narwhal
       - ledger-narwhal-batch-certificate
@@ -956,38 +1263,63 @@ workflows:
   synthesizer-workflow:
     jobs:
       - synthesizer
-      - synthesizer-test
-      # - synthesizer-mem-heavy
-      - synthesizer-integration
       - synthesizer-process
-      - synthesizer-process-with-rocksdb
       - synthesizer-program
-      - synthesizer-program-integration
-      - synthesizer-program-integration-keccak
-      - synthesizer-program-integration-psd
-      - synthesizer-program-integration-sha
-      - synthesizer-program-integration-instruction-is
-      - synthesizer-program-integration-instruction-equal
-      - synthesizer-program-integration-instruction-commit
       - synthesizer-snark
 
   snarkvm-workflow:
     jobs:
-      - snarkvm
       - algorithms
-      - algorithms-profiler
       - curves
       - fields
-      - parameters
-      - parameters-large
-      - parameters-uncached
+      - snarkvm
       - utilities
       - utilities-derives
       - wasm
 
-  windows-workflow:
+  # Jobs specific to this branch to run
+  custom-workflow:
+    when: pipeline.git.branch == "fix_target_adjustment_tests"
     jobs:
-      - verify-windows:
+      - ledger-block
+
+  # Run additional but unlikely to fail checks on merges only
+  merge-workflow:
+    when: pipeline.git.branch == "staging"
+      or pipeline.git.branch == "canary"
+      or pipeline.git.branch == "testnet"
+      or pipeline.git.branch == "mainnet"
+      or pipeline.git.branch == "copilot/adjust-transaction-cache-key"
+    jobs:
+      - check-unused-dependencies # This can be cleaned up before releases
+      - check-cargo-semver-checks # This can be cleaned up before releases
+      - ledger-with-rocksdb-partition1 # Often similar results as `ledger`
+      - ledger-with-rocksdb-partition2 # Often similar results as `ledger`
+      - ledger-block # Very heavy and time taking run
+      - ledger-store-prerelease # Run the slowest ledger-store tests as pre-release
+      - ledger-with-valid-solutions-prerelease # Run the slowest ledger-with-valid-solution test as pre-release
+      - parameters # Infrastructure which often runs fine
+      - parameters-large # Infrastructure which often runs fine
+      - parameters-uncached # Infrastructure which often runs fine
+      - synthesizer-integration # Very slow test taking over 30+ minutes to pass
+      - synthesizer-prerelease # Run the slowest synthesizer tests as pre-release
+      - synthesizer-process-with-rocksdb # Often similar results as `synthesizer-process`
+      - synthesizer-program-integration # Expensive, rarely impacted, duplicate test-runs with `synthesizer`
+      - synthesizer-program-integration-keccak # Expensive and rarely impacted
+      - synthesizer-program-integration-psd # Expensive and rarely impacted
+      - synthesizer-program-integration-sha # Expensive and rarely impacted
+      - synthesizer-program-integration-instruction-is # Expensive and rarely impacted
+      - synthesizer-program-integration-instruction-equal # Expensive and rarely impacted
+      - synthesizer-program-integration-instruction-commit # Expensive and rarely impacted
+      - synthesizer-test-partition1 # Often similar results as `synthesizer`
+      - synthesizer-test-partition2 # Often similar results as `synthesizer`
+
+  release-workflow:
+    when: pipeline.git.branch == "canary"
+      or pipeline.git.branch == "testnet"
+      or pipeline.git.branch == "mainnet"
+    jobs:
+      - verify-windows: # Windows has never failed us when linux passed
           matrix:
             parameters:
               workspace_member: [

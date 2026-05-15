@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,7 +49,7 @@ mod tests {
         let address = Address::try_from(private_key)?;
 
         // Sample a new partial solution.
-        let expected = PartialSolution::new(rng.r#gen(), address, u64::rand(&mut rng)).unwrap();
+        let expected = PartialSolution::new(rng.random(), address, u64::rand(&mut rng)).unwrap();
 
         // Check the byte representation.
         let expected_bytes = expected.to_bytes_le()?;

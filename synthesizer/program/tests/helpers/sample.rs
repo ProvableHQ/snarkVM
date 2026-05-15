@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +17,7 @@ use circuit::AleoV0;
 use console::{
     network::MainnetV0,
     prelude::*,
-    program::{Identifier, Literal, Plaintext, Register, Value},
+    program::{Identifier, Plaintext, Register, Value},
 };
 use snarkvm_synthesizer_process::{Authorization, CallStack, FinalizeRegisters, Registers, Stack};
 use snarkvm_synthesizer_program::{FinalizeGlobalState, RegistersCircuit as _, RegistersTrait as _};
@@ -29,7 +29,7 @@ type CurrentAleo = AleoV0;
 pub fn sample_registers(
     stack: &Stack<CurrentNetwork>,
     function_name: &Identifier<CurrentNetwork>,
-    values: &[(&Literal<CurrentNetwork>, Option<circuit::Mode>)],
+    values: &[(Value<CurrentNetwork>, Option<circuit::Mode>)],
 ) -> Result<Registers<CurrentNetwork, CurrentAleo>> {
     // Initialize the registers.
     let mut registers = Registers::<CurrentNetwork, CurrentAleo>::new(
@@ -38,11 +38,9 @@ pub fn sample_registers(
     );
 
     // For each value, store the register and value.
-    for (index, (literal, mode)) in values.iter().enumerate() {
+    for (index, (value, mode)) in values.iter().enumerate() {
         // Initialize the register.
         let register = Register::Locator(index as u64);
-        // Initialize the console value.
-        let value = Value::Plaintext(Plaintext::from(*literal));
         // Store the value in the console registers.
         registers.store(stack, &register, value.clone())?;
         // If the mode is not `None`,
@@ -50,7 +48,7 @@ pub fn sample_registers(
             use circuit::Inject;
 
             // Initialize the circuit value.
-            let circuit_value = circuit::Value::new(*mode, value);
+            let circuit_value = circuit::Value::new(*mode, value.clone());
             // Store the value in the circuit registers.
             registers.store_circuit(stack, &register, circuit_value)?;
         }
@@ -62,25 +60,23 @@ pub fn sample_registers(
 pub fn sample_finalize_registers(
     stack: &Stack<CurrentNetwork>,
     function_name: &Identifier<CurrentNetwork>,
-    literals: &[&Literal<CurrentNetwork>],
+    plaintexts: &[Plaintext<CurrentNetwork>],
 ) -> Result<FinalizeRegisters<CurrentNetwork>> {
     // Initialize the registers.
     let mut finalize_registers = FinalizeRegisters::<CurrentNetwork>::new(
-        FinalizeGlobalState::from(1, 1, [0; 32]),
-        <CurrentNetwork as Network>::TransitionID::default(),
+        FinalizeGlobalState::from(1, 1, None, [0; 32]),
+        Some(<CurrentNetwork as Network>::TransitionID::default()),
         *function_name,
         stack.get_finalize_types(function_name)?.clone(),
-        0u64,
+        Some(0u64),
     );
 
     // For each literal,
-    for (index, literal) in literals.iter().enumerate() {
+    for (index, plaintext) in plaintexts.iter().enumerate() {
         // Initialize the register
         let register = Register::Locator(index as u64);
-        // Initialize the console value.
-        let value = Value::Plaintext(Plaintext::from(*literal));
         // Store the value in the console registers.
-        finalize_registers.store(stack, &register, value)?;
+        finalize_registers.store(stack, &register, Value::Plaintext(plaintext.clone()))?;
     }
 
     Ok(finalize_registers)

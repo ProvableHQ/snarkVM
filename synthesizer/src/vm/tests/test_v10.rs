@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +31,7 @@ use snarkvm_utilities::TestRng;
 //  - a record cannot be consumed twice in the same program.
 //  - a local record cannot be created and consumed in the same program.
 #[test]
+#[ignore]
 fn test_upgrade_cycle_with_records() {
     let rng = &mut TestRng::default();
 

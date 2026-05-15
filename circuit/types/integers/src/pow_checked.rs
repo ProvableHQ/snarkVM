@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,10 +52,6 @@ impl<E: Environment, I: IntegerType, M: Magnitude> PowChecked<Integer<E, M>> for
         } else {
             let mut result = Self::one();
 
-            // TODO (@pranav) In each step, we check that we have not overflowed,
-            //  yet we know that in the first step, we do not need to check and
-            //  in general we do not need to check for overflow until we have found
-            //  the second bit that has been set. Optimize.
             for bit in other.bits_le.iter().rev() {
                 result = result.mul_checked(&result);
 
@@ -79,7 +75,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> PowChecked<Integer<E, M>> for
                     };
 
                     let overflow = overflow | positive_product_overflows | negative_product_underflows;
-                    E::assert_eq(overflow & bit, E::zero());
+                    E::assert_eq(overflow & bit, E::zero()).expect("Integer power overflow check failed");
 
                     // Return the product of `self` and `other` with the appropriate sign.
                     Self::ternary(operands_same_sign, &product, &(!&product).add_wrapped(&Self::one()))
@@ -87,7 +83,7 @@ impl<E: Environment, I: IntegerType, M: Magnitude> PowChecked<Integer<E, M>> for
                     let (product, overflow) = Self::mul_with_flags(&result, self);
 
                     // For unsigned multiplication, check that the overflow flag is not set.
-                    E::assert_eq(overflow & bit, E::zero());
+                    E::assert_eq(overflow & bit, E::zero()).expect("Integer power overflow check failed");
 
                     // Return the product of `self` and `other`.
                     product

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +24,13 @@ impl<A: Aleo> Equal<Self> for Value<A> {
             (Self::Plaintext(a), Self::Plaintext(b)) => a.is_equal(b),
             (Self::Record(a), Self::Record(b)) => a.is_equal(b),
             (Self::Future(a), Self::Future(b)) => a.is_equal(b),
-            (Self::Plaintext(..), _) | (Self::Record(..), _) | (Self::Future(..), _) => Boolean::constant(false),
+            (Self::DynamicRecord(a), Self::DynamicRecord(b)) => a.is_equal(b),
+            (Self::DynamicFuture(a), Self::DynamicFuture(b)) => a.is_equal(b),
+            (Self::Plaintext(..), _)
+            | (Self::Record(..), _)
+            | (Self::Future(..), _)
+            | (Self::DynamicRecord(..), _)
+            | (Self::DynamicFuture(..), _) => Boolean::constant(false),
         }
     }
 
@@ -34,7 +40,13 @@ impl<A: Aleo> Equal<Self> for Value<A> {
             (Self::Plaintext(a), Self::Plaintext(b)) => a.is_not_equal(b),
             (Self::Record(a), Self::Record(b)) => a.is_not_equal(b),
             (Self::Future(a), Self::Future(b)) => a.is_not_equal(b),
-            (Self::Plaintext(..), _) | (Self::Record(..), _) | (Self::Future(..), _) => Boolean::constant(true),
+            (Self::DynamicRecord(a), Self::DynamicRecord(b)) => a.is_not_equal(b),
+            (Self::DynamicFuture(a), Self::DynamicFuture(b)) => a.is_not_equal(b),
+            (Self::Plaintext(..), _)
+            | (Self::Record(..), _)
+            | (Self::Future(..), _)
+            | (Self::DynamicRecord(..), _)
+            | (Self::DynamicFuture(..), _) => Boolean::constant(true),
         }
     }
 }

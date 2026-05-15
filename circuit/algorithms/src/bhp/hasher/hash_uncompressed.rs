@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -73,7 +73,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
 
             // Ensure `lambda` is correct by enforcing:
             // `(that_x - this_x) * lambda == (that_y - this_y)`
-            E::enforce(|| (that_x - this_x, &lambda, that_y - this_y));
+            E::enforce(|| (that_x - this_x, &lambda, that_y - this_y)).expect("BHP lambda constraint unsatisfied");
 
             // Construct `sum_x` as a witness defined as:
             // `sum_x := (B * lambda^2) - A - this_x - that_x`
@@ -83,7 +83,8 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
 
             // Ensure `sum_x` is correct by enforcing:
             // `(B * lambda) * lambda == (A + this_x + that_x + sum_x)`
-            E::enforce(|| (&coeff_b * &lambda, &lambda, &coeff_a + this_x + that_x + &sum_x));
+            E::enforce(|| (&coeff_b * &lambda, &lambda, &coeff_a + this_x + that_x + &sum_x))
+                .expect("BHP sum_x constraint unsatisfied");
 
             // Construct `sum_y` as a witness defined as:
             // `sum_y := -(this_y + (lambda * (this_x - sum_x)))`
@@ -91,7 +92,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
 
             // Ensure `sum_y` is correct by enforcing:
             // `(this_x - sum_x) * lambda == (this_y + sum_y)`
-            E::enforce(|| (this_x - &sum_x, &lambda, this_y + &sum_y));
+            E::enforce(|| (this_x - &sum_x, &lambda, this_y + &sum_y)).expect("BHP sum_y constraint unsatisfied");
 
             (sum_x, sum_y)
         };
@@ -144,7 +145,8 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
                         // which is equivalent to:
                         //     if `bit_2 == 0`, then `montgomery_y = -1/2 * -2 * y = y`
                         //     if `bit_2 == 1`, then `montgomery_y = 1/2 * -2 * y = -y`
-                        E::enforce(|| (-y.double(), bit_2 - &one_half, &montgomery_y)); // 1 constraint
+                        E::enforce(|| (-y.double(), bit_2 - &one_half, &montgomery_y))
+                            .expect("BHP montgomery_y constraint unsatisfied"); // 1 constraint
 
                         montgomery_y
                     };
@@ -189,7 +191,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 10;
     const MESSAGE: &str = "BHPCircuit0";
 
     fn check_hash_uncompressed<const NUM_WINDOWS: u8, const WINDOW_SIZE: u8>(

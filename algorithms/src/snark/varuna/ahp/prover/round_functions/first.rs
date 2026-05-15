@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,7 @@ use snarkvm_fields::PrimeField;
 use snarkvm_utilities::cfg_into_iter;
 
 use itertools::Itertools;
-use rand::RngCore;
+use rand::Rng;
 use std::collections::BTreeMap;
 
 #[cfg(not(feature = "serial"))]
@@ -58,7 +58,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     }
 
     /// Output the first round message and the next state.
-    pub fn prover_first_round<'a, R: RngCore>(
+    pub fn prover_first_round<'a, R: Rng>(
         mut state: prover::State<'a, F, SM>,
         rng: &mut R,
     ) -> Result<prover::State<'a, F, SM>, AHPError> {
@@ -99,7 +99,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         Ok(state)
     }
 
-    fn calculate_mask_poly<R: RngCore>(variable_domain: EvaluationDomain<F>, rng: &mut R) -> LabeledPolynomial<F> {
+    fn calculate_mask_poly<R: Rng>(variable_domain: EvaluationDomain<F>, rng: &mut R) -> LabeledPolynomial<F> {
         assert!(SM::ZK);
         let mask_poly_time = start_timer!(|| "Computing mask polynomial");
         // We'll use the masking technique from Lunar (https://eprint.iacr.org/2020/1069.pdf, pgs 20-22).
@@ -124,6 +124,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         LabeledPolynomial::new("mask_poly".to_string(), mask_poly, None, None)
     }
 
+    // Compute the shifted witness \overline{w}(X)
     fn calculate_w(
         label: String,
         private_variables: Vec<F>,
@@ -134,6 +135,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     ) -> Witness<F> {
         let mut w_extended = private_variables;
         let ratio = variable_domain.size() / input_domain.size();
+        // Padding the witness w to the size of C_i
         w_extended.resize(variable_domain.size() - input_domain.size(), F::zero());
 
         let x_evals = {
@@ -143,13 +145,19 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             coeffs
         };
 
+        // Computing the evaluations of \widetilde{z} - \widetilde{x} (which
+        // vanishes at C_i[x], i. e. variable_domain)
         let w_poly_time = start_timer!(|| "Computing w polynomial");
         let w_poly_evals = cfg_into_iter!(0..variable_domain.size())
             .map(|k| match k % ratio {
                 0 => F::zero(),
+                // Interleaving the padded witness with the instance
                 _ => w_extended[k - (k / ratio) - 1] - x_evals[k],
             })
             .collect();
+
+        // Interpolating \widetilde{z} - \widetilde{x} and dividing by the
+        // vanishing polynomial over variable_domain.
         let w_poly = EvaluationsOnDomain::from_vec_and_domain(w_poly_evals, variable_domain)
             .interpolate_with_pc(&circuit.ifft_precomputation);
         let (w_poly, remainder) = w_poly.divide_by_vanishing_poly(input_domain).unwrap();

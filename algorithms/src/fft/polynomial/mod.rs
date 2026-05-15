@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -281,7 +281,7 @@ impl<F: PrimeField> Polynomial<'_, F> {
                         .chunks(domain.size())
                         .map(|d| Evaluations::from_vec_and_domain(domain.fft(d), domain))
                         .fold(Evaluations::from_vec_and_domain(vec![F::zero(); domain.size()], domain), |mut acc, e| {
-                            cfg_iter_mut!(acc.evaluations).zip(e.evaluations).for_each(|(a, e)| *a += e);
+                            acc.evaluations.iter_mut().zip(e.evaluations).for_each(|(a, e)| *a += e);
                             acc
                         })
                 } else {

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,9 @@
 // limitations under the License.
 
 use super::*;
+use snarkvm_synthesizer_error::*;
+
+use std::sync::OnceLock;
 
 impl<N: Network> Stack<N> {
     /// Evaluates a program closure on the given inputs.
@@ -28,12 +31,12 @@ impl<N: Network> Stack<N> {
         signer: Address<N>,
         caller: Address<N>,
         tvk: Field<N>,
-    ) -> Result<Vec<Value<N>>> {
+    ) -> Result<Vec<Value<N>>, StackEvalError> {
         let timer = timer!("Stack::evaluate_closure");
 
         // Ensure the number of inputs matches the number of input statements.
         if closure.inputs().len() != inputs.len() {
-            bail!("Expected {} inputs, found {}", closure.inputs().len(), inputs.len())
+            return Err(anyhow!("Expected {} inputs, found {}", closure.inputs().len(), inputs.len()).into());
         }
 
         // Initialize the registers.
@@ -55,10 +58,10 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Store the inputs");
 
         // Evaluate the instructions.
-        for instruction in closure.instructions() {
+        for (ix, instruction) in closure.instructions().iter().enumerate() {
             // If the evaluation fails, bail and return the error.
             if let Err(error) = instruction.evaluate(self, &mut registers) {
-                bail!("Failed to evaluate instruction ({instruction}): {error}");
+                return Err(IndexedInstructionError::new(ix, format!("{instruction}"), error.into()).into());
             }
         }
         lap!(timer, "Evaluate the instructions");
@@ -67,7 +70,7 @@ impl<N: Network> Stack<N> {
         let outputs = closure
             .outputs()
             .iter()
-            .map(|output| {
+            .map(|output| -> Result<_> {
                 match output.operand() {
                     // If the operand is a literal, use the literal directly.
                     Operand::Literal(literal) => Ok(Value::Plaintext(Plaintext::from(literal))),
@@ -81,8 +84,26 @@ impl<N: Network> Stack<N> {
                     Operand::Signer => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.signer()?)))),
                     // If the operand is the caller, retrieve the caller from the registers.
                     Operand::Caller => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.caller()?)))),
+                    // If the operand is the generator, retrieve the Aleo generator.
+                    Operand::AleoGenerator => N::g_powers()
+                        .first()
+                        .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                        .ok_or_else(|| anyhow!("Failed to retrieve the Aleo generator.")),
+                    // If the operand is the generator powers, retrieve the generator powers or the indexed group.
+                    Operand::AleoGeneratorPowers(index) => match index {
+                        None => Ok(Value::Plaintext(Plaintext::Array(
+                            N::g_powers().iter().map(|element| Plaintext::from(Literal::Group(*element))).collect(),
+                            OnceLock::new(),
+                        ))),
+                        Some(index) => N::g_powers()
+                            .get(**index as usize)
+                            .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                            .ok_or_else(|| anyhow!("Index {index} out of bounds for Aleo generator")),
+                    },
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => bail!("Cannot retrieve the block height from a closure scope."),
+                    // If the operand is the block timestamp, throw an error.
+                    Operand::BlockTimestamp => bail!("Cannot retrieve the block timestamp from a closure scope."),
                     // If the operand is the network id, throw an error.
                     Operand::NetworkID => bail!("Cannot retrieve the network ID from a closure scope."),
                     // If the operand is the program checksum, throw an error.
@@ -93,6 +114,7 @@ impl<N: Network> Stack<N> {
                     Operand::ProgramOwner(_) => bail!("Cannot retrieve the program owner from a closure scope."),
                 }
             })
+            .map(|res| res.map_err(StackEvalError::from))
             .collect();
         lap!(timer, "Load the outputs");
 
@@ -110,36 +132,36 @@ impl<N: Network> Stack<N> {
         caller: Option<ProgramID<N>>,
         root_tvk: Option<Field<N>>,
         rng: &mut R,
-    ) -> Result<Response<N>> {
+    ) -> Result<Response<N>, StackEvalError> {
         let timer = timer!("Stack::evaluate_function");
 
         // Retrieve the next request, based on the call stack mode.
-        let (request, call_stack) = match &mut call_stack {
-            CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
-            CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
-            // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
-            // This is done to ensure that evaluation during execution is performed consistently.
-            CallStack::Execute(authorization, _) => {
-                // Note: We need to replicate the authorization, so that 'execute' can call 'authorization.next()?'.
-                // This way, the authorization remains unmodified in this 'evaluate' scope.
-                let authorization = authorization.replicate();
-                let request = authorization.next()?;
-                let call_stack = CallStack::Evaluate(authorization);
-                (request, call_stack)
-            }
-            _ => bail!(
-                "Illegal operation: call stack must be `Authorize`, `Evaluate` or `Execute` in `evaluate_function`."
-            ),
-        };
+        let (request, call_stack) =
+            match &mut call_stack {
+                CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
+                CallStack::AuthorizeMocked(..) => (call_stack.pop()?, call_stack),
+                CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
+                // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
+                // This is done to ensure that evaluation during execution is performed consistently.
+                CallStack::Execute(authorization, _, _) => {
+                    // Note: We need to replicate the authorization, so that 'execute' can call 'authorization.next()?'.
+                    // This way, the authorization remains unmodified in this 'evaluate' scope.
+                    let authorization = authorization.replicate();
+                    let request = authorization.next()?;
+                    let call_stack = CallStack::Evaluate(authorization);
+                    (request, call_stack)
+                }
+                _ => return Err(anyhow!(
+                    "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `AuthorizeMocked` in `evaluate_function`."
+                )
+                .into()),
+            };
         lap!(timer, "Retrieve the next request");
 
         // Ensure the network ID matches.
-        ensure!(
-            **request.network_id() == N::ID,
-            "Network ID mismatch. Expected {}, but found {}",
-            N::ID,
-            request.network_id()
-        );
+        if **request.network_id() != N::ID {
+            return Err(anyhow!("Network ID mismatch. Expected {}, but found {}", N::ID, request.network_id()).into());
+        }
 
         // Retrieve the function, inputs, and transition view key.
         let function = self.get_function(request.function_name())?;
@@ -160,15 +182,24 @@ impl<N: Network> Stack<N> {
 
         // Ensure the number of inputs matches.
         if function.inputs().len() != inputs.len() {
-            bail!(
+            return Err(anyhow!(
                 "Function '{}' in the program '{}' expects {} inputs, but {} were provided.",
                 function.name(),
                 self.program.id(),
                 function.inputs().len(),
                 inputs.len()
             )
+            .into());
         }
         lap!(timer, "Perform input checks");
+
+        // Ensure the request is well-formed (unless it has been mocked).
+        if !matches!(call_stack, CallStack::AuthorizeMocked(..))
+            && !request.verify(&function.input_types(), is_root, program_checksum)
+        {
+            return Err(anyhow!("[Evaluate] Request is invalid").into());
+        }
+        lap!(timer, "Verify the request");
 
         // Initialize the registers.
         let mut registers = Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone());
@@ -186,10 +217,6 @@ impl<N: Network> Stack<N> {
         }
         lap!(timer, "Initialize the registers");
 
-        // Ensure the request is well-formed.
-        ensure!(request.verify(&function.input_types(), is_root, program_checksum), "[Evaluate] Request is invalid");
-        lap!(timer, "Verify the request");
-
         // Store the inputs.
         function.inputs().iter().map(|i| i.register()).zip_eq(inputs).try_for_each(|(register, input)| {
             // Assign the input value to the register.
@@ -199,17 +226,21 @@ impl<N: Network> Stack<N> {
 
         // Evaluate the instructions.
         // Note: We handle the `call` instruction separately, as it requires special handling.
-        for instruction in function.instructions() {
+        for (ix, instruction) in function.instructions().iter().enumerate() {
             // Evaluate the instruction.
             let result = match instruction {
                 // If the instruction is a `call` instruction, we need to handle it separately.
-                Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng),
+                Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng)
+                    .map_err(|e| InstructionEvalError::Call(Box::new(e))),
+                // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
+                Instruction::CallDynamic(call_dynamic) => CallTrait::evaluate(call_dynamic, self, &mut registers, rng)
+                    .map_err(|e| InstructionEvalError::Call(Box::new(e))),
                 // Otherwise, evaluate the instruction normally.
-                _ => instruction.evaluate(self, &mut registers),
+                _ => instruction.evaluate(self, &mut registers).map_err(Into::into),
             };
             // If the evaluation fails, bail and return the error.
             if let Err(error) = result {
-                bail!("Failed to evaluate instruction ({instruction}): {error}");
+                return Err(IndexedInstructionError::new(ix, format!("{instruction}"), error).into());
             }
         }
         lap!(timer, "Evaluate the instructions");
@@ -235,8 +266,26 @@ impl<N: Network> Stack<N> {
                     Operand::Signer => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.signer()?)))),
                     // If the operand is the caller, retrieve the caller from the registers.
                     Operand::Caller => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.caller()?)))),
+                    // If the operand is the generator, retrieve the Aleo generator.
+                    Operand::AleoGenerator => N::g_powers()
+                        .first()
+                        .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                        .ok_or_else(|| anyhow!("Failed to retrieve the Aleo generator.")),
+                    // If the operand is the generator powers, retrieve the generator powers or the indexed group.
+                    Operand::AleoGeneratorPowers(index) => match index {
+                        None => Ok(Value::Plaintext(Plaintext::Array(
+                            N::g_powers().iter().map(|element| Plaintext::from(Literal::Group(*element))).collect(),
+                            OnceLock::new(),
+                        ))),
+                        Some(index) => N::g_powers()
+                            .get(**index as usize)
+                            .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                            .ok_or_else(|| anyhow!("Index {index} out of bounds for Aleo generator")),
+                    },
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => bail!("Cannot retrieve the block height from a function scope."),
+                    // If the operand is the block timestamp, throw an error.
+                    Operand::BlockTimestamp => bail!("Cannot retrieve the block timestamp from a function scope."),
                     // If the operand is the network id, throw an error.
                     Operand::NetworkID => bail!("Cannot retrieve the network ID from a function scope."),
                     // If the operand is the program checksum, throw an error.
@@ -275,13 +324,21 @@ impl<N: Network> Stack<N> {
         )?;
         finish!(timer);
 
-        // If the circuit is in `Authorize` mode, then save the transition.
+        // If the circuit is in `Authorize` or `AuthorizeMocked` mode, then save the transition.
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
             // Construct the transition.
             let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
+        }
+        if let CallStack::AuthorizeMocked(_, _, authorization) = registers.call_stack_ref() {
+            // Construct the transition without checking correctness of input IDs.
+            let transition =
+                Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;
+            // Add the transition to the authorization.
+            authorization.insert_transition(transition)?;
+            lap!(timer, "Save the mocked transition");
         }
 
         Ok(response)

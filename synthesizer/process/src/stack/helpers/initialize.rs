@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -58,6 +58,7 @@ impl<N: Network> Stack<N> {
             program_address: program.id().to_address()?,
             program_checksum: program.to_checksum(),
             program_edition: U16::new(edition),
+            program_amendment_count: 0,
             program_owner: None,
         };
         // Return the stack.

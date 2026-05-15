@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,10 +50,12 @@ mod print;
 pub mod rand;
 pub use self::rand::*;
 
+/// Helpers for data (de-)serialization.
 pub mod serialize;
 pub use serialize::*;
 
-mod errors;
+/// Helpers for error handling.
+pub mod errors;
 pub use errors::*;
 
 /// Use old name for backward-compatibility.

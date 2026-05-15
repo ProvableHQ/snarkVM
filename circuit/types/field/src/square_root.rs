@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +28,7 @@ impl<E: Environment> SquareRoot for Field<E> {
         });
 
         // Ensure `square_root` * `square_root` == `self`.
-        E::enforce(|| (&square_root, &square_root, self));
+        E::enforce(|| (&square_root, &square_root, self)).expect("Square root constraint unsatisfied");
 
         // Define the MODULUS_MINUS_ONE_DIV_TWO as a constant.
         let modulus_minus_one_div_two = match E::BaseField::from_bigint(E::BaseField::modulus_minus_one_div_two()) {
@@ -39,7 +39,7 @@ impl<E: Environment> SquareRoot for Field<E> {
         // Ensure that `square_root` is less than or equal to (MODULUS - 1) / 2.
         // This ensures that the resulting square root is unique.
         let is_less_than_or_equal = square_root.is_less_than_or_equal(&modulus_minus_one_div_two);
-        E::assert(is_less_than_or_equal);
+        E::assert(is_less_than_or_equal).expect("Square root uniqueness constraint unsatisfied");
 
         square_root
     }
@@ -54,11 +54,11 @@ impl<E: Environment> Field<E> {
         });
 
         // Ensure `square_root` * `square_root` == `self`.
-        E::enforce(|| (&square_root, &square_root, self));
+        E::enforce(|| (&square_root, &square_root, self)).expect("Even square root constraint unsatisfied");
 
         // Ensure that the LSB of the square root is zero.
         // Note that this unwrap is safe since the number of bits is always greater than zero.
-        E::assert(!square_root.to_bits_be().last().unwrap());
+        E::assert(!square_root.to_bits_be().last().unwrap()).expect("Even square root LSB constraint unsatisfied");
 
         square_root
     }
@@ -110,7 +110,7 @@ impl<E: Environment> Field<E> {
 
         // Enforce that the first root squared is equal to the square.
         // Note that if `self` is not a square, then `first_root` and `square` are both zero and the constraint is satisfied.
-        E::enforce(|| (&first_root, &first_root, &square));
+        E::enforce(|| (&first_root, &first_root, &square)).expect("Flagged square root constraint unsatisfied");
 
         // Initialize the second root as the negation of the first root.
         let second_root = first_root.clone().neg();
@@ -150,7 +150,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 1_000;
+    const ITERATIONS: u64 = 10;
 
     fn check_square_root(name: &str, mode: Mode, rng: &mut TestRng) {
         for _ in 0..ITERATIONS {

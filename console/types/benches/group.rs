@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,7 @@ fn group_from_field(c: &mut Criterion) {
     let rng = &mut TestRng::default();
 
     c.bench_function("group_from_field", move |b| {
-        let fields: Vec<Field<CurrentNetwork>> = (0..1000).map(|_| rng.r#gen()).collect();
+        let fields: Vec<Field<CurrentNetwork>> = (0..1000).map(|_| rng.random()).collect();
 
         b.iter(|| {
             for field in &fields {
@@ -44,7 +44,7 @@ fn group_from_field_on_curve(c: &mut Criterion) {
         type Projective = <CurrentNetwork as Environment>::Projective;
 
         let fields: Vec<Field<CurrentNetwork>> =
-            (0..1000).map(|_| rng.r#gen::<Projective>().to_affine().to_x_coordinate()).map(Field::new).collect();
+            (0..1000).map(|_| rng.random::<Projective>().to_affine().to_x_coordinate()).map(Field::new).collect();
 
         b.iter(|| {
             for field in &fields {
@@ -62,7 +62,7 @@ fn group_from_field_off_curve(c: &mut Criterion) {
         type Affine = <CurrentNetwork as Environment>::Affine;
 
         let fields: Vec<_> = std::iter::repeat(())
-            .map(|_| rng.r#gen::<Field<CurrentNetwork>>())
+            .map(|_| rng.random::<Field<CurrentNetwork>>())
             .filter(|&field| Affine::from_x_coordinate(*field, true).is_none())
             .take(1000)
             .collect();

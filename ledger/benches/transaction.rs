@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -136,7 +136,7 @@ fn execute(c: &mut Criterion) {
         // Bench the Transaction.write_le method using the LimitedWriter.
         c.bench_function("LimitedWriter::new - transfer_public", |b| {
             let mut buffer = Vec::with_capacity(3000);
-            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::MAX_TRANSACTION_SIZE)))
+            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::LATEST_MAX_TRANSACTION_SIZE())))
         });
 
         // Bench the execution of transfer_public.
@@ -182,7 +182,7 @@ fn execute(c: &mut Criterion) {
         // Bench the Transaction.write_le method using the LimitedWriter.
         c.bench_function("LimitedWriter::new - transfer_private", |b| {
             let mut buffer = Vec::with_capacity(3000);
-            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::MAX_TRANSACTION_SIZE)))
+            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::LATEST_MAX_TRANSACTION_SIZE())))
         });
 
         // Bench the check_transaction method.
@@ -263,15 +263,15 @@ function main:
         let inputs = [Value::from_str("2group").unwrap()].into_iter();
 
         // Add the program to the VM.
-        vm.process().write().add_program(&program).unwrap();
+        vm.process().lock().add_program(&program).unwrap();
 
         // Create an execution transaction that is 164613 bytes in size.
         let transaction = vm.execute(&private_key, ("too_big.aleo", "main"), inputs, None, 0, None, rng).unwrap();
 
         // Bench the Transaction.write_le method using the LimitedWriter.
         c.bench_function("LimitedWriter::new - too_big.aleo", |b| {
-            let mut buffer = Vec::with_capacity(MainnetV0::MAX_TRANSACTION_SIZE);
-            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::MAX_TRANSACTION_SIZE)))
+            let mut buffer = Vec::with_capacity(MainnetV0::LATEST_MAX_TRANSACTION_SIZE());
+            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::LATEST_MAX_TRANSACTION_SIZE())))
         });
 
         // Bench the check_transaction method.

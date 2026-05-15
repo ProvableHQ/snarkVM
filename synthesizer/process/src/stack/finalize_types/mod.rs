@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,9 +41,12 @@ use snarkvm_synthesizer_program::{
     Command,
     Constructor,
     Contains,
+    ContainsDynamic,
     Finalize,
     Get,
+    GetDynamic,
     GetOrUse,
+    GetOrUseDynamic,
     Instruction,
     MAX_ADDITIONAL_SEEDS,
     Opcode,
@@ -53,6 +56,7 @@ use snarkvm_synthesizer_program::{
     Remove,
     Set,
     StackTrait,
+    types_equivalent,
 };
 
 use indexmap::IndexMap;
@@ -83,6 +87,13 @@ impl<N: Network> FinalizeTypes<N> {
         Self::initialize_finalize_types_from_finalize(stack, finalize)
     }
 
+    /// Initializes a new instance of `FinalizeTypes` for the given view function.
+    /// Checks that the given view is well-formed for the given stack.
+    #[inline]
+    pub fn from_view(stack: &Stack<N>, view: &snarkvm_synthesizer_program::ViewCore<N>) -> Result<Self> {
+        Self::initialize_finalize_types_from_view(stack, view)
+    }
+
     /// Returns `true` if the given register exists.
     pub fn contains(&self, register: &Register<N>) -> bool {
         // Retrieve the register locator.
@@ -106,7 +117,16 @@ impl<N: Network> FinalizeTypes<N> {
             Operand::Signer => bail!("'self.signer' is not a valid operand in a finalize context."),
             Operand::Caller => bail!("'self.caller' is not a valid operand in a finalize context."),
             Operand::BlockHeight => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U32)),
+            Operand::BlockTimestamp => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::I64)),
             Operand::NetworkID => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U16)),
+            Operand::AleoGenerator => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
+            Operand::AleoGeneratorPowers(index) => match index {
+                None => FinalizeType::Plaintext(PlaintextType::Array(ArrayType::new(
+                    PlaintextType::Literal(LiteralType::Group),
+                    vec![U32::new(N::Scalar::SIZE_IN_BITS as u32)],
+                )?)),
+                Some(_) => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Group)),
+            },
             Operand::Checksum(_) => FinalizeType::Plaintext(PlaintextType::Array(ArrayType::new(
                 PlaintextType::Literal(LiteralType::U8),
                 vec![U32::new(32)],
@@ -157,6 +177,20 @@ impl<N: Network> FinalizeTypes<N> {
                         None => bail!("'{identifier}' does not exist in struct '{struct_name}'"),
                     }
                 }
+                // Access the member on the path to output the register type.
+                (FinalizeType::Plaintext(PlaintextType::ExternalStruct(locator)), Access::Member(identifier)) => {
+                    // Retrieve the member type from the external struct and check that it exists.
+                    let external_stack = stack.get_external_stack(locator.program_id())?;
+                    match external_stack.program().get_struct(locator.resource())?.members().get(identifier) {
+                        // Qualify local struct references so subsequent accesses use the correct stack.
+                        Some(member_type) => {
+                            let qualified = member_type.clone().qualify(*locator.program_id());
+                            finalize_type = FinalizeType::Plaintext(qualified);
+                        }
+                        // Halts if the member does not exist.
+                        None => bail!("'{identifier}' does not exist in struct '{locator}'"),
+                    }
+                }
                 // Access the member on the path to output the register type and check that it is in bounds.
                 (FinalizeType::Plaintext(PlaintextType::Array(array_type)), Access::Index(index)) => {
                     match index < array_type.length() {
@@ -188,14 +222,41 @@ impl<N: Network> FinalizeTypes<N> {
                     // Check that the index is in bounds.
                     match finalize_inputs.get_index(**index as usize) {
                         // Retrieve the input type and update `finalize_type` for the next iteration.
-                        Some(input) => finalize_type = input.finalize_type().clone(),
+                        Some(input) => {
+                            finalize_type = match input.finalize_type() {
+                                FinalizeType::Plaintext(plaintext_type) => {
+                                    let plaintext = match external_stack {
+                                        Some(ref external_stack) => {
+                                            // Qualify the finalize input type with the external program ID so that any
+                                            // subsequent accesses are resolved against the correct program context.
+                                            // Without this, the type would appear "local" and later lookups could
+                                            // incorrectly search the current program instead of the external one the
+                                            // struct originated from.
+                                            //
+                                            // Note: this was added in ConsensusVersion::V13 and a check was added to make
+                                            // sure this doesn't affect older consensus versions.
+                                            plaintext_type.clone().qualify(*external_stack.program_id())
+                                        }
+                                        None => plaintext_type.clone(),
+                                    };
+
+                                    FinalizeType::Plaintext(plaintext)
+                                }
+                                FinalizeType::Future(locator) => FinalizeType::Future(*locator),
+                                FinalizeType::DynamicFuture => bail!("Cannot access arguments of a dynamic future"),
+                            }
+                        }
                         // Halts if the index is out of bounds.
                         None => bail!("Index out of bounds"),
                     }
                 }
-                (FinalizeType::Plaintext(PlaintextType::Struct(..)), Access::Index(..))
+                (
+                    FinalizeType::Plaintext(PlaintextType::Struct(..) | PlaintextType::ExternalStruct(..)),
+                    Access::Index(..),
+                )
                 | (FinalizeType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (FinalizeType::Future(..), Access::Member(..)) => {
+                | (FinalizeType::Future(..), Access::Member(..))
+                | (FinalizeType::DynamicFuture, _) => {
                     bail!("Invalid access `{access}`")
                 }
             }
@@ -203,5 +264,21 @@ impl<N: Network> FinalizeTypes<N> {
 
         // Return the output type.
         Ok(finalize_type)
+    }
+}
+
+pub fn finalize_types_equivalent<N: Network>(
+    stack0: &impl StackTrait<N>,
+    type0: &FinalizeType<N>,
+    stack1: &impl StackTrait<N>,
+    type1: &FinalizeType<N>,
+) -> Result<bool> {
+    match (type0, type1) {
+        (FinalizeType::Plaintext(plaintext0), FinalizeType::Plaintext(plaintext1)) => {
+            types_equivalent(stack0, plaintext0, stack1, plaintext1)
+        }
+        (FinalizeType::Future(future0), FinalizeType::Future(future1)) => Ok(future0 == future1),
+        (FinalizeType::DynamicFuture, FinalizeType::DynamicFuture) => Ok(true),
+        _ => Ok(false),
     }
 }

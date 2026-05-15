@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,7 +66,7 @@ use snarkvm_algorithms::{
     snark::varuna::{CircuitProvingKey, CircuitVerifyingKey, VarunaHidingMode},
     srs::{UniversalProver, UniversalVerifier},
 };
-use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon2, Poseidon4};
+use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon2, Poseidon4, Poseidon8};
 use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
 use snarkvm_console_types::{Field, Group, Scalar};
 use snarkvm_curves::PairingEngine;
@@ -129,6 +129,16 @@ pub trait Network:
 
     /// The starting supply of Aleo credits.
     const STARTING_SUPPLY: u64 = 1_500_000_000_000_000; // 1.5B credits
+    /// The maximum supply of Aleo credits.
+    /// This value represents the absolute upper bound on all ALEO created over the lifetime of the network.
+    const MAX_SUPPLY: u64 = 5_000_000_000_000_000; // 5B credits
+    /// The block height that upper bounds the total supply of Aleo credits to 5 billion.
+    #[cfg(not(feature = "test"))]
+    const MAX_SUPPLY_LIMIT_HEIGHT: u32 = 263_527_685;
+    /// The block height that upper bounds the total supply of Aleo credits to 5 billion.
+    /// This is deliberately set to a low value for testing purposes only.
+    #[cfg(feature = "test")]
+    const MAX_SUPPLY_LIMIT_HEIGHT: u32 = 5;
     /// The cost in microcredits per byte for the deployment transaction.
     const DEPLOYMENT_FEE_MULTIPLIER: u64 = 1_000; // 1 millicredit per byte
     /// The multiplier in microcredits for each command in the constructor.
@@ -151,6 +161,8 @@ pub trait Network:
     /// The maximum number of constraints in a deployment. These limits are enforced at the block level.
     /// This corresponds to ~4 seconds single-threaded runtime at mainnet launch reference validator hardware.
     const MAX_DEPLOYMENT_CONSTRAINTS_V1: u64 = 1 << 24; // 16,777,216 constraints
+    /// The maximum number of instances to verify in a batch proof.
+    const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
     /// A list of consensus versions and their corresponding transaction spend limits in microcredits.
@@ -161,13 +173,26 @@ pub trait Network:
     const ARC_0005_COMPUTE_DISCOUNT: u64 = 25;
 
     /// The anchor height, defined as the expected number of blocks to reach the coinbase target.
-    const ANCHOR_HEIGHT: u32 = Self::ANCHOR_TIME as u32 / Self::BLOCK_TIME as u32;
-    /// The anchor time in seconds.
-    const ANCHOR_TIME: u16 = 25;
+    /// Note: The anchor height used exclusively by `coinbase_reward_v1`.
+    const ANCHOR_HEIGHT: u32 = Self::REWARD_ANCHOR_TIME as u32 / Self::BLOCK_TIME as u32;
+    /// The anchor time used specifically for calculating the coinbase reward.
+    /// We ensure that the reward anchor time matches the original ConsensusVersion::V1 anchor time
+    /// to maintain the original coinbase reward schedule.
+    const REWARD_ANCHOR_TIME: u16 = 25;
+    /// A list of (consensus_version, anchor_time_in_seconds) pairs (sparse).
+    /// Each entry takes effect at the specified version and remains active until the next entry.
+    /// The anchor time, defined as the expected time in seconds to reach the coinbase target.
+    const ANCHOR_TIMES: [(ConsensusVersion, u16); 2] =
+        [(ConsensusVersion::V1, Self::REWARD_ANCHOR_TIME), (ConsensusVersion::V15, 35)];
     /// The expected time per block in seconds.
     const BLOCK_TIME: u16 = 10;
     /// The number of blocks per epoch.
+    #[cfg(not(feature = "test"))]
     const NUM_BLOCKS_PER_EPOCH: u32 = 3600 / Self::BLOCK_TIME as u32; // 360 blocks == ~1 hour
+    /// The number of blocks per epoch.
+    /// This is deliberately set to a low value for testing purposes only.
+    #[cfg(feature = "test")]
+    const NUM_BLOCKS_PER_EPOCH: u32 = 10;
 
     /// The maximum number of entries in data.
     const MAX_DATA_ENTRIES: usize = 32;
@@ -185,8 +210,9 @@ pub trait Network:
 
     /// The minimum number of elements in an array.
     const MIN_ARRAY_ELEMENTS: usize = 1; // This ensures the array is not empty.
-    /// The maximum number of elements in an array.
-    const MAX_ARRAY_ELEMENTS: usize = Self::MAX_DATA_ENTRIES;
+    ///  A list of (consensus_version, size) pairs indicating the maximum number of elements in an array.
+    const MAX_ARRAY_ELEMENTS: [(ConsensusVersion, usize); 3] =
+        [(ConsensusVersion::V1, 32), (ConsensusVersion::V11, 512), (ConsensusVersion::V14, 2048)];
 
     /// The minimum number of entries in a record.
     const MIN_RECORD_ENTRIES: usize = 1; // This accounts for 'record.owner'.
@@ -194,8 +220,10 @@ pub trait Network:
     const MAX_RECORD_ENTRIES: usize = Self::MIN_RECORD_ENTRIES.saturating_add(Self::MAX_DATA_ENTRIES);
 
     /// The maximum program size by number of characters.
-    const MAX_PROGRAM_SIZE: usize = 100_000; // 100 KB
-
+    const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 2] = [
+        (ConsensusVersion::V1, 100_000),  // 100 kB
+        (ConsensusVersion::V14, 512_000), // 512 kB
+    ];
     /// The maximum number of mappings in a program.
     const MAX_MAPPINGS: usize = 31;
     /// The maximum number of functions in a program.
@@ -206,6 +234,8 @@ pub trait Network:
     const MAX_RECORDS: usize = 10 * Self::MAX_FUNCTIONS;
     /// The maximum number of closures in a program.
     const MAX_CLOSURES: usize = 2 * Self::MAX_FUNCTIONS;
+    /// The maximum number of view functions in a program.
+    const MAX_VIEWS: usize = 2 * Self::MAX_FUNCTIONS;
     /// The maximum number of operands in an instruction.
     const MAX_OPERANDS: usize = Self::MAX_INPUTS;
     /// The maximum number of instructions in a closure or function.
@@ -213,7 +243,7 @@ pub trait Network:
     /// The maximum number of commands in finalize.
     const MAX_COMMANDS: usize = u16::MAX as usize;
     /// The maximum number of write commands in finalize.
-    const MAX_WRITES: u16 = 16;
+    const MAX_WRITES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 16), (ConsensusVersion::V14, 32)];
     /// The maximum number of `position` commands in finalize.
     const MAX_POSITIONS: usize = u8::MAX as usize;
 
@@ -225,9 +255,20 @@ pub trait Network:
     /// The maximum number of imports.
     const MAX_IMPORTS: usize = 64;
 
-    /// The maximum number of bytes in a transaction.
-    // Note: This value must **not** be decreased as it would invalidate existing transactions.
-    const MAX_TRANSACTION_SIZE: usize = 128_000; // 128 kB
+    /// A list of consensus versions and their corresponding maximum transaction sizes in bytes.
+    ///
+    /// A transaction consists of fixed identifiers, deployment data, and fees.
+    /// Fixed components include identifiers, ownership, checksums, and fees.
+    /// Variable components include the program bytecode and verifying-key entries.
+    /// Verifying-key entries scale with the number of functions and records.
+    ///
+    /// MAX_TRANSACTION_SIZE = C + MAX_PROGRAM_SIZE + (673 + 58) * (MAX_FUNCTIONS + MAX_RECORDS)
+    /// C = fixed size components (Up to 2367 bytes)
+    // Note: This value must **not** decrease without considering the impact on transaction validity.
+    const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 2] = [
+        (ConsensusVersion::V1, 128_000),  // 128 kB
+        (ConsensusVersion::V14, 768_000), // 768 kB
+    ];
 
     /// The state root type.
     type StateRoot: Bech32ID<Field<Self>>;
@@ -295,10 +336,33 @@ pub trait Network:
     fn CONSENSUS_HEIGHT(version: ConsensusVersion) -> Result<u32> {
         Ok(Self::CONSENSUS_VERSION_HEIGHTS().get(version as usize - 1).ok_or(anyhow!("Invalid consensus version"))?.1)
     }
+    /// Returns the last `MAX_ARRAY_ELEMENTS` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_ARRAY_ELEMENTS() -> usize {
+        Self::MAX_ARRAY_ELEMENTS.last().expect("MAX_ARRAY_ELEMENTS must have at least one entry").1
+    }
     /// Returns the last `MAX_CERTIFICATES` value.
     #[allow(non_snake_case)]
-    fn LATEST_MAX_CERTIFICATES() -> Result<u16> {
-        Self::MAX_CERTIFICATES.last().map_or(Err(anyhow!("No MAX_CERTIFICATES defined.")), |(_, value)| Ok(*value))
+    fn LATEST_MAX_CERTIFICATES() -> u16 {
+        Self::MAX_CERTIFICATES.last().expect("MAX_CERTIFICATES must have at least one entry").1
+    }
+
+    /// Returns the last `MAX_PROGRAM_SIZE` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_PROGRAM_SIZE() -> usize {
+        Self::MAX_PROGRAM_SIZE.last().expect("MAX_PROGRAM_SIZE must have at least one entry").1
+    }
+
+    /// Returns the last `MAX_WRITES` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_WRITES() -> u16 {
+        Self::MAX_WRITES.last().expect("MAX_WRITES must have at least one entry").1
+    }
+
+    /// Returns the last `MAX_TRANSACTION_SIZE` value.
+    #[allow(non_snake_case)]
+    fn LATEST_MAX_TRANSACTION_SIZE() -> usize {
+        Self::MAX_TRANSACTION_SIZE.last().expect("MAX_TRANSACTION_SIZE must have at least one entry").1
     }
 
     /// Returns the block height where the the inclusion proof will be updated.
@@ -343,6 +407,17 @@ pub trait Network:
 
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
+
+    #[cfg(not(feature = "wasm"))]
+    /// Returns the `proving key` for the translation circuit.
+    fn translation_credits_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
+
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the translation circuit.
+    fn translation_credits_proving_key(bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>>;
+
+    /// Returns the `verifying key` for the translation circuit.
+    fn translation_credits_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
 
     /// Returns the powers of `G`.
     fn g_powers() -> &'static Vec<Group<Self>>;
@@ -518,6 +593,12 @@ pub trait Network:
         root: &Field<Self>,
         leaf: &Vec<Field<Self>>,
     ) -> bool;
+
+    /// Returns the Poseidon leaf hasher for dynamic records (rate 8).
+    fn dynamic_record_leaf_hasher() -> &'static Poseidon8<Self>;
+
+    /// Returns the Poseidon path hasher for dynamic records (rate 2).
+    fn dynamic_record_path_hasher() -> &'static Poseidon2<Self>;
 }
 
 /// Returns the consensus version heights, initializing them if necessary.

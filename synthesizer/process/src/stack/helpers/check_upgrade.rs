@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +36,10 @@ impl<N: Network> Stack<N> {
     ///  | finalize          |   ❌   | ✅ (logic)   |  ✅   |
     ///  |-------------------|--------|--------------|-------|
     ///
+    /// There is one important caveat in that output register indices **MUST** remain the same.
+    /// For example, changing `output r10 as <NAME>.record` into `output r11 as <NAME>.record` would not be a valid upgrade.
+    /// This restriction is necessary because the output register index is instantiated as a constant in the caller circuit.
+    /// This check is enforced in `check_transaction` in `synthesizer/src/vm/verify.rs`.
     #[inline]
     pub fn check_upgrade_is_valid(old_program: &Program<N>, new_program: &Program<N>) -> Result<()> {
         // Get the new program ID.

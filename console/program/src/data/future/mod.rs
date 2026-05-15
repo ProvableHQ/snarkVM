@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,11 +24,9 @@ mod serialize;
 mod to_bits;
 mod to_fields;
 
-use crate::{Access, Identifier, Plaintext, ProgramID, Value};
+use crate::{Access, DynamicFuture, Identifier, Plaintext, ProgramID, Value};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
-
-// TODO (@d0cd). Implement `FromBytes` and `FromBits` for `Future`.
 
 /// A future.
 #[derive(Clone)]

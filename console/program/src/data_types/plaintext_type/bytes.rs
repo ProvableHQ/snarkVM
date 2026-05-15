@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,8 @@ impl<N: Network> FromBytes for PlaintextType<N> {
             0 => Ok(Self::Literal(LiteralType::read_le(&mut reader)?)),
             1 => Ok(Self::Struct(Identifier::read_le(&mut reader)?)),
             2 => Ok(Self::Array(ArrayType::read_le(&mut reader)?)),
-            3.. => Err(error(format!("Failed to deserialize annotation variant {variant}"))),
+            3 => Ok(Self::ExternalStruct(Locator::read_le(&mut reader)?)),
+            4.. => Err(error(format!("Failed to deserialize plaintext type variant {variant}"))),
         }
     }
 }
@@ -43,6 +44,10 @@ impl<N: Network> ToBytes for PlaintextType<N> {
             Self::Array(array_type) => {
                 2u8.write_le(&mut writer)?;
                 array_type.write_le(&mut writer)
+            }
+            Self::ExternalStruct(locator) => {
+                3u8.write_le(&mut writer)?;
+                locator.write_le(&mut writer)
             }
         }
     }

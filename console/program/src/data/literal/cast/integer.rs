@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -85,5 +85,14 @@ impl<E: Environment, I: IntegerType> Cast<Scalar<E>> for Integer<E, I> {
     fn cast(&self) -> Result<Scalar<E>> {
         let bits_le = self.to_bits_le();
         Scalar::<E>::from_bits_le(&bits_le)
+    }
+}
+
+impl<E: Environment, I: IntegerType> Cast<IdentifierLiteral<E>> for Integer<E, I> {
+    /// Casts an `Integer` to an `IdentifierLiteral`.
+    #[inline]
+    fn cast(&self) -> Result<IdentifierLiteral<E>> {
+        let field: Field<E> = self.cast()?;
+        field.cast()
     }
 }

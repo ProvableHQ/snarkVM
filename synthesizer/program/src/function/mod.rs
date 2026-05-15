@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +25,7 @@ mod parse;
 use crate::{Instruction, finalize::FinalizeCore};
 use console::{
     network::prelude::*,
-    program::{Identifier, Register, ValueType, Variant},
+    program::{Identifier, Register, ValueType},
 };
 
 use indexmap::IndexSet;
@@ -66,11 +66,6 @@ impl<N: Network> FunctionCore<N> {
         self.inputs.iter().map(|input| input.value_type()).cloned().collect()
     }
 
-    /// Returns the function input type variants.
-    pub fn input_variants(&self) -> Vec<Variant> {
-        self.inputs.iter().map(|input| input.value_type().variant()).collect()
-    }
-
     /// Returns the function instructions.
     pub fn instructions(&self) -> &[Instruction<N>] {
         &self.instructions
@@ -86,14 +81,59 @@ impl<N: Network> FunctionCore<N> {
         self.outputs.iter().map(|output| output.value_type()).cloned().collect()
     }
 
-    /// Returns the function output type variants.
-    pub fn output_variants(&self) -> Vec<Variant> {
-        self.outputs.iter().map(|output| output.value_type().variant()).collect()
-    }
-
     /// Returns the function finalize logic.
     pub const fn finalize_logic(&self) -> Option<&FinalizeCore<N>> {
         self.finalize_logic.as_ref()
+    }
+
+    /// Returns whether this function refers to an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        self.inputs.iter().any(|input| input.value_type().contains_external_struct())
+            || self.outputs.iter().any(|output| output.value_type().contains_external_struct())
+            || self.instructions.iter().any(|instruction| instruction.contains_external_struct())
+            || self.finalize_logic.iter().any(|finalize| finalize.contains_external_struct())
+    }
+
+    /// Returns `true` if the function contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.input_types().iter().any(|input| input.contains_string_type())
+            || self.output_types().iter().any(|output| output.contains_string_type())
+            || self.instructions.iter().any(|instruction| instruction.contains_string_type())
+            || self.finalize_logic.as_ref().map(|finalize| finalize.contains_string_type()).unwrap_or(false)
+    }
+
+    /// Returns `true` if the function contains an identifier type in its inputs, outputs, instructions, or finalize logic.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        for input in self.input_types() {
+            if input.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        for output in self.output_types() {
+            if output.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        // Check instruction-level types (e.g., cast destination types).
+        for instruction in &self.instructions {
+            if instruction.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        if let Some(finalize) = &self.finalize_logic {
+            if finalize.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Returns `true` if the function scope contains an array type with a size that exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        self.inputs.iter().any(|input| input.value_type().exceeds_max_array_size(max_array_size))
+            || self.outputs.iter().any(|output| output.value_type().exceeds_max_array_size(max_array_size))
+            || self.instructions.iter().any(|instruction| instruction.exceeds_max_array_size(max_array_size))
+            || self.finalize_logic.iter().any(|finalize| finalize.exceeds_max_array_size(max_array_size))
     }
 }
 

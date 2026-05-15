@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -74,12 +74,15 @@ impl<A: Aleo> Eject for TransitionLeaf<A> {
 
     /// Ejects the transition leaf.
     fn eject_value(&self) -> Self::Primitive {
-        Self::Primitive::from(
+        match Self::Primitive::from(
             *self.version.eject_value(),
             *self.index.eject_value(),
             *self.variant.eject_value(),
             self.id.eject_value(),
-        )
+        ) {
+            Ok(leaf) => leaf,
+            Err(error) => A::halt(format!("Failed to eject the transition leaf: {error}")),
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -297,7 +297,7 @@ mod tests {
             let rng = &mut TestRng::default();
 
             let mut input_sizes = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 32, 64, 128, 256, 512, 1024];
-            input_sizes.extend((0..5).map(|_| rng.gen_range(1..1024)));
+            input_sizes.extend((0..5).map(|_| rng.random_range(1..1024)));
 
             for num_inputs in input_sizes {
                 println!("Checking equivalence for {num_inputs} inputs");

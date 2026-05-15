@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Assignment, Inject, LinearCombination, Mode, R1CS, Variable, witness_mode};
+use crate::{Assignment, ConstraintUnsatisfied, Inject, LinearCombination, Mode, R1CS, Variable, witness_mode};
 use snarkvm_curves::AffineCurve;
 use snarkvm_fields::traits::*;
 
@@ -62,7 +62,7 @@ pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq +
         Fn: FnOnce() -> Output;
 
     /// Adds one constraint enforcing that `(A * B) == C`.
-    fn enforce<Fn, A, B, C>(constraint: Fn)
+    fn enforce<Fn, A, B, C>(constraint: Fn) -> Result<(), ConstraintUnsatisfied>
     where
         Fn: FnOnce() -> (A, B, C),
         A: Into<LinearCombination<Self::BaseField>>,
@@ -70,12 +70,14 @@ pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq +
         C: Into<LinearCombination<Self::BaseField>>;
 
     /// Adds one constraint enforcing that the given boolean is `true`.
-    fn assert<Boolean: Into<LinearCombination<Self::BaseField>>>(boolean: Boolean) {
+    fn assert<Boolean: Into<LinearCombination<Self::BaseField>>>(
+        boolean: Boolean,
+    ) -> Result<(), ConstraintUnsatisfied> {
         Self::enforce(|| (boolean, Self::one(), Self::one()))
     }
 
     /// Adds one constraint enforcing that the `A == B`.
-    fn assert_eq<A, B>(a: A, b: B)
+    fn assert_eq<A, B>(a: A, b: B) -> Result<(), ConstraintUnsatisfied>
     where
         A: Into<LinearCombination<Self::BaseField>>,
         B: Into<LinearCombination<Self::BaseField>>,
@@ -84,7 +86,7 @@ pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq +
     }
 
     /// Adds one constraint enforcing that the `A != B`.
-    fn assert_neq<A, B>(a: A, b: B)
+    fn assert_neq<A, B>(a: A, b: B) -> Result<(), ConstraintUnsatisfied>
     where
         A: Into<LinearCombination<Self::BaseField>>,
         B: Into<LinearCombination<Self::BaseField>>,
@@ -102,7 +104,7 @@ pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq +
         };
 
         // Enforce `(a - b) * multiplier == 1`.
-        Self::enforce(|| (a_minus_b, multiplier, Self::one()));
+        Self::enforce(|| (a_minus_b, multiplier, Self::one()))
     }
 
     /// Returns `true` if all constraints in the environment are satisfied.

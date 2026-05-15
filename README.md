@@ -1,5 +1,5 @@
 <p align="center">
-    <img alt="snarkVM" width="1412" src="https://aleo.org/snarkVM.png">
+    <img alt="snarkVM" width="1412" src=".resources/snarkVM-banner.png">
 </p>
 
 <p align="center">
@@ -44,6 +44,12 @@ We recommend installing Rust using [rustup](https://www.rustup.rs/). You can ins
 - macOS or Linux:
   ```bash
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  ```
+
+  For macOS users, you will need to subsequently install the following packages:
+  ```bash
+  brew install pkgconf
+  brew install openssl
   ```
 
 - Windows (64-bit):

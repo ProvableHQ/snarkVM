@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,9 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, Result, StackTrait};
+use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, Result, StackTrait, types_equivalent};
 
-use circuit::{Inject, Mode};
 use console::{
     network::prelude::*,
     program::{Argument, FinalizeType, Future, Identifier, Locator, Register, RegisterType, Value},
@@ -59,6 +58,12 @@ impl<N: Network> Async<N> {
     pub fn destinations(&self) -> Vec<Register<N>> {
         vec![self.destination.clone()]
     }
+
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network> Async<N> {
@@ -78,6 +83,8 @@ impl<N: Network> Async<N> {
                 Value::Plaintext(plaintext) => Ok(Argument::Plaintext(plaintext)),
                 Value::Record(_) => bail!("Cannot pass a record into an `async` instruction"),
                 Value::Future(future) => Ok(Argument::Future(future)),
+                Value::DynamicRecord(_) => bail!("Cannot pass a dynamic record into an `async` instruction"),
+                Value::DynamicFuture(dynamic_future) => Ok(Argument::DynamicFuture(dynamic_future)),
             })
             .try_collect()?;
 
@@ -108,13 +115,15 @@ impl<N: Network> Async<N> {
                 circuit::Value::Plaintext(plaintext) => Ok(circuit::Argument::Plaintext(plaintext)),
                 circuit::Value::Record(_) => bail!("Cannot pass a record into an `async` instruction"),
                 circuit::Value::Future(future) => Ok(circuit::Argument::Future(future)),
+                circuit::Value::DynamicRecord(_) => bail!("Cannot pass a dynamic record into an `async` instruction"),
+                circuit::Value::DynamicFuture(dynamic_future) => Ok(circuit::Argument::DynamicFuture(dynamic_future)),
             })
             .try_collect()?;
 
         // Initialize a future.
         let future = circuit::Value::Future(circuit::Future::from(
-            circuit::ProgramID::new(Mode::Constant, *stack.program_id()),
-            circuit::Identifier::new(Mode::Constant, *self.function_name()),
+            circuit::ProgramID::constant(*stack.program_id()),
+            circuit::Identifier::constant(*self.function_name()),
             arguments,
         ));
         // Store the future in the destination register.
@@ -159,7 +168,7 @@ impl<N: Network> Async<N> {
             match (input_type, finalize_type) {
                 (RegisterType::Plaintext(input_type), FinalizeType::Plaintext(finalize_type)) => {
                     ensure!(
-                        input_type == &finalize_type,
+                        types_equivalent(stack, input_type, stack, &finalize_type)?,
                         "'{}/{}' finalize expects a '{}' argument, found a '{}' argument",
                         stack.program_id(),
                         self.function_name(),
@@ -181,6 +190,7 @@ impl<N: Network> Async<N> {
                         input_locator
                     );
                 }
+                (RegisterType::DynamicFuture, FinalizeType::DynamicFuture) => {}
                 (input_type, finalize_type) => bail!(
                     "'{}/{}' async expects a '{}' argument, found a '{}' argument",
                     stack.program_id(),

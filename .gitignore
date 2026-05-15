@@ -14,3 +14,12 @@
 !**/beta-h.usrs
 !**/neg-powers-of-beta.usrs
 **/proptest-regressions/
+artifacts
+
+# Claude Code
+**/CLAUDE.md
+!.claude/CLAUDE.md
+.claude/*
+!.claude/CLAUDE.md
+!.claude/.gitignore
+!.claude/skills/

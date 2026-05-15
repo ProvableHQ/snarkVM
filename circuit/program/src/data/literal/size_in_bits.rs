@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +36,7 @@ impl<A: Aleo> Literal<A> {
             Self::Scalar(..) => console::Scalar::<A::Network>::size_in_bits() as u16,
             Self::Signature(..) => console::Signature::<A::Network>::size_in_bits() as u16,
             Self::String(string) => string.to_bits_le().len() as u16,
+            Self::Identifier(..) => console::IdentifierLiteral::<A::Network>::size_in_bits() as u16,
         }))
     }
 }

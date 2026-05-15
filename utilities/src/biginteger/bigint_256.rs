@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::{Read, Result as IoResult, Write};
+use std::{
+    cmp,
+    io::{Read, Result as IoResult, Write},
+};
 
 use crate::{
     FromBits,
@@ -29,7 +32,8 @@ use core::fmt::{Debug, Display};
 use num_bigint::BigUint;
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    RngExt,
+    distr::{Distribution, StandardUniform},
 };
 use zeroize::Zeroize;
 
@@ -311,16 +315,15 @@ impl Display for BigInteger256 {
 
 impl Ord for BigInteger256 {
     #[inline]
-    #[allow(clippy::comparison_chain)]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         for (a, b) in self.0.iter().rev().zip(other.0.iter().rev()) {
-            if a < b {
-                return std::cmp::Ordering::Less;
-            } else if a > b {
-                return std::cmp::Ordering::Greater;
+            match a.cmp(b) {
+                cmp::Ordering::Less => return cmp::Ordering::Less,
+                cmp::Ordering::Greater => return cmp::Ordering::Greater,
+                _ => continue,
             }
         }
-        std::cmp::Ordering::Equal
+        cmp::Ordering::Equal
     }
 }
 
@@ -331,9 +334,9 @@ impl PartialOrd for BigInteger256 {
     }
 }
 
-impl Distribution<BigInteger256> for Standard {
+impl Distribution<BigInteger256> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BigInteger256 {
-        BigInteger256(rng.r#gen())
+        BigInteger256(rng.random())
     }
 }
 

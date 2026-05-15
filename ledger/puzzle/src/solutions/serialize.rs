@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,11 +53,11 @@ pub(super) mod tests {
     pub(crate) fn sample_solutions(rng: &mut TestRng) -> PuzzleSolutions<CurrentNetwork> {
         // Sample a new solutions.
         let mut solutions = vec![];
-        for _ in 0..rng.gen_range(1..CurrentNetwork::MAX_SOLUTIONS) {
+        for _ in 0..rng.random_range(1..CurrentNetwork::MAX_SOLUTIONS) {
             let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
             let address = Address::try_from(private_key).unwrap();
 
-            let partial_solution = PartialSolution::new(rng.r#gen(), address, u64::rand(rng)).unwrap();
+            let partial_solution = PartialSolution::new(rng.random(), address, u64::rand(rng)).unwrap();
             let solution = Solution::new(partial_solution, u64::rand(rng));
             solutions.push(solution);
         }

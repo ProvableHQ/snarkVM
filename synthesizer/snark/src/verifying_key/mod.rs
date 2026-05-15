@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 pub struct VerifyingKey<N: Network> {
     /// The verifying key for the function.
     verifying_key: Arc<varuna::CircuitVerifyingKey<N::PairingCurve>>,
-    /// The number of constant, public, and private variables for the circuit.
+    /// The number of public and private variables for the circuit.
     num_variables: u64,
 }
 
@@ -36,7 +36,7 @@ impl<N: Network> VerifyingKey<N> {
         Self { verifying_key, num_variables }
     }
 
-    /// Returns the number of constant, public, and private variables for the circuit.
+    /// Returns the number of public and private variables for the circuit.
     pub fn num_variables(&self) -> u64 {
         self.num_variables
     }

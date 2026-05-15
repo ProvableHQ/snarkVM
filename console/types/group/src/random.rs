@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<E: Environment> Distribution<Group<E>> for Standard {
+impl<E: Environment> Distribution<Group<E>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Group<E> {
         Group::new(Uniform::rand(rng))

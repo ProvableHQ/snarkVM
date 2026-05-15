@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +24,7 @@ type CurrentNetwork = MainnetV0;
 
 // A helper function to sample the default process.
 fn sample_process() -> Result<Process<CurrentNetwork>, Error> {
-    let mut process = Process::load()?;
+    let process = Process::load()?;
     // Add the default program to the process.
     let default_program = Program::from_str(
         r"
@@ -34,7 +34,7 @@ constructor:
     assert.eq true true;
     ",
     )?;
-    process.add_program(&default_program)?;
+    process.lock().add_program(&default_program)?;
     // Return the process.
     Ok(process)
 }
@@ -42,7 +42,7 @@ constructor:
 #[test]
 fn test_add_simple_program() -> Result<()> {
     // Sample the default process.
-    let mut process = Process::<CurrentNetwork>::load()?;
+    let process = Process::<CurrentNetwork>::load()?;
     // Add a simple program to the process.
     let initial_program = Program::from_str(
         r"
@@ -51,7 +51,7 @@ function foo:
     ",
     )?;
     // Add the new program to the process.
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Get the program from the process.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -63,7 +63,7 @@ function foo:
 #[test]
 fn test_upgrade_without_constructor() -> Result<()> {
     // Sample the default process.
-    let mut process = Process::<CurrentNetwork>::load()?;
+    let process = Process::<CurrentNetwork>::load()?;
     // Add a program without a constructor to the process.
     let initial_program = Program::from_str(
         r"
@@ -71,7 +71,7 @@ program test.aleo;
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Attempt to upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -81,14 +81,14 @@ function bar:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_upgrade_with_constructor() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -100,14 +100,14 @@ function bar:
     ",
     )?;
     // Verify that the upgrade was successful.
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     Ok(())
 }
 
 #[test]
 fn test_add_import() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -118,7 +118,7 @@ constructor:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -129,7 +129,7 @@ function foo:
 #[test]
 fn test_add_struct() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -141,7 +141,7 @@ struct bar:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -152,7 +152,7 @@ function foo:
 #[test]
 fn test_add_record() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -165,7 +165,7 @@ record bar:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -176,7 +176,7 @@ function foo:
 #[test]
 fn test_add_mapping() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -189,7 +189,7 @@ mapping onchain:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -200,7 +200,7 @@ function foo:
 #[test]
 fn test_add_closure() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -215,7 +215,7 @@ closure sum:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -226,7 +226,7 @@ function foo:
 #[test]
 fn test_add_function() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -241,7 +241,7 @@ function adder:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -252,7 +252,7 @@ function foo:
 #[test]
 fn test_modify_function_logic() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -266,7 +266,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -280,7 +280,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("basic.aleo")?;
     let program = stack.program();
@@ -291,7 +291,7 @@ function adder:
 #[test]
 fn test_modify_function_signature() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -305,7 +305,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -320,14 +320,14 @@ function adder:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_modify_finalize_logic() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -345,7 +345,7 @@ finalize assert_on_chain:
     assert.eq r0 r1;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -363,7 +363,7 @@ finalize assert_on_chain:
     assert.neq r0 r1;
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("basic.aleo")?;
     let program = stack.program();
@@ -374,7 +374,7 @@ finalize assert_on_chain:
 #[test]
 fn test_modify_finalize_signature() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -392,7 +392,7 @@ finalize assert_on_chain:
     assert.eq r0 r1;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -411,14 +411,14 @@ finalize assert_on_chain:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_modify_struct() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -430,7 +430,7 @@ struct bar:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -443,14 +443,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_modify_record() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -463,7 +463,7 @@ record bar:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -477,14 +477,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_modify_mapping() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -497,7 +497,7 @@ mapping onchain:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -511,14 +511,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_modify_closure_logic() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -533,7 +533,7 @@ closure sum:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -549,14 +549,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_modify_closure_signature() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -571,7 +571,7 @@ closure sum:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -587,14 +587,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_remove_import() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -605,7 +605,7 @@ constructor:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -616,14 +616,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_remove_struct() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -635,7 +635,7 @@ struct bar:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -646,14 +646,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_remove_record() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -666,7 +666,7 @@ record bar:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -677,14 +677,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_remove_mapping() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -697,7 +697,7 @@ mapping onchain:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -708,14 +708,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_remove_closure() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -730,7 +730,7 @@ closure sum:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -741,14 +741,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_remove_function() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -763,7 +763,7 @@ function adder:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -774,14 +774,14 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_add_call_to_non_async_transition() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add a program with a non-async transition.
     let new_program = Program::from_str(
         r"
@@ -794,7 +794,7 @@ function foo:
     add r0 r1 into r2;
     output r2 as u8.private;",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -809,7 +809,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -824,7 +824,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("basic.aleo")?;
     let program = stack.program();
@@ -835,7 +835,7 @@ function adder:
 #[test]
 fn test_add_call_to_async_transition() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add a program with an async transition.
     let new_program = Program::from_str(
         r"
@@ -854,7 +854,7 @@ finalize foo:
     input r1 as u8.public;
     assert.eq r0 r1;",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -869,7 +869,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -889,14 +889,14 @@ finalize adder:
     await r0;",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
 #[test]
 fn test_add_import_cycle() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
 
     // Add the initial program to the process.
     let initial_program = Program::from_str(
@@ -911,7 +911,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
 
     // Verify that self-import cycles are not allowed.
     let new_program = Program::from_str(
@@ -927,7 +927,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
 
     // Add a program dependent on `basic.aleo`.
     let dependent_program = Program::from_str(
@@ -942,7 +942,7 @@ function foo:
     call basic.aleo/adder r0 r1 into r2;
     output r2 as u8.private;",
     )?;
-    process.add_program(&dependent_program)?;
+    process.lock().add_program(&dependent_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("dependent.aleo")?;
     let program = stack.program();
@@ -964,14 +964,14 @@ function adder:
     ",
     )?;
     // Verify that the upgrade was successful.
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     Ok(())
 }
 
 #[test]
 fn test_constructor_upgrade() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -981,7 +981,7 @@ constructor:
     assert.eq 1u8 1u8;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -992,7 +992,7 @@ constructor:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -1015,7 +1015,7 @@ fn test_credits_is_not_upgradable() -> Result<()> {
 #[test]
 fn test_edition_and_checksum_and_program_owner_operands() -> Result<()> {
     // Sample the default process.
-    let mut process = sample_process()?;
+    let process = sample_process()?;
 
     // A helper to sample a test program with an operand in the function.
     let sample_program_with_operand_in_function = |operand: &str| -> Result<Program<CurrentNetwork>> {
@@ -1053,22 +1053,22 @@ closure foo:
     // Check that the below programs are invalid.
 
     let program = sample_program_with_operand_in_function("edition")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     let program = sample_program_with_operand_in_function("checksum")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     let program = sample_program_with_operand_in_function("program_owner")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     let program = sample_program_with_operand_in_closure("edition")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     let program = sample_program_with_operand_in_closure("checksum")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     let program = sample_program_with_operand_in_closure("program_owner")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     Ok(())
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,9 @@
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 
 extern crate snarkvm_console_types_string as console;
+
+pub mod identifier_literal;
+pub use identifier_literal::IdentifierLiteral;
 
 mod equal;
 mod helpers;
@@ -59,7 +62,8 @@ impl<E: Environment> Inject for StringType<E> {
             false => Field::new(Mode::Private, num_bytes),
         };
         // Ensure the witness matches the constant.
-        E::assert_eq(&expected_size_in_bytes, &size_in_bytes);
+        E::assert_eq(&expected_size_in_bytes, &size_in_bytes)
+            .expect("String size witness does not match expected size");
 
         Self {
             mode,

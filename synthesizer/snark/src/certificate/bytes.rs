@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,19 @@ impl<N: Network> FromBytes for Certificate<N> {
         }
         // Read the certificate.
         let certificate = FromBytes::read_le(&mut reader)?;
+        // Return the certificate.
+        Ok(Self { certificate })
+    }
+
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the version.
+        let version = u8::read_le(&mut reader)?;
+        // Ensure the version is valid.
+        if version != 1 {
+            return Err(error("Invalid certificate version"));
+        }
+        // Read the certificate.
+        let certificate = FromBytes::read_le_unchecked(&mut reader)?;
         // Return the certificate.
         Ok(Self { certificate })
     }

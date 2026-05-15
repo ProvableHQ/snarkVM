@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 use super::verifier::QueryPoints;
 use crate::fft::{DensePolynomial, EvaluationDomain};
 use snarkvm_fields::{PrimeField, batch_inversion};
-use snarkvm_utilities::{cfg_into_iter, cfg_iter_mut};
+use snarkvm_utilities::cfg_into_iter;
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
@@ -26,9 +26,9 @@ use std::collections::{BTreeMap, HashSet};
 use rayon::prelude::*;
 
 /// Precompute a batch of selectors at challenges. We batch:
-/// - constraint domain selectors at alpha
-/// - variable domain selectors at beta
-/// - non_zero domain selectors at gamma
+/// - constraint domain selectors at `alpha`
+/// - variable domain selectors at `beta`
+/// - non_zero domain selectors at `gamma`
 pub(crate) fn precompute_selectors<F: PrimeField>(
     max_constraint_domain: EvaluationDomain<F>,
     constraint_domains: HashSet<EvaluationDomain<F>>,
@@ -94,10 +94,13 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         let selector_time = start_timer!(|| "Compute selector without remainder witness");
 
         let (mut h_i, remainder) = poly.divide_by_vanishing_poly(*src_domain)?;
-        ensure!(remainder.is_zero(), "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})");
+        ensure!(
+            remainder.is_zero(),
+            "[No remainder witness] Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
+        );
 
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
-        cfg_iter_mut!(h_i.coeffs).for_each(|c| *c *= multiplier);
+        h_i.coeffs.iter_mut().for_each(|c| *c *= multiplier);
 
         end_timer!(selector_time);
         Ok((h_i, None))
@@ -113,17 +116,36 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // That's what we're computing here.
         let selector_time = start_timer!(|| "Compute selector with remainder witness");
 
-        let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
-        cfg_iter_mut!(poly.coeffs).for_each(|c| *c *= multiplier);
+        let multiplier = if src_domain.size == target_domain.size {
+            combiner
+        } else {
+            combiner * src_domain.size_as_field_element * target_domain.size_inv
+        };
 
-        let (h_i, mut xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;
-        xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
+        poly.coeffs.iter_mut().for_each(|c| *c *= multiplier);
 
-        let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
-        ensure!(remainder.is_zero(), "Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})");
+        let (h_i, xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;
+
+        // Computing xg_i * s_i with s_i = (v_H / v_H_i) * (H_i.size() /
+        // H.size()) without the last constant, which was already incorporated
+        // into the multiplier. If the two domains are equal, s_i = 1 and we
+        // skip this step.
+        let updated_xg_i = if src_domain.size == target_domain.size {
+            xg_i
+        } else {
+            let xg_i = xg_i.mul_by_vanishing_poly(*target_domain);
+
+            let (xg_i, remainder) = xg_i.divide_by_vanishing_poly(*src_domain)?;
+            ensure!(
+                remainder.is_zero(),
+                "[Returning remainder witness] Failed to divide by vanishing polynomial - non-zero remainder ({remainder:?})"
+            );
+
+            xg_i
+        };
 
         end_timer!(selector_time);
-        Ok((h_i, Some(xg_i)))
+        Ok((h_i, Some(updated_xg_i)))
     }
 }
 

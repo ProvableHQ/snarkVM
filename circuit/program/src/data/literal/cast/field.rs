@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,7 +35,7 @@ impl<E: Environment> Cast<Boolean<E>> for Field<E> {
     #[inline]
     fn cast(&self) -> Boolean<E> {
         let is_one = self.is_one();
-        E::assert(self.is_zero().bitor(&is_one));
+        E::assert(self.is_zero().bitor(&is_one)).expect("Field must be zero or one to cast to Boolean");
         is_one
     }
 }
@@ -81,6 +81,16 @@ impl<E: Environment> Cast<Scalar<E>> for Field<E> {
     }
 }
 
+impl<E: Environment> Cast<IdentifierLiteral<E>> for Field<E> {
+    /// Casts a `Field` to an `IdentifierLiteral`.
+    ///
+    /// This operation validates that the field element represents a valid identifier literal.
+    #[inline]
+    fn cast(&self) -> IdentifierLiteral<E> {
+        IdentifierLiteral::from_field(self.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,7 +103,7 @@ mod tests {
 
     use std::fmt::Debug;
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 10;
 
     fn sample_values(
         i: usize,

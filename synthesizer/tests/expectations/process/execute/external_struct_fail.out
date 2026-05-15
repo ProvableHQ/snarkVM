@@ -1,0 +1,3 @@
+errors:
+- Struct 'S2' in 'external_struct_fail_parent.aleo' is not defined.
+outputs: []

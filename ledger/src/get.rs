@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,7 @@
 
 use super::*;
 
+// Getters for `Ledger`.
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the committee for the given `block height`.
     pub fn get_committee(&self, block_height: u32) -> Result<Option<Committee<N>>> {
@@ -94,19 +95,24 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the block for the given block height.
     pub fn get_block(&self, height: u32) -> Result<Block<N>> {
-        // If the height is 0, return the genesis block.
-        if height == 0 {
-            return Ok(self.genesis_block.clone());
-        }
-        // Retrieve the block hash.
-        let block_hash = match self.vm.block_store().get_block_hash(height)? {
-            Some(block_hash) => block_hash,
-            None => bail!("Block {height} does not exist in storage"),
-        };
-        // Retrieve the block.
-        match self.vm.block_store().get_block(&block_hash)? {
+        match self.try_get_block(height)? {
             Some(block) => Ok(block),
-            None => bail!("Block {height} ('{block_hash}') does not exist in storage"),
+            None => bail!("Block {height} does not exist in storage"),
+        }
+    }
+
+    /// Returns the block for the given block height.
+    ///
+    /// This behaves the same as [`Self::get_block`], except that a missing block will cause the function to
+    /// return `Ok(None)` instead of an error.
+    pub fn try_get_block(&self, height: u32) -> Result<Option<Block<N>>> {
+        if height == 0 {
+            return Ok(Some(self.genesis_block.clone()));
+        }
+
+        match self.vm.block_store().get_block_hash(height)? {
+            Some(hash) => self.vm.block_store().get_block(&hash),
+            None => Ok(None),
         }
     }
 
@@ -118,11 +124,18 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the block for the given block hash.
     pub fn get_block_by_hash(&self, block_hash: &N::BlockHash) -> Result<Block<N>> {
-        // Retrieve the block.
-        match self.vm.block_store().get_block(block_hash)? {
+        match self.try_get_block_by_hash(block_hash)? {
             Some(block) => Ok(block),
             None => bail!("Block '{block_hash}' does not exist in storage"),
         }
+    }
+
+    /// Returns the block for the given block hash.
+    ///
+    /// This behaves the same as [`Self::get_block_by_hash`], except that a missing block will cause the function to
+    /// return `Ok(None)` instead of an error.
+    pub fn try_get_block_by_hash(&self, block_hash: &N::BlockHash) -> Result<Option<Block<N>>> {
+        self.vm.block_store().get_block(block_hash)
     }
 
     /// Returns the block height for the given block hash.
@@ -211,29 +224,44 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the transaction for the given transaction ID.
     pub fn get_transaction(&self, transaction_id: N::TransactionID) -> Result<Transaction<N>> {
-        // Retrieve the transaction.
         match self.vm.block_store().get_transaction(&transaction_id)? {
             Some(transaction) => Ok(transaction),
-            None => bail!("Missing transaction for ID {transaction_id}"),
+            None => bail!("Missing transaction '{transaction_id}' in block storage"),
         }
+    }
+
+    /// Returns the transaction for the given transaction ID, or `None` if no transaction of this ID exists.
+    pub fn try_get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
+        self.vm.block_store().get_transaction(transaction_id)
     }
 
     /// Returns the confirmed transaction for the given transaction ID.
     pub fn get_confirmed_transaction(&self, transaction_id: N::TransactionID) -> Result<ConfirmedTransaction<N>> {
-        // Retrieve the confirmed transaction.
-        match self.vm.block_store().get_confirmed_transaction(&transaction_id)? {
+        match self.try_get_confirmed_transaction(&transaction_id)? {
             Some(confirmed_transaction) => Ok(confirmed_transaction),
             None => bail!("Missing confirmed transaction for ID {transaction_id}"),
         }
     }
 
+    /// Returns the confirmed transaction for the given transaction ID, or `None` if no confirmed transaction of this ID exists.
+    pub fn try_get_confirmed_transaction(
+        &self,
+        transaction_id: &N::TransactionID,
+    ) -> Result<Option<ConfirmedTransaction<N>>> {
+        self.vm.block_store().get_confirmed_transaction(transaction_id)
+    }
+
     /// Returns the unconfirmed transaction for the given `transaction ID`.
     pub fn get_unconfirmed_transaction(&self, transaction_id: &N::TransactionID) -> Result<Transaction<N>> {
-        // Retrieve the unconfirmed transaction.
-        match self.vm.block_store().get_unconfirmed_transaction(transaction_id)? {
+        match self.try_get_unconfirmed_transaction(transaction_id)? {
             Some(unconfirmed_transaction) => Ok(unconfirmed_transaction),
             None => bail!("Missing unconfirmed transaction for ID {transaction_id}"),
         }
+    }
+
+    /// Returns the unconfirmed transaction for the given transaction ID, or `None` if no unconfirmed transaction of this ID exists.
+    pub fn try_get_unconfirmed_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
+        self.vm.block_store().get_unconfirmed_transaction(transaction_id)
     }
 
     /// Returns the latest edition for the given `program ID`.
@@ -254,10 +282,16 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the program for the given `program ID` and `edition`.
     pub fn get_program_for_edition(&self, program_id: ProgramID<N>, edition: u16) -> Result<Program<N>> {
-        match self.vm.block_store().get_program_for_edition(&program_id, edition)? {
+        match self.try_get_program_for_edition(&program_id, edition)? {
             Some(program) => Ok(program),
             None => bail!("Missing program for ID {program_id} and edition {edition}"),
         }
+    }
+
+    /// Returns the program for the given `program ID` and `edition`,
+    /// or `None` if no program of this ID and edition exists.
+    pub fn try_get_program_for_edition(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<Program<N>>> {
+        self.vm.block_store().get_program_for_edition(program_id, edition)
     }
 
     /// Returns the block solutions for the given block height.
@@ -277,6 +311,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
 
     /// Returns the solution for the given solution ID.
     pub fn get_solution(&self, solution_id: &SolutionID<N>) -> Result<Solution<N>> {
+        match self.try_get_solution(solution_id)? {
+            Some(solution) => Ok(solution),
+            None => bail!("Missing solution for ID {solution_id}"),
+        }
+    }
+
+    /// Returns the solution for the given solution ID, or `None` if no solution of this ID exists.
+    pub fn try_get_solution(&self, solution_id: &SolutionID<N>) -> Result<Option<Solution<N>>> {
         self.vm.block_store().get_solution(solution_id)
     }
 

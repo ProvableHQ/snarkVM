@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@ mod parse;
 use console::{
     network::prelude::*,
     program::{Literal, ProgramID, Register},
-    types::Group,
+    types::{Group, U32},
 };
 
 /// The `Operand` enum represents the options for an operand in an instruction.
@@ -41,9 +41,16 @@ pub enum Operand<N: Network> {
     /// The operand is the block height.
     /// Note: This variant is only accessible in the `finalize` scope.
     BlockHeight,
+    /// The operand is the block timestamp.
+    /// Note: This variant is only accessible in the `finalize` scope.
+    BlockTimestamp,
     /// The operand is the network ID.
     /// Note: This variant is only accessible in the `finalize` scope.
     NetworkID,
+    /// The operand is the first group base for the Aleo signature and encryption schemes.
+    AleoGenerator,
+    /// The operand is the group bases for the Aleo signature and encryption schemes.
+    AleoGeneratorPowers(Option<U32<N>>),
     /// The operand is the program checksum.
     /// If no program ID is specified, the checksum is for the current program.
     /// If a program ID is specified, the checksum is for an external program.
@@ -87,6 +94,13 @@ impl<N: Network> From<&Register<N>> for Operand<N> {
     #[inline]
     fn from(register: &Register<N>) -> Self {
         Operand::Register(register.clone())
+    }
+}
+
+impl<N: Network> Operand<N> {
+    /// Returns `true` if the operand contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        matches!(self, Self::Literal(Literal::String(_)))
     }
 }
 

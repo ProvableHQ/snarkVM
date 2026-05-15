@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +21,18 @@ mod test_v9;
 
 #[cfg(feature = "test")]
 mod test_v10;
+
+#[cfg(feature = "test")]
+mod test_v11;
+
+#[cfg(feature = "test")]
+mod test_v13;
+
+#[cfg(feature = "test")]
+mod test_v14;
+
+#[cfg(feature = "test")]
+mod test_v15;
 
 #[cfg(feature = "test")]
 use super::*;

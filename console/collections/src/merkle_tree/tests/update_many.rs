@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -558,7 +558,7 @@ fn test_profiler() -> Result<()> {
         generate_leaves!(1, &mut rng)
             .into_iter()
             .map(|leaf| {
-                let index: usize = Uniform::rand(&mut rng);
+                let index = usize::try_from(rng.random::<u64>()).unwrap();
                 (index % num_leaves, leaf)
             })
             .for_each(|(index, leaf)| {

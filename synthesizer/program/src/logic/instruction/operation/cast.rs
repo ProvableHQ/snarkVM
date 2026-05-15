@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,11 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
+use crate::{Opcode, Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait, types_equivalent};
 use console::{
     network::prelude::*,
     program::{
         ArrayType,
+        DynamicRecord,
         Entry,
         EntryType,
         Identifier,
@@ -30,6 +31,7 @@ use console::{
         Record,
         Register,
         RegisterType,
+        StructType,
         Value,
         ValueType,
     },
@@ -38,14 +40,31 @@ use console::{
 
 use indexmap::IndexMap;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
 /// The type of the cast operation.
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum CastType<N: Network> {
     GroupXCoordinate,
     GroupYCoordinate,
     Plaintext(PlaintextType<N>),
     Record(Identifier<N>),
     ExternalRecord(Locator<N>),
+    DynamicRecord,
+}
+
+impl<N: Network> CastType<N> {
+    /// Returns `true` if the cast type is an array and the size exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        matches!(self,
+            Self::Plaintext(plaintext_type) if plaintext_type.exceeds_max_array_size(max_array_size))
+    }
+
+    /// Returns `true` if the cast type contains an identifier type.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Self::Plaintext(plaintext_type) => plaintext_type.contains_identifier_type(),
+            _ => Ok(false),
+        }
+    }
 }
 
 impl<N: Network> Parser for CastType<N> {
@@ -54,6 +73,9 @@ impl<N: Network> Parser for CastType<N> {
         alt((
             map(tag("group.x"), |_| Self::GroupXCoordinate),
             map(tag("group.y"), |_| Self::GroupYCoordinate),
+            // We match this variant outside its usual position to ensure "dynamic.record" is not
+            // parsed as a static record with identifier "record"
+            map(tag("dynamic.record"), |_| Self::DynamicRecord),
             map(pair(Locator::parse, tag(".record")), |(locator, _)| Self::ExternalRecord(locator)),
             map(pair(Identifier::parse, tag(".record")), |(identifier, _)| Self::Record(identifier)),
             map(PlaintextType::parse, Self::Plaintext),
@@ -69,6 +91,7 @@ impl<N: Network> Display for CastType<N> {
             Self::Plaintext(plaintext_type) => write!(f, "{plaintext_type}"),
             Self::Record(identifier) => write!(f, "{identifier}.record"),
             Self::ExternalRecord(locator) => write!(f, "{locator}.record"),
+            Self::DynamicRecord => write!(f, "dynamic.record"),
         }
     }
 }
@@ -103,18 +126,19 @@ impl<N: Network> ToBytes for CastType<N> {
         match self {
             Self::GroupXCoordinate => 0u8.write_le(&mut writer),
             Self::GroupYCoordinate => 1u8.write_le(&mut writer),
-            CastType::Plaintext(plaintext_type) => {
+            Self::Plaintext(plaintext_type) => {
                 2u8.write_le(&mut writer)?;
                 plaintext_type.write_le(&mut writer)
             }
-            CastType::Record(identifier) => {
+            Self::Record(identifier) => {
                 3u8.write_le(&mut writer)?;
                 identifier.write_le(&mut writer)
             }
-            CastType::ExternalRecord(locator) => {
+            Self::ExternalRecord(locator) => {
                 4u8.write_le(&mut writer)?;
                 locator.write_le(&mut writer)
             }
+            Self::DynamicRecord => 5u8.write_le(&mut writer),
         }
     }
 }
@@ -129,7 +153,8 @@ impl<N: Network> FromBytes for CastType<N> {
             2 => Ok(Self::Plaintext(PlaintextType::read_le(&mut reader)?)),
             3 => Ok(Self::Record(Identifier::read_le(&mut reader)?)),
             4 => Ok(Self::ExternalRecord(Locator::read_le(&mut reader)?)),
-            5.. => Err(error(format!("Failed to deserialize cast type variant {variant}"))),
+            5 => Ok(Self::DynamicRecord),
+            6.. => Err(error(format!("Failed to deserialize cast type variant {variant}"))),
         }
     }
 }
@@ -179,10 +204,35 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
         vec![self.destination.clone()]
     }
 
-    /// Returns the cast type.
     #[inline]
     pub const fn cast_type(&self) -> &CastType<N> {
         &self.cast_type
+    }
+
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        matches!(&self.cast_type, CastType::Plaintext(plaintext_type) if plaintext_type.contains_external_struct())
+    }
+
+    /// Validates the operands and destination for a DynamicRecord cast.
+    /// Returns an error if the cast type is DynamicRecord and the operands/destination are invalid.
+    fn validate_dynamic_record_cast(
+        cast_type: &CastType<N>,
+        operands: &[Operand<N>],
+        destination: &Register<N>,
+    ) -> Result<()> {
+        if *cast_type == CastType::DynamicRecord {
+            // Casting to a dynamic record requires exactly one operand of the form r<i>.
+            if operands.len() != 1 || !matches!(operands[0], Operand::Register(Register::Locator(_))) {
+                bail!("Casting to a dynamic record requires a single operand of the form r<i>");
+            }
+            // Casting to a dynamic record requires a destination of the form r<i>.
+            if !matches!(destination, Register::Locator(_)) {
+                bail!("Casting to a dynamic record requires a destination of the form r<i>");
+            }
+        }
+        Ok(())
     }
 }
 
@@ -230,7 +280,13 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 registers.store(stack, &self.destination, Value::Plaintext(Plaintext::from(value)))
             }
             CastType::Plaintext(PlaintextType::Struct(struct_name)) => {
-                self.cast_to_struct(stack, registers, *struct_name, inputs)
+                let plaintext = self.evaluate_cast_to_struct(stack, *struct_name, inputs)?;
+                registers.store(stack, &self.destination, plaintext.into())
+            }
+            CastType::Plaintext(PlaintextType::ExternalStruct(locator)) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                let plaintext = self.evaluate_cast_to_struct(&*external_stack, *locator.resource(), inputs)?;
+                registers.store(stack, &self.destination, plaintext.into())
             }
             CastType::Plaintext(PlaintextType::Array(array_type)) => {
                 self.cast_to_array(stack, registers, array_type, inputs)
@@ -285,6 +341,12 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         Value::Record(..) => bail!("Casting a record into a record entry is illegal"),
                         // Ensure the record entry is not a future.
                         Value::Future(..) => bail!("Casting a future into a record entry is illegal"),
+                        // Ensure the record entry is not a dynamic record.
+                        Value::DynamicRecord(..) => {
+                            bail!("Casting a dynamic record into a record entry is illegal")
+                        }
+                        // Ensure the record entry is not a dynamic future.
+                        Value::DynamicFuture(..) => bail!("Casting a dynamic future into a record entry is illegal"),
                     };
                     // Append the entry to the record entries.
                     match entry_type {
@@ -312,6 +374,16 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             }
             CastType::ExternalRecord(_locator) => {
                 bail!("Illegal operation: Cannot cast to an external record.")
+            }
+            CastType::DynamicRecord => {
+                // Check that there is exactly one input.
+                ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
+                // Retrieve and convert the record into a dynamic record.
+                let dynamic_record = match &inputs[0] {
+                    Value::Record(record) => DynamicRecord::from_record(record)?,
+                    _ => bail!("Casting to a dynamic record requires the operand value to be a record"),
+                };
+                registers.store(stack, &self.destination, Value::DynamicRecord(dynamic_record))
             }
         }
     }
@@ -381,57 +453,16 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                     circuit::Value::Plaintext(circuit::Plaintext::from(value)),
                 )
             }
-            CastType::Plaintext(PlaintextType::Struct(struct_)) => {
-                // Ensure the operands length is at least the minimum.
-                if inputs.len() < N::MIN_STRUCT_ENTRIES {
-                    bail!("Casting to a struct requires at least {} operand(s)", N::MIN_STRUCT_ENTRIES)
-                }
-                // Ensure the number of members does not exceed the maximum.
-                if inputs.len() > N::MAX_STRUCT_ENTRIES {
-                    bail!("Casting to struct '{struct_}' cannot exceed {} members", N::MAX_STRUCT_ENTRIES)
-                }
-
-                // Retrieve the struct and ensure it is defined in the program.
-                let struct_ = stack.program().get_struct(struct_)?;
-
-                // Ensure that the number of operands is equal to the number of struct members.
-                if inputs.len() != struct_.members().len() {
-                    bail!(
-                        "Casting to the struct {} requires {} operands, but {} were provided",
-                        struct_.name(),
-                        struct_.members().len(),
-                        inputs.len()
-                    )
-                }
-
-                // Initialize the struct members.
-                let mut members = IndexMap::new();
-                for (member, (member_name, member_type)) in inputs.iter().zip_eq(struct_.members()) {
-                    // Retrieve the plaintext value from the entry.
-                    let plaintext = match member {
-                        circuit::Value::Plaintext(plaintext) => {
-                            // Ensure the member matches the register type.
-                            stack.matches_plaintext(&plaintext.eject_value(), member_type)?;
-                            // Output the plaintext.
-                            plaintext.clone()
-                        }
-                        // Ensure the struct member is not a record.
-                        circuit::Value::Record(..) => {
-                            bail!("Casting a record into a struct member is illegal")
-                        }
-                        // Ensure the struct member is not a future.
-                        circuit::Value::Future(..) => {
-                            bail!("Casting a future into a struct member is illegal")
-                        }
-                    };
-                    // Append the member to the struct members.
-                    members.insert(circuit::Identifier::constant(*member_name), plaintext);
-                }
-
-                // Construct the struct.
-                let struct_ = circuit::Plaintext::Struct(members, Default::default());
+            CastType::Plaintext(PlaintextType::Struct(struct_name)) => {
+                let plaintext = self.execute_cast_to_struct(stack, *struct_name, inputs)?;
                 // Store the struct.
-                registers.store_circuit(stack, &self.destination, circuit::Value::Plaintext(struct_))
+                registers.store_circuit(stack, &self.destination, plaintext.into())
+            }
+            CastType::Plaintext(PlaintextType::ExternalStruct(locator)) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                let plaintext = self.execute_cast_to_struct(&*external_stack, *locator.resource(), inputs)?;
+                // Store the struct.
+                registers.store_circuit(stack, &self.destination, plaintext.into())
             }
             CastType::Plaintext(PlaintextType::Array(array_type)) => {
                 // Ensure the operands length is at least the minimum.
@@ -439,8 +470,8 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                     bail!("Casting to an array requires at least {} operand(s)", N::MIN_ARRAY_ELEMENTS)
                 }
                 // Ensure the number of elements does not exceed the maximum.
-                if inputs.len() > N::MAX_ARRAY_ELEMENTS {
-                    bail!("Casting to array '{array_type}' cannot exceed {} elements", N::MAX_ARRAY_ELEMENTS)
+                if inputs.len() > N::LATEST_MAX_ARRAY_ELEMENTS() {
+                    bail!("Casting to array '{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
                 }
 
                 // Ensure that the number of operands is equal to the number of array entries.
@@ -468,6 +499,14 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         circuit::Value::Record(..) => bail!("Casting a record into an array element is illegal"),
                         // Ensure the element is not a future.
                         circuit::Value::Future(..) => bail!("Casting a future into an array element is illegal"),
+                        // Ensure the element is not a dynamic record.
+                        circuit::Value::DynamicRecord(..) => {
+                            bail!("Casting a dynamic record into an array element is illegal")
+                        }
+                        // Ensure the element is not a dynamic future.
+                        circuit::Value::DynamicFuture(..) => {
+                            bail!("Casting a dynamic future into an array element is illegal")
+                        }
                     };
                     // Store the element.
                     elements.push(plaintext);
@@ -538,6 +577,14 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         circuit::Value::Record(..) => bail!("Casting a record into a record entry is illegal"),
                         // Ensure the record entry is not a future.
                         circuit::Value::Future(..) => bail!("Casting a future into a record entry is illegal"),
+                        // Ensure the record entry is not a dynamic record.
+                        circuit::Value::DynamicRecord(..) => {
+                            bail!("Casting a dynamic record into a record entry is illegal")
+                        }
+                        // Ensure the record entry is not a dynamic future.
+                        circuit::Value::DynamicFuture(..) => {
+                            bail!("Casting a dynamic future into a record entry is illegal")
+                        }
                     };
                     // Construct the entry name constant circuit.
                     let entry_name = circuit::Identifier::constant(*entry_name);
@@ -571,6 +618,17 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             }
             CastType::ExternalRecord(_locator) => {
                 bail!("Illegal operation: Cannot cast to an external record.")
+            }
+            CastType::DynamicRecord => {
+                // Check that there is exactly one input.
+                ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
+                // Retrieve and convert the record into a dynamic record.
+                let dynamic_record = match &inputs[0] {
+                    circuit::Value::Record(record) => circuit::DynamicRecord::from_record(record)?,
+                    _ => bail!("Casting to a dynamic record requires the operand value to be a record"),
+                };
+                // Store the dynamic record.
+                registers.store_circuit(stack, &self.destination, circuit::Value::DynamicRecord(dynamic_record))
             }
         }
     }
@@ -618,16 +676,25 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 registers.store(stack, &self.destination, Value::Plaintext(Plaintext::from(value)))
             }
             CastType::Plaintext(PlaintextType::Struct(struct_name)) => {
-                self.cast_to_struct(stack, registers, *struct_name, inputs)
+                let plaintext = self.evaluate_cast_to_struct(stack, *struct_name, inputs)?;
+                registers.store(stack, &self.destination, plaintext.into())
+            }
+            CastType::Plaintext(PlaintextType::ExternalStruct(locator)) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                let plaintext = self.evaluate_cast_to_struct(&*external_stack, *locator.resource(), inputs)?;
+                registers.store(stack, &self.destination, plaintext.into())
             }
             CastType::Plaintext(PlaintextType::Array(array_type)) => {
                 self.cast_to_array(stack, registers, array_type, inputs)
             }
             CastType::Record(_record_name) => {
-                bail!("Illegal operation: Cannot cast to a record in a finalize block.")
+                bail!("Illegal operation: Cannot cast to a record in a finalize scope.")
             }
             CastType::ExternalRecord(_locator) => {
-                bail!("Illegal operation: Cannot cast to an external record.")
+                bail!("Illegal operation: Cannot cast to an external record in a finalize scope.")
+            }
+            CastType::DynamicRecord => {
+                bail!("Illegal operation: Cannot cast to a dynamic record in a finalize scope.")
             }
         }
     }
@@ -655,6 +722,71 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             self.operands.len(),
         );
 
+        fn struct_checks<N: Network>(
+            struct_stack: &impl StackTrait<N>,
+            stack: &impl StackTrait<N>,
+            struct_type: &StructType<N>,
+            input_types: &[RegisterType<N>],
+        ) -> Result<()> {
+            let struct_name = struct_type.name();
+
+            // Ensure the input types length is at least the minimum.
+            if input_types.len() < N::MIN_STRUCT_ENTRIES {
+                bail!("Casting to a struct requires at least {} operand(s)", N::MIN_STRUCT_ENTRIES)
+            }
+            // Ensure the number of members does not exceed the maximum.
+            if input_types.len() > N::MAX_STRUCT_ENTRIES {
+                bail!("Casting to struct '{struct_type}' cannot exceed {} members", N::MAX_STRUCT_ENTRIES)
+            }
+
+            // Ensure that the number of input types is equal to the number of struct members.
+            ensure!(
+                input_types.len() == struct_type.members().len(),
+                "Casting to the struct {} requires {} operands, but {} were provided",
+                struct_name,
+                struct_type.members().len(),
+                input_types.len()
+            );
+            // Ensure the input types match the struct.
+            for ((_, member_type), input_type) in struct_type.members().iter().zip_eq(input_types) {
+                match input_type {
+                    // Ensure the plaintext type matches the member type.
+                    RegisterType::Plaintext(plaintext_type) => {
+                        ensure!(
+                            types_equivalent(struct_stack, member_type, stack, plaintext_type,)?,
+                            "Struct '{struct_name}' member type mismatch: expected '{member_type}', found '{plaintext_type}'"
+                        )
+                    }
+                    // Ensure the input type cannot be a record (this is unsupported behavior).
+                    RegisterType::Record(record_name) => bail!(
+                        "Struct '{struct_name}' member type mismatch: expected '{member_type}', found record '{record_name}'"
+                    ),
+                    // Ensure the input type cannot be an external record (this is unsupported behavior).
+                    RegisterType::ExternalRecord(locator) => bail!(
+                        "Struct '{struct_name}' member type mismatch: expected '{member_type}', found external record '{locator}'"
+                    ),
+                    // Ensure the input type cannot be a future (this is unsupported behavior).
+                    RegisterType::Future(..) => {
+                        bail!("Struct '{struct_name}' member type mismatch: expected '{member_type}', found future")
+                    }
+                    // Ensure the input type cannot be a dynamic record (this is unsupported behavior).
+                    RegisterType::DynamicRecord => {
+                        bail!(
+                            "Struct '{struct_name}' member type mismatch: expected '{member_type}', found dynamic record"
+                        )
+                    }
+                    // Ensure the input type cannot be a dynamic future (this is unsupported behavior).
+                    RegisterType::DynamicFuture => {
+                        bail!(
+                            "Struct '{struct_name}' member type mismatch: expected '{member_type}', found dynamic future"
+                        )
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
         // Ensure the output type is defined in the program.
         match &self.cast_type {
             CastType::GroupXCoordinate | CastType::GroupYCoordinate => {
@@ -668,51 +800,15 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             CastType::Plaintext(PlaintextType::Literal(..)) => {
                 ensure!(input_types.len() == 1, "Casting to a literal requires exactly 1 operand");
             }
+            CastType::Plaintext(PlaintextType::ExternalStruct(locator)) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                let struct_type = external_stack.program().get_struct(locator.resource())?;
+                struct_checks(&*external_stack, stack, struct_type, input_types)?;
+            }
             CastType::Plaintext(PlaintextType::Struct(struct_name)) => {
                 // Retrieve the struct and ensure it is defined in the program.
-                let struct_ = stack.program().get_struct(struct_name)?;
-
-                // Ensure the input types length is at least the minimum.
-                if input_types.len() < N::MIN_STRUCT_ENTRIES {
-                    bail!("Casting to a struct requires at least {} operand(s)", N::MIN_STRUCT_ENTRIES)
-                }
-                // Ensure the number of members does not exceed the maximum.
-                if input_types.len() > N::MAX_STRUCT_ENTRIES {
-                    bail!("Casting to struct '{struct_}' cannot exceed {} members", N::MAX_STRUCT_ENTRIES)
-                }
-
-                // Ensure that the number of input types is equal to the number of struct members.
-                ensure!(
-                    input_types.len() == struct_.members().len(),
-                    "Casting to the struct {} requires {} operands, but {} were provided",
-                    struct_.name(),
-                    struct_.members().len(),
-                    input_types.len()
-                );
-                // Ensure the input types match the struct.
-                for ((_, member_type), input_type) in struct_.members().iter().zip_eq(input_types) {
-                    match input_type {
-                        // Ensure the plaintext type matches the member type.
-                        RegisterType::Plaintext(plaintext_type) => {
-                            ensure!(
-                                member_type == plaintext_type,
-                                "Struct '{struct_name}' member type mismatch: expected '{member_type}', found '{plaintext_type}'"
-                            )
-                        }
-                        // Ensure the input type cannot be a record (this is unsupported behavior).
-                        RegisterType::Record(record_name) => bail!(
-                            "Struct '{struct_name}' member type mismatch: expected '{member_type}', found record '{record_name}'"
-                        ),
-                        // Ensure the input type cannot be an external record (this is unsupported behavior).
-                        RegisterType::ExternalRecord(locator) => bail!(
-                            "Struct '{struct_name}' member type mismatch: expected '{member_type}', found external record '{locator}'"
-                        ),
-                        // Ensure the input type cannot be a future (this is unsupported behavior).
-                        RegisterType::Future(..) => {
-                            bail!("Struct '{struct_name}' member type mismatch: expected '{member_type}', found future")
-                        }
-                    }
-                }
+                let struct_type = stack.program().get_struct(struct_name)?;
+                struct_checks(stack, stack, struct_type, input_types)?;
             }
             CastType::Plaintext(PlaintextType::Array(array_type)) => {
                 // Ensure the input types length is at least the minimum.
@@ -720,8 +816,8 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                     bail!("Casting to an array requires at least {} operand(s)", N::MIN_ARRAY_ELEMENTS)
                 }
                 // Ensure the number of elements does not exceed the maximum.
-                if input_types.len() > N::MAX_ARRAY_ELEMENTS {
-                    bail!("Casting to array '{array_type}' cannot exceed {} elements", N::MAX_ARRAY_ELEMENTS)
+                if input_types.len() > N::LATEST_MAX_ARRAY_ELEMENTS() {
+                    bail!("Casting to array '{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
                 }
 
                 // Ensure that the number of input types is equal to the number of array entries.
@@ -740,7 +836,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         // Ensure the plaintext type matches the member type.
                         RegisterType::Plaintext(plaintext_type) => {
                             ensure!(
-                                plaintext_type == array_type.next_element_type(),
+                                types_equivalent(stack, plaintext_type, stack, array_type.next_element_type())?,
                                 "Array element type mismatch: expected '{}', found '{plaintext_type}'",
                                 array_type.next_element_type()
                             )
@@ -758,6 +854,16 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         // Ensure the input type cannot be a future (this is unsupported behavior).
                         RegisterType::Future(..) => bail!(
                             "Array element type mismatch: expected '{}', found future",
+                            array_type.next_element_type()
+                        ),
+                        // Ensure the input type cannot be a dynamic record (this is unsupported behavior).
+                        RegisterType::DynamicRecord => bail!(
+                            "Array element type mismatch: expected '{}', found dynamic record",
+                            array_type.next_element_type()
+                        ),
+                        // Ensure the input type cannot be a dynamic future (this is unsupported behavior).
+                        RegisterType::DynamicFuture => bail!(
+                            "Array element type mismatch: expected '{}', found dynamic future",
                             array_type.next_element_type()
                         ),
                     }
@@ -816,13 +922,32 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         ),
                         // Ensure the input type cannot be a future (this is unsupported behavior).
                         RegisterType::Future(..) => {
-                            bail!("Record '{record_name}' entry type mismatch: expected '{entry_type}', found future",)
+                            bail!("Record '{record_name}' entry type mismatch: expected '{entry_type}', found future")
+                        }
+                        // Ensure the input type cannot be a dynamic record (this is unsupported behavior).
+                        RegisterType::DynamicRecord => {
+                            bail!(
+                                "Record '{record_name}' entry type mismatch: expected '{entry_type}', found dynamic record"
+                            )
+                        }
+                        // Ensure the input type cannot be a dynamic future (this is unsupported behavior).
+                        RegisterType::DynamicFuture => {
+                            bail!(
+                                "Record '{record_name}' entry type mismatch: expected '{entry_type}', found dynamic future"
+                            )
                         }
                     }
                 }
             }
             CastType::ExternalRecord(_locator) => {
                 bail!("Illegal operation: Cannot cast to an external record.")
+            }
+            CastType::DynamicRecord => {
+                ensure!(input_types.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
+                ensure!(
+                    matches!(input_types[0], RegisterType::Record(..) | RegisterType::ExternalRecord(..)),
+                    "Casting to a dynamic record requires a static record (whether external or not) as the operand"
+                );
             }
         }
 
@@ -832,61 +957,111 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             CastType::Plaintext(plaintext_type) => RegisterType::Plaintext(plaintext_type.clone()),
             CastType::Record(identifier) => RegisterType::Record(*identifier),
             CastType::ExternalRecord(locator) => RegisterType::ExternalRecord(*locator),
+            CastType::DynamicRecord => RegisterType::DynamicRecord,
         }])
     }
 }
 
-impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
-    /// A helper method to handle casting to a struct.
-    fn cast_to_struct(
-        &self,
-        stack: &impl StackTrait<N>,
-        registers: &mut impl RegistersTrait<N>,
-        struct_name: Identifier<N>,
-        inputs: Vec<Value<N>>,
-    ) -> Result<()> {
+macro_rules! cast_to_struct_common {
+    ($N: ident, $struct_name: expr, $inputs: expr, $stack: expr, $plaintext: path, $record: path, $future: path,
+     $eject_value: expr, $process_member: expr
+    ) => {{
         // Ensure the operands length is at least the minimum.
-        if inputs.len() < N::MIN_STRUCT_ENTRIES {
-            bail!("Casting to a struct requires at least {} operand", N::MIN_STRUCT_ENTRIES)
+        if $inputs.len() < $N::MIN_STRUCT_ENTRIES {
+            bail!("Casting to a struct requires at least {} operand(s)", N::MIN_STRUCT_ENTRIES)
+        }
+        // Ensure the number of members does not exceed the maximum.
+        if $inputs.len() > $N::MAX_STRUCT_ENTRIES {
+            bail!("Casting to a struct cannot exceed {} members", N::MAX_STRUCT_ENTRIES)
         }
 
         // Retrieve the struct and ensure it is defined in the program.
-        let struct_ = stack.program().get_struct(&struct_name)?;
+        let struct_ = $stack.program().get_struct($struct_name)?;
 
         // Ensure that the number of operands is equal to the number of struct members.
-        if inputs.len() != struct_.members().len() {
+        if $inputs.len() != struct_.members().len() {
             bail!(
                 "Casting to the struct {} requires {} operands, but {} were provided",
                 struct_.name(),
                 struct_.members().len(),
-                inputs.len()
+                $inputs.len()
             )
         }
 
         // Initialize the struct members.
         let mut members = IndexMap::new();
-        for (member, (member_name, member_type)) in inputs.iter().zip_eq(struct_.members()) {
+        for (member, (member_name, member_type)) in $inputs.iter().zip_eq(struct_.members()) {
             // Retrieve the plaintext value from the entry.
             let plaintext = match member {
-                Value::Plaintext(plaintext) => {
-                    // Ensure the plaintext matches the member type.
-                    stack.matches_plaintext(plaintext, member_type)?;
+                $plaintext(plaintext) => {
+                    // Ensure the member matches the register type.
+                    $stack.matches_plaintext(&$eject_value(plaintext), member_type)?;
                     // Output the plaintext.
                     plaintext.clone()
                 }
                 // Ensure the struct member is not a record.
-                Value::Record(..) => bail!("Casting a record into a struct member is illegal"),
+                $record(..) => {
+                    bail!("Casting a record into a struct member is illegal")
+                }
                 // Ensure the struct member is not a future.
-                Value::Future(..) => bail!("Casting a future into a struct member is illegal"),
+                $future(..) => {
+                    bail!("Casting a future into a struct member is illegal")
+                }
+                // Catch-all for other value types (DynamicRecord, DynamicFuture)
+                _ => {
+                    bail!("Casting this value type into a struct member is illegal")
+                }
             };
             // Append the member to the struct members.
-            members.insert(*member_name, plaintext);
+            members.insert($process_member(member_name), plaintext);
         }
 
+        members
+    }};
+}
+
+impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
+    fn evaluate_cast_to_struct(
+        &self,
+        stack: &impl StackTrait<N>,
+        struct_name: Identifier<N>,
+        inputs: Vec<Value<N>>,
+    ) -> Result<Plaintext<N>> {
+        let members = cast_to_struct_common!(
+            N,
+            &struct_name,
+            inputs,
+            stack,
+            Value::Plaintext,
+            Value::Record,
+            Value::Future,
+            |x: &Plaintext<_>| x.clone(),
+            |x: &Identifier<_>| *x
+        );
         // Construct the struct.
-        let struct_ = Plaintext::Struct(members, Default::default());
-        // Store the struct.
-        registers.store(stack, &self.destination, Value::Plaintext(struct_))
+        Ok(Plaintext::Struct(members, Default::default()))
+    }
+
+    fn execute_cast_to_struct<A: circuit::Aleo<Network = N>>(
+        &self,
+        stack: &impl StackTrait<N>,
+        struct_name: Identifier<N>,
+        inputs: Vec<circuit::Value<A>>,
+    ) -> Result<circuit::Plaintext<A>> {
+        use circuit::Eject;
+        let members = cast_to_struct_common!(
+            N,
+            &struct_name,
+            inputs,
+            stack,
+            circuit::Value::Plaintext,
+            circuit::Value::Record,
+            circuit::Value::Future,
+            |x: &circuit::Plaintext<_>| x.eject_value(),
+            |x: &Identifier<N>| circuit::Identifier::constant(*x)
+        );
+        // Construct the struct.
+        Ok(circuit::Plaintext::Struct(members, Default::default()))
     }
 
     /// A helper method to handle casting to an array.
@@ -927,6 +1102,10 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 Value::Record(..) => bail!("Casting a record into an array element is illegal"),
                 // Ensure the element is not a future.
                 Value::Future(..) => bail!("Casting a future into an array element is illegal"),
+                // Ensure the element is not a dynamic record.
+                Value::DynamicRecord(..) => bail!("Casting a dynamic record into an array element is illegal"),
+                // Ensure the element is not a dynamic future.
+                Value::DynamicFuture(..) => bail!("Casting a dynamic future into an array element is illegal"),
             };
             // Store the element.
             elements.push(plaintext);
@@ -975,10 +1154,17 @@ impl<N: Network, const VARIANT: u8> Parser for CastOperation<N, VARIANT> {
             CastType::GroupXCoordinate
             | CastType::GroupYCoordinate
             | CastType::Plaintext(PlaintextType::Literal(_)) => 1,
-            CastType::Plaintext(PlaintextType::Struct(_)) => N::MAX_STRUCT_ENTRIES,
-            CastType::Plaintext(PlaintextType::Array(_)) => N::MAX_ARRAY_ELEMENTS,
+            CastType::Plaintext(PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_)) => N::MAX_STRUCT_ENTRIES,
+            CastType::Plaintext(PlaintextType::Array(_)) => N::LATEST_MAX_ARRAY_ELEMENTS(),
             CastType::Record(_) | CastType::ExternalRecord(_) => N::MAX_RECORD_ENTRIES,
+            CastType::DynamicRecord => 1,
         };
+
+        // Validate DynamicRecord cast constraints.
+        if let Err(e) = Self::validate_dynamic_record_cast(&cast_type, &operands, &destination) {
+            return map_res(fail, move |_: ParserResult<Self>| Err(error(e.to_string())))(string);
+        }
+
         match !operands.is_empty() && (operands.len() <= max_operands) {
             true => Ok((string, Self { operands, destination, cast_type })),
             false => {
@@ -1023,9 +1209,10 @@ impl<N: Network, const VARIANT: u8> Display for CastOperation<N, VARIANT> {
             CastType::GroupYCoordinate
             | CastType::GroupXCoordinate
             | CastType::Plaintext(PlaintextType::Literal(_)) => 1,
-            CastType::Plaintext(PlaintextType::Struct(_)) => N::MAX_STRUCT_ENTRIES,
-            CastType::Plaintext(PlaintextType::Array(_)) => N::MAX_ARRAY_ELEMENTS,
+            CastType::Plaintext(PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_)) => N::MAX_STRUCT_ENTRIES,
+            CastType::Plaintext(PlaintextType::Array(_)) => N::LATEST_MAX_ARRAY_ELEMENTS(),
             CastType::Record(_) | CastType::ExternalRecord(_) => N::MAX_RECORD_ENTRIES,
+            CastType::DynamicRecord => 1,
         };
         if self.operands.is_empty() || self.operands.len() > max_operands {
             return Err(fmt::Error);
@@ -1041,13 +1228,20 @@ impl<N: Network, const VARIANT: u8> FromBytes for CastOperation<N, VARIANT> {
     /// Reads the operation from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the number of operands.
-        let num_operands = u8::read_le(&mut reader)? as usize;
+        let mut num_operands = u8::read_le(&mut reader)? as usize;
+        // If the number of operands is `u8::MAX`, read the actual number of operands as a `u16`.
+        if num_operands == u8::MAX as usize {
+            num_operands = u16::read_le(&mut reader)? as usize
+        }
 
         // Ensure that the number of operands does not exceed the upper bound.
         // Note: Although a similar check is performed later, this check is performed to ensure that an exceedingly large number of operands is not allocated.
         // Note: This check is purely a sanity check, as it is not type-aware.
-        if num_operands.is_zero() || num_operands > N::MAX_RECORD_ENTRIES {
-            return Err(error(format!("The number of operands must be nonzero and <= {}", N::MAX_RECORD_ENTRIES)));
+        if num_operands.is_zero() || num_operands > N::LATEST_MAX_ARRAY_ELEMENTS() {
+            return Err(error(format!(
+                "The number of operands must be nonzero and <= {}",
+                N::LATEST_MAX_ARRAY_ELEMENTS()
+            )));
         }
 
         // Initialize the vector for the operands.
@@ -1068,13 +1262,17 @@ impl<N: Network, const VARIANT: u8> FromBytes for CastOperation<N, VARIANT> {
             CastType::GroupYCoordinate
             | CastType::GroupXCoordinate
             | CastType::Plaintext(PlaintextType::Literal(_)) => 1,
-            CastType::Plaintext(PlaintextType::Struct(_)) => N::MAX_STRUCT_ENTRIES,
-            CastType::Plaintext(PlaintextType::Array(_)) => N::MAX_ARRAY_ELEMENTS,
+            CastType::Plaintext(PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_)) => N::MAX_STRUCT_ENTRIES,
+            CastType::Plaintext(PlaintextType::Array(_)) => N::LATEST_MAX_ARRAY_ELEMENTS(),
             CastType::Record(_) | CastType::ExternalRecord(_) => N::MAX_RECORD_ENTRIES,
+            CastType::DynamicRecord => 1,
         };
         if num_operands.is_zero() || num_operands > max_operands {
             return Err(error(format!("The number of operands must be nonzero and <= {max_operands}")));
         }
+
+        // Validate DynamicRecord cast constraints.
+        Self::validate_dynamic_record_cast(&cast_type, &operands, &destination).map_err(|e| error(e.to_string()))?;
 
         // Return the operation.
         Ok(Self { operands, destination, cast_type })
@@ -1089,16 +1287,24 @@ impl<N: Network, const VARIANT: u8> ToBytes for CastOperation<N, VARIANT> {
             CastType::GroupYCoordinate
             | CastType::GroupXCoordinate
             | CastType::Plaintext(PlaintextType::Literal(_)) => 1,
-            CastType::Plaintext(PlaintextType::Struct(_)) => N::MAX_STRUCT_ENTRIES,
-            CastType::Plaintext(PlaintextType::Array(_)) => N::MAX_ARRAY_ELEMENTS,
+            CastType::Plaintext(PlaintextType::Struct(_) | PlaintextType::ExternalStruct(_)) => N::MAX_STRUCT_ENTRIES,
+            CastType::Plaintext(PlaintextType::Array(_)) => N::LATEST_MAX_ARRAY_ELEMENTS(),
             CastType::Record(_) | CastType::ExternalRecord(_) => N::MAX_RECORD_ENTRIES,
+            CastType::DynamicRecord => 1,
         };
         if self.operands.is_empty() || self.operands.len() > max_operands {
             return Err(error(format!("The number of operands must be nonzero and <= {max_operands}")));
         }
 
         // Write the number of operands.
-        u8::try_from(self.operands.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        if self.operands.len() >= u8::MAX as usize {
+            // Write the `u8::MAX` value.
+            u8::MAX.write_le(&mut writer)?;
+            // Write the actual number of operands as a `u16`.
+            u16::try_from(self.operands.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        } else {
+            u8::try_from(self.operands.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        }
         // Write the operands.
         self.operands.iter().try_for_each(|operand| operand.write_le(&mut writer))?;
         // Write the destination register.
@@ -1210,5 +1416,71 @@ mod tests {
         }
         string.push_str(&format!("into r{} as foo", CurrentNetwork::MAX_STRUCT_ENTRIES + 1));
         assert!(Cast::<CurrentNetwork>::parse(&string).is_err(), "Parser did not error");
+    }
+
+    #[test]
+    fn test_parse_cast_into_dynamic_record() {
+        let correct_cases = ["cast r0 into r1 as dynamic.record", "cast r1 into r5 as dynamic.record"];
+
+        let incorrect_cases = [
+            // Too few operands
+            "cast into r1 as dynamic.record",
+            // Too many operands (two)
+            "cast r0 r1 into r2 as dynamic.record",
+            // Too many operands
+            "cast r0 r1 r2 into r3 as dynamic.record",
+            // Too few destinations (with tag)
+            "cast r0 into as dynamic.record",
+            // Too few destinations (without tag)
+            "cast r0 as dynamic.record",
+            // Incorrect operand structure
+            "cast r0.owner into r1 as dynamic.record",
+            // Incorrect destination structure
+            "cast r0 into r1.owner as dynamic.record",
+        ];
+
+        for case in correct_cases {
+            assert!(Cast::<CurrentNetwork>::parse(case).is_ok(), "Parser failed for: {case}");
+        }
+
+        for case in incorrect_cases {
+            assert!(Cast::<CurrentNetwork>::parse(case).is_err(), "Parser did not fail for: {case}");
+        }
+    }
+
+    #[test]
+    fn test_cast_type_contains_identifier_type() {
+        // Identifier literal type should be detected.
+        let cast_type = CastType::<CurrentNetwork>::Plaintext(PlaintextType::Literal(LiteralType::Identifier));
+        assert!(cast_type.contains_identifier_type().unwrap());
+
+        // Non-identifier literal types should not be detected.
+        let cast_type = CastType::<CurrentNetwork>::Plaintext(PlaintextType::Literal(LiteralType::Field));
+        assert!(!cast_type.contains_identifier_type().unwrap());
+        let cast_type = CastType::<CurrentNetwork>::Plaintext(PlaintextType::Literal(LiteralType::U64));
+        assert!(!cast_type.contains_identifier_type().unwrap());
+
+        // Non-plaintext cast types should not be detected.
+        let cast_type = CastType::<CurrentNetwork>::GroupXCoordinate;
+        assert!(!cast_type.contains_identifier_type().unwrap());
+        let cast_type = CastType::<CurrentNetwork>::GroupYCoordinate;
+        assert!(!cast_type.contains_identifier_type().unwrap());
+        let cast_type = CastType::<CurrentNetwork>::Record(Identifier::from_str("token").unwrap());
+        assert!(!cast_type.contains_identifier_type().unwrap());
+    }
+
+    #[test]
+    fn test_cast_instruction_contains_identifier_type() {
+        // A cast to identifier type should be detected.
+        let (_, cast) = Cast::<CurrentNetwork>::parse("cast r0 into r1 as identifier").unwrap();
+        assert!(cast.cast_type().contains_identifier_type().unwrap());
+
+        // A cast to field type should not be detected.
+        let (_, cast) = Cast::<CurrentNetwork>::parse("cast r0 into r1 as field").unwrap();
+        assert!(!cast.cast_type().contains_identifier_type().unwrap());
+
+        // A cast.lossy to identifier type should be detected.
+        let (_, cast) = CastLossy::<CurrentNetwork>::parse("cast.lossy r0 into r1 as identifier").unwrap();
+        assert!(cast.cast_type().contains_identifier_type().unwrap());
     }
 }

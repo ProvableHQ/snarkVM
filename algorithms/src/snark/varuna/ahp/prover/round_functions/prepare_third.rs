@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +28,7 @@ use snarkvm_utilities::ExecutionPool;
 
 use anyhow::Result;
 use itertools::Itertools;
-use rand::RngCore;
+use rand::Rng;
 use std::collections::{BTreeMap, VecDeque};
 
 struct LinevalPrepInstance<F: PrimeField> {
@@ -38,7 +38,7 @@ struct LinevalPrepInstance<F: PrimeField> {
 
 impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     /// Output the preparation third round message and the next state.
-    pub fn prover_prepare_third_round<'a, R: RngCore>(
+    pub fn prover_prepare_third_round<'a, R: Rng>(
         verifier_message: &verifier::FirstMessage<F>,
         verifier_second_message: &verifier::SecondMessage<F>,
         mut state: prover::State<'a, F, SM>,
@@ -91,6 +91,24 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // Compute lineval sumcheck witnesses
         let mut job_pool = ExecutionPool::with_capacity(total_instances * 3);
         // Iterate for each circuit in the batch.
+        anyhow::ensure!(
+            state.circuit_specific_states.len() == fft_precomputations.len(),
+            "[calculate Prep Lineval Sumcheck Witness] Expected {} circuit specific states, but {} were provided.",
+            fft_precomputations.len(),
+            state.circuit_specific_states.len()
+        );
+        anyhow::ensure!(
+            state.circuit_specific_states.len() == assignments.len(),
+            "[calculate Prep Lineval Sumcheck Witness] Expected {} assignments, but {} were provided.",
+            assignments.len(),
+            state.circuit_specific_states.len()
+        );
+        anyhow::ensure!(
+            state.circuit_specific_states.len() == matrix_transposes.len(),
+            "[calculate Prep Lineval Sumcheck Witness] Expected {} matrix transposes, but {} were provided.",
+            matrix_transposes.len(),
+            state.circuit_specific_states.len()
+        );
         for ((((&circuit, circuit_specific_state), precomp), assignments_i), matrix_transposes_i) in state
             .circuit_specific_states
             .iter()
@@ -114,11 +132,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                             matrix_transpose,
                             *alpha,
                         )?;
-                        let sum = z_m_at_alpha
-                            .evaluate_over_domain_by_ref(circuit_specific_state.variable_domain)
-                            .evaluations
-                            .into_iter()
-                            .sum::<F>();
+                        // sum_{h in H} f(h) = n*(c_0 + c_n) for deg(p) < 2n, where c_0 and c_n are the
+                        // coeffs of f at degree 0 and n, resp. and in [0, 2n-2]
+                        // only k=0 and k=n are multiples of n. Avoids an O(n log n) FFT.
+                        let n = circuit_specific_state.variable_domain.size_as_field_element;
+                        let c_0 = z_m_at_alpha.coeffs.first().copied().unwrap_or_default();
+                        let c_n = z_m_at_alpha
+                            .coeffs
+                            .get(circuit_specific_state.variable_domain.size())
+                            .copied()
+                            .unwrap_or_default();
+                        let sum = n * (c_0 + c_n);
                         Ok((circuit, LinevalPrepInstance { z_m_at_alpha, sum }))
                     });
                 }

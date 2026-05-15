@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -152,7 +152,7 @@ impl<N: Network> Package<N> {
     /// Returns a new process for the package.
     pub fn get_process(&self) -> Result<Process<N>> {
         // Load the default process.
-        let mut process = Process::load()?;
+        let process = Process::load()?;
         // Get the imported programs.
         let imports_directory = self.imports_directory();
         let mut programs = self
@@ -194,7 +194,7 @@ impl<N: Network> Package<N> {
             .collect::<Vec<_>>();
 
         // Load the programs.
-        process.add_programs_with_editions(&programs_and_editions)?;
+        process.lock().add_programs_with_editions(&programs_and_editions)?;
 
         Ok(process)
     }

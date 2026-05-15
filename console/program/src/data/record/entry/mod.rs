@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,7 @@ mod find;
 mod num_randomizers;
 mod parse;
 mod to_bits;
+mod to_fields;
 
 use crate::{Access, Ciphertext, Identifier, Literal, Plaintext};
 use snarkvm_console_network::Network;
@@ -35,4 +36,15 @@ pub enum Entry<N: Network, Private: Visibility> {
     Public(Plaintext<N>),
     /// A private entry encrypted under the address of the record owner.
     Private(Private),
+}
+
+impl<N: Network, Private: Visibility> Entry<N, Private> {
+    /// Returns the variant of the entry.
+    pub fn variant(&self) -> u8 {
+        match self {
+            Self::Constant(_) => 0,
+            Self::Public(_) => 1,
+            Self::Private(_) => 2,
+        }
+    }
 }

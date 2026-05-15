@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@ use snarkvm_utilities::{FromBytes, ToBits, ToBytes, bititerator::BitIteratorBE, 
 
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    distr::{Distribution, StandardUniform},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -199,7 +199,7 @@ impl<P: Fp12Parameters> std::fmt::Display for Fp12<P> {
     }
 }
 
-impl<P: Fp12Parameters> Distribution<Fp12<P>> for Standard {
+impl<P: Fp12Parameters> Distribution<Fp12<P>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Fp12<P> {
         Fp12::new(Uniform::rand(rng), Uniform::rand(rng))

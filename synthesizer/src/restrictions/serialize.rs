@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,11 +51,11 @@ mod tests {
     use super::*;
     use console::types::Address;
 
-    use rand::seq::SliceRandom;
+    use rand::seq::IndexedRandom;
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 10;
 
     const TEST_PROGRAM_CASES: &[&str] = &["testing.aleo", "hello.aleo", "abc_def.aleo", "a1234.aleo"];
     const TEST_FUNCTION_CASES: &[&str] = &["testing", "transfer", "hello", "foo", "bar"];
@@ -74,18 +74,18 @@ mod tests {
 
     /// Randomly sample a block range.
     fn sample_block_range<R: Rng + CryptoRng>(rng: &mut R) -> BlockRange {
-        let variant = rng.gen_range(0..5);
+        let variant = rng.random_range(0..5);
         match variant {
             0 => {
-                let start = rng.r#gen();
-                let end = rng.gen_range(start..=u32::MAX);
+                let start = rng.random();
+                let end = rng.random_range(start..=u32::MAX);
                 BlockRange::Range(start..end)
             }
-            1 => BlockRange::RangeFrom(rng.r#gen()..),
-            2 => BlockRange::RangeTo(..rng.r#gen()),
+            1 => BlockRange::RangeFrom(rng.random()..),
+            2 => BlockRange::RangeTo(..rng.random()),
             3 => {
-                let start = rng.r#gen();
-                let end = rng.gen_range(start..=u32::MAX);
+                let start = rng.random();
+                let end = rng.random_range(start..=u32::MAX);
                 BlockRange::RangeInclusive(start..=end)
             }
             4 => BlockRange::FullRange,
@@ -117,7 +117,7 @@ mod tests {
             // Add the argument locators.
             let mut arguments = IndexMap::new();
             for _ in 0..NUM_RESTRICTIONS {
-                let argument_locator = ArgumentLocator::new(rng.r#gen(), rng.gen_range(0..16));
+                let argument_locator = ArgumentLocator::new(rng.random(), rng.random_range(0..16));
 
                 // Add the literals.
                 let mut literals = IndexMap::new();

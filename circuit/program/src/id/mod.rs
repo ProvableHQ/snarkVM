@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,15 +34,16 @@ pub struct ProgramID<A: Aleo> {
     network: Identifier<A>,
 }
 
-impl<A: Aleo> Inject for ProgramID<A> {
-    type Primitive = console::ProgramID<A::Network>;
+impl<A: Aleo> ProgramID<A> {
+    /// Returns a constant program ID.
+    pub fn constant(id: console::ProgramID<A::Network>) -> Self {
+        Self { name: Identifier::constant(*id.name()), network: Identifier::constant(*id.network()) }
+    }
 
-    /// Injects a program ID with the given primitive.
-    fn new(_: Mode, id: Self::Primitive) -> Self {
-        Self {
-            name: Identifier::new(Mode::Constant, *id.name()),
-            network: Identifier::new(Mode::Constant, *id.network()),
-        }
+    /// Returns a public program ID.
+    /// Note: This method should be used cautiously since program IDs typically should be constant.
+    pub fn public(id: console::ProgramID<A::Network>) -> Self {
+        Self { name: Identifier::public(*id.name()), network: Identifier::public(*id.network()) }
     }
 }
 

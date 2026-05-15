@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -263,7 +263,7 @@ pub mod test_helpers {
         // Initialize the starting round.
         let starting_round = {
             loop {
-                let round = rng.gen_range(2..u64::MAX);
+                let round = rng.random_range(2..u64::MAX);
                 if round % 2 == 0 {
                     break round;
                 }
@@ -328,7 +328,7 @@ mod tests {
     fn test_max_certificates() {
         // Determine the maximum number of certificates in a block.
         let max_certificates_per_block =
-            BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS * CurrentNetwork::LATEST_MAX_CERTIFICATES().unwrap() as usize;
+            BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS * CurrentNetwork::LATEST_MAX_CERTIFICATES() as usize;
 
         // Note: The maximum number of certificates in a block must be able to be Merklized.
         assert!(
@@ -372,7 +372,8 @@ mod tests {
         let mut rng = TestRng::default();
 
         for _ in 0..ITERATIONS {
-            let data: Vec<(i64, u64)> = (0..10).map(|_| (rng.gen_range(1..100), rng.gen_range(10..100))).collect();
+            let data: Vec<(i64, u64)> =
+                (0..10).map(|_| (rng.random_range(1..100), rng.random_range(10..100))).collect();
             let min = data.iter().min_by_key(|x| x.0).unwrap().0;
             let max = data.iter().max_by_key(|x| x.0).unwrap().0;
             let median = weighted_median(data);
@@ -385,7 +386,8 @@ mod tests {
         let mut rng = TestRng::default();
 
         for _ in 0..ITERATIONS {
-            let data: Vec<(i64, u64)> = (0..10).map(|_| (rng.gen_range(1..100), rng.gen_range(10..100) * 2)).collect();
+            let data: Vec<(i64, u64)> =
+                (0..10).map(|_| (rng.random_range(1..100), rng.random_range(10..100) * 2)).collect();
             let scaled_data: Vec<(i64, u64)> = data.iter().map(|&(t, s)| (t, s * 10)).collect();
 
             if weighted_median(data.clone()) != weighted_median(scaled_data.clone()) {

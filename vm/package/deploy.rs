@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -124,7 +124,7 @@ impl<N: Network> Package<N> {
         dev_println!("⏳ Deploying '{}'...\n", program_id.to_string());
 
         // Initialize the RNG.
-        let rng = &mut rand::thread_rng();
+        let rng = &mut rand::rng();
         // Compute the deployment.
         let deployment = process.get_stack(program_id)?.deploy::<A, _>(rng).unwrap();
 

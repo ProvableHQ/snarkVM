@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,6 +38,17 @@ macro_rules! count_is {
     ($num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
         $crate::UpdatableCount {
             constant: $crate::Measurement::Exact($num_constants),
+            public: $crate::Measurement::Exact($num_public),
+            private: $crate::Measurement::Exact($num_private),
+            constraints: $crate::Measurement::Exact($num_constraints),
+            file: file!(),
+            line: line!(),
+            column: column!(),
+        }
+    };
+    (<=$num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
+        $crate::UpdatableCount {
+            constant: $crate::Measurement::UpperBound($num_constants),
             public: $crate::Measurement::Exact($num_public),
             private: $crate::Measurement::Exact($num_private),
             constraints: $crate::Measurement::Exact($num_constraints),
@@ -493,7 +504,7 @@ mod test {
     fn check_position() {
         let count = count_is!(0, 0, 0, 0);
         assert_eq!(count.file, "circuit/environment/src/helpers/updatable_count.rs");
-        assert_eq!(count.line, 494);
+        assert_eq!(count.line, 505);
         assert_eq!(count.column, 21);
     }
 

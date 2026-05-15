@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -134,7 +134,7 @@ impl<N: Network> Execution<N> {
     }
 
     /// Returns an iterator over the underlying transitions.
-    pub fn transitions(&self) -> impl '_ + ExactSizeIterator + DoubleEndedIterator<Item = &Transition<N>> {
+    pub fn transitions(&self) -> impl '_ + ExactSizeIterator + DoubleEndedIterator<Item = &Transition<N>> + Clone {
         self.transitions.values()
     }
 

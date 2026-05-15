@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,14 +34,18 @@ impl<N: Network> RegisterTypes<N> {
             // Ensure the closure contains no async instructions.
             ensure!(instruction.opcode() != Opcode::Async, "An 'async' instruction is not allowed in closures");
             // Ensure the closure contains no call instructions.
-            ensure!(instruction.opcode() != Opcode::Call, "A 'call' instruction is not allowed in closures");
+            ensure!(
+                !matches!(instruction.opcode(), Opcode::Call(_)),
+                "A 'call' instruction is not allowed in closures"
+            );
             // Check the instruction opcode, operands, and destinations.
             register_types.check_instruction(stack, closure.name(), instruction)?;
         }
 
         // Step 3. Check the outputs are well-formed.
         for output in closure.outputs() {
-            // Ensure the closure output register is not a record.
+            // Ensure the closure output register is not a static record.
+            // ExternalRecord and DynamicRecord are disallowed at V15+ deployment time (see `VM::check_transaction`).
             ensure!(
                 !matches!(output.register_type(), RegisterType::Record(..)),
                 "Closure outputs do not support records"
@@ -98,7 +102,7 @@ impl<N: Network> RegisterTypes<N> {
                         _ => bail!("Expected 'async' instruction"),
                     };
                 }
-                Opcode::Call => {
+                Opcode::Call(_) => {
                     // Ensure the `call` instruction precedes any `async` instruction.
                     ensure!(async_.is_none(), "The 'call' can only be invoked before an 'async' instruction")
                 }
@@ -155,11 +159,12 @@ impl<N: Network> RegisterTypes<N> {
         // - All futures produced before the `async` call must be consumed by the `async` call.
 
         // Get all registers containing futures.
-        let mut future_registers: IndexSet<(Register<N>, Locator<N>)> = register_types
+        let mut future_registers: IndexSet<Register<N>> = register_types
             .destinations
             .iter()
             .filter_map(|(index, register_type)| match register_type {
-                RegisterType::Future(locator) => Some((Register::<N>::Locator(*index), *locator)),
+                RegisterType::Future(_) => Some(Register::<N>::Locator(*index)),
+                RegisterType::DynamicFuture => Some(Register::<N>::Locator(*index)),
                 _ => None,
             })
             .collect();
@@ -180,8 +185,14 @@ impl<N: Network> RegisterTypes<N> {
                 // Check only the register operands that are `future` types.
                 for operand in async_.operands() {
                     if let Operand::Register(register) = operand {
-                        if let Ok(RegisterType::Future(locator)) = register_types.get_type(stack, register) {
-                            assert!(future_registers.swap_remove(&(register.clone(), locator)));
+                        if matches!(
+                            register_types.get_type(stack, register)?,
+                            RegisterType::Future(_) | RegisterType::DynamicFuture
+                        ) {
+                            ensure!(
+                                future_registers.swap_remove(&register.clone()),
+                                "Could not find future register '{register}' produced before the 'async' instruction.",
+                            );
                         }
                     }
                 }
@@ -254,9 +265,7 @@ impl<N: Network> RegisterTypes<N> {
     fn check_input(&mut self, stack: &Stack<N>, register: &Register<N>, register_type: &RegisterType<N>) -> Result<()> {
         // Ensure the register type is defined in the program.
         match register_type {
-            RegisterType::Plaintext(PlaintextType::Literal(..)) => (),
-            RegisterType::Plaintext(PlaintextType::Struct(struct_name)) => Self::check_struct(stack, struct_name)?,
-            RegisterType::Plaintext(PlaintextType::Array(array_type)) => Self::check_array(stack, array_type)?,
+            RegisterType::Plaintext(plaintext_type) => Self::check_plaintext_type(stack, plaintext_type)?,
             RegisterType::Record(identifier) => {
                 // Ensure the record type is defined in the program.
                 if !stack.program().contains_record(identifier) {
@@ -272,6 +281,9 @@ impl<N: Network> RegisterTypes<N> {
                 }
             }
             RegisterType::Future(..) => bail!("Input '{register}' cannot be a future."),
+            // Note. Checks for dynamic records are enforced at runtime.
+            RegisterType::DynamicRecord => (),
+            RegisterType::DynamicFuture => bail!("Input '{register}' cannot be a dynamic future."),
         };
 
         // Insert the input register.
@@ -285,7 +297,6 @@ impl<N: Network> RegisterTypes<N> {
     }
 
     /// Ensure the given output register is well-formed.
-    #[inline]
     fn check_output(&self, stack: &Stack<N>, operand: &Operand<N>, register_type: &RegisterType<N>) -> Result<()> {
         match operand {
             // Inform the user the output operand is an input register, to ensure this is intended behavior.
@@ -305,9 +316,7 @@ impl<N: Network> RegisterTypes<N> {
 
         // Ensure the register type is defined in the program.
         match register_type {
-            RegisterType::Plaintext(PlaintextType::Literal(..)) => (),
-            RegisterType::Plaintext(PlaintextType::Struct(struct_name)) => Self::check_struct(stack, struct_name)?,
-            RegisterType::Plaintext(PlaintextType::Array(array_type)) => Self::check_array(stack, array_type)?,
+            RegisterType::Plaintext(plaintext_type) => Self::check_plaintext_type(stack, plaintext_type)?,
             RegisterType::Record(identifier) => {
                 // Ensure the record type is defined in the program.
                 if !stack.program().contains_record(identifier) {
@@ -331,14 +340,15 @@ impl<N: Network> RegisterTypes<N> {
                     }
                 };
             }
+            RegisterType::DynamicRecord => {} // Dynamic records are valid outputs.
+            RegisterType::DynamicFuture => bail!("Output '{operand}' cannot be a dynamic future."),
         };
 
         // Ensure the operand type and the output type match.
-        if *register_type != self.get_type_from_operand(stack, operand)? {
+        let operand_type = self.get_type_from_operand(stack, operand)?;
+        if !register_types_equivalent(stack, register_type, stack, &operand_type)? {
             bail!(
-                "Output '{operand}' does not match the expected output operand type: expected '{}', found '{}'",
-                self.get_type_from_operand(stack, operand)?,
-                register_type
+                "Output '{operand}' does not match the expected output operand type: expected '{operand_type}', found '{register_type}'",
             )
         }
         Ok(())
@@ -380,7 +390,6 @@ impl<N: Network> RegisterTypes<N> {
 
     /// Ensures the opcode is a valid opcode and corresponds to the correct instruction.
     /// This method is called when adding a new closure or function to the program.
-    #[inline]
     fn check_instruction_opcode(
         &self,
         stack: &Stack<N>,
@@ -423,72 +432,75 @@ impl<N: Network> RegisterTypes<N> {
                     "Instruction '{instruction}' does not match the function name '{closure_or_function_name}'."
                 );
             }
-            Opcode::Call => {
-                // Retrieve the call operation.
-                let call = match instruction {
-                    Instruction::Call(call) => call,
-                    _ => bail!("Instruction '{instruction}' is not a call operation."),
-                };
+            Opcode::Call(_) => {
+                // Validate the call operation.
+                match instruction {
+                    Instruction::Call(call) => {
+                        match call.operator() {
+                            CallOperator::Locator(locator) => {
+                                // Retrieve the program ID.
+                                let program_id = locator.program_id();
+                                // Retrieve the resource from the locator.
+                                let resource = locator.resource();
 
-                // Retrieve the operator.
-                match call.operator() {
-                    CallOperator::Locator(locator) => {
-                        // Retrieve the program ID.
-                        let program_id = locator.program_id();
-                        // Retrieve the resource from the locator.
-                        let resource = locator.resource();
+                                // Ensure the locator does not reference the current program.
+                                if stack.program_id() == program_id {
+                                    bail!("Locator '{locator}' does not reference an external program.");
+                                }
+                                // Ensure the current program contains an import for this external program.
+                                if !stack.program().imports().keys().contains(program_id) {
+                                    bail!(
+                                        "External program '{}' is not imported by '{program_id}'.",
+                                        locator.program_id()
+                                    );
+                                }
 
-                        // Ensure the locator does not reference the current program.
-                        if stack.program_id() == program_id {
-                            bail!("Locator '{locator}' does not reference an external program.");
-                        }
-                        // Ensure the current program contains an import for this external program.
-                        if !stack.program().imports().keys().contains(program_id) {
-                            bail!("External program '{}' is not imported by '{program_id}'.", locator.program_id());
-                        }
+                                // Retrieve the program.
+                                let external_stack = stack.get_external_stack(program_id)?;
+                                let external = external_stack.program();
+                                // Check that function exists in the program.
+                                if let Ok(child_function) = external.get_function_ref(resource) {
+                                    // If the child function contains a finalize block, then the parent function must also contain a finalize block.
+                                    let child_contains_finalize = child_function.finalize_logic().is_some();
+                                    let parent_contains_finalize =
+                                        stack.get_function_ref(closure_or_function_name)?.finalize_logic().is_some();
+                                    if child_contains_finalize && !parent_contains_finalize {
+                                        bail!(
+                                            "Function '{}/{closure_or_function_name}' must contain a finalize block, since it calls '{}/{resource}'.",
+                                            stack.program_id(),
+                                            program_id
+                                        )
+                                    }
+                                }
+                                // Otherwise, ensure the closure exists in the program.
+                                else if !external.contains_closure(resource) {
+                                    bail!("'{resource}' is not defined in '{}'.", external.id())
+                                }
+                            }
+                            CallOperator::Resource(resource) => {
+                                // Ensure the resource does not reference this closure or function.
+                                if resource == closure_or_function_name {
+                                    bail!("Cannot invoke 'call' to self (in '{resource}'): self-recursive call.")
+                                }
 
-                        // Retrieve the program.
-                        let external_stack = stack.get_external_stack(program_id)?;
-                        let external = external_stack.program();
-                        // Check that function exists in the program.
-                        if let Ok(child_function) = external.get_function_ref(resource) {
-                            // If the child function contains a finalize block, then the parent function must also contain a finalize block.
-                            let child_contains_finalize = child_function.finalize_logic().is_some();
-                            let parent_contains_finalize =
-                                stack.get_function_ref(closure_or_function_name)?.finalize_logic().is_some();
-                            if child_contains_finalize && !parent_contains_finalize {
-                                bail!(
-                                    "Function '{}/{closure_or_function_name}' must contain a finalize block, since it calls '{}/{resource}'.",
-                                    stack.program_id(),
-                                    program_id
-                                )
+                                // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
+                                //  But there are legitimate uses for passing a record through to an internal function.
+                                //  We could invoke the internal function without a state transition, but need to match visibility.
+                                if stack.program().contains_function(resource) {
+                                    bail!(
+                                        "Cannot call '{resource}' from '{closure_or_function_name}'. Use a closure ('closure {resource}:') instead."
+                                    )
+                                }
+                                // Ensure the function or closure exists in the program.
+                                // if !self.program.contains_function(resource) && !self.program.contains_closure(resource) {
+                                if !stack.program().contains_closure(resource) {
+                                    bail!("'{resource}' is not defined in '{}'.", stack.program_id())
+                                }
                             }
                         }
-                        // Otherwise, ensure the closure exists in the program.
-                        else if !external.contains_closure(resource) {
-                            bail!("'{resource}' is not defined in '{}'.", external.id())
-                        }
                     }
-                    CallOperator::Resource(resource) => {
-                        // Ensure the resource does not reference this closure or function.
-                        if resource == closure_or_function_name {
-                            bail!("Cannot invoke 'call' to self (in '{resource}'): self-recursive call.")
-                        }
-
-                        // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
-                        //  But there are legitimate uses for passing a record through to an internal function.
-                        //  We could invoke the internal function without a state transition, but need to match visibility.
-                        if stack.program().contains_function(resource) {
-                            bail!(
-                                "Cannot call '{resource}' from '{closure_or_function_name}'. Use a closure ('closure {resource}:') instead."
-                            )
-                        }
-                        // Ensure the function or closure exists in the program.
-                        // if !self.program.contains_function(resource) && !self.program.contains_closure(resource) {
-                        if !stack.program().contains_closure(resource) {
-                            bail!("'{resource}' is not defined in '{}'.", stack.program_id())
-                        }
-                    }
+                    Instruction::CallDynamic(_) => {} // We do not validate the targets of dynamic calls before hand.
+                    _ => bail!("Instruction '{instruction}' is not a call operation."),
                 }
             }
             Opcode::Cast(opcode) => match opcode {
@@ -512,19 +524,27 @@ impl<N: Network> RegisterTypes<N> {
                         | CastType::Plaintext(PlaintextType::Literal(..)) => {
                             ensure!(instruction.operands().len() == 1, "Expected 1 operand.");
                         }
-                        CastType::Plaintext(PlaintextType::Struct(struct_name)) => {
-                            // Ensure the struct name exists in the program.
-                            if !stack.program().contains_struct(struct_name) {
-                                bail!("Struct '{struct_name}' is not defined.")
-                            }
+                        CastType::Plaintext(plaintext @ PlaintextType::Struct(struct_name)) => {
+                            // Ensure the type is valid.
+                            Self::check_plaintext_type(stack, plaintext)?;
                             // Retrieve the struct.
                             let struct_ = stack.program().get_struct(struct_name)?;
                             // Ensure the operand types match the struct.
-                            self.matches_struct(stack, instruction.operands(), struct_)?;
+                            self.matches_struct(stack, stack, instruction.operands(), struct_)?;
                         }
-                        CastType::Plaintext(PlaintextType::Array(array_type)) => {
-                            // Ensure that the array type is valid.
-                            RegisterTypes::check_array(stack, array_type)?;
+                        CastType::Plaintext(plaintext @ PlaintextType::ExternalStruct(locator)) => {
+                            // Ensure the type is valid.
+                            Self::check_plaintext_type(stack, plaintext)?;
+                            let external_stack = stack.get_external_stack(locator.program_id())?;
+                            let struct_name = locator.resource();
+                            // Retrieve the struct.
+                            let struct_ = external_stack.program().get_struct(struct_name)?;
+                            // Ensure the operand types match the struct.
+                            self.matches_struct(stack, &*external_stack, instruction.operands(), struct_)?;
+                        }
+                        CastType::Plaintext(plaintext @ PlaintextType::Array(array_type)) => {
+                            // Ensure the type is valid.
+                            Self::check_plaintext_type(stack, plaintext)?;
                             // Ensure the operand types match the element type.
                             self.matches_array(stack, instruction.operands(), array_type)?;
                         }
@@ -540,6 +560,9 @@ impl<N: Network> RegisterTypes<N> {
                         }
                         CastType::ExternalRecord(_locator) => {
                             bail!("Illegal operation: Cannot cast to an external record.")
+                        }
+                        CastType::DynamicRecord => {
+                            ensure!(instruction.operands().len() == 1, "Cast to dynamic record expected 1 operand.");
                         }
                     }
                 }
@@ -570,6 +593,21 @@ impl<N: Network> RegisterTypes<N> {
                 bail!("Forbidden operation: Instruction '{instruction}' cannot invoke command '{opcode}'.");
             }
             Opcode::Commit(opcode) => Self::check_commit_opcode(opcode, instruction)?,
+            Opcode::Deserialize(opcode) => Self::check_deserialize_opcode(opcode, instruction)?,
+            Opcode::ECDSA(opcode) => {
+                bail!("Forbidden operation: Instruction '{instruction}' cannot invoke command '{opcode}'.")
+            }
+            Opcode::GetRecordDynamic(_) => {
+                ensure!(instruction.operands().len() == 1, "Expected 1 operand.");
+                ensure!(
+                    instruction.destinations().len() == 1,
+                    "Instruction '{instruction}' has multiple destinations."
+                );
+                ensure!(
+                    matches!(instruction, Instruction::GetRecordDynamic(..)),
+                    "Instruction '{instruction}' is not a get.record.dynamic operation."
+                );
+            }
             Opcode::Hash(opcode) => Self::check_hash_opcode(opcode, instruction)?,
             Opcode::Is(opcode) => match opcode {
                 "is.eq" => ensure!(
@@ -582,12 +620,16 @@ impl<N: Network> RegisterTypes<N> {
                 ),
                 _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
             },
-            Opcode::Sign => {
+            Opcode::Serialize(opcode) => Self::check_serialize_opcode(opcode, instruction)?,
+            Opcode::Sign(_) => {
                 // Ensure the instruction has one destination register.
                 ensure!(
                     instruction.destinations().len() == 1,
                     "Instruction '{instruction}' has multiple destinations."
                 );
+            }
+            Opcode::Snark(opcode) => {
+                bail!("Forbidden operation: Instruction '{instruction}' cannot invoke command '{opcode}'.")
             }
         }
         Ok(())
@@ -595,81 +637,24 @@ impl<N: Network> RegisterTypes<N> {
 }
 
 impl<N: Network> RegisterTypes<N> {
-    // TODO (howardwu & d0cd): Reimplement this for cast and cast.lossy.
-    // /// Checks the cast operation is well-formed.
-    // fn check_cast_operation<const VARIANT: u8>(
-    //     &self,
-    //     stack: &impl StackTrait<N>,
-    //     operation: &CastOperation<N, VARIANT>,
-    // ) -> Result<()> {
-    //     // Ensure the operation has one destination register.
-    //     ensure!(operation.destinations().len() == 1, "Instruction '{operation}' has multiple destinations.");
-    //     // Ensure the casted register type is defined.
-    //     match operation.register_type() {
-    //         RegisterType::Plaintext(PlaintextType::Literal(..)) => {
-    //             ensure!(operation.operands().len() == 1, "Expected 1 operand.");
-    //         }
-    //         RegisterType::Plaintext(PlaintextType::Struct(struct_name)) => {
-    //             // Ensure the struct name exists in the program.
-    //             if !stack.program().contains_struct(struct_name) {
-    //                 bail!("Struct '{struct_name}' is not defined.")
-    //             }
-    //             // Retrieve the struct.
-    //             let struct_ = stack.program().get_struct(struct_name)?;
-    //             // Ensure the operand types match the struct.
-    //             self.matches_struct(stack, operation.operands(), struct_)?;
-    //         }
-    //         RegisterType::Plaintext(PlaintextType::Array(array_type)) => {
-    //             // Ensure that the array type is valid.
-    //             RegisterTypes::check_array(stack, array_type)?;
-    //             // Ensure the operand types match the element type.
-    //             self.matches_array(stack, operation.operands(), array_type)?;
-    //         }
-    //         RegisterType::Record(record_name) => {
-    //             // Ensure the record type is defined in the program.
-    //             if !stack.program().contains_record(record_name) {
-    //                 bail!("Record '{record_name}' is not defined.")
-    //             }
-    //             // Retrieve the record type.
-    //             let record_type = stack.program().get_record(record_name)?;
-    //             // Ensure the operand types match the record type.
-    //             self.matches_record(stack, operation.operands(), record_type)?;
-    //         }
-    //         RegisterType::ExternalRecord(_locator) => {
-    //             bail!("Illegal operation: Cannot cast to an external record.")
-    //         }
-    //     }
-    //     Ok(())
-    // }
-
-    /// Ensures the struct exists in the program, and recursively-checks for array members.
-    pub(crate) fn check_struct(stack: &Stack<N>, struct_name: &Identifier<N>) -> Result<()> {
-        // Retrieve the struct from the program.
-        let Ok(struct_) = stack.program().get_struct(struct_name) else {
-            bail!("Struct '{struct_name}' in '{}' is not defined.", stack.program_id())
-        };
-
-        // If the struct contains arrays, ensure their base element types are defined in the program.
-        for member in struct_.members().values() {
-            match member {
-                PlaintextType::Literal(..) => (),
-                PlaintextType::Struct(struct_name) => Self::check_struct(stack, struct_name)?,
-                PlaintextType::Array(array_type) => Self::check_array(stack, array_type)?,
+    /// Ensure any struct referenced directly or otherwise exists.
+    pub fn check_plaintext_type(stack: &Stack<N>, type_: &PlaintextType<N>) -> Result<()> {
+        match type_ {
+            PlaintextType::Literal(..) => Ok(()),
+            PlaintextType::Struct(struct_name) => {
+                // Retrieve the struct from the program.
+                let Ok(struct_) = stack.program().get_struct(struct_name) else {
+                    bail!("Struct '{struct_name}' in '{}' is not defined.", stack.program_id())
+                };
+                struct_.members().values().try_for_each(|member| Self::check_plaintext_type(stack, member))
             }
-        }
-        Ok(())
-    }
-
-    /// Ensure the base element type of the array is defined in the program.
-    pub(crate) fn check_array(stack: &Stack<N>, array_type: &ArrayType<N>) -> Result<()> {
-        // If the base element type is a struct, check that it is defined in the program.
-        if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
-            // Ensure the struct is defined in the program.
-            if !stack.program().contains_struct(struct_name) {
-                bail!("Struct '{struct_name}' in '{}' is not defined.", stack.program_id())
+            PlaintextType::ExternalStruct(locator) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                let struct_type = PlaintextType::Struct(*locator.resource());
+                Self::check_plaintext_type(&*external_stack, &struct_type)
             }
+            PlaintextType::Array(array_type) => Self::check_plaintext_type(stack, array_type.base_element_type()),
         }
-        Ok(())
     }
 
     /// Ensures the opcode is a valid opcode and corresponds to the `commit` instruction.
@@ -699,6 +684,30 @@ impl<N: Network> RegisterTypes<N> {
             ),
             "commit.ped128" => ensure!(
                 matches!(instruction, Instruction::CommitPED128(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp256.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP256Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp512.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP512Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp768.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP768Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp1024.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP1024Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.ped64.raw" => ensure!(
+                matches!(instruction, Instruction::CommitPED64Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.ped128.raw" => ensure!(
+                matches!(instruction, Instruction::CommitPED128Raw(..)),
                 "Instruction '{instruction}' is not for opcode '{opcode}'."
             ),
             _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
@@ -781,6 +790,250 @@ impl<N: Network> RegisterTypes<N> {
             ),
             "hash_many.psd8" => ensure!(
                 matches!(instruction, Instruction::HashManyPSD8(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.bhp256.raw" => ensure!(
+                matches!(instruction, Instruction::HashBHP256Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.bhp512.raw" => ensure!(
+                matches!(instruction, Instruction::HashBHP512Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.bhp768.raw" => ensure!(
+                matches!(instruction, Instruction::HashBHP768Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.bhp1024.raw" => ensure!(
+                matches!(instruction, Instruction::HashBHP1024Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.keccak256.raw" => ensure!(
+                matches!(instruction, Instruction::HashKeccak256Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.keccak384.raw" => ensure!(
+                matches!(instruction, Instruction::HashKeccak384Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.keccak512.raw" => ensure!(
+                matches!(instruction, Instruction::HashKeccak512Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.ped64.raw" => ensure!(
+                matches!(instruction, Instruction::HashPED64Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.ped128.raw" => ensure!(
+                matches!(instruction, Instruction::HashPED128Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.psd2.raw" => ensure!(
+                matches!(instruction, Instruction::HashPSD2Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.psd4.raw" => ensure!(
+                matches!(instruction, Instruction::HashPSD4Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.psd8.raw" => ensure!(
+                matches!(instruction, Instruction::HashPSD8Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.sha3_256.raw" => ensure!(
+                matches!(instruction, Instruction::HashSha3_256Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.sha3_384.raw" => ensure!(
+                matches!(instruction, Instruction::HashSha3_384Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.sha3_512.raw" => ensure!(
+                matches!(instruction, Instruction::HashSha3_512Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.keccak256.native" => ensure!(
+                matches!(instruction, Instruction::HashKeccak256Native(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.keccak256.native.raw" => ensure!(
+                matches!(instruction, Instruction::HashKeccak256NativeRaw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.keccak384.native" => ensure!(
+                matches!(instruction, Instruction::HashKeccak384Native(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.keccak384.native.raw" => ensure!(
+                matches!(instruction, Instruction::HashKeccak384NativeRaw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.keccak512.native" => ensure!(
+                matches!(instruction, Instruction::HashKeccak512Native(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.keccak512.native.raw" => ensure!(
+                matches!(instruction, Instruction::HashKeccak512NativeRaw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.sha3_256.native" => ensure!(
+                matches!(instruction, Instruction::HashSha3_256Native(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.sha3_256.native.raw" => ensure!(
+                matches!(instruction, Instruction::HashSha3_256NativeRaw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.sha3_384.native" => ensure!(
+                matches!(instruction, Instruction::HashSha3_384Native(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.sha3_384.native.raw" => ensure!(
+                matches!(instruction, Instruction::HashSha3_384NativeRaw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.sha3_512.native" => ensure!(
+                matches!(instruction, Instruction::HashSha3_512Native(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "hash.sha3_512.native.raw" => ensure!(
+                matches!(instruction, Instruction::HashSha3_512NativeRaw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
+        }
+        Ok(())
+    }
+
+    /// Ensures the opcode is a valid opcode and corresponds to the `ecdsa.verify` instruction.
+    #[inline]
+    pub(crate) fn check_ecdsa_opcode(opcode: &str, instruction: &Instruction<N>) -> Result<()> {
+        // Ensure the instruction has one destination register.
+        ensure!(instruction.destinations().len() == 1, "Instruction '{instruction}' has multiple destinations.");
+        // Ensure the instruction is the correct one.
+        match opcode {
+            "ecdsa.verify.digest" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyDigest(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.digest.eth" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyDigestEth(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.keccak256" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyKeccak256(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.keccak256.raw" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyKeccak256Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.keccak256.eth" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyKeccak256Eth(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.keccak384" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyKeccak384(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.keccak384.raw" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyKeccak384Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.keccak384.eth" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyKeccak384Eth(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.keccak512" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyKeccak512(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.keccak512.raw" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyKeccak512Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.keccak512.eth" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifyKeccak512Eth(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.sha3_256" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifySha3_256(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.sha3_256.raw" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifySha3_256Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.sha3_256.eth" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifySha3_256Eth(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.sha3_384" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifySha3_384(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.sha3_384.raw" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifySha3_384Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.sha3_384.eth" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifySha3_384Eth(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.sha3_512" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifySha3_512(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.sha3_512.raw" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifySha3_512Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "ecdsa.verify.sha3_512.eth" => ensure!(
+                matches!(instruction, Instruction::ECDSAVerifySha3_512Eth(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
+        }
+        Ok(())
+    }
+
+    /// Ensures the opcode is a valid opcode and corresponds to the `serialize` instruction.
+    #[inline]
+    pub(crate) fn check_serialize_opcode(opcode: &str, instruction: &Instruction<N>) -> Result<()> {
+        // Ensure that the instruction has exactly one operand register.
+        ensure!(instruction.operands().len() == 1, "Instruction '{instruction}' must have exactly one operand.");
+        // Ensure the instruction has one destination register.
+        ensure!(instruction.destinations().len() == 1, "Instruction '{instruction}' has multiple destinations.");
+        // Ensure the instruction is the correct one.
+        match opcode {
+            "serialize.bits" => ensure!(
+                matches!(instruction, Instruction::SerializeBits(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "serialize.bits.raw" => ensure!(
+                matches!(instruction, Instruction::SerializeBitsRaw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
+        }
+        Ok(())
+    }
+
+    /// Ensures the opcode is a valid opcode and corresponds to the `deserialize` instruction.
+    #[inline]
+    pub(crate) fn check_deserialize_opcode(opcode: &str, instruction: &Instruction<N>) -> Result<()> {
+        // Ensure that the instruction has exactly one operand register.
+        ensure!(instruction.operands().len() == 1, "Instruction '{instruction}' must have exactly one operand.");
+        // Ensure the instruction has one destination register.
+        ensure!(instruction.destinations().len() == 1, "Instruction '{instruction}' has multiple destinations.");
+        // Ensure the instruction is the correct one.
+        match opcode {
+            "deserialize.bits" => ensure!(
+                matches!(instruction, Instruction::DeserializeBits(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "deserialize.bits.raw" => ensure!(
+                matches!(instruction, Instruction::DeserializeBitsRaw(..)),
                 "Instruction '{instruction}' is not for opcode '{opcode}'."
             ),
             _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),

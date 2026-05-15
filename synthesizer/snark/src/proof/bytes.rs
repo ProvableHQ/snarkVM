@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,19 @@ impl<N: Network> FromBytes for Proof<N> {
         }
         // Read the proof.
         let proof = FromBytes::read_le(&mut reader)?;
+        // Return the proof.
+        Ok(Self { proof })
+    }
+
+    fn read_le_unchecked<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the version.
+        let version = u8::read_le(&mut reader)?;
+        // Ensure the version is valid.
+        if version != 1 {
+            return Err(error("Invalid proof version"));
+        }
+        // Read the proof.
+        let proof = FromBytes::read_le_unchecked(&mut reader)?;
         // Return the proof.
         Ok(Self { proof })
     }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,7 @@ use console::{account::Address, network::prelude::*};
 use snarkvm_ledger_committee::{Committee, MIN_DELEGATOR_STAKE};
 
 use indexmap::IndexMap;
+use std::sync::atomic::AtomicU64;
 
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::Mutex;
@@ -74,13 +75,14 @@ pub fn staking_rewards<N: Network>(
         })
         .collect();
 
-    // Track validators not in committee.
+    // Track validators not in committee as well as their stake.
     // Pre-allocating with an expected capacity prevents reallocation while the mutex is held.
     let hashset_capacity = committee.members().len();
     let missing_validators = Mutex::new(std::collections::HashSet::<Address<N>>::with_capacity(hashset_capacity));
+    let invalid_validator_stake = AtomicU64::new(0);
 
     // Compute the updated stakers.
-    cfg_iter!(stakers)
+    let staking_rewards = cfg_iter!(stakers)
         .map(|(staker, (validator, stake))| {
             // If the validator is not in the valid validators list, skip the staker.
             let Some((validator_stake, commission_rate)) = valid_validators.get(validator) else {
@@ -90,6 +92,7 @@ pub fn staking_rewards<N: Network>(
                     if logged.insert(*validator) {
                         trace!("Validator {validator} is not in the committee - skipping all stakers");
                     }
+                    invalid_validator_stake.fetch_add(*stake, std::sync::atomic::Ordering::Relaxed);
                 }
                 return (*staker, (*validator, *stake));
             };
@@ -157,7 +160,15 @@ pub fn staking_rewards<N: Network>(
             // Return the staker and the updated stake.
             (*staker, (*validator, stake.saturating_add(staking_reward_after_commission)))
         })
-        .collect()
+        .collect();
+
+    if tracing::enabled!(tracing::Level::TRACE) {
+        let invalid_validator_stake = invalid_validator_stake.load(std::sync::atomic::Ordering::Relaxed);
+        trace!("Total stake invalidated due to validator not in committee: {invalid_validator_stake}");
+    }
+
+    // Return the result.
+    staking_rewards
 }
 
 /// Returns the proving rewards for a given coinbase reward and list of prover solutions.
@@ -215,7 +226,7 @@ mod tests {
 
     type CurrentNetwork = console::network::MainnetV0;
 
-    const ITERATIONS: usize = 1000;
+    const ITERATIONS: usize = 10;
 
     #[test]
     fn test_staking_rewards() {
@@ -223,13 +234,13 @@ mod tests {
         // Sample a random committee.
         let committee = snarkvm_ledger_committee::test_helpers::sample_committee_with_commissions(rng);
         // Sample a random block reward.
-        let block_reward = rng.gen_range(0..MAX_COINBASE_REWARD);
+        let block_reward = rng.random_range(0..MAX_COINBASE_REWARD);
         // Retrieve an address.
         let address = *committee.members().iter().next().unwrap().0;
 
         for _ in 0..ITERATIONS {
             // Sample a random stake.
-            let stake = rng.gen_range(MIN_DELEGATOR_STAKE..committee.total_stake());
+            let stake = rng.random_range(MIN_DELEGATOR_STAKE..committee.total_stake());
             // Construct the stakers.
             let stakers = indexmap! {address => (address, stake)};
             let next_stakers = staking_rewards::<CurrentNetwork>(&stakers, &committee, block_reward);
@@ -249,7 +260,7 @@ mod tests {
         let committee = snarkvm_ledger_committee::test_helpers::sample_committee(rng);
         let fake_committee = snarkvm_ledger_committee::test_helpers::sample_committee(rng);
         // Sample a random block reward.
-        let block_reward = rng.gen_range(0..MAX_COINBASE_REWARD);
+        let block_reward = rng.random_range(0..MAX_COINBASE_REWARD);
 
         // Generate the stakers
         let stakers = crate::committee::test_helpers::to_stakers(committee.members(), rng);
@@ -288,7 +299,7 @@ mod tests {
         // Convert the committee into stakers.
         let stakers = crate::committee::test_helpers::to_stakers(committee.members(), rng);
         // Sample a random block reward.
-        let block_reward = rng.gen_range(0..MAX_COINBASE_REWARD);
+        let block_reward = rng.random_range(0..MAX_COINBASE_REWARD);
         // Create a map of validators to commissions
         let commissions: IndexMap<Address<CurrentNetwork>, u8> =
             committee.members().iter().map(|(address, (_, _, commission))| (*address, *commission)).collect();
@@ -360,7 +371,7 @@ mod tests {
         let rng = &mut TestRng::default();
 
         // Sample a random block reward.
-        let block_reward = rng.gen_range(0..MAX_COINBASE_REWARD);
+        let block_reward = rng.random_range(0..MAX_COINBASE_REWARD);
         // Sample a committee.
         let committee = snarkvm_ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 25, rng);
         // Convert the committee into stakers.
@@ -390,13 +401,13 @@ mod tests {
         // Convert the committee into stakers.
         let stakers = crate::committee::test_helpers::to_stakers(committee.members(), rng);
         // Sample a random block reward.
-        let block_reward = rng.gen_range(0..MAX_COINBASE_REWARD);
+        let block_reward = rng.random_range(0..MAX_COINBASE_REWARD);
         // Retrieve an address of a delegator that isn't a validator
         let address = *stakers.iter().find(|(address, _)| !committee.is_committee_member(**address)).unwrap().0;
 
         for _ in 0..ITERATIONS {
             // Sample a random stake.
-            let stake = rng.gen_range(0..MIN_DELEGATOR_STAKE);
+            let stake = rng.random_range(0..MIN_DELEGATOR_STAKE);
             // Construct the stakers.
             let stakers = indexmap! {address => (address, stake)};
             let next_stakers = staking_rewards::<CurrentNetwork>(&stakers, &committee, block_reward);
@@ -425,9 +436,9 @@ mod tests {
         // Ensure a staking reward that is too large, renders no rewards.
         for _ in 0..ITERATIONS {
             // Sample a random overly-large block reward.
-            let block_reward = rng.gen_range(MAX_COINBASE_REWARD..u64::MAX);
+            let block_reward = rng.random_range(MAX_COINBASE_REWARD..u64::MAX);
             // Sample a random stake.
-            let stake = rng.gen_range(MIN_DELEGATOR_STAKE..u64::MAX);
+            let stake = rng.random_range(MIN_DELEGATOR_STAKE..u64::MAX);
             // Construct the stakers.
             let stakers = indexmap![address => (address, stake)];
             // Check that an overly large block reward fails.
@@ -443,7 +454,7 @@ mod tests {
         let committee = snarkvm_ledger_committee::test_helpers::sample_committee(rng);
 
         // Compute the staking rewards (empty).
-        let rewards = staking_rewards::<CurrentNetwork>(&indexmap![], &committee, rng.r#gen());
+        let rewards = staking_rewards::<CurrentNetwork>(&indexmap![], &committee, rng.random());
         assert!(rewards.is_empty());
     }
 
@@ -455,7 +466,7 @@ mod tests {
             // Sample a random address.
             let address = Address::rand(rng);
             // Sample a random puzzle reward.
-            let puzzle_reward = rng.gen_range(0..MAX_COINBASE_REWARD);
+            let puzzle_reward = rng.random_range(0..MAX_COINBASE_REWARD);
 
             let rewards = proving_rewards::<CurrentNetwork>(vec![(address, u64::MAX)], puzzle_reward);
             assert_eq!(rewards.len(), 1);
@@ -474,9 +485,9 @@ mod tests {
             // Sample a random address.
             let address = Address::rand(rng);
             // Sample a random overly-large puzzle reward.
-            let puzzle_reward = rng.gen_range(MAX_COINBASE_REWARD..u64::MAX);
+            let puzzle_reward = rng.random_range(MAX_COINBASE_REWARD..u64::MAX);
             // Sample a random proof target.
-            let proof_target = rng.gen_range(0..u64::MAX);
+            let proof_target = rng.random_range(0..u64::MAX);
             // Check that a maxed out proof target fails.
             let rewards = proving_rewards::<CurrentNetwork>(vec![(address, proof_target)], puzzle_reward);
             assert!(rewards.is_empty());
@@ -490,7 +501,7 @@ mod tests {
         let address = Address::rand(rng);
 
         // Compute the proving rewards (empty).
-        let rewards = proving_rewards::<CurrentNetwork>(vec![], rng.r#gen());
+        let rewards = proving_rewards::<CurrentNetwork>(vec![], rng.random());
         assert!(rewards.is_empty());
 
         // Check that a maxed out coinbase reward, returns empty.

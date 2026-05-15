@@ -1,5 +1,5 @@
 errors: []
 outputs:
-- execute: Program 'bad_constructor.aleo' does not exist
+- execute: 'Authorization failed: Process authorization failed: Program ''bad_constructor.aleo'' does not exist'
 additional:
 - {}

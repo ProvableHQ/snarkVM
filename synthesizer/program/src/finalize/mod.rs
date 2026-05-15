@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -79,6 +79,48 @@ impl<N: Network> FinalizeCore<N> {
     pub const fn positions(&self) -> &HashMap<Identifier<N>, usize> {
         &self.positions
     }
+
+    pub fn contains_external_struct(&self) -> bool {
+        self.commands
+            .iter()
+            .any(|command| matches!(command, Command::Instruction(inst) if inst.contains_external_struct()))
+    }
+
+    /// Returns `true` if the finalize scope contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.input_types().iter().any(|input_type| {
+            matches!(input_type, FinalizeType::Plaintext(plaintext_type) if plaintext_type.contains_string_type())
+        }) || self.commands.iter().any(|command| {
+            command.contains_string_type()
+        })
+    }
+
+    /// Returns `true` if the finalize scope contains an identifier type in its inputs or commands.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        for input_type in self.input_types() {
+            if let FinalizeType::Plaintext(plaintext_type) = input_type {
+                if plaintext_type.contains_identifier_type()? {
+                    return Ok(true);
+                }
+            }
+        }
+        // Check commands for identifier types in cast destinations.
+        for command in &self.commands {
+            if command.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Returns `true` if the finalize scope contains an array type with a size that exceeds the given maximum.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        self.input_types().iter().any(|input_type| {
+            matches!(input_type, FinalizeType::Plaintext(plaintext_type) if plaintext_type.exceeds_max_array_size(max_array_size))
+        }) || self.commands.iter().any(|command| {
+            command.exceeds_max_array_size(max_array_size)
+        })
+    }
 }
 
 impl<N: Network> FinalizeCore<N> {
@@ -117,9 +159,9 @@ impl<N: Network> FinalizeCore<N> {
         // Ensure the number of write commands has not been exceeded.
         if command.is_write() {
             ensure!(
-                self.num_writes < N::MAX_WRITES,
+                self.num_writes < N::LATEST_MAX_WRITES(),
                 "Cannot add more than {} 'set' & 'remove' commands",
-                N::MAX_WRITES
+                N::LATEST_MAX_WRITES()
             );
         }
 
@@ -127,8 +169,8 @@ impl<N: Network> FinalizeCore<N> {
         ensure!(!command.is_async(), "Forbidden operation: Finalize cannot invoke an 'async' instruction");
         // Ensure the command is not a call instruction.
         ensure!(!command.is_call(), "Forbidden operation: Finalize cannot invoke a 'call'");
-        // Ensure the command is not a cast to record instruction.
-        ensure!(!command.is_cast_to_record(), "Forbidden operation: Finalize cannot cast to a record");
+        // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
+        ensure!(!command.is_instruction_for_record(), "Forbidden operation: Finalize cannot operate on records");
 
         // Check the destination registers.
         for register in command.destinations() {
@@ -230,10 +272,10 @@ mod tests {
         let name = Identifier::from_str("finalize_core_test").unwrap();
         let mut finalize = Finalize::<CurrentNetwork>::new(name);
 
-        for _ in 0..CurrentNetwork::MAX_WRITES * 2 {
+        for _ in 0..CurrentNetwork::LATEST_MAX_WRITES() * 2 {
             let command = Command::<CurrentNetwork>::from_str("remove object[r0];").unwrap();
 
-            match finalize.commands.len() < CurrentNetwork::MAX_WRITES as usize {
+            match finalize.commands.len() < CurrentNetwork::LATEST_MAX_WRITES() as usize {
                 true => assert!(finalize.add_command(command).is_ok()),
                 false => assert!(finalize.add_command(command).is_err()),
             }
@@ -275,5 +317,25 @@ mod tests {
                 false => assert!(finalize.add_command(command).is_err()),
             }
         }
+    }
+
+    #[test]
+    fn test_reject_cast_to_dynamic_record_in_finalize() {
+        let name = Identifier::from_str("finalize_core_test").unwrap();
+        let mut finalize = Finalize::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("cast r0 into r1 as dynamic.record;").unwrap();
+        let err = finalize.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("operate on records"));
+    }
+
+    #[test]
+    fn test_reject_get_record_dynamic_in_finalize() {
+        let name = Identifier::from_str("finalize_core_test").unwrap();
+        let mut finalize = Finalize::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("get.record.dynamic r0.x into r1 as bool;").unwrap();
+        let err = finalize.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("operate on records"));
     }
 }

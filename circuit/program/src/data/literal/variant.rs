@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +36,7 @@ impl<A: Aleo> Literal<A> {
             Self::Scalar(..) => console::U8::new(14),
             Self::Signature(..) => console::U8::new(15),
             Self::String(..) => console::U8::new(16),
+            Self::Identifier(..) => console::U8::new(17),
         })
     }
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,20 +17,33 @@ use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
 use circuit::prelude::ToFields as CircuitToFields;
 use console::{
     network::prelude::*,
-    program::{Literal, LiteralType, PlaintextType, Register, RegisterType, ToFields as ConsoleToFields},
+    program::{
+        Address,
+        Literal,
+        LiteralType,
+        PlaintextType,
+        Register,
+        RegisterType,
+        Signature,
+        ToFields as ConsoleToFields,
+        Value,
+    },
     types::Boolean,
 };
 
 /// Computes whether `signature` is valid for the given `address` and `message`.
+pub type SignVerify<N> = SignatureVerification<N>;
+
+/// Computes whether `signature` is valid for the given `address` and `message`.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct SignVerify<N: Network> {
+pub struct SignatureVerification<N: Network> {
     /// The operands.
     operands: Vec<Operand<N>>,
     /// The destination register.
     destination: Register<N>,
 }
 
-impl<N: Network> SignVerify<N> {
+impl<N: Network> SignatureVerification<N> {
     /// Initializes a new `sign.verify` instruction.
     #[inline]
     pub fn new(operands: Vec<Operand<N>>, destination: Register<N>) -> Result<Self> {
@@ -43,7 +56,7 @@ impl<N: Network> SignVerify<N> {
     /// Returns the opcode.
     #[inline]
     pub const fn opcode() -> Opcode {
-        Opcode::Sign
+        Opcode::Sign("sign.verify")
     }
 
     /// Returns the operands in the operation.
@@ -60,9 +73,28 @@ impl<N: Network> SignVerify<N> {
     pub fn destinations(&self) -> Vec<Register<N>> {
         vec![self.destination.clone()]
     }
+
+    /// Returns whether this instruction refers to an external struct.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
-impl<N: Network> SignVerify<N> {
+/// Evaluate a Schnorr verification operation.
+///
+/// This allows running the verification without the machinery of stacks and registers.
+/// This is necessary for the Leo interpreter.
+pub fn evaluate_schnorr_verification<N: Network>(
+    signature: &Signature<N>,
+    address: &Address<N>,
+    message: &Value<N>,
+) -> Result<bool> {
+    // Verify the signature.
+    Ok(signature.verify(address, &message.to_fields()?))
+}
+
+impl<N: Network> SignatureVerification<N> {
     /// Evaluates the instruction.
     #[inline]
     pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
@@ -83,7 +115,8 @@ impl<N: Network> SignVerify<N> {
         let message = registers.load(stack, &self.operands[2])?;
 
         // Verify the signature.
-        let output = Literal::Boolean(Boolean::new(signature.verify(&address, &message.to_fields()?)));
+        let output = evaluate_schnorr_verification(&signature, &address, &message)?;
+        let output = Literal::Boolean(Boolean::new(output));
 
         // Store the output.
         registers.store_literal(stack, &self.destination, output)
@@ -159,7 +192,7 @@ impl<N: Network> SignVerify<N> {
     }
 }
 
-impl<N: Network> Parser for SignVerify<N> {
+impl<N: Network> Parser for SignatureVerification<N> {
     /// Parses a string into an operation.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
@@ -190,7 +223,7 @@ impl<N: Network> Parser for SignVerify<N> {
     }
 }
 
-impl<N: Network> FromStr for SignVerify<N> {
+impl<N: Network> FromStr for SignatureVerification<N> {
     type Err = Error;
 
     /// Parses a string into an operation.
@@ -208,14 +241,14 @@ impl<N: Network> FromStr for SignVerify<N> {
     }
 }
 
-impl<N: Network> Debug for SignVerify<N> {
+impl<N: Network> Debug for SignatureVerification<N> {
     /// Prints the operation as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network> Display for SignVerify<N> {
+impl<N: Network> Display for SignatureVerification<N> {
     /// Prints the operation to a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Ensure the number of operands is 3.
@@ -229,7 +262,7 @@ impl<N: Network> Display for SignVerify<N> {
     }
 }
 
-impl<N: Network> FromBytes for SignVerify<N> {
+impl<N: Network> FromBytes for SignatureVerification<N> {
     /// Reads the operation from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Initialize the vector for the operands.
@@ -246,7 +279,7 @@ impl<N: Network> FromBytes for SignVerify<N> {
     }
 }
 
-impl<N: Network> ToBytes for SignVerify<N> {
+impl<N: Network> ToBytes for SignatureVerification<N> {
     /// Writes the operation to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Ensure the number of operands is 3.

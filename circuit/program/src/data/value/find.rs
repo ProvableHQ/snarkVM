@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +31,8 @@ impl<A: Aleo> Value<A> {
                 }
             }
             Self::Future(future) => Ok(future.find(path)?),
+            Self::DynamicRecord(dynamic_record) => Ok(dynamic_record.find(path)?),
+            Self::DynamicFuture(..) => bail!("Cannot invoke `find` on a dynamic future value"),
         }
     }
 }

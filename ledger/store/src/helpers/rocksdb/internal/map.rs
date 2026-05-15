@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
 use super::*;
 use crate::helpers::{Map, MapRead};
 
-use snarkvm_utilities::bytes::unchecked_deserialize;
+use snarkvm_utilities::{bytes::unchecked_deserialize, flatten_error};
 
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use indexmap::IndexMap;
@@ -59,7 +59,7 @@ impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerData
 
 impl<
     'a,
-    K: 'a + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
+    K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
     V: 'a + Clone + Serialize + DeserializeOwned + Send + Sync,
 > Map<'a, K, V> for DataMap<K, V>
 {
@@ -93,7 +93,7 @@ impl<
         match self.is_atomic_in_progress() {
             // If a batch is in progress, add the key to the batch.
             true => {
-                self.atomic_batch.lock().push((*key, None));
+                self.atomic_batch.lock().push((key.clone(), None));
             }
             // Otherwise, remove the key-value pair directly from the map.
             false => {
@@ -119,14 +119,14 @@ impl<
         // Ensure that the atomic batch is empty.
         assert!(
             self.atomic_batch.lock().is_empty(),
-            "Cannot start an atomic operation when the atomic batch is not empty"
+            "Cannot start an atomic batch operation while another one is already in progress"
         );
         // Ensure that the database atomic batch is empty; skip this check if the atomic
         // writes are paused, as there may be pending operations.
         if !self.database.are_atomic_writes_paused() {
             assert!(
                 self.database.atomic_batch.lock().is_empty(),
-                "Cannot start an atomic operation when the database atomic batch is not empty"
+                "Cannot start a database atomic batch operation while another one is already in progress"
             );
         }
     }
@@ -251,7 +251,7 @@ impl<
             // Ensure that the database atomic batch is empty.
             assert!(
                 self.database.atomic_batch.lock().is_empty(),
-                "Database atomic batch must empty after write operation"
+                "The database atomic batch must be empty when finishing a write batch operation"
             );
         }
 
@@ -278,7 +278,7 @@ impl<
 
 impl<
     'a,
-    K: 'a + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
+    K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
     V: 'a + Clone + Serialize + DeserializeOwned + Send + Sync,
 > MapRead<'a, K, V> for DataMap<K, V>
 {
@@ -456,13 +456,15 @@ impl<
 
         // Deserialize the key and value.
         let key = unchecked_deserialize(&key[PREFIX_LEN..])
-            .map_err(|e| {
-                error!("RocksDB Iter deserialize(key) error: {e}");
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB Iter deserialize(key) error")));
             })
             .ok()?;
         let value = unchecked_deserialize(value)
-            .map_err(|e| {
-                error!("RocksDB Iter deserialize(value) error: {e}");
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB Iter deserialize(value) error")));
             })
             .ok()?;
 
@@ -494,8 +496,9 @@ impl<'a, K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + Deserialize
 
         // Deserialize the key.
         let key = unchecked_deserialize(&self.db_iter.key()?[PREFIX_LEN..])
-            .map_err(|e| {
-                error!("RocksDB Keys deserialize(key) error: {e}");
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB Keys deserialize(key) error")));
             })
             .ok()?;
 
@@ -527,8 +530,9 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V
 
         // Deserialize the value.
         let value = unchecked_deserialize(self.db_iter.value()?)
-            .map_err(|e| {
-                error!("RocksDB Values deserialize(value) error: {e}");
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB Values deserialize(value) error")));
             })
             .ok()?;
 

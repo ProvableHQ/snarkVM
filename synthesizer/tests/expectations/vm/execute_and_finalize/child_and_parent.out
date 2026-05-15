@@ -4,8 +4,8 @@ outputs:
   execute:
     child.aleo/foo:
       outputs:
-      - '{"type":"public","id":"2640838416790640681168590379361283273826520388801373579901976371772330215645field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
-      - '{"type":"public","id":"5387158298738959004626274281066907362332577788890240735651079058270864719628field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
+      - '{"type":"public","id":"4201529693397238840799638858137230332506377596536900074247047008097933811482field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
+      - '{"type":"public","id":"7462138283031330960096134272387746442140505665941265000431915933082703032315field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
@@ -22,7 +22,7 @@ additional:
 - child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"501500725828144533217226455002919340777005403436583492675058159393287504376field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    1276u64\n  ]\n}"}'
+      - '{"type":"future","id":"4178900336063733474088185423072938467691968056296874665705905495215307119868field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    1276u64\n  ]\n}"}'
 - child_outputs:
     child.aleo/foo:
       outputs:

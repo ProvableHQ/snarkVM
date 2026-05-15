@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +31,22 @@ macro_rules! to_bits_le {
     });
 }
 
+/// Takes as input a sequence of objects, and converts them to a series of little-endian bits.
+/// All traits that implement `ToBitsRaw` can be automatically converted to bits in this manner.
+#[macro_export]
+macro_rules! to_bits_raw_le {
+    ($($x:expr),*) => ({
+        let mut buffer = vec![];
+        $($x.write_bits_raw_le(&mut buffer);)*
+        buffer
+    });
+    ($($x:expr),*; $size:expr) => ({
+        let mut buffer = Vec::with_capacity($size);
+        $($x.write_bits_raw_le(&mut buffer);)*
+        buffer
+    });
+}
+
 pub trait ToBits: Sized {
     /// Writes `self` into the given vector as a boolean array in little-endian order.
     fn write_bits_le(&self, vec: &mut Vec<bool>);
@@ -55,6 +71,28 @@ pub trait ToBits: Sized {
     /// An optional indication of how many bits an object can be represented with.
     fn num_bits() -> Option<usize> {
         None
+    }
+}
+
+pub trait ToBitsRaw: ToBits + Sized {
+    /// Writes `self` into the given vector as a raw boolean array in little-endian order.
+    fn write_bits_raw_le(&self, vec: &mut Vec<bool>);
+
+    /// Writes `self` into the given vector as a boolean array in big-endian order.
+    fn write_bits_raw_be(&self, vec: &mut Vec<bool>);
+
+    /// Returns `self` as a boolean array in little-endian order.
+    fn to_bits_raw_le(&self) -> Vec<bool> {
+        let mut bits = Vec::new();
+        self.write_bits_raw_le(&mut bits);
+        bits
+    }
+
+    /// Returns `self` as a boolean array in big-endian order.
+    fn to_bits_raw_be(&self) -> Vec<bool> {
+        let mut bits = Vec::new();
+        self.write_bits_raw_be(&mut bits);
+        bits
     }
 }
 
@@ -104,6 +142,40 @@ macro_rules! to_bits_tuple {
                 // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
                 self.$i0.write_bits_be(vec);
                 $(self.$idx.write_bits_be(vec);)+
+            }
+        }
+
+        impl<$t0: ToBitsRaw, $($ty: ToBitsRaw),+> ToBitsRaw for ($t0, $($ty),+) {
+            /// A helper method to return a concatenated list of little-endian bits without variant or identifier bits from the circuits.
+            #[inline]
+            fn write_bits_raw_le(&self, vec: &mut Vec<bool>) {
+                // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
+                (&self).write_bits_raw_le(vec);
+            }
+
+            /// A helper method to return a concatenated list of bits-endian bits without variant or identifier bits from the circuits.
+            #[inline]
+            fn write_bits_raw_be(&self, vec: &mut Vec<bool>) {
+                // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
+                (&self).write_bits_raw_be(vec);
+            }
+        }
+
+        impl<'a, $t0: ToBitsRaw, $($ty: ToBitsRaw),+> ToBitsRaw for &'a ($t0, $($ty),+) {
+            /// A helper method to return a concatenated list of little-endian bits without variant or identifier bits from the circuits.
+            #[inline]
+            fn write_bits_raw_le(&self, vec: &mut Vec<bool>) {
+                // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
+                self.$i0.write_bits_raw_le(vec);
+                $(self.$idx.write_bits_raw_le(vec);)+
+            }
+
+            /// A helper method to return a concatenated list of bits-endian bits without variant or identifier bits from the circuits.
+            #[inline]
+            fn write_bits_raw_be(&self, vec: &mut Vec<bool>) {
+                // The tuple is order-preserving, meaning the first circuit in is the first circuit bits out.
+                self.$i0.write_bits_raw_be(vec);
+                $(self.$idx.write_bits_raw_be(vec);)+
             }
         }
     }
@@ -295,6 +367,64 @@ impl<C: ToBits> ToBits for &[C] {
     }
 }
 
+impl<C: ToBitsRaw> ToBitsRaw for Vec<C> {
+    /// A helper method to return a concatenated list of little-endian bits.
+    #[inline]
+    fn write_bits_raw_le(&self, vec: &mut Vec<bool>) {
+        // The vector is order-preserving, meaning the first variable in is the first variable bits out.
+        self.as_slice().write_bits_raw_le(vec);
+    }
+
+    /// A helper method to return a concatenated list of big-endian bits.
+    #[inline]
+    fn write_bits_raw_be(&self, vec: &mut Vec<bool>) {
+        // The vector is order-preserving, meaning the first variable in is the first variable bits out.
+        self.as_slice().write_bits_raw_be(vec);
+    }
+}
+
+impl<C: ToBitsRaw, const N: usize> ToBitsRaw for [C; N] {
+    /// A helper method to return a concatenated list of little-endian bits.
+    #[inline]
+    fn write_bits_raw_le(&self, vec: &mut Vec<bool>) {
+        // The slice is order-preserving, meaning the first variable in is the first variable bits out.
+        self.as_slice().write_bits_raw_le(vec)
+    }
+
+    /// A helper method to return a concatenated list of big-endian bits.
+    #[inline]
+    fn write_bits_raw_be(&self, vec: &mut Vec<bool>) {
+        // The slice is order-preserving, meaning the first variable in is the first variable bits out.
+        self.as_slice().write_bits_raw_be(vec)
+    }
+}
+
+impl<C: ToBitsRaw> ToBitsRaw for &[C] {
+    /// A helper method to return a concatenated list of little-endian bits.
+    #[inline]
+    fn write_bits_raw_le(&self, vec: &mut Vec<bool>) {
+        if let Some(num_bits) = C::num_bits() {
+            vec.reserve(num_bits * self.len());
+        }
+
+        for elem in self.iter() {
+            elem.write_bits_raw_le(vec);
+        }
+    }
+
+    /// A helper method to return a concatenated list of big-endian bits.
+    #[inline]
+    fn write_bits_raw_be(&self, vec: &mut Vec<bool>) {
+        if let Some(num_bits) = C::num_bits() {
+            vec.reserve(num_bits * self.len());
+        }
+
+        for elem in self.iter() {
+            elem.write_bits_raw_be(vec);
+        }
+    }
+}
+
 impl FromBits for Vec<u8> {
     /// A helper method to return `Self` from a concatenated list of little-endian bits.
     #[inline]
@@ -317,7 +447,7 @@ mod tests {
     use crate::{TestRng, Uniform};
 
     use anyhow::Result;
-    use rand::{Rng, distributions::Alphanumeric};
+    use rand::{RngExt, distr::Alphanumeric};
 
     const ITERATIONS: u64 = 10000;
 
@@ -363,7 +493,7 @@ mod tests {
         // I128
         check!((0..100).map(|_| Uniform::rand(rng)).collect::<Vec<i128>>());
         // String
-        check!((0..100).map(|_| random_string(rng.r#gen(), rng)).collect::<Vec<String>>());
+        check!((0..100).map(|_| random_string(rng.random(), rng)).collect::<Vec<String>>());
         // Vec<Vec<u8>>
         check!((0..100).map(|_| (0..128).map(|_| Uniform::rand(rng)).collect::<Vec<u8>>()).collect::<Vec<_>>());
         // Vec<Vec<u16>>
@@ -387,7 +517,7 @@ mod tests {
         // Vec<Vec<String>>
         check!(
             (0..100)
-                .map(|_| (0..128).map(|_| random_string(rng.r#gen(), rng)).collect::<Vec<String>>())
+                .map(|_| (0..128).map(|_| random_string(rng.random(), rng)).collect::<Vec<String>>())
                 .collect::<Vec<_>>()
         );
     }

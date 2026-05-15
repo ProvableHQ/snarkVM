@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -197,10 +197,7 @@ impl<P: Fp384Parameters> Field for Fp384<P> {
         Self::from_bigint(two_inv).unwrap() // Guaranteed to be valid.
     }
 
-    fn sum_of_products<'a>(
-        a: impl Iterator<Item = &'a Self> + Clone,
-        b: impl Iterator<Item = &'a Self> + Clone,
-    ) -> Self {
+    fn sum_of_products<'a>(a: &'a [Self], b: &'a [Self]) -> Self {
         // For a single `a x b` multiplication, operand scanning (schoolbook) takes each
         // limb of `a` in turn, and multiplies it by all of the limbs of `b` to compute
         // the result as a double-width intermediate representation, which is then fully
@@ -220,9 +217,8 @@ impl<P: Fp384Parameters> Field for Fp384<P> {
         let (u0, u1, u2, u3, u4, u5) = (0..6).fold((0, 0, 0, 0, 0, 0), |(u0, u1, u2, u3, u4, u5), j| {
             // Algorithm 2, line 3
             // For each pair in the overall sum of products:
-            let (t0, t1, t2, t3, t4, t5, mut t6) = a.clone().zip(b.clone()).fold(
-                (u0, u1, u2, u3, u4, u5, 0),
-                |(t0, t1, t2, t3, t4, t5, mut t6), (a, b)| {
+            let (t0, t1, t2, t3, t4, t5, mut t6) =
+                a.iter().zip(b).fold((u0, u1, u2, u3, u4, u5, 0), |(t0, t1, t2, t3, t4, t5, mut t6), (a, b)| {
                     // Compute digit_j x row and accumulate into `u`.
                     let mut carry = 0;
                     let t0 = fa::mac_with_carry(t0, a.0.0[j], b.0.0[0], &mut carry);
@@ -234,8 +230,7 @@ impl<P: Fp384Parameters> Field for Fp384<P> {
                     let _ = fa::adc(&mut t6, 0, carry);
 
                     (t0, t1, t2, t3, t4, t5, t6)
-                },
-            );
+                });
 
             // Algorithm 2, lines 4-5
             // This is a single step of the usual Montgomery reduction process.

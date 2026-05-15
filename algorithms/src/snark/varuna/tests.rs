@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,7 @@ mod varuna {
             VarunaSNARK,
             VarunaVersion,
             mode::SNARKMode,
+            proof::proof_size,
             test_circuit::TestCircuit,
         },
         traits::{AlgebraicSponge, SNARK},
@@ -33,6 +34,7 @@ mod varuna {
 
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
     use snarkvm_utilities::{
+        CanonicalSerialize,
         ToBytes,
         rand::{TestRng, Uniform},
     };
@@ -46,8 +48,7 @@ mod varuna {
         ($test_struct: ident, $snark_inst: tt, $snark_mode: tt) => {
             struct $test_struct {}
             impl $test_struct {
-                pub(crate) fn test_circuit(num_constraints: usize, num_variables: usize, pk_size_expectation: usize, varuna_version: VarunaVersion) {
-                    let rng = &mut snarkvm_utilities::rand::TestRng::default();
+                pub(crate) fn test_circuit(num_constraints: usize, num_variables: usize, pk_size_expectation: usize, varuna_version: VarunaVersion, rng: &mut snarkvm_utilities::rand::TestRng) {
                     let random = Fr::rand(rng);
 
                     let max_degree = AHPForR1CS::<Fr, $snark_mode>::max_degree(100, 25, 300).unwrap();
@@ -131,6 +132,15 @@ mod varuna {
                                 $snark_inst::prove_batch(universal_prover, &fs_parameters, varuna_version, &pks_to_constraints, rng).unwrap();
                             println!("Called prover");
 
+                            if varuna_version == VarunaVersion::V2 {
+                                let batch_sizes = proof.batch_sizes();
+                                let mut proof_bytes = vec![];
+                                proof.serialize_compressed(&mut proof_bytes).unwrap();
+                                let actual_size = proof_size::<Bls12_377>(&batch_sizes, VarunaVersion::V2, $snark_mode::ZK).unwrap();
+                                assert_eq!(proof_bytes.len(), actual_size);
+                                println!("Compressed size is as expected ({actual_size} B)");
+                            }
+
                             assert!(
                                 $snark_inst::verify_batch(universal_verifier, &fs_parameters, varuna_version, &vks_to_inputs, &proof).unwrap(),
                                 "Batch verification failed with {instance_batch_size} instances and {circuit_batch_size} circuits for circuits: {constraints:?}"
@@ -176,10 +186,8 @@ mod varuna {
                     }
                 }
 
-                pub(crate) fn test_serde_json(num_constraints: usize, num_variables: usize) {
+                pub(crate) fn test_serde_json(num_constraints: usize, num_variables: usize, rng: &mut TestRng) {
                     use std::str::FromStr;
-
-                    let rng = &mut TestRng::default();
 
                     let max_degree = AHPForR1CS::<Fr, $snark_mode>::max_degree(100, 25, 300).unwrap();
                     let universal_srs = $snark_inst::universal_setup(max_degree).unwrap();
@@ -203,10 +211,8 @@ mod varuna {
                     assert_eq!(index_vk, serde_json::from_str(&candidate_string).unwrap());
                 }
 
-                pub(crate) fn test_bincode(num_constraints: usize, num_variables: usize) {
+                pub(crate) fn test_bincode(num_constraints: usize, num_variables: usize, rng: &mut TestRng) {
                     use snarkvm_utilities::{FromBytes, ToBytes};
-
-                    let rng = &mut TestRng::default();
 
                     let max_degree = AHPForR1CS::<Fr, $snark_mode>::max_degree(100, 25, 300).unwrap();
                     let universal_srs = $snark_inst::universal_setup(max_degree).unwrap();
@@ -240,18 +246,19 @@ mod varuna {
         let num_variables = 25;
         let pk_size_zk = 91971;
         let pk_size_posw = 91633;
+        let mut rng = TestRng::default();
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1, &mut rng);
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
 
-        SonicPCTest::test_serde_json(num_constraints, num_variables);
-        SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
+        SonicPCTest::test_serde_json(num_constraints, num_variables, &mut rng);
+        SonicPCPoswTest::test_serde_json(num_constraints, num_variables, &mut rng);
 
-        SonicPCTest::test_bincode(num_constraints, num_variables);
-        SonicPCPoswTest::test_bincode(num_constraints, num_variables);
+        SonicPCTest::test_bincode(num_constraints, num_variables, &mut rng);
+        SonicPCPoswTest::test_bincode(num_constraints, num_variables, &mut rng);
     }
 
     #[test]
@@ -260,18 +267,19 @@ mod varuna {
         let num_variables = 25;
         let pk_size_zk = 25428;
         let pk_size_posw = 25090;
+        let mut rng = TestRng::default();
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1, &mut rng);
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
 
-        SonicPCTest::test_serde_json(num_constraints, num_variables);
-        SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
+        SonicPCTest::test_serde_json(num_constraints, num_variables, &mut rng);
+        SonicPCPoswTest::test_serde_json(num_constraints, num_variables, &mut rng);
 
-        SonicPCTest::test_bincode(num_constraints, num_variables);
-        SonicPCPoswTest::test_bincode(num_constraints, num_variables);
+        SonicPCTest::test_bincode(num_constraints, num_variables, &mut rng);
+        SonicPCPoswTest::test_bincode(num_constraints, num_variables, &mut rng);
     }
 
     #[test]
@@ -280,18 +288,19 @@ mod varuna {
         let num_variables = 100;
         let pk_size_zk = 53523;
         let pk_size_posw = 53185;
+        let mut rng = TestRng::default();
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1, &mut rng);
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
 
-        SonicPCTest::test_serde_json(num_constraints, num_variables);
-        SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
+        SonicPCTest::test_serde_json(num_constraints, num_variables, &mut rng);
+        SonicPCPoswTest::test_serde_json(num_constraints, num_variables, &mut rng);
 
-        SonicPCTest::test_bincode(num_constraints, num_variables);
-        SonicPCPoswTest::test_bincode(num_constraints, num_variables);
+        SonicPCTest::test_bincode(num_constraints, num_variables, &mut rng);
+        SonicPCPoswTest::test_bincode(num_constraints, num_variables, &mut rng);
     }
 
     #[test]
@@ -300,18 +309,19 @@ mod varuna {
         let num_variables = 26;
         let pk_size_zk = 25284;
         let pk_size_posw = 24946;
+        let mut rng = TestRng::default();
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1, &mut rng);
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
 
-        SonicPCTest::test_serde_json(num_constraints, num_variables);
-        SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
+        SonicPCTest::test_serde_json(num_constraints, num_variables, &mut rng);
+        SonicPCPoswTest::test_serde_json(num_constraints, num_variables, &mut rng);
 
-        SonicPCTest::test_bincode(num_constraints, num_variables);
-        SonicPCPoswTest::test_bincode(num_constraints, num_variables);
+        SonicPCTest::test_bincode(num_constraints, num_variables, &mut rng);
+        SonicPCPoswTest::test_bincode(num_constraints, num_variables, &mut rng);
     }
 
     #[test]
@@ -320,18 +330,19 @@ mod varuna {
         let num_variables = 25;
         let pk_size_zk = 25284;
         let pk_size_posw = 24946;
+        let mut rng = TestRng::default();
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1, &mut rng);
 
-        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2);
-        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2);
+        SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
+        SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
 
-        SonicPCTest::test_serde_json(num_constraints, num_variables);
-        SonicPCPoswTest::test_serde_json(num_constraints, num_variables);
+        SonicPCTest::test_serde_json(num_constraints, num_variables, &mut rng);
+        SonicPCPoswTest::test_serde_json(num_constraints, num_variables, &mut rng);
 
-        SonicPCTest::test_bincode(num_constraints, num_variables);
-        SonicPCPoswTest::test_bincode(num_constraints, num_variables);
+        SonicPCTest::test_bincode(num_constraints, num_variables, &mut rng);
+        SonicPCPoswTest::test_bincode(num_constraints, num_variables, &mut rng);
     }
 }
 
@@ -366,9 +377,8 @@ mod varuna_hiding {
         num_variables: usize,
         num_times: usize,
         varuna_version: VarunaVersion,
+        rng: &mut TestRng,
     ) {
-        let rng = &mut TestRng::default();
-
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
         let universal_prover = &universal_srs.to_universal_prover().unwrap();
@@ -432,13 +442,11 @@ mod varuna_hiding {
         }
     }
 
-    fn test_circuit(num_constraints: usize, num_variables: usize, varuna_version: VarunaVersion) {
-        test_circuit_n_times(num_constraints, num_variables, 100, varuna_version)
+    fn test_circuit(num_constraints: usize, num_variables: usize, varuna_version: VarunaVersion, rng: &mut TestRng) {
+        test_circuit_n_times(num_constraints, num_variables, 100, varuna_version, rng)
     }
 
-    fn test_serde_json(num_constraints: usize, num_variables: usize) {
-        let rng = &mut TestRng::default();
-
+    fn test_serde_json(num_constraints: usize, num_variables: usize, rng: &mut TestRng) {
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
 
@@ -458,9 +466,7 @@ mod varuna_hiding {
         assert_eq!(index_vk, serde_json::from_str(&candidate_string).unwrap());
     }
 
-    fn test_bincode(num_constraints: usize, num_variables: usize) {
-        let rng = &mut TestRng::default();
-
+    fn test_bincode(num_constraints: usize, num_variables: usize, rng: &mut TestRng) {
         let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
         let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
 
@@ -486,64 +492,70 @@ mod varuna_hiding {
     fn prove_and_verify_with_tall_matrix_big() {
         let num_constraints = 100;
         let num_variables = 25;
+        let mut rng = TestRng::default();
 
-        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
-        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
-        test_serde_json(num_constraints, num_variables);
-        test_bincode(num_constraints, num_variables);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V1, &mut rng);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V2, &mut rng);
+        test_serde_json(num_constraints, num_variables, &mut rng);
+        test_bincode(num_constraints, num_variables, &mut rng);
     }
 
     #[test]
     fn prove_and_verify_with_tall_matrix_small() {
         let num_constraints = 26;
         let num_variables = 25;
+        let mut rng = TestRng::default();
 
-        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
-        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
-        test_serde_json(num_constraints, num_variables);
-        test_bincode(num_constraints, num_variables);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V1, &mut rng);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V2, &mut rng);
+        test_serde_json(num_constraints, num_variables, &mut rng);
+        test_bincode(num_constraints, num_variables, &mut rng);
     }
 
     #[test]
     fn prove_and_verify_with_squat_matrix_big() {
         let num_constraints = 25;
         let num_variables = 100;
+        let mut rng = TestRng::default();
 
-        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
-        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
-        test_serde_json(num_constraints, num_variables);
-        test_bincode(num_constraints, num_variables);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V1, &mut rng);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V2, &mut rng);
+        test_serde_json(num_constraints, num_variables, &mut rng);
+        test_bincode(num_constraints, num_variables, &mut rng);
     }
 
     #[test]
     fn prove_and_verify_with_squat_matrix_small() {
         let num_constraints = 25;
         let num_variables = 26;
+        let mut rng = TestRng::default();
 
-        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
-        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
-        test_serde_json(num_constraints, num_variables);
-        test_bincode(num_constraints, num_variables);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V1, &mut rng);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V2, &mut rng);
+        test_serde_json(num_constraints, num_variables, &mut rng);
+        test_bincode(num_constraints, num_variables, &mut rng);
     }
 
     #[test]
     fn prove_and_verify_with_square_matrix() {
         let num_constraints = 25;
         let num_variables = 25;
+        let mut rng = TestRng::default();
 
-        test_circuit(num_constraints, num_variables, VarunaVersion::V1);
-        test_circuit(num_constraints, num_variables, VarunaVersion::V2);
-        test_serde_json(num_constraints, num_variables);
-        test_bincode(num_constraints, num_variables);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V1, &mut rng);
+        test_circuit(num_constraints, num_variables, VarunaVersion::V2, &mut rng);
+        test_serde_json(num_constraints, num_variables, &mut rng);
+        test_bincode(num_constraints, num_variables, &mut rng);
     }
 
     #[test]
     fn prove_and_verify_with_large_matrix() {
         let num_constraints = 1 << 16;
         let num_variables = 1 << 16;
+        let mut rng = TestRng::default();
 
-        test_circuit_n_times(num_constraints, num_variables, 1, VarunaVersion::V1);
-        test_circuit_n_times(num_constraints, num_variables, 1, VarunaVersion::V2);
+        test_circuit_n_times(num_constraints, num_variables, 1, VarunaVersion::V1, &mut rng);
+        test_circuit_n_times(num_constraints, num_variables, 1, VarunaVersion::V2, &mut rng);
     }
 
     #[test]
@@ -669,6 +681,92 @@ mod varuna_hiding {
             VarunaInst::verify(universal_verifier, &fs_parameters, &vk1, varuna_version, public_inputs1, &proof1)
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn test_circuit_verifying_key_bounded_deserialization() {
+        use snarkvm_utilities::serialize::*;
+
+        let mut rng = TestRng::default();
+
+        // Create a valid circuit and verifying key
+        let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100, 25, 300).unwrap();
+        let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
+        let (circ, _public_inputs) = TestCircuit::gen_rand(1, 26, 25, &mut rng);
+        let (_index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circ).unwrap();
+
+        // Test 1: Valid verifying key should deserialize successfully
+        let serialized = index_vk.to_bytes_le().unwrap();
+        let deserialized: CircuitVerifyingKey<Bls12_377> =
+            CircuitVerifyingKey::deserialize_compressed(&serialized[..]).unwrap();
+        assert_eq!(index_vk, deserialized);
+
+        // Test 2: Verify the number of circuit commitments is within bounds (should be
+        // 12)
+        assert!(
+            index_vk.circuit_commitments.len() <= 12,
+            "Circuit commitments should not exceed 12, got {}",
+            index_vk.circuit_commitments.len()
+        );
+
+        // Test 3: Attempt to deserialize a verifying key with too many commitments
+        // We'll manually craft a malicious serialization with 13 commitments
+        let mut malicious_bytes = Vec::new();
+
+        // Serialize circuit_info
+        index_vk.circuit_info.serialize_compressed(&mut malicious_bytes).unwrap();
+
+        // Write a length of 13 (exceeds MAX_CIRCUIT_COMMITMENTS = 12)
+        let malicious_len: u64 = 13;
+        malicious_len.serialize_compressed(&mut malicious_bytes).unwrap();
+
+        // Serialize 13 commitments (repeating commitments as needed)
+        for i in 0..13 {
+            let commitment_idx = i % index_vk.circuit_commitments.len();
+            index_vk.circuit_commitments[commitment_idx].serialize_compressed(&mut malicious_bytes).unwrap();
+        }
+
+        // Serialize id
+        index_vk.id.serialize_compressed(&mut malicious_bytes).unwrap();
+
+        // Test 4: Deserialization should fail with InvalidData error
+        let result: Result<CircuitVerifyingKey<Bls12_377>, SerializationError> =
+            CircuitVerifyingKey::deserialize_compressed(&malicious_bytes[..]);
+
+        assert!(result.is_err(), "Deserialization should fail for more than 12 commitments");
+        assert!(
+            matches!(result.unwrap_err(), SerializationError::InvalidData),
+            "Error should be SerializationError::InvalidData"
+        );
+
+        // Test 5: Test backwards compatibility - verifying keys with <= 12 commitments
+        // should work
+        for num_commitments in 1..=12 {
+            let mut compatible_bytes = Vec::new();
+
+            // Serialize circuit_info
+            index_vk.circuit_info.serialize_compressed(&mut compatible_bytes).unwrap();
+
+            // Write a valid length (use min to handle cases where circuit has fewer
+            // commitments)
+            let actual_len = num_commitments.min(index_vk.circuit_commitments.len());
+            (actual_len as u64).serialize_compressed(&mut compatible_bytes).unwrap();
+
+            // Serialize the commitments (repeat if necessary for testing)
+            for i in 0..actual_len {
+                let commitment_idx = i % index_vk.circuit_commitments.len();
+                index_vk.circuit_commitments[commitment_idx].serialize_compressed(&mut compatible_bytes).unwrap();
+            }
+
+            // Serialize id
+            index_vk.id.serialize_compressed(&mut compatible_bytes).unwrap();
+
+            // This should succeed
+            let result: Result<CircuitVerifyingKey<Bls12_377>, SerializationError> =
+                CircuitVerifyingKey::deserialize_compressed(&compatible_bytes[..]);
+
+            assert!(result.is_ok(), "Deserialization should succeed for {num_commitments} commitments",);
+        }
     }
 }
 

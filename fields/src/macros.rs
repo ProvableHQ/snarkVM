@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,11 +39,13 @@ macro_rules! impl_field_to_biginteger {
 
 macro_rules! impl_primefield_standard_sample {
     ($field: ident, $params: ident) => {
-        impl<P: $params> rand::distributions::Distribution<$field<P>> for rand::distributions::Standard {
+        impl<P: $params> rand::distr::Distribution<$field<P>> for rand::distr::StandardUniform {
             #[inline]
             fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> $field<P> {
+                use rand::RngExt;
+
                 loop {
-                    let mut tmp = $field(rng.sample(rand::distributions::Standard), PhantomData);
+                    let mut tmp = $field(rng.sample(rand::distr::StandardUniform), PhantomData);
                     // Mask away the unused bits at the beginning.
                     tmp.0.as_mut().last_mut().map(|val| *val &= u64::MAX >> P::REPR_SHAVE_BITS);
 

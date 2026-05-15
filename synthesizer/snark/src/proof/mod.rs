@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +12,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+use snarkvm_algorithms::snark::varuna::{VarunaVersion, proof_size as varuna_proof_size};
 
 use super::*;
 
@@ -38,4 +40,26 @@ impl<N: Network> Deref for Proof<N> {
     fn deref(&self) -> &Self::Target {
         &self.proof
     }
+}
+
+/// Computes the size in bytes of the proof as produced by
+/// `Proof::write_le` without needing to receive the proof itself.
+///
+/// *Arguments*:
+///  - `batch_sizes`: the batch sizes of the circuits and instances being
+///    proved.
+///  - `varuna_version`: the version of Varuna being used
+///  - `hiding`: indicates whether the proof system is run in ZK mode
+///
+/// *Returns*:
+///  - `Ok(size)` for `VarunaVersion::V2`, where `size` is the size of the proof
+///    in bytes.
+///  - `Err` for `VarunaVersion::V1`.
+pub fn proof_size<N: Network>(
+    batch_sizes: &[usize],
+    varuna_version: VarunaVersion,
+    hiding_mode: bool,
+) -> Result<usize> {
+    // The extra 1 byte comes from the serialised version number
+    varuna_proof_size::<N::PairingCurve>(batch_sizes, varuna_version, hiding_mode).map(|size| 1 + size)
 }

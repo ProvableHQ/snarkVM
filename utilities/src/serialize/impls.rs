@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -197,7 +197,8 @@ impl<T: CanonicalSerialize> CanonicalSerialize for Option<T> {
 
     #[inline]
     fn serialized_size(&self, compress: Compress) -> usize {
-        8 + self.as_ref().map(|s| s.serialized_size(compress)).unwrap_or(0)
+        bool::serialized_size(&self.is_some(), compress)
+            + self.as_ref().map(|s| s.serialized_size(compress)).unwrap_or(0)
     }
 }
 
@@ -637,10 +638,12 @@ mod test {
             (Compress::Yes, Validate::Yes),
         ];
         for (compress, validate) in combinations {
-            let mut serialized = vec![0; data.serialized_size(compress)];
-            data.serialize_with_mode(&mut serialized[..], compress).unwrap();
+            let mut serialized = vec![];
+            data.serialize_with_mode(&mut serialized, compress).unwrap();
             let de = T::deserialize_with_mode(&serialized[..], compress, validate).unwrap();
             assert_eq!(data, de);
+
+            assert_eq!(data.serialized_size(compress), serialized.len());
         }
     }
 

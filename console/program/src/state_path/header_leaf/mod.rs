@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,6 +56,6 @@ mod test_helpers {
 
     pub(super) fn sample_leaf(rng: &mut TestRng) -> HeaderLeaf<CurrentNetwork> {
         // Construct a new leaf.
-        HeaderLeaf::new(rng.r#gen(), Uniform::rand(rng))
+        HeaderLeaf::new(rng.random(), Uniform::rand(rng))
     }
 }

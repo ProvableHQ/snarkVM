@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +28,15 @@ pub use cast::*;
 mod commit;
 pub use commit::*;
 
+mod deserialize;
+pub use deserialize::*;
+
+mod ecdsa_verify;
+pub use ecdsa_verify::*;
+
+mod get_record_dynamic;
+pub use get_record_dynamic::*;
+
 mod hash;
 pub use hash::*;
 
@@ -39,8 +48,14 @@ pub use literals::*;
 
 mod macros;
 
+mod serialize;
+pub use serialize::*;
+
 mod sign_verify;
 pub use sign_verify::*;
+
+mod snark_verify;
+pub use snark_verify::*;
 
 use crate::Opcode;
 use console::network::prelude::*;

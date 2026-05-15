@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,6 +38,10 @@ pub use snarkvm_ledger as ledger;
 pub use snarkvm_metrics as metrics;
 #[cfg(feature = "parameters")]
 pub use snarkvm_parameters as parameters;
+#[cfg(feature = "slipstream-plugins")]
+pub use snarkvm_slipstream_plugin_interface as slipstream_plugin_interface;
+#[cfg(feature = "slipstream-plugins")]
+pub use snarkvm_slipstream_plugin_manager as slipstream_plugin_manager;
 #[cfg(feature = "synthesizer")]
 pub use snarkvm_synthesizer as synthesizer;
 #[cfg(feature = "utilities")]

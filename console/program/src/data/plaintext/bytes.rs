@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,7 +61,7 @@ impl<N: Network> Plaintext<N> {
             2 => {
                 // Read the length of the array.
                 let num_elements = u32::read_le(&mut reader)?;
-                if num_elements as usize > N::MAX_ARRAY_ELEMENTS {
+                if num_elements as usize > N::LATEST_MAX_ARRAY_ELEMENTS() {
                     return Err(error("Failed to deserialize plaintext: Array exceeds maximum length"));
                 }
                 // Read the elements.

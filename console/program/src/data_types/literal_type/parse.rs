@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,6 +38,7 @@ impl Parser for LiteralType {
             map(tag(Self::Scalar.type_name()), |_| Self::Scalar),
             map(tag(Self::Signature.type_name()), |_| Self::Signature),
             map(tag(Self::String.type_name()), |_| Self::String),
+            map(tag(Self::Identifier.type_name()), |_| Self::Identifier),
         ))(string)
     }
 }

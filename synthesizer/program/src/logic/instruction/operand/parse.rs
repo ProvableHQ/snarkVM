@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +27,13 @@ impl<N: Network> Parser for Operand<N> {
             map(tag("self.signer"), |_| Self::Signer),
             map(tag("self.caller"), |_| Self::Caller),
             map(tag("block.height"), |_| Self::BlockHeight),
+            map(tag("block.timestamp"), |_| Self::BlockTimestamp),
             map(tag("network.id"), |_| Self::NetworkID),
+            map(
+                pair(tag("aleo::GENERATOR_POWERS"), opt(delimited(tag("["), U32::<N>::parse, tag("]")))),
+                |(_, index)| Self::AleoGeneratorPowers(index),
+            ),
+            map(tag("aleo::GENERATOR"), |_| Self::AleoGenerator),
             // Note that `Operand::Checksum` and `Operand::Edition` must be parsed before `Operand::ProgramID`s, since an edition or checksum may be prefixed with a program ID.
             map(pair(opt(terminated(ProgramID::parse, tag("/"))), tag("checksum")), |(program_id, _)| {
                 Self::Checksum(program_id)
@@ -89,8 +95,17 @@ impl<N: Network> Display for Operand<N> {
             Self::Caller => write!(f, "self.caller"),
             // Prints the identifier for the block height, i.e. block.height
             Self::BlockHeight => write!(f, "block.height"),
+            // Prints the identifier for the block timestamp, i.e. block.timestamp
+            Self::BlockTimestamp => write!(f, "block.timestamp"),
             // Prints the identifier for the network ID, i.e. network.id
             Self::NetworkID => write!(f, "network.id"),
+            // Prints the identifier for the generator, i.e. aleo::GENERATOR
+            Self::AleoGenerator => write!(f, "aleo::GENERATOR"),
+            // Prints the identifier for the generator powers, i.e. aleo::GENERATOR_POWERS
+            Self::AleoGeneratorPowers(index) => match index {
+                None => write!(f, "aleo::GENERATOR_POWERS"),
+                Some(index) => write!(f, "aleo::GENERATOR_POWERS[{index}]"),
+            },
             // Prints the optional program ID with the checksum keyword, i.e. `checksum` or `token.aleo/checksum`
             Self::Checksum(program_id) => match program_id {
                 Some(program_id) => write!(f, "{program_id}/checksum"),
@@ -140,8 +155,20 @@ mod tests {
         let operand = Operand::<CurrentNetwork>::parse("block.height").unwrap().1;
         assert_eq!(Operand::BlockHeight, operand);
 
+        let operand = Operand::<CurrentNetwork>::parse("block.timestamp").unwrap().1;
+        assert_eq!(Operand::BlockTimestamp, operand);
+
         let operand = Operand::<CurrentNetwork>::parse("network.id").unwrap().1;
         assert_eq!(Operand::NetworkID, operand);
+
+        let operand = Operand::<CurrentNetwork>::parse("aleo::GENERATOR").unwrap().1;
+        assert_eq!(Operand::AleoGenerator, operand);
+
+        let operand = Operand::<CurrentNetwork>::parse("aleo::GENERATOR_POWERS").unwrap().1;
+        assert_eq!(Operand::AleoGeneratorPowers(None), operand);
+
+        let operand = Operand::<CurrentNetwork>::parse("aleo::GENERATOR_POWERS[5u32]").unwrap().1;
+        assert_eq!(Operand::AleoGeneratorPowers(Some(U32::new(5u32))), operand);
 
         let operand = Operand::<CurrentNetwork>::parse("group::GEN").unwrap().1;
         assert_eq!(Operand::Literal(Literal::Group(Group::generator())), operand);
@@ -194,6 +221,15 @@ mod tests {
 
         let operand = Operand::<CurrentNetwork>::parse("checksum").unwrap().1;
         assert_eq!(format!("{operand}"), "checksum");
+
+        let operand = Operand::<CurrentNetwork>::parse("aleo::GENERATOR").unwrap().1;
+        assert_eq!(format!("{operand}"), "aleo::GENERATOR");
+
+        let operand = Operand::<CurrentNetwork>::parse("aleo::GENERATOR_POWERS").unwrap().1;
+        assert_eq!(format!("{operand}"), "aleo::GENERATOR_POWERS");
+
+        let operand = Operand::<CurrentNetwork>::parse("aleo::GENERATOR_POWERS[5u32]").unwrap().1;
+        assert_eq!(format!("{operand}"), "aleo::GENERATOR_POWERS[5u32]");
 
         let operand = Operand::<CurrentNetwork>::parse("foo.aleo/checksum").unwrap().1;
         assert_eq!(format!("{operand}"), "foo.aleo/checksum");

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -64,7 +64,7 @@ pub(super) use test_atomic_finalize;
 
 /// Samples a new finalize state.
 fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-    FinalizeGlobalState::from(block_height as u64, block_height, [0u8; 32])
+    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
 }
 
 /// Returns the `value` for the given `key` in the `mapping` for the given `program_id`.
@@ -254,7 +254,7 @@ fn execute_function<F: FinalizeStorage<CurrentNetwork>>(
     let block_height = block_height.unwrap_or(1);
 
     // Add an atomic finalize wrapper around the finalize function.
-    process.finalize_execution(sample_finalize_state(block_height), finalize_store, &execution, None)?;
+    process.lock().finalize_execution(sample_finalize_state(block_height), finalize_store, &execution, None)?;
 
     Ok(())
 }

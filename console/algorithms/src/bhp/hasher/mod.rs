@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,7 @@ use crate::Blake2Xs;
 use snarkvm_console_types::prelude::*;
 use snarkvm_utilities::BigInteger;
 
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// The BHP chunk size (this implementation is for a 3-bit BHP).
@@ -27,7 +28,8 @@ pub(super) const BHP_LOOKUP_SIZE: usize = 1 << BHP_CHUNK_SIZE;
 
 /// BHP is a collision-resistant hash function that takes a variable-length input.
 /// The BHP hasher is used to process one internal iteration of the BHP hash function.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(bound = "E: Serialize + DeserializeOwned")]
 pub struct BHPHasher<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> {
     /// The bases for the BHP hash.
     bases: Arc<Vec<Vec<Group<E>>>>,

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,8 @@ use snarkvm_utilities::{FromBytes, ToBytes, bititerator::BitIteratorBE, rand::Un
 
 use rand::{
     Rng,
-    distributions::{Distribution, Standard},
+    RngExt,
+    distr::{Distribution, StandardUniform},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -307,12 +308,12 @@ impl<P: Parameters> FromBytes for Affine<P> {
     }
 }
 
-impl<P: Parameters> Distribution<Affine<P>> for Standard {
+impl<P: Parameters> Distribution<Affine<P>> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Affine<P> {
         loop {
             let x = P::BaseField::rand(rng);
-            let greatest = rng.r#gen();
+            let greatest = rng.random();
 
             if let Some(p) = Affine::from_x_coordinate(x, greatest) {
                 return p.mul_by_cofactor();
