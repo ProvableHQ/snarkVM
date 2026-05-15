@@ -154,6 +154,14 @@ pub mod test_helpers {
         for version in 1..=2 {
             for edition in 0..=1 {
                 for has_translation_keys in [true, false] {
+                    // version 1 didn't support translation keys
+                    if version == 1 && has_translation_keys {
+                        continue;
+                    }
+                    // version 2 expects edition 1
+                    if version == 2 && edition == 0 {
+                        continue;
+                    }
                     for is_fee_private in [true, false] {
                         let tx =
                             sample_rejected_deployment(version, edition, has_translation_keys, is_fee_private, rng);
