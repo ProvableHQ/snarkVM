@@ -87,7 +87,7 @@ impl<N: Network> Stack<N> {
     #[inline]
     pub fn verify_deployment<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
-        _consensus_version: ConsensusVersion,
+        consensus_version: ConsensusVersion,
         deployment: &Deployment<N>,
         rng: &mut R,
     ) -> Result<()> {
@@ -120,10 +120,12 @@ impl<N: Network> Stack<N> {
         // Get the program ID.
         let program_id = self.program.id();
 
-        // Check that the number of combined variables does not exceed the deployment limit.
-        ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
-        // Check that the number of combined constraints does not exceed the deployment limit.
-        ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
+        if consensus_version >= ConsensusVersion::V15 {
+            // Check that the number of combined variables does not exceed the deployment limit.
+            ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
+            // Check that the number of combined constraints does not exceed the deployment limit.
+            ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
+        }
 
         // Construct the call stacks and assignments used to verify the certificates.
         let mut call_stacks = Vec::with_capacity(deployment.function_verifying_keys().len());

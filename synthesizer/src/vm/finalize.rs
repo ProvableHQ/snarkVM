@@ -428,6 +428,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     block_spend,
                     transaction_spend_limit,
                     block_spend_limit,
+                    None,
                     consensus_version,
                 ) {
                     PrepareSpeculateResult::Abort(abort_reason) => {
@@ -957,6 +958,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         block_spend: u64,
         transaction_spend_limit: u64,
         block_spend_limit: Option<u64>,
+        block_combined_density: Option<u64>,
         consensus_version: ConsensusVersion,
     ) -> PrepareSpeculateResult {
         // Ensure that the transaction is not a fee transaction.
@@ -1028,10 +1030,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
-        // Before V15, we return without tracking any compute spend.
+        // Before V15, we return without tracking any compute spend and checking deployment limits.
         if consensus_version < ConsensusVersion::V15 {
             PrepareSpeculateResult::Finalize(0)
-        // If the consensus version is >= V15, ensure that the transaction is not exceeding spend limits.
+        // If the consensus version is >= V15, ensure that the transaction is not exceeding spend or deployment limits.
         } else {
             // Compute microcredit spend from deployment or execution cost details.
             let compute_spend = match transaction {
@@ -1068,6 +1070,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     ));
                 }
             }
+            // If we are keeping track of block-wide circuit density and this transaction contains a deployment, make sure its
+            // density does not make the running total exceed the limit.
+            if let Some(combined_density) = block_combined_density && let Transaction::Deploy(_, _, _, deployment, _) = transaction {
+                if combined_density.saturating_add(deployment.combined_density()) > N::MAX_DEPLOY_DENSITY_PER_PROPOSAL {
+                    return PrepareSpeculateResult::Abort(format!(
+                        "Deployment density '{}' added to current accumulated block-wide density '{}' exceeds the limit '{}'",
+                        deployment.combined_density(),
+                        combined_density,
+                        N::MAX_DEPLOY_DENSITY_PER_PROPOSAL
+                    ));
+                }
+            }
 
             PrepareSpeculateResult::Finalize(compute_spend)
         }
@@ -1100,6 +1114,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
         // Determine the block spend limit.
         let block_spend_limit = state.block_spend_limit();
+        // Initialize a block-wide total of the combined density of all circuits in all deployments.
+        let mut block_combined_density = 0u64;
 
         // Abort duplicate, overspending, invalid, or disallowed transactions before verification.
         for transaction in transactions.iter() {
@@ -1109,6 +1125,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 block_spend,
                 transaction_spend_limit,
                 block_spend_limit,
+                Some(block_combined_density),
                 consensus_version,
             ) {
                 PrepareSpeculateResult::Abort(abort_reason) => {
@@ -1119,6 +1136,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     if consensus_version >= ConsensusVersion::V15 {
                         // Track the compute_spend used so far.
                         block_spend = block_spend.saturating_add(compute_spend);
+
+                        // If the transaction contains a deployment, add its combined density to the running total.
+                        match transaction {
+                            Transaction::Deploy(_, _, _, deployment, _) => {
+                                block_combined_density = block_combined_density.saturating_add(deployment.combined_density());
+                            },
+                            _ => {}
+                        }
                     }
                     // Track the accepted transaction details.
                     candidate_transaction_details.record_accepted_transaction(transaction);
