@@ -61,7 +61,7 @@ type AbortReason = String;
 type ComputeSpend = u64;
 /// An intermediary speculation artifact indicating whether a transaction should
 /// be aborted or finalized with a certain compute_spend.
-enum PrepareSpeculateResult {
+enum ShouldAbortResult {
     Abort(AbortReason),
     Finalize(ComputeSpend),
 }
@@ -402,7 +402,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Accumulate per-block uniqueness checks.
             let mut candidate_transaction_details = CandidateTransactionDetails::<N>::default();
             // Accumulate per-block spend.
-            let mut block_spend = 0;
+            let mut block_spend = 0u64;
             // Determine the transaction spend limit. These unwraps are safe, see tests in consensus_heights.rs
             let consensus_version = N::CONSENSUS_VERSION(state.block_height()).unwrap();
             let transaction_spend_limit =
@@ -425,20 +425,30 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 match self.should_abort_transaction(
                     &transaction,
                     &candidate_transaction_details,
-                    block_spend,
                     transaction_spend_limit,
-                    block_spend_limit,
                     None,
                     consensus_version,
                 ) {
-                    PrepareSpeculateResult::Abort(abort_reason) => {
+                    ShouldAbortResult::Abort(abort_reason) => {
                         // Store the aborted transaction.
                         aborted.push((transaction.clone(), abort_reason));
                         // Continue to the next transaction.
                         continue 'outer;
                     }
-                    PrepareSpeculateResult::Finalize(compute_spend) => {
+                    ShouldAbortResult::Finalize(compute_spend) => {
+                        // If the consensus version is >= V15, ensure that the
+                        // transaction is not exceeding block spend limits.
                         if consensus_version >= ConsensusVersion::V15 {
+                            if let Some(block_spend_limit) = block_spend_limit {
+                                if block_spend.saturating_add(compute_spend) > block_spend_limit {
+                                    aborted.push((
+                                        transaction.clone(),
+                                        format!("Exceeds the block spend limit with compute_spend: '{compute_spend}'"),
+                                    ));
+                                    // Continue to the next transaction.
+                                    continue 'outer;
+                                }
+                            }
                             // Track the compute_spend used so far.
                             block_spend = block_spend.saturating_add(compute_spend);
                         }
@@ -938,7 +948,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         finalize_result
     }
 
-    /// Returns PrepareSpeculateResult.
+    /// Returns ShouldAbortResult.
     ///
     /// The transaction will be aborted if any of the following conditions are met:
     /// - The transaction is producing a duplicate transition
@@ -955,15 +965,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         &self,
         transaction: &Transaction<N>,
         candidate_transaction_details: &CandidateTransactionDetails<N>,
-        block_spend: u64,
         transaction_spend_limit: u64,
-        block_spend_limit: Option<u64>,
         block_combined_density: Option<u64>,
         consensus_version: ConsensusVersion,
-    ) -> PrepareSpeculateResult {
+    ) -> ShouldAbortResult {
         // Ensure that the transaction is not a fee transaction.
         if let Transaction::Fee(..) = transaction {
-            return PrepareSpeculateResult::Abort("Fee transactions are not allowed in speculate".to_string());
+            return ShouldAbortResult::Abort("Fee transactions are not allowed in speculate".to_string());
         }
 
         // Ensure that:
@@ -976,11 +984,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             if candidate_transaction_details.transition_ids.contains(transition_id)
                 || self.transition_store().contains_transition_id(transition_id).unwrap_or(true)
             {
-                return PrepareSpeculateResult::Abort(format!("Duplicate transition {transition_id}"));
+                return ShouldAbortResult::Abort(format!("Duplicate transition {transition_id}"));
             }
             // If the transition's program is being deployed or redeployed in this block, abort the transaction.
             if candidate_transaction_details.deployments.contains(transition.program_id()) {
-                return PrepareSpeculateResult::Abort(format!(
+                return ShouldAbortResult::Abort(format!(
                     "Program {} is being deployed or redeployed in this block",
                     transition.program_id()
                 ));
@@ -993,7 +1001,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             if candidate_transaction_details.input_ids.contains(input_id)
                 || self.transition_store().contains_input_id(input_id).unwrap_or(true)
             {
-                return PrepareSpeculateResult::Abort(format!("Double-spending input {input_id}"));
+                return ShouldAbortResult::Abort(format!("Double-spending input {input_id}"));
             }
         }
 
@@ -1003,7 +1011,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             if candidate_transaction_details.output_ids.contains(output_id)
                 || self.transition_store().contains_output_id(output_id).unwrap_or(true)
             {
-                return PrepareSpeculateResult::Abort(format!("Duplicate output {output_id}"));
+                return ShouldAbortResult::Abort(format!("Duplicate output {output_id}"));
             }
         }
 
@@ -1014,7 +1022,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             if candidate_transaction_details.tpks.contains(tpk)
                 || self.transition_store().contains_tpk(tpk).unwrap_or(true)
             {
-                return PrepareSpeculateResult::Abort(format!("Duplicate transition public key {tpk}"));
+                return ShouldAbortResult::Abort(format!("Duplicate transition public key {tpk}"));
             }
         }
 
@@ -1023,7 +1031,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // If any public deployment payer has already deployed in this block, abort the transaction.
             if let Some(payer) = fee.payer() {
                 if candidate_transaction_details.deployment_payers.contains(&payer) {
-                    return PrepareSpeculateResult::Abort(format!(
+                    return ShouldAbortResult::Abort(format!(
                         "Another deployment in the block from the same public fee payer {payer}"
                     ));
                 }
@@ -1032,7 +1040,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Before V15, we return without tracking any compute spend and checking deployment limits.
         if consensus_version < ConsensusVersion::V15 {
-            PrepareSpeculateResult::Finalize(0)
+            ShouldAbortResult::Finalize(0)
         // If the consensus version is >= V15, ensure that the transaction is not exceeding spend or deployment limits.
         } else {
             // Compute microcredit spend from deployment or execution cost details.
@@ -1041,9 +1049,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     match deployment_cost(self.process(), deployment, consensus_version) {
                         Ok((_, cost_details)) => deploy_compute_cost_in_microcredits(cost_details, consensus_version),
                         Err(e) => {
-                            return PrepareSpeculateResult::Abort(format!(
-                                "Failed to compute the deployment cost: {e}"
-                            ));
+                            return ShouldAbortResult::Abort(format!("Failed to compute the deployment cost: {e}"));
                         }
                     }
                 }
@@ -1051,7 +1057,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     match execution_cost(self.process(), execution, consensus_version) {
                         Ok((_, cost_details)) => execute_compute_cost_in_microcredits(cost_details, consensus_version),
                         Err(e) => {
-                            return PrepareSpeculateResult::Abort(format!("Failed to compute the execution cost: {e}"));
+                            return ShouldAbortResult::Abort(format!("Failed to compute the execution cost: {e}"));
                         }
                     }
                 }
@@ -1059,31 +1065,25 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             };
 
             if compute_spend > transaction_spend_limit {
-                return PrepareSpeculateResult::Abort(format!(
+                return ShouldAbortResult::Abort(format!(
                     "Exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
                 ));
             }
-            if let Some(block_spend_limit) = block_spend_limit {
-                if block_spend.saturating_add(compute_spend) > block_spend_limit {
-                    return PrepareSpeculateResult::Abort(format!(
-                        "Exceeds the block spend limit with compute_spend: '{compute_spend}'"
-                    ));
-                }
-            }
             // If we are keeping track of block-wide circuit density and this transaction contains a deployment, make sure its
             // density does not make the running total exceed the limit.
-            if let Some(combined_density) = block_combined_density && let Transaction::Deploy(_, _, _, deployment, _) = transaction {
-                if combined_density.saturating_add(deployment.combined_density()) > N::MAX_DEPLOY_DENSITY_PER_PROPOSAL {
-                    return PrepareSpeculateResult::Abort(format!(
-                        "Deployment density '{}' added to current accumulated block-wide density '{}' exceeds the limit '{}'",
-                        deployment.combined_density(),
-                        combined_density,
-                        N::MAX_DEPLOY_DENSITY_PER_PROPOSAL
-                    ));
-                }
+            if let Some(combined_density) = block_combined_density
+                && let Transaction::Deploy(_, _, _, deployment, _) = transaction
+                && combined_density.saturating_add(deployment.combined_density()) > N::MAX_DEPLOY_DENSITY_PER_PROPOSAL
+            {
+                return ShouldAbortResult::Abort(format!(
+                    "Deployment density '{}' added to current accumulated block-wide density '{}' exceeds the limit '{}'",
+                    deployment.combined_density(),
+                    combined_density,
+                    N::MAX_DEPLOY_DENSITY_PER_PROPOSAL
+                ));
             }
 
-            PrepareSpeculateResult::Finalize(compute_spend)
+            ShouldAbortResult::Finalize(compute_spend)
         }
     }
 
@@ -1106,14 +1106,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Accumulate per-block uniqueness checks.
         let mut candidate_transaction_details = CandidateTransactionDetails::<N>::default();
-        // Accumulate per-block spend.
-        let mut block_spend = 0;
         // Determine the transaction spend limit. These unwraps are safe, see tests in consensus_heights.rs
         let consensus_version = N::CONSENSUS_VERSION(state.block_height()).unwrap();
         let transaction_spend_limit =
             consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
-        // Determine the block spend limit.
-        let block_spend_limit = state.block_spend_limit();
         // Initialize a block-wide total of the combined density of all circuits in all deployments.
         let mut block_combined_density = 0u64;
 
@@ -1122,28 +1118,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             match self.should_abort_transaction(
                 transaction,
                 &candidate_transaction_details,
-                block_spend,
                 transaction_spend_limit,
-                block_spend_limit,
                 Some(block_combined_density),
                 consensus_version,
             ) {
-                PrepareSpeculateResult::Abort(abort_reason) => {
+                ShouldAbortResult::Abort(abort_reason) => {
                     // Store the aborted transaction.
                     aborted_transactions.push((*transaction, abort_reason));
                 }
-                PrepareSpeculateResult::Finalize(compute_spend) => {
-                    if consensus_version >= ConsensusVersion::V15 {
-                        // Track the compute_spend used so far.
-                        block_spend = block_spend.saturating_add(compute_spend);
-
-                        // If the transaction contains a deployment, add its combined density to the running total.
-                        match transaction {
-                            Transaction::Deploy(_, _, _, deployment, _) => {
-                                block_combined_density = block_combined_density.saturating_add(deployment.combined_density());
-                            },
-                            _ => {}
-                        }
+                ShouldAbortResult::Finalize(_compute_spend) => {
+                    // At ConsensusVersion::V15 and above, if the transaction contains a deployment, add its combined density to the running total.
+                    if consensus_version >= ConsensusVersion::V15
+                        && let Transaction::Deploy(_, _, _, deployment, _) = transaction
+                    {
+                        block_combined_density = block_combined_density.saturating_add(deployment.combined_density());
                     }
                     // Track the accepted transaction details.
                     candidate_transaction_details.record_accepted_transaction(transaction);

@@ -96,7 +96,6 @@ fn sample_next_block<R: Rng + CryptoRng>(
 //    into actual deployments in various configurations (for instance, 4 deployments of size N vs. 2 deployments
 //    of size 2N vs. 1 deployment of size 4N)
 fn main() {
-
     // One array element = one group of deployments checked together. Each such group is represented by a pair:
     // (number of programs in the deployment, size of the program). The size of the program is in actuality the number
     // of inputs to the program's only function, which simply hashes them. The total density of the program grows
@@ -104,14 +103,11 @@ fn main() {
     let deployment_configs = [
         // Each set of configurations visually grouped together corresponds to approximately the same total density.
         (1, 1 << 4),
-
         (1, 1 << 5),
         (2, 1 << 4),
-
         (1, 1 << 6),
         (2, 1 << 5),
         (4, 1 << 4),
-
         (1, 1 << 7),
         (2, 1 << 6),
         (4, 1 << 5),
@@ -139,54 +135,62 @@ fn main() {
 
     // Advance the ledger to the latest consensus version
     let transactions: [Transaction<CurrentNetwork>; 0] = [];
-    while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::latest()).unwrap() {
+    while vm.block_store().current_block_height()
+        < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::latest()).unwrap()
+    {
         let next_block = sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
         vm.add_next_block(&next_block).unwrap();
     }
 
     for (deployment_idx, (num_progs, multiplier)) in deployment_configs.into_iter().enumerate() {
-
         println!("Processing deployment with {num_progs} program(s) with multiplier {multiplier}");
 
-        let deployments = (0..num_progs).map(|i| {
-
-            let mut program_str = format!(r"
+        let deployments = (0..num_progs)
+            .map(|i| {
+                let mut program_str = format!(
+                    r"
                 program test_{deployment_idx}_{i}.aleo;
 
                 function fun:
                     input r0 as [field; 32u32].public;
-            ");
+            "
+                );
 
-            for j in 1..multiplier {
-                program_str += &format!(r"
+                for j in 1..multiplier {
+                    program_str += &format!(
+                        r"
                     hash.bhp256 r0 into r{j} as field;
-                ");
-            }
-                
-            program_str += r"
+                "
+                    );
+                }
+
+                program_str += r"
             constructor:
                     assert.eq true true;
                 ";
 
-            let program = Program::from_str(&program_str).unwrap();
+                let program = Program::from_str(&program_str).unwrap();
 
-            // Deploy the first program
-            let deployment_tx = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-            let deployment = deployment_tx.deployment().unwrap();
+                // Deploy the first program
+                let deployment_tx = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
+                let deployment = deployment_tx.deployment().unwrap();
 
-            assert!(deployment.verifying_keys().len() == 1);
-            let circuit_info = deployment.verifying_keys().first().unwrap().1.0.circuit_info;
-            let combined_density = circuit_info.num_non_zero_a + circuit_info.num_non_zero_b + circuit_info.num_non_zero_c;
-            println!(" - Program {:?}: total density: {combined_density:?}", deployment.program().id());
-            
-            (deployment_tx, combined_density as usize)
-        }).collect::<Vec<_>>();
+                assert!(deployment.verifying_keys().len() == 1);
+                let circuit_info = deployment.verifying_keys().first().unwrap().1.0.circuit_info;
+                let combined_density =
+                    circuit_info.num_non_zero_a + circuit_info.num_non_zero_b + circuit_info.num_non_zero_c;
+                println!(" - Program {:?}: total density: {combined_density:?}", deployment.program().id());
+
+                (deployment_tx, combined_density as usize)
+            })
+            .collect::<Vec<_>>();
 
         let (deployment_txs, combined_densities): (Vec<_>, Vec<_>) = deployments.into_iter().unzip();
         let total_density = combined_densities.iter().sum::<usize>();
 
         let start = Instant::now();
-        vm.check_transactions(&deployment_txs.iter().map(|deployment| (deployment, None)).collect::<Vec<_>>(), rng).unwrap();
+        vm.check_transactions(&deployment_txs.iter().map(|deployment| (deployment, None)).collect::<Vec<_>>(), rng)
+            .unwrap();
         let elapsed = start.elapsed().as_millis() as f64 / 1000.0;
         println!("Deployment(s) with total density {total_density} checked in {elapsed:.2} s\n");
     }

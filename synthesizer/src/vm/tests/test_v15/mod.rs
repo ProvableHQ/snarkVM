@@ -19,6 +19,8 @@ mod record_existence;
 mod closure_records;
 // Tests on the use of `commit_*_raw` instruction variants.
 mod commit_raw;
+// Additional test for cost estimation without a private key.
+mod cost_for_call;
 // Tests for quorum block compute spend limits.
 mod block_spend_limit;
 
