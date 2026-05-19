@@ -103,11 +103,14 @@ fn main() {
     let deployment_configs = [
         // Each set of configurations visually grouped together corresponds to approximately the same total density.
         (1, 1 << 4),
+        //
         (1, 1 << 5),
         (2, 1 << 4),
+        //
         (1, 1 << 6),
         (2, 1 << 5),
         (4, 1 << 4),
+        //
         (1, 1 << 7),
         (2, 1 << 6),
         (4, 1 << 5),
@@ -143,7 +146,7 @@ fn main() {
     }
 
     for (deployment_idx, (num_progs, multiplier)) in deployment_configs.into_iter().enumerate() {
-        println!("Processing deployment with {num_progs} program(s) with multiplier {multiplier}");
+        println!("{num_progs} deployment(s) with multiplier {multiplier}");
 
         let deployments = (0..num_progs)
             .map(|i| {
@@ -179,7 +182,8 @@ fn main() {
                 let circuit_info = deployment.verifying_keys().first().unwrap().1.0.circuit_info;
                 let combined_density =
                     circuit_info.num_non_zero_a + circuit_info.num_non_zero_b + circuit_info.num_non_zero_c;
-                println!(" - Program {:?}: total density: {combined_density:?}", deployment.program().id());
+                // Optional: uncomment to display size information about each individual program
+                // println!(" - Program {:?}: total density: {combined_density:?}", deployment.program().id());
 
                 (deployment_tx, combined_density as usize)
             })
@@ -188,10 +192,11 @@ fn main() {
         let (deployment_txs, combined_densities): (Vec<_>, Vec<_>) = deployments.into_iter().unzip();
         let total_density = combined_densities.iter().sum::<usize>();
 
+        println!("  Checking deployment(s). Total density: {total_density}.");
         let start = Instant::now();
         vm.check_transactions(&deployment_txs.iter().map(|deployment| (deployment, None)).collect::<Vec<_>>(), rng)
             .unwrap();
         let elapsed = start.elapsed().as_millis() as f64 / 1000.0;
-        println!("Deployment(s) with total density {total_density} checked in {elapsed:.2} s\n");
+        println!("  Checked in {elapsed:.2} s\n");
     }
 }

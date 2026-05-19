@@ -158,11 +158,11 @@ pub trait Network:
     /// launch reference validator hardware.
     const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
     /// The maximum number of non-zero entries across all circuits of all deployments in a block. This limit is
-    /// enforced starting at consensus version V15 and overrides the two per-transaction limits above.
+    /// enforced starting at consensus version V15 and overrides the two per-transaction limits above. This
+    /// corresponds to ~10 seconds single-threaded runtime on reference validator hardware.
     // TODO (Antonio) make sure this is correct
     // As an additional sanity check, the total number of constraints and variables of each individual
     // function is also limited to this bound (at >= V15).
-    // TODO (Antonio) time estimation
     const MAX_DEPLOY_DENSITY_PER_PROPOSAL: u64 = 1 << 24; // 16,777,216 non-zero entries.
     const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
