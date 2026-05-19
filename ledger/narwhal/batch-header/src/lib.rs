@@ -342,32 +342,3 @@ pub mod test_helpers {
         sample
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use console::network::{CanaryV0, MainnetV0, TestnetV0};
-
-    #[test]
-    fn test_max_synthesis_cost_below_batch_spend_limit() {
-        fn max_synthesis_cost_valid<N: Network>(v15_plus: bool) {
-            let max_basis = if v15_plus {
-                N::MAX_DEPLOY_DENSITY_PER_PROPOSAL
-            } else {
-                N::MAX_DEPLOYMENT_VARIABLES.saturating_add(N::MAX_DEPLOYMENT_CONSTRAINTS)
-            };
-            let max_synthesis_cost = max_basis * N::SYNTHESIS_FEE_MULTIPLIER / N::ARC_0005_COMPUTE_DISCOUNT;
-            for (_, height) in N::CONSENSUS_VERSION_HEIGHTS().iter() {
-                assert!(max_synthesis_cost < BatchHeader::<N>::batch_spend_limit(*height));
-            }
-        }
-
-        max_synthesis_cost_valid::<CanaryV0>(false);
-        max_synthesis_cost_valid::<TestnetV0>(false);
-        max_synthesis_cost_valid::<MainnetV0>(false);
-        max_synthesis_cost_valid::<CanaryV0>(true);
-        max_synthesis_cost_valid::<TestnetV0>(true);
-        max_synthesis_cost_valid::<MainnetV0>(true);
-    }
-}

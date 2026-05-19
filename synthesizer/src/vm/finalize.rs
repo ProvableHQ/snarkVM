@@ -427,6 +427,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     &candidate_transaction_details,
                     transaction_spend_limit,
                     None,
+                    None,
                     consensus_version,
                 ) {
                     ShouldAbortResult::Abort(abort_reason) => {
@@ -966,6 +967,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         transaction: &Transaction<N>,
         candidate_transaction_details: &CandidateTransactionDetails<N>,
         transaction_spend_limit: u64,
+        block_synthesis_limit: Option<u64>,
         block_combined_density: Option<u64>,
         consensus_version: ConsensusVersion,
     ) -> ShouldAbortResult {
@@ -1071,15 +1073,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
             // If we are keeping track of block-wide circuit density and this transaction contains a deployment, make sure its
             // density does not make the running total exceed the limit.
-            if let Some(combined_density) = block_combined_density
-                && let Transaction::Deploy(_, _, _, deployment, _) = transaction
-                && combined_density.saturating_add(deployment.combined_density()) > N::MAX_DEPLOY_DENSITY_PER_PROPOSAL
+            if let Transaction::Deploy(_, _, _, deployment, _) = transaction
+                && let Some(combined_density) = block_combined_density
+                && let Some(synthesis_limit) = block_synthesis_limit
+                && combined_density.saturating_add(deployment.combined_density()) > synthesis_limit
             {
                 return ShouldAbortResult::Abort(format!(
                     "Deployment density '{}' added to current accumulated block-wide density '{}' exceeds the limit '{}'",
                     deployment.combined_density(),
                     combined_density,
-                    N::MAX_DEPLOY_DENSITY_PER_PROPOSAL
+                    synthesis_limit
                 ));
             }
 
@@ -1119,6 +1122,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 transaction,
                 &candidate_transaction_details,
                 transaction_spend_limit,
+                state.block_synthesis_limit(),
                 Some(block_combined_density),
                 consensus_version,
             ) {
@@ -1721,8 +1725,14 @@ finalize transfer_public:
         let next_timestamp = (next_block_height
             >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
         .then_some(next_block_timestamp);
-        let finalize_state =
-            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32], None);
+        let finalize_state = FinalizeGlobalState::from(
+            next_block_height as u64,
+            next_block_height,
+            next_timestamp,
+            [0u8; 32],
+            None,
+            None,
+        );
 
         // Speculate on the candidate ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =

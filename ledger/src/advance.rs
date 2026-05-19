@@ -415,6 +415,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             (next_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default()).then_some(next_timestamp);
         // Determine the block spend limit.
         let block_spend_limit = if let Some(subdag) = subdag { subdag.spend_limit(next_height) } else { None };
+        // Determine the block synthesis limit.
+        let block_synthesis_limit = if let Some(subdag) = subdag { subdag.synthesis_limit(next_height) } else { None };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             next_round,
@@ -424,6 +426,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             next_cumulative_proof_target,
             previous_block.hash(),
             block_spend_limit,
+            block_synthesis_limit,
         )?;
         // Speculate over the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = self.vm.speculate(

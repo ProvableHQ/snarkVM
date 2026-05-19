@@ -157,13 +157,12 @@ pub trait Network:
     /// consensus version V14 (inclusive). This corresponds to ~0.5 second single-threaded runtime at mainnet
     /// launch reference validator hardware.
     const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
-    /// The maximum number of non-zero entries across all circuits of all deployments in a block. This limit is
-    /// enforced starting at consensus version V15 and overrides the two per-transaction limits above. This
-    /// corresponds to ~10 seconds single-threaded runtime on reference validator hardware.
-    // TODO (Antonio) make sure this is correct
-    // As an additional sanity check, the total number of constraints and variables of each individual
-    // function is also limited to this bound (at >= V15).
-    const MAX_DEPLOY_DENSITY_PER_PROPOSAL: u64 = 1 << 24; // 16,777,216 non-zero entries.
+    /// Approximate conversion factor from non-zero circuit entries to seconds of certificate-verification work
+    /// when checking a deployment. From it, a per-proposal synthesis limit is enforced starting at consensus
+    /// version V15 which overrides the two per-transaction limits above.
+    // 2^24 non-zero entries correspond to ~10 seconds of verification work single-threaded runtime on reference
+    // validator hardware.
+    const SYNTHESIS_PER_SECOND_OF_RUNTIME: u64 = (1 << 24) / 10;
     const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
