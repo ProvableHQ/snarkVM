@@ -29,6 +29,7 @@ large_params = []
 locktick = ["dep:locktick"]
 no_std_out = []
 rocks = ["snarkvm-ledger-store/rocks"]
+skip-srs-embed = []
 wasm = ["encoding", "js-sys", "web-sys"]
 dev-print = ["snarkvm-utilities/dev-print"]
 
