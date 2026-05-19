@@ -214,13 +214,37 @@ impl<N: Network> Stack<N> {
             };
             // Retrieve the variable limit.
             let variable_limit = verifying_key.num_variables();
+            // If the consensus version is >= V15, set the density limit, accounting for one non-zero entry (with value 1) added to
+            // each of A, B, and C in order to make the Varuna zerocheck hiding.
+            let non_zero_limit = if consensus_version >= ConsensusVersion::V15 {
+                let info = verifying_key.circuit_info;
+                if info.num_non_zero_a >= 1 && info.num_non_zero_b >= 1 && info.num_non_zero_c >= 1 {
+                    Some((
+                        info.num_non_zero_a as u64 - 1,
+                        info.num_non_zero_b as u64 - 1,
+                        info.num_non_zero_c as u64 - 1,
+                    ))
+                } else {
+                    bail!(
+                        "The claimed number of non-zero entries for function '{}' is less than the one added by the Varuna hiding constraint (A: {}, B: {}, C: {})",
+                        function.name(),
+                        info.num_non_zero_a,
+                        info.num_non_zero_b,
+                        info.num_non_zero_c,
+                    );
+                }
+            } else {
+                None
+            };
             // Initialize the call stack.
+            // TODO (Antonio) don't we have a similar variables/constraints/density check for translation circuits (checked below)?
             let call_stack = CallStack::CheckDeployment(
                 vec![request],
                 burner_private_key,
                 assignments.clone(),
                 Some(constraint_limit as u64),
                 Some(variable_limit),
+                non_zero_limit,
             );
             // Append the function name, callstack, and assignments.
             call_stacks.push((function.name(), call_stack, assignments));
