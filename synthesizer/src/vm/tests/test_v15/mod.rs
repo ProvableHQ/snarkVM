@@ -23,6 +23,8 @@ mod commit_raw;
 mod cost_for_call;
 // Tests for quorum block compute spend limits.
 mod block_spend_limit;
+// Tests for block-wide density limits on deployments.
+mod blockwide_synthesis_limit;
 
 use super::*;
 

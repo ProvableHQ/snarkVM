@@ -335,8 +335,48 @@ impl<N: Network> Stack<N> {
             // `zip_eq` correctly pairs each record assignment with its corresponding key.
             cfg_into_iter!(translation_names_assignments).zip_eq(translation_verifying_keys).try_for_each(
             |((record_name, translation_index, translation_assignment), (_, (verifying_key, certificate)))| {
+
+                // TODO (Antonio) maybe make common abstraction with the function-circuit case
+                // TODO (Antonio) also clarify that pre-v15 we dont check anything for translation circuits
+                let (variable_limit, constraint_limit, non_zero_limit) = if consensus_version < ConsensusVersion::V15 {
+                    let constraint_limit = if verifying_key.circuit_info.num_constraints >= 1 {
+                        Some((verifying_key.circuit_info.num_constraints - 1) as u64)
+                    } else {
+                        // TODO (Antonio) is this bail really bailing?
+                        // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
+                        bail!("The constraint limit of 0 for translation circuit for record '{}' is invalid", record_name);
+                    };
+
+                    // Retrieve the variable limit.
+                    let variable_limit = Some(verifying_key.num_variables());
+
+                    // TODO (Antonio) this doc is outdated
+                    // If the consensus version is >= V15, set the density limit, accounting for one non-zero entry (with value 1) added to
+                    // each of A, B, and C in order to make the Varuna zerocheck hiding.
+                    let info = verifying_key.circuit_info;
+                    let non_zero_limit = if info.num_non_zero_a >= 1 && info.num_non_zero_b >= 1 && info.num_non_zero_c >= 1 {
+                        Some((
+                            info.num_non_zero_a as u64 - 1,
+                            info.num_non_zero_b as u64 - 1,
+                            info.num_non_zero_c as u64 - 1,
+                        ))
+                    } else {
+                        bail!(
+                            "The claimed number of non-zero entries for translation circuit for record '{}' is less than the one added by the Varuna hiding constraint (A: {}, B: {}, C: {})",
+                            record_name,
+                            info.num_non_zero_a,
+                            info.num_non_zero_b,
+                            info.num_non_zero_c,
+                        );
+                    };
+
+                    (variable_limit, constraint_limit, non_zero_limit)
+                } else {
+                    (None, None, None)
+                };
+
                 // Synthesize the circuit.
-                match translation_assignment.to_circuit_assignment::<A>(translation_index) {
+                match translation_assignment.to_circuit_assignment::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit) {
                     Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
                     Ok(circuit_assignment) => {
                         // Ensure the certificate is valid.

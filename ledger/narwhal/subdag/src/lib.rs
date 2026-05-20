@@ -208,8 +208,6 @@ impl<N: Network> Subdag<N> {
             // Compute the number of certificates in the subdag.
             let subdag_certificates_count =
                 self.values().map(|certificates| certificates.len() as u64).sum::<u64>() as f64;
-            // TODO (Antonio) remove
-            println!("Returning synthesis limit: {}", (synthesis_per_certificate * subdag_certificates_count) as u64);
             // The synthesis limit is the number of certificates times the synthesis budget per certificate.
             Some((synthesis_per_certificate * subdag_certificates_count) as u64)
         } else {
@@ -352,23 +350,11 @@ pub mod test_helpers {
         // Return the sample vector.
         sample
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use console::network::ConsensusVersion;
-    use snarkvm_ledger_narwhal_batch_certificate::test_helpers::sample_batch_certificate_for_round;
-    use snarkvm_ledger_narwhal_batch_header::BatchHeader;
-
-    type CurrentNetwork = console::network::MainnetV0;
-
-    const ITERATIONS: u64 = 100;
 
     /// Constructs a subdag (via `from_unchecked`) that contains `cert_count` certificates
     /// placed in a single even-numbered round.  The DAG structure is not valid, but
     /// `spend_limit` only inspects certificate counts, so this is sufficient for unit tests.
-    fn subdag_with_cert_count(cert_count: usize, rng: &mut TestRng) -> Subdag<CurrentNetwork> {
+    pub fn subdag_with_cert_count(cert_count: usize, rng: &mut TestRng) -> Subdag<CurrentNetwork> {
         let mut certs = IndexSet::new();
         for _ in 0..cert_count {
             // Round 2 is arbitrary; any even round keeps the anchor-round invariant if desired.
@@ -378,6 +364,20 @@ mod tests {
         map.insert(2u64, certs);
         Subdag::from_unchecked(map)
     }
+
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::ConsensusVersion;
+    use snarkvm_ledger_narwhal_batch_header::BatchHeader;
+
+    use crate::test_helpers::subdag_with_cert_count;
+
+    type CurrentNetwork = console::network::MainnetV0;
+
+    const ITERATIONS: u64 = 100;
 
     #[test]
     fn test_max_certificates() {

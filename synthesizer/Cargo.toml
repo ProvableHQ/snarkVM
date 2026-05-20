@@ -197,6 +197,10 @@ features = [ "test-helpers" ]
 workspace = true
 features = [ "test-helpers" ]
 
+[dev-dependencies.snarkvm-ledger-narwhal-subdag]
+workspace = true
+features = [ "test-helpers" ]
+
 [dev-dependencies.snarkvm-synthesizer-process]
 workspace = true
 features = [ "test" ]

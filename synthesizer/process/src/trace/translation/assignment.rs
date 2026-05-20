@@ -128,7 +128,13 @@ impl<N: Network> TranslationAssignment<N> {
     // circuit in `A`. The publicly exposed function `to_circuit_assignment`
     // ejects the resulting `Assignment` from the R1CS, but having direct access
     // to `A` while the constraint system is still loaded facilitates testing.
-    pub(crate) fn to_circuit_assignment_internal<A: Aleo<Network = N>>(&self, translation_index: u16) -> Result<()> {
+    pub(crate) fn to_circuit_assignment_internal<A: Aleo<Network = N>>(
+        &self,
+        translation_index: u16,
+        variable_limit: Option<u64>,
+        constraint_limit: Option<u64>,
+        non_zero_limit: Option<(u64, u64, u64)>,
+    ) -> Result<()> {
         // Ensure the circuit environment is clean.
         ensure!(
             A::count() == (0, 1, 0, 0, (0, 0, 0)),
@@ -136,6 +142,12 @@ impl<N: Network> TranslationAssignment<N> {
             A::count()
         );
         A::reset();
+
+        // Set limits for the number of variables, constraints, and non-zero entries in the circuit to be
+        // checked after each step of the synthesis.
+        A::set_variable_limit(variable_limit);
+        A::set_constraint_limit(constraint_limit);
+        A::set_non_zero_limit(non_zero_limit);
 
         // ******** Constants
 
@@ -276,8 +288,11 @@ impl<N: Network> TranslationAssignment<N> {
     pub fn to_circuit_assignment<A: circuit::Aleo<Network = N>>(
         &self,
         translation_index: u16,
+        variable_limit: Option<u64>,
+        constraint_limit: Option<u64>,
+        non_zero_limit: Option<(u64, u64, u64)>,
     ) -> Result<circuit::Assignment<N::Field>> {
-        self.to_circuit_assignment_internal::<A>(translation_index)?;
+        self.to_circuit_assignment_internal::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit)?;
         Stack::log_circuit::<A>(
             format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()),
             "TranslationAssignment",

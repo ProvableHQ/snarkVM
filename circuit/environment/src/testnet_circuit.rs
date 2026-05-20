@@ -51,7 +51,6 @@ impl Environment for TestnetCircuit {
         ONE.with(|one| one.clone())
     }
 
-    // TODO (Antonio) non-zero needs to be constrained here?
     /// Returns a new variable of the given mode and value.
     fn new_variable(mode: Mode, value: Self::BaseField) -> Variable<Self::BaseField> {
         IN_WITNESS.with(|in_witness| {

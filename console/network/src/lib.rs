@@ -159,7 +159,7 @@ pub trait Network:
     const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
     /// Approximate conversion factor from non-zero circuit entries to seconds of certificate-verification work
     /// when checking a deployment. From it, a per-proposal synthesis limit is enforced starting at consensus
-    /// version V15 which overrides the two per-transaction limits above.
+    /// versionV15 which overrides the two per-transaction limits above.
     // 2^24 non-zero entries correspond to ~10 seconds of verification work single-threaded runtime on reference
     // validator hardware.
     const SYNTHESIS_PER_SECOND_OF_RUNTIME: u64 = (1 << 24) / 10;

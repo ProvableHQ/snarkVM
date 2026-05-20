@@ -90,6 +90,46 @@ fn sample_next_block<R: Rng + CryptoRng>(
     )
 }
 
+// Samples num_deployments deployments, each for a single function with combined density ~multiplier * (2^18) (could be slightly higher or lower in practice)
+fn sample_deployments(
+    num_deployments: usize,
+    multiplier: usize,
+    name_prefix: &str,
+    vm: &VM<CurrentNetwork, CurrentLedger>,
+    private_key: &PrivateKey<CurrentNetwork>,
+    rng: &mut TestRng,
+) -> Vec<Transaction<CurrentNetwork>> {
+    (0..num_deployments).map(|i| {
+        let mut program_str = format!(
+            r"
+        program {name_prefix}_{i}.aleo;
+
+        function fun:
+            input r0 as [field; 32u32].public;
+    "
+        );
+
+        for j in 1..multiplier {
+            program_str += &format!(
+                r"
+            hash.bhp256 r0 into r{j} as field;
+        "
+            );
+        }
+
+        program_str += r"
+        constructor:
+                assert.eq true true;
+        ";
+
+        let program = Program::from_str(&program_str).unwrap();
+
+        // The individual combined density of the deployment can be read with tx.deployment().unwrap().combined_density()
+        vm.deploy(&private_key, &program, None, 0, None, rng).unwrap()
+    })
+    .collect()
+}
+
 // This function displays the runtime of check_transactions for various groups of example deployments. It focuses on:
 //  - How the runtime of check_deployment scales with the total density of the circuits in the deployment
 //  - How the runtime of check_transactions behaves when the same total cross-deployments density is split
@@ -148,53 +188,13 @@ fn main() {
     for (deployment_idx, (num_progs, multiplier)) in deployment_configs.into_iter().enumerate() {
         println!("{num_progs} deployment(s) with multiplier {multiplier}");
 
-        let deployments = (0..num_progs)
-            .map(|i| {
-                let mut program_str = format!(
-                    r"
-                program test_{deployment_idx}_{i}.aleo;
+        let deployments = sample_deployments(num_progs, multiplier, &format!("test_{deployment_idx}"), &vm, &private_key, rng);
 
-                function fun:
-                    input r0 as [field; 32u32].public;
-            "
-                );
-
-                for j in 1..multiplier {
-                    program_str += &format!(
-                        r"
-                    hash.bhp256 r0 into r{j} as field;
-                "
-                    );
-                }
-
-                program_str += r"
-            constructor:
-                    assert.eq true true;
-                ";
-
-                let program = Program::from_str(&program_str).unwrap();
-
-                // Deploy the first program
-                let deployment_tx = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
-                let deployment = deployment_tx.deployment().unwrap();
-
-                assert!(deployment.verifying_keys().len() == 1);
-                let circuit_info = deployment.verifying_keys().first().unwrap().1.0.circuit_info;
-                let combined_density =
-                    circuit_info.num_non_zero_a + circuit_info.num_non_zero_b + circuit_info.num_non_zero_c;
-                // Optional: uncomment to display size information about each individual program
-                // println!(" - Program {:?}: total density: {combined_density:?}", deployment.program().id());
-
-                (deployment_tx, combined_density as usize)
-            })
-            .collect::<Vec<_>>();
-
-        let (deployment_txs, combined_densities): (Vec<_>, Vec<_>) = deployments.into_iter().unzip();
-        let total_density = combined_densities.iter().sum::<usize>();
+        let total_density = deployments.iter().map(|deployment| deployment.deployment().unwrap().combined_density()).sum::<u64>();
 
         println!("  Checking deployment(s). Total density: {total_density}.");
         let start = Instant::now();
-        vm.check_transactions(&deployment_txs.iter().map(|deployment| (deployment, None)).collect::<Vec<_>>(), rng)
+        vm.check_transactions(&deployments.iter().map(|deployment| (deployment, None)).collect::<Vec<_>>(), rng)
             .unwrap();
         let elapsed = start.elapsed().as_millis() as f64 / 1000.0;
         println!("  Checked in {elapsed:.2} s\n");
