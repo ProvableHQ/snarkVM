@@ -171,7 +171,11 @@ pub trait Network:
     const TRANSACTION_SPEND_LIMIT: [(ConsensusVersion, u64); 2] =
         [(ConsensusVersion::V1, 100_000_000), (ConsensusVersion::V10, 4_000_000)];
     /// The compute discount approved by ARC 0005.
-    const ARC_0005_COMPUTE_DISCOUNT: u64 = 25;
+    const ARC_0005_COMPUTE_DISCOUNT: u64 =
+        Self::CREDITS_PER_SECOND_OF_RUNTIME[0].1 / Self::CREDITS_PER_SECOND_OF_RUNTIME[1].1;
+    /// The number of microcredits representing a second of runtime.
+    const CREDITS_PER_SECOND_OF_RUNTIME: [(ConsensusVersion, u64); 2] =
+        [(ConsensusVersion::V1, 100_000_000), (ConsensusVersion::V10, 4_000_000)];
 
     /// The anchor height, defined as the expected number of blocks to reach the coinbase target.
     /// Note: The anchor height used exclusively by `coinbase_reward_v1`.

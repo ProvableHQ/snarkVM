@@ -439,6 +439,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     ShouldAbortResult::Finalize(compute_spend) => {
                         // If the consensus version is >= V15, ensure that the
                         // transaction is not exceeding block spend limits.
+                        //
+                        // TODO(vicsn) a more robust setup would rely on the
+                        // batch_spend_limit directly, checking on a
+                        // per-certificate basis whether or not transactions
+                        // exceed it.
                         if consensus_version >= ConsensusVersion::V15 {
                             if let Some(block_spend_limit) = block_spend_limit {
                                 if block_spend.saturating_add(compute_spend) > block_spend_limit {

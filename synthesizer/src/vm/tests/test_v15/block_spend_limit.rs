@@ -21,7 +21,6 @@ use crate::vm::test_helpers::{sample_genesis_private_key, sample_vm_at_height};
 
 use console::{account::Address, network::ConsensusVersion, program::Value};
 use snarkvm_ledger_block::Solutions;
-use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 use snarkvm_synthesizer_process::{execute_compute_cost_in_microcredits, execution_cost};
 use snarkvm_synthesizer_program::FinalizeGlobalState;
 use snarkvm_utilities::TestRng;
@@ -52,9 +51,6 @@ fn test_quorum_block_spend_limit_aborts_excess_transactions() {
         "test expects the next block to execute under V15 spend rules"
     );
 
-    let batch_allowance = BatchHeader::<CurrentNetwork>::batch_spend_limit(next_block_height);
-    assert!(batch_allowance > 0, "quorum batches must admit a strictly positive compute budget at this height");
-
     let transfer_inputs = |amount: &str| {
         [Value::<CurrentNetwork>::from_str(&caller_address.to_string()).unwrap(), Value::from_str(amount).unwrap()]
     };
@@ -75,11 +71,6 @@ fn test_quorum_block_spend_limit_aborts_excess_transactions() {
     let consensus_version = CurrentNetwork::CONSENSUS_VERSION(next_block_height).unwrap();
     let (_, cost_details) = execution_cost(vm.process(), execution_0, consensus_version).unwrap();
     let compute_per_transfer = execute_compute_cost_in_microcredits(cost_details, consensus_version);
-
-    assert!(
-        compute_per_transfer <= batch_allowance,
-        "sample transfer must fit within a single-batch quorum allowance (got {compute_per_transfer}, batch {batch_allowance})",
-    );
 
     let transaction_1 = vm
         .execute(

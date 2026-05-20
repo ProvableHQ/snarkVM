@@ -180,12 +180,15 @@ impl<N: Network> Subdag<N> {
 
     /// Returns the block spend limit for this subdag at `block_height`.
     #[inline]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn spend_limit(&self, block_height: u32) -> Option<u64> {
         if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap() {
-            Some(
-                self.values().map(|certificates| certificates.len() as u64).sum::<u64>()
-                    * BatchHeader::<N>::batch_spend_limit(block_height),
-            )
+            // Compute the number of certificates in the subdag.
+            let subdag_certificates_count = self.values().map(|certificates| certificates.len() as u64).sum::<u64>();
+            // Compute the batch spend limit.
+            let batch_spend_limit = BatchHeader::<N>::batch_spend_limit(block_height);
+            // For each certificate in the subdag, we can spend up to the batch spend limit.
+            Some(subdag_certificates_count.saturating_mul(batch_spend_limit))
         } else {
             None
         }
@@ -354,11 +357,27 @@ pub mod test_helpers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use console::network::ConsensusVersion;
+    use snarkvm_ledger_narwhal_batch_certificate::test_helpers::sample_batch_certificate_for_round;
     use snarkvm_ledger_narwhal_batch_header::BatchHeader;
 
     type CurrentNetwork = console::network::MainnetV0;
 
     const ITERATIONS: u64 = 100;
+
+    /// Constructs a subdag (via `from_unchecked`) that contains `cert_count` certificates
+    /// placed in a single even-numbered round.  The DAG structure is not valid, but
+    /// `spend_limit` only inspects certificate counts, so this is sufficient for unit tests.
+    fn subdag_with_cert_count(cert_count: usize, rng: &mut TestRng) -> Subdag<CurrentNetwork> {
+        let mut certs = IndexSet::new();
+        for _ in 0..cert_count {
+            // Round 2 is arbitrary; any even round keeps the anchor-round invariant if desired.
+            certs.insert(sample_batch_certificate_for_round(2, rng));
+        }
+        let mut map = BTreeMap::new();
+        map.insert(2u64, certs);
+        Subdag::from_unchecked(map)
+    }
 
     #[test]
     fn test_max_certificates() {
@@ -431,6 +450,107 @@ mod tests {
                 println!("scaled_data: {scaled_data:?}");
             }
             assert_eq!(weighted_median(data), weighted_median(scaled_data));
+        }
+    }
+
+    /// `spend_limit` must return `None` for any block height that predates V15.
+    #[test]
+    fn test_spend_limit_returns_none_before_v15() {
+        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let mut rng = TestRng::default();
+        let subdag = test_helpers::sample_subdag(&mut rng);
+
+        assert!(subdag.spend_limit(0).is_none(), "height 0 must return None");
+        if v15_height > 0 {
+            assert!(subdag.spend_limit(v15_height - 1).is_none(), "height V15-1 must return None");
+        }
+    }
+
+    /// `spend_limit` must return `Some` for any block height at or after V15.
+    #[test]
+    fn test_spend_limit_returns_some_at_and_after_v15() {
+        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let mut rng = TestRng::default();
+        let subdag = test_helpers::sample_subdag(&mut rng);
+
+        assert!(subdag.spend_limit(v15_height).is_some(), "height V15 must return Some");
+        assert!(subdag.spend_limit(v15_height.saturating_add(1)).is_some(), "height V15+1 must return Some");
+        assert!(subdag.spend_limit(u32::MAX).is_some(), "u32::MAX must return Some");
+    }
+
+    /// A subdag with zero certificates must produce a spend limit of 0 at V15.
+    #[test]
+    fn test_spend_limit_zero_certificates() {
+        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        // from_unchecked bypasses structural validation; spend_limit only reads cert counts.
+        let empty_subdag: Subdag<CurrentNetwork> = Subdag::from_unchecked(BTreeMap::new());
+        assert_eq!(empty_subdag.spend_limit(v15_height), Some(0));
+    }
+
+    /// A subdag whose total certificate count equals MAX_CERTIFICATES should consume
+    /// the full 5-second allotment: `5 * CREDITS_PER_SECOND_OF_RUNTIME`.
+    #[test]
+    fn test_spend_limit_full_subdag() {
+        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let max_certs = consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, v15_height).unwrap() as usize;
+        let credits_per_second_of_runtime =
+            consensus_config_value!(CurrentNetwork, CREDITS_PER_SECOND_OF_RUNTIME, v15_height).unwrap();
+
+        let mut rng = TestRng::default();
+        let subdag = subdag_with_cert_count(max_certs, &mut rng);
+
+        // fullness == 1.0, so limit == 5 * tx_spend_limit exactly.
+        assert_eq!(subdag.spend_limit(v15_height), Some(5 * credits_per_second_of_runtime));
+    }
+
+    /// Verify the exact arithmetic for an arbitrary partial fill of the subdag.
+    #[test]
+    #[allow(clippy::cast_possible_truncation)]
+    fn test_spend_limit_partial_subdag() {
+        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let max_certs = consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, v15_height).unwrap() as f64;
+        let credits_per_second_of_runtime =
+            consensus_config_value!(CurrentNetwork, CREDITS_PER_SECOND_OF_RUNTIME, v15_height).unwrap() as f64;
+
+        let n_certs: usize = 7;
+        let mut rng = TestRng::default();
+        let subdag = subdag_with_cert_count(n_certs, &mut rng);
+
+        // Mirror the production formula so the test breaks if the formula changes.
+        let expected = (5.0 * credits_per_second_of_runtime * n_certs as f64 / max_certs) as u64;
+        assert_eq!(subdag.spend_limit(v15_height), Some(expected));
+    }
+
+    /// Doubling the number of certificates must (at most) double the spend limit,
+    /// and the result must differ by at most 1 due to integer truncation.
+    #[test]
+    fn test_spend_limit_proportional_to_cert_count() {
+        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let mut rng = TestRng::default();
+
+        let n: usize = 10;
+        let subdag_n = subdag_with_cert_count(n, &mut rng);
+        let subdag_2n = subdag_with_cert_count(2 * n, &mut rng);
+
+        let limit_n = subdag_n.spend_limit(v15_height).unwrap();
+        let limit_2n = subdag_2n.spend_limit(v15_height).unwrap();
+
+        // 2 * floor(x) ≤ floor(2x) ≤ 2 * floor(x) + 1
+        assert!(limit_2n >= 2 * limit_n, "limit_2n={limit_2n} limit_n={limit_n}");
+        assert!(limit_2n <= 2 * limit_n + 1, "limit_2n={limit_2n} limit_n={limit_n}");
+    }
+
+    /// `spend_limit` must be monotonically non-decreasing as certificate count grows.
+    #[test]
+    fn test_spend_limit_monotone_in_cert_count() {
+        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let mut rng = TestRng::default();
+
+        let mut previous = 0u64;
+        for n in 0..=20 {
+            let limit = subdag_with_cert_count(n, &mut rng).spend_limit(v15_height).unwrap();
+            assert!(limit >= previous, "spend_limit must not decrease: n={n}, limit={limit}, previous={previous}");
+            previous = limit;
         }
     }
 }

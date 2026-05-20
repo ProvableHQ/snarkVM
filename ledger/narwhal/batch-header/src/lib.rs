@@ -69,11 +69,17 @@ impl<N: Network> BatchHeader<N> {
 
 impl<N: Network> BatchHeader<N> {
     /// The maximum number of microcredits that can be spent on compute by the transactions in a batch.
-    /// This implies the block spend limit is bounded at batch_spend_limit * N::NUM_MAX_CERTIFICATES` * MAX_GC_ROUNDS.
-    // TODO: div by 20 is temporary until we can dial in what the limit should be.
     pub fn batch_spend_limit(height: u32) -> u64 {
-        consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap() * Self::MAX_TRANSMISSIONS_PER_BATCH as u64
-            / 20
+        // TODO(vicsn) a more robust setup would bound the batch spend limit further.
+        // For example to: 5_f64 * credits_per_second_of_runtime / max_certificates.
+        if height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap() {
+            consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap()
+        } else {
+            // NOTE: div by 20 was temporary until we could dial in what the limit should be.
+            consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap()
+                * Self::MAX_TRANSMISSIONS_PER_BATCH as u64
+                / 20
+        }
     }
 }
 
