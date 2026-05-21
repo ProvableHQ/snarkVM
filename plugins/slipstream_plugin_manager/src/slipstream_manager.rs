@@ -175,6 +175,49 @@ impl SlipstreamPluginManager {
         Ok(name)
     }
 
+    /// Registers a statically-linked plugin without dynamic library loading.
+    ///
+    /// Calls `plugin.on_load(config_file, false)` and adds the plugin to the
+    /// active list.  The backing "library" is the current process itself —
+    /// plugin code is compiled into the binary, so there is no `.so` to unload.
+    pub fn register(
+        &mut self,
+        mut plugin: Box<dyn SlipstreamPlugin>,
+        config_file: impl AsRef<Path>,
+    ) -> JsonRpcResult<String> {
+        let name = plugin.name().to_string();
+
+        if self.plugins.iter().any(|p| p.plugin.name() == name) {
+            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(name));
+        }
+
+        let config_file_str = config_file
+            .as_ref()
+            .to_str()
+            .ok_or(SlipstreamPluginManagerError::InvalidPluginPath)?;
+
+        plugin
+            .on_load(config_file_str, false)
+            .map_err(|e| SlipstreamPluginManagerError::PluginStartError(e.to_string()))?;
+
+        // Use the current process as the backing library — the plugin code is
+        // statically linked into the binary, so there is nothing to dlopen or
+        // unload. libpath is empty to avoid false-positive duplicate-path checks.
+        #[cfg(unix)]
+        let lib = Library::from(libloading::os::unix::Library::this());
+        #[cfg(windows)]
+        let lib = Library::from(libloading::os::windows::Library::this().unwrap()); // infallible: current process is always loadable
+
+        self.plugins.push(LoadedPlugin {
+            plugin: LoadedSlipstreamPlugin::new(plugin, None),
+            _lib: lib,
+            libpath: PathBuf::new(),
+        });
+
+        info!("Registered static plugin: {}", name);
+        Ok(name)
+    }
+
     /// Unloads the plugin with the given name.
     pub fn unload_plugin(&mut self, name: &str) -> JsonRpcResult<()> {
         let Some(idx) = self.plugins.iter().position(|entry| entry.plugin.name().eq(name)) else {
