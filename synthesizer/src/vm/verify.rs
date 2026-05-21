@@ -418,6 +418,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             );
                         }
                     }
+
+                    // Bound the size in bits of every plaintext type declared in the program. This must run
+                    // before deployment verification samples values, since sampling materializes leaves of
+                    // attacker-controlled array dimensions.
+                    let max_plaintext_type_bits =
+                        consensus_config_value!(N, MAX_PLAINTEXT_TYPE_SIZE_IN_BITS, current_block_height).ok_or_else(
+                            || anyhow!("Missing consensus config value: MAX_PLAINTEXT_TYPE_SIZE_IN_BITS"),
+                        )?;
+                    let stack = Stack::new(&self.process, deployment.program())?;
+                    check_program_plaintext_sizes(deployment.program(), &stack, max_plaintext_type_bits)?;
                 }
 
                 // Determine if any of the array types exceed the maximum array elements.

@@ -30,6 +30,9 @@ mod views;
 // Tests for restricted keywords at V15.
 mod restricted_keywords;
 
+// Tests for the V15 plaintext-type size bound.
+mod plaintext_size;
+
 use super::*;
 
 use crate::vm::test_helpers::{sample_vm_at_height, *};
