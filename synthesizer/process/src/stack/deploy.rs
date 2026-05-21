@@ -215,7 +215,7 @@ impl<N: Network> Stack<N> {
             // Retrieve the variable limit.
             let variable_limit = verifying_key.num_variables();
             // If the consensus version is >= V15, set the density limit, accounting for one non-zero entry (with value 1) added to
-            // each of A, B, and C in order to make the Varuna zerocheck hiding.
+            // each of A, B and C in order to make the Varuna zerocheck hiding.
             let non_zero_limit = if consensus_version >= ConsensusVersion::V15 {
                 let info = verifying_key.circuit_info;
                 if info.num_non_zero_a >= 1 && info.num_non_zero_b >= 1 && info.num_non_zero_c >= 1 {
@@ -237,7 +237,6 @@ impl<N: Network> Stack<N> {
                 None
             };
             // Initialize the call stack.
-            // TODO (Antonio) don't we have a similar variables/constraints/density check for translation circuits (checked below)?
             let call_stack = CallStack::CheckDeployment(
                 vec![request],
                 burner_private_key,
@@ -335,24 +334,23 @@ impl<N: Network> Stack<N> {
             // `zip_eq` correctly pairs each record assignment with its corresponding key.
             cfg_into_iter!(translation_names_assignments).zip_eq(translation_verifying_keys).try_for_each(
             |((record_name, translation_index, translation_assignment), (_, (verifying_key, certificate)))| {
-
-                // TODO (Antonio) maybe make common abstraction with the function-circuit case
-                // TODO (Antonio) also clarify that pre-v15 we dont check anything for translation circuits
+                // Construct the variable, constraint and non-zero element counts to pass to the translation-circuit
+                // synthesizer as bounds. These are only enforced in ConsensusVersion::V15 and later.
                 let (variable_limit, constraint_limit, non_zero_limit) = if consensus_version < ConsensusVersion::V15 {
+                    (None, None, None)
+                } else {
                     let constraint_limit = if verifying_key.circuit_info.num_constraints >= 1 {
-                        Some((verifying_key.circuit_info.num_constraints - 1) as u64)
-                    } else {
-                        // TODO (Antonio) is this bail really bailing?
                         // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
-                        bail!("The constraint limit of 0 for translation circuit for record '{}' is invalid", record_name);
+                        Some(verifying_key.circuit_info.num_constraints as u64 - 1)
+                    } else {
+                        bail!("The constraint limit of 0 for translation circuit for record '{record_name}' is invalid");
                     };
 
                     // Retrieve the variable limit.
                     let variable_limit = Some(verifying_key.num_variables());
 
-                    // TODO (Antonio) this doc is outdated
-                    // If the consensus version is >= V15, set the density limit, accounting for one non-zero entry (with value 1) added to
-                    // each of A, B, and C in order to make the Varuna zerocheck hiding.
+                    // Set the density limit, accounting for one non-zero entry (with value 1) added to each of A, B and C
+                    // in order to make the Varuna zerocheck hiding.
                     let info = verifying_key.circuit_info;
                     let non_zero_limit = if info.num_non_zero_a >= 1 && info.num_non_zero_b >= 1 && info.num_non_zero_c >= 1 {
                         Some((
@@ -371,8 +369,6 @@ impl<N: Network> Stack<N> {
                     };
 
                     (variable_limit, constraint_limit, non_zero_limit)
-                } else {
-                    (None, None, None)
                 };
 
                 // Synthesize the circuit.

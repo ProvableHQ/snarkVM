@@ -364,7 +364,6 @@ pub mod test_helpers {
         map.insert(2u64, certs);
         Subdag::from_unchecked(map)
     }
-
 }
 
 #[cfg(test)]
