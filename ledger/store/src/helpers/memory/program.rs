@@ -26,7 +26,9 @@ use console::types::Address;
 use console::{
     prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
+    types::Field,
 };
+use snarkvm_ledger_block::RejectedReason;
 use snarkvm_ledger_committee::Committee;
 
 use aleo_std_storage::StorageMode;
@@ -43,6 +45,8 @@ pub struct FinalizeMemory<N: Network> {
     program_id_map: MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
     key_value_map: NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
+    /// The rejection reason map.
+    rejected_reason_map: MemoryMap<Field<N>, RejectedReason<N>>,
     /// The historical mapping value update map.
     #[cfg(feature = "history")]
     mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>,
@@ -64,6 +68,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type CommitteeStorage = CommitteeMemory<N>;
     type ProgramIDMap = MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>;
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
     #[cfg(feature = "history")]
     type MappingUpdateMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>;
     #[cfg(feature = "history")]
@@ -81,6 +86,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             committee_store,
             program_id_map: MemoryMap::default(),
             key_value_map: NestedMemoryMap::default(),
+            rejected_reason_map: MemoryMap::default(),
             #[cfg(feature = "history")]
             mapping_update_map: MemoryMap::default(),
             #[cfg(feature = "history")]
@@ -106,6 +112,11 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap {
         &self.key_value_map
+    }
+
+    /// Returns the rejection reason map.
+    fn rejected_reason_map(&self) -> &Self::RejectedReasonMap {
+        &self.rejected_reason_map
     }
 
     /// Returns the historical value map.

@@ -22,11 +22,11 @@ impl<N: Network> Process<N> {
     /// Note: This does *not* check that the global state root exists in the ledger.
     #[inline]
     pub fn verify_execution(
-        &self,
         consensus_version: ConsensusVersion,
         varuna_version: VarunaVersion,
         inclusion_version: InclusionVersion,
         execution: &Execution<N>,
+        execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
     ) -> Result<()> {
         let timer = timer!("Process::verify_execution");
 
@@ -44,7 +44,9 @@ impl<N: Network> Process<N> {
             // Retrieve the transition (without popping it).
             let transition = execution.peek()?;
             // Retrieve the stack.
-            let stack = self.get_stack(transition.program_id())?;
+            let stack = execution_stacks
+                .get(transition.program_id())
+                .ok_or_else(|| anyhow!("Missing stack for program '{}'", transition.program_id()))?;
             // Calculate the minimum number of calls for the root transition.
             let minimum_number_of_calls = stack.get_minimum_number_of_calls(transition.function_name())?;
             // If the root transition contains a dynamic call,
@@ -69,14 +71,14 @@ impl<N: Network> Process<N> {
         lap!(timer, "Verify the number of transitions");
 
         // Construct the call graph of the execution.
-        let call_graph = self.construct_call_graph(execution.transitions())?;
+        let call_graph = Self::construct_call_graph(execution.transitions(), execution_stacks)?;
 
         // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
         // function in the execution, all DynamicRecords and ExternalRecords
         // received as inputs or from callees exist on the ledger at the end of
         // the execution (whether spent or not).
         if consensus_version >= ConsensusVersion::V15 {
-            self.ensure_records_exist(execution.transitions(), &call_graph)?;
+            Self::ensure_records_exist(execution.transitions(), &call_graph, execution_stacks)?;
         }
 
         // Construct the reverse call graph of the execution.
@@ -161,7 +163,9 @@ impl<N: Network> Process<N> {
             lap!(timer, "Verify the outputs");
 
             // Retrieve the stack.
-            let stack = self.get_stack(transition.program_id())?;
+            let stack = execution_stacks
+                .get(transition.program_id())
+                .ok_or_else(|| anyhow!("Missing stack for program '{}'", transition.program_id()))?;
             // Retrieve the function from the stack.
             let function = stack.get_function(transition.function_name())?;
             // Retrieve the program checksum, if the program has a constructor.
@@ -204,7 +208,7 @@ impl<N: Network> Process<N> {
             transition_map.insert(*transition.id(), (transition, function.clone()));
 
             // Construct the verifier inputs for the transition.
-            let inputs = self.to_transition_verifier_inputs(
+            let inputs = Self::to_transition_verifier_inputs(
                 transition,
                 parent,
                 &call_graph,
@@ -212,6 +216,7 @@ impl<N: Network> Process<N> {
                 &transition_map,
                 &mut function_id_cache,
                 &network_id,
+                execution_stacks,
             )?;
             lap!(timer, "Constructed the verifier inputs for a transition of {}", function.name());
 
@@ -247,7 +252,10 @@ impl<N: Network> Process<N> {
             execution.transitions(),
             &transition_map,
             &|(program_id, record_name)| {
-                self.get_stack(program_id).and_then(|stack| stack.get_verifying_key(record_name))
+                execution_stacks
+                    .get(program_id)
+                    .ok_or_else(|| anyhow!("Missing stack for program '{program_id}'"))
+                    .and_then(|stack| stack.get_verifying_key(record_name))
             },
         )?;
         // Sanity check: the number of translation inputs computed here must match the count
@@ -255,7 +263,9 @@ impl<N: Network> Process<N> {
         // `Authorization::translation_batch_sizes` does not preserve order; the prover and
         // verifier agree on order through the use of `translation_index`.
         let expected_n_translations =
-            Authorization::translation_batch_sizes(self, execution.transitions())?.into_iter().sum::<usize>();
+            Authorization::translation_batch_sizes(execution.transitions(), execution_stacks)?
+                .into_iter()
+                .sum::<usize>();
         let actual_n_translations = batch_translation_inputs.iter().map(|(_, inputs)| inputs.len()).sum::<usize>();
         ensure!(
             actual_n_translations == expected_n_translations,
@@ -316,7 +326,6 @@ impl<N: Network> Process<N> {
 impl<N: Network> Process<N> {
     /// Returns the public inputs to verify the proof for the given transition.
     fn to_transition_verifier_inputs(
-        &self,
         transition: &Transition<N>,
         parent: Option<&ProgramID<N>>,
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
@@ -324,6 +333,7 @@ impl<N: Network> Process<N> {
         transition_map: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
         function_id_cache: &mut HashMap<(ProgramID<N>, Identifier<N>), Field<N>>,
         network_id: &U16<N>,
+        execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
     ) -> Result<Vec<N::Field>> {
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = transition.tpk().to_xy_coordinates();
@@ -337,7 +347,7 @@ impl<N: Network> Process<N> {
         };
 
         // Retrieve the address belonging to the parent.
-        let stack = self.get_stack(parent)?;
+        let stack = execution_stacks.get(&parent).ok_or_else(|| anyhow!("Missing stack for program '{parent}'"))?;
         let parent_address = stack.program_address();
 
         // Compute the x- and y-coordinate of `parent`.
@@ -381,7 +391,9 @@ impl<N: Network> Process<N> {
                         // Closures are inlined and do not produce separate transitions.
                         Instruction::Call(call) => {
                             // Retrieve the stack for the current program.
-                            let stack = self.get_stack(transition.program_id())?;
+                            let stack = execution_stacks
+                                .get(transition.program_id())
+                                .ok_or_else(|| anyhow!("Missing stack for program '{}'", transition.program_id()))?;
                             // Check if this call invokes a function (as opposed to a closure).
                             match call.is_function_call(stack.as_ref()) {
                                 Ok(true) => calls.push(instruction.clone()),
@@ -605,8 +617,8 @@ impl<N: Network> Process<N> {
     // - Iterate over the call structure in reverse post-order. The ordering is maintained by the `traversal_stack`.
     // - Process each transition in the `Execution` in reverse, assigning its transition ID to the corresponding function call.
     pub fn construct_call_graph<'a>(
-        &self,
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>> + DoubleEndedIterator,
+        execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
     ) -> Result<HashMap<N::TransitionID, Vec<N::TransitionID>>> {
         // Metadata for each transition the execution.
         struct TransitionMetadata<N: Network> {
@@ -722,7 +734,9 @@ impl<N: Network> Process<N> {
                 let (caller_pid, caller_fname) = top.locator.as_ref().unwrap();
 
                 // Retrieve the stack.
-                let stack = self.get_stack(caller_pid)?;
+                let stack = execution_stacks
+                    .get(caller_pid)
+                    .ok_or_else(|| anyhow!("Missing stack for program '{caller_pid}'"))?;
                 // Retrieve the function from the stack.
                 let caller_fname = stack.get_function(caller_fname)?;
                 // Collect the children of the current transition.
@@ -736,7 +750,7 @@ impl<N: Network> Process<N> {
                             snarkvm_synthesizer_program::CallOperator::Resource(fname) => (caller_pid, fname),
                         };
                         // Add the child to the traversal stack, only if it is a call to a transition.
-                        if self.get_stack(pid)?.get_function(fname).is_ok() {
+                        if execution_stacks.get(pid).is_some_and(|stack| stack.get_function(fname).is_ok()) {
                             children.push(TransitionMetadata::new(&mut counter, Some((*pid, *fname)), None));
                         }
                     }

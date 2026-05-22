@@ -33,7 +33,7 @@ locktick = [
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-history = [ "snarkvm-ledger-store/history" ]
+history = [ "snarkvm-ledger-store/history", "snarkvm-synthesizer-process/history" ]
 history-staking-rewards = [ "snarkvm-ledger-store/history-staking-rewards" ]
 slipstream-plugins = [ "snarkvm-ledger-store/slipstream-plugins" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
@@ -48,7 +48,7 @@ serial = [
   "snarkvm-synthesizer-snark/serial"
 ]
 setup = [ ]
-test = [ "snarkvm-console/test", "snarkvm-synthesizer-process/test" ]
+test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 timer = [ "aleo-std/timer" ]
 wasm = [
   "snarkvm-console/wasm",

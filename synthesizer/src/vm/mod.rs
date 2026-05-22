@@ -25,7 +25,7 @@ mod verify;
 #[cfg(test)]
 mod tests;
 
-use crate::{Restrictions, Stack, cast_mut_ref, cast_ref, convert, process};
+use crate::{Command, Restrictions, Stack, cast_mut_ref, cast_ref, convert, process};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -42,7 +42,7 @@ use console::{
         Response,
         Value,
     },
-    types::{Field, Group, U16, U64},
+    types::{Field, Group, U8, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_authority::Authority;
@@ -58,6 +58,7 @@ use snarkvm_ledger_block::{
     Ratifications,
     Ratify,
     Rejected,
+    RejectedReason,
     Solutions,
     Transaction,
     Transactions,
@@ -107,7 +108,7 @@ use lru::LruCache;
 use parking_lot::{Mutex, RwLock};
 use rand::{SeedableRng, rngs::StdRng};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     num::NonZeroUsize,
     sync::{Arc, mpsc},
     thread,
@@ -117,9 +118,10 @@ use std::{
 use rayon::prelude::*;
 
 // The key for the partially-verified transactions cache.
-// The key is a tuple of the transaction ID and a list of program checksums for the transitions in the transaction.
-// Note: If a program is upgraded and its contents are changed, then the program checksums will change, invalidating the previously cached result.
-type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<U16<N>>);
+// The key is a tuple of the transaction ID and a list of `(program checksum, edition, amendment count)` for each transition.
+// Note: Program upgrades and amendments can change verification behavior without changing the transaction ID, so the cache key
+// must include program metadata in addition to the checksum.
+pub type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<([U8<N>; 32], u16, u64)>);
 
 #[derive(Clone)]
 pub struct VM<N: Network, C: ConsensusStorage<N>> {
@@ -133,6 +135,9 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     partially_verified_transactions: Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>>,
     /// The restrictions list.
     restrictions: Restrictions<N>,
+    /// The list of rejection reasons for pending confirmed transactions.
+    /// TODO: it would be cleaner if these are passed along as an argument to `add_next_block`, but this requires a bigger refactor.
+    pending_rejected_reasons: Arc<RwLock<HashMap<N::TransactionID, RejectedReason<N>>>>,
     /// A sender to the channel for operations that must be performed sequentially.
     sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
     /// The handle to the thread which processes operations sequentially.
@@ -235,6 +240,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             ))),
             restrictions: Restrictions::load()?,
             sequential_ops_tx: Default::default(),
+            pending_rejected_reasons: Default::default(),
             sequential_ops_thread: Default::default(),
         };
 
@@ -300,6 +306,70 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub fn transaction_store(&self) -> &TransactionStore<N, C::TransactionStorage> {
         self.store.transaction_store()
+    }
+
+    /// Builds a `FinalizeGlobalState` from the block at the given `height`.
+    ///
+    /// Returns an error if no block exists at `height`. Views reuse the same shape that
+    /// the consensus path uses in `add_next_block_inner`, populating round, timestamp, the
+    /// cumulative weights, and the previous-block hash from the actual block — so any
+    /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
+    /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
+    #[cfg(feature = "history")]
+    fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
+        let block_hash =
+            self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
+        let block = self
+            .block_store()
+            .get_block(&block_hash)?
+            .ok_or_else(|| anyhow!("Block hash for height {height} resolved but the block could not be loaded"))?;
+        // Match the consensus path's gating: the timestamp is only included from V12 onward.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
+        let block_spend_limit =
+            if let Authority::Quorum(subdag) = block.authority() { subdag.spend_limit(block.height()) } else { None };
+        let block_synthesis_limit = if let Authority::Quorum(subdag) = block.authority() {
+            subdag.synthesis_limit(block.height())
+        } else {
+            None
+        };
+        FinalizeGlobalState::new::<N>(
+            block.round(),
+            block.height(),
+            block_timestamp,
+            block.cumulative_weight(),
+            block.cumulative_proof_target(),
+            block.previous_hash(),
+            block_spend_limit,
+            block_synthesis_limit,
+        )
+    }
+
+    /// Evaluates a view function against finalize-store state at the given block `height`.
+    /// Returns the typed outputs.
+    ///
+    /// Mapping reads are pinned to `height` via the per-key historical update map, and the
+    /// `FinalizeGlobalState` is reconstructed from the block at `height`. Available only with
+    /// `--features history`.
+    ///
+    /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
+    /// for historic views. `height` must satisfy `height <= current_block_height()`.
+    ///
+    /// Caveat: the `Stack` itself uses interior mutability, so a concurrent redeploy of the
+    /// same program could perturb its structural caches mid-view. Mapping values are
+    /// snapshot-consistent at `height`; program structure is not. Known gap; a future
+    /// `StackSnapshot`-style fix would close it.
+    #[cfg(feature = "history")]
+    #[inline]
+    pub fn evaluate_view_at_height(
+        &self,
+        program_id: impl TryInto<ProgramID<N>>,
+        view_name: impl TryInto<Identifier<N>>,
+        inputs: Vec<Value<N>>,
+        height: u32,
+    ) -> Result<Vec<Value<N>>> {
+        let state = self.finalize_state_for_block(height)?;
+        self.process.evaluate_view_at_height(state, self.finalize_store(), program_id, view_name, inputs, height)
     }
 
     /// Returns the transition store.
@@ -938,8 +1008,15 @@ function compute:
         );
 
         // Speculate on the ratifications, solutions, and transactions.
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            vm.speculate(finalize_state, time_since_last_block, None, vec![], &None.into(), transactions.iter(), rng)?;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
+            finalize_state,
+            time_since_last_block,
+            Some(0u64),
+            vec![],
+            &None.into(),
+            transactions.iter(),
+            rng,
+        )?;
 
         // Construct the metadata associated with the block.
         let metadata = Metadata::new(

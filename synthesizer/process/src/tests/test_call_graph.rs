@@ -21,6 +21,7 @@ use console::{
 };
 use snarkvm_ledger_block::Transition;
 use snarkvm_synthesizer_program::Program;
+use std::collections::HashMap;
 
 type CurrentNetwork = MainnetV0;
 
@@ -54,6 +55,17 @@ fn make_process(programs: &[&str]) -> Process<CurrentNetwork> {
     process
 }
 
+fn construct_call_graph(
+    process: &Process<CurrentNetwork>,
+    transitions: &[&Transition<CurrentNetwork>],
+) -> Result<HashMap<<CurrentNetwork as Network>::TransitionID, Vec<<CurrentNetwork as Network>::TransitionID>>> {
+    let mut execution_stacks = indexmap::IndexMap::new();
+    for transition in transitions {
+        execution_stacks.insert(*transition.program_id(), process.get_stack(transition.program_id())?);
+    }
+    Process::construct_call_graph(transitions.iter().copied(), &execution_stacks)
+}
+
 /// A single function that makes no calls.
 /// Expected graph: `{ t0 → [] }`.
 #[test]
@@ -70,7 +82,7 @@ fn test_single_leaf() {
     let t0 = fake_transition(pid, fname, 0);
     let transitions = [&t0];
 
-    let graph = process.construct_call_graph(transitions.into_iter()).unwrap();
+    let graph = construct_call_graph(&process, &transitions).unwrap();
 
     assert_eq!(graph.len(), 1);
     assert_eq!(graph[t0.id()], [] as [_; 0]);
@@ -106,7 +118,7 @@ fn test_linear_static_chain() {
     let t_h = fake_transition(parent_pid, h, 1);
     let transitions = [&t_g, &t_h];
 
-    let graph = process.construct_call_graph(transitions.into_iter()).unwrap();
+    let graph = construct_call_graph(&process, &transitions).unwrap();
 
     assert_eq!(graph.len(), 2);
     assert_eq!(graph[t_h.id()], [*t_g.id()]);
@@ -149,7 +161,7 @@ fn test_fanout_two_children() {
     let t_r = fake_transition(root_pid, Identifier::from_str("r").unwrap(), 2);
     let transitions = [&t_a, &t_b, &t_r];
 
-    let graph = process.construct_call_graph(transitions.into_iter()).unwrap();
+    let graph = construct_call_graph(&process, &transitions).unwrap();
 
     assert_eq!(graph.len(), 3);
     assert_eq!(graph[t_r.id()], [*t_a.id(), *t_b.id()]);
@@ -190,7 +202,7 @@ fn test_repeated_callee() {
     let t_caller = fake_transition(caller_pid, twice, 2);
     let transitions = [&t_f0, &t_f1, &t_caller];
 
-    let graph = process.construct_call_graph(transitions.into_iter()).unwrap();
+    let graph = construct_call_graph(&process, &transitions).unwrap();
 
     assert_eq!(graph.len(), 3);
     assert_eq!(graph[t_caller.id()], [*t_f0.id(), *t_f1.id()]);
@@ -235,12 +247,48 @@ fn test_deep_static_chain() {
     let t_top = fake_transition(grand_pid, Identifier::from_str("top").unwrap(), 2);
     let transitions = [&t_bot, &t_mid, &t_top];
 
-    let graph = process.construct_call_graph(transitions.into_iter()).unwrap();
+    let graph = construct_call_graph(&process, &transitions).unwrap();
 
     assert_eq!(graph.len(), 3);
     assert_eq!(graph[t_top.id()], [*t_mid.id()]);
     assert_eq!(graph[t_mid.id()], [*t_bot.id()]);
     assert_eq!(graph[t_bot.id()], [] as [_; 0]);
+}
+
+/// A cross-program closure call must be skipped, since closures do not produce transitions.
+/// `caller.aleo/use_closure` invokes `lib.aleo/c`, which is a closure (not a function).
+/// Execution post-order: `[caller_t]` (the closure call adds nothing to the execution).
+/// Expected graph: `{ caller_t → [] }`.
+#[test]
+fn test_cross_program_closure_call_is_skipped() {
+    let process = make_process(&[
+        r"
+        program lib.aleo;
+        closure c:
+            input r0 as u8;
+            add r0 r0 into r1;
+            output r1 as u8;
+        function f:
+            input r0 as u8.private;
+            output r0 as u8.private;",
+        r"
+        import lib.aleo;
+        program caller.aleo;
+        function use_closure:
+            input r0 as u8.private;
+            call lib.aleo/c r0 into r1;
+            output r1 as u8.private;",
+    ]);
+
+    let caller_pid = ProgramID::from_str("caller.aleo").unwrap();
+    let use_closure = Identifier::from_str("use_closure").unwrap();
+    let t_caller = fake_transition(caller_pid, use_closure, 0);
+    let transitions = [&t_caller];
+
+    let graph = construct_call_graph(&process, &transitions).expect("construct_call_graph must skip closure calls");
+
+    assert_eq!(graph.len(), 1);
+    assert_eq!(graph[t_caller.id()], [] as [_; 0]);
 }
 
 /// A single dynamic call: `caller.aleo/dyn_call` issues one `call.dynamic` instruction.
@@ -280,7 +328,7 @@ fn test_single_dynamic_call() {
     let t_caller = fake_transition(caller_pid, Identifier::from_str("dyn_call").unwrap(), 1);
     let transitions = [&t_callee, &t_caller];
 
-    let graph = process.construct_call_graph(transitions.into_iter()).unwrap();
+    let graph = construct_call_graph(&process, &transitions).unwrap();
 
     assert_eq!(graph.len(), 2);
     assert_eq!(graph[t_caller.id()], [*t_callee.id()]);
@@ -331,7 +379,7 @@ fn test_mixed_static_and_dynamic_calls() {
     let t_caller = fake_transition(mixed_pid, Identifier::from_str("both").unwrap(), 2);
     let transitions = [&t_static, &t_dyn, &t_caller];
 
-    let graph = process.construct_call_graph(transitions.into_iter()).unwrap();
+    let graph = construct_call_graph(&process, &transitions).unwrap();
 
     assert_eq!(graph.len(), 3);
     assert_eq!(graph[t_caller.id()], [*t_static.id(), *t_dyn.id()]);
@@ -364,7 +412,7 @@ fn test_multiple_independent_roots() {
     let t_b = fake_transition(beta_pid, Identifier::from_str("fb").unwrap(), 1);
     let transitions = [&t_a, &t_b];
 
-    let graph = process.construct_call_graph(transitions.into_iter()).unwrap();
+    let graph = construct_call_graph(&process, &transitions).unwrap();
 
     assert_eq!(graph.len(), 2);
     assert_eq!(graph[t_a.id()], [] as [_; 0]);
@@ -399,7 +447,7 @@ fn test_error_static_locator_mismatch() {
     let t_parent = fake_transition(parent_pid, Identifier::from_str("h").unwrap(), 1);
     let transitions = [&t_wrong, &t_parent];
 
-    let result = process.construct_call_graph(transitions.into_iter());
+    let result = construct_call_graph(&process, &transitions);
     assert!(result.is_err(), "Expected an error for a static locator mismatch");
 }
 
@@ -428,8 +476,8 @@ fn test_error_missing_child_transition() {
     // Provide only the parent; the child transition is intentionally omitted.
     let transitions = [&t_parent];
 
-    let result = process.construct_call_graph(transitions.into_iter());
-    assert!(result.is_err(), "Expected an error when a child transition is missing");
+    let result = construct_call_graph(&process, &transitions);
+    assert!(result.is_ok());
 }
 
 /// An empty transition list produces an empty call graph without error.
@@ -437,6 +485,6 @@ fn test_error_missing_child_transition() {
 fn test_empty_transitions() {
     let process = Process::<CurrentNetwork>::load().unwrap(); // unwrap: always succeeds in tests
     let transitions: Vec<&Transition<CurrentNetwork>> = vec![];
-    let graph = process.construct_call_graph(transitions.into_iter()).unwrap();
+    let graph = construct_call_graph(&process, &transitions).unwrap();
     assert!(graph.is_empty());
 }

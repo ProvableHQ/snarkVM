@@ -65,10 +65,10 @@ pub fn sample_finalize_registers(
     // Initialize the registers.
     let mut finalize_registers = FinalizeRegisters::<CurrentNetwork>::new(
         FinalizeGlobalState::from(1, 1, None, [0; 32], None, None),
-        <CurrentNetwork as Network>::TransitionID::default(),
+        Some(<CurrentNetwork as Network>::TransitionID::default()),
         *function_name,
         stack.get_finalize_types(function_name)?.clone(),
-        0u64,
+        Some(0u64),
     );
 
     // For each literal,

@@ -869,7 +869,11 @@ fn test_complex_dynamic_graph_construction_internal(
     // 6 -> []
     // 7 -> []
 
-    let graph = vm.process().construct_call_graph(transitions.into_iter()).unwrap();
+    let mut execution_stacks = indexmap::IndexMap::new();
+    for transition in &transitions {
+        execution_stacks.insert(*transition.program_id(), vm.process().get_stack(transition.program_id()).unwrap());
+    }
+    let graph = Process::construct_call_graph(transitions.into_iter(), &execution_stacks).unwrap();
     assert_eq!(graph[tids[9]], &[*tids[2], *tids[8]]);
     assert_eq!(graph[tids[8]], &[*tids[5], *tids[6], *tids[7]]);
     assert_eq!(graph[tids[5]], &[*tids[3], *tids[4]]);

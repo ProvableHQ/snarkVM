@@ -224,6 +224,17 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         self.program_edition
     }
 
+    /// Returns the number of amendments for the current program edition.
+    #[inline]
+    fn program_amendment_count(&self) -> u64 {
+        self.program_amendment_count
+    }
+
+    /// Sets the number of amendments for the current program edition.
+    fn set_program_amendment_count(&mut self, program_amendment_count: u64) {
+        self.program_amendment_count = program_amendment_count;
+    }
+
     /// Returns the program owner.
     #[inline]
     fn program_owner(&self) -> &Option<Address<N>> {

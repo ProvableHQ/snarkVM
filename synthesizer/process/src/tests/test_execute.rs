@@ -22,7 +22,7 @@ use console::{
     types::{Field, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
-use snarkvm_ledger_block::{Fee, Output, Transaction, Transition};
+use snarkvm_ledger_block::{Execution, Fee, Output, Transaction, Transition};
 use snarkvm_ledger_query::Query;
 use snarkvm_ledger_store::{
     BlockStorage,
@@ -47,6 +47,17 @@ type CurrentAleo = AleoV0;
 /// Samples a new finalize state.
 pub fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
     FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None, None)
+}
+
+fn execution_stacks_for_execution<N: Network>(
+    process: &Process<N>,
+    execution: &Execution<N>,
+) -> indexmap::IndexMap<ProgramID<N>, Arc<crate::Stack<N>>> {
+    let mut execution_stacks = indexmap::IndexMap::new();
+    for transition in execution.transitions() {
+        execution_stacks.insert(*transition.program_id(), process.get_stack(transition.program_id()).unwrap());
+    }
+    execution_stacks
 }
 
 /// Samples a valid fee for the given process, block store, and finalize store.
@@ -569,7 +580,14 @@ fn test_process_execute_transfer_public_to_private() {
         // Prove the execution.
         let execution = trace.prove_execution::<CurrentAleo, _>("credits.aleo", VarunaVersion::V2, rng).unwrap();
         // Verify the execution.
-        process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+        Process::verify_execution(
+            ConsensusVersion::V10,
+            VarunaVersion::V2,
+            InclusionVersion::V1,
+            &execution,
+            &execution_stacks_for_execution(&process, &execution),
+        )
+        .unwrap();
 
         // Check the execution cost
         assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -1363,7 +1381,14 @@ finalize compute:
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V2, rng).unwrap();
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &execution_stacks_for_execution(&process, &execution),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -1483,7 +1508,14 @@ finalize compute:
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &execution_stacks_for_execution(&process, &execution),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -1621,7 +1653,14 @@ finalize mint_public:
     let execution = trace.prove_execution::<CurrentAleo, _>("token", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &execution_stacks_for_execution(&process, &execution),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -1797,7 +1836,14 @@ finalize init:
     let execution = trace.prove_execution::<CurrentAleo, _>("public_wallet", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &execution_stacks_for_execution(&process, &execution),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -1919,7 +1965,14 @@ finalize compute:
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &execution_stacks_for_execution(&process, &execution),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -2090,7 +2143,14 @@ finalize a:
     let execution = trace.prove_execution::<CurrentAleo, _>("two", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &execution_stacks_for_execution(&process, &execution),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -2365,7 +2425,14 @@ fn test_complex_execution_order() {
     let execution = trace.prove_execution::<CurrentAleo, _>("four", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &execution_stacks_for_execution(&process, &execution),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -2500,7 +2567,14 @@ finalize compute:
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &execution_stacks_for_execution(&process, &execution),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
@@ -2615,7 +2689,14 @@ function compute:
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V2, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+    Process::verify_execution(
+        ConsensusVersion::V10,
+        VarunaVersion::V2,
+        InclusionVersion::V1,
+        &execution,
+        &execution_stacks_for_execution(&process, &execution),
+    )
+    .unwrap();
 
     // Check the execution cost
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);

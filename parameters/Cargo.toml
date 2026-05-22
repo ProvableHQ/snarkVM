@@ -93,15 +93,13 @@ version = "0.3.64"
 features = ["XmlHttpRequest"]
 optional = true
 
-[target.'cfg(all(any(target_os = "android", target_os = "ios"), not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.reqwest]
-version = "0.13"
-default-features = false
-features = ["blocking", "native-tls"]
+[target.'cfg(all(any(target_os = "android", target_os = "ios"), not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.ureq]
+workspace = true
+features = ["native-tls"]
 
-[target.'cfg(all(not(any(target_os = "android", target_os = "ios")), not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.reqwest]
-version = "0.13"
-default-features = false
-features = ["blocking", "rustls"]
+[target.'cfg(all(not(any(target_os = "android", target_os = "ios")), not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.ureq]
+workspace = true
+features = ["rustls"]
 
 [dev-dependencies.snarkvm-algorithms]
 path = "../algorithms"

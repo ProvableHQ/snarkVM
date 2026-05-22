@@ -686,7 +686,7 @@ jobs:
 
   ledger:
     executor: rust-docker
-    resource_class: << pipeline.parameters.xlarge >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-ledger
@@ -905,8 +905,10 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer
+          # `history` enables the per-key historical update map that the `view` evaluation path
+          # depends on; gating it here ensures the v15 view tests are exercised in CI.
           flags: >
-            --lib --bins --features test
+            --lib --bins --features test,history
             --partition count:1/2
             -- --test-threads 8
           cache_key_suffix: -test1
@@ -919,7 +921,7 @@ jobs:
       - run_test:
           workspace_member: snarkvm-synthesizer
           flags: >
-            --lib --bins --features test
+            --lib --bins --features test,history
             --partition count:2/2
             -- --test-threads 8
           cache_key_suffix: -test2
@@ -933,7 +935,7 @@ jobs:
           timeout: 30m # test_vm_execute_and_finalize can take over 10 minutes in the current setup
           no_output_timeout: 20m
           workspace_member: snarkvm-synthesizer
-          flags: --test '*' --features test,dev-print -- --test-threads=4
+          flags: --test '*' --features test,dev-print,history -- --test-threads=4
           cache_key_suffix: -integration
 
   synthesizer-process:
@@ -942,6 +944,8 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-process
+          # See `synthesizer-test-partition1` for why `history` is enabled.
+          flags: --features history
 
   synthesizer-process-with-rocksdb:
     executor: rust-docker

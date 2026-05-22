@@ -32,12 +32,51 @@ impl<N: Network> FinalizeTypes<N> {
         for command in constructor.commands() {
             // Ensure the command is not a call instruction.
             ensure!(!command.is_call(), "`call` commands are not allowed in constructors.");
-            // Ensure the command is not a cast to record instruction.
-            ensure!(!command.is_cast_to_record(), "`cast` (to record) commands are not allowed in constructors.");
+            // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
+            ensure!(!command.is_instruction_for_record(), "Record operations are not allowed in constructors.");
             // Ensure the command is not an await command.
             ensure!(!command.is_await(), "`await` commands are not allowed in constructors.");
             // Check the command opcode, operands, and destinations.
             finalize_types.check_command(stack, constructor.positions(), command)?;
+        }
+
+        Ok(finalize_types)
+    }
+
+    /// Initializes a new instance of `FinalizeTypes` for the given view function.
+    /// Checks that the given view is well-formed for the given stack.
+    ///
+    /// Views share the finalize register/command shape, but cannot await futures and cannot
+    /// produce side effects. The forbidden-command list (writes, async, await, call, rand.chacha)
+    /// is enforced at `ViewCore` construction; this function only needs to type-check the body.
+    #[inline]
+    pub(super) fn initialize_finalize_types_from_view(
+        stack: &Stack<N>,
+        view: &snarkvm_synthesizer_program::ViewCore<N>,
+    ) -> Result<Self> {
+        let mut finalize_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
+
+        // Type-check the inputs. View inputs are guaranteed to be plaintext at construction time.
+        for input in view.inputs() {
+            finalize_types.check_input(stack, input.register(), input.finalize_type())?;
+        }
+
+        // Type-check the commands.
+        for command in view.commands() {
+            finalize_types.check_command(stack, view.positions(), command)?;
+        }
+
+        // Type-check the outputs: each output operand must resolve and match the declared type.
+        for output in view.outputs() {
+            let actual = finalize_types.get_type_from_operand(stack, output.operand())?;
+            if &actual != output.finalize_type() {
+                bail!(
+                    "View output type mismatch: declared '{}' but operand '{}' has type '{}'",
+                    output.finalize_type(),
+                    output.operand(),
+                    actual,
+                );
+            }
         }
 
         Ok(finalize_types)

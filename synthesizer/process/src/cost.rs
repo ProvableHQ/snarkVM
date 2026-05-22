@@ -23,6 +23,7 @@ use console::{
     program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Value},
     types::Address,
 };
+use indexmap::IndexMap;
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
 use snarkvm_synthesizer_program::{CallDynamic, CastType, Command, GetRecordDynamic, Instruction, Operand};
@@ -123,9 +124,15 @@ pub fn execution_cost_for_authorization<N: Network>(
         batch_sizes.push(n_input_records);
     }
 
+    // Build the execution stacks once and reuse for translation batch sizing.
+    let mut execution_stacks = IndexMap::new();
+    for transition in authorization.transitions().values() {
+        execution_stacks.insert(*transition.program_id(), process.get_stack(transition.program_id())?);
+    }
+
     // Add the batches corresponding to translation tasks
     let translations_for_transaction =
-        Authorization::translation_batch_sizes(process, authorization.transitions().values())?;
+        Authorization::translation_batch_sizes(authorization.transitions().values(), &execution_stacks)?;
     batch_sizes.extend(translations_for_transaction);
 
     // Varuna is always run in hiding (i. e. ZK) mode when proving Executions.
@@ -302,6 +309,20 @@ pub fn deployment_cost_v2<N: Network>(
             finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
             "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
             function.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Bound each view function's worst-case compute. Views are off-consensus and have no
+    // dedicated fee component beyond what is already counted in `storage_cost` (their bytes
+    // contribute to `size_in_bytes`). The bound below is purely a deploy-time sanity check
+    // to keep pathological views from being accepted.
+    for view in deployment.program().views().values() {
+        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3)?;
+        ensure!(
+            view_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "View '{}' has a cost '{view_cost}' which exceeds the transaction spend limit '{}'",
+            view.name(),
             N::TRANSACTION_SPEND_LIMIT[1].1
         );
     }
@@ -1045,6 +1066,30 @@ fn finalize_cost_for_single_function_raw<N: Network>(
     }
 
     Ok(finalize_cost)
+}
+
+/// Returns the maximum compute cost (in microcredits) of a single view function's body.
+///
+/// Views do not run as part of consensus, so this cost is not paid by anyone — it is only
+/// used as a deploy-time sanity bound (mirrors the per-function `TRANSACTION_SPEND_LIMIT`
+/// check) to prevent deploying views whose worst-case compute is unreasonable.
+fn view_cost_for_single_view<N: Network>(
+    stack: &Stack<N>,
+    view_name: &Identifier<N>,
+    consensus_fee_version: ConsensusFeeVersion,
+) -> Result<u64> {
+    let view = stack.program().get_view_ref(view_name)?;
+
+    // View types are not cached on the stack today; recompute them here for the cost walk.
+    let view_types = FinalizeTypes::from_view(stack, view)?;
+
+    let mut view_cost = 0u64;
+    for command in view.commands() {
+        view_cost = view_cost
+            .checked_add(cost_per_command(stack, &view_types, command, consensus_fee_version)?)
+            .ok_or(anyhow!("View cost overflowed"))?;
+    }
+    Ok(view_cost)
 }
 
 /// Returns the total finalize cost for an execution by iterating over all concrete transitions.

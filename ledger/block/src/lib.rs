@@ -145,7 +145,7 @@ impl<N: Network> Block<N> {
 
     /// Initializes a new block from the given previous block hash, block header, authority,
     /// ratifications, solutions, aborted solution IDs, transactions, and aborted transaction IDs.
-    pub fn from(
+    fn from(
         previous_hash: N::BlockHash,
         header: Header<N>,
         authority: Authority<N>,

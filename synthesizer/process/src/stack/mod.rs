@@ -277,6 +277,8 @@ pub struct Stack<N: Network> {
     program_checksum: [U8<N>; 32],
     /// The program edition.
     program_edition: U16<N>,
+    /// The number of amendments applied to the current program edition.
+    program_amendment_count: u64,
     /// The program owner.
     program_owner: Option<Address<N>>,
 }
@@ -381,6 +383,13 @@ impl<N: Network> Stack<N> {
                 // Add the finalize name and finalize types to the stack.
                 finalize_types.insert(*name, types);
             }
+        }
+
+        // Type-check every view function. The result is not cached on the stack here;
+        // it is recomputed by the view evaluator. This is acceptable for the prototype
+        // and ensures that ill-typed views are rejected at deploy time.
+        for view in self.program.views().values() {
+            let _ = FinalizeTypes::from_view(self, view)?;
         }
 
         // Drop the locks since the types have been initialized.

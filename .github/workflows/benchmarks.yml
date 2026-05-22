@@ -118,7 +118,7 @@ jobs:
           alert-threshold: '150%'
           comment-on-alert: true
           fail-on-alert: true
-          alert-comment-cc-users: '@raychu86'
+          alert-comment-cc-users: '@vicsn'
           # Only push the results on staging (see below)
           auto-push: false
           # Enable Job Summary for PRs

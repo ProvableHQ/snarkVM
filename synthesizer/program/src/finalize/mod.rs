@@ -169,8 +169,8 @@ impl<N: Network> FinalizeCore<N> {
         ensure!(!command.is_async(), "Forbidden operation: Finalize cannot invoke an 'async' instruction");
         // Ensure the command is not a call instruction.
         ensure!(!command.is_call(), "Forbidden operation: Finalize cannot invoke a 'call'");
-        // Ensure the command is not a cast to record instruction.
-        ensure!(!command.is_cast_to_record(), "Forbidden operation: Finalize cannot cast to a record");
+        // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
+        ensure!(!command.is_instruction_for_record(), "Forbidden operation: Finalize cannot operate on records");
 
         // Check the destination registers.
         for register in command.destinations() {
@@ -317,5 +317,25 @@ mod tests {
                 false => assert!(finalize.add_command(command).is_err()),
             }
         }
+    }
+
+    #[test]
+    fn test_reject_cast_to_dynamic_record_in_finalize() {
+        let name = Identifier::from_str("finalize_core_test").unwrap();
+        let mut finalize = Finalize::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("cast r0 into r1 as dynamic.record;").unwrap();
+        let err = finalize.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("operate on records"));
+    }
+
+    #[test]
+    fn test_reject_get_record_dynamic_in_finalize() {
+        let name = Identifier::from_str("finalize_core_test").unwrap();
+        let mut finalize = Finalize::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("get.record.dynamic r0.x into r1 as bool;").unwrap();
+        let err = finalize.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("operate on records"));
     }
 }
