@@ -130,7 +130,7 @@ cuda = [ "snarkvm-algorithms/cuda" ]
 history = [ "snarkvm-synthesizer/history" ]
 history-staking-rewards = [ "snarkvm-synthesizer/history-staking-rewards" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
-skip-srs-embed = [ "snarkvm-parameters/skip-srs-embed" ]
+no-embedded-srs = [ "snarkvm-parameters/no-embedded-srs" ]
 locktick = [
   "snarkvm-console?/locktick",
   "snarkvm-algorithms?/locktick",
