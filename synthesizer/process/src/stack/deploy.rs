@@ -339,15 +339,14 @@ impl<N: Network> Stack<N> {
                 let (variable_limit, constraint_limit, non_zero_limit) = if consensus_version < ConsensusVersion::V15 {
                     (None, None, None)
                 } else {
+                    let variable_limit = Some(verifying_key.num_variables());
+
                     let constraint_limit = if verifying_key.circuit_info.num_constraints >= 1 {
                         // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
                         Some(verifying_key.circuit_info.num_constraints as u64 - 1)
                     } else {
                         bail!("The constraint limit of 0 for translation circuit for record '{record_name}' is invalid");
                     };
-
-                    // Retrieve the variable limit.
-                    let variable_limit = Some(verifying_key.num_variables());
 
                     // Set the density limit, accounting for one non-zero entry (with value 1) added to each of A, B and C
                     // in order to make the Varuna zerocheck hiding.

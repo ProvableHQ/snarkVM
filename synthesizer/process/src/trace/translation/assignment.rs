@@ -141,6 +141,10 @@ impl<N: Network> TranslationAssignment<N> {
             "Circuit environment is not clean: expected (0, 1, 0, 0, (0, 0, 0)), got {:?}",
             A::count()
         );
+        // Ensure (thread-local) global constants are initialised before we reset - otherwise the
+        // use of Poseidon in the translation circuit will result in a different vk.num_constants()
+        // depending on whether initialize_global_constants() has been called in the thread or not.
+        A::initialize_global_constants();
         A::reset();
 
         // Set limits for the number of variables, constraints, and non-zero entries in the circuit to be

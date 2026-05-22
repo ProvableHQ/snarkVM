@@ -74,42 +74,10 @@ fn fund_deployer_keys(
     deployer_keys
 }
 
-/// Samples `num_deployments` deployments, each signed and paid by a distinct private key.
-fn sample_deployments(
-    multipliers: Vec<usize>,
-    name_prefix: &str,
-    vm: &VM<CurrentNetwork, LedgerType>,
-    deployer_keys: &mut Vec<PrivateKey<CurrentNetwork>>,
-    rng: &mut TestRng,
-) -> Vec<Transaction<CurrentNetwork>> {
-    // Set to true to print the combined density of each individual deployment.
-    let verbose = false;
-
-    multipliers
-        .into_iter()
-        .enumerate()
-        .map(|(i, multiplier)| {
-            let program = program_from_multiplier(multiplier, name_prefix, i);
-            let private_key = &deployer_keys.pop().unwrap();
-
-            let deployment = vm.deploy(private_key, &program, None, 0, None, rng).unwrap();
-
-            if verbose {
-                println!(
-                    "  Deployment with multiplier {multiplier}, combined density {}",
-                    deployment.deployment().unwrap().combined_density()
-                );
-            }
-
-            deployment
-        })
-        .collect()
-}
-
-fn program_from_multiplier(multiplier: usize, name_prefix: &str, suffix: usize) -> Program<CurrentNetwork> {
+fn function_program_from_multiplier(multiplier: usize, name_prefix: &str, suffix: usize) -> Program<CurrentNetwork> {
     let mut program_str = format!(
         r"
-    program {name_prefix}_{suffix}.aleo;
+    program {name_prefix}_fun_{suffix}.aleo;
 
     function fun:
         input r0 as [field; 32u32].public;
@@ -132,6 +100,36 @@ fn program_from_multiplier(multiplier: usize, name_prefix: &str, suffix: usize) 
     Program::from_str(&program_str).unwrap()
 }
 
+fn record_program_from_multiplier(multiplier: usize, name_prefix: &str, suffix: usize) -> Program<CurrentNetwork> {
+    let mut program_str = format!(
+        r"
+        program {name_prefix}_rec_{suffix}.aleo;"
+    );
+
+    for j in 0..multiplier {
+        // Ending the record name in _ prevents the situation where the program contains both
+        // rec_test_synthesis_0_1 and rec_test_synthesis_0_10, which is disallowed by the rule
+        // that record names cannot be prefixes of one another.
+        program_str += &format!(
+            r"
+            record rec_{name_prefix}_{j}_:
+                owner as address.private;
+                data as [u128; 32u32].public;
+        "
+        );
+    }
+
+    program_str += r"
+            function fun:
+                assert.eq true true;
+
+            constructor:
+                assert.eq true true;
+    ";
+
+    Program::from_str(&program_str).unwrap()
+}
+
 /// Extracts the message from a panic payload caught by [`try_vm_runtime`].
 fn vm_halt_message(payload: Box<dyn std::any::Any + Send>) -> String {
     payload
@@ -143,7 +141,7 @@ fn vm_halt_message(payload: Box<dyn std::any::Any + Send>) -> String {
 
 /// Checks that the block-wide synthesis limit is computed and enforced correctly.
 #[test]
-fn test_blockwide_limits() {
+fn test_blockwide_synthesis_limit() {
     let current_max_certificates = CurrentNetwork::LATEST_MAX_CERTIFICATES() as f64;
 
     let rng = &mut TestRng::default();
@@ -153,26 +151,56 @@ fn test_blockwide_limits() {
     let genesis_private_key = sample_genesis_private_key(rng);
     let genesis_address = Address::try_from(&genesis_private_key).unwrap();
 
-    // Each entry has the form (c, ms, as) with
+    // Set to true to print the combined density of each individual deployment.
+    let verbose = false;
+
+    // Each entry has the form (c, ds, as) with
     // - c: number of certificates
-    // - ms: circuit-size multipliers, one per deployment
-    // - as: whether each of the deployments is expected to be aborted
+    // - ds: (multiplier, function_program) for each deployment
+    //       if the latter is set to true, the program constructed has a large function;
+    //       if false, it has a large record
+    // - as: for each deployment (in the same order as above), whether it is expected to be aborted
+    //
+    // For reference, these are the function- and record-program densities for a few selected multipliers:
+    //          function    record
+    // - 1:        193_174     308_194
+    // - 2:        459_436     559_165
+    // - 4:        991_960   1_061_107
+    // - 8:      2_057_008   2_064_991
+    // - 16:     4_187_104   4_071_763
+    // - 32:     8_447_296   8_084_643
+    // - 64:    16_967_680  16_110_403
     let cases = vec![
         // Synthesis limit = 16_777_210, densities: [4_187_104, 4_187_104, 4_187_104, 4_187_104], total 16_748_416 below limit
-        (2 * current_max_certificates as u64, vec![16; 4], vec![false; 4]),
+        (2 * current_max_certificates as u64, vec![(16, true); 4], vec![false; 4]),
         // Synthesis limit = 16_777_210, densities: [4_187_104, 4_187_104, 4_187_104, 4_187_104, 4_187_104], the last one goes over the limit
-        (2 * current_max_certificates as u64, vec![16; 5], vec![false, false, false, false, true]),
+        (2 * current_max_certificates as u64, vec![(16, true); 5], vec![false, false, false, false, true]),
         // Synthesis limit = 18_390_403, densities: [16_967_680]
-        ((2.2 * current_max_certificates) as u64, vec![64], vec![false; 1]),
+        ((2.2 * current_max_certificates) as u64, vec![(64, true)], vec![false; 1]),
         // Synthesis limit = 18_390_403, densities: [8_447_296, 8_447_296, 8_447_296], the third one goes over the limit
-        ((2.2 * current_max_certificates) as u64, vec![32, 32, 32], vec![false, false, true]),
+        ((2.2 * current_max_certificates) as u64, vec![(32, true); 3], vec![false, false, true]),
+        // Synthesis limit = 18_390_403, densities: [8_084_643, 8_084_643, 8_084_643], the third one goes over the limit
+        ((2.2 * current_max_certificates) as u64, vec![(32, false); 3], vec![false, false, true]),
         // Synthesis limit = 33554420, densities: [8_447_296, 8_447_296, 8_447_296], the third one now fits thanks to the increased limit
-        (4 * current_max_certificates as u64, vec![32, 32, 32], vec![false, false, false]),
-        // Synthesis limit = 16_777_210, densities: [4_187_104, 8_447_296, 4_187_104, 2_057_008, 4_187_104, 2_057_008], the third and fifth go over the limit, fourth and sixth still fit
-        (2 * current_max_certificates as u64, vec![16, 32, 16, 8, 16, 8], vec![false, false, true, false, true, false]),
+        (4 * current_max_certificates as u64, vec![(32, true); 3], vec![false, false, false]),
+        // Synthesis limit = 16_777_210, densities: [4_187_104, 8_447_296, 4_187_104, 2_057_008, 4_187_104, 2_057_008],
+        // the third and fifth go over the limit, fourth and sixth still fit
+        (
+            2 * current_max_certificates as u64,
+            vec![(16, true), (32, true), (16, true), (8, true), (16, true), (8, true)],
+            vec![false, false, true, false, true, false],
+        ),
+        // Similar to above, but we mix function- and record-heavy programs
+        // Synthesis limit = 16_777_210, densities: [4_187_104, 8_084_643, 2_064_991, 4_187_104, 2_064_991, 4_071_763, 2_057_008],
+        // the third and fifth go over the limit, fourth and sixth still fit
+        (
+            2 * current_max_certificates as u64,
+            vec![(16, true), (32, false), (8, false), (16, true), (8, false), (16, false)],
+            vec![false, false, false, true, false, true],
+        ),
     ];
 
-    let num_deployer_keys = cases.iter().map(|(_, ms, _)| ms.len()).sum::<usize>();
+    let num_deployer_keys = cases.iter().map(|(_, ds, _)| ds.len()).sum::<usize>();
 
     let mut deployer_keys = fund_deployer_keys(&vm, &genesis_private_key, &genesis_address, num_deployer_keys, rng);
 
@@ -180,17 +208,40 @@ fn test_blockwide_limits() {
     let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
     let next_block_height = previous_block.height().saturating_add(1);
 
-    for (i, (num_certs, multipliers, aborted)) in cases.into_iter().enumerate() {
+    for (i, (num_certs, deployment_specs, aborted)) in cases.into_iter().enumerate() {
         println!("Sampling subdag at height {next_block_height}");
         let subdag = subdag_with_cert_count(num_certs as usize, rng);
-        let num_deployments = multipliers.len();
+        let num_deployments = deployment_specs.len();
 
         let synthesis_limit = subdag.synthesis_limit(next_block_height).expect("Synthesis limit in >= V15");
 
-        let name_prefix = format!("test_synthesis_{i}");
+        let name_prefix = &format!("test_synthesis_{i}");
 
-        println!("Sampling deployments with multipliers: {multipliers:?}");
-        let deployments = sample_deployments(multipliers, &name_prefix, &vm, &mut deployer_keys, rng);
+        println!("Sampling deployments with specs: {deployment_specs:?}");
+
+        let deployments: Vec<Transaction<CurrentNetwork>> = deployment_specs
+            .into_iter()
+            .enumerate()
+            .map(|(i, (multiplier, use_function_program))| {
+                let program = if use_function_program {
+                    function_program_from_multiplier(multiplier, name_prefix, i)
+                } else {
+                    record_program_from_multiplier(multiplier, name_prefix, i)
+                };
+                let private_key = &deployer_keys.pop().unwrap();
+
+                let deployment = vm.deploy(private_key, &program, None, 0, None, rng).unwrap();
+
+                if verbose {
+                    println!(
+                        "  Deployment with multiplier {multiplier}, combined density {}",
+                        deployment.deployment().unwrap().combined_density()
+                    );
+                }
+
+                deployment
+            })
+            .collect();
 
         let next_timestamp = previous_block.timestamp().saturating_add(CurrentNetwork::BLOCK_TIME as i64);
         let next_timestamp = (next_block_height
@@ -236,8 +287,8 @@ fn test_blockwide_limits() {
     }
 }
 
-/// Checks that, during synthesis, if the running density of one of the circuit matrices
-/// surpasses the total claimed in the verifying key, synthesis stops.
+/// Checks that, during synthesis, if the running density of one of the function- or record-circuit
+/// matrices surpasses the total claimed in the verifying key, synthesis stops.
 #[test]
 fn test_vk_num_non_zero_detected() {
     let rng = &mut TestRng::default();
@@ -246,17 +297,26 @@ fn test_vk_num_non_zero_detected() {
     let vm = sample_vm_at_height(v15_height, rng);
     let genesis_private_key = sample_genesis_private_key(rng);
 
-    for (i, multiplier) in (1..=4).map(|i| (i, 1 << i)) {
-        let program = program_from_multiplier(multiplier, "test", i);
-        let transaction = vm.deploy(&genesis_private_key, &program, None, 0, None, rng).unwrap();
-
-        let Transaction::Deploy(_, _, _, deployment, _) = transaction else {
-            panic!("expected a deployment transaction");
+    let cases = vec![("function", 1), ("function", 2), ("function", 4), ("function", 8), ("record", 1)];
+    for (i, (program_type, multiplier)) in cases.into_iter().enumerate() {
+        let program = match program_type {
+            "function" => function_program_from_multiplier(multiplier, "function_test", i),
+            "record" => record_program_from_multiplier(1, "record_test", i),
+            _ => panic!("Invalid circuit type: {program_type}"),
         };
 
-        assert!(deployment.verifying_keys().len() == 1);
+        let deployment =
+            vm.deploy(&genesis_private_key, &program, None, 0, None, rng).unwrap().deployment().unwrap().clone();
 
-        let (function_id, (vk, certificate)) = &deployment.verifying_keys()[0];
+        let expected_num_vks = match program_type {
+            "function" => 1,
+            // The generated record-heavy program still has a circuit verification key for the dummy function.
+            "record" => 2,
+            _ => panic!("Invalid circuit type: {program_type}"),
+        };
+        assert!(deployment.verifying_keys().len() == expected_num_vks);
+
+        let (function_id, (vk, certificate)) = &deployment.verifying_keys()[expected_num_vks - 1];
 
         for tamper_with in ["a", "b", "c"] {
             let mut circuit_vk = vk.deref().clone();
@@ -272,10 +332,17 @@ fn test_vk_num_non_zero_detected() {
                 _ => panic!("tamper_with must be a, b or c, got {tamper_with}"),
             }
 
-            let tampered_vks = vec![(
-                *function_id,
-                (VerifyingKey::new(Arc::new(circuit_vk), vk.num_variables()), certificate.clone()),
-            )];
+            let tampered_vks = match program_type {
+                "function" => vec![(
+                    *function_id,
+                    (VerifyingKey::new(Arc::new(circuit_vk), vk.num_variables()), certificate.clone()),
+                )],
+                "record" => vec![
+                    deployment.verifying_keys()[0].clone(),
+                    (*function_id, (VerifyingKey::new(Arc::new(circuit_vk), vk.num_variables()), certificate.clone())),
+                ],
+                _ => panic!("Invalid circuit type: {program_type}"),
+            };
 
             let tampered_deployment = Deployment::new(
                 deployment.edition(),
@@ -291,8 +358,9 @@ fn test_vk_num_non_zero_detected() {
             let verification_result = try_vm_runtime!(|| {
                 vm.process().verify_deployment::<CurrentAleo, _>(ConsensusVersion::V15, &tampered_deployment, rng)
             });
+
             let error_message = match verification_result {
-                Ok(Ok(())) => panic!("Expected deployment verification to fail (matrices are denser than vk claims)"),
+                Ok(Ok(())) => panic!("Expected deployment verification to fail"),
                 Ok(Err(error)) => error.to_string(),
                 Err(payload) => vm_halt_message(payload),
             };
