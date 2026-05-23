@@ -15,6 +15,9 @@
 
 #![warn(unsafe_code)]
 #![allow(clippy::module_inception)]
+#![allow(clippy::manual_is_multiple_of)]
+#![allow(mismatched_lifetime_syntaxes)]
+#![allow(clippy::unused_enumerate_index)]
 #![allow(clippy::type_complexity)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 

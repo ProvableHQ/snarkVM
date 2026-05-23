@@ -15,6 +15,7 @@
 
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 #![warn(clippy::cast_possible_truncation)]
+#![allow(mismatched_lifetime_syntaxes)]
 
 pub mod identifier_literal;
 pub use identifier_literal::{IdentifierLiteral, SIZE_IN_BITS, SIZE_IN_BYTES};

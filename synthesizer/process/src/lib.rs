@@ -14,6 +14,8 @@
 // limitations under the License.
 
 #![forbid(unsafe_code)]
+#![allow(mismatched_lifetime_syntaxes)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
 #![allow(clippy::too_many_arguments)]
 // #![warn(clippy::cast_possible_truncation)]
 // TODO (howardwu): Update the return type on `execute` after stabilizing the interface.

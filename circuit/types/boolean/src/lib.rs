@@ -15,6 +15,7 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
+#![allow(mismatched_lifetime_syntaxes)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 
 extern crate snarkvm_console_types_boolean as console;

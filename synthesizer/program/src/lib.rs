@@ -14,6 +14,8 @@
 // limitations under the License.
 
 #![forbid(unsafe_code)]
+#![allow(mismatched_lifetime_syntaxes)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
 #![allow(clippy::too_many_arguments)]
 #![warn(clippy::cast_possible_truncation)]
 
@@ -977,10 +979,10 @@ impl<N: Network> ProgramCore<N> {
         let mut record_names_iter = record_names.iter();
         let mut previous_record_name = record_names_iter.next();
         for record_name in record_names_iter {
-            if let Some(previous) = previous_record_name {
-                if record_name.starts_with(previous) {
-                    bail!("Record name '{previous}' can't be a prefix of record name '{record_name}'.");
-                }
+            if let Some(previous) = previous_record_name
+                && record_name.starts_with(previous)
+            {
+                bail!("Record name '{previous}' can't be a prefix of record name '{record_name}'.");
             }
             previous_record_name = Some(record_name);
         }
@@ -1337,12 +1339,11 @@ impl<N: Network> ProgramCore<N> {
             {
                 return Ok(true);
             }
-            if let Some(finalize) = function.finalize_logic() {
-                if finalize.inputs().iter().any(|input| matches!(input.finalize_type(), FinalizeType::DynamicFuture))
-                    || finalize.commands().iter().any(is_v14_command)
-                {
-                    return Ok(true);
-                }
+            if let Some(finalize) = function.finalize_logic()
+                && (finalize.inputs().iter().any(|input| matches!(input.finalize_type(), FinalizeType::DynamicFuture))
+                    || finalize.commands().iter().any(is_v14_command))
+            {
+                return Ok(true);
             }
             if function.contains_identifier_type()? {
                 return Ok(true);

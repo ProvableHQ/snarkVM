@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #![forbid(unsafe_code)]
+#![allow(mismatched_lifetime_syntaxes)]
 #![allow(clippy::too_many_arguments)]
 
 extern crate snarkvm_console_account as console;

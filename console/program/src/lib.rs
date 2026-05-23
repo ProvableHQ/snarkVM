@@ -15,6 +15,8 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments)]
+#![allow(mismatched_lifetime_syntaxes)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
 #![warn(clippy::cast_possible_truncation)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 

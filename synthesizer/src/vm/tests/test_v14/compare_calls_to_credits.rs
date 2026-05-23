@@ -558,7 +558,7 @@ fn test_compare_transfer_public_to_private() {
         )
         .unwrap();
 
-    let dynamic_inputs = vec![Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
+    let dynamic_inputs = [Value::from_str(&recipient.to_string()).unwrap(), Value::from_str(amount).unwrap()];
     let dynamic_tx = vm
         .execute(
             &caller_private_key,

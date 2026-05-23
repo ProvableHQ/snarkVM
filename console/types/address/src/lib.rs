@@ -15,6 +15,7 @@
 
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 #![warn(clippy::cast_possible_truncation)]
+#![allow(mismatched_lifetime_syntaxes)]
 
 mod bitwise;
 mod bytes;

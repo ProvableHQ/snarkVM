@@ -25,7 +25,7 @@ pub use operation::*;
 mod bytes;
 mod parse;
 
-use crate::{RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait, instruction};
+use crate::{RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
 use console::{
     network::Network,
     prelude::{

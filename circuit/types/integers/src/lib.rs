@@ -14,6 +14,8 @@
 // limitations under the License.
 
 #![forbid(unsafe_code)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
+#![allow(mismatched_lifetime_syntaxes)]
 #![allow(clippy::too_many_arguments)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]
 

@@ -59,11 +59,11 @@ impl<N: Network> Parser for FunctionCore<N> {
                 eprintln!("{error}");
                 return Err(error);
             }
-            if let Some(finalize) = &finalize {
-                if let Err(error) = function.add_finalize(finalize.clone()) {
-                    eprintln!("{error}");
-                    return Err(error);
-                }
+            if let Some(finalize) = &finalize
+                && let Err(error) = function.add_finalize(finalize.clone())
+            {
+                eprintln!("{error}");
+                return Err(error);
             }
             Ok::<_, Error>(function)
         })(string)

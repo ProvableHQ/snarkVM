@@ -3183,13 +3183,7 @@ function check:
 
         // Generate the authorization that will contain multiple transitions
         let authorization = process
-            .authorize::<CurrentAleo, _>(
-                &private_key,
-                grandparent_program.id(),
-                &function_name,
-                vec![input].iter(),
-                rng,
-            )
+            .authorize::<CurrentAleo, _>(&private_key, grandparent_program.id(), &function_name, [input].iter(), rng)
             .unwrap();
 
         // Assert the Authorization has more than 1 transitions

@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #![forbid(unsafe_code)]
+#![allow(clippy::manual_is_multiple_of)]
 #![allow(clippy::too_many_arguments)]
 #![warn(clippy::cast_possible_truncation)]
 #![cfg_attr(test, allow(clippy::assertions_on_result_states))]

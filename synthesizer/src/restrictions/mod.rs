@@ -246,10 +246,10 @@ impl<N: Network> Restrictions<N> {
                                     Input::Constant(_, Some(plaintext)) | Input::Public(_, Some(plaintext)) => {
                                         match plaintext {
                                             Plaintext::Literal(literal, _) => {
-                                                if let Some(range) = arguments.get(literal) {
-                                                    if range.contains(block_height) {
-                                                        return true;
-                                                    }
+                                                if let Some(range) = arguments.get(literal)
+                                                    && range.contains(block_height)
+                                                {
+                                                    return true;
                                                 }
                                             }
                                             Plaintext::Struct(..) | Plaintext::Array(..) => continue,
@@ -265,10 +265,10 @@ impl<N: Network> Restrictions<N> {
                                     Output::Constant(_, Some(plaintext)) | Output::Public(_, Some(plaintext)) => {
                                         match plaintext {
                                             Plaintext::Literal(literal, _) => {
-                                                if let Some(range) = arguments.get(literal) {
-                                                    if range.contains(block_height) {
-                                                        return true;
-                                                    }
+                                                if let Some(range) = arguments.get(literal)
+                                                    && range.contains(block_height)
+                                                {
+                                                    return true;
                                                 }
                                             }
                                             Plaintext::Struct(..) | Plaintext::Array(..) => continue,

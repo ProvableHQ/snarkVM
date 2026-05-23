@@ -217,14 +217,14 @@ impl<N: Network> Display for DynamicFuture<N> {
         let function_name_id = Identifier::<N>::from_field(&self.function_name);
 
         // If all conversions succeed, display human-readable format.
-        if let (Ok(name), Ok(network), Ok(function)) = (program_name_id, program_network_id, function_name_id) {
-            if let Ok(program_id) = ProgramID::try_from((name, network)) {
-                return write!(
-                    f,
-                    "{{ _program_id: {program_id}, _function_name: {function}, _checksum: {} }}",
-                    self.checksum()
-                );
-            }
+        if let (Ok(name), Ok(network), Ok(function)) = (program_name_id, program_network_id, function_name_id)
+            && let Ok(program_id) = ProgramID::try_from((name, network))
+        {
+            return write!(
+                f,
+                "{{ _program_id: {program_id}, _function_name: {function}, _checksum: {} }}",
+                self.checksum()
+            );
         }
 
         // Fall back to raw field format.
