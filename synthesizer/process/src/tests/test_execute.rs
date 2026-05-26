@@ -60,17 +60,6 @@ fn execution_stacks_for_execution<N: Network>(
     execution_stacks
 }
 
-fn execution_stacks_for_execution<N: Network>(
-    process: &Process<N>,
-    execution: &Execution<N>,
-) -> indexmap::IndexMap<ProgramID<N>, Arc<crate::Stack<N>>> {
-    let mut execution_stacks = indexmap::IndexMap::new();
-    for transition in execution.transitions() {
-        execution_stacks.insert(*transition.program_id(), process.get_stack(transition.program_id()).unwrap());
-    }
-    execution_stacks
-}
-
 /// Samples a valid fee for the given process, block store, and finalize store.
 pub fn sample_fee<N: Network, A: Aleo<Network = N>, B: BlockStorage<N>, P: FinalizeStorage<N>>(
     process: &Process<N>,

@@ -44,7 +44,7 @@ pub fn deployment_cost<N: Network>(
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    if consensus_version >= ConsensusVersion::V15 {
+    if consensus_version >= ConsensusVersion::V16 {
         deployment_cost_v3(process, deployment)
     } else if consensus_version >= ConsensusVersion::V10 {
         deployment_cost_v2(process, deployment)
@@ -210,7 +210,7 @@ pub fn execute_compute_cost_in_microcredits(
     }
 }
 
-/// Returns the *minimum* cost in microcredits to publish the given deployment using at `ConsensusVersion::V15` or later.
+/// Returns the *minimum* cost in microcredits to publish the given deployment using at `ConsensusVersion::V16` or later.
 // This function only differs from `deployment_cost_v2` in that it replaces the factor (`num_combined_variables` + `num_combined_constraints`)
 // of the synthesis cost by the deployment's combined density.
 pub fn deployment_cost_v3<N: Network>(
@@ -249,6 +249,20 @@ pub fn deployment_cost_v3<N: Network>(
             finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
             "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
             function.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Bound each view function's worst-case compute. Views are off-consensus and have no
+    // dedicated fee component beyond what is already counted in `storage_cost` (their bytes
+    // contribute to `size_in_bytes`). The bound below is purely a deploy-time sanity check
+    // to keep pathological views from being accepted.
+    for view in deployment.program().views().values() {
+        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3)?;
+        ensure!(
+            view_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "View '{}' has a cost '{view_cost}' which exceeds the transaction spend limit '{}'",
+            view.name(),
             N::TRANSACTION_SPEND_LIMIT[1].1
         );
     }

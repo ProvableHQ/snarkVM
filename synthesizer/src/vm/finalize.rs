@@ -1128,7 +1128,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
             // If we are keeping track of block-wide circuit density and this transaction contains a deployment, make sure its
             // density does not make the running total exceed the limit.
-            if let Transaction::Deploy(_, _, _, deployment, _) = transaction
+            if consensus_version >= ConsensusVersion::V16
+                && let Transaction::Deploy(_, _, _, deployment, _) = transaction
                 && let Some(combined_density) = block_combined_density
                 && let Some(synthesis_limit) = block_synthesis_limit
                 && combined_density.saturating_add(deployment.combined_density()) > synthesis_limit
@@ -1186,8 +1187,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     aborted_transactions.push((*transaction, abort_reason));
                 }
                 ShouldAbortResult::Finalize(_compute_spend) => {
-                    // At ConsensusVersion::V15 and above, if the transaction contains a deployment, add its combined density to the running total.
-                    if consensus_version >= ConsensusVersion::V15
+                    // At ConsensusVersion::V16 and above, if the transaction contains a deployment, add its combined density to the running total.
+                    if consensus_version >= ConsensusVersion::V16
                         && let Transaction::Deploy(_, _, _, deployment, _) = transaction
                     {
                         block_combined_density = block_combined_density.saturating_add(deployment.combined_density());
