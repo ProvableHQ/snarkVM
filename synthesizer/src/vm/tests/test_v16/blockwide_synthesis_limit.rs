@@ -15,25 +15,7 @@
 
 #![allow(clippy::cast_possible_truncation)]
 
-use std::{collections::HashSet, sync::Arc};
-
 use super::*;
-
-use crate::vm::test_helpers::{CurrentNetwork, LedgerType, sample_genesis_private_key, sample_vm_at_height};
-
-use console::{
-    account::{Address, PrivateKey},
-    network::ConsensusVersion,
-    prelude::FromStr,
-    program::Value,
-};
-use snarkvm_ledger_block::{Deployment, Solutions, Transaction};
-use snarkvm_ledger_narwhal_subdag::test_helpers::subdag_with_cert_count;
-use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
-use snarkvm_synthesizer_snark::VerifyingKey;
-use snarkvm_utilities::{TestRng, try_vm_runtime};
-
-use super::test_v14::add_and_test_with_costs;
 
 // Construct `count` deployer keys and fund them so more than one deployment can fit in a single block.
 fn fund_deployer_keys(
@@ -213,7 +195,7 @@ fn test_blockwide_synthesis_limit() {
         let subdag = subdag_with_cert_count(num_certs as usize, rng);
         let num_deployments = deployment_specs.len();
 
-        let synthesis_limit = subdag.synthesis_limit(next_block_height).expect("Synthesis limit in >= V15");
+        let synthesis_limit = subdag.synthesis_limit(next_block_height).expect("Synthesis limit in >= V16");
 
         let name_prefix = &format!("test_synthesis_{i}");
 

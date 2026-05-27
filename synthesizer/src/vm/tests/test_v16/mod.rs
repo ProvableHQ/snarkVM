@@ -13,34 +13,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests for the record-existence check.
-mod record_existence;
-// Tests on the input/output behaviour of closures and related functionality.
-mod closure_records;
-// Tests on the use of `commit_*_raw` instruction variants.
-mod commit_raw;
-// Additional test for cost estimation without a private key.
-mod cost_for_call;
-// Tests for quorum block compute spend limits.
-mod block_spend_limit;
-
-// Tests for the externally-callable `view` function prototype.
-mod views;
-
-// Tests for restricted keywords at V15.
-mod restricted_keywords;
+// Tests for block-wide density limits on deployments.
+mod blockwide_synthesis_limit;
 
 use super::*;
 
-use crate::vm::test_helpers::{sample_vm_at_height, *};
+use std::{collections::HashSet, sync::Arc};
 
-use console::{
-    account::ViewKey,
-    network::ConsensusVersion,
-    program::{Identifier, Value},
+use crate::vm::test_helpers::{
+    CurrentAleo,
+    CurrentNetwork,
+    LedgerType,
+    sample_genesis_private_key,
+    sample_vm_at_height,
 };
 
-use snarkvm_synthesizer_program::Program;
-use snarkvm_utilities::TestRng;
+use console::{
+    account::{Address, PrivateKey},
+    network::ConsensusVersion,
+    prelude::FromStr,
+    program::Value,
+};
+
+use snarkvm_ledger_block::{Deployment, Solutions, Transaction};
+use snarkvm_ledger_narwhal_subdag::test_helpers::subdag_with_cert_count;
+use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
+use snarkvm_synthesizer_snark::VerifyingKey;
+use snarkvm_utilities::{TestRng, try_vm_runtime};
 
 use super::test_v14::add_and_test_with_costs;

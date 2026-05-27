@@ -29,6 +29,7 @@ struct CandidateTransactionDetails<N: Network> {
     tpks: IndexSet<Group<N>>,
     deployment_payers: IndexSet<Address<N>>,
     deployments: IndexSet<ProgramID<N>>,
+    block_combined_density: u64,
 }
 
 impl<N: Network> Default for CandidateTransactionDetails<N> {
@@ -40,13 +41,14 @@ impl<N: Network> Default for CandidateTransactionDetails<N> {
             tpks: IndexSet::new(),
             deployment_payers: IndexSet::new(),
             deployments: IndexSet::new(),
+            block_combined_density: 0,
         }
     }
 }
 
 impl<N: Network> CandidateTransactionDetails<N> {
-    /// Records an accepted transaction: extends uniqueness sets.
-    fn record_accepted_transaction(&mut self, transaction: &Transaction<N>) {
+    /// Records a transaction: extends uniqueness sets and updates counters.
+    fn record_transaction(&mut self, transaction: &Transaction<N>) {
         self.transition_ids.extend(transaction.transition_ids());
         self.input_ids.extend(transaction.input_ids());
         self.output_ids.extend(transaction.output_ids());
@@ -54,6 +56,7 @@ impl<N: Network> CandidateTransactionDetails<N> {
         if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
             fee.payer().map(|payer| self.deployment_payers.insert(payer));
             self.deployments.insert(*deployment.program_id());
+            self.block_combined_density = self.block_combined_density.saturating_add(deployment.combined_density());
         }
     }
 }
@@ -437,7 +440,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     &candidate_transaction_details,
                     transaction_spend_limit,
                     None,
-                    None,
                     consensus_version,
                 ) {
                     ShouldAbortResult::Abort(abort_reason) => {
@@ -644,7 +646,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // If the transaction succeeded, store it and continue to the next transaction.
                     Ok(confirmed_transaction) => {
                         // Track the accepted transaction details.
-                        candidate_transaction_details.record_accepted_transaction(confirmed_transaction.transaction());
+                        candidate_transaction_details.record_transaction(confirmed_transaction.transaction());
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
                         // Increment the transaction index counter.
@@ -1023,7 +1025,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         candidate_transaction_details: &CandidateTransactionDetails<N>,
         transaction_spend_limit: u64,
         block_synthesis_limit: Option<u64>,
-        block_combined_density: Option<u64>,
         consensus_version: ConsensusVersion,
     ) -> ShouldAbortResult {
         // Ensure that the transaction is not a fee transaction.
@@ -1130,14 +1131,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // density does not make the running total exceed the limit.
             if consensus_version >= ConsensusVersion::V16
                 && let Transaction::Deploy(_, _, _, deployment, _) = transaction
-                && let Some(combined_density) = block_combined_density
                 && let Some(synthesis_limit) = block_synthesis_limit
-                && combined_density.saturating_add(deployment.combined_density()) > synthesis_limit
+                && candidate_transaction_details.block_combined_density.saturating_add(deployment.combined_density())
+                    > synthesis_limit
             {
                 return ShouldAbortResult::Abort(format!(
                     "Deployment density '{}' added to current accumulated block-wide density '{}' exceeds the limit '{}'",
                     deployment.combined_density(),
-                    combined_density,
+                    candidate_transaction_details.block_combined_density,
                     synthesis_limit
                 ));
             }
@@ -1169,8 +1170,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let consensus_version = N::CONSENSUS_VERSION(state.block_height()).unwrap();
         let transaction_spend_limit =
             consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
-        // Initialize a block-wide total of the combined density of all circuits in all deployments.
-        let mut block_combined_density = 0u64;
 
         // Abort duplicate, overspending, invalid, or disallowed transactions before verification.
         for transaction in transactions.iter() {
@@ -1179,7 +1178,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 &candidate_transaction_details,
                 transaction_spend_limit,
                 state.block_synthesis_limit(),
-                Some(block_combined_density),
                 consensus_version,
             ) {
                 ShouldAbortResult::Abort(abort_reason) => {
@@ -1187,14 +1185,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     aborted_transactions.push((*transaction, abort_reason));
                 }
                 ShouldAbortResult::Finalize(_compute_spend) => {
-                    // At ConsensusVersion::V16 and above, if the transaction contains a deployment, add its combined density to the running total.
-                    if consensus_version >= ConsensusVersion::V16
-                        && let Transaction::Deploy(_, _, _, deployment, _) = transaction
-                    {
-                        block_combined_density = block_combined_density.saturating_add(deployment.combined_density());
-                    }
                     // Track the accepted transaction details.
-                    candidate_transaction_details.record_accepted_transaction(transaction);
+                    candidate_transaction_details.record_transaction(transaction);
                     // Mark the transaction ready to verify.
                     transactions_to_verify.push(transaction);
                 }

@@ -326,12 +326,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Match the consensus path's gating: the timestamp is only included from V12 onward.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
-        let block_spend_limit =
-            if let Authority::Quorum(subdag) = block.authority() { subdag.spend_limit(block.height()) } else { None };
-        let block_synthesis_limit = if let Authority::Quorum(subdag) = block.authority() {
-            subdag.synthesis_limit(block.height())
+        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
+            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
         } else {
-            None
+            (None, None)
         };
         FinalizeGlobalState::new::<N>(
             block.round(),
