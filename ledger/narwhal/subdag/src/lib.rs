@@ -182,7 +182,7 @@ impl<N: Network> Subdag<N> {
     #[inline]
     #[allow(clippy::cast_possible_truncation)]
     pub fn spend_limit(&self, block_height: u32) -> Option<u64> {
-        if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap() {
+        if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap() {
             // Compute the number of certificates in the subdag.
             let subdag_certificates_count = self.values().map(|certificates| certificates.len() as u64).sum::<u64>();
             // Compute the batch spend limit.
@@ -452,53 +452,53 @@ mod tests {
         }
     }
 
-    /// `spend_limit` must return `None` for any block height that predates V15.
+    /// `spend_limit` must return `None` for any block height that predates V16.
     #[test]
-    fn test_spend_limit_returns_none_before_v15() {
-        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+    fn test_spend_limit_returns_none_before_v16() {
+        let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
         let mut rng = TestRng::default();
         let subdag = test_helpers::sample_subdag(&mut rng);
 
         assert!(subdag.spend_limit(0).is_none(), "height 0 must return None");
-        if v15_height > 0 {
-            assert!(subdag.spend_limit(v15_height - 1).is_none(), "height V15-1 must return None");
+        if v16_height > 0 {
+            assert!(subdag.spend_limit(v16_height - 1).is_none(), "height V16-1 must return None");
         }
     }
 
-    /// `spend_limit` must return `Some` for any block height at or after V15.
+    /// `spend_limit` must return `Some` for any block height at or after V16.
     #[test]
-    fn test_spend_limit_returns_some_at_and_after_v15() {
-        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+    fn test_spend_limit_returns_some_at_and_after_v16() {
+        let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
         let mut rng = TestRng::default();
         let subdag = test_helpers::sample_subdag(&mut rng);
 
-        assert!(subdag.spend_limit(v15_height).is_some(), "height V15 must return Some");
-        assert!(subdag.spend_limit(v15_height.saturating_add(1)).is_some(), "height V15+1 must return Some");
+        assert!(subdag.spend_limit(v16_height).is_some(), "height V16 must return Some");
+        assert!(subdag.spend_limit(v16_height.saturating_add(1)).is_some(), "height V16+1 must return Some");
         assert!(subdag.spend_limit(u32::MAX).is_some(), "u32::MAX must return Some");
     }
 
-    /// A subdag with zero certificates must produce a spend limit of 0 at V15.
+    /// A subdag with zero certificates must produce a spend limit of 0 at V16.
     #[test]
     fn test_spend_limit_zero_certificates() {
-        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
         // from_unchecked bypasses structural validation; spend_limit only reads cert counts.
         let empty_subdag: Subdag<CurrentNetwork> = Subdag::from_unchecked(BTreeMap::new());
-        assert_eq!(empty_subdag.spend_limit(v15_height), Some(0));
+        assert_eq!(empty_subdag.spend_limit(v16_height), Some(0));
     }
 
     /// Doubling the number of certificates must (at most) double the spend limit,
     /// and the result must differ by at most 1 due to integer truncation.
     #[test]
     fn test_spend_limit_proportional_to_cert_count() {
-        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
         let mut rng = TestRng::default();
 
         let n: usize = 10;
         let subdag_n = subdag_with_cert_count(n, &mut rng);
         let subdag_2n = subdag_with_cert_count(2 * n, &mut rng);
 
-        let limit_n = subdag_n.spend_limit(v15_height).unwrap();
-        let limit_2n = subdag_2n.spend_limit(v15_height).unwrap();
+        let limit_n = subdag_n.spend_limit(v16_height).unwrap();
+        let limit_2n = subdag_2n.spend_limit(v16_height).unwrap();
 
         // 2 * floor(x) ≤ floor(2x) ≤ 2 * floor(x) + 1
         assert!(limit_2n >= 2 * limit_n, "limit_2n={limit_2n} limit_n={limit_n}");
@@ -508,12 +508,12 @@ mod tests {
     /// `spend_limit` must be monotonically non-decreasing as certificate count grows.
     #[test]
     fn test_spend_limit_monotone_in_cert_count() {
-        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+        let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
         let mut rng = TestRng::default();
 
         let mut previous = 0u64;
         for n in 0..=20 {
-            let limit = subdag_with_cert_count(n, &mut rng).spend_limit(v15_height).unwrap();
+            let limit = subdag_with_cert_count(n, &mut rng).spend_limit(v16_height).unwrap();
             assert!(limit >= previous, "spend_limit must not decrease: n={n}, limit={limit}, previous={previous}");
             previous = limit;
         }

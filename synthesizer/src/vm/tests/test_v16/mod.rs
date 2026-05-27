@@ -13,32 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests for block-wide density limits on deployments.
-mod blockwide_synthesis_limit;
+// Tests for quorum block compute spend limits.
+mod block_spend_limit;
 
 use super::*;
 
-use std::{collections::HashSet, sync::Arc};
+use crate::vm::test_helpers::{CurrentNetwork, sample_genesis_private_key, sample_vm_at_height};
 
-use crate::vm::test_helpers::{
-    CurrentAleo,
-    CurrentNetwork,
-    LedgerType,
-    sample_genesis_private_key,
-    sample_vm_at_height,
-};
+use console::{account::Address, network::ConsensusVersion, prelude::FromStr, program::Value};
 
-use console::{
-    account::{Address, PrivateKey},
-    network::ConsensusVersion,
-    prelude::FromStr,
-    program::Value,
-};
-
-use snarkvm_ledger_block::{Deployment, Solutions, Transaction};
-use snarkvm_ledger_narwhal_subdag::test_helpers::subdag_with_cert_count;
-use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
-use snarkvm_synthesizer_snark::VerifyingKey;
-use snarkvm_utilities::{TestRng, try_vm_runtime};
-
-use super::test_v14::add_and_test_with_costs;
+use snarkvm_ledger_block::Solutions;
+use snarkvm_synthesizer_process::{execute_compute_cost_in_microcredits, execution_cost};
+use snarkvm_synthesizer_program::FinalizeGlobalState;
+use snarkvm_utilities::TestRng;

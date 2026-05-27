@@ -21,8 +21,6 @@ mod closure_records;
 mod commit_raw;
 // Additional test for cost estimation without a private key.
 mod cost_for_call;
-// Tests for quorum block compute spend limits.
-mod block_spend_limit;
 
 // Tests for the externally-callable `view` function prototype.
 mod views;

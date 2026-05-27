@@ -56,10 +56,10 @@ pub enum ConsensusVersion {
     V14 = 14,
     /// V15: Introduces the record-existence check and `commit.*.raw` instruction variants.
     ///      Increase the anchor time to 35.
-    ///      Moves the block's spend limit check to the finalize phase.
-    ///      Supports storing of transaction rejection reasons.
     V15 = 15,
-    /// V16: Introduces block-wide deployment limits.
+    /// V16: Moves the block's spend limit check to the finalize phase.
+    ///      Supports storing of transaction rejection reasons.
+    ///      Introduces block-wide deployment limits.
     V16 = 16,
 }
 

@@ -17,14 +17,6 @@
 
 use super::*;
 
-use crate::vm::test_helpers::{sample_genesis_private_key, sample_vm_at_height};
-
-use console::{account::Address, network::ConsensusVersion, program::Value};
-use snarkvm_ledger_block::Solutions;
-use snarkvm_synthesizer_process::{execute_compute_cost_in_microcredits, execution_cost};
-use snarkvm_synthesizer_program::FinalizeGlobalState;
-use snarkvm_utilities::TestRng;
-
 /// Quorum blocks pass `block_spend_limit` into [`FinalizeGlobalState`] via
 /// `Authority::Quorum(subdag).spend_limit(height)` (see `VM::add_next_block_inner`).
 ///
@@ -36,8 +28,8 @@ use snarkvm_utilities::TestRng;
 fn test_quorum_block_spend_limit_aborts_excess_transactions() {
     let rng = &mut TestRng::default();
 
-    let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
-    let vm = sample_vm_at_height(v15_height, rng);
+    let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
+    let vm = sample_vm_at_height(v16_height, rng);
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
 
@@ -47,8 +39,8 @@ fn test_quorum_block_spend_limit_aborts_excess_transactions() {
 
     assert_eq!(
         CurrentNetwork::CONSENSUS_VERSION(next_block_height).unwrap(),
-        ConsensusVersion::V15,
-        "test expects the next block to execute under V15 spend rules"
+        ConsensusVersion::V16,
+        "test expects the next block to execute under V16 spend rules"
     );
 
     let transfer_inputs = |amount: &str| {
