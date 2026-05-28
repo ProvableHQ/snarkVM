@@ -134,7 +134,6 @@ impl<N: Network> TranslationAssignment<N> {
         variable_limit: Option<u64>,
         constraint_limit: Option<u64>,
         non_zero_limit: Option<(u64, u64, u64)>,
-        // TODO (Antonio) consensus_version?
     ) -> Result<()> {
         // Ensure the circuit environment is clean.
         ensure!(
@@ -148,7 +147,6 @@ impl<N: Network> TranslationAssignment<N> {
         // We gate this behind ConsensusVersion::V16 go avoid constant-count divergence in
         // previously deployed circuits. Count consistency is important in V16+ due to
         // non-zero-count checks introduced therein.
-        // TODO (Antonio) consensus_version?
         A::initialize_global_constants();
         A::reset();
 
@@ -300,7 +298,6 @@ impl<N: Network> TranslationAssignment<N> {
         variable_limit: Option<u64>,
         constraint_limit: Option<u64>,
         non_zero_limit: Option<(u64, u64, u64)>,
-        // TODO (Antonio) consensus_version?
     ) -> Result<circuit::Assignment<N::Field>> {
         self.to_circuit_assignment_internal::<A>(translation_index, variable_limit, constraint_limit, non_zero_limit)?;
         Stack::log_circuit::<A>(

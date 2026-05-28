@@ -163,6 +163,8 @@ fn test_blockwide_synthesis_limit() {
         ((2.2 * current_max_certificates) as u64, vec![(32, true); 3], vec![false, false, true]),
         // Synthesis limit = 18_390_403, densities: [8_084_643, 8_084_643, 8_084_643], the third one goes over the limit
         ((2.2 * current_max_certificates) as u64, vec![(32, false); 3], vec![false, false, true]),
+        // Synthesis limit = 26_779_008, densities: [8_084_643, 8_084_643, 8_084_643]
+        ((3.2 * current_max_certificates) as u64, vec![(32, false); 3], vec![false, false, false]),
         // Synthesis limit = 33554420, densities: [8_447_296, 8_447_296, 8_447_296], the third one now fits thanks to the increased limit
         (4 * current_max_certificates as u64, vec![(32, true); 3], vec![false, false, false]),
         // Synthesis limit = 16_777_210, densities: [4_187_104, 8_447_296, 4_187_104, 2_057_008, 4_187_104, 2_057_008],
