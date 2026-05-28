@@ -136,17 +136,8 @@ impl<F: PrimeField> LinearCombination<F> {
         &self.terms
     }
 
-    /// Returns the number of nonzeros in the linear combination.
-    pub(super) fn num_nonzeros(&self) -> u64 {
-        // Increment by one if the constant is nonzero.
-        match self.constant.is_zero() {
-            true => self.terms.len() as u64,
-            false => (self.terms.len() as u64).saturating_add(1),
-        }
-    }
-
     /// Returns the number of nonzeros in the linear combination, deduplicating instances of the same variable.
-    pub(super) fn num_nonzeros_deduplicated(&self) -> u64 {
+    pub(super) fn num_nonzeros(&self) -> u64 {
         let mut count: u64 = 0;
         let mut merged_constant_with_public_zero = false;
 

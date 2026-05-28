@@ -29,7 +29,7 @@ impl<F: PrimeField> Constraint<F> {
     /// Returns the number of non-zero terms required by this constraint.
     pub(crate) fn num_nonzeros(&self) -> (u64, u64, u64) {
         let (a, b, c) = (&self.1, &self.2, &self.3);
-        (a.num_nonzeros_deduplicated(), b.num_nonzeros_deduplicated(), c.num_nonzeros_deduplicated())
+        (a.num_nonzeros(), b.num_nonzeros(), c.num_nonzeros())
     }
 
     /// Returns `true` if the constraint is satisfied.
