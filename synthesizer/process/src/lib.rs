@@ -309,6 +309,7 @@ impl<N: Network> Process<N> {
         }
         let rng = &mut rand::rng();
         let credits_record_name = Identifier::<N>::from_str("credits").unwrap(); // Safe: "credits" is always a valid identifier.
+        // TODO (Antonio) consensus_version
         stack.synthesize_translation_key::<A, _>(&credits_record_name, rng)?;
         lap!(timer, "Synthesize credits program keys");
 
@@ -600,6 +601,7 @@ impl<N: Network> Process<N> {
         record_name: &Identifier<N>,
         rng: &mut R,
     ) -> Result<()> {
+        // TODO (Antonio) consensus_version
         self.get_stack(program_id)?.synthesize_translation_key::<A, R>(record_name, rng)
     }
 }

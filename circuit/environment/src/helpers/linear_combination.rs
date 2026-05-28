@@ -145,6 +145,46 @@ impl<F: PrimeField> LinearCombination<F> {
         }
     }
 
+    /// Returns the number of nonzeros in the linear combination, deduplicating instances of the same variable.
+    pub(super) fn num_nonzeros_deduplicated(&self) -> u64 {
+        let mut count: u64 = 0;
+        let mut merged_constant_with_public_zero = false;
+
+        let mut index = 0;
+        while index < self.terms.len() {
+            // Get the next new variable. Note that duplicate variables are adjacent
+            let (variable, coefficient) = &self.terms[index];
+            let mut combined_coefficient = *coefficient;
+            index += 1;
+
+            // Iterate over duplicates of the same variable, if any, adding their coefficients.
+            while index < self.terms.len() && self.terms[index].0 == *variable {
+                combined_coefficient += self.terms[index].1;
+                index += 1;
+            }
+
+            // In the translated matrix, the LC constant and Public(0) both map to
+            // the same column. Merge them before counting.
+            if variable.is_public() && variable.index() == 0 {
+                merged_constant_with_public_zero = true;
+                combined_coefficient += self.constant;
+            }
+
+            // The variable only materialises in the final circuit constraint if
+            // its final coefficient is non-zero.
+            if !combined_coefficient.is_zero() {
+                count = count.saturating_add(1);
+            }
+        }
+
+        // If no Public(0) term was present, count the constant separately.
+        if !merged_constant_with_public_zero && !self.constant.is_zero() {
+            count = count.saturating_add(1);
+        }
+
+        count
+    }
+
     /// Returns the number of addition gates in the linear combination.
     #[cfg(test)]
     pub(super) fn num_additions(&self) -> u64 {
