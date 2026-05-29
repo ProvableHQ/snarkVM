@@ -2905,7 +2905,7 @@ mod sanity_checks {
         assert_eq!(18, assignment.num_public());
         assert_eq!(62398, assignment.num_private());
         assert_eq!(62461, assignment.num_constraints());
-        assert_eq!((121404, 135548, 94473), assignment.num_nonzeros());
+        assert_eq!((121399, 135544, 94473), assignment.num_nonzeros());
     }
 
     #[test]
@@ -2995,7 +2995,7 @@ mod sanity_checks {
         assert_eq!(16, assignment.num_public());
         assert_eq!(45456, assignment.num_private());
         assert_eq!(45502, assignment.num_constraints());
-        assert_eq!((86977, 97375, 67786), assignment.num_nonzeros());
+        assert_eq!((86974, 97373, 67786), assignment.num_nonzeros());
     }
 
     #[test]
