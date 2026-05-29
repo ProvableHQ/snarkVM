@@ -18,7 +18,7 @@ use super::*;
 static SIGNATURE_PREFIX: &str = "sign";
 
 impl<N: Network> Parser for Signature<N> {
-    /// Parses a string into an signature.
+    /// Parses a string into a signature.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         // Prepare a parser for the Aleo signature.
