@@ -54,6 +54,7 @@ required-features = ["test-helpers"]
 name = "transaction"
 path = "benches/transaction.rs"
 harness = false
+required-features = [ "test" ]
 
 [features]
 default = [ "async", "indexmap/rayon", ]
