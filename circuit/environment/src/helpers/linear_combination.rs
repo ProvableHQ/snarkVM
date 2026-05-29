@@ -138,24 +138,31 @@ impl<F: PrimeField> LinearCombination<F> {
 
     /// Returns the number of nonzeros in the linear combination.
     pub(super) fn num_nonzeros(&self) -> u64 {
-        // TODO (Antonio) remove
-        let expected_terms = std::collections::BTreeSet::from_iter(self.terms.iter().map(|(v, _)| {
-                if v.is_public() {
-                    (true, v.index())
-                } else if v.is_private() {
-                    (false, v.index())
-                } else {
-                    panic!("Found constant!");
-                }
-            }));
-        assert_eq!(expected_terms.len(), self.terms.len(), "MISMATCH!");
-        assert!(self.terms.iter().all(|(v, _)| !v.is_constant()), "FOUND A CONSTANT!");
+        // Detecting whether the linear combination contains a variable of the form Public(0),
+        // which will be merged with self.constant by later parts of the synthesis pipeline.
+        let constant_as_var_coeff = self
+            .terms
+            .iter()
+            .find_map(|(var, coeff)| if var.index() == 0 && var.is_public() { Some(*coeff) } else { None });
 
-        // Increment by one if the constant is nonzero.
-        match self.constant.is_zero() {
-            true => self.terms.len() as u64,
-            false => (self.terms.len() as u64).saturating_add(1),
-        }
+        let modifier: i64 = if let Some(c) = constant_as_var_coeff {
+            if c + self.constant == F::zero() {
+                // In this case, self.terms.len() below reflects the Public(0) term, which will not
+                // materialise into a non-zero matrix entry in the final circuit and therefore needs
+                // to be subtracted from the count.
+                -1
+            } else {
+                // In this case, the combination of the Public(0) term and self.constant will
+                // eventually materialise as a non-zero entry, as counted by self.terms.len().
+                0
+            }
+        } else {
+            // In this case, a non-zero entry (which is not counted by self.terms.len()) will
+            // materialise if and only if self.constant != 0.
+            if self.constant.is_zero() { 0 } else { 1 }
+        };
+
+        (self.terms.len() as i64 + modifier) as u64
     }
 
     /// Returns the number of addition gates in the linear combination.
