@@ -636,7 +636,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Verify the deployment.
                     match try_vm_runtime!(|| self.check_deployment_internal(deployment, rng)) {
                         Ok(result) => result?,
-                        Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
+                        // TODO (Antonio) replace
+                        // Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
+                        // TODO (Antonio) remove
+                        Err(e) => bail!("VM safely halted transaction '{id}' during verification: {e:?}"),
                     }
                 }
             }
@@ -675,7 +678,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     is_partially_verified
                 )) {
                     Ok(result) => result?,
-                    Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
+                    // TODO (Antonio) replace
+                    // Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
+                    // TODO (Antonio) remove
+                    Err(e) => bail!("VM safely halted transaction '{id}' during verification: {e:?}"),
                 }
             }
             Transaction::Fee(..) => { /* no-op */ }
@@ -804,18 +810,42 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine which consensus version to use.
         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
 
+        // macro_rules! logic {
+        //     ($process:expr, $network:path, $aleo:path) => {{
+        //         // Prepare the deployment.
+        //         let deployment = cast_ref!(&deployment as Deployment<$network>);
+        //         // Verify the deployment.
+        //         $process.verify_deployment::<$aleo, _>(consensus_version, &deployment, rng)
+        //     }};
+        // }
+        // TODO (Antonio) remove
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
-                // Prepare the deployment.
-                let deployment = cast_ref!(&deployment as Deployment<$network>);
-                // Verify the deployment.
-                $process.verify_deployment::<$aleo, _>(consensus_version, &deployment, rng)
-            }};
-        }
+            // Prepare the deployment.
+            let deployment = cast_ref!(&deployment as Deployment<$network>);
+            // Verify the deployment.
+            let rest = $process.verify_deployment::<$aleo, _>(consensus_version, &deployment, rng);
+
+            if let Err(e) = rest.as_ref() {
+                println!("\nMINE Deployment verification failed - {e:?}\n");
+            }
+
+            rest
+        }};
+    }
+        
 
         // Process the logic.
         let timer = timer!("VM::check_deployment");
-        let result = process!(self, logic).map_err(|error| anyhow!("Deployment verification failed - {error}"));
+        // TODO (Antono) replace
+        // let result = process!(self, logic).map_err(|error| anyhow!("Deployment verification failed - {error}"));
+        println!("GETS HERE");
+        let result = process!(self, logic).map_err(|error| {
+            println!("\nMINE Deployment verification failed - {error:?}\n");
+            anyhow!("Deployment verification failed - {error}")
+        });
+        println!("AFTER HERE");
+
         finish!(timer);
         result
     }

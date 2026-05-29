@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use crate::r1cs::{ConstraintSystem, Index, LinearCombination, OptionalVec, Variable, errors::SynthesisError};
-use hashbrown::HashMap;
 use snarkvm_fields::Field;
 
 use cfg_if::cfg_if;
@@ -253,20 +252,10 @@ impl<F: Field> TestConstraintSystem<F> {
         let mut non_zero_a = 0;
         let mut non_zero_b = 0;
         let mut non_zero_c = 0;
-
-        let deduplicated_len = |terms: &[(Variable, InternedField)]| -> usize {
-            let mut vars_to_coeffs = HashMap::new();
-            terms.iter().for_each(|(var, coeff)| {
-                let current_coeff = vars_to_coeffs.entry(var).or_insert(0);
-                *current_coeff += coeff;
-            });
-            vars_to_coeffs.len()
-        };
-
         for TestConstraint { a, b, c, .. } in self.constraints.iter() {
-            non_zero_a += deduplicated_len(a);
-            non_zero_b += deduplicated_len(b);
-            non_zero_c += deduplicated_len(c);
+            non_zero_a += a.len();
+            non_zero_b += b.len();
+            non_zero_c += c.len();
         }
         (non_zero_a, non_zero_b, non_zero_c)
     }

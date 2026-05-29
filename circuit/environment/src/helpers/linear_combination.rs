@@ -136,44 +136,26 @@ impl<F: PrimeField> LinearCombination<F> {
         &self.terms
     }
 
-    /// Returns the number of nonzeros in the linear combination, deduplicating instances of the same variable.
+    /// Returns the number of nonzeros in the linear combination.
     pub(super) fn num_nonzeros(&self) -> u64 {
-        let mut count: u64 = 0;
-        let mut merged_constant_with_public_zero = false;
+        // TODO (Antonio) remove
+        let expected_terms = std::collections::BTreeSet::from_iter(self.terms.iter().map(|(v, _)| {
+                if v.is_public() {
+                    (true, v.index())
+                } else if v.is_private() {
+                    (false, v.index())
+                } else {
+                    panic!("Found constant!");
+                }
+            }));
+        assert_eq!(expected_terms.len(), self.terms.len(), "MISMATCH!");
+        assert!(self.terms.iter().all(|(v, _)| !v.is_constant()), "FOUND A CONSTANT!");
 
-        let mut index = 0;
-        while index < self.terms.len() {
-            // Get the next new variable. Note that duplicate variables are adjacent
-            let (variable, coefficient) = &self.terms[index];
-            let mut combined_coefficient = *coefficient;
-            index += 1;
-
-            // Iterate over duplicates of the same variable, if any, adding their coefficients.
-            while index < self.terms.len() && self.terms[index].0 == *variable {
-                combined_coefficient += self.terms[index].1;
-                index += 1;
-            }
-
-            // In the translated matrix, the LC constant and Public(0) both map to
-            // the same column. Merge them before counting.
-            if variable.is_public() && variable.index() == 0 {
-                merged_constant_with_public_zero = true;
-                combined_coefficient += self.constant;
-            }
-
-            // The variable only materialises in the final circuit constraint if
-            // its final coefficient is non-zero.
-            if !combined_coefficient.is_zero() {
-                count = count.saturating_add(1);
-            }
+        // Increment by one if the constant is nonzero.
+        match self.constant.is_zero() {
+            true => self.terms.len() as u64,
+            false => (self.terms.len() as u64).saturating_add(1),
         }
-
-        // If no Public(0) term was present, count the constant separately.
-        if !merged_constant_with_public_zero && !self.constant.is_zero() {
-            count = count.saturating_add(1);
-        }
-
-        count
     }
 
     /// Returns the number of addition gates in the linear combination.
