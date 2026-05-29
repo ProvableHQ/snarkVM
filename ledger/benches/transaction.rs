@@ -20,19 +20,16 @@ extern crate criterion;
 
 use snarkvm_console::{
     account::*,
-    network::{ConsensusVersion, MainnetV0, Network},
+    network::{MainnetV0, Network},
     program::{Plaintext, Record, Value},
-    types::Field,
 };
-use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
+use snarkvm_ledger_block::Transition;
 use snarkvm_ledger_store::ConsensusStore;
-use snarkvm_synthesizer::{
-    VM,
-    program::{FinalizeGlobalState, Program},
-};
+use snarkvm_synthesizer::{VM, program::Program};
 
 use aleo_std::StorageMode;
 use criterion::Criterion;
+use indexmap::IndexMap;
 
 #[cfg(not(feature = "rocks"))]
 type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<MainnetV0>;
@@ -49,135 +46,17 @@ fn initialize_vm<R: Rng + CryptoRng>(
     // Initialize the genesis block.
     let genesis = vm.genesis_beacon(private_key, rng).unwrap();
 
+    // Fetch the unspent records.
+    let records = genesis.transitions().cloned().flat_map(Transition::into_records).collect::<IndexMap<_, _>>();
+
+    // Select a record to spend.
+    let view_key = ViewKey::try_from(private_key).unwrap();
+    let records = records.values().map(|record| record.decrypt(&view_key).unwrap()).collect();
+
     // Update the VM.
     vm.add_next_block(&genesis).unwrap();
 
-    // Advance the VM so that the benchmarks run starting at `ConsensusVersion::V16`.
-    // NOTE: This requires the `test` feature, which enables the small test consensus heights;
-    //       under the mainnet heights `V16` activates at `u32::MAX` and is unreachable here.
-    advance_to_consensus_version(&vm, private_key, ConsensusVersion::V16, rng);
-
-    // Mint fresh records at the current (post-upgrade) height.
-    // The genesis records were created at height 0, before the `V8` inclusion upgrade
-    // (`INCLUSION_UPGRADE_HEIGHT`), so they cannot be spent privately under the `V16` inclusion
-    // rules. Minting records here ensures they satisfy the record-height check.
-    let records = mint_records(&vm, private_key, rng);
-
     (vm, records)
-}
-
-/// Mints fresh spendable records for the given private key at the VM's current height by
-/// converting public credits into a private record via `credits.aleo/transfer_public_to_private`.
-fn mint_records<R: Rng + CryptoRng>(
-    vm: &VM<MainnetV0, LedgerType>,
-    private_key: &PrivateKey<MainnetV0>,
-    rng: &mut R,
-) -> Vec<Record<MainnetV0, Plaintext<MainnetV0>>> {
-    // Prepare the inputs: send a large amount of public credits to the caller as a private record.
-    let address = Address::try_from(private_key).unwrap();
-    let inputs =
-        [Value::from_str(&address.to_string()).unwrap(), Value::<MainnetV0>::from_str("1000000000000u64").unwrap()];
-
-    // Create an execution transaction that converts public credits into a private record.
-    let transaction = vm
-        .execute(private_key, ("credits.aleo", "transfer_public_to_private"), inputs.into_iter(), None, 0, None, rng)
-        .unwrap();
-
-    // Include the transaction in the next block and update the VM.
-    let block = sample_next_block(vm, private_key, &[transaction], rng);
-    vm.add_next_block(&block).unwrap();
-
-    // Decrypt and return the newly-minted records owned by the caller.
-    let view_key = ViewKey::try_from(private_key).unwrap();
-    block
-        .transitions()
-        .cloned()
-        .flat_map(Transition::into_records)
-        .filter_map(|(_, record)| record.decrypt(&view_key).ok())
-        .collect()
-}
-
-/// Advances the VM by producing empty beacon blocks until the given consensus version is active.
-fn advance_to_consensus_version<R: Rng + CryptoRng>(
-    vm: &VM<MainnetV0, LedgerType>,
-    private_key: &PrivateKey<MainnetV0>,
-    version: ConsensusVersion,
-    rng: &mut R,
-) {
-    // Determine the activation height of the requested consensus version.
-    let target_height = MainnetV0::CONSENSUS_HEIGHT(version).unwrap();
-    // Produce empty beacon blocks until the VM reaches the target height.
-    while vm.block_store().current_block_height() < target_height {
-        let block = sample_next_block(vm, private_key, &[], rng);
-        vm.add_next_block(&block).unwrap();
-    }
-}
-
-/// Samples the next beacon block containing the given transactions for the given VM.
-fn sample_next_block<R: Rng + CryptoRng>(
-    vm: &VM<MainnetV0, LedgerType>,
-    private_key: &PrivateKey<MainnetV0>,
-    transactions: &[Transaction<MainnetV0>],
-    rng: &mut R,
-) -> Block<MainnetV0> {
-    // Get the most recent block.
-    let block_hash = vm.block_store().get_block_hash(vm.block_store().max_height().unwrap()).unwrap().unwrap();
-    let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
-
-    // Create the finalize state for the next block height.
-    let next_block_height = previous_block.height() + 1;
-    let time_since_last_block = MainnetV0::BLOCK_TIME as i64;
-    let next_block_timestamp = previous_block.timestamp().saturating_add(time_since_last_block);
-    let next_timestamp = (next_block_height >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
-        .then_some(next_block_timestamp);
-    let finalize_state =
-        FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32], None, None);
-
-    // Speculate on the given transactions.
-    let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
-        .speculate(finalize_state, time_since_last_block, Some(0u64), vec![], &None.into(), transactions.iter(), rng)
-        .unwrap();
-
-    // Construct the metadata associated with the block.
-    let metadata = Metadata::new(
-        MainnetV0::ID,
-        previous_block.round() + 1,
-        next_block_height,
-        0,
-        0,
-        MainnetV0::GENESIS_COINBASE_TARGET,
-        MainnetV0::GENESIS_PROOF_TARGET,
-        previous_block.last_coinbase_target(),
-        previous_block.last_coinbase_timestamp(),
-        next_block_timestamp,
-    )
-    .unwrap();
-
-    // Construct the new block header.
-    let header = Header::from(
-        vm.block_store().current_state_root(),
-        transactions.to_transactions_root().unwrap(),
-        transactions.to_finalize_root(ratified_finalize_operations).unwrap(),
-        ratifications.to_ratifications_root().unwrap(),
-        Field::zero(),
-        Field::zero(),
-        metadata,
-    )
-    .unwrap();
-
-    // Construct the new block.
-    Block::new_beacon(
-        private_key,
-        previous_block.hash(),
-        header,
-        ratifications,
-        None.into(),
-        vec![],
-        transactions,
-        aborted_transaction_ids,
-        rng,
-    )
-    .unwrap()
 }
 
 fn deploy(c: &mut Criterion) {
@@ -199,9 +78,6 @@ function hello:
     input r1 as u32.private;
     add r0 r1 into r2;
     output r2 as u32.private;
-
-constructor:
-    assert.eq true true;
 ",
     )
     .unwrap();
