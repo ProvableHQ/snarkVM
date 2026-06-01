@@ -31,6 +31,33 @@ impl<N: Network> PrivateKey<N> {
     pub fn sign_bits<R: Rng + CryptoRng>(&self, message: &[bool], rng: &mut R) -> Result<Signature<N>> {
         Signature::sign_bits(self, message, rng)
     }
+
+    /// Returns a signature for the given message (as field elements) using the private key.
+    pub fn sign_v2<R: Rng + CryptoRng>(&self, message: &[Field<N>], rng: &mut R) -> Result<Signature<N>> {
+        Signature::sign_v2(self, message, rng)
+    }
+
+    /// Returns a signature for the given message (as bytes) using the private key.
+    pub fn sign_bytes_v2<R: Rng + CryptoRng>(&self, message: &[u8], rng: &mut R) -> Result<Signature<N>> {
+        Signature::sign_bytes_v2(self, message, rng)
+    }
+
+    /// Returns a signature for the given message (as bytes) using the private key.
+    /// Message length is not encoded and must be checked by the caller if relevant.
+    pub fn sign_bytes_raw_v2<R: Rng + CryptoRng>(&self, message: &[u8], rng: &mut R) -> Result<Signature<N>> {
+        Signature::sign_bytes_raw_v2(self, message, rng)
+    }
+
+    /// Returns a signature for the given message (as bits) using the private key.
+    pub fn sign_bits_v2<R: Rng + CryptoRng>(&self, message: &[bool], rng: &mut R) -> Result<Signature<N>> {
+        Signature::sign_bits_v2(self, message, rng)
+    }
+
+    /// Returns a signature for the given message (as bits) using the private key.
+    /// Message length is not encoded and must be checked by the caller if relevant.
+    pub fn sign_bits_raw_v2<R: Rng + CryptoRng>(&self, message: &[bool], rng: &mut R) -> Result<Signature<N>> {
+        Signature::sign_bits_raw_v2(self, message, rng)
+    }
 }
 
 #[cfg(test)]

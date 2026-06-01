@@ -65,8 +65,48 @@ impl<N: Network> Signature<N> {
         Self::sign_internal(private_key, message, rng, &[prefix])
     }
 
+    /// Returns a signature for the given message (as bytes) using the private key.
+    pub fn sign_bytes_v2<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        message: &[u8],
+        rng: &mut R,
+    ) -> Result<Signature<N>> {
+        // Convert the message into bits, and sign the message.
+        Self::sign_bits_v2(private_key, &message.to_bits_le(), rng)
+    }
+
+    /// Returns a signature for the given message (as bytes) using the private key.
+    /// Message length is not encoded and must be checked by the caller if relevant.
+    pub fn sign_bytes_raw_v2<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        message: &[u8],
+        rng: &mut R,
+    ) -> Result<Signature<N>> {
+        // Convert the message into bits, and sign the message.
+        Self::sign_bits_raw_v2(private_key, &message.to_bits_le(), rng)
+    }
+
     /// Returns a signature for the given message (as bits) using the private key.
     pub fn sign_bits_v2<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        message: &[bool],
+        rng: &mut R,
+    ) -> Result<Signature<N>> {
+        let message_length = Field::<N>::from_u128(u128::try_from(message.len())?);
+
+        let mut message_with_length = Vec::with_capacity(1 + message.len());
+        message_with_length.push(message_length);
+        // Pack the bits into field elements.
+        message_with_length.extend(
+            message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>()?,
+        );
+        // Sign the message.
+        Self::sign_v2(private_key, &message_with_length, rng)
+    }
+
+    /// Returns a signature for the given message (as bits) using the private key.
+    /// Message length is not encoded and must be checked by the caller if relevant.
+    pub fn sign_bits_raw_v2<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
         message: &[bool],
         rng: &mut R,
@@ -76,16 +116,6 @@ impl<N: Network> Signature<N> {
             message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>()?;
         // Sign the message.
         Self::sign_v2(private_key, &fields, rng)
-    }
-
-    /// Returns a signature for the given message (as bytes) using the private key.
-    pub fn sign_bytes_v2<R: Rng + CryptoRng>(
-        private_key: &PrivateKey<N>,
-        message: &[u8],
-        rng: &mut R,
-    ) -> Result<Signature<N>> {
-        // Convert the message into bits, and sign the message.
-        Self::sign_bits_v2(private_key, &message.to_bits_le(), rng)
     }
 }
 

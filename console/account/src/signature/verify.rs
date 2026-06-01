@@ -51,17 +51,57 @@ impl<N: Network> Signature<N> {
         self.verify_internal(address, message, &[prefix])
     }
 
-    /// Verifies a signature produced with `sign_v2` for the given address and message (as bytes).
+    /// Verifies a signature produced with `sign_bytes_v2` for the given address and message (as bytes).
     pub fn verify_bytes_v2(&self, address: &Address<N>, message: &[u8]) -> bool {
         // Convert the message into bits, and verify the signature.
         self.verify_bits_v2(address, &message.to_bits_le())
     }
 
-    /// Verifies a signature produced with `sign_v2` for the given address and message (as bits).
+    /// Verifies a signature produced with `sign_bytes_raw_v2` for the given address and message (as bytes).
+    /// Message length is not encoded and must be checked by the caller if relevant.
+    pub fn verify_bytes_raw_v2(&self, address: &Address<N>, message: &[u8]) -> bool {
+        // Convert the message into bits, and verify the signature.
+        self.verify_bits_raw_v2(address, &message.to_bits_le())
+    }
+
+    /// Verifies a signature produced with `sign_bits_v2` for the given address and message (as bits).
     pub fn verify_bits_v2(&self, address: &Address<N>, message: &[bool]) -> bool {
+        // Encode the number of bits of the message as a field element:
+        if let Ok(message_length_u128) = u128::try_from(message.len()) {
+            let message_length_field = Field::<N>::from_u128(message_length_u128);
+
+            // Pack the bits into field elements.
+            match message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>() {
+                Ok(fields) => {
+                    let mut message_with_length = Vec::with_capacity(fields.len() + 1);
+                    message_with_length.push(message_length_field);
+                    message_with_length.extend(fields);
+                    self.verify_v2(address, &message_with_length)
+                }
+                Err(error) => {
+                    eprintln!("Failed to verify signature: {error}");
+                    false
+                }
+            }
+        } else {
+            eprintln!("Failed to verify signature: number of bits in the mesage does not fit in a u128");
+            false
+        }
+    }
+
+    /// Verifies a signature produced with `sign_bits_raw_v2` for the given address and message (as bits).
+    /// Message length is not encoded and must be checked by the caller if relevant.
+    pub fn verify_bits_raw_v2(&self, address: &Address<N>, message: &[bool]) -> bool {
         // Pack the bits into field elements.
         match message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>() {
-            Ok(fields) => self.verify_v2(address, &fields),
+            // TODO (Antonio) re-introduce
+            // Ok(fields) => self.verify_v2(address, &fields),
+            Ok(fields) => {
+                for f in fields.iter() {
+                    println!("  f: {f}");
+                }
+                self.verify_v2(address, &fields)
+            }
             Err(error) => {
                 eprintln!("Failed to verify signature: {error}");
                 false
@@ -175,16 +215,23 @@ mod tests {
             let signature_v2 = Signature::sign_bytes_v2(&private_key, &message, rng)?;
             assert!(signature_v2.verify_bytes_v2(&address, &message));
 
+            let signature_raw_v2 = Signature::sign_bytes_raw_v2(&private_key, &message, rng)?;
+            assert!(signature_raw_v2.verify_bytes_raw_v2(&address, &message));
+
             // Check that the signatures are invalid for an incorrect message.
             let failure_message: Vec<u8> = (0..i).map(|_| Uniform::rand(rng)).collect();
             if message != failure_message {
                 assert!(!signature_v1.verify_bytes(&address, &failure_message));
                 assert!(!signature_v2.verify_bytes_v2(&address, &failure_message));
+                assert!(!signature_raw_v2.verify_bytes_raw_v2(&address, &failure_message));
             }
 
-            // Sanity-check that the v1 signature doesn't verify under verify_bytes_v2 and viceversa
+            // Sanity-check that the v1 signature doesn't verify under verify_bytes_v2 and viceversa,
+            // and that the raw signature doesn't verify under verify_bytes_v2 and viceversa
             assert!(!signature_v1.verify_bytes_v2(&address, &message));
             assert!(!signature_v2.verify_bytes(&address, &message));
+            assert!(!signature_v2.verify_bytes_raw_v2(&address, &message));
+            assert!(!signature_raw_v2.verify_bytes_v2(&address, &message));
         }
         Ok(())
     }
@@ -207,16 +254,79 @@ mod tests {
             let signature_v2 = Signature::sign_bits_v2(&private_key, &message, rng)?;
             assert!(signature_v2.verify_bits_v2(&address, &message));
 
+            let signature_raw_v2 = Signature::sign_bits_raw_v2(&private_key, &message, rng)?;
+            assert!(signature_raw_v2.verify_bits_raw_v2(&address, &message));
+
             // Check that the signature is invalid for an incorrect message.
             let failure_message: Vec<bool> = (0..i).map(|_| Uniform::rand(rng)).collect();
             if message != failure_message {
                 assert!(!signature_v1.verify_bits(&address, &failure_message));
                 assert!(!signature_v2.verify_bits_v2(&address, &failure_message));
+                assert!(!signature_raw_v2.verify_bits_raw_v2(&address, &failure_message));
             }
 
-            // Sanity-check that the v1 signature doesn't verify under verify_bits_v2 and viceversa
+            // Sanity-check that the v1 signature doesn't verify under verify_bits_v2 and viceversa,
+            // and that the raw signature doesn't verify under verify_bits_v2 and viceversa
             assert!(!signature_v1.verify_bits_v2(&address, &message));
             assert!(!signature_v2.verify_bits(&address, &message));
+            assert!(!signature_v2.verify_bits_raw_v2(&address, &message));
+            assert!(!signature_raw_v2.verify_bits_v2(&address, &message));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_sign_and_verify_bits_v2_padding() -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        for i in 0..ITERATIONS {
+            // Sample an address and a private key.
+            let private_key = PrivateKey::<CurrentNetwork>::new(rng)?;
+            let address = Address::try_from(&private_key)?;
+
+            // Construct a message and a copy with an extra zero.
+            let message: Vec<bool> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let mut padded_message = message.clone();
+            padded_message.push(false);
+
+            let signature = Signature::sign_bits_v2(&private_key, &message, rng)?;
+            let signature_padded = Signature::sign_bits_v2(&private_key, &padded_message, rng)?;
+
+            // Check the signature of the padded message does not verify on the unpadded one and viceversa
+            assert!(!signature.verify_bits_v2(&address, &padded_message));
+            assert!(!signature_padded.verify_bits_v2(&address, &message));
+
+            // Check the two signatures verify as expected
+            assert!(signature.verify_bits_v2(&address, &message));
+            assert!(signature_padded.verify_bits_v2(&address, &padded_message));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_sign_and_verify_bytes_v2_padding() -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        for i in 0..ITERATIONS {
+            // Sample an address and a private key.
+            let private_key = PrivateKey::<CurrentNetwork>::new(rng)?;
+            let address = Address::try_from(&private_key)?;
+
+            // Construct a message and a copy with an extra zero byte.
+            let message: Vec<u8> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let mut padded_message = message.clone();
+            padded_message.push(0u8);
+
+            let signature = Signature::sign_bytes_v2(&private_key, &message, rng)?;
+            let signature_padded = Signature::sign_bytes_v2(&private_key, &padded_message, rng)?;
+
+            // Check the signature of the padded message does not verify on the unpadded one and viceversa
+            assert!(!signature.verify_bytes_v2(&address, &padded_message));
+            assert!(!signature_padded.verify_bytes_v2(&address, &message));
+
+            // Check the two signatures verify as expected
+            assert!(signature.verify_bytes_v2(&address, &message));
+            assert!(signature_padded.verify_bytes_v2(&address, &padded_message));
         }
         Ok(())
     }
