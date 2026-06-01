@@ -13,7 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+};
 use console::{
     network::prelude::*,
     program::{Literal, LiteralType, Plaintext, PlaintextType, Register, RegisterType, Value},
@@ -302,7 +310,12 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         // Ensure the number of operands is correct.
         if self.operands.len() != 4 {
             bail!("Instruction '{}' expects 4 operands, found {} operands", Self::opcode(), self.operands.len())

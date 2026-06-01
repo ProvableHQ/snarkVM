@@ -32,12 +32,15 @@ impl<N: Network> Parser for ViewCore<N> {
         // Parse the colon ':' keyword from the string.
         let (string, _) = tag(":")(string)?;
 
-        // Parse the inputs from the string.
+        // Parse the inputs, commands, and outputs from the string. All three are `many0` —
+        // views permit zero commands (passthrough / no-op shapes) and zero outputs (assertional
+        // / guard views; the Aleo analogue of Solidity `view` functions that don't return
+        // anything). The constraints that matter (no record-touching ops, no state writes, no
+        // `async`/`await`/`call`/`rand.chacha`) are enforced by `ViewCore::add_command`, not by
+        // the parser arity.
         let (string, inputs) = many0(Input::parse)(string)?;
-        // Parse the commands from the string.
-        let (string, commands) = many1(Command::<N>::parse)(string)?;
-        // Parse the outputs from the string.
-        let (string, outputs) = many1(Output::parse)(string)?;
+        let (string, commands) = many0(Command::<N>::parse)(string)?;
+        let (string, outputs) = many0(Output::parse)(string)?;
 
         map_res(take(0usize), move |_| {
             let mut view = Self::new(name);
@@ -152,24 +155,6 @@ view foo
             )
             .is_err()
         );
-        // Missing output (a view must have at least one).
-        assert!(
-            ViewCore::<CurrentNetwork>::from_str(
-                r"
-view foo:
-    add 1u64 2u64 into r0;"
-            )
-            .is_err()
-        );
-        // Missing commands (a view must have at least one).
-        assert!(
-            ViewCore::<CurrentNetwork>::from_str(
-                r"
-view foo:
-    output r0 as u64.public;"
-            )
-            .is_err()
-        );
         // 'set' is forbidden in a view.
         assert!(
             ViewCore::<CurrentNetwork>::from_str(
@@ -181,5 +166,55 @@ view foo:
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn test_view_parse_no_outputs_guard() {
+        // A guard view: asserts a precondition and returns nothing. Callers observe success
+        // via tx acceptance and failure (assertion fails) via tx rejection.
+        let view = ViewCore::<CurrentNetwork>::parse(
+            r"
+view require_zero:
+    input r0 as u64.public;
+    assert.eq r0 0u64;",
+        )
+        .unwrap()
+        .1;
+        assert_eq!("require_zero", view.name().to_string());
+        assert_eq!(1, view.inputs().len());
+        assert_eq!(1, view.commands().len());
+        assert_eq!(0, view.outputs().len());
+    }
+
+    #[test]
+    fn test_view_parse_no_commands_passthrough() {
+        // A passthrough view: no commands, output is the input register directly.
+        let view = ViewCore::<CurrentNetwork>::parse(
+            r"
+view identity:
+    input r0 as u64.public;
+    output r0 as u64.public;",
+        )
+        .unwrap()
+        .1;
+        assert_eq!("identity", view.name().to_string());
+        assert_eq!(1, view.inputs().len());
+        assert_eq!(0, view.commands().len());
+        assert_eq!(1, view.outputs().len());
+    }
+
+    #[test]
+    fn test_view_parse_fully_empty() {
+        // A no-op view: no inputs, commands, or outputs. Permitted for symmetry with `function`.
+        let view = ViewCore::<CurrentNetwork>::parse(
+            r"
+view noop:",
+        )
+        .unwrap()
+        .1;
+        assert_eq!("noop", view.name().to_string());
+        assert_eq!(0, view.inputs().len());
+        assert_eq!(0, view.commands().len());
+        assert_eq!(0, view.outputs().len());
     }
 }

@@ -543,7 +543,26 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::AssertEq(_)) => Ok(500),
         Command::Instruction(Instruction::AssertNeq(_)) => Ok(500),
         Command::Instruction(Instruction::Async(_)) => bail!("'async' is not supported in finalize"),
-        Command::Instruction(Instruction::Call(_)) => bail!("'call' is not supported in finalize"),
+        Command::Instruction(Instruction::Call(call)) => {
+            // From a finalize body, `call` is permitted only when the target resolves to a
+            // view function (validated at `Stack::new`). Roll up the called view's worst-case
+            // body cost into the caller's finalize cost, mirroring how function-to-function
+            // call costs already aggregate. Same-program targets reuse the current stack;
+            // cross-program targets resolve through the external stack.
+            //
+            // Recursion bound: `view_cost_for_single_view` re-enters `cost_per_command` on the
+            // view's body, but views reject `is_call()` at construction (`ViewCore::add_command`)
+            // and again at deploy via `FinalizeTypes::from_view`. So this recursion is at most
+            // one level deep — a Call in a finalize body, never a Call inside a view body.
+            use snarkvm_synthesizer_program::CallOperator;
+            match call.operator() {
+                CallOperator::Locator(locator) => {
+                    let external_stack = stack.get_external_stack(locator.program_id())?;
+                    view_cost_for_single_view(&*external_stack, locator.resource(), consensus_fee_version)
+                }
+                CallOperator::Resource(name) => view_cost_for_single_view(stack, name, consensus_fee_version),
+            }
+        }
         Command::Instruction(Instruction::CallDynamic(_)) => {
             bail!("'{}' is not supported in finalize", CallDynamic::<N>::opcode())
         }
@@ -1025,9 +1044,8 @@ fn view_cost_for_single_view<N: Network>(
     consensus_fee_version: ConsensusFeeVersion,
 ) -> Result<u64> {
     let view = stack.program().get_view_ref(view_name)?;
-
-    // View types are not cached on the stack today; recompute them here for the cost walk.
-    let view_types = FinalizeTypes::from_view(stack, view)?;
+    // Use the cached view types (computed once at `Stack::new`).
+    let view_types = stack.get_view_types(view_name)?;
 
     let mut view_cost = 0u64;
     for command in view.commands() {

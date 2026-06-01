@@ -21,6 +21,8 @@ use snarkvm_utilities::try_vm_runtime;
 
 use std::collections::HashSet;
 
+type TotalAwaits = usize;
+
 impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// Finalizes the deployment and fee.
     /// This method assumes the given deployment **is valid**.
@@ -291,8 +293,27 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
             // Finalize the root transition.
             // Note that this will result in all the remaining transitions being finalized, since the number
             // of calls matches the number of transitions.
-            let mut finalize_operations =
+            let (mut finalize_operations, total_awaits) =
                 finalize_transition(state, store, &stack, transition, call_graph, dynamic_future_to_future)?;
+
+            if consensus_version >= ConsensusVersion::V15 {
+                // Check that the total number of `Await` commands evaluated during
+                // finalization matches the number of `Future`s defined in the
+                // execution's transitions' outputs.
+                let total_futures = execution
+                    .transitions()
+                    .filter(|t| t.outputs().last().and_then(|output| output.future()).is_some())
+                    .count();
+                let expected_total_awaits = total_futures.saturating_sub(1);
+                if total_awaits != expected_total_awaits {
+                    indexed_finalize_bail!(
+                        Some((transition_program_id, *stack.program_edition())),
+                        Some(transition_function_name),
+                        "The number of 'await' calls during finalization is incorrect. \
+                        Expected {expected_total_awaits}, but found {total_awaits}"
+                    );
+                }
+            }
 
             /* Finalize the fee. */
             if let Some(fee) = fee {
@@ -361,7 +382,17 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     };
 
     // Finalize the transition.
-    finalize_transition(state, store, stack, fee, call_graph, Default::default())
+    let (finalize_operations, total_awaits) =
+        finalize_transition(state, store, stack, fee, call_graph, Default::default())?;
+    // Create IndexedFinalizeError if the fee path has awaits.
+    if consensus_version >= ConsensusVersion::V15 && total_awaits != 0 {
+        indexed_finalize_bail!(
+            Some((*fee.program_id(), *stack.program_edition())),
+            Some(*fee.function_name()),
+            "Fees must not have any awaits"
+        );
+    }
+    Ok(finalize_operations)
 }
 
 /// Finalizes the constructor.
@@ -453,7 +484,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     transition: &Transition<N>,
     call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
     dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>>,
-) -> Result<Vec<FinalizeOperation<N>>, IndexedFinalizeError<N, Command<N>>> {
+) -> Result<(Vec<FinalizeOperation<N>>, TotalAwaits), IndexedFinalizeError<N, Command<N>>> {
     // Retrieve the program ID.
     let program_id = transition.program_id();
     // Retrieve the function name.
@@ -465,7 +496,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     // If the last output of the transition is a future, retrieve and finalize it. Otherwise, there are no operations to finalize.
     let future = match transition.outputs().last().and_then(|output| output.future()) {
         Some(future) => future,
-        _ => return Ok(Vec::new()),
+        _ => return Ok((Vec::new(), 0)),
     };
 
     // Check that the program ID and function name of the transition match those in the future.
@@ -495,6 +526,9 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
         Some(*function_name),
         None::<(usize, Command<N>)>,
     )?);
+
+    // Track the total number of `Await` commands evaluated across all `FinalizeState`s.
+    let mut total_awaits: TotalAwaits = 0;
 
     // While there are active finalize states, finalize them.
     'outer: while let Some(FinalizeState { mut counter, mut registers, stack, mut call_counter, mut awaited }) =
@@ -622,6 +656,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
 
                     // Increment the call counter.
                     call_counter += 1;
+                    // Increment the total number of `Await` commands evaluated.
+                    total_awaits += 1;
                     // Increment the counter.
                     counter += 1;
                     // Add the awaited register to the tracked set.
@@ -670,8 +706,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
         }
     }
 
-    // Return the finalize operations.
-    Ok(finalize_operations)
+    // Return the finalize operations and the total number of `Await` commands evaluated.
+    Ok((finalize_operations, total_awaits))
 }
 
 // A helper struct to track the execution of a finalize scope.
@@ -735,13 +771,15 @@ fn initialize_finalize_state<N: Network>(
 // A helper function to finalize all commands except `await`, updating the finalize operations and the counter.
 //
 // Generic over the store so the view evaluator (which passes either the canonical
-// `FinalizeStore` or a read-only historic adapter) can reuse this dispatch.
+// `FinalizeStore` or a read-only historic adapter) can reuse this dispatch. The stack must be
+// the concrete `Stack<N>` so we can resolve `Call`-to-view targets and read their cached
+// `FinalizeTypes` (the in-block call path needs concrete access).
 #[inline]
 pub(crate) fn finalize_command_except_await<N: Network>(
     program_id: Option<(ProgramID<N>, u16)>,
     resource: Option<Identifier<N>>,
-    store: &impl FinalizeStoreTrait<N>,
-    stack: &impl StackTrait<N>,
+    store: &dyn FinalizeStoreTrait<N>,
+    stack: &Stack<N>,
     registers: &mut FinalizeRegisters<N>,
     positions: &HashMap<Identifier<N>, usize>,
     command: &Command<N>,

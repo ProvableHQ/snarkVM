@@ -298,13 +298,13 @@ fn snark_vk_deserialize(c: &mut Criterion) {
 fn snark_certificate_prove(c: &mut Criterion) {
     let rng = &mut TestRng::default();
 
-    let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100000, 100000, 100000).unwrap();
+    let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(10_000, 10_000, 10_000).unwrap();
     let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
     let universal_prover = &universal_srs.to_universal_prover().unwrap();
     let fs_parameters = FS::sample_parameters();
     let fs_p = &fs_parameters;
 
-    for size in [100, 1_000, 10_000, 100_000] {
+    for size in [100, 1_000, 10_000] {
         let num_constraints = size;
         let num_variables = size;
         let mul_depth = 1;
@@ -320,14 +320,14 @@ fn snark_certificate_prove(c: &mut Criterion) {
 fn snark_certificate_verify(c: &mut Criterion) {
     let rng = &mut TestRng::default();
 
-    let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(100_000, 100_000, 100_000).unwrap();
+    let max_degree = AHPForR1CS::<Fr, VarunaHidingMode>::max_degree(10_000, 10_000, 10_000).unwrap();
     let universal_srs = VarunaInst::universal_setup(max_degree).unwrap();
     let universal_prover = &universal_srs.to_universal_prover().unwrap();
     let universal_verifier = &universal_srs.to_universal_verifier().unwrap();
     let fs_parameters = FS::sample_parameters();
     let fs_p = &fs_parameters;
 
-    for size in [100, 1_000, 10_000, 100_000] {
+    for size in [100, 1_000, 10_000] {
         let num_constraints = size;
         let num_variables = size;
         let mul_depth = 1;
@@ -343,7 +343,7 @@ fn snark_certificate_verify(c: &mut Criterion) {
 
 criterion_group! {
     name = varuna_snark;
-    config = Criterion::default().measurement_time(Duration::from_secs(10));
+    config = Criterion::default().sample_size(10).measurement_time(Duration::from_secs(10));
     targets = snark_universal_setup, snark_circuit_setup, snark_prove, snark_verify, snark_batch_prove, snark_batch_verify, snark_vk_serialize, snark_vk_deserialize, snark_certificate_prove, snark_certificate_verify,
 }
 

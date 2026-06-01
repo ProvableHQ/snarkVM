@@ -106,6 +106,11 @@ impl<N: Network> Command<N> {
         matches!(self, Command::Instruction(Instruction::Call(_) | Instruction::CallDynamic(_)))
     }
 
+    /// Returns `true` if the command is specifically a dynamic call instruction.
+    pub fn is_dynamic_call(&self) -> bool {
+        matches!(self, Command::Instruction(Instruction::CallDynamic(_)))
+    }
+
     /// Returns `true` if the command is a cast-to-record instruction. Covers all three
     /// record cast variants: static `record`, `external_record`, and `dynamic.record`.
     pub fn is_cast_to_record(&self) -> bool {
@@ -204,12 +209,12 @@ impl<N: Network> Command<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        store: &impl FinalizeStoreTrait<N>,
+        store: &dyn FinalizeStoreTrait<N>,
         registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<Option<FinalizeOperation<N>>, FinalizeError> {
         match self {
             // Finalize the instruction, and return no finalize operation.
-            Command::Instruction(instruction) => instruction.finalize(stack, registers).map(|_| None),
+            Command::Instruction(instruction) => instruction.finalize(stack, Some(store), registers).map(|_| None),
             // `await` commands are processed by the caller of this method.
             Command::Await(_) => Err(FinalizeError::Anyhow(anyhow!("`await` commands cannot be finalized directly."))),
             // Finalize the 'contains' command, and return no finalize operation.

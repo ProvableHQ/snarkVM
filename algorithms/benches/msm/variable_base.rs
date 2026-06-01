@@ -35,9 +35,9 @@ fn create_scalar_bases<G: AffineCurve<ScalarField = F>, F: PrimeField>(size: usi
 
 fn variable_base_bls12_377(c: &mut Criterion) {
     use snarkvm_curves::bls12_377::{Fr, G1Affine};
-    let (bases, scalars) = create_scalar_bases::<G1Affine, Fr>(2000000);
+    let (bases, scalars) = create_scalar_bases::<G1Affine, Fr>(1_000_000);
 
-    for size in [10_000, 100_000, 200_000, 300_000, 400_000, 500_000, 1_000_000, 2_000_000] {
+    for size in [10_000, 100_000, 1_000_000] {
         c.bench_function(&format!("VariableBase MSM on BLS12-377 ({size})"), |b| {
             b.iter(|| VariableBase::msm(&bases[..size], &scalars[..size]))
         });

@@ -52,6 +52,7 @@ impl<N: Network> Stack<N> {
             constructor_types: Default::default(),
             register_types: Default::default(),
             finalize_types: Default::default(),
+            view_types: Default::default(),
             universal_srs: process.universal_srs().clone(),
             proving_keys: Default::default(),
             verifying_keys: Default::default(),

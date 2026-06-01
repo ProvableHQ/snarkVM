@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-slipstream-plugin-manager"
-version = "4.6.0"
+version = "4.7.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "The SnarkVM Slipstream plugin manager."
 homepage = "https://aleo.org"

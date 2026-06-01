@@ -433,6 +433,13 @@ impl<N: Network> RegisterTypes<N> {
                 );
             }
             Opcode::Call(_) => {
+                // The self-locator and import-existence checks here intentionally mirror the
+                // finalize-context `Opcode::Call` arm in
+                // `finalize_types/initialize.rs::check_instruction_opcode`. The two arms
+                // diverge on what they allow as a target (functions/closures here vs. views
+                // there), but the locator-resolution preamble must remain in sync — keep
+                // both sites updated together when changing imports/locator semantics.
+                //
                 // Validate the call operation.
                 match instruction {
                     Instruction::Call(call) => {

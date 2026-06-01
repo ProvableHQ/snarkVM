@@ -456,6 +456,16 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         // Sample the record with that nonce.
         self.sample_record(burner_address, record_name, record_nonce, rng)
     }
+
+    fn evaluate_view(
+        &self,
+        state: FinalizeGlobalState,
+        store: &dyn FinalizeStoreTrait<N>,
+        view_name: &Identifier<N>,
+        inputs: Vec<Value<N>>,
+    ) -> Result<Vec<Value<N>>> {
+        crate::view::evaluate_view_inner(state, store, self, view_name, inputs)
+    }
 }
 
 impl<N: Network> Stack<N> {

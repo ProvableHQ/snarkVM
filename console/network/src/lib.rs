@@ -234,6 +234,10 @@ pub trait Network:
     const MAX_INSTRUCTIONS: usize = u16::MAX as usize;
     /// The maximum number of commands in finalize.
     const MAX_COMMANDS: usize = u16::MAX as usize;
+    /// The maximum number of `call` commands in a finalize body. Matched to
+    /// `Transaction::MAX_TRANSITIONS` so view-call arity in a finalize is bounded analogously
+    /// to the static-call bound on transition graphs.
+    const MAX_CALLS: usize = 32;
     /// The maximum number of write commands in finalize.
     const MAX_WRITES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 16), (ConsensusVersion::V14, 32)];
     /// The maximum number of `position` commands in finalize.

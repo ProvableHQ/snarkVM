@@ -821,8 +821,13 @@ impl<N: Network> FinalizeTypes<N> {
             operand_types.push(RegisterType::from(self.get_type_from_operand(stack, operand)?));
         }
 
-        // Compute the destination register types.
-        let destination_types = instruction.output_types(stack, &operand_types)?;
+        // Compute the destination register types. `CallDynamic` is rejected by
+        // `Finalize::add_command` and so is unreachable here; we bail explicitly to keep the
+        // assumption checked in code rather than relying solely on the upstream guard.
+        let destination_types = match instruction {
+            Instruction::CallDynamic(_) => bail!("'call.dynamic' is not allowed in finalize"),
+            _ => instruction.output_types(stack, &operand_types)?,
+        };
 
         // Insert the destination register.
         for (destination, destination_type) in
@@ -873,7 +878,50 @@ impl<N: Network> FinalizeTypes<N> {
                 bail!("Instruction 'async' is not allowed in 'finalize' or 'constructor'.");
             }
             Opcode::Call(_) => {
-                bail!("Instruction 'call' is not allowed in 'finalize' or 'constructor'.");
+                // `call` is permitted in finalize only when the target resolves to a view
+                // function. (Constructors and views themselves reject `call` at construction
+                // time via their `add_command` guards, so the only commands reaching here are
+                // from finalize bodies. `Instruction::CallDynamic` is rejected at construction
+                // by `Finalize::add_command`, so the `_` arm below is unreachable in practice.)
+                let call = match instruction {
+                    Instruction::Call(call) => call,
+                    _ => bail!("Instruction '{instruction}' is not a 'call' operation."),
+                };
+                // The self-locator and import-existence checks here intentionally mirror the
+                // transition-context `Opcode::Call` arm in
+                // `register_types/initialize.rs::check_instruction_opcode`. The two arms
+                // diverge on what they allow as a target (views here vs. functions/closures
+                // there), but the locator-resolution preamble must remain in sync — keep
+                // both sites updated together when changing imports/locator semantics.
+                //
+                // Hold the external stack (if any) in this binding so the borrowed
+                // `target_program` reference stays valid for the view check below.
+                let external_stack;
+                let (target_program, target_name) = match call.operator() {
+                    snarkvm_synthesizer_program::CallOperator::Locator(locator) => {
+                        // Cross-program: resolve the external stack and use its program.
+                        if stack.program_id() == locator.program_id() {
+                            bail!("Locator '{locator}' does not reference an external view.");
+                        }
+                        if !stack.program().imports().keys().contains(locator.program_id()) {
+                            bail!(
+                                "External program '{}' is not imported by '{}'.",
+                                locator.program_id(),
+                                stack.program_id()
+                            );
+                        }
+                        external_stack = stack.get_external_stack(locator.program_id())?;
+                        (external_stack.program(), *locator.resource())
+                    }
+                    snarkvm_synthesizer_program::CallOperator::Resource(name) => (stack.program(), *name),
+                };
+                if target_program.get_view_ref(&target_name).is_err() {
+                    bail!(
+                        "Instruction 'call' in finalize must target a view; '{}/{}' is not a view.",
+                        target_program.id(),
+                        target_name
+                    );
+                }
             }
             Opcode::Cast(opcode) => match opcode {
                 "cast" => {

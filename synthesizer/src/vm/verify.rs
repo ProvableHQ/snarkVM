@@ -205,7 +205,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
 
         // Check if the transaction exists in the partially-verified cache.
-        let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum);
+        let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum)
+            || is_pre_accepted_testnet_transaction::<N>(transaction.id());
 
         // Verify the fee.
         self.check_fee(transaction, rejected_id, is_partially_verified)?;

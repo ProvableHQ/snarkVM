@@ -13,7 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+};
 use circuit::{Eject, Inject, Mode, traits::ToField};
 use console::{
     collections::merkle_tree::MerklePath,
@@ -311,7 +319,12 @@ impl<N: Network> GetRecordDynamic<N> {
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, _stack: &impl StackTrait<N>, _registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        _stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        _registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         bail!("Forbidden operation: Finalize cannot invoke 'get.record.dynamic'.")
     }
 

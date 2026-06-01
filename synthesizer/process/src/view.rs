@@ -13,11 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{FinalizeRegisters, FinalizeTypes, Process, Stack};
+#[cfg(feature = "history")]
+use crate::Process;
+use crate::{FinalizeRegisters, Stack};
+#[cfg(feature = "history")]
+use console::program::ProgramID;
 use console::{
     network::prelude::*,
-    program::{Identifier, ProgramID, Value},
+    program::{Identifier, Value},
 };
+#[cfg(feature = "history")]
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore};
 use snarkvm_synthesizer_program::{
     FinalizeGlobalState,
@@ -27,6 +32,7 @@ use snarkvm_synthesizer_program::{
     StackTrait,
 };
 
+#[cfg(feature = "history")]
 impl<N: Network> Process<N> {
     /// Evaluates a view function against historic finalize-store state at the given block
     /// height. Routes mapping reads through the finalize store's historical update map (per-key
@@ -72,6 +78,7 @@ impl<N: Network> Process<N> {
 /// `height`; program structure is not. Known gap — see `VM::evaluate_view_at_height`.
 ///
 /// Available only with `--features history`.
+#[cfg(feature = "history")]
 pub fn evaluate_view_at_height<N: Network, P: FinalizeStorage<N>>(
     state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
@@ -88,11 +95,13 @@ pub fn evaluate_view_at_height<N: Network, P: FinalizeStorage<N>>(
 /// store's historical update map at a fixed `height`. Writes bail — they are unreachable on
 /// the view path (views reject `set` / `remove` at construction), but bailing here
 /// preserves that invariant if the adapter is ever passed to other code.
+#[cfg(feature = "history")]
 struct HistoricFinalizeStore<'a, N: Network, P: FinalizeStorage<N>> {
     store: &'a FinalizeStore<N, P>,
     height: u32,
 }
 
+#[cfg(feature = "history")]
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinalizeStore<'_, N, P> {
     fn contains_mapping_confirmed(
         &self,
@@ -167,9 +176,9 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
 /// Inner evaluation of a view. Generic over the store; the public path
 /// ([`evaluate_view_at_height`]) wraps the underlying `FinalizeStore` in a
 /// [`HistoricFinalizeStore`] adapter that pins reads to a fixed height.
-fn evaluate_view_inner<N: Network>(
+pub(crate) fn evaluate_view_inner<N: Network>(
     state: FinalizeGlobalState,
-    store: &impl FinalizeStoreTrait<N>,
+    store: &dyn FinalizeStoreTrait<N>,
     stack: &Stack<N>,
     view_name: &Identifier<N>,
     inputs: Vec<Value<N>>,
@@ -177,8 +186,8 @@ fn evaluate_view_inner<N: Network>(
     // Resolve the view function in the stack's program.
     let view = stack.program().get_view_ref(view_name)?;
 
-    // Compute the register types for the view body.
-    let types = FinalizeTypes::from_view(stack, view)?;
+    // Use the cached view types (computed once at `Stack::new`).
+    let types = stack.get_view_types(view_name)?;
 
     // Views are read-only and externally-callable: no transition is associated. Pass `None`
     // for `transition_id` and `nonce` — the only consumer (rand.chacha) is rejected by
@@ -250,9 +259,14 @@ fn evaluate_view_inner<N: Network>(
         )?;
     }
     // Defensive: views reject all write-producing commands at construction, so no finalize
-    // operations should ever be emitted. Catches any future regression that allows a write
-    // through the type-check path.
-    debug_assert!(finalize_operations.is_empty(), "view produced finalize operations: {finalize_operations:?}");
+    // operations should ever be emitted. Fail closed in release builds too — a regression that
+    // allows a write through the type-check path must not silently leak side effects from the
+    // view path, where some callers (e.g. RPC views) discard `finalize_operations` entirely.
+    ensure!(
+        finalize_operations.is_empty(),
+        "view '{}' produced finalize operations: {finalize_operations:?}",
+        view.name()
+    );
 
     // Load the outputs.
     let mut outputs = Vec::with_capacity(view.outputs().len());
@@ -262,7 +276,10 @@ fn evaluate_view_inner<N: Network>(
     Ok(outputs)
 }
 
-#[cfg(test)]
+// All existing view tests exercise the external `evaluate_view_at_height` path, which is
+// gated on `--features history`. Tests for the new in-block call path live at the v15 VM-tests
+// level (where deploying a program with a finalize-calling-view function is straightforward).
+#[cfg(all(test, feature = "history"))]
 mod tests {
     use super::*;
     use crate::Process;

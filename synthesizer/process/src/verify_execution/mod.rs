@@ -695,6 +695,10 @@ impl<N: Network> Process<N> {
             match traversal_stack.last_mut() {
                 // If the stack is empty, then push the `transition` to the top of the stack.
                 None => {
+                    ensure!(
+                        counter == 0,
+                        "Invalid traversal - execution contains multiple disconnected transition trees"
+                    );
                     traversal_stack.push(TransitionMetadata::new(
                         &mut counter,
                         Some((*transition.program_id(), *transition.function_name())),

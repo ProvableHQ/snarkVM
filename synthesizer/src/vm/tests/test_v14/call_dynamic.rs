@@ -842,7 +842,7 @@ fn test_complex_dynamic_graph_construction_internal(
 
     println!("Reconstructing call graph...");
 
-    let transitions = transaction.transitions().collect_vec();
+    let transitions = transaction.execution().unwrap().transitions().collect_vec();
     let tids = transitions.iter().map(|transition| transition.id()).collect_vec();
 
     // Call tree                    transition index

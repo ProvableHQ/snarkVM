@@ -849,9 +849,9 @@ impl<N: Network> ProgramCore<N> {
         ensure!(!Self::is_reserved_opcode(&view_name.to_string()), "'{view_name}' is a reserved opcode.");
         ensure!(!Self::is_reserved_keyword(&view_name), "'{view_name}' is a reserved keyword.");
 
-        // Views must have at least one command and at least one output.
-        ensure!(!view.commands().is_empty(), "Cannot evaluate a view function without commands");
-        ensure!(!view.outputs().is_empty(), "A view function must declare at least one output");
+        // Views permit zero commands (passthrough / no-op) and zero outputs (guard views: the
+        // body asserts and the caller observes success via tx acceptance, failure via tx
+        // rejection; mirrors Solidity's zero-return `view` functions).
         ensure!(view.inputs().len() <= N::MAX_INPUTS, "View exceeds maximum number of inputs");
         ensure!(view.outputs().len() <= N::MAX_OUTPUTS, "View exceeds maximum number of outputs");
 
@@ -1396,6 +1396,7 @@ impl<N: Network> ProgramCore<N> {
     /// This includes:
     /// 1. `commit.*.raw` opcodes (raw commit variants).
     /// 2. `view` blocks (new on-disk component variant 6).
+    /// 3. `call` instructions inside `finalize` bodies (pre-V15 finalize forbade `call`).
     ///
     /// This is enforced to be `false` for programs before `ConsensusVersion::V15`.
     #[inline]
@@ -1420,7 +1421,20 @@ impl<N: Network> ProgramCore<N> {
             .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
             .any(|command| matches!(command, Command::Instruction(instruction) if has_op(*instruction.opcode())));
 
-        function_contains || closure_contains || command_contains || !self.views.is_empty()
+        // Detect `call` instructions inside finalize bodies. Pre-V15 finalize forbade `call`
+        // entirely, so any deployed program with one is necessarily V15+ syntax.
+        //
+        // Intentionally matches only `Instruction::Call` — `CallDynamic` in a finalize body is
+        // rejected at parse time by `Finalize::add_command`, so it can never reach a deployed
+        // program. If `call.dynamic` is ever permitted in finalize, this clause must be widened
+        // (and `Finalize::add_command`, `cost::cost_per_command`, and the finalize
+        // type-checker's `Opcode::Call` arm need re-review at the same time).
+        let finalize_has_call = cfg_iter!(self.functions())
+            .filter_map(|(_, function)| function.finalize_logic())
+            .flat_map(|finalize| finalize.commands())
+            .any(|command| matches!(command, Command::Instruction(Instruction::Call(_))));
+
+        function_contains || closure_contains || command_contains || finalize_has_call || !self.views.is_empty()
     }
 
     /// Returns `true` if a program contains any string type.

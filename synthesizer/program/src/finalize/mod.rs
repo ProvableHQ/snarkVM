@@ -40,6 +40,8 @@ pub struct FinalizeCore<N: Network> {
     commands: Vec<Command<N>>,
     /// The number of write commands.
     num_writes: u16,
+    /// The number of `call` commands (view calls).
+    num_calls: u16,
     /// A mapping from `Position`s to their index in `commands`.
     positions: HashMap<Identifier<N>, usize>,
 }
@@ -47,7 +49,14 @@ pub struct FinalizeCore<N: Network> {
 impl<N: Network> FinalizeCore<N> {
     /// Initializes a new finalize with the given name.
     pub fn new(name: Identifier<N>) -> Self {
-        Self { name, inputs: IndexSet::new(), commands: Vec::new(), num_writes: 0, positions: HashMap::new() }
+        Self {
+            name,
+            inputs: IndexSet::new(),
+            commands: Vec::new(),
+            num_writes: 0,
+            num_calls: 0,
+            positions: HashMap::new(),
+        }
     }
 
     /// Returns the name of the associated function.
@@ -167,8 +176,22 @@ impl<N: Network> FinalizeCore<N> {
 
         // Ensure the command is not an async instruction.
         ensure!(!command.is_async(), "Forbidden operation: Finalize cannot invoke an 'async' instruction");
-        // Ensure the command is not a call instruction.
-        ensure!(!command.is_call(), "Forbidden operation: Finalize cannot invoke a 'call'");
+        // Allow `call` only when the target resolves to a `view` function (enforced later by the
+        // type-check at `Stack::new`). `call.dynamic` remains forbidden because we have not yet
+        // designed a way to track dynamic spend / gas usage for runtime-resolved targets.
+        ensure!(!command.is_dynamic_call(), "Forbidden operation: Finalize cannot invoke a 'call.dynamic'");
+        // Bound the number of view-calls per finalize body. This is a structural cap mirrored
+        // on `Transaction::MAX_TRANSITIONS` — without it, a finalize could chain up to
+        // `MAX_COMMANDS` calls, each into a view whose own body has up to `MAX_COMMANDS`
+        // commands, giving `O(MAX_COMMANDS^2)` worst-case work. `TRANSACTION_SPEND_LIMIT` still
+        // bounds it economically, but this gives a tight structural bound on top.
+        if command.is_call() {
+            ensure!(
+                (self.num_calls as usize) < N::MAX_CALLS,
+                "Cannot add more than {} 'call' commands in a finalize body",
+                N::MAX_CALLS
+            );
+        }
         // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
         ensure!(!command.is_instruction_for_record(), "Forbidden operation: Finalize cannot operate on records");
 
@@ -198,6 +221,11 @@ impl<N: Network> FinalizeCore<N> {
         if command.is_write() {
             // Increment the number of write commands.
             self.num_writes += 1;
+        }
+        // Track the number of view-calls. `is_dynamic_call` is already rejected above, so this
+        // counts only static `Call`s.
+        if command.is_call() {
+            self.num_calls += 1;
         }
 
         // Insert the command.
