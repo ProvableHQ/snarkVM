@@ -1097,7 +1097,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Before V16, we return without tracking any compute spend and checking deployment limits.
-        if consensus_version < ConsensusVersion::V15 {
+        if consensus_version < ConsensusVersion::V16 {
             ShouldAbortResult::Finalize(0)
         // If the consensus version is >= V16, ensure that the transaction is not exceeding spend or deployment limits.
         } else {

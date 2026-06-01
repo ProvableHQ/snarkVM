@@ -144,9 +144,6 @@ impl<N: Network> TranslationAssignment<N> {
         // Ensure (thread-local) global constants are initialised before we reset - otherwise the
         // use of Poseidon in the translation circuit will result in a different vk.num_constants()
         // depending on whether initialize_global_constants() has been called in the thread or not.
-        // We gate this behind ConsensusVersion::V16 go avoid constant-count divergence in
-        // previously deployed circuits. Count consistency is important in V16+ due to
-        // non-zero-count checks introduced therein.
         A::initialize_global_constants();
         A::reset();
 

@@ -232,7 +232,10 @@ pub fn deployment_cost_v3<N: Network>(
         .ok_or(anyhow!("The storage cost computation overflowed for a deployment"))?;
 
     // Compute the synthesis cost in microcredits.
-    let synthesis_cost = combined_density * N::SYNTHESIS_FEE_MULTIPLIER / N::ARC_0005_COMPUTE_DISCOUNT;
+    let synthesis_cost = combined_density
+        .checked_mul(N::SYNTHESIS_FEE_MULTIPLIER)
+        .ok_or(anyhow!("The synthesis cost computation overflowed for a deployment"))?
+        / N::ARC_0005_COMPUTE_DISCOUNT;
 
     // Compute a Stack for the deployment.
     let stack = Stack::new(process, deployment.program())?;
