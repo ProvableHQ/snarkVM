@@ -124,8 +124,7 @@ impl<N: Network> Signature<N> {
 impl<N: Network> Signature<N> {
     // Internal method common to sign and sign_v2 which prefaces the preimage of the challenge's
     // hash with the given prefix.
-    // TODO (Antonio) make private again
-    pub(super) fn sign_internal<R: Rng + CryptoRng>(
+    fn sign_internal<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
         message: &[Field<N>],
         rng: &mut R,
