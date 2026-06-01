@@ -21,11 +21,6 @@ impl<N: Network> Signature<N> {
     ///     challenge := HashToScalar(nonce * G, pk_sig, pr_sig, address, message)
     ///     response := nonce - challenge * private_key.sk_sig()
     pub fn sign<R: Rng + CryptoRng>(private_key: &PrivateKey<N>, message: &[Field<N>], rng: &mut R) -> Result<Self> {
-        // Ensure the number of field elements does not exceed the maximum allowed size.
-        if message.len() > N::MAX_DATA_SIZE_IN_FIELDS as usize {
-            bail!("Cannot sign the message: the message exceeds maximum allowed size")
-        }
-
         // Disallowing the case message[1] == N::hash_psd2(message[0]) to separate Signature::sign from Request::sign.
         if message.len() >= 2 && message[1] == N::hash_psd2(&[message[0]])? {
             bail!(
@@ -33,33 +28,7 @@ impl<N: Network> Signature<N> {
             );
         }
 
-        // Sample a random nonce from the scalar field.
-        let nonce = Scalar::rand(rng);
-        // Compute `g_r` as `nonce * G`.
-        let g_r = N::g_scalar_multiply(&nonce);
-
-        // Derive the compute key from the private key.
-        let compute_key = ComputeKey::try_from(private_key)?;
-        // Retrieve pk_sig.
-        let pk_sig = compute_key.pk_sig();
-        // Retrieve pr_sig.
-        let pr_sig = compute_key.pr_sig();
-
-        // Derive the address from the compute key.
-        let address = Address::try_from(compute_key)?;
-
-        // Construct the hash input as (r * G, pk_sig, pr_sig, address, message).
-        let mut preimage = Vec::with_capacity(4 + message.len());
-        preimage.extend([g_r, pk_sig, pr_sig, *address].map(|point| point.to_x_coordinate()));
-        preimage.extend(message);
-
-        // Compute the verifier challenge.
-        let challenge = N::hash_to_scalar_psd8(&preimage)?;
-        // Compute the prover response.
-        let response = nonce - (challenge * private_key.sk_sig());
-
-        // Output the signature.
-        Ok(Self { challenge, response, compute_key })
+        Self::sign_internal(private_key, message, rng, &[])
     }
 
     /// Returns a signature for the given message (as bytes) using the private key.
@@ -196,7 +165,10 @@ mod tests {
             message.extend(extra_fields);
 
             let error = Signature::sign(&private_key, &message, &mut rng).unwrap_err();
-            assert!(error.to_string().contains("message[1] == N::hash_psd2(message[0])"), "unexpected error: {error}");
+            assert!(
+                error.to_string().contains("message[1] == N::hash_psd2([message[0]])"),
+                "unexpected error: {error}"
+            );
         }
         Ok(())
     }

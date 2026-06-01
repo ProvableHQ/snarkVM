@@ -20,43 +20,7 @@ impl<N: Network> Signature<N> {
     /// Verifies (challenge == challenge') && (address == address') where:
     ///     challenge' := HashToScalar(response * G + challenge * pk_sig, pk_sig, pr_sig, address, message)
     pub fn verify(&self, address: &Address<N>, message: &[Field<N>]) -> bool {
-        // Ensure the number of field elements does not exceed the maximum allowed size.
-        if message.len() > N::MAX_DATA_SIZE_IN_FIELDS as usize {
-            eprintln!("Cannot sign the signature: the signed message exceeds maximum allowed size");
-            return false;
-        }
-
-        // Retrieve pk_sig.
-        let pk_sig = self.compute_key.pk_sig();
-        // Retrieve pr_sig.
-        let pr_sig = self.compute_key.pr_sig();
-
-        // Compute `g_r` := (response * G) + (challenge * pk_sig).
-        let g_r = N::g_scalar_multiply(&self.response) + (pk_sig * self.challenge);
-
-        // Construct the hash input as (r * G, pk_sig, pr_sig, address, message).
-        let mut preimage = Vec::with_capacity(4 + message.len());
-        preimage.extend([g_r, pk_sig, pr_sig, **address].map(|point| point.to_x_coordinate()));
-        preimage.extend(message);
-
-        // Hash to derive the verifier challenge, and return `false` if this operation fails.
-        let candidate_challenge = match N::hash_to_scalar_psd8(&preimage) {
-            // Output the computed candidate challenge.
-            Ok(candidate_challenge) => candidate_challenge,
-            // Return `false` if the challenge errored.
-            Err(_) => return false,
-        };
-
-        // Derive the address from the compute key, and return `false` if this operation fails.
-        let candidate_address = match Address::try_from(self.compute_key) {
-            // Output the computed candidate address.
-            Ok(candidate_address) => candidate_address,
-            // Return `false` if the address errored.
-            Err(_) => return false,
-        };
-
-        // Return `true` if the candidate challenge and address are correct.
-        self.challenge == candidate_challenge && *address == candidate_address
+        self.verify_internal(address, message, &[])
     }
 
     /// Verifies a signature for the given address and message (as bytes).
