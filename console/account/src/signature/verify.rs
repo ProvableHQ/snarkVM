@@ -171,16 +171,29 @@ mod tests {
             let address = Address::try_from(&private_key)?;
 
             // Check that the v1 and v2 signatures are valid for the message.
-            let message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let message: Vec<Field<CurrentNetwork>> = (0..i).map(|_| Uniform::rand(rng)).collect();
+
+            // TODO (Antonio) remove
+            let seed = rng.random();
+            let rng = &mut TestRng::from_seed(seed);
+            let rng_copy = &mut TestRng::from_seed(seed);
+            let manual_signature_v1 = Signature::sign_internal(&private_key, &message, rng_copy, &[])?;
 
             let signature_v1 = Signature::sign(&private_key, &message, rng)?;
             assert!(signature_v1.verify(&address, &message));
+
+            // TODO (Antonio) remove
+            {
+                assert_eq!(manual_signature_v1, signature_v1);
+                assert!(manual_signature_v1.verify(&address, &message));
+                assert!(signature_v1.verify_internal(&address, &message, &[]));
+            }
 
             let signature_v2 = Signature::sign_v2(&private_key, &message, rng)?;
             assert!(signature_v2.verify_v2(&address, &message));
 
             // Check that the signature is invalid for an incorrect message.
-            let failure_message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let failure_message: Vec<Field<CurrentNetwork>> = (0..i).map(|_| Uniform::rand(rng)).collect();
             if message != failure_message {
                 assert!(!signature_v1.verify(&address, &failure_message));
                 assert!(!signature_v2.verify_v2(&address, &failure_message));
@@ -203,16 +216,34 @@ mod tests {
             let address = Address::try_from(&private_key)?;
 
             // Check that the v1 and v2 signatures are valid for the message.
-            let message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let message: Vec<u8> = (0..i).map(|_| Uniform::rand(rng)).collect();
+
+            // TODO (Antonio) remove
+            let seed = rng.random();
+            let rng = &mut TestRng::from_seed(seed);
+            let rng_copy = &mut TestRng::from_seed(seed);
+            let message_fields = message
+                .to_bits_le()
+                .chunks(Field::<CurrentNetwork>::size_in_data_bits())
+                .map(Field::from_bits_le)
+                .collect::<Result<Vec<_>>>()?;
+            let manual_signature_v1 = Signature::sign_internal(&private_key, &message_fields, rng_copy, &[])?;
 
             let signature_v1 = Signature::sign_bytes(&private_key, &message, rng)?;
             assert!(signature_v1.verify_bytes(&address, &message));
+
+            // TODO (Antonio) remove
+            {
+                assert_eq!(manual_signature_v1, signature_v1);
+                assert!(manual_signature_v1.verify_bytes(&address, &message));
+                assert!(signature_v1.verify_internal(&address, &message_fields, &[]));
+            }
 
             let signature_v2 = Signature::sign_bytes_v2(&private_key, &message, rng)?;
             assert!(signature_v2.verify_bytes_v2(&address, &message));
 
             // Check that the signatures are invalid for an incorrect message.
-            let failure_message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let failure_message: Vec<u8> = (0..i).map(|_| Uniform::rand(rng)).collect();
             if message != failure_message {
                 assert!(!signature_v1.verify_bytes(&address, &failure_message));
                 assert!(!signature_v2.verify_bytes_v2(&address, &failure_message));
@@ -235,16 +266,33 @@ mod tests {
             let address = Address::try_from(&private_key)?;
 
             // Check that the v1 and v2 signatures are valid for the message.
-            let message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let message: Vec<bool> = (0..i).map(|_| Uniform::rand(rng)).collect();
+
+            // TODO (Antonio) remove
+            let seed = rng.random();
+            let rng = &mut TestRng::from_seed(seed);
+            let rng_copy = &mut TestRng::from_seed(seed);
+            let message_fields = message
+                .chunks(Field::<CurrentNetwork>::size_in_data_bits())
+                .map(Field::from_bits_le)
+                .collect::<Result<Vec<_>>>()?;
+            let manual_signature_v1 = Signature::sign_internal(&private_key, &message_fields, rng_copy, &[])?;
 
             let signature_v1 = Signature::sign_bits(&private_key, &message, rng)?;
             assert!(signature_v1.verify_bits(&address, &message));
+
+            // TODO (Antonio) remove
+            {
+                assert_eq!(manual_signature_v1, signature_v1);
+                assert!(manual_signature_v1.verify_bits(&address, &message));
+                assert!(signature_v1.verify_internal(&address, &message_fields, &[]));
+            }
 
             let signature_v2 = Signature::sign_bits_v2(&private_key, &message, rng)?;
             assert!(signature_v2.verify_bits_v2(&address, &message));
 
             // Check that the signature is invalid for an incorrect message.
-            let failure_message: Vec<_> = (0..i).map(|_| Uniform::rand(rng)).collect();
+            let failure_message: Vec<bool> = (0..i).map(|_| Uniform::rand(rng)).collect();
             if message != failure_message {
                 assert!(!signature_v1.verify_bits(&address, &failure_message));
                 assert!(!signature_v2.verify_bits_v2(&address, &failure_message));
