@@ -1290,6 +1290,7 @@ workflows:
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
       or pipeline.git.branch == "ensure_finalize_scopes_match"
+      or pipeline.git.branch == "feat/sign_v2"
     jobs:
       - check-unused-dependencies # This can be cleaned up before releases
       - check-cargo-semver-checks # This can be cleaned up before releases
