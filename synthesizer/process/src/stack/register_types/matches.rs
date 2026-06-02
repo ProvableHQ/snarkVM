@@ -151,71 +151,43 @@ impl<N: Network> RegisterTypes<N> {
         if operands.len() < N::MIN_ARRAY_ELEMENTS {
             bail!("'{array_type}' must have at least {} operand(s)", N::MIN_ARRAY_ELEMENTS)
         }
-        // Ensure the number of elements not exceed the maximum.
-        if operands.len() > N::LATEST_MAX_ARRAY_ELEMENTS() {
-            bail!("'{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
-        }
 
-        // Ensure the number of operands matches the length of the array.
-        let num_elements = operands.len();
-        let expected_num_elements = **array_type.length() as usize;
-        if expected_num_elements != num_elements {
-            bail!("'{array_type}' expected {expected_num_elements} elements, found {num_elements} elements")
-        }
+        // Retrieve the expected element type of the array.
+        let element_type = array_type.next_element_type();
+        // Tracks the total number of elements contributed by the operands. An operand whose type
+        // matches the element type contributes one element; an operand that is an array of the
+        // element type is flattened, contributing its length.
+        let mut total_elements: usize = 0;
 
-        // Ensure the operand types match the element type.
+        // Ensure the operand types match (or flatten into) the element type.
         for operand in operands.iter() {
-            match operand {
-                // Ensure the literal type matches the element type.
-                Operand::Literal(literal) => {
-                    ensure!(
-                        &PlaintextType::Literal(literal.to_type()) == array_type.next_element_type(),
-                        "Array element expects a {}, but found '{operand}' in the operand.",
-                        array_type.next_element_type(),
-                    )
-                }
-                // Ensure the register type matches the element type.
-                Operand::Register(register) => {
-                    // Retrieve the register type.
-                    match self.get_type(stack, register)? {
-                        // Ensure the register type is not a record.
-                        RegisterType::ExternalRecord(..) | RegisterType::Record(..) => {
-                            bail!("Casting a record into an array element is illegal")
-                        }
-                        // Ensure the register type is not a future.
-                        RegisterType::Future(..) => {
-                            bail!("Casting a future into an array element is illegal")
-                        }
-                        // Ensure the register type is not a dynamic record.
-                        RegisterType::DynamicRecord => {
-                            bail!("Casting a dynamic record into an array element is illegal")
-                        }
-                        // Ensure the register type is not a dynamic future.
-                        RegisterType::DynamicFuture => {
-                            bail!("Casting a dynamic future into an array element is illegal")
-                        }
-                        // Ensure the register type matches the element type.
-                        RegisterType::Plaintext(type_) => {
-                            ensure!(
-                                types_equivalent(stack, &type_, stack, array_type.next_element_type())?,
-                                "Array element expects a '{}', but found '{type_}' in the operand '{operand}'.",
-                                array_type.next_element_type()
-                            )
-                        }
+            // Determine the plaintext type of the operand.
+            let operand_type = match operand {
+                // A literal is always a single scalar element.
+                Operand::Literal(literal) => PlaintextType::Literal(literal.to_type()),
+                // Retrieve the register type.
+                Operand::Register(register) => match self.get_type(stack, register)? {
+                    // Ensure the register type is not a record.
+                    RegisterType::ExternalRecord(..) | RegisterType::Record(..) => {
+                        bail!("Casting a record into an array element is illegal")
                     }
-                }
-                // Ensure the program ID, signer, and caller types match the element type.
+                    // Ensure the register type is not a future.
+                    RegisterType::Future(..) => bail!("Casting a future into an array element is illegal"),
+                    // Ensure the register type is not a dynamic record.
+                    RegisterType::DynamicRecord => bail!("Casting a dynamic record into an array element is illegal"),
+                    // Ensure the register type is not a dynamic future.
+                    RegisterType::DynamicFuture => bail!("Casting a dynamic future into an array element is illegal"),
+                    // Retrieve the plaintext type.
+                    RegisterType::Plaintext(type_) => type_,
+                },
+                // The program ID, signer, and caller are single address elements.
                 Operand::ProgramID(..) | Operand::Signer | Operand::Caller => {
-                    // Retrieve the operand type.
-                    let RegisterType::Plaintext(operand_type) = self.get_type_from_operand(stack, operand)? else {
-                        bail!("Expected a plaintext type for the operand '{operand}' in array element '{array_type}'")
-                    };
-                    // Ensure the operand type matches the element type.
-                    ensure!(
-                        types_equivalent(stack, &operand_type, stack, array_type.next_element_type())?,
-                        "Array element expects {}, but found '{operand_type}' in the operand '{operand}'.",
-                        array_type.next_element_type()
-                    )
+                    match self.get_type_from_operand(stack, operand)? {
+                        RegisterType::Plaintext(type_) => type_,
+                        _ => bail!(
+                            "Expected a plaintext type for the operand '{operand}' in array element '{array_type}'"
+                        ),
+                    }
                 }
                 // If the operand is a block height type, throw an error.
                 Operand::BlockHeight => bail!("Array element cannot be from a block height in a non-finalize scope"),
@@ -226,26 +198,45 @@ impl<N: Network> RegisterTypes<N> {
                 // If the operand is a network ID type, throw an error.
                 Operand::NetworkID => bail!("Array element cannot be from a network ID in a non-finalize scope"),
                 // If the operand is a generator, throw an error.
-                Operand::AleoGenerator => {
-                    bail!("Array element cannot be from a generator in a non-finalize scope")
-                }
+                Operand::AleoGenerator => bail!("Array element cannot be from a generator in a non-finalize scope"),
                 // If the operand is the generator powers, throw an error.
                 Operand::AleoGeneratorPowers(_) => {
                     bail!("Array element cannot be from generator powers in a non-finalize scope")
                 }
                 // If the operand is a checksum type, throw an error.
-                Operand::Checksum(_) => {
-                    bail!("Array element cannot be from a checksum in a non-finalize scope")
-                }
+                Operand::Checksum(_) => bail!("Array element cannot be from a checksum in a non-finalize scope"),
                 // If the operand is an edition type, throw an error.
-                Operand::Edition(_) => {
-                    bail!("Array element cannot be from an edition in a non-finalize scope")
-                }
+                Operand::Edition(_) => bail!("Array element cannot be from an edition in a non-finalize scope"),
                 // If the operand is a program owner type, throw an error.
                 Operand::ProgramOwner(_) => {
                     bail!("Array element cannot be from a program owner in a non-finalize scope")
                 }
+            };
+
+            // Determine the number of elements this operand contributes. An operand whose type
+            // matches the element type contributes one element. Otherwise, if it is an array of
+            // the element type, it is flattened into its constituent elements.
+            if types_equivalent(stack, &operand_type, stack, element_type)? {
+                total_elements += 1;
+            } else if let PlaintextType::Array(inner) = &operand_type
+                && types_equivalent(stack, inner.next_element_type(), stack, element_type)?
+            {
+                total_elements += **inner.length() as usize;
+            } else {
+                bail!(
+                    "Array element expects a '{element_type}', but found '{operand_type}' in the operand '{operand}'."
+                )
             }
+        }
+
+        // Ensure the number of elements does not exceed the maximum.
+        if total_elements > N::LATEST_MAX_ARRAY_ELEMENTS() {
+            bail!("'{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
+        }
+        // Ensure the total number of elements matches the length of the array.
+        let expected_num_elements = **array_type.length() as usize;
+        if expected_num_elements != total_elements {
+            bail!("'{array_type}' expected {expected_num_elements} elements, found {total_elements} elements")
         }
         Ok(())
     }

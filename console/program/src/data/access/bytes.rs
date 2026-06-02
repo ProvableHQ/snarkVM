@@ -22,7 +22,8 @@ impl<N: Network> FromBytes for Access<N> {
         match variant {
             0 => Ok(Self::Member(Identifier::read_le(&mut reader)?)),
             1 => Ok(Self::Index(U32::read_le(&mut reader)?)),
-            2.. => Err(error(format!("Failed to deserialize access variant {variant}"))),
+            2 => Ok(Self::Range(U32::read_le(&mut reader)?, U32::read_le(&mut reader)?)),
+            3.. => Err(error(format!("Failed to deserialize access variant {variant}"))),
         }
     }
 }
@@ -38,6 +39,11 @@ impl<N: Network> ToBytes for Access<N> {
             Access::Index(index) => {
                 1u8.write_le(&mut writer)?;
                 index.write_le(&mut writer)
+            }
+            Access::Range(start, end) => {
+                2u8.write_le(&mut writer)?;
+                start.write_le(&mut writer)?;
+                end.write_le(&mut writer)
             }
         }
     }
@@ -72,6 +78,11 @@ mod tests {
             // Index
             let index = U32::<CurrentNetwork>::rand(rng);
             check_bytes(Access::Index(index))?;
+
+            // Range
+            let start = U32::<CurrentNetwork>::rand(rng);
+            let end = U32::<CurrentNetwork>::rand(rng);
+            check_bytes(Access::Range(start, end))?;
         }
         Ok(())
     }

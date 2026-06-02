@@ -13,29 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "test")]
-mod test_v8;
+// Tests for array range access (`r[a..b]`) slicing.
+mod slice;
 
-#[cfg(feature = "test")]
-mod test_v9;
+// Tests for array-flattening `cast` (concatenation).
+mod concat;
 
-#[cfg(feature = "test")]
-mod test_v10;
-
-#[cfg(feature = "test")]
-mod test_v11;
-
-#[cfg(feature = "test")]
-mod test_v13;
-
-#[cfg(feature = "test")]
-mod test_v14;
-
-#[cfg(feature = "test")]
-mod test_v15;
-
-#[cfg(feature = "test")]
-mod test_v16;
-
-#[cfg(feature = "test")]
 use super::*;
+
+use crate::vm::test_helpers::{sample_vm_at_height, *};
+
+use console::{network::ConsensusVersion, program::Value};
+
+use crate::{Stack, process::Process};
+use snarkvm_synthesizer_program::Program;
+use snarkvm_utilities::TestRng;

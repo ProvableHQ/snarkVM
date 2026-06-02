@@ -408,6 +408,23 @@ mod tests {
             Register::parse("r4[0u32]").unwrap()
         );
 
+        // Register::Access with Access::Range
+        assert_eq!(
+            ("", Register::<CurrentNetwork>::Access(0, vec![Access::Range(U32::new(0), U32::new(4))])),
+            Register::parse("r0[0u32..4u32]").unwrap()
+        );
+        // Register::Access with a range followed by an index, i.e. `r0[1..4][0]`.
+        assert_eq!(
+            (
+                "",
+                Register::<CurrentNetwork>::Access(0, vec![
+                    Access::Range(U32::new(1), U32::new(4)),
+                    Access::Index(U32::new(0))
+                ])
+            ),
+            Register::parse("r0[1u32..4u32][0u32]").unwrap()
+        );
+
         for i in 1..=CurrentNetwork::MAX_DATA_DEPTH {
             let mut string = "r0".to_string();
             for _ in 0..i {

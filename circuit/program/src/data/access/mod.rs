@@ -30,6 +30,8 @@ pub enum Access<A: Aleo> {
     Member(Identifier<A>),
     /// Access an element of an array.
     Index(U32<A>),
+    /// Access a contiguous sub-array, i.e. the half-open range `[start, end)`.
+    Range(U32<A>, U32<A>),
 }
 
 impl<A: Aleo> Inject for Access<A> {
@@ -41,6 +43,7 @@ impl<A: Aleo> Inject for Access<A> {
         match plaintext {
             Self::Primitive::Member(identifier) => Self::Member(Identifier::constant(identifier)),
             Self::Primitive::Index(index) => Self::Index(U32::new(_m, index)),
+            Self::Primitive::Range(start, end) => Self::Range(U32::new(_m, start), U32::new(_m, end)),
         }
     }
 }
@@ -53,6 +56,7 @@ impl<A: Aleo> Eject for Access<A> {
         match self {
             Self::Member(member) => member.eject_mode(),
             Self::Index(index) => index.eject_mode(),
+            Self::Range(start, end) => Mode::combine(start.eject_mode(), [end.eject_mode()]),
         }
     }
 
@@ -61,6 +65,7 @@ impl<A: Aleo> Eject for Access<A> {
         match self {
             Self::Member(identifier) => console::Access::Member(identifier.eject_value()),
             Self::Index(index) => console::Access::Index(index.eject_value()),
+            Self::Range(start, end) => console::Access::Range(start.eject_value(), end.eject_value()),
         }
     }
 }

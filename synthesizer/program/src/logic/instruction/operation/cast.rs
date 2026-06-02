@@ -479,32 +479,16 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 if inputs.len() < N::MIN_ARRAY_ELEMENTS {
                     bail!("Casting to an array requires at least {} operand(s)", N::MIN_ARRAY_ELEMENTS)
                 }
-                // Ensure the number of elements does not exceed the maximum.
-                if inputs.len() > N::LATEST_MAX_ARRAY_ELEMENTS() {
-                    bail!("Casting to array '{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
-                }
 
-                // Ensure that the number of operands is equal to the number of array entries.
-                if inputs.len() != **array_type.length() as usize {
-                    bail!(
-                        "Casting to the array {} requires {} operands, but {} were provided",
-                        array_type,
-                        array_type.length(),
-                        inputs.len()
-                    )
-                }
+                // Retrieve the expected element type of the array.
+                let element_type = array_type.next_element_type();
 
                 // Initialize the elements.
                 let mut elements = Vec::with_capacity(inputs.len());
-                for element in inputs.iter() {
+                for element in inputs.into_iter() {
                     // Retrieve the plaintext value from the element.
                     let plaintext = match element {
-                        circuit::Value::Plaintext(plaintext) => {
-                            // Ensure the plaintext matches the element type.
-                            stack.matches_plaintext(&plaintext.eject_value(), array_type.next_element_type())?;
-                            // Output the plaintext.
-                            plaintext.clone()
-                        }
+                        circuit::Value::Plaintext(plaintext) => plaintext,
                         // Ensure the element is not a record.
                         circuit::Value::Record(..) => bail!("Casting a record into an array element is illegal"),
                         // Ensure the element is not a future.
@@ -518,8 +502,33 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                             bail!("Casting a dynamic future into an array element is illegal")
                         }
                     };
-                    // Store the element.
-                    elements.push(plaintext);
+                    // Whole-match takes priority: if the value matches the element type, push it as a
+                    // single element. Otherwise, if it is an array of the element type, flatten it.
+                    if stack.matches_plaintext(&plaintext.eject_value(), element_type).is_ok() {
+                        elements.push(plaintext);
+                    } else if let circuit::Plaintext::Array(inner, _) = plaintext {
+                        // Ensure each element of the flattened array matches the element type.
+                        for inner_element in &inner {
+                            stack.matches_plaintext(&inner_element.eject_value(), element_type)?;
+                        }
+                        elements.extend(inner);
+                    } else {
+                        bail!("Array element expects a '{element_type}' in the cast to '{array_type}'");
+                    }
+                }
+
+                // Ensure the number of elements does not exceed the maximum.
+                if elements.len() > N::LATEST_MAX_ARRAY_ELEMENTS() {
+                    bail!("Casting to array '{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
+                }
+                // Ensure that the number of elements is equal to the number of array entries.
+                if elements.len() != **array_type.length() as usize {
+                    bail!(
+                        "Casting to the array {} requires {} elements, but {} were provided",
+                        array_type,
+                        array_type.length(),
+                        elements.len()
+                    )
                 }
 
                 // Construct the array.
@@ -830,58 +839,68 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 if input_types.len() < N::MIN_ARRAY_ELEMENTS {
                     bail!("Casting to an array requires at least {} operand(s)", N::MIN_ARRAY_ELEMENTS)
                 }
-                // Ensure the number of elements does not exceed the maximum.
-                if input_types.len() > N::LATEST_MAX_ARRAY_ELEMENTS() {
-                    bail!("Casting to array '{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
-                }
 
-                // Ensure that the number of input types is equal to the number of array entries.
-                if input_types.len() != **array_type.length() as usize {
-                    bail!(
-                        "Casting to the array {} requires {} operands, but {} were provided",
-                        array_type,
-                        array_type.length(),
-                        input_types.len()
-                    )
-                }
+                // Retrieve the expected element type of the array.
+                let element_type = array_type.next_element_type();
+                // Tracks the total number of elements contributed by the operands. An operand whose
+                // type matches the element type contributes one element; an operand that is an array
+                // of the element type is flattened, contributing its length.
+                let mut total_elements: usize = 0;
 
-                // Ensure the input types match the element type.
+                // Ensure the input types match (or flatten into) the element type.
                 for input_type in input_types {
-                    match input_type {
-                        // Ensure the plaintext type matches the member type.
-                        RegisterType::Plaintext(plaintext_type) => {
-                            ensure!(
-                                types_equivalent(stack, plaintext_type, stack, array_type.next_element_type())?,
-                                "Array element type mismatch: expected '{}', found '{plaintext_type}'",
-                                array_type.next_element_type()
+                    // Determine the plaintext type of the operand.
+                    let plaintext_type = match input_type {
+                        RegisterType::Plaintext(plaintext_type) => plaintext_type,
+                        // Ensure the input type cannot be a record (this is unsupported behavior).
+                        RegisterType::Record(record_name) => {
+                            bail!(
+                                "Array element type mismatch: expected '{element_type}', found record '{record_name}'"
                             )
                         }
-                        // Ensure the input type cannot be a record (this is unsupported behavior).
-                        RegisterType::Record(record_name) => bail!(
-                            "Array element type mismatch: expected '{}', found record '{record_name}'",
-                            array_type.next_element_type()
-                        ),
                         // Ensure the input type cannot be an external record (this is unsupported behavior).
                         RegisterType::ExternalRecord(locator) => bail!(
-                            "Array element type mismatch: expected '{}', found external record '{locator}'",
-                            array_type.next_element_type()
+                            "Array element type mismatch: expected '{element_type}', found external record '{locator}'"
                         ),
                         // Ensure the input type cannot be a future (this is unsupported behavior).
-                        RegisterType::Future(..) => bail!(
-                            "Array element type mismatch: expected '{}', found future",
-                            array_type.next_element_type()
-                        ),
+                        RegisterType::Future(..) => {
+                            bail!("Array element type mismatch: expected '{element_type}', found future")
+                        }
                         // Ensure the input type cannot be a dynamic record (this is unsupported behavior).
-                        RegisterType::DynamicRecord => bail!(
-                            "Array element type mismatch: expected '{}', found dynamic record",
-                            array_type.next_element_type()
-                        ),
+                        RegisterType::DynamicRecord => {
+                            bail!("Array element type mismatch: expected '{element_type}', found dynamic record")
+                        }
                         // Ensure the input type cannot be a dynamic future (this is unsupported behavior).
-                        RegisterType::DynamicFuture => bail!(
-                            "Array element type mismatch: expected '{}', found dynamic future",
-                            array_type.next_element_type()
-                        ),
+                        RegisterType::DynamicFuture => {
+                            bail!("Array element type mismatch: expected '{element_type}', found dynamic future")
+                        }
+                    };
+                    // Determine the number of elements this operand contributes. An operand whose
+                    // type matches the element type contributes one element. Otherwise, if it is an
+                    // array of the element type, it is flattened into its constituent elements.
+                    if types_equivalent(stack, plaintext_type, stack, element_type)? {
+                        total_elements += 1;
+                    } else if let PlaintextType::Array(inner) = plaintext_type
+                        && types_equivalent(stack, inner.next_element_type(), stack, element_type)?
+                    {
+                        total_elements += **inner.length() as usize;
+                    } else {
+                        bail!("Array element type mismatch: expected '{element_type}', found '{plaintext_type}'")
                     }
+                }
+
+                // Ensure the number of elements does not exceed the maximum.
+                if total_elements > N::LATEST_MAX_ARRAY_ELEMENTS() {
+                    bail!("Casting to array '{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
+                }
+                // Ensure that the total number of elements is equal to the number of array entries.
+                if total_elements != **array_type.length() as usize {
+                    bail!(
+                        "Casting to the array {} requires {} elements, but {} were provided",
+                        array_type,
+                        array_type.length(),
+                        total_elements
+                    )
                 }
             }
             CastType::Record(record_name) => {
@@ -1092,27 +1111,15 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             bail!("Casting to an array requires at least {} operand", N::MIN_ARRAY_ELEMENTS)
         }
 
-        // Ensure that the number of operands is equal to the number of array entries.
-        if inputs.len() != **array_type.length() as usize {
-            bail!(
-                "Casting to the array {} requires {} operands, but {} were provided",
-                array_type,
-                array_type.length(),
-                inputs.len()
-            )
-        }
+        // Retrieve the expected element type of the array.
+        let element_type = array_type.next_element_type();
 
         // Initialize the elements.
         let mut elements = Vec::with_capacity(inputs.len());
-        for element in inputs.iter() {
+        for element in inputs.into_iter() {
             // Retrieve the plaintext value from the element.
             let plaintext = match element {
-                Value::Plaintext(plaintext) => {
-                    // Ensure the plaintext matches the element type.
-                    stack.matches_plaintext(plaintext, array_type.next_element_type())?;
-                    // Output the plaintext.
-                    plaintext.clone()
-                }
+                Value::Plaintext(plaintext) => plaintext,
                 // Ensure the element is not a record.
                 Value::Record(..) => bail!("Casting a record into an array element is illegal"),
                 // Ensure the element is not a future.
@@ -1122,8 +1129,29 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 // Ensure the element is not a dynamic future.
                 Value::DynamicFuture(..) => bail!("Casting a dynamic future into an array element is illegal"),
             };
-            // Store the element.
-            elements.push(plaintext);
+            // Whole-match takes priority: if the value matches the element type, push it as a single
+            // element. Otherwise, if it is an array of the element type, flatten it into its elements.
+            if stack.matches_plaintext(&plaintext, element_type).is_ok() {
+                elements.push(plaintext);
+            } else if let Plaintext::Array(inner, _) = plaintext {
+                // Ensure each element of the flattened array matches the element type.
+                for inner_element in &inner {
+                    stack.matches_plaintext(inner_element, element_type)?;
+                }
+                elements.extend(inner);
+            } else {
+                bail!("Array element expects a '{element_type}' in the cast to '{array_type}'");
+            }
+        }
+
+        // Ensure that the number of elements is equal to the number of array entries.
+        if elements.len() != **array_type.length() as usize {
+            bail!(
+                "Casting to the array {} requires {} elements, but {} were provided",
+                array_type,
+                array_type.length(),
+                elements.len()
+            )
         }
 
         // Construct the array.

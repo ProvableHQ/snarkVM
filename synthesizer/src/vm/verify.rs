@@ -355,6 +355,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V15`"
                     );
                 }
+                if consensus_version < ConsensusVersion::V16 {
+                    // Array range accesses (`r[a..b]`) are not allowed before V16.
+                    ensure!(
+                        !deployment.program().contains_v16_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V16`"
+                    );
+                    // Array-flattening `cast` is not allowed before V16. This requires type inference,
+                    // so construct the stack to resolve operand types.
+                    let stack = Stack::new(&self.process, deployment.program())?;
+                    ensure!(
+                        !program_uses_array_flatten(deployment.program(), &stack)?,
+                        "Invalid deployment transaction '{id}' - program uses an array-flattening cast that is not allowed before `ConsensusVersion::V16`"
+                    );
+                }
 
                 // Checks required for current and future consensus versions (>= V9).
                 //

@@ -77,6 +77,7 @@ mod tests {
         for i in 0..1000 {
             check_serde_json(Access::<CurrentNetwork>::from_str(&format!(".owner_{i}")).unwrap());
             check_serde_json(Access::<CurrentNetwork>::from_str(&format!("[{i}u32]")).unwrap());
+            check_serde_json(Access::<CurrentNetwork>::from_str(&format!("[{i}u32..{}u32]", i + 1)).unwrap());
         }
     }
 
@@ -85,6 +86,7 @@ mod tests {
         for i in 0..1000 {
             check_bincode(Access::<CurrentNetwork>::from_str(&format!(".owner_{i}")).unwrap());
             check_bincode(Access::<CurrentNetwork>::from_str(&format!("[{i}u32]")).unwrap());
+            check_bincode(Access::<CurrentNetwork>::from_str(&format!("[{i}u32..{}u32]", i + 1)).unwrap());
         }
     }
 }

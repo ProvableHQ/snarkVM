@@ -28,6 +28,7 @@ impl<A: Aleo> Record<A, Plaintext<A>> {
             let first = match first.clone().into() {
                 Access::Member(identifier) => identifier,
                 Access::Index(_) => bail!("Attempted to index into a record"),
+                Access::Range(..) => bail!("Attempted to slice a record"),
             };
             // Retrieve the top-level entry.
             match self.data.get(&first) {

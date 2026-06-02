@@ -1437,6 +1437,45 @@ impl<N: Network> ProgramCore<N> {
         function_contains || closure_contains || command_contains || finalize_has_call || !self.views.is_empty()
     }
 
+    /// Returns `true` if a program contains any V16 syntax: array range accesses (`r[a..b]`).
+    /// This is enforced to be `false` for programs before `ConsensusVersion::V16`.
+    /// Note: array-flattening `cast` is detected separately, as it requires type inference.
+    #[inline]
+    pub fn contains_v16_syntax(&self) -> bool {
+        use console::program::{Access, Register};
+
+        // Returns `true` if the operand reads a sub-array via a range access.
+        fn operand_has_range<N: Network>(operand: &Operand<N>) -> bool {
+            matches!(
+                operand,
+                Operand::Register(Register::Access(_, accesses))
+                    if accesses.iter().any(|access| matches!(access, Access::Range(..)))
+            )
+        }
+
+        // Returns `true` if any of the instruction's operands use a range access.
+        fn instruction_has_range<N: Network>(instruction: &Instruction<N>) -> bool {
+            instruction.operands().iter().any(operand_has_range)
+        }
+
+        // Determine if any function instructions contain a range access.
+        let function_contains =
+            cfg_iter!(self.functions()).flat_map(|(_, function)| function.instructions()).any(instruction_has_range);
+
+        // Determine if any closure instructions contain a range access.
+        let closure_contains =
+            cfg_iter!(self.closures()).flat_map(|(_, closure)| closure.instructions()).any(instruction_has_range);
+
+        // Determine if any finalize commands or constructor commands contain a range access.
+        let command_contains = cfg_iter!(self.functions())
+            .flat_map(|(_, function)| function.finalize_logic().map(|finalize| finalize.commands()))
+            .flatten()
+            .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
+            .any(|command| command.operands().iter().any(operand_has_range));
+
+        function_contains || closure_contains || command_contains
+    }
+
     /// Returns `true` if a program contains any string type.
     /// Before ConsensusVersion::V12, variable-length string sampling when using them as inputs caused deployment synthesis to be inconsistent and abort with probability 63/64.
     /// After ConsensusVersion::V12, string types are disallowed.
