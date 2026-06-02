@@ -35,6 +35,8 @@ impl<N: Network> ProgramOwner<N> {
         // Derive the address.
         let address = Address::try_from(private_key)?;
         // Sign the transaction ID.
+        // TODO (Antonio) allow deprecated or use v2?
+        #[allow(deprecated)]
         let signature = private_key.sign(&[deployment_id], rng)?;
         // Return the program owner.
         Ok(Self { address, signature })
@@ -56,6 +58,8 @@ impl<N: Network> ProgramOwner<N> {
     }
 
     /// Verify that the signature is valid for the given deployment ID.
+    // TODO (Antonio) allow deprecated or use v2?
+    #[allow(deprecated)]
     pub fn verify(&self, deployment_id: Field<N>) -> bool {
         self.signature.verify(&self.address, &[deployment_id])
     }

@@ -96,7 +96,7 @@ fn signature_serialization(c: &mut Criterion) {
     let data = rng.random();
 
     let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap();
-    let signature = private_key.sign(&[data], &mut rng).unwrap();
+    let signature = private_key.sign_v2(&[data], &mut rng).unwrap();
 
     bench_serialization(c, "Signature", signature);
 }

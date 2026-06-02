@@ -19,20 +19,25 @@ use super::*;
 impl<N: Network> Signature<N> {
     /// Verifies (challenge == challenge') && (address == address') where:
     ///     challenge' := HashToScalar(response * G + challenge * pk_sig, pk_sig, pr_sig, address, message)
+    #[deprecated(note="Please migrate to `verify_v2`")]
     pub fn verify(&self, address: &Address<N>, message: &[Field<N>]) -> bool {
         self.verify_internal(address, message, &[])
     }
 
     /// Verifies a signature for the given address and message (as bytes).
+    #[deprecated(note="Please migrate to `verify_bytes_v2`")]
     pub fn verify_bytes(&self, address: &Address<N>, message: &[u8]) -> bool {
+        #[allow(deprecated)]
         // Convert the message into bits, and verify the signature.
         self.verify_bits(address, &message.to_bits_le())
     }
 
     /// Verifies a signature for the given address and message (as bits).
+    #[deprecated(note="Please migrate to `verify_bits_v2`")]
     pub fn verify_bits(&self, address: &Address<N>, message: &[bool]) -> bool {
         // Pack the bits into field elements.
         match message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>() {
+            #[allow(deprecated)]
             Ok(fields) => self.verify(address, &fields),
             Err(error) => {
                 eprintln!("Failed to verify signature: {error}");
@@ -166,6 +171,7 @@ mod tests {
     const ITERATIONS: u64 = 100;
 
     #[test]
+    #[allow(deprecated)]
     fn test_sign_and_verify() -> Result<()> {
         let rng = &mut TestRng::default();
 
@@ -198,6 +204,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_sign_and_verify_bytes() -> Result<()> {
         let rng = &mut TestRng::default();
 
@@ -237,6 +244,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_sign_and_verify_bits() -> Result<()> {
         let rng = &mut TestRng::default();
 

@@ -20,6 +20,7 @@ impl<N: Network> Signature<N> {
     /// Returns a signature `(challenge, response, compute_key)` for a given message and RNG, where:
     ///     challenge := HashToScalar(nonce * G, pk_sig, pr_sig, address, message)
     ///     response := nonce - challenge * private_key.sk_sig()
+    #[deprecated(note="Please migrate to `sign_v2`")]
     pub fn sign<R: Rng + CryptoRng>(private_key: &PrivateKey<N>, message: &[Field<N>], rng: &mut R) -> Result<Self> {
         // Disallowing the case message[1] == N::hash_psd2(message[0]) to separate Signature::sign from Request::sign.
         if message.len() >= 2 && message[1] == N::hash_psd2(&[message[0]])? {
@@ -32,16 +33,19 @@ impl<N: Network> Signature<N> {
     }
 
     /// Returns a signature for the given message (as bytes) using the private key.
+    #[deprecated(note="Please migrate to `sign_bytes_v2`")]
     pub fn sign_bytes<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
         message: &[u8],
         rng: &mut R,
     ) -> Result<Signature<N>> {
+        #[allow(deprecated)]
         // Convert the message into bits, and sign the message.
         Self::sign_bits(private_key, &message.to_bits_le(), rng)
     }
 
     /// Returns a signature for the given message (as bits) using the private key.
+    #[deprecated(note="Please migrate to `sign_bits_v2`")]
     pub fn sign_bits<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
         message: &[bool],
@@ -50,6 +54,7 @@ impl<N: Network> Signature<N> {
         // Pack the bits into field elements.
         let fields =
             message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>()?;
+        #[allow(deprecated)]
         // Sign the message.
         Self::sign(private_key, &fields, rng)
     }
@@ -175,6 +180,7 @@ mod tests {
     const ITERATIONS: u64 = 100;
 
     #[test]
+    #[allow(deprecated)]
     fn test_sign_rejects_request_like_messages() -> Result<()> {
         let mut rng = TestRng::default();
 

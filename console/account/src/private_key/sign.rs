@@ -18,17 +18,23 @@ use crate::Signature;
 
 impl<N: Network> PrivateKey<N> {
     /// Returns a signature for the given message (as field elements) using the private key.
+    #[deprecated(note="Please migrate to `sign_v2`")]
     pub fn sign<R: Rng + CryptoRng>(&self, message: &[Field<N>], rng: &mut R) -> Result<Signature<N>> {
+        #[allow(deprecated)]
         Signature::sign(self, message, rng)
     }
 
     /// Returns a signature for the given message (as bytes) using the private key.
+    #[deprecated(note="Please migrate to `sign_bytes_v2`")]
     pub fn sign_bytes<R: Rng + CryptoRng>(&self, message: &[u8], rng: &mut R) -> Result<Signature<N>> {
+        #[allow(deprecated)]
         Signature::sign_bytes(self, message, rng)
     }
 
     /// Returns a signature for the given message (as bits) using the private key.
+    #[deprecated(note="Please migrate to `sign_bits_v2`")]
     pub fn sign_bits<R: Rng + CryptoRng>(&self, message: &[bool], rng: &mut R) -> Result<Signature<N>> {
+        #[allow(deprecated)]
         Signature::sign_bits(self, message, rng)
     }
 
@@ -71,6 +77,7 @@ mod tests {
     const ITERATIONS: u64 = 100;
 
     #[test]
+    #[allow(deprecated)]
     fn test_sign_and_verify() -> Result<()> {
         let rng = &mut TestRng::default();
 
@@ -94,6 +101,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_sign_and_verify_bytes() -> Result<()> {
         let rng = &mut TestRng::default();
 
@@ -117,6 +125,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_sign_and_verify_bits() -> Result<()> {
         let rng = &mut TestRng::default();
 

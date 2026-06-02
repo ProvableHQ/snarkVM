@@ -122,6 +122,8 @@ impl<N: Network> BatchHeader<N> {
             &previous_certificate_ids,
         )?;
         // Sign the preimage.
+        // TODO (Antonio) allow deprecated or use v2?
+        #[allow(deprecated)]
         let signature = private_key.sign(&[batch_id], rng)?;
         // Return the batch header.
         Ok(Self {
@@ -178,6 +180,8 @@ impl<N: Network> BatchHeader<N> {
             &previous_certificate_ids,
         )?;
         // Verify the signature.
+        // TODO (Antonio) allow deprecated or use v2?
+        #[allow(deprecated)]
         if !signature.verify(&author, &[batch_id]) {
             bail!("Invalid signature for the batch header");
         }

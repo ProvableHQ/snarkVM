@@ -72,8 +72,8 @@ pub(crate) mod helpers {
 
         // Generate a signature.
         let message: Vec<_> = (0..num_fields).map(|_| Uniform::rand(rng)).collect();
-        let signature = console::Signature::sign(&private_key, &message, rng).unwrap();
-        assert!(signature.verify(&address, &message));
+        let signature = console::Signature::sign_v2(&private_key, &message, rng).unwrap();
+        assert!(signature.verify_v2(&address, &message));
         signature
     }
 }
