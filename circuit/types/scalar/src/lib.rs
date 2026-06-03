@@ -57,7 +57,13 @@ impl<E: Environment> Inject for Scalar<E> {
 
         // Initialize the scalar as a field element.
         match console::ToField::to_field(&scalar) {
-            Ok(field) => Self { field: Field::new(mode, field), bits_le: OnceCell::new() },
+            Ok(field) => {
+                let scalar = Self { field: Field::new(mode, field), bits_le: OnceCell::new() };
+                // Track the underlying variable so we can detect, at the end of synthesis, any
+                // scalar that is never range-checked (i.e. never converted to bits).
+                E::track_unconverted_scalar(&LinearCombination::from(&scalar.field));
+                scalar
+            }
             Err(error) => E::halt(format!("Unable to initialize a scalar circuit as a field element: {error}")),
         }
     }

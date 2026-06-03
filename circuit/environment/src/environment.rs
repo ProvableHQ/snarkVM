@@ -18,6 +18,26 @@ use snarkvm_curves::AffineCurve;
 use snarkvm_fields::traits::*;
 
 use core::{fmt, hash};
+use std::{cell::RefCell, collections::HashSet};
+
+thread_local! {
+    /// Tracks the underlying variables of injected `Scalar`s that have not yet been converted to
+    /// bits (i.e. not yet range-checked). Entries are added in `Scalar::new` and removed when a
+    /// scalar is converted to bits. This is a synthesis-time diagnostic and adds no constraints.
+    static UNCONVERTED_SCALARS: RefCell<HashSet<u64>> = RefCell::new(HashSet::new());
+}
+
+/// Returns a tracking key for a non-constant variable, or `None` for constants.
+/// Public and private variables share the same relative index space, so the high bit is used to
+/// distinguish private variables.
+fn scalar_tracking_key<F: PrimeField>(variable: &Variable<F>) -> Option<u64> {
+    const PRIVATE_FLAG: u64 = 1 << 63;
+    match variable.mode() {
+        Mode::Constant => None,
+        Mode::Public => Some(variable.index()),
+        Mode::Private => Some(variable.index() | PRIVATE_FLAG),
+    }
+}
 
 /// Attention: Do not use `Send + Sync` on this trait, as it is not thread-safe.
 pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq + PartialEq + hash::Hash {
@@ -173,6 +193,52 @@ pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq +
 
     /// Sets the constraint limit for the circuit.
     fn set_constraint_limit(limit: Option<u64>);
+
+    /// Records the underlying variable(s) of an injected scalar as not-yet-converted-to-bits.
+    fn track_unconverted_scalar(scalar: &LinearCombination<Self::BaseField>) {
+        UNCONVERTED_SCALARS.with(|set| {
+            let mut set = set.borrow_mut();
+            for (variable, _) in scalar.to_terms() {
+                if let Some(key) = scalar_tracking_key(variable) {
+                    set.insert(key);
+                }
+            }
+        });
+    }
+
+    /// Removes the underlying variable(s) of a scalar from the not-yet-converted-to-bits set,
+    /// indicating that the scalar has been range-checked via its bit decomposition.
+    fn untrack_unconverted_scalar(scalar: &LinearCombination<Self::BaseField>) {
+        UNCONVERTED_SCALARS.with(|set| {
+            let mut set = set.borrow_mut();
+            for (variable, _) in scalar.to_terms() {
+                if let Some(key) = scalar_tracking_key(variable) {
+                    set.remove(&key);
+                }
+            }
+        });
+    }
+
+    /// Prints whether every injected scalar was converted to bits during synthesis.
+    /// Returns `true` if the unconverted-scalars set is empty.
+    fn check_unconverted_scalars() -> bool {
+        UNCONVERTED_SCALARS.with(|set| {
+            let set = set.borrow();
+            match set.is_empty() {
+                true => println!("[unconverted-scalars] OK: every injected scalar was converted to bits."),
+                false => println!(
+                    "[unconverted-scalars] WARNING: {} injected scalar variable(s) were never converted to bits (range-unchecked).",
+                    set.len()
+                ),
+            }
+            set.is_empty()
+        })
+    }
+
+    /// Clears the unconverted-scalars set.
+    fn clear_unconverted_scalars() {
+        UNCONVERTED_SCALARS.with(|set| set.borrow_mut().clear());
+    }
 
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
     fn halt<S: Into<String>, T>(message: S) -> T {
