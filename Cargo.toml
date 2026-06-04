@@ -677,7 +677,10 @@ incremental = true
 
 [profile.test]
 opt-level = 3
-lto = "thin"
+# `lto` runs at link time and is not cached by sccache, so it is paid on every
+# CI test job. `opt-level = 3` already gives the crypto tests their runtime; the
+# extra cross-crate inlining from LTO is not worth the per-job link cost here.
+lto = "off"
 incremental = true
 debug = true
 debug-assertions = true

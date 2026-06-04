@@ -26,7 +26,11 @@ executors:
     docker:
       - image: cimg/rust:1.88.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
     environment:
-      RUSTFLAGS: "" # override the config.toml flags
+      # Override config.toml's rustflags: drop `target-cpu=native` (CI runners are
+      # heterogeneous and share the sccache cache) but keep the faster `lld` linker,
+      # which config.toml already requests. A non-empty RUSTFLAGS replaces the
+      # config-file rustflags entirely, so lld must be set explicitly here.
+      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
 
 commands:
   check_windows:
@@ -100,7 +104,9 @@ commands:
 
             # sccache settings
             echo 'export SCCACHE_DIR="$HOME/.cache/sccache"' >> "$BASH_ENV"
-            echo 'export SCCACHE_CACHE_SIZE="2000M"' >> "$BASH_ENV"
+            # 2000M thrashed for this workspace (small crates re-compiled across
+            # jobs); 8G keeps the working set resident to raise the hit rate.
+            echo 'export SCCACHE_CACHE_SIZE="8000M"' >> "$BASH_ENV"
             echo 'export SCCACHE_IDLE_TIMEOUT=0' >> "$BASH_ENV"
             echo 'export SCCACHE_LOG=info' >> "$BASH_ENV"
 
@@ -191,8 +197,14 @@ commands:
                 cache_key: v4.7.1-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
 
       - run:
-          name: Install debian packages (always)
+          name: Install debian packages (no-cache jobs only)
           command: |
+            # Cached jobs already installed these in setup_environment; only the
+            # no-cache path (which skips setup_environment) needs them here.
+            if [ "<< parameters.use_cache >>" = "true" ]; then
+              echo "Cached job: debian packages already installed by setup_environment"
+              exit 0
+            fi
             DEBIAN_FRONTEND=noninteractive sudo apt-get update
             DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
               clang libclang-dev llvm-dev llvm lld pkg-config xz-utils make libssl-dev
@@ -423,7 +435,9 @@ commands:
 
             if [ "$USE_CACHE" = "true" ]; then
               echo "[sccache stats AFTER nextest]"
-              "$CIRCLE_WORKING_DIRECTORY/.bin/sccache" -s || true
+              # Persist stats to artifacts so cache hit rate is trackable over time.
+              "$CIRCLE_WORKING_DIRECTORY/.bin/sccache" -s \
+                | tee "artifacts/<< parameters.workspace_member >>-sccache.txt" || true
             fi
 
       - store_artifacts:
@@ -448,7 +462,6 @@ jobs:
     executor: rust-docker
     resource_class: << pipeline.parameters.large >>
     steps:
-      - checkout
       - run_test:
           workspace_member: snarkvm
 
@@ -1126,7 +1139,11 @@ jobs:
           name:  Check for security vulnerabilities
           no_output_timeout: 10m
           command: |
-            cargo install cargo-audit@0.22.0 --locked --force
+            # Install only if missing; the binary is cached in .cargo/bin via
+            # clear_environment, so --force needlessly recompiled it every run.
+            if ! command -v cargo-audit >/dev/null 2>&1; then
+              cargo install cargo-audit@0.22.0 --locked
+            fi
             cargo audit -D warnings
       - clear_environment:
           cache_key: v4.7.1-rust-1.88.0-cargo-audit-cache
