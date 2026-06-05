@@ -254,6 +254,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Indicate that external calls are never a root request.
             let is_root = false;
 
+            // Convert all tracked, still-unconverted values to bits.
+            A::convert_unconverted_values();
+
             // Eject the existing circuit.
             let r1cs = A::eject_r1cs_and_reset();
             let (request, caller_response_outputs) = {

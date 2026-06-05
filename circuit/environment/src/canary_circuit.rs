@@ -286,8 +286,9 @@ impl Environment for CanaryCircuit {
 
     /// Returns the R1CS circuit, resetting the circuit.
     fn eject_r1cs_and_reset() -> R1CS<Self::BaseField> {
-        // Clear the unconverted-scalars diagnostic.
-        Self::clear_unconverted_scalars();
+        // Ensure all Scalars have been converted to bits.
+        Self::check_unconverted_values().unwrap();
+
         CANARY_CIRCUIT.with(|circuit| {
             // Reset the witness mode.
             IN_WITNESS.with(|in_witness| in_witness.replace(false));
@@ -310,9 +311,9 @@ impl Environment for CanaryCircuit {
 
     /// Returns the R1CS assignment of the circuit, resetting the circuit.
     fn eject_assignment_and_reset() -> Assignment<<Self::Network as console::Environment>::Field> {
-        // Report and clear the unconverted-scalars diagnostic at the end of synthesis.
-        Self::check_unconverted_scalars();
-        Self::clear_unconverted_scalars();
+        // Ensure all Scalars have been converted to bits.
+        Self::check_unconverted_values().unwrap();
+
         CANARY_CIRCUIT.with(|circuit| {
             // Reset the witness mode.
             IN_WITNESS.with(|in_witness| in_witness.replace(false));
@@ -334,8 +335,9 @@ impl Environment for CanaryCircuit {
 
     /// Clears the circuit and initializes an empty environment.
     fn reset() {
-        // Clear the unconverted-scalars diagnostic.
-        Self::clear_unconverted_scalars();
+        // Clear the unconverted-values tracking set.
+        Self::clear_unconverted_values();
+
         CANARY_CIRCUIT.with(|circuit| {
             // Reset the witness mode.
             IN_WITNESS.with(|in_witness| in_witness.replace(false));
@@ -350,6 +352,8 @@ impl Environment for CanaryCircuit {
             assert_eq!(0, circuit.borrow().num_private());
             assert_eq!(1, circuit.borrow().num_variables());
             assert_eq!(0, circuit.borrow().num_constraints());
+            // Ensure the unconverted-value tracking set is empty.
+            assert!(Self::check_unconverted_values().is_ok());
         });
     }
 }

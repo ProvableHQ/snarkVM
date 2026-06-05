@@ -88,6 +88,9 @@ impl<N: Network> InclusionV0Assignment<N> {
             "InclusionV0Assignment".to_string(),
         );
 
+        // Convert all tracked, still-unconverted values to bits.
+        A::convert_unconverted_values();
+
         // Eject the assignment and reset the circuit environment.
         Ok(A::eject_assignment_and_reset())
     }

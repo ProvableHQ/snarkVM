@@ -112,6 +112,9 @@ fn batch_prove(c: &mut Criterion) {
         let candidate = path.verify(&circuit_leaf_hasher, &circuit_path_hasher, &root, &leaf);
         assert!(candidate.eject_value());
 
+        // Convert all tracked, still-unconverted values to bits.
+        CurrentAleo::convert_unconverted_values();
+
         // Eject the assignment.
         CurrentAleo::eject_assignment_and_reset()
     };

@@ -50,9 +50,9 @@ impl<E: Environment> ToBits for &Scalar<E> {
                 Boolean::assert_less_than_or_equal_constant(&bits_le, &modulus_minus_one.to_bits_le());
             }
 
-            // The scalar is now range-checked via its bit decomposition, so remove its underlying
-            // variable from the unconverted-scalars diagnostic set.
-            E::untrack_unconverted_scalar(&LinearCombination::from(&self.field));
+            // Now that underlying Field has been checked to represent a correct Scalar, we remove
+            // it from the unconverted-value tracking set.
+            E::untrack_unconverted_value(&LinearCombination::from(&self.field));
 
             bits_le
         });

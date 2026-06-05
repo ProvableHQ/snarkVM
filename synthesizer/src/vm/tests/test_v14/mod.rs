@@ -301,4 +301,3 @@ constructor:
         vm.add_next_block(&block).unwrap();
     }
 }
-

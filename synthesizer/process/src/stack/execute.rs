@@ -567,6 +567,9 @@ impl<N: Network> Stack<N> {
             }
         }
 
+        // Convert all tracked, still-unconverted values to bits.
+        A::convert_unconverted_values();
+
         // Eject the circuit assignment and reset the circuit.
         let assignment = A::eject_assignment_and_reset();
 

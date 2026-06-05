@@ -303,9 +303,11 @@ pub fn compare_constraints<F: PrimeField>(assignment_1: &Assignment<F>, assignme
 
 #[cfg(test)]
 mod tests {
+    use console::TestRng;
     use snarkvm_algorithms::{AlgebraicSponge, SNARK, r1cs::ConstraintSynthesizer, snark::varuna::VarunaVersion};
     use snarkvm_circuit::prelude::*;
     use snarkvm_curves::bls12_377::Fr;
+    use snarkvm_utilities::Uniform;
 
     /// Compute 2^EXPONENT - 1, in a purposefully constraint-inefficient manner for testing.
     fn create_example_circuit<E: Environment>() -> Field<E> {
@@ -395,5 +397,68 @@ mod tests {
             !VarunaInst::verify(universal_verifier, &fs_pp, &index_vk, varuna_version, [one, one + one], &proof)
                 .unwrap()
         );
+    }
+
+    fn sample_circuit_for_scalars(
+        // Whether to inject a scalar which is never converted or not
+        inject_unconverted_scalar: bool,
+        // True if the assignment should be ejected, false if the R1CS should be ejected
+        eject_assignment: bool,
+        rng: &mut TestRng,
+    ) {
+        // Inject a few innocuous values and add a constraint.
+        let field_1 = Field::<AleoV0>::new(Mode::Private, Uniform::rand(rng));
+        let field_2 = Field::<AleoV0>::new(Mode::Public, Uniform::rand(rng));
+        let _product = &field_1 * &field_2;
+
+        // Inject a Scalar and convert it to bits: this is not problematic.
+        let scalar = Scalar::<AleoV0>::new(Mode::Private, Uniform::rand(rng));
+        let _scalar_bits = scalar.to_bits_le();
+
+        if inject_unconverted_scalar {
+            // Inject a private scalar which is never converted to bits: ejection should fail
+            let _unconverted_scalar = Scalar::<AleoV0>::new(Mode::Private, Uniform::rand(rng));
+        }
+
+        // Hash the injected fields to add a few more constraints.
+        let _fields_hash = AleoV0::hash_psd8(&[field_1, field_2]);
+
+        match (eject_assignment, inject_unconverted_scalar) {
+            // Ejection must fail when an injected scalar was never converted to bits.
+            (true, true) => {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(AleoV0::eject_assignment_and_reset));
+                assert!(result.is_err());
+                AleoV0::reset();
+            }
+            (false, true) => {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(AleoV0::eject_r1cs_and_reset));
+                assert!(result.is_err());
+                AleoV0::reset();
+            }
+            // Ejection succeeds when every injected scalar was converted to bits.
+            (true, false) => {
+                let _assignment = AleoV0::eject_assignment_and_reset();
+            }
+            (false, false) => {
+                let _r1cs = AleoV0::eject_r1cs_and_reset();
+            }
+        }
+
+        AleoV0::reset();
+    }
+
+    #[test]
+    // Checks that a (sample) circuit fails to eject the assignment and the R1CS if a Scalar is
+    // injected and never converted to bits.
+    fn test_unconverted_scalar_rejection() {
+        let rng = &mut TestRng::default();
+
+        // Cases with unconverted scalars at the end: panic expected (caught by assert_panics)
+        sample_circuit_for_scalars(true, true, rng);
+        sample_circuit_for_scalars(true, false, rng);
+
+        // Sanity check: when the (unconverted) scalar is not injected, ejection works
+        sample_circuit_for_scalars(false, true, rng);
+        sample_circuit_for_scalars(false, false, rng);
     }
 }

@@ -60,8 +60,16 @@ impl<E: Environment> Inject for Scalar<E> {
             Ok(field) => {
                 let scalar = Self { field: Field::new(mode, field), bits_le: OnceCell::new() };
                 // Track the underlying variable so we can detect, at the end of synthesis, any
-                // scalar that is never range-checked (i.e. never converted to bits).
-                E::track_unconverted_scalar(&LinearCombination::from(&scalar.field));
+                // scalar that is never range-checked. The closure converts this scalar to bits
+                // (range-checking it) if it is never otherwise converted during synthesis.
+                let lc = LinearCombination::from(&scalar.field);
+                let pending = scalar.clone();
+                E::track_unconverted_value(
+                    &lc,
+                    Box::new(move || {
+                        let _ = pending.to_bits_le();
+                    }),
+                );
                 scalar
             }
             Err(error) => E::halt(format!("Unable to initialize a scalar circuit as a field element: {error}")),
