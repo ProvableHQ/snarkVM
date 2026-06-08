@@ -43,7 +43,12 @@ fn verify_execution_proof(vm: &VM<CurrentNetwork, LedgerType>, transaction: &Tra
         false => InclusionVersion::V1,
     };
 
-    vm.process().read().verify_execution(consensus_version, varuna_version, inclusion_version, execution).unwrap();
+    let execution_stacks = execution
+        .transitions()
+        .map(|t| (*t.program_id(), vm.process().get_stack(t.program_id()).unwrap()))
+        .collect::<IndexMap<_, _>>();
+    Process::verify_execution(consensus_version, varuna_version, inclusion_version, execution, &execution_stacks)
+        .unwrap();
 }
 
 fn mint_credits_record(
