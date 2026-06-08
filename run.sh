@@ -76,6 +76,21 @@ case "$1" in
         echo "Running Varuna tall-matrix test (cuVaruna + profiling)..."
         cargo test -p snarkvm-algorithms --lib prove_and_verify_with_tall_matrix_big --features cuvaruna --features cuvaruna-profiling -- --nocapture
         ;;
+    throughput)
+        N="${2:-4}"
+        FEATURES="--features cuvaruna"
+        # Allow optional extra flags (e.g. profile, debug).
+        shift; shift 2>/dev/null || true
+        for arg in "$@"; do
+            case "$arg" in
+                profile) FEATURES="$FEATURES --features cuvaruna-profiling" ;;
+                debug)   FEATURES="$FEATURES --features cuvaruna-debug" ;;
+            esac
+        done
+        echo "Running throughput test: $N parallel proofs with $FEATURES"
+        NUM_PROOFS=$N cargo test test_transfer_private_throughput \
+            --package snarkvm-synthesizer --lib --release $FEATURES -- --nocapture
+        ;;
     *)
         echo "Usage:"
         echo "  ./run.sh cpu               - Run CPU only (no CUDA)"
@@ -89,6 +104,7 @@ case "$1" in
         echo "  ./run.sh bench-cu          - Run benchmark with cuvaruna"
         echo "  ./run.sh varuna-cpu        - Run Varuna tall-matrix test (CPU)"
         echo "  ./run.sh varuna-cu-profile - Run Varuna tall-matrix test (cuVaruna + profiling)"
+        echo "  ./run.sh throughput [N]    - Parallel throughput: N proofs (default 4) with cuvaruna"
         exit 1
         ;;
 esac

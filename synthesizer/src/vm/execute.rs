@@ -689,6 +689,82 @@ finalize test:
     }
 
     #[test]
+    fn test_transfer_private_throughput() {
+        let num_proofs: usize = std::env::var("NUM_PROOFS").ok().and_then(|v| v.parse().ok()).unwrap_or(4);
+        let rng = &mut TestRng::fixed(42);
+
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+        let address = Address::try_from(&caller_private_key).unwrap();
+
+        let (vm, records) = prepare_vm(rng).unwrap();
+
+        let record = records.values().next().unwrap().decrypt(&caller_view_key).unwrap();
+
+        // Pre-generate all authorizations (cheap, CPU-only).
+        println!("Pre-generating {num_proofs} authorizations...");
+        let authorizations: Vec<_> = (0..num_proofs)
+            .map(|i| {
+                let inputs = [
+                    Value::<CurrentNetwork>::Record(record.clone()),
+                    Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                    Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+                ];
+                let auth =
+                    vm.authorize(&caller_private_key, "credits.aleo", "transfer_private", inputs, rng).unwrap();
+                println!("  Authorization {i} ready");
+                auth
+            })
+            .collect();
+
+        // Warmup: run one proof sequentially to ensure GPU kernels are loaded.
+        {
+            let warmup_inputs = [
+                Value::<CurrentNetwork>::Record(record.clone()),
+                Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+            ];
+            let warmup_auth =
+                vm.authorize(&caller_private_key, "credits.aleo", "transfer_private", warmup_inputs, rng).unwrap();
+            println!("Running warmup proof...");
+            let now = Instant::now();
+            vm.execute_authorization(warmup_auth, None, None, rng).unwrap();
+            println!("Warmup done in {}ms", now.elapsed().as_millis());
+        }
+
+        // Run all proofs in parallel.
+        println!("Starting {num_proofs} parallel proofs...");
+        let start = Instant::now();
+        std::thread::scope(|s| {
+            let handles: Vec<_> = authorizations
+                .into_iter()
+                .enumerate()
+                .map(|(i, auth)| {
+                    let vm = &vm;
+                    s.spawn(move || {
+                        let thread_rng = &mut TestRng::fixed((100 + i) as u64);
+                        let now = Instant::now();
+                        let tx = vm.execute_authorization(auth, None, None, thread_rng).unwrap();
+                        let elapsed = now.elapsed();
+                        println!("  Proof {i} done in {}ms", elapsed.as_millis());
+                        assert!(matches!(tx, Transaction::Execute(_, _, _, _)));
+                    })
+                })
+                .collect();
+            for h in handles {
+                h.join().unwrap();
+            }
+        });
+        let total = start.elapsed();
+
+        let proofs_per_sec = num_proofs as f64 / total.as_secs_f64();
+        println!("=== Throughput Results ===");
+        println!("  Proofs:     {num_proofs}");
+        println!("  Wall time:  {}ms", total.as_millis());
+        println!("  Throughput: {proofs_per_sec:.2} proofs/s");
+    }
+
+    #[test]
     fn test_transfer_private_transaction_size() {
         let rng = &mut TestRng::default();
 
