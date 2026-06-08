@@ -36,8 +36,9 @@ pub(crate) fn num_non_zero<F>(joint_matrix: &Matrix<F>) -> usize {
     joint_matrix.iter().map(|row| row.len()).sum()
 }
 
-/// Parameters for sparse matrix-vector multiplication, categorized by column density.
-/// Used for efficient GPU computation with different kernel strategies per density bucket.
+/// Parameters for sparse matrix-vector multiplication, categorized by column
+/// density. Used for efficient GPU computation with different kernel strategies
+/// per density bucket.
 #[derive(Debug, Clone, Default)]
 pub struct MatrixParameters<F> {
     /// Column indices in the output
@@ -105,8 +106,9 @@ impl<F: PrimeField> CanonicalDeserialize for MatrixParameters<F> {
     }
 }
 
-/// Generate matrix parameters from a transposed matrix, categorizing columns by density.
-/// This preprocessing enables efficient GPU sparse matrix-vector multiplication.
+/// Generate matrix parameters from a transposed matrix, categorizing columns by
+/// density. This preprocessing enables efficient GPU sparse matrix-vector
+/// multiplication.
 pub(crate) fn generate_matrix_parameters<F: Clone>(matrix: &Matrix<F>) -> MatrixParametersAll<F> {
     let mut matrix_parameters = vec![
         MatrixParameters {

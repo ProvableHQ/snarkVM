@@ -68,6 +68,14 @@ case "$1" in
         echo "Running benchmark with cuvaruna..."
         cargo bench --package snarkvm-synthesizer --bench execute_authorization --features cuvaruna
         ;;
+    bench-amm-base)
+        echo "Running AMM swap benchmark with cuda (baseline)..."
+        cargo bench --package snarkvm-synthesizer --bench amm_swap --features cuda
+        ;;
+    bench-amm-cu)
+        echo "Running AMM swap benchmark with cuvaruna..."
+        cargo bench --package snarkvm-synthesizer --bench amm_swap --features cuvaruna
+        ;;
     varuna-cpu)
         echo "Running Varuna tall-matrix test (CPU)..."
         cargo test -p snarkvm-algorithms --lib prove_and_verify_with_tall_matrix_big -- --nocapture
@@ -87,6 +95,8 @@ case "$1" in
         echo "  ./run.sh nsys [name]       - Build and run nsys profile (default: snarkvm_test_profile)"
         echo "  ./run.sh bench-base        - Run benchmark with cuda (baseline)"
         echo "  ./run.sh bench-cu          - Run benchmark with cuvaruna"
+        echo "  ./run.sh bench-amm-base    - Run AMM swap benchmark with cuda (baseline)"
+        echo "  ./run.sh bench-amm-cu      - Run AMM swap benchmark with cuvaruna"
         echo "  ./run.sh varuna-cpu        - Run Varuna tall-matrix test (CPU)"
         echo "  ./run.sh varuna-cu-profile - Run Varuna tall-matrix test (cuVaruna + profiling)"
         exit 1

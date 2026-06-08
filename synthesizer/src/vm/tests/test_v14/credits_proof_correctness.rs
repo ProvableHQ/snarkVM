@@ -72,7 +72,9 @@ fn mint_credits_record(
 
     let output = tx.transitions().next().unwrap().outputs().iter().next().unwrap();
     match output {
-        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(caller_view_key).unwrap(),
+        Output::Record(_, _, record_ciphertext, _) => {
+            record_ciphertext.as_ref().unwrap().decrypt(caller_view_key).unwrap()
+        }
         _ => panic!("Expected record output"),
     }
 }

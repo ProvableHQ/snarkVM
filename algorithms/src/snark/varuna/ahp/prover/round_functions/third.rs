@@ -15,13 +15,18 @@
 
 use crate::{
     fft::{
-        DensePolynomial, EvaluationDomain, Evaluations,
+        DensePolynomial,
+        EvaluationDomain,
+        Evaluations,
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        AHPError, Matrix, SNARKMode, VarunaVersion,
+        AHPError,
+        Matrix,
+        SNARKMode,
+        VarunaVersion,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
         matrices::transpose,
         prover::{self, MatrixSums, ThirdMessage},
@@ -117,9 +122,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let g_1 = DensePolynomial::from_coefficients_slice(&x_g_1_sum.coeffs[1..]);
 
         // DEBUG: Print actual g_1 coefficients that will be committed
-        // println!("CPU g_1.coeffs[0..5] = {:?}", &g_1.coeffs[..5.min(g_1.coeffs.len())]);
-        // println!("CPU g_1.coeffs.len() = {}", g_1.coeffs.len());
-        // println!("CPU g_1 last 5 coeffs = {:?}", &g_1.coeffs[g_1.coeffs.len().saturating_sub(5)..]);
+        // println!("CPU g_1.coeffs[0..5] = {:?}",
+        // &g_1.coeffs[..5.min(g_1.coeffs.len())]); println!("CPU
+        // g_1.coeffs.len() = {}", g_1.coeffs.len()); println!("CPU g_1 last 5
+        // coeffs = {:?}", &g_1.coeffs[g_1.coeffs.len().saturating_sub(5)..]);
 
         drop(x_g_1_sum); // Be assured we don't use x_g_1_sum anymore
 
@@ -132,7 +138,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         };
 
         // DEBUG: Print what's being compared
-        // let expected_info = Self::third_round_polynomial_info(state.max_variable_domain.size());
+        // let expected_info =
+        // Self::third_round_polynomial_info(state.max_variable_domain.size());
         // println!("CPU DEBUG g_1 actual: {:?}", oracles.g_1.info());
         // println!("CPU DEBUG g_1 expected: {:?}", expected_info.get("g_1"));
         // println!("CPU DEBUG h_1 actual: {:?}", oracles.h_1.info());
@@ -283,9 +290,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             xg_1_sum += &lineval_b.xg_1_i;
             xg_1_sum += &lineval_c.xg_1_i;
             // Debug output for third round
-            // println!("  Third round Instance {} matrix a: sum = {:?}", i - instances_seen, lineval_a.sum);
-            // println!("  Third round Instance {} matrix b: sum = {:?}", i - instances_seen, lineval_b.sum);
-            // println!("  Third round Instance {} matrix c: sum = {:?}", i - instances_seen, lineval_c.sum);
+            // println!("  Third round Instance {} matrix a: sum = {:?}", i -
+            // instances_seen, lineval_a.sum); println!("  Third round Instance
+            // {} matrix b: sum = {:?}", i - instances_seen, lineval_b.sum);
+            // println!("  Third round Instance {} matrix c: sum = {:?}", i -
+            // instances_seen, lineval_c.sum);
 
             sums[circuit_index].push(MatrixSums { sum_a: lineval_a.sum, sum_b: lineval_b.sum, sum_c: lineval_c.sum });
             if 1 + i - instances_seen == num_instances[circuit_index] {
@@ -301,27 +310,35 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
         // DEBUG: Print mask polynomial info
         // let nonzero_mask: Vec<_> =
-        //     mask_poly.coeffs.iter().enumerate().filter(|(_, c)| !c.is_zero()).map(|(i, _)| i as u32).collect();
-        // println!("CPU mask_poly: {} non-zero coeffs, indices = {:?}", nonzero_mask.len(), nonzero_mask);
+        //     mask_poly.coeffs.iter().enumerate().filter(|(_, c)|
+        // !c.is_zero()).map(|(i, _)| i as u32).collect(); println!("CPU
+        // mask_poly: {} non-zero coeffs, indices = {:?}", nonzero_mask.len(),
+        // nonzero_mask);
 
         // DEBUG: Print h_1_sum and xg_1_sum BEFORE mask polynomial
-        // println!("CPU h_1_sum BEFORE mask coeffs[0..5] = {:?}", &h_1_sum.coeffs[..5.min(h_1_sum.coeffs.len())]);
-        // println!("CPU xg_1_sum BEFORE mask coeffs[0..5] = {:?}", &xg_1_sum.coeffs[..5.min(xg_1_sum.coeffs.len())]);
+        // println!("CPU h_1_sum BEFORE mask coeffs[0..5] = {:?}",
+        // &h_1_sum.coeffs[..5.min(h_1_sum.coeffs.len())]); println!("CPU
+        // xg_1_sum BEFORE mask coeffs[0..5] = {:?}",
+        // &xg_1_sum.coeffs[..5.min(xg_1_sum.coeffs.len())]);
 
         let (mut h_1_mask, mut xg_1_mask) = mask_poly.divide_by_vanishing_poly(*max_variable_domain).unwrap();
 
         // DEBUG: Print mask contributions
-        // println!("CPU h_1_mask.coeffs[0..5] = {:?}", &h_1_mask.coeffs[..5.min(h_1_mask.coeffs.len())]);
-        // println!("CPU xg_1_mask.coeffs[0..5] = {:?}", &xg_1_mask.coeffs[..5.min(xg_1_mask.coeffs.len())]);
+        // println!("CPU h_1_mask.coeffs[0..5] = {:?}",
+        // &h_1_mask.coeffs[..5.min(h_1_mask.coeffs.len())]); println!("CPU
+        // xg_1_mask.coeffs[0..5] = {:?}",
+        // &xg_1_mask.coeffs[..5.min(xg_1_mask.coeffs.len())]);
 
         h_1_sum += &core::mem::take(&mut h_1_mask);
         xg_1_sum += &core::mem::take(&mut xg_1_mask);
 
         // DEBUG: Print final h_1_sum and xg_1_sum
-        // println!("CPU h_1_sum AFTER mask coeffs[0..5] = {:?}", &h_1_sum.coeffs[..5.min(h_1_sum.coeffs.len())]);
-        // println!("CPU xg_1_sum AFTER mask coeffs[0..5] = {:?}", &xg_1_sum.coeffs[..5.min(xg_1_sum.coeffs.len())]);
-        // println!("CPU h_1_sum.degree() = {}", h_1_sum.degree());
-        // println!("CPU xg_1_sum.degree() = {}", xg_1_sum.degree());
+        // println!("CPU h_1_sum AFTER mask coeffs[0..5] = {:?}",
+        // &h_1_sum.coeffs[..5.min(h_1_sum.coeffs.len())]); println!("CPU
+        // xg_1_sum AFTER mask coeffs[0..5] = {:?}",
+        // &xg_1_sum.coeffs[..5.min(xg_1_sum.coeffs.len())]); println!("CPU
+        // h_1_sum.degree() = {}", h_1_sum.degree()); println!("CPU
+        // xg_1_sum.degree() = {}", xg_1_sum.degree());
 
         let msg = ThirdMessage { sums };
 

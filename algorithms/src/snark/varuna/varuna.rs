@@ -15,16 +15,31 @@
 
 use super::Certificate;
 use crate::{
-    AlgebraicSponge, SNARK, SNARKError,
+    AlgebraicSponge,
+    SNARK,
+    SNARKError,
     fft::EvaluationDomain,
     polycommit::sonic_pc::{
-        Commitment, CommitterUnionKey, Evaluations, LabeledCommitment, QuerySet, Randomness, SonicKZG10,
+        Commitment,
+        CommitterUnionKey,
+        Evaluations,
+        LabeledCommitment,
+        QuerySet,
+        Randomness,
+        SonicKZG10,
     },
     r1cs::{ConstraintSynthesizer, SynthesisError},
     snark::varuna::{
-        CircuitProvingKey, CircuitVerifyingKey, Proof, SNARKMode, UniversalSRS, VarunaVersion,
+        CircuitProvingKey,
+        CircuitVerifyingKey,
+        Proof,
+        SNARKMode,
+        UniversalSRS,
+        VarunaVersion,
         ahp::{AHPError, AHPForR1CS, CircuitId, EvaluationsProvider},
-        proof, prover, witness_label,
+        proof,
+        prover,
+        witness_label,
     },
     srs::UniversalVerifier,
 };
@@ -421,12 +436,13 @@ where
         // println!("\n========== CPU FIRST ROUND START ==========");
         // println!("CPU First Round Inputs:");
         // println!("  total_instances: {}", prover_state.total_instances);
-        // println!("  max_constraint_domain.size(): {}", prover_state.max_constraint_domain.size());
-        // println!("  max_variable_domain.size(): {}", prover_state.max_variable_domain.size());
-        // println!("  max_non_zero_domain.size(): {}", prover_state.max_non_zero_domain.size());
-        // for (circuit, css) in prover_state.circuit_specific_states.iter() {
-        //     println!("  Circuit {}:", circuit.id);
-        //     println!("    batch_size={}", css.batch_size);
+        // println!("  max_constraint_domain.size(): {}",
+        // prover_state.max_constraint_domain.size()); println!("
+        // max_variable_domain.size(): {}", prover_state.max_variable_domain.size());
+        // println!("  max_non_zero_domain.size(): {}",
+        // prover_state.max_non_zero_domain.size()); for (circuit, css) in
+        // prover_state.circuit_specific_states.iter() {     println!("  Circuit
+        // {}:", circuit.id);     println!("    batch_size={}", css.batch_size);
         //     println!("    variable_domain.size(): {}", css.variable_domain_size());
         //     println!("    input_domain.size(): {}", css.input_domain_size());
         //     let private_vars = css.private_variables_ref();
@@ -434,8 +450,8 @@ where
         //     for (j, pv) in private_vars.iter().enumerate() {
         //         let sample: Vec<_> = pv.iter().take(5).collect();
         //         println!("    private_variables[{}].len(): {}", j, pv.len());
-        //         println!("    private_variables[{}][0..min(5,len)]: {:?}", j, sample);
-        //     }
+        //         println!("    private_variables[{}][0..min(5,len)]: {:?}", j,
+        // sample);     }
         //     let x_polys = css.x_polys_ref();
         //     println!("    x_polys.len(): {}", x_polys.len());
         //     for (j, xp) in x_polys.iter().enumerate() {
@@ -530,7 +546,8 @@ where
 
                     // // Print sums for comparison with CUDA path
                     // println!("\n========== CPU PREPARE THIRD MESSAGE SUMS ==========");
-                    // for (circuit_idx, circuit_sums) in prover_prepare_third_message.sums.iter().enumerate() {
+                    // for (circuit_idx, circuit_sums) in
+                    // prover_prepare_third_message.sums.iter().enumerate() {
                     //     for (instance_idx, sums) in circuit_sums.iter().enumerate() {
                     //         println!(
                     //             "  Circuit {} Instance {}: sum_a={:?}, sum_b={:?}, sum_c={:?}",
@@ -766,9 +783,10 @@ where
         // println!("    g_1: {:?}", commitments.g_1);
         // println!("    h_1: {:?}", commitments.h_1);
         // println!("    h_2: {:?}", commitments.h_2);
-        // println!("    witness_commitments.len(): {}", commitments.witness_commitments.len());
-        // if !commitments.witness_commitments.is_empty() {
-        //     println!("    witness_commitments[0].w: {:?}", commitments.witness_commitments[0].w);
+        // println!("    witness_commitments.len(): {}",
+        // commitments.witness_commitments.len()); if !commitments.
+        // witness_commitments.is_empty() {     println!("
+        // witness_commitments[0].w: {:?}", commitments.witness_commitments[0].w);
         // }
 
         // // Debug: Print prover messages
@@ -787,8 +805,8 @@ where
         // println!("  CPU Key Polynomials (degree, first 3 coeffs):");
         // for (i, poly) in polynomials.iter().take(10).enumerate() {
         //     let coeffs_sample: Vec<_> = poly.polynomial().coeffs().take(3).collect();
-        //     println!("    [{}] {}: deg={}, coeffs={:?}", i, poly.label(), poly.degree(), coeffs_sample);
-        // }
+        //     println!("    [{}] {}: deg={}, coeffs={:?}", i, poly.label(),
+        // poly.degree(), coeffs_sample); }
 
         let evaluations = proof::Evaluations::from_map(&evaluations, batch_sizes.clone());
 

@@ -17,8 +17,15 @@
 mod varuna {
     use crate::{
         snark::varuna::{
-            AHPForR1CS, CircuitVerifyingKey, VarunaHidingMode, VarunaNonHidingMode, VarunaSNARK, VarunaVersion,
-            mode::SNARKMode, proof::proof_size, test_circuit::TestCircuit,
+            AHPForR1CS,
+            CircuitVerifyingKey,
+            VarunaHidingMode,
+            VarunaNonHidingMode,
+            VarunaSNARK,
+            VarunaVersion,
+            mode::SNARKMode,
+            proof::proof_size,
+            test_circuit::TestCircuit,
         },
         traits::{AlgebraicSponge, SNARK},
     };
@@ -27,7 +34,8 @@ mod varuna {
 
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
     use snarkvm_utilities::{
-        CanonicalSerialize, ToBytes,
+        CanonicalSerialize,
+        ToBytes,
         rand::{TestRng, Uniform},
     };
 
@@ -292,11 +300,15 @@ mod varuna {
         // let pk_size_posw = 91633;
         // let mut rng = TestRng::default();
 
-        // SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V1, &mut rng);
-        // SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V1, &mut rng);
+        // SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk,
+        // VarunaVersion::V1, &mut rng);
+        // SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw,
+        // VarunaVersion::V1, &mut rng);
 
-        // SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
-        // SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
+        // SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk,
+        // VarunaVersion::V2, &mut rng);
+        // SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw,
+        // VarunaVersion::V2, &mut rng);
 
         // SonicPCTest::test_serde_json(num_constraints, num_variables, &mut rng);
         // SonicPCPoswTest::test_serde_json(num_constraints, num_variables, &mut rng);
@@ -319,7 +331,8 @@ mod varuna {
         let mut rng = TestRng::default();
 
         SonicPCTest::test_circuit(num_constraints, num_variables, pk_size_zk, VarunaVersion::V2, &mut rng);
-        // SonicPCPoswTest::test_circuit(num_constraints, num_variables, pk_size_posw, VarunaVersion::V2, &mut rng);
+        // SonicPCPoswTest::test_circuit(num_constraints, num_variables,
+        // pk_size_posw, VarunaVersion::V2, &mut rng);
     }
 
     #[test]
@@ -412,14 +425,19 @@ mod varuna_hiding {
     use crate::{
         crypto_hash::PoseidonSponge,
         snark::varuna::{
-            CircuitVerifyingKey, VarunaHidingMode, VarunaSNARK, VarunaVersion, ahp::AHPForR1CS,
+            CircuitVerifyingKey,
+            VarunaHidingMode,
+            VarunaSNARK,
+            VarunaVersion,
+            ahp::AHPForR1CS,
             test_circuit::TestCircuit,
         },
         traits::{AlgebraicSponge, SNARK},
     };
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
     use snarkvm_utilities::{
-        FromBytes, ToBytes,
+        FromBytes,
+        ToBytes,
         rand::{TestRng, Uniform},
     };
 
@@ -550,9 +568,9 @@ mod varuna_hiding {
     //     let num_variables = 25;
     //     let mut rng = TestRng::default();
 
-    //     test_circuit(num_constraints, num_variables, VarunaVersion::V1, &mut rng);
-    //     test_circuit(num_constraints, num_variables, VarunaVersion::V2, &mut rng);
-    //     test_serde_json(num_constraints, num_variables, &mut rng);
+    //     test_circuit(num_constraints, num_variables, VarunaVersion::V1, &mut
+    // rng);     test_circuit(num_constraints, num_variables, VarunaVersion::V2,
+    // &mut rng);     test_serde_json(num_constraints, num_variables, &mut rng);
     //     test_bincode(num_constraints, num_variables, &mut rng);
     // }
 

@@ -16,7 +16,9 @@
 use crate::{
     fft::DensePolynomial,
     snark::varuna::{
-        AHPError, Matrix, SNARKMode,
+        AHPError,
+        Matrix,
+        SNARKMode,
         ahp::{AHPForR1CS, indexer::CircuitId, verifier},
         prover::{self, MatrixSums, ThirdMessage},
     },
@@ -58,16 +60,17 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // Debug output for assignments (CPU baseline)
         // println!("\n========== CPU PREPARE THIRD ROUND - ASSIGNMENTS ==========");
         // for (circuit_id, circuit_assignments) in &assignments {
-        //     println!("  circuit_id={}, num_assignments={}", circuit_id, circuit_assignments.len());
-        //     if let Some(first_assignment) = circuit_assignments.first() {
-        //         println!(
+        //     println!("  circuit_id={}, num_assignments={}", circuit_id,
+        // circuit_assignments.len());     if let Some(first_assignment) =
+        // circuit_assignments.first() {         println!(
         //             "    assignment[0].degree()={}, coeffs[0..5]={:?}",
         //             first_assignment.degree(),
         //             &first_assignment.coeffs[..first_assignment.coeffs.len().min(5)]
         //         );
         //     }
         // }
-        // println!("========== CPU PREPARE THIRD ROUND - ASSIGNMENTS END ==========\n");
+        // println!("========== CPU PREPARE THIRD ROUND - ASSIGNMENTS END
+        // ==========\n");
 
         let matrix_transposes = Self::calculate_matrix_transpose(&mut state)?;
 
@@ -140,8 +143,10 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             // );
 
             // DEBUG: Print first 5 Lagrange coefficients for first matrix
-            // let l_at_alpha = circuit_specific_state.constraint_domain.evaluate_all_lagrange_coefficients(*alpha);
-            // println!("    CPU Lagrange[0..5]: {:?}", &l_at_alpha[..5]);
+            // let l_at_alpha =
+            // circuit_specific_state.constraint_domain.evaluate_all_lagrange_coefficients(*
+            // alpha); println!("    CPU Lagrange[0..5]: {:?}",
+            // &l_at_alpha[..5]);
 
             // Iterate for each instance in the batch.
             for assignment in assignments_i {
@@ -196,8 +201,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             //     lineval_a.z_m_at_alpha.degree()
             // );
             // if lineval_a.z_m_at_alpha.coeffs.len() >= 5 {
-            //     println!("      z_m_at_alpha.coeffs[0..5] = {:?}", &lineval_a.z_m_at_alpha.coeffs[..5]);
-            // }
+            //     println!("      z_m_at_alpha.coeffs[0..5] = {:?}",
+            // &lineval_a.z_m_at_alpha.coeffs[..5]); }
             // println!(
             //     "    Instance {} matrix {}: sum = {:?}, z_m_at_alpha.degree() = {}",
             //     instance_idx,
@@ -206,8 +211,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             //     lineval_b.z_m_at_alpha.degree()
             // );
             // if lineval_b.z_m_at_alpha.coeffs.len() >= 5 {
-            //     println!("      z_m_at_alpha.coeffs[0..5] = {:?}", &lineval_b.z_m_at_alpha.coeffs[..5]);
-            // }
+            //     println!("      z_m_at_alpha.coeffs[0..5] = {:?}",
+            // &lineval_b.z_m_at_alpha.coeffs[..5]); }
             // println!(
             //     "    Instance {} matrix {}: sum = {:?}, z_m_at_alpha.degree() = {}",
             //     instance_idx,
@@ -216,8 +221,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             //     lineval_c.z_m_at_alpha.degree()
             // );
             // if lineval_c.z_m_at_alpha.coeffs.len() >= 5 {
-            //     println!("      z_m_at_alpha.coeffs[0..5] = {:?}", &lineval_c.z_m_at_alpha.coeffs[..5]);
-            // }
+            //     println!("      z_m_at_alpha.coeffs[0..5] = {:?}",
+            // &lineval_c.z_m_at_alpha.coeffs[..5]); }
 
             sums[circuit_index].push(MatrixSums { sum_a: lineval_a.sum, sum_b: lineval_b.sum, sum_c: lineval_c.sum });
             if 1 + i - instances_seen == num_instances[circuit_index] {

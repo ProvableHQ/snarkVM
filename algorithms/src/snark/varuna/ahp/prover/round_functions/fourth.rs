@@ -15,7 +15,9 @@
 
 use crate::{
     fft::{
-        DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain,
+        DensePolynomial,
+        EvaluationDomain,
+        Evaluations as EvaluationsOnDomain,
         domain::{FFTPrecomputation, IFFTPrecomputation},
         polynomial::PolyMultiplier,
     },
@@ -138,14 +140,20 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             // let g_a_dense = g_a.polynomial().clone().into_dense();
             // let g_b_dense = g_b.polynomial().clone().into_dense();
             // let g_c_dense = g_c.polynomial().clone().into_dense();
-            // println!("  CPU circuit {}: g_a.coeffs[0..3]={:?}, degree={}", circuit_a.id, &g_a_dense.coeffs[0..3.min(g_a_dense.coeffs.len())], g_a.degree());
-            // println!("  CPU circuit {}: g_b.coeffs[0..3]={:?}, degree={}", circuit_a.id, &g_b_dense.coeffs[0..3.min(g_b_dense.coeffs.len())], g_b.degree());
-            // println!("  CPU circuit {}: g_c.coeffs[0..3]={:?}, degree={}", circuit_a.id, &g_c_dense.coeffs[0..3.min(g_c_dense.coeffs.len())], g_c.degree());
+            // println!("  CPU circuit {}: g_a.coeffs[0..3]={:?}, degree={}", circuit_a.id,
+            // &g_a_dense.coeffs[0..3.min(g_a_dense.coeffs.len())], g_a.degree());
+            // println!("  CPU circuit {}: g_b.coeffs[0..3]={:?}, degree={}", circuit_a.id,
+            // &g_b_dense.coeffs[0..3.min(g_b_dense.coeffs.len())], g_b.degree());
+            // println!("  CPU circuit {}: g_c.coeffs[0..3]={:?}, degree={}", circuit_a.id,
+            // &g_c_dense.coeffs[0..3.min(g_c_dense.coeffs.len())], g_c.degree());
 
             // Debug: Print lhs polynomial info
-            // println!("  CPU circuit {}: lhs_a.coeffs[0..3]={:?}, degree={}", circuit_a.id, &lhs_a.coeffs[0..3.min(lhs_a.coeffs.len())], lhs_a.degree());
-            // println!("  CPU circuit {}: lhs_b.coeffs[0..3]={:?}, degree={}", circuit_a.id, &lhs_b.coeffs[0..3.min(lhs_b.coeffs.len())], lhs_b.degree());
-            // println!("  CPU circuit {}: lhs_c.coeffs[0..3]={:?}, degree={}", circuit_a.id, &lhs_c.coeffs[0..3.min(lhs_c.coeffs.len())], lhs_c.degree());
+            // println!("  CPU circuit {}: lhs_a.coeffs[0..3]={:?}, degree={}",
+            // circuit_a.id, &lhs_a.coeffs[0..3.min(lhs_a.coeffs.len())], lhs_a.degree());
+            // println!("  CPU circuit {}: lhs_b.coeffs[0..3]={:?}, degree={}",
+            // circuit_a.id, &lhs_b.coeffs[0..3.min(lhs_b.coeffs.len())], lhs_b.degree());
+            // println!("  CPU circuit {}: lhs_c.coeffs[0..3]={:?}, degree={}",
+            // circuit_a.id, &lhs_c.coeffs[0..3.min(lhs_c.coeffs.len())], lhs_c.degree());
 
             let matrix_sum = prover::message::MatrixSums { sum_a, sum_b, sum_c };
             sums.push(matrix_sum);

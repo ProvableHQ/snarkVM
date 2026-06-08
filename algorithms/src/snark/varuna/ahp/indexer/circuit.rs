@@ -85,8 +85,9 @@ pub struct Circuit<F: PrimeField, SM: SNARKMode> {
     pub b_arith: MatrixEvals<F>,
     pub c_arith: MatrixEvals<F>,
 
-    /// Precomputed transpose parameters for GPU sparse matrix-vector multiplication.
-    /// Columns are categorized into 4 buckets by density for different CUDA kernels.
+    /// Precomputed transpose parameters for GPU sparse matrix-vector
+    /// multiplication. Columns are categorized into 4 buckets by density
+    /// for different CUDA kernels.
     pub a_trans_parameters: MatrixParametersAll<F>,
     pub b_trans_parameters: MatrixParametersAll<F>,
     pub c_trans_parameters: MatrixParametersAll<F>,
@@ -172,7 +173,8 @@ impl<F: PrimeField, SM: SNARKMode> Circuit<F, SM> {
 impl<F: PrimeField, SM: SNARKMode> CanonicalSerialize for Circuit<F, SM> {
     fn serialize_with_mode<W: Write>(&self, mut writer: W, compress: Compress) -> Result<(), SerializationError> {
         // Note: *_trans_parameters are NOT serialized - they are computed on-the-fly
-        // during deserialization from the a, b, c matrices to maintain backward compatibility
+        // during deserialization from the a, b, c matrices to maintain backward
+        // compatibility
         self.index_info.serialize_with_mode(&mut writer, compress)?;
         self.a.serialize_with_mode(&mut writer, compress)?;
         self.b.serialize_with_mode(&mut writer, compress)?;
@@ -237,9 +239,10 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
         let c: Matrix<F> = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
         let id = Self::hash(&index_info, &a, &b, &c)?;
 
-        // Compute trans_parameters on-the-fly (not serialized for backward compatibility)
-        let variable_domain =
-            EvaluationDomain::<F>::new(index_info.num_public_and_private_variables).ok_or(SerializationError::InvalidData)?;
+        // Compute trans_parameters on-the-fly (not serialized for backward
+        // compatibility)
+        let variable_domain = EvaluationDomain::<F>::new(index_info.num_public_and_private_variables)
+            .ok_or(SerializationError::InvalidData)?;
         let input_domain =
             EvaluationDomain::<F>::new(index_info.num_public_inputs).ok_or(SerializationError::InvalidData)?;
 

@@ -17,9 +17,12 @@ use crate::{
     fft::{DensePolynomial, EvaluationDomain, Evaluations as EvaluationsOnDomain, SparsePolynomial},
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        Circuit, CircuitId, SNARKMode,
+        Circuit,
+        CircuitId,
+        SNARKMode,
         ahp::{AHPError, AHPForR1CS},
-        prover, witness_label,
+        prover,
+        witness_label,
     },
 };
 use snarkvm_fields::PrimeField;
@@ -132,11 +135,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     ) -> Witness<F> {
         // println!("=== CPU calculate_w: {} ===", label);
         // println!("  private_variables.len(): {}", private_variables.len());
-        // println!("  private_variables[0..min(5,len)]: {:?}", &private_variables[..private_variables.len().min(5)]);
-        // println!("  x_poly.degree(): {}", x_poly.degree());
-        // println!("  x_poly.coeffs[0..min(5,len)]: {:?}", &x_poly.coeffs[..x_poly.coeffs.len().min(5)]);
-        // println!("  variable_domain.size(): {}", variable_domain.size());
-        // println!("  input_domain.size(): {}", input_domain.size());
+        // println!("  private_variables[0..min(5,len)]: {:?}",
+        // &private_variables[..private_variables.len().min(5)]); println!("
+        // x_poly.degree(): {}", x_poly.degree()); println!("
+        // x_poly.coeffs[0..min(5,len)]: {:?}",
+        // &x_poly.coeffs[..x_poly.coeffs.len().min(5)]); println!("
+        // variable_domain.size(): {}", variable_domain.size()); println!("
+        // input_domain.size(): {}", input_domain.size());
 
         let mut w_extended = private_variables;
         let ratio = variable_domain.size() / input_domain.size();
@@ -154,7 +159,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             coeffs
         };
         // println!("  x_evals[0..5]: {:?}", &x_evals[..5]);
-        // println!("  x_evals[ratio-1..ratio+4]: {:?}", &x_evals[ratio - 1..ratio + 4]);
+        // println!("  x_evals[ratio-1..ratio+4]: {:?}", &x_evals[ratio - 1..ratio +
+        // 4]);
 
         // Computing the evaluations of \widetilde{z} - \widetilde{x} (which
         // vanishes at C_i[x], i. e. variable_domain)
@@ -173,14 +179,16 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let w_poly_before_div = EvaluationsOnDomain::from_vec_and_domain(w_poly_evals, variable_domain)
             .interpolate_with_pc(&circuit.ifft_precomputation);
         // println!("  w_poly_before_div.degree(): {}", w_poly_before_div.degree());
-        // println!("  w_poly_before_div.coeffs[0..5]: {:?}", &w_poly_before_div.coeffs[..5]);
+        // println!("  w_poly_before_div.coeffs[0..5]: {:?}",
+        // &w_poly_before_div.coeffs[..5]);
 
         let (w_poly, remainder) = w_poly_before_div.divide_by_vanishing_poly(input_domain).unwrap();
         assert!(remainder.is_zero());
 
         // println!("  w_poly.degree(): {}", w_poly.degree());
         // println!("  w_poly.coeffs[0..5]: {:?}", &w_poly.coeffs[..5]);
-        // println!("  w_poly.coeffs (last 5): {:?}", &w_poly.coeffs[w_poly.coeffs.len() - 5..]);
+        // println!("  w_poly.coeffs (last 5): {:?}", &w_poly.coeffs[w_poly.coeffs.len()
+        // - 5..]);
 
         assert!(w_poly.degree() < variable_domain.size() - input_domain.size());
         end_timer!(w_poly_time);

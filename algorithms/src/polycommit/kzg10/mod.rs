@@ -130,10 +130,10 @@ impl<E: PairingEngine> KZG10<E> {
                 let bases = &powers.powers_of_beta_g[num_leading_zeros..(num_leading_zeros + plain_coeffs.len())];
 
                 // // DEBUG: Print MSM inputs (standard form after to_bigint)
-                // println!("CPU MSM: num_leading_zeros={}, plain_coeffs.len()={}", num_leading_zeros, plain_coeffs.len());
-                // if !plain_coeffs.is_empty() {
-                //     println!("CPU MSM scalars (standard form, first 5):");
-                //     for i in 0..5.min(plain_coeffs.len()) {
+                // println!("CPU MSM: num_leading_zeros={}, plain_coeffs.len()={}",
+                // num_leading_zeros, plain_coeffs.len()); if !plain_coeffs.
+                // is_empty() {     println!("CPU MSM scalars (standard form,
+                // first 5):");     for i in 0..5.min(plain_coeffs.len()) {
                 //         println!("  [{}]: {:?}", i, plain_coeffs[i]);
                 //     }
                 //     // Print last 5 scalars

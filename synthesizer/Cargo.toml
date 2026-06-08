@@ -80,6 +80,11 @@ name = "execute_authorization"
 path = "benches/execute_authorization.rs"
 harness = false
 
+[[bench]]
+name = "amm_swap"
+path = "benches/amm_swap.rs"
+harness = false
+
 [dependencies.snarkvm-algorithms]
 workspace = true
 

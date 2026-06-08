@@ -38,8 +38,7 @@ use snarkvm_utilities::{CanonicalDeserialize, CanonicalSerialize, TestRng};
 use aleo_std::StorageMode;
 use criterion::Criterion;
 use indexmap::IndexMap;
-use std::{collections::BTreeMap, time::Duration};
-use std::str::FromStr;
+use std::{collections::BTreeMap, str::FromStr, time::Duration};
 
 type VarunaInst = VarunaSNARK<Bls12_377, FS, VarunaHidingMode>;
 type FS = PoseidonSponge<Fq, 2, 1>;
@@ -133,7 +132,8 @@ fn snark_prove_credits_aleo(c: &mut Criterion) {
     let rng_setup = &mut TestRng::fixed(42);
 
     // Common setup once for all credits.aleo methods.
-    let vm = VM::<CurrentNetwork, LedgerType>::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
+    let vm =
+        VM::<CurrentNetwork, LedgerType>::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap();
     let caller_private_key = snarkvm_ledger_test_helpers::sample_genesis_private_key(rng_setup);
     let genesis = vm.genesis_beacon(&caller_private_key, rng_setup).unwrap();
     vm.add_next_block(&genesis).unwrap();
@@ -195,10 +195,7 @@ fn snark_prove_credits_aleo(c: &mut Criterion) {
     );
     let trace_join = build_trace(
         "join",
-        vec![
-            Value::<CurrentNetwork>::Record(records[0].clone()),
-            Value::<CurrentNetwork>::Record(records[1].clone()),
-        ],
+        vec![Value::<CurrentNetwork>::Record(records[0].clone()), Value::<CurrentNetwork>::Record(records[1].clone())],
         rng_setup,
     );
     let trace_split = build_trace(
@@ -213,7 +210,11 @@ fn snark_prove_credits_aleo(c: &mut Criterion) {
         let varuna_version = VarunaVersion::V2;
         b.iter(|| {
             trace_transfer_public
-                .prove_execution::<CurrentAleo, _>("credits.aleo/transfer_public", varuna_version, &mut rng_transfer_public)
+                .prove_execution::<CurrentAleo, _>(
+                    "credits.aleo/transfer_public",
+                    varuna_version,
+                    &mut rng_transfer_public,
+                )
                 .unwrap()
         })
     });
@@ -223,7 +224,11 @@ fn snark_prove_credits_aleo(c: &mut Criterion) {
         let varuna_version = VarunaVersion::V2;
         b.iter(|| {
             trace_transfer_private
-                .prove_execution::<CurrentAleo, _>("credits.aleo/transfer_private", varuna_version, &mut rng_transfer_private)
+                .prove_execution::<CurrentAleo, _>(
+                    "credits.aleo/transfer_private",
+                    varuna_version,
+                    &mut rng_transfer_private,
+                )
                 .unwrap()
         })
     });
@@ -260,9 +265,7 @@ fn snark_prove_credits_aleo(c: &mut Criterion) {
     c.bench_function("credits.aleo.join", |b| {
         let varuna_version = VarunaVersion::V2;
         b.iter(|| {
-            trace_join
-                .prove_execution::<CurrentAleo, _>("credits.aleo/join", varuna_version, &mut rng_join)
-                .unwrap()
+            trace_join.prove_execution::<CurrentAleo, _>("credits.aleo/join", varuna_version, &mut rng_join).unwrap()
         })
     });
 
@@ -270,9 +273,7 @@ fn snark_prove_credits_aleo(c: &mut Criterion) {
     c.bench_function("credits.aleo.split", |b| {
         let varuna_version = VarunaVersion::V2;
         b.iter(|| {
-            trace_split
-                .prove_execution::<CurrentAleo, _>("credits.aleo/split", varuna_version, &mut rng_split)
-                .unwrap()
+            trace_split.prove_execution::<CurrentAleo, _>("credits.aleo/split", varuna_version, &mut rng_split).unwrap()
         })
     });
 }
