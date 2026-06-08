@@ -53,3 +53,6 @@ function transfer_private_to_public:
 
 finalize transfer_private_to_public:
     assert.eq true true;
+
+constructor:
+    assert.eq true true;
