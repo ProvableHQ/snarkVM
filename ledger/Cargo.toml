@@ -86,7 +86,7 @@ locktick = [
   "snarkvm-ledger-store/locktick",
   "snarkvm-synthesizer/locktick"
 ]
-metrics = [ "snarkvm-ledger-committee/metrics" ]
+metrics = [ "snarkvm-ledger-committee/metrics", "snarkvm-ledger-store/metrics" ]
 prop-tests = [ "snarkvm-ledger-committee/prop-tests" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [

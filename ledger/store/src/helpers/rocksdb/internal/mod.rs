@@ -297,6 +297,64 @@ impl RocksDB {
     fn are_atomic_writes_paused(&self) -> bool {
         self.atomic_writes_paused.load(Ordering::SeqCst)
     }
+
+    /// Reads key RocksDB internal properties and publishes them to the metrics registry.
+    ///
+    /// This is a lightweight, synchronous call — properties are read from RocksDB's in-memory
+    /// counters with no disk I/O.  Call it from an existing background loop (e.g. the
+    /// auto-checkpoint polling loop in snarkOS); there is no need to spawn a dedicated thread.
+    #[cfg(feature = "metrics")]
+    pub fn export_rocksdb_metrics(&self) {
+        use snarkvm_metrics::rocksdb as names;
+
+        /// Read a single integer property; silently skip on error (DB may be closing).
+        fn prop(db: &rocksdb::DB, key: &str) -> Option<u64> {
+            db.property_int_value(key).ok().flatten()
+        }
+
+        let db = &self.rocksdb;
+
+        // Compaction pressure
+        if let Some(v) = prop(db, "rocksdb.compaction-pending") {
+            snarkvm_metrics::gauge(names::COMPACTION_PENDING, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.estimate-pending-compaction-bytes") {
+            snarkvm_metrics::gauge(names::ESTIMATE_PENDING_COMPACTION_BYTES, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.num-running-compactions") {
+            snarkvm_metrics::gauge(names::NUM_RUNNING_COMPACTIONS, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.num-running-flushes") {
+            snarkvm_metrics::gauge(names::NUM_RUNNING_FLUSHES, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.mem-table-flush-pending") {
+            snarkvm_metrics::gauge(names::MEM_TABLE_FLUSH_PENDING, v as f64);
+        }
+
+        // Disk footprint
+        if let Some(v) = prop(db, "rocksdb.total-sst-files-size") {
+            snarkvm_metrics::gauge(names::TOTAL_SST_FILES_SIZE, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.live-sst-files-size") {
+            snarkvm_metrics::gauge(names::LIVE_SST_FILES_SIZE, v as f64);
+        }
+
+        // General state
+        if let Some(v) = prop(db, "rocksdb.estimate-num-keys") {
+            snarkvm_metrics::gauge(names::ESTIMATE_NUM_KEYS, v as f64);
+        }
+        if let Some(v) = prop(db, "rocksdb.num-snapshots") {
+            snarkvm_metrics::gauge(names::NUM_SNAPSHOTS, v as f64);
+        }
+
+        // Per-level SST file counts (levels 0–6)
+        for (level, &name) in names::NUM_FILES_AT_LEVEL.iter().enumerate() {
+            let key = format!("rocksdb.num-files-at-level{level}");
+            if let Some(v) = prop(db, &key) {
+                snarkvm_metrics::gauge(name, v as f64);
+            }
+        }
+    }
 }
 
 // impl RocksDB {
