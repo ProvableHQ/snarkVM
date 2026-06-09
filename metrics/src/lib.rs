@@ -48,8 +48,7 @@ pub mod rocksdb {
     /// 1 if a compaction is pending (background compaction requested but not yet running), else 0.
     pub const COMPACTION_PENDING: &str = "snarkvm_rocksdb_compaction_pending";
     /// Estimated total bytes of data to be compacted. A sustained non-zero value signals backpressure.
-    pub const ESTIMATE_PENDING_COMPACTION_BYTES: &str =
-        "snarkvm_rocksdb_estimate_pending_compaction_bytes";
+    pub const ESTIMATE_PENDING_COMPACTION_BYTES: &str = "snarkvm_rocksdb_estimate_pending_compaction_bytes";
     /// Number of compactions currently running in the background.
     pub const NUM_RUNNING_COMPACTIONS: &str = "snarkvm_rocksdb_num_running_compactions";
     /// Number of memtable flushes currently running.
