@@ -668,10 +668,19 @@ finalize test:
             assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
             // Verify the execution proof (without fee validation).
             if let Transaction::Execute(_, _, execution, _) = &transaction {
-                vm.process()
-                    .read()
-                    .verify_execution(ConsensusVersion::V4, VarunaVersion::V2, InclusionVersion::V0, execution)
+                let execution_stacks = execution
+                    .transitions()
+                    .map(|t| Ok((*t.program_id(), vm.process().get_stack(t.program_id())?)))
+                    .collect::<Result<IndexMap<_, _>>>()
                     .unwrap();
+                Process::verify_execution(
+                    ConsensusVersion::V4,
+                    VarunaVersion::V2,
+                    InclusionVersion::V0,
+                    execution,
+                    &execution_stacks,
+                )
+                .unwrap();
             }
             true
         }
