@@ -50,6 +50,10 @@ impl<E: Environment> ToBits for &Scalar<E> {
                 Boolean::assert_less_than_or_equal_constant(&bits_le, &modulus_minus_one.to_bits_le());
             }
 
+            // Now that underlying Field has been checked to represent a correct Scalar, we remove
+            // it from the unconverted-value tracking set.
+            E::untrack_unconverted_value(&LinearCombination::from(&self.field));
+
             bits_le
         });
         // Extend the vector with the bits of the scalar.

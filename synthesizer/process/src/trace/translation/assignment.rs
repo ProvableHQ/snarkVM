@@ -282,6 +282,9 @@ impl<N: Network> TranslationAssignment<N> {
             format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()),
             "TranslationAssignment",
         );
+        // Convert all tracked, still-unconverted values to bits.
+        A::convert_unconverted_values();
+
         Ok(A::eject_assignment_and_reset())
     }
 }

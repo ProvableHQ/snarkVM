@@ -18,6 +18,29 @@ use snarkvm_curves::AffineCurve;
 use snarkvm_fields::traits::*;
 
 use core::{fmt, hash};
+use std::{cell::RefCell, collections::BTreeMap};
+
+use anyhow::Result;
+
+thread_local! {
+    /// Stores certain injected values which have not been converted to bits yet, alongside a
+    /// closure that converts each of them to bits.
+    // This gives higher-level crates the ability to track any values which must be converted to
+    // bits before the end of synthesis (e.g. Scalars, which are otherwise never range-checked) and
+    // convert them if they have not been.
+    static UNCONVERTED_VALUES: RefCell<BTreeMap<u64, Box<dyn FnOnce()>>> = RefCell::new(BTreeMap::new());
+}
+
+/// Returns a tracking key for a non-constant variable, or `None` for constants. An index shift of
+/// 2^63 is used to distinguish private variables from public ones, as they share the same index space.
+fn value_tracking_key<F: PrimeField>(variable: &Variable<F>) -> Option<u64> {
+    const PRIVATE_FLAG: u64 = 1 << 63;
+    match variable.mode() {
+        Mode::Constant => None,
+        Mode::Public => Some(variable.index()),
+        Mode::Private => Some(variable.index() | PRIVATE_FLAG),
+    }
+}
 
 /// Attention: Do not use `Send + Sync` on this trait, as it is not thread-safe.
 pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq + PartialEq + hash::Hash {
@@ -173,6 +196,62 @@ pub trait Environment: 'static + Copy + Clone + fmt::Debug + fmt::Display + Eq +
 
     /// Sets the constraint limit for the circuit.
     fn set_constraint_limit(limit: Option<u64>);
+
+    /// Records an injected value which has not been converted to bits yet, alongside a closure
+    /// that converts it to bits.
+    // The main purpose of this function is to track (non-constant) Aleo Scalars in higher-level
+    // crates, whose underlying base-field element is not checked to be in the canonical scalar range
+    // until to_bits is called.
+    fn track_unconverted_value(value: &LinearCombination<Self::BaseField>, convert: Box<dyn FnOnce()>) {
+        if let Some(key) = value.to_terms().iter().find_map(|(variable, _)| value_tracking_key(variable)) {
+            UNCONVERTED_VALUES.with(|set| {
+                set.borrow_mut().insert(key, convert);
+            });
+        }
+    }
+
+    /// Removes a value from the set of unconverted values.
+    fn untrack_unconverted_value(value: &LinearCombination<Self::BaseField>) {
+        UNCONVERTED_VALUES.with(|set| {
+            let mut set = set.borrow_mut();
+            for (variable, _) in value.to_terms() {
+                if let Some(key) = value_tracking_key(variable) {
+                    set.remove(&key);
+                }
+            }
+        });
+    }
+
+    /// Returns `Ok` if no unconverted values remain in the tracking set and `Err` otherwise.
+    fn check_unconverted_values() -> Result<(), String> {
+        UNCONVERTED_VALUES.with(|set| {
+            let set = set.borrow();
+            if set.is_empty() {
+                Ok(())
+            } else {
+                Err(format!("{} unconverted value(s) remain(s) in the tracking set: {:#?}", set.len(), set.keys()))
+            }
+        })
+    }
+
+    /// Converts every unconverted value to bits by calling the stored closure, adding the
+    /// relevant constraints to the current circuit.
+    fn convert_unconverted_values() {
+        // Take ownership of the closures, releasing the borrow before invoking them: each closure is
+        // a `FnOnce` (so must be consumed by value) and converts a value to bits, which re-enters
+        // `untrack_unconverted_value` and would otherwise conflict with the outstanding borrow.
+        let pending: Vec<Box<dyn FnOnce()>> =
+            UNCONVERTED_VALUES.with(|set| core::mem::take(&mut *set.borrow_mut()).into_values().collect());
+        for convert in pending {
+            convert();
+        }
+    }
+
+    /// Clears the set of unconverted values, dropping the stored conversion closures without
+    /// invoking them. Used when resetting the circuit between syntheses.
+    fn clear_unconverted_values() {
+        UNCONVERTED_VALUES.with(|set| set.borrow_mut().clear());
+    }
 
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.
     fn halt<S: Into<String>, T>(message: S) -> T {

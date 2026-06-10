@@ -94,6 +94,9 @@ impl<N: Network> EpochProgram<N> {
         );
         lap!(timer, "Ensure the circuit is satisfied");
 
+        // Convert all tracked, still-unconverted values to bits.
+        A::convert_unconverted_values();
+
         // Eject the R1CS and reset the circuit.
         let r1cs = A::eject_r1cs_and_reset();
         finish!(timer, "Eject the circuit assignment and reset the circuit");

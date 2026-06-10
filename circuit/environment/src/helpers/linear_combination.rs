@@ -132,7 +132,7 @@ impl<F: PrimeField> LinearCombination<F> {
     }
 
     /// Returns the terms (excluding the constant value) in the linear combination.
-    pub(super) fn to_terms(&self) -> &[(Variable<F>, F)] {
+    pub(crate) fn to_terms(&self) -> &[(Variable<F>, F)] {
         &self.terms
     }
 

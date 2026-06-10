@@ -213,3 +213,91 @@ pub(crate) fn add_and_test_with_costs(
         }
     }
 }
+
+// Deploys three programs: one whose function adds two private scalar inputs and outputs the private
+// sum, one whose function hashes two private inputs and outputs the private hash, and one defining a
+// record with a `scalar` entry.
+#[test]
+fn test_scalar_behavior() {
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Initialize the VM at the V14 height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = sample_vm_at_height(v14_height, rng);
+
+    // A program whose function adds two private scalar inputs and outputs the private sum.
+    let scalar_add_program = Program::<CurrentNetwork>::from_str(
+        r"
+program scalar_add_test.aleo;
+
+function add_scalars:
+    input r0 as scalar.private;
+    input r1 as scalar.private;
+    add r0 r1 into r2;
+
+constructor:
+    assert.eq true true;
+",
+    )
+    .unwrap();
+
+    // A program whose function hashes two private inputs and outputs the private hash.
+    let hash_program = Program::<CurrentNetwork>::from_str(
+        r"
+program hash_inputs_test.aleo;
+
+function hash_inputs:
+    input r0 as field.private;
+    input r1 as field.private;
+    hash.bhp256 r0 into r2 as field;
+    hash.bhp256 r1 into r3 as field;
+    output r3 as field.private;
+
+constructor:
+    assert.eq true true;
+",
+    )
+    .unwrap();
+
+    // A program defining a record with a `scalar` entry, minted by a function.
+    let scalar_record_program = Program::<CurrentNetwork>::from_str(
+        r"
+program scalar_record_test.aleo;
+
+record holder:
+    owner as address.private;
+    val as scalar.private;
+
+record holder2:
+    owner as address.private;
+    val as scalar.public;
+
+function mint:
+    input r0 as address.private;
+    input r1 as scalar.private;
+    cast r0 r1 into r2 as holder.record;
+    output r2 as holder.record;
+
+constructor:
+    assert.eq true true;
+",
+    )
+    .unwrap();
+
+    // Deploy each program (in its own block) and ensure the deployment is accepted.
+    for program in [&scalar_add_program, &hash_program, &scalar_record_program] {
+        println!("Deploying program: {}", program.id());
+        let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment, None, rng).is_ok());
+
+        let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 1);
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+    }
+}
