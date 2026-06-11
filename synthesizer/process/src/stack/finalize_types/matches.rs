@@ -109,49 +109,30 @@ impl<N: Network> FinalizeTypes<N> {
         if operands.len() < N::MIN_ARRAY_ELEMENTS {
             bail!("'{array_type}' must have at least {} operand(s)", N::MIN_ARRAY_ELEMENTS)
         }
-        // Ensure the number of elements not exceed the maximum.
-        if operands.len() > N::LATEST_MAX_ARRAY_ELEMENTS() {
-            bail!("'{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
-        }
 
-        // Ensure the number of operands matches the length of the array.
-        let num_elements = operands.len();
-        let expected_num_elements = **array_type.length() as usize;
-        if expected_num_elements != num_elements {
-            bail!("'{array_type}' expected {expected_num_elements} elements, found {num_elements} elements")
-        }
+        // Retrieve the expected element type of the array.
+        let element_type = array_type.next_element_type();
+        // Tracks the total number of elements contributed by the operands. An operand whose type
+        // matches the element type contributes one element; an operand that is an array of the
+        // element type is flattened, contributing its length.
+        let mut total_elements: usize = 0;
 
-        // Ensure the operand types match the element type.
+        // Ensure the operand types match (or flatten into) the element type.
         for operand in operands.iter() {
-            match operand {
-                // Ensure the literal type matches the element type.
-                Operand::Literal(literal) => {
-                    ensure!(
-                        // No need to call `types_equivalent`, since it can't be a struct.
-                        &PlaintextType::Literal(literal.to_type()) == array_type.next_element_type(),
-                        "Array element expects {}, but found '{operand}' in the operand.",
-                        array_type.next_element_type()
-                    )
-                }
-                // Ensure the type of the register matches the element type.
-                Operand::Register(register) => {
-                    // Retrieve the type.
-                    let plaintext_type = match self.get_type(stack, register)? {
-                        // If the register is a plaintext type, return it.
-                        FinalizeType::Plaintext(plaintext_type) => plaintext_type,
-                        // If the register is a future, throw an error.
-                        FinalizeType::Future(..) => bail!("Array element cannot be a future"),
-                        // If the register is a dynamic future, throw an error.
-                        FinalizeType::DynamicFuture => bail!("Array element cannot be a dynamic future"),
-                    };
-                    // Ensure the register type matches the element type.
-                    ensure!(
-                        types_equivalent(stack, &plaintext_type, stack, array_type.next_element_type())?,
-                        "Array element expects {}, but found '{plaintext_type}' in the operand '{operand}'.",
-                        array_type.next_element_type()
-                    )
-                }
-                // Ensure the program ID, block height, network ID, generator, checksum, edition, and program owner types matches the element type.
+            // Determine the plaintext type of the operand.
+            let operand_type = match operand {
+                // A literal is always a single scalar element.
+                Operand::Literal(literal) => PlaintextType::Literal(literal.to_type()),
+                // Retrieve the register type.
+                Operand::Register(register) => match self.get_type(stack, register)? {
+                    // If the register is a plaintext type, return it.
+                    FinalizeType::Plaintext(plaintext_type) => plaintext_type,
+                    // If the register is a future, throw an error.
+                    FinalizeType::Future(..) => bail!("Array element cannot be a future"),
+                    // If the register is a dynamic future, throw an error.
+                    FinalizeType::DynamicFuture => bail!("Array element cannot be a dynamic future"),
+                },
+                // The program ID, block height, network ID, generator, checksum, edition, and program owner are single elements.
                 Operand::ProgramID(..)
                 | Operand::BlockHeight
                 | Operand::BlockTimestamp
@@ -160,24 +141,40 @@ impl<N: Network> FinalizeTypes<N> {
                 | Operand::AleoGeneratorPowers(_)
                 | Operand::Checksum(_)
                 | Operand::Edition(_)
-                | Operand::ProgramOwner(_) => {
-                    // Retrieve the operand type.
-                    let FinalizeType::Plaintext(program_ref_type) = self.get_type_from_operand(stack, operand)? else {
-                        bail!("Expected a plaintext type for the operand '{operand}' in array element '{array_type}'")
-                    };
-                    // Ensure the operand type matches the element type.
-                    ensure!(
-                        // No need to call `types_equivalent`, since `program_ref_type` cannot be a struct.
-                        &program_ref_type == array_type.next_element_type(),
-                        "Array element expects {}, but found '{program_ref_type}' in the operand '{operand}'.",
-                        array_type.next_element_type()
-                    )
-                }
+                | Operand::ProgramOwner(_) => match self.get_type_from_operand(stack, operand)? {
+                    FinalizeType::Plaintext(program_ref_type) => program_ref_type,
+                    _ => bail!("Expected a plaintext type for the operand '{operand}' in array element '{array_type}'"),
+                },
                 // If the operand is a signer, throw an error.
                 Operand::Signer => bail!("Array element cannot be cast from a signer in a finalize scope."),
                 // If the operand is a caller, throw an error.
                 Operand::Caller => bail!("Array element cannot be cast from a caller in a finalize scope."),
+            };
+
+            // Determine the number of elements this operand contributes. An operand whose type
+            // matches the element type contributes one element. Otherwise, if it is an array of
+            // the element type, it is flattened into its constituent elements.
+            if types_equivalent(stack, &operand_type, stack, element_type)? {
+                total_elements += 1;
+            } else if let PlaintextType::Array(inner) = &operand_type
+                && types_equivalent(stack, inner.next_element_type(), stack, element_type)?
+            {
+                total_elements += **inner.length() as usize;
+            } else {
+                bail!(
+                    "Array element expects a '{element_type}', but found '{operand_type}' in the operand '{operand}'."
+                )
             }
+        }
+
+        // Ensure the number of elements does not exceed the maximum.
+        if total_elements > N::LATEST_MAX_ARRAY_ELEMENTS() {
+            bail!("'{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
+        }
+        // Ensure the total number of elements matches the length of the array.
+        let expected_num_elements = **array_type.length() as usize;
+        if expected_num_elements != total_elements {
+            bail!("'{array_type}' expected {expected_num_elements} elements, found {total_elements} elements")
         }
         Ok(())
     }

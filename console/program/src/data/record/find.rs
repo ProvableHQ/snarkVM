@@ -28,6 +28,7 @@ impl<N: Network> Record<N, Plaintext<N>> {
             let first = match (*first).into() {
                 Access::Member(identifier) => identifier,
                 Access::Index(_) => bail!("Attempted to index into a record"),
+                Access::Range(..) => bail!("Attempted to slice a record"),
             };
             // Retrieve the top-level entry.
             match self.data.get(&first) {

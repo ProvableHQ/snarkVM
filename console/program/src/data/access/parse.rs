@@ -17,10 +17,17 @@ use super::*;
 
 impl<N: Network> Parser for Access<N> {
     fn parse(string: &str) -> ParserResult<Self> {
-        alt((
-            map(pair(tag("["), pair(U32::parse, tag("]"))), |(_, (index, _))| Self::Index(index)),
-            map(pair(tag("."), Identifier::parse), |(_, identifier)| Self::Member(identifier)),
-        ))(string)
+        // Parses a range access, i.e. `[start..end]`.
+        let parse_range = map(
+            pair(tag("["), pair(U32::parse, pair(tag(".."), pair(U32::parse, tag("]"))))),
+            |(_, (start, (_, (end, _))))| Self::Range(start, end),
+        );
+        // Parses an index access, i.e. `[index]`.
+        let parse_index = map(pair(tag("["), pair(U32::parse, tag("]"))), |(_, (index, _))| Self::Index(index));
+        // Parses a member access, i.e. `.member`.
+        let parse_member = map(pair(tag("."), Identifier::parse), |(_, identifier)| Self::Member(identifier));
+        // Attempt to parse a range before an index, as both begin with `[`.
+        alt((parse_range, parse_index, parse_member))(string)
     }
 }
 
@@ -57,6 +64,8 @@ impl<N: Network> Display for Access<N> {
             Self::Member(identifier) => write!(f, ".{identifier}"),
             // Prints the access index, i.e. `[0u32]`
             Self::Index(index) => write!(f, "[{index}]"),
+            // Prints the access range, i.e. `[0u32..4u32]`
+            Self::Range(start, end) => write!(f, "[{start}..{end}]"),
         }
     }
 }
@@ -72,6 +81,7 @@ mod tests {
     fn test_parse() -> Result<()> {
         assert_eq!(Access::parse(".data"), Ok(("", Access::<CurrentNetwork>::Member(Identifier::from_str("data")?))));
         assert_eq!(Access::parse("[0u32]"), Ok(("", Access::<CurrentNetwork>::Index(U32::new(0)))));
+        assert_eq!(Access::parse("[0u32..4u32]"), Ok(("", Access::<CurrentNetwork>::Range(U32::new(0), U32::new(4)))));
         Ok(())
     }
 
@@ -100,6 +110,7 @@ mod tests {
     fn test_display() -> Result<()> {
         assert_eq!(Access::<CurrentNetwork>::Member(Identifier::from_str("foo")?).to_string(), ".foo");
         assert_eq!(Access::<CurrentNetwork>::Index(U32::new(0)).to_string(), "[0u32]");
+        assert_eq!(Access::<CurrentNetwork>::Range(U32::new(0), U32::new(4)).to_string(), "[0u32..4u32]");
         Ok(())
     }
 }

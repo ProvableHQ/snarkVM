@@ -27,6 +27,8 @@ pub enum Access<N: Network> {
     Member(Identifier<N>),
     /// Access an element of an array.
     Index(U32<N>),
+    /// Access a contiguous sub-array, i.e. the half-open range `[start, end)`.
+    Range(U32<N>, U32<N>),
 }
 
 impl<N: Network> From<Identifier<N>> for Access<N> {
@@ -42,5 +44,13 @@ impl<N: Network> From<U32<N>> for Access<N> {
     #[inline]
     fn from(index: U32<N>) -> Self {
         Self::Index(index)
+    }
+}
+
+impl<N: Network> From<core::ops::Range<U32<N>>> for Access<N> {
+    /// Initializes a new range access from a `start..end` range.
+    #[inline]
+    fn from(range: core::ops::Range<U32<N>>) -> Self {
+        Self::Range(range.start, range.end)
     }
 }

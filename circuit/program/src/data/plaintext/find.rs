@@ -15,6 +15,8 @@
 
 use super::*;
 
+use std::borrow::Cow;
+
 impl<A: Aleo> Plaintext<A> {
     /// Returns the plaintext member from the given path.
     pub fn find<A0: Into<Access<A>> + Clone + Debug>(&self, path: &[A0]) -> Result<Plaintext<A>> {
@@ -22,46 +24,60 @@ impl<A: Aleo> Plaintext<A> {
         if path.is_empty() {
             A::halt("Attempted to find member with an empty path.")
         }
+        // Walk the path and return an owned copy of the located value.
+        self.find_cow(path).map(Cow::into_owned)
+    }
 
-        match self {
-            // Halts if the value is not a struct or an array.
-            Self::Literal(..) => A::halt("A literal is not a struct or an array"),
-            // Retrieve the value of the member (from the value).
-            Self::Struct(..) | Self::Array(..) => {
-                // Initialize the plaintext starting from the top-level.
-                let mut plaintext = self;
+    /// Walks the given path, returning the located value borrowed when possible and owned when a
+    /// range access requires constructing a new sub-array.
+    fn find_cow<A0: Into<Access<A>> + Clone + Debug>(&self, path: &[A0]) -> Result<Cow<'_, Plaintext<A>>> {
+        // If the path is exhausted, return the current value.
+        let Some((access, remaining)) = path.split_first() else {
+            return Ok(Cow::Borrowed(self));
+        };
 
-                // Iterate through the path to retrieve the value.
-                for access in path.iter() {
-                    let access = access.clone().into();
-                    match (plaintext, &access) {
-                        (Self::Struct(members, ..), Access::Member(identifier)) => {
-                            match members.get(identifier) {
-                                // Retrieve the member and update `plaintext` for the next iteration.
-                                Some(member) => plaintext = member,
-                                // Halts if the member does not exist.
-                                None => bail!("Failed to locate member '{identifier}'"),
-                            }
-                        }
-                        (Self::Array(array, ..), Access::Index(index)) => {
-                            let index = match index.eject_mode() {
-                                Mode::Constant => index.eject_value(),
-                                _ => bail!("'{index}' must be a constant"),
-                            };
-                            match array.get(*index as usize) {
-                                // Retrieve the element and update `plaintext` for the next iteration.
-                                Some(element) => plaintext = element,
-                                // Halts if the element does not exist.
-                                None => bail!("Failed to locate element '{index}'"),
-                            }
-                        }
-                        _ => bail!("Invalid access `{access}``"),
-                    }
+        match (self, access.clone().into()) {
+            (Self::Struct(members, ..), Access::Member(identifier)) => match members.get(&identifier) {
+                // Continue walking from the member.
+                Some(member) => member.find_cow(remaining),
+                // Halts if the member does not exist.
+                None => bail!("Failed to locate member '{identifier}'"),
+            },
+            (Self::Array(array, ..), Access::Index(index)) => {
+                // The index must be a constant, as array indices are resolved at synthesis time.
+                let index = match index.eject_mode() {
+                    Mode::Constant => index.eject_value(),
+                    _ => bail!("'{index}' must be a constant"),
+                };
+                match array.get(*index as usize) {
+                    // Continue walking from the element.
+                    Some(element) => element.find_cow(remaining),
+                    // Halts if the element does not exist.
+                    None => bail!("Failed to locate element '{index}'"),
                 }
-
-                // Return the output.
-                Ok(plaintext.clone())
             }
+            (Self::Array(array, ..), Access::Range(start, end)) => {
+                // The bounds must be constants, as array ranges are resolved at synthesis time.
+                let start = match start.eject_mode() {
+                    Mode::Constant => start.eject_value(),
+                    _ => bail!("'{start}' must be a constant"),
+                };
+                let end = match end.eject_mode() {
+                    Mode::Constant => end.eject_value(),
+                    _ => bail!("'{end}' must be a constant"),
+                };
+                match array.get(*start as usize..*end as usize) {
+                    // Construct the sub-array, then continue walking from it. As the sub-array is
+                    // owned locally, the remaining walk must return an owned value.
+                    Some(elements) => {
+                        let sub_array = Self::Array(elements.to_vec(), Default::default());
+                        Ok(Cow::Owned(sub_array.find_cow(remaining)?.into_owned()))
+                    }
+                    // Halts if the range is out of bounds.
+                    None => bail!("Range '{start}..{end}' is out of bounds"),
+                }
+            }
+            _ => bail!("Invalid access `{}`", access.clone().into()),
         }
     }
 }

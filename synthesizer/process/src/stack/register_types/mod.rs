@@ -176,6 +176,7 @@ impl<N: Network> RegisterTypes<N> {
                     let path_name = match access {
                         Access::Member(path_name) => path_name,
                         Access::Index(_) => bail!("Attempted to index into a record"),
+                        Access::Range(..) => bail!("Attempted to slice a record"),
                     };
                     // Retrieve the entry type from the record.
                     match stack.program().get_record(record_name)?.entries().get(path_name) {
@@ -205,6 +206,7 @@ impl<N: Network> RegisterTypes<N> {
                     let path_name = match access {
                         Access::Member(path_name) => path_name,
                         Access::Index(_) => bail!("Attempted to index into an external record"),
+                        Access::Range(..) => bail!("Attempted to slice an external record"),
                     };
                     // Retrieve the entry type from the external record.
                     match external_record.entries().get(path_name) {
@@ -273,6 +275,23 @@ impl<N: Network> RegisterTypes<N> {
                         false => bail!("'{index}' is out of bounds for '{register}'"),
                     }
                 }
+                // Slice the array to output a sub-array type, checking that the range is in bounds.
+                (RegisterAccessType::Plaintext(PlaintextType::Array(array_type)), Access::Range(start, end)) => {
+                    // Ensure the range `[start, end)` is valid and within bounds.
+                    ensure!(start <= end, "Range '{start}..{end}' is invalid for '{register}': start exceeds end");
+                    ensure!(end <= array_type.length(), "Range '{start}..{end}' is out of bounds for '{register}'");
+                    // Ensure the resulting sub-array is not empty.
+                    let length = **end - **start;
+                    ensure!(
+                        length as usize >= N::MIN_ARRAY_ELEMENTS,
+                        "Range '{start}..{end}' must select at least {} element(s)",
+                        N::MIN_ARRAY_ELEMENTS
+                    );
+                    // Construct the sub-array type, preserving the element type.
+                    let sub_array_type =
+                        ArrayType::new(array_type.next_element_type().clone(), vec![U32::new(length)])?;
+                    register_type = RegisterAccessType::Plaintext(PlaintextType::Array(sub_array_type));
+                }
                 // Access the input to the future to output the register type and check that it is in bounds.
                 (RegisterAccessType::Future(locator), Access::Index(index)) => {
                     // Retrieve the external stack, if needed.
@@ -325,10 +344,10 @@ impl<N: Network> RegisterTypes<N> {
                 }
                 (
                     RegisterAccessType::Plaintext(PlaintextType::Struct(..) | PlaintextType::ExternalStruct(..)),
-                    Access::Index(..),
+                    Access::Index(..) | Access::Range(..),
                 )
                 | (RegisterAccessType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (RegisterAccessType::Future(..), Access::Member(..))
+                | (RegisterAccessType::Future(..), Access::Member(..) | Access::Range(..))
                 | (RegisterAccessType::DynamicFuture, _) => {
                     bail!("Invalid access `{access}`")
                 }
