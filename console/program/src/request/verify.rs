@@ -158,6 +158,8 @@ impl<N: Network> Request<N> {
         }
 
         // Verify the signature.
+        // TODO (Antonio) allow deprecated or use v2?
+        #[allow(deprecated)]
         self.signature.verify(&self.signer, &message)
     }
 }

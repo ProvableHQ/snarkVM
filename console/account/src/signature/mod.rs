@@ -36,6 +36,9 @@ use crate::address::Address;
 use snarkvm_console_network::prelude::*;
 use snarkvm_console_types::{Boolean, Field, Scalar};
 
+// Domain separator used in sign_v2 and related methods.
+static SIGNATURE_V2_PREFIX: &str = "ALEO_SIGNATURE_V2";
+
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Signature<N: Network> {
     /// The verifier challenge to check against.

@@ -201,6 +201,8 @@ impl TestChainBuilder {
                 )
                 .unwrap();
 
+                // TODO (Antonio) allow deprecated or use v2?
+                #[allow(deprecated)]
                 // Add signatures for the batch header.
                 let signatures = self
                     .private_keys

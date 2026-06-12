@@ -146,6 +146,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_sign_bits() {
         let private_key = PrivateKey::<CurrentNetwork>::from_str(ALEO_PRIVATE_KEY).unwrap();
         let address = Address::<CurrentNetwork>::try_from(&private_key).unwrap();
@@ -157,10 +158,15 @@ mod tests {
             let signature = private_key.sign_bits(&message, &mut rng).unwrap();
             let verification = signature.verify_bits(&address, &message);
             assert!(verification);
+            let signature_v2 = private_key.sign_bits_v2(&message, &mut rng).unwrap();
+            let verification_v2 = signature_v2.verify_bits_v2(&address, &message);
+            assert!(verification_v2);
         }
+        
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_invalid_sign_bits() {
         let private_key = PrivateKey::<CurrentNetwork>::from_str(ALEO_PRIVATE_KEY).unwrap();
         let address = Address::<CurrentNetwork>::try_from(&private_key).unwrap();
@@ -174,10 +180,14 @@ mod tests {
             let signature = private_key.sign_bits(&message, &mut rng).unwrap();
             let verification = signature.verify_bits(&address, &incorrect_message);
             assert!(!verification);
+            let signature_v2 = private_key.sign_bits_v2(&message, &mut rng).unwrap();
+            let verification_v2 = signature_v2.verify_bits_v2(&address, &incorrect_message);
+            assert!(!verification_v2);
         }
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_aleo_signature_bech32() {
         let mut rng = TestRng::default();
 
@@ -192,10 +202,17 @@ mod tests {
             let candidate_string = &expected_signature.to_string();
             assert_eq!(216, candidate_string.len(), "Update me if serialization has changed");
             assert_eq!("sign1", &candidate_string[0..5], "Update me if the prefix has changed");
+
+            let expected_signature_v2 = private_key.sign_bits_v2(&message, &mut rng).unwrap();
+
+            let candidate_string = &expected_signature_v2.to_string();
+            assert_eq!(216, candidate_string.len(), "Update me if serialization has changed");
+            assert_eq!("sign1", &candidate_string[0..5], "Update me if the prefix has changed");
         }
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_aleo_signature_serde_json() {
         let mut rng = TestRng::default();
 
@@ -215,10 +232,23 @@ mod tests {
             // Deserialize
             assert_eq!(expected_signature, serde_json::from_str(&candidate_string).unwrap());
             assert_eq!(expected_signature, Signature::<CurrentNetwork>::from_str(expected_string).unwrap());
+
+            // Craft the Aleo signature with the v2 method.
+            let expected_signature_v2 = private_key.sign_bits_v2(&message, &mut rng).unwrap();
+
+            // Serialize
+            let expected_string = &expected_signature_v2.to_string();
+            let candidate_string = serde_json::to_string(&expected_signature).unwrap();
+            assert_eq!(expected_string, serde_json::Value::from_str(&candidate_string).unwrap().as_str().unwrap());
+
+            // Deserialize
+            assert_eq!(expected_signature_v2, serde_json::from_str(&candidate_string).unwrap());
+            assert_eq!(expected_signature, Signature::<CurrentNetwork>::from_str(expected_string).unwrap());
         }
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_aleo_signature_bincode() {
         let mut rng = TestRng::default();
 
@@ -239,6 +269,19 @@ mod tests {
             // Deserialize
             assert_eq!(expected_signature, bincode::deserialize(&candidate_bytes[..]).unwrap());
             assert_eq!(expected_signature, Signature::<CurrentNetwork>::read_le(&expected_bytes[..]).unwrap());
+
+            // Craft the Aleo signature with the v2 method.
+            let expected_signature_v2 = private_key.sign_bits_v2(&message, &mut rng).unwrap();
+
+            // Serialize
+            let expected_bytes = expected_signature_v2.to_bytes_le().unwrap();
+            let candidate_bytes = bincode::serialize(&expected_signature_v2).unwrap();
+            assert_eq!(128, expected_bytes.len(), "Update me if serialization has changed");
+            assert_eq!(&expected_bytes[..], &candidate_bytes[8..]);
+
+            // Deserialize
+            assert_eq!(expected_signature_v2, bincode::deserialize(&candidate_bytes[..]).unwrap());
+            assert_eq!(expected_signature_v2, Signature::<CurrentNetwork>::read_le(&expected_bytes[..]).unwrap());
         }
     }
 }

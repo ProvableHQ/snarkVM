@@ -15,11 +15,125 @@
 
 use super::*;
 
+// V1 Signing methods
 impl<N: Network> Signature<N> {
     /// Returns a signature `(challenge, response, compute_key)` for a given message and RNG, where:
     ///     challenge := HashToScalar(nonce * G, pk_sig, pr_sig, address, message)
     ///     response := nonce - challenge * private_key.sk_sig()
+    #[deprecated(note="Please migrate to `sign_v2`")]
     pub fn sign<R: Rng + CryptoRng>(private_key: &PrivateKey<N>, message: &[Field<N>], rng: &mut R) -> Result<Self> {
+        // Disallowing the case message[1] == N::hash_psd2(message[0]) to separate Signature::sign from Request::sign.
+        if message.len() >= 2 && message[1] == N::hash_psd2(&[message[0]])? {
+            bail!(
+                "Invalid message: message[1] == N::hash_psd2([message[0]]) is disallowed. Please construct a different message or use Request::sign."
+            );
+        }
+
+        Self::sign_internal(private_key, message, rng, &[])
+    }
+
+    /// Returns a signature for the given message (as bytes) using the private key.
+    #[deprecated(note="Please migrate to `sign_bytes_v2`")]
+    pub fn sign_bytes<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        message: &[u8],
+        rng: &mut R,
+    ) -> Result<Signature<N>> {
+        #[allow(deprecated)]
+        // Convert the message into bits, and sign the message.
+        Self::sign_bits(private_key, &message.to_bits_le(), rng)
+    }
+
+    /// Returns a signature for the given message (as bits) using the private key.
+    #[deprecated(note="Please migrate to `sign_bits_v2`")]
+    pub fn sign_bits<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        message: &[bool],
+        rng: &mut R,
+    ) -> Result<Signature<N>> {
+        // Pack the bits into field elements.
+        let fields =
+            message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>()?;
+        #[allow(deprecated)]
+        // Sign the message.
+        Self::sign(private_key, &fields, rng)
+    }
+}
+
+// V2 Signing methods
+impl<N: Network> Signature<N> {
+    /// Returns a signature `(challenge, response, compute_key)` for a given message and RNG, where:
+    ///     challenge := HashToScalar(ALEO_SIGNATURE_V2, nonce * G, pk_sig, pr_sig, address, message)
+    ///     response := nonce - challenge * private_key.sk_sig()
+    pub fn sign_v2<R: Rng + CryptoRng>(private_key: &PrivateKey<N>, message: &[Field<N>], rng: &mut R) -> Result<Self> {
+        let prefix = Field::<N>::new_domain_separator(SIGNATURE_V2_PREFIX);
+        Self::sign_internal(private_key, message, rng, &[prefix])
+    }
+
+    /// Returns a signature for the given message (as bytes) using the private key.
+    pub fn sign_bytes_v2<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        message: &[u8],
+        rng: &mut R,
+    ) -> Result<Signature<N>> {
+        // Convert the message into bits, and sign the message.
+        Self::sign_bits_v2(private_key, &message.to_bits_le(), rng)
+    }
+
+    /// Returns a signature for the given message (as bytes) using the private key.
+    /// Message length is not encoded and must be checked by the caller if relevant.
+    pub fn sign_bytes_raw_v2<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        message: &[u8],
+        rng: &mut R,
+    ) -> Result<Signature<N>> {
+        // Convert the message into bits, and sign the message.
+        Self::sign_bits_raw_v2(private_key, &message.to_bits_le(), rng)
+    }
+
+    /// Returns a signature for the given message (as bits) using the private key.
+    pub fn sign_bits_v2<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        message: &[bool],
+        rng: &mut R,
+    ) -> Result<Signature<N>> {
+        let message_length = Field::<N>::from_u128(u128::try_from(message.len())?);
+
+        let mut message_with_length = Vec::with_capacity(1 + message.len());
+        message_with_length.push(message_length);
+        // Pack the bits into field elements.
+        message_with_length.extend(
+            message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>()?,
+        );
+        // Sign the message.
+        Self::sign_v2(private_key, &message_with_length, rng)
+    }
+
+    /// Returns a signature for the given message (as bits) using the private key.
+    /// Message length is not encoded and must be checked by the caller if relevant.
+    pub fn sign_bits_raw_v2<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        message: &[bool],
+        rng: &mut R,
+    ) -> Result<Signature<N>> {
+        // Pack the bits into field elements.
+        let fields =
+            message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>()?;
+        // Sign the message.
+        Self::sign_v2(private_key, &fields, rng)
+    }
+}
+
+// Internal functions common to several signing versions.
+impl<N: Network> Signature<N> {
+    // Internal method common to sign and sign_v2 which prefaces the preimage of the challenge's
+    // hash with the given prefix.
+    fn sign_internal<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        message: &[Field<N>],
+        rng: &mut R,
+        prefix: &[Field<N>],
+    ) -> Result<Self> {
         // Ensure the number of field elements does not exceed the maximum allowed size.
         if message.len() > N::MAX_DATA_SIZE_IN_FIELDS as usize {
             bail!("Cannot sign the message: the message exceeds maximum allowed size")
@@ -40,8 +154,9 @@ impl<N: Network> Signature<N> {
         // Derive the address from the compute key.
         let address = Address::try_from(compute_key)?;
 
-        // Construct the hash input as (r * G, pk_sig, pr_sig, address, message).
-        let mut preimage = Vec::with_capacity(4 + message.len());
+        // Construct the hash input as (prefix [if present], r * G, pk_sig, pr_sig, address, message).
+        let mut preimage = Vec::with_capacity(prefix.len() + 4 + message.len());
+        preimage.extend(prefix);
         preimage.extend([g_r, pk_sig, pr_sig, *address].map(|point| point.to_x_coordinate()));
         preimage.extend(message);
 
@@ -53,27 +168,44 @@ impl<N: Network> Signature<N> {
         // Output the signature.
         Ok(Self { challenge, response, compute_key })
     }
+}
 
-    /// Returns a signature for the given message (as bytes) using the private key.
-    pub fn sign_bytes<R: Rng + CryptoRng>(
-        private_key: &PrivateKey<N>,
-        message: &[u8],
-        rng: &mut R,
-    ) -> Result<Signature<N>> {
-        // Convert the message into bits, and sign the message.
-        Self::sign_bits(private_key, &message.to_bits_le(), rng)
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network::MainnetV0;
 
-    /// Returns a signature for the given message (as bits) using the private key.
-    pub fn sign_bits<R: Rng + CryptoRng>(
-        private_key: &PrivateKey<N>,
-        message: &[bool],
-        rng: &mut R,
-    ) -> Result<Signature<N>> {
-        // Pack the bits into field elements.
-        let fields =
-            message.chunks(Field::<N>::size_in_data_bits()).map(Field::from_bits_le).collect::<Result<Vec<_>>>()?;
-        // Sign the message.
-        Self::sign(private_key, &fields, rng)
+    type CurrentNetwork = MainnetV0;
+
+    const ITERATIONS: u64 = 100;
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_sign_rejects_request_like_messages() -> Result<()> {
+        let mut rng = TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            // Sample a new private key.
+            let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng).unwrap();
+
+            // Request signatures begin with (tvk, tcm) where tcm = hash_psd2(tvk).
+            let tvk = Field::<CurrentNetwork>::rand(&mut rng);
+            let tcm = CurrentNetwork::hash_psd2(&[tvk])?;
+
+            // Add a small number of extra field elements to the message.
+            let extra_fields =
+                (0..rng.random_range(0..10)).map(|_| Field::rand(&mut rng)).collect::<Vec<Field<CurrentNetwork>>>();
+
+            let mut message = Vec::with_capacity(2 + extra_fields.len());
+            message.extend([tvk, tcm]);
+            message.extend(extra_fields);
+
+            let error = Signature::sign(&private_key, &message, &mut rng).unwrap_err();
+            assert!(
+                error.to_string().contains("message[1] == N::hash_psd2([message[0]])"),
+                "unexpected error: {error}"
+            );
+        }
+        Ok(())
     }
 }
