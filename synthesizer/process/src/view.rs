@@ -18,7 +18,6 @@ use console::{
     network::prelude::*,
     program::{Identifier, Value},
 };
-#[cfg(feature = "history")]
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore};
 use snarkvm_synthesizer_program::{
     FinalizeGlobalState,
@@ -45,6 +44,20 @@ pub fn evaluate_view_with_stack_at_height<N: Network, P: FinalizeStorage<N>>(
 ) -> Result<Vec<Value<N>>> {
     let historic = HistoricFinalizeStore { store, height };
     evaluate_view_inner(state, &historic, stack, view_name, inputs)
+}
+
+/// Evaluates a view function against the latest confirmed finalize-store state, reading through
+/// [`LatestFinalizeStore`]. Prefer `VM::evaluate_view`, which resolves the stack and serializes
+/// against block commits.
+pub fn evaluate_view_with_stack<N: Network, P: FinalizeStorage<N>>(
+    state: FinalizeGlobalState,
+    store: &FinalizeStore<N, P>,
+    stack: &Stack<N>,
+    view_name: &Identifier<N>,
+    inputs: Vec<Value<N>>,
+) -> Result<Vec<Value<N>>> {
+    let latest = LatestFinalizeStore { store };
+    evaluate_view_inner(state, &latest, stack, view_name, inputs)
 }
 
 /// Read-only `FinalizeStoreTrait` adapter that routes mapping reads through the finalize
@@ -97,6 +110,78 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
             .store
             .get_historical_mapping_value(program_id, mapping_name, key.clone(), self.height)?
             .map(|cow| cow.into_owned()))
+    }
+
+    fn insert_key_value(
+        &self,
+        _program_id: console::program::ProgramID<N>,
+        _mapping_name: Identifier<N>,
+        _key: console::program::Plaintext<N>,
+        _value: Value<N>,
+    ) -> Result<snarkvm_synthesizer_program::FinalizeOperation<N>> {
+        bail!("Forbidden operation: view path cannot write to the finalize store ('insert_key_value')")
+    }
+
+    fn update_key_value(
+        &self,
+        _program_id: console::program::ProgramID<N>,
+        _mapping_name: Identifier<N>,
+        _key: console::program::Plaintext<N>,
+        _value: Value<N>,
+    ) -> Result<snarkvm_synthesizer_program::FinalizeOperation<N>> {
+        bail!("Forbidden operation: view path cannot write to the finalize store ('update_key_value')")
+    }
+
+    fn remove_key_value(
+        &self,
+        _program_id: console::program::ProgramID<N>,
+        _mapping_name: Identifier<N>,
+        _key: &console::program::Plaintext<N>,
+    ) -> Result<Option<snarkvm_synthesizer_program::FinalizeOperation<N>>> {
+        bail!("Forbidden operation: view path cannot write to the finalize store ('remove_key_value')")
+    }
+}
+
+/// Read-only `FinalizeStoreTrait` adapter that routes every mapping read to the store's
+/// *confirmed* values, so a concurrent speculation's uncommitted atomic batch is never observed.
+/// Writes bail, as in [`HistoricFinalizeStore`].
+struct LatestFinalizeStore<'a, N: Network, P: FinalizeStorage<N>> {
+    store: &'a FinalizeStore<N, P>,
+}
+
+impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for LatestFinalizeStore<'_, N, P> {
+    fn contains_mapping_confirmed(
+        &self,
+        program_id: &console::program::ProgramID<N>,
+        mapping_name: &Identifier<N>,
+    ) -> Result<bool> {
+        self.store.contains_mapping_confirmed(program_id, mapping_name)
+    }
+
+    fn contains_mapping_speculative(
+        &self,
+        program_id: &console::program::ProgramID<N>,
+        mapping_name: &Identifier<N>,
+    ) -> Result<bool> {
+        self.store.contains_mapping_confirmed(program_id, mapping_name)
+    }
+
+    fn contains_key_speculative(
+        &self,
+        program_id: console::program::ProgramID<N>,
+        mapping_name: Identifier<N>,
+        key: &console::program::Plaintext<N>,
+    ) -> Result<bool> {
+        self.store.contains_key_confirmed(program_id, mapping_name, key)
+    }
+
+    fn get_value_speculative(
+        &self,
+        program_id: console::program::ProgramID<N>,
+        mapping_name: Identifier<N>,
+        key: &console::program::Plaintext<N>,
+    ) -> Result<Option<Value<N>>> {
+        self.store.get_value_confirmed(program_id, mapping_name, key)
     }
 
     fn insert_key_value(

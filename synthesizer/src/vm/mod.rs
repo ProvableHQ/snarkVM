@@ -141,6 +141,9 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
     /// The handle to the thread which processes operations sequentially.
     sequential_ops_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+    /// Serializes block commits against latest-view evaluation: a commit takes the write lock,
+    /// a mapping-reading view takes the read lock so it cannot straddle a commit.
+    finalize_lock: Arc<RwLock<()>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -241,6 +244,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             sequential_ops_tx: Default::default(),
             pending_rejected_reasons: Default::default(),
             sequential_ops_thread: Default::default(),
+            finalize_lock: Default::default(),
         };
 
         // Spawn a thread for sequential operations.
@@ -314,7 +318,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// cumulative weights, and the previous-block hash from the actual block — so any
     /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
     /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
-    #[cfg(feature = "history")]
     fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
         let block_hash =
             self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
@@ -333,6 +336,27 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             block.cumulative_proof_target(),
             block.previous_hash(),
         )
+    }
+
+    /// Evaluates a view function against the latest confirmed finalize-store state, against the
+    /// latest program edition. Unlike `evaluate_view_at_height`, this does not require
+    /// `--features history`.
+    ///
+    /// A view that reads mappings holds the finalize lock for its evaluation so it cannot straddle
+    /// a block commit; a view that reads none skips the lock.
+    pub fn evaluate_view(
+        &self,
+        program_id: impl TryInto<ProgramID<N>>,
+        view_name: impl TryInto<Identifier<N>>,
+        inputs: Vec<Value<N>>,
+    ) -> Result<Vec<Value<N>>> {
+        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
+        let view_name = view_name.try_into().map_err(|_| anyhow!("Invalid view function name"))?;
+        let stack = self.process.get_stack(program_id)?;
+        let reads_store = stack.program().get_view_ref(&view_name)?.reads_finalize_store();
+        let _finalize_guard = reads_store.then(|| self.finalize_lock.read());
+        let state = self.finalize_state_for_block(self.block_store().current_block_height())?;
+        snarkvm_synthesizer_process::evaluate_view_with_stack(state, self.finalize_store(), &stack, &view_name, inputs)
     }
 
     /// Evaluates a view function against finalize-store state at the given block `height`.
@@ -601,6 +625,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub(crate) fn add_next_block_inner(&self, block: Block<N>) -> Result<()> {
         self.ensure_sequential_processing();
+
+        // Hold the finalize lock for the commit, excluding concurrent latest-view evaluation.
+        let _finalize_guard = self.finalize_lock.write();
 
         // Determine if the block timestamp should be included.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())

@@ -105,6 +105,11 @@ impl<N: Network> ViewCore<N> {
         &self.positions
     }
 
+    /// Returns `true` if any command in the view reads from the finalize store.
+    pub fn reads_finalize_store(&self) -> bool {
+        self.commands.iter().any(Command::reads_finalize_store)
+    }
+
     /// Returns `true` if the view contains an array type with a size that exceeds the given maximum.
     /// Mirrors `Finalize::exceeds_max_array_size` and additionally walks `outputs`, since views
     /// declare typed outputs.

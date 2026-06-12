@@ -37,6 +37,7 @@ mod evaluate;
 mod execute;
 mod finalize;
 mod view;
+pub use view::evaluate_view_with_stack;
 #[cfg(feature = "history")]
 pub use view::evaluate_view_with_stack_at_height;
 mod verify_deployment;

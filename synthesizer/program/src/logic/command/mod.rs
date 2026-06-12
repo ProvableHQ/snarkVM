@@ -145,6 +145,19 @@ impl<N: Network> Command<N> {
         matches!(self, Command::Set(_) | Command::Remove(_))
     }
 
+    /// Returns `true` if the command reads from the finalize store.
+    pub fn reads_finalize_store(&self) -> bool {
+        matches!(
+            self,
+            Command::Contains(_)
+                | Command::ContainsDynamic(_)
+                | Command::Get(_)
+                | Command::GetDynamic(_)
+                | Command::GetOrUse(_)
+                | Command::GetOrUseDynamic(_)
+        )
+    }
+
     /// Returns the branch target, if the command is a branch command.
     /// Otherwise, returns `None`.
     pub fn branch_to(&self) -> Option<&Identifier<N>> {

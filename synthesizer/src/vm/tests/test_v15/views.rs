@@ -21,11 +21,9 @@
 
 use super::*;
 
-#[cfg(feature = "history")]
 use console::program::{Literal, Plaintext};
 
 /// Convenience: extract a single `u64` from a single-output view result.
-#[cfg(feature = "history")]
 fn expect_u64(outputs: &[Value<CurrentNetwork>]) -> u64 {
     assert_eq!(outputs.len(), 1, "expected exactly one output, got {}", outputs.len());
     match &outputs[0] {
@@ -2330,4 +2328,178 @@ fn test_evaluate_view_before_deployment_height_errors() -> Result<()> {
     let err = vm.evaluate_view_at_height("vw_predeploy.aleo", "fixed", vec![], before).unwrap_err().to_string();
     assert!(err.contains("was not deployed at or before height"), "unexpected error: {err}");
     Ok(())
+}
+
+// `VM::evaluate_view` (latest-height) tests. These do not require `--features history`.
+
+/// The latest-height view reflects the committed mapping value after each block.
+#[test]
+fn test_evaluate_view_latest_reflects_finalize_state() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    let program = Program::from_str(
+        r"
+        program vw_latest_lifecycle.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function increment:
+            input r0 as address.public;
+            input r1 as u64.public;
+            async increment r0 r1 into r2;
+            output r2 as vw_latest_lifecycle.aleo/increment.future;
+
+        finalize increment:
+            input r0 as address.public;
+            input r1 as u64.public;
+            get.or_use balances[r0] 0u64 into r2;
+            add r2 r1 into r3;
+            set r3 into balances[r0];
+
+        view total_balance:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
+
+    // Deploy.
+    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
+
+    // Untouched mapping returns the default (0).
+    let outputs = vm.evaluate_view("vw_latest_lifecycle.aleo", "total_balance", vec![Value::from_str(
+        &caller_address.to_string(),
+    )?])?;
+    assert_eq!(expect_u64(&outputs), 0);
+
+    // Execute increment(addr, 10).
+    let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("10u64")?];
+    let tx =
+        vm.execute(&caller_private_key, ("vw_latest_lifecycle.aleo", "increment"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
+
+    // The latest view reflects the finalize-set value.
+    let outputs = vm.evaluate_view("vw_latest_lifecycle.aleo", "total_balance", vec![Value::from_str(
+        &caller_address.to_string(),
+    )?])?;
+    assert_eq!(expect_u64(&outputs), 10);
+
+    // Increment again by 32. New total: 42.
+    let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("32u64")?];
+    let tx =
+        vm.execute(&caller_private_key, ("vw_latest_lifecycle.aleo", "increment"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
+
+    let outputs = vm.evaluate_view("vw_latest_lifecycle.aleo", "total_balance", vec![Value::from_str(
+        &caller_address.to_string(),
+    )?])?;
+    assert_eq!(expect_u64(&outputs), 42);
+
+    Ok(())
+}
+
+/// A view that reads no mappings is not flagged as reading the store (the lock-skip condition)
+/// and still evaluates correctly.
+#[test]
+fn test_evaluate_view_latest_stateless_skips_lock() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let program = Program::from_str(
+        r"
+        program vw_latest_stateless.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function noop:
+            input r0 as u64.private;
+            output r0 as u64.private;
+
+        constructor:
+            assert.eq true true;
+
+        view add3:
+            input r0 as u64.public;
+            input r1 as u64.public;
+            input r2 as u64.public;
+            add r0 r1 into r3;
+            add r3 r2 into r4;
+            output r4 as u64.public;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
+    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
+
+    // Confirm the view is detected as not reading the store (the lock-skip condition).
+    let stack = vm.process().get_stack("vw_latest_stateless.aleo")?;
+    assert!(
+        !stack.program().get_view_ref(&Identifier::from_str("add3")?)?.reads_finalize_store(),
+        "a view with no get/contains commands must not be flagged as reading the finalize store"
+    );
+
+    let outputs = vm.evaluate_view("vw_latest_stateless.aleo", "add3", vec![
+        Value::from_str("10u64")?,
+        Value::from_str("20u64")?,
+        Value::from_str("12u64")?,
+    ])?;
+    assert_eq!(expect_u64(&outputs), 42);
+    Ok(())
+}
+
+/// Calling `evaluate_view` with the wrong input arity returns an error.
+#[test]
+fn test_evaluate_view_latest_arity_mismatch() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let program = Program::from_str(
+        r"
+        program vw_latest_arity.aleo;
+
+        function noop:
+            input r0 as u64.private;
+            output r0 as u64.private;
+
+        constructor:
+            assert.eq true true;
+
+        view takes_two:
+            input r0 as u64.public;
+            input r1 as u64.public;
+            add r0 r1 into r2;
+            output r2 as u64.public;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
+    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
+
+    let result = vm.evaluate_view("vw_latest_arity.aleo", "takes_two", vec![Value::from_str("1u64")?]);
+    assert!(result.is_err(), "expected error for too few inputs");
+    assert!(result.unwrap_err().to_string().contains("expects 2"));
+    Ok(())
+}
+
+/// Calling `evaluate_view` against a program that was never deployed returns an error.
+#[test]
+fn test_evaluate_view_latest_unknown_program() {
+    let rng = &mut TestRng::default();
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    let result = vm.evaluate_view("never_deployed.aleo", "anything", vec![]);
+    assert!(result.is_err(), "expected error for unknown program");
 }
