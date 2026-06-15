@@ -161,6 +161,17 @@ case "$1" in
         echo "Running AMM swap benchmark with cuvaruna..."
         run_amm_bench cuvaruna
         ;;
+    bench-amm-cpu)
+        # CPU-only AMM proving times. Builds with `dev-print` (no cuda/cuvaruna) so the
+        # `ProvingKey::prove_batch` wall-clock timer prints ` • Executed '<locator>' (in <ms> ms)`.
+        # This is the same prove_batch boundary that becomes the NVTX `prove_batch` range under
+        # `nsys-amm` on GPU, so the per-function numbers are directly comparable.
+        #
+        # Extract the AMM proof times (excluding the untimed setup) with, e.g.:
+        #   ./run.sh bench-amm-cpu 2>&1 | grep "Executed 'leo_amm.aleo/"
+        echo "Running AMM swap benchmark on CPU (dev-print, prove_batch timing)..."
+        run_amm_bench dev-print
+        ;;
     varuna-cpu)
         echo "Running Varuna tall-matrix test (CPU)..."
         cargo test -p snarkvm-algorithms --lib prove_and_verify_with_tall_matrix_big -- --nocapture
@@ -183,6 +194,7 @@ case "$1" in
         echo "  ./run.sh bench-cu          - Run benchmark with cuvaruna"
         echo "  ./run.sh bench-amm-base    - Run AMM swap benchmark with cuda (baseline)"
         echo "  ./run.sh bench-amm-cu      - Run AMM swap benchmark with cuvaruna"
+        echo "  ./run.sh bench-amm-cpu     - Run AMM swap benchmark on CPU (prints prove_batch times)"
         echo "  ./run.sh varuna-cpu        - Run Varuna tall-matrix test (CPU)"
         echo "  ./run.sh varuna-cu-profile - Run Varuna tall-matrix test (cuVaruna + profiling)"
         exit 1
