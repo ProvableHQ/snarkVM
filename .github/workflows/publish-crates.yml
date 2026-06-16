@@ -79,6 +79,12 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install lld
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lld
+
       - name: Publish With release-plz
         uses: release-plz/action@v0.5
         with:

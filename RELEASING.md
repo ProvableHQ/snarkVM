@@ -35,6 +35,10 @@ Trusted Publishing is a one-time crates.io setup for each published crate. Confi
 
 This setup is inherently per crate and should be scripted across the crate set. It does not mean release-plz creates per-crate tags at release time; `release-plz.toml` keeps GitHub tags and releases on the umbrella `snarkvm` crate only.
 
+## Tag Collisions
+
+`release-plz release` treats an existing `v{version}` git tag as already released and will skip publishing the umbrella `snarkvm` crate and creating its release for that version, even if crates.io has not yet received it. Before enabling this flow, make sure the next workspace version does not already have a matching upstream tag. If a stale or pre-created `v{version}` tag exists for a version that was never published, remove or migrate it first.
+
 ## New Crate Bootstrap
 
 Trusted Publishing cannot reserve a brand-new crate name. A new `snarkvm-*` crate needs one initial manual `cargo publish` with a crates.io token before Trusted Publishing can be enabled for that crate.
