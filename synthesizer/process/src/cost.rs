@@ -233,7 +233,7 @@ pub fn deployment_cost_v4<N: Network>(
     let storage_cost = deployment_storage_cost::<N>(size_in_bytes)?;
 
     // Compute the synthesis cost in microcredits based on the combined density of the progrm.
-    let synthesis_cost = combined_density * N::SYNTHESIS_FEE_MULTIPLIER / N::ARC_0005_COMPUTE_DISCOUNT;
+    let synthesis_cost = combined_density.saturating_mul(N::SYNTHESIS_FEE_MULTIPLIER) / N::ARC_0005_COMPUTE_DISCOUNT;
 
     // Compute a Stack for the deployment.
     let stack = Stack::new(process, deployment.program())?;

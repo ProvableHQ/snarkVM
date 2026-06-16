@@ -15,6 +15,8 @@
 
 // Tests for block-wide synthesis limits.
 mod blockwide_synthesis_limit;
+// Tests that structurally identical records from different programs are not interchangeable.
+mod cross_program_record_mismatch;
 
 use super::*;
 
@@ -23,10 +25,10 @@ use std::{collections::HashSet, sync::Arc};
 use crate::vm::test_helpers::*;
 
 use console::{
-    account::{Address, PrivateKey},
+    account::{Address, PrivateKey, ViewKey},
     network::ConsensusVersion,
-    prelude::FromStr,
-    program::Value,
+    prelude::{FromStr, Result},
+    program::{Plaintext, Value},
 };
 
 use snarkvm_ledger_block::{Deployment, Solutions, Transaction};
