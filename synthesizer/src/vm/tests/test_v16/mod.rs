@@ -22,27 +22,13 @@ mod program_size;
 // Tests for the `<name>/checksum` component checksum operand.
 mod component_checksum;
 
-// Tests for block-wide density limits on deployments.
-mod blockwide_synthesis_limit;
-
 use super::*;
-
-use std::{collections::HashSet, sync::Arc};
 
 use crate::vm::test_helpers::*;
 
-use console::{
-    account::{Address, PrivateKey},
-    network::ConsensusVersion,
-    prelude::FromStr,
-    program::Value,
-};
+use console::{account::Address, network::ConsensusVersion, prelude::FromStr, program::Value};
 
-use snarkvm_ledger_block::{Deployment, Solutions, Transaction};
-use snarkvm_ledger_narwhal_subdag::test_helpers::subdag_with_cert_count;
+use snarkvm_ledger_block::{Solutions, Transaction};
 use snarkvm_synthesizer_process::{execute_compute_cost_in_microcredits, execution_cost};
 use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
-use snarkvm_synthesizer_snark::VerifyingKey;
-use snarkvm_utilities::{TestRng, try_vm_runtime};
-
-use super::test_v14::add_and_test_with_costs;
+use snarkvm_utilities::TestRng;

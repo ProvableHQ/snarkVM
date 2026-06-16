@@ -577,7 +577,7 @@ view reads_ts:
         let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
 
         // Build a state with a non-trivial timestamp, mimicking what a real VM would supply.
-        let state = FinalizeGlobalState::from(1, 1, Some(1234567890), [0u8; 32], None);
+        let state = FinalizeGlobalState::from(1, 1, Some(1234567890), [0u8; 32], None, None);
         let outputs = evaluate_view_with_stack_at_height(
             state,
             &finalize_store,

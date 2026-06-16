@@ -21,7 +21,6 @@ use super::*;
 fn fund_deployer_keys(
     vm: &VM<CurrentNetwork, LedgerType>,
     genesis_private_key: &PrivateKey<CurrentNetwork>,
-    genesis_address: &Address<CurrentNetwork>,
     count: usize,
     rng: &mut TestRng,
 ) -> Vec<PrivateKey<CurrentNetwork>> {
@@ -50,7 +49,7 @@ fn fund_deployer_keys(
             })
             .collect();
 
-        add_and_test_with_costs(vm, genesis_private_key, genesis_address, None, &funding_transactions, rng);
+        add_and_test_with_costs(vm, genesis_private_key, None, &funding_transactions, rng);
     }
 
     deployer_keys
@@ -128,10 +127,9 @@ fn test_blockwide_synthesis_limit() {
 
     let rng = &mut TestRng::default();
 
-    let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
-    let vm = sample_vm_at_height(v16_height, rng);
+    let v17_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V17).unwrap();
+    let vm = sample_vm_at_height(v17_height, rng);
     let genesis_private_key = sample_genesis_private_key(rng);
-    let genesis_address = Address::try_from(&genesis_private_key).unwrap();
 
     // Set to true to print the combined density of each individual deployment.
     let verbose = false;
@@ -186,7 +184,7 @@ fn test_blockwide_synthesis_limit() {
 
     let num_deployer_keys = cases.iter().map(|(_, ds, _)| ds.len()).sum::<usize>();
 
-    let mut deployer_keys = fund_deployer_keys(&vm, &genesis_private_key, &genesis_address, num_deployer_keys, rng);
+    let mut deployer_keys = fund_deployer_keys(&vm, &genesis_private_key, num_deployer_keys, rng);
 
     let block_hash = vm.block_store().get_block_hash(vm.block_store().max_height().unwrap()).unwrap().unwrap();
     let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
@@ -197,7 +195,7 @@ fn test_blockwide_synthesis_limit() {
         let subdag = subdag_with_cert_count(num_certs as usize, rng);
         let num_deployments = deployment_specs.len();
 
-        let synthesis_limit = subdag.synthesis_limit(next_block_height).expect("Synthesis limit in >= V16");
+        let synthesis_limit = subdag.synthesis_limit(next_block_height).expect("Synthesis limit in >= V17");
 
         let name_prefix = &format!("test_synthesis_{i}");
 
@@ -277,8 +275,8 @@ fn test_blockwide_synthesis_limit() {
 fn test_vk_num_non_zero_detected() {
     let rng = &mut TestRng::default();
 
-    let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
-    let vm = sample_vm_at_height(v16_height, rng);
+    let v17_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V17).unwrap();
+    let vm = sample_vm_at_height(v17_height, rng);
     let genesis_private_key = sample_genesis_private_key(rng);
 
     let cases = vec![("function", 1), ("function", 2), ("function", 4), ("function", 8), ("record", 1)];
@@ -340,7 +338,7 @@ fn test_vk_num_non_zero_detected() {
             // check_transaction uses try_vm_runtime! and replaces the halt panic with a generic message.
             // We call the latter directly to receive the finer-grained error.
             let verification_result = try_vm_runtime!(|| {
-                vm.process().verify_deployment::<CurrentAleo, _>(ConsensusVersion::V16, &tampered_deployment, rng)
+                vm.process().verify_deployment::<CurrentAleo, _>(ConsensusVersion::V17, &tampered_deployment, rng)
             });
 
             let error_message = match verification_result {

@@ -120,7 +120,7 @@ impl<N: Network> Stack<N> {
         // Get the program ID.
         let program_id = self.program.id();
 
-        if consensus_version < ConsensusVersion::V16 {
+        if consensus_version < ConsensusVersion::V17 {
             // Check that the number of combined variables does not exceed the deployment limit.
             ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
             // Check that the number of combined constraints does not exceed the deployment limit.
@@ -214,9 +214,9 @@ impl<N: Network> Stack<N> {
             };
             // Retrieve the variable limit.
             let variable_limit = verifying_key.num_variables();
-            // If the consensus version is >= V16, set the density limit, accounting for one non-zero entry (with value 1) added to
+            // If the consensus version is >= V17, set the density limit, accounting for one non-zero entry (with value 1) added to
             // each of A, B and C in order to make the Varuna zerocheck hiding.
-            let non_zero_limit = if consensus_version >= ConsensusVersion::V16 {
+            let non_zero_limit = if consensus_version >= ConsensusVersion::V17 {
                 let info = verifying_key.circuit_info;
                 if info.num_non_zero_a >= 1 && info.num_non_zero_b >= 1 && info.num_non_zero_c >= 1 {
                     Some((
@@ -335,8 +335,8 @@ impl<N: Network> Stack<N> {
             cfg_into_iter!(translation_names_assignments).zip_eq(translation_verifying_keys).try_for_each(
             |((record_name, translation_index, translation_assignment), (_, (verifying_key, certificate)))| {
                 // Construct the variable, constraint and non-zero element counts to pass to the translation-circuit
-                // synthesizer as bounds. These are only enforced in ConsensusVersion::V16 and later.
-                let (variable_limit, constraint_limit, non_zero_limit) = if consensus_version < ConsensusVersion::V16 {
+                // synthesizer as bounds. These are only enforced in ConsensusVersion::V17 and later.
+                let (variable_limit, constraint_limit, non_zero_limit) = if consensus_version < ConsensusVersion::V17 {
                     (None, None, None)
                 } else {
                     let variable_limit = Some(verifying_key.num_variables());

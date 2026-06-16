@@ -1128,9 +1128,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     "Exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
                 ));
             }
-            // If we are keeping track of block-wide circuit density and this transaction contains a deployment, make sure its
-            // density does not make the running total exceed the limit.
-            if consensus_version >= ConsensusVersion::V16
+            // In consensus version >= V17, if we are keeping track of block-wide circuit density and this transaction
+            // contains a deployment, make sure its density does not make the running total exceed the limit.
+            if consensus_version >= ConsensusVersion::V17
                 && let Transaction::Deploy(_, _, _, deployment, _) = transaction
                 && let Some(synthesis_limit) = block_synthesis_limit
                 && candidate_transaction_details.block_combined_density.saturating_add(deployment.combined_density())
