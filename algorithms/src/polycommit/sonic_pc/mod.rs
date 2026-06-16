@@ -316,7 +316,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             labels.1.insert(label);
         }
 
-        let mut pool = snarkvm_utilities::ExecutionPool::<_>::with_capacity(query_to_labels_map.len());
+        let mut proofs = Vec::new();
         for (_point_name, (&query, labels)) in query_to_labels_map.into_iter() {
             let mut query_polys = Vec::with_capacity(labels.len());
             let mut query_rands = Vec::with_capacity(labels.len());
@@ -330,19 +330,18 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             }
             let (polynomial, rand) =
                 Self::combine_for_open(universal_prover, ck, query_polys.into_iter(), query_rands.into_iter(), fs_rng)?;
-            let _randomizer = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
 
-            pool.add_job(move || {
-                let proof_time = start_timer!(|| "Creating proof");
-                let proof = kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand);
-                end_timer!(proof_time);
-                proof
-            });
+            let proof_time = start_timer!(|| "Creating proof");
+            let proof = kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?;
+            end_timer!(proof_time);
+            proofs.push(proof);
+
+            let _ = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
         }
-        let batch_proof = pool.execute_all().into_iter().collect::<Result<_, _>>().map(BatchProof).map_err(Into::into);
+        let batch_proof = BatchProof(proofs);
         end_timer!(open_time);
 
-        batch_proof
+        Ok(batch_proof)
     }
 
     pub fn batch_check<'a>(
@@ -370,6 +369,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         }
 
         assert_eq!(proof.0.len(), query_to_labels_map.len());
+
+        let mut private_sponge = fs_rng.clone();
+        for proof in &proof.0 {
+            proof.absorb_into_sponge(&mut private_sponge);
+        }
 
         let mut randomizer = E::Fr::one();
 
@@ -406,7 +410,9 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                 fs_rng,
             )?;
 
-            randomizer = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
+            let _ = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
+
+            randomizer = private_sponge.squeeze_short_nonnative_field_element::<E::Fr>();
         }
 
         let result = Self::check_elems(vk, combined_comms, combined_witness, combined_adjusted_witness);

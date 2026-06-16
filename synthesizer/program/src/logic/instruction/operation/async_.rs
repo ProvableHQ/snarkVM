@@ -13,7 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, Result, StackTrait, types_equivalent};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    Result,
+    StackTrait,
+    types_equivalent,
+};
 
 use console::{
     network::prelude::*,
@@ -134,7 +144,12 @@ impl<N: Network> Async<N> {
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, _stack: &impl StackTrait<N>, _registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        _stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        _registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         bail!("Forbidden operation: Finalize cannot invoke 'async'.")
     }
 

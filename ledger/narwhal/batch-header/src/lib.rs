@@ -279,9 +279,12 @@ impl<N: Network> BatchHeader<N> {
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers {
     use super::*;
-    use console::{account::PrivateKey, network::MainnetV0, prelude::TestRng};
-
-    use time::OffsetDateTime;
+    use console::{
+        account::PrivateKey,
+        network::MainnetV0,
+        prelude::{TestRng, Uniform},
+    };
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     type CurrentNetwork = MainnetV0;
 
@@ -328,8 +331,9 @@ pub mod test_helpers {
         let transmission_ids = snarkvm_ledger_narwhal_transmission_id::test_helpers::sample_transmission_ids(rng)
             .into_iter()
             .collect::<IndexSet<_>>();
-        // Checkpoint the timestamp for the batch.
-        let timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        // The timestamp needs to be current to pass integration tests.
+        let timestamp =
+            SystemTime::now().duration_since(UNIX_EPOCH).expect("System time before UNIX epoch").as_secs() as i64;
         // Return the batch header.
         BatchHeader::new(private_key, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, rng)
             .unwrap()

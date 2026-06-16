@@ -311,15 +311,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
                 self.mapping_update_map()
                     .insert((program_id, mapping_name, key.clone(), current_height), value.clone())?;
 
-                // Ensure the update height history does not already exist.
-                let height_update_key = (program_id, mapping_name, key.clone());
-                if self.mapping_update_heights_map().contains_key_speculative(&height_update_key)? {
-                    bail!(
-                        "Illegal operation: the history of height updates for '{program_id}/{mapping_name}/{key}' already exists in storage"
-                    );
-                }
-
                 // Insert the first historical update height.
+                let height_update_key = (program_id, mapping_name, key.clone());
                 self.mapping_update_heights_map().insert(height_update_key, vec![current_height])?;
             }
 

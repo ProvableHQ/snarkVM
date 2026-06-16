@@ -61,6 +61,10 @@ mod identifier_literal;
 // Tests for V3 deployments (amendments).
 mod amendments;
 
+// Helpers for tesing the function which authorizes a set of related requests.
+mod authorize_requests_helpers;
+use authorize_requests_helpers::reauthorize_from_execution;
+
 use super::*;
 
 use crate::{
@@ -149,11 +153,12 @@ use snarkvm_utilities::TestRng;
 // accepted, additionally checking that the cost estimations based on the
 // Authorization and the call target an inputs are correct. This is done if
 // and only if the `inputs` parameter is provided, which should not be done
-// for deployments.
+// for deployments. Furthermore, if that is the case, it is checked that
+// authorize_requests recovers a consistent authorization when provided
+// with the same requests.
 pub(crate) fn add_and_test_with_costs(
     vm: &VM<CurrentNetwork, LedgerType>,
-    next_block_private_key: &PrivateKey<CurrentNetwork>,
-    caller_address: &Address<CurrentNetwork>,
+    caller_private_key: &PrivateKey<CurrentNetwork>,
     inputs: Option<&[&[Value<CurrentNetwork>]]>,
     transactions: &[Transaction<CurrentNetwork>],
     rng: &mut TestRng,
@@ -178,7 +183,7 @@ pub(crate) fn add_and_test_with_costs(
         })
         .collect();
     // Sample the next block.
-    let block = sample_next_block(vm, next_block_private_key, &transactions, rng).unwrap();
+    let block = sample_next_block(vm, caller_private_key, &transactions, rng).unwrap();
     // Assert all transactions were accepted.
     assert_eq!(block.transactions().num_accepted(), transactions.len());
     assert_eq!(block.transactions().num_rejected(), 0);
@@ -200,7 +205,7 @@ pub(crate) fn add_and_test_with_costs(
                 let root_transition = execution.transitions().last().unwrap();
                 let estimated_cost_request = execution_cost_for_call::<CurrentAleo, _>(
                     vm.process(),
-                    *caller_address,
+                    Address::try_from(caller_private_key).unwrap(),
                     *root_transition.program_id(),
                     *root_transition.function_name(),
                     inputs.iter(),
@@ -209,6 +214,23 @@ pub(crate) fn add_and_test_with_costs(
                 )
                 .unwrap();
                 assert_eq!(actual_cost, estimated_cost_request);
+
+                // Reconstruct an authorization from the execution using authorize_requests
+                let reauthorization = reauthorize_from_execution(vm, execution, inputs, caller_private_key, rng);
+                let reauthorized_transitions = reauthorization.transitions();
+
+                // Test consistency between the transitions in the original execution and the new reauthorization.
+                // All values can be compared directly except for tpk.
+                for (original, (tid, reauthorized)) in execution.transitions().zip_eq(reauthorized_transitions.iter()) {
+                    assert_eq!(original.id(), tid);
+                    assert_eq!(original.id(), reauthorized.id());
+                    assert_eq!(original.program_id(), reauthorized.program_id());
+                    assert_eq!(original.function_name(), reauthorized.function_name());
+                    assert_eq!(original.tcm(), reauthorized.tcm());
+                    assert_eq!(original.scm(), reauthorized.scm());
+                    assert_eq!(original.inputs(), reauthorized.inputs());
+                    assert_eq!(original.outputs(), reauthorized.outputs());
+                }
             }
         }
     }

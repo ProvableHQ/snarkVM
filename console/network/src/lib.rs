@@ -225,9 +225,10 @@ pub trait Network:
     const MAX_RECORD_ENTRIES: usize = Self::MIN_RECORD_ENTRIES.saturating_add(Self::MAX_DATA_ENTRIES);
 
     /// The maximum program size by number of characters.
-    const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 2] = [
-        (ConsensusVersion::V1, 100_000),  // 100 kB
-        (ConsensusVersion::V14, 512_000), // 512 kB
+    const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 3] = [
+        (ConsensusVersion::V1, 100_000),    // 100 kB
+        (ConsensusVersion::V14, 512_000),   // 512 kB
+        (ConsensusVersion::V16, 2_048_000), // 2048 kB
     ];
     /// The maximum number of mappings in a program.
     const MAX_MAPPINGS: usize = 31;
@@ -247,6 +248,10 @@ pub trait Network:
     const MAX_INSTRUCTIONS: usize = u16::MAX as usize;
     /// The maximum number of commands in finalize.
     const MAX_COMMANDS: usize = u16::MAX as usize;
+    /// The maximum number of `call` commands in a finalize body. Matched to
+    /// `Transaction::MAX_TRANSITIONS` so view-call arity in a finalize is bounded analogously
+    /// to the static-call bound on transition graphs.
+    const MAX_CALLS: usize = 32;
     /// The maximum number of write commands in finalize.
     const MAX_WRITES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 16), (ConsensusVersion::V14, 32)];
     /// The maximum number of `position` commands in finalize.
@@ -270,9 +275,10 @@ pub trait Network:
     /// MAX_TRANSACTION_SIZE = C + MAX_PROGRAM_SIZE + (673 + 58) * (MAX_FUNCTIONS + MAX_RECORDS)
     /// C = fixed size components (Up to 2367 bytes)
     // Note: This value must **not** decrease without considering the impact on transaction validity.
-    const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 2] = [
-        (ConsensusVersion::V1, 128_000),  // 128 kB
-        (ConsensusVersion::V14, 768_000), // 768 kB
+    const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 3] = [
+        (ConsensusVersion::V1, 128_000),    // 128 kB
+        (ConsensusVersion::V14, 768_000),   // 768 kB
+        (ConsensusVersion::V16, 2_304_000), // 2304 kB
     ];
 
     /// The state root type.

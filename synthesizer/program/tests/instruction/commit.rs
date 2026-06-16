@@ -151,7 +151,7 @@ fn check_commit<const VARIANT: u8>(
     let mut finalize_registers =
         sample_finalize_registers(&stack, &function_name, &[Plaintext::from(literal_a), Plaintext::from(literal_b)])
             .unwrap();
-    let result_c = operation.finalize(&stack, &mut finalize_registers);
+    let result_c = operation.finalize(&stack, None, &mut finalize_registers);
 
     // Check that either all operations failed, or all operations succeeded.
     let all_failed = result_a.is_err() && result_b.is_err() && result_c.is_err();

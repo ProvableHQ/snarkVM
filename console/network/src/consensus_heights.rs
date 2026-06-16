@@ -59,8 +59,11 @@ pub enum ConsensusVersion {
     V15 = 15,
     /// V16: Moves the block's spend limit check to the finalize phase.
     ///      Supports storing of transaction rejection reasons.
-    ///      Introduces block-wide deployment limits.
+    ///      Increase the program size limit to 2048 kB and the transaction size limit to 2304 kB.
+    ///      Update the deployment storage cost for programs exceeding 512 kB.
     V16 = 16,
+    /// V17: Introduces block-wide deployment limits.
+    V17 = 17,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -126,7 +129,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V12, 10_030_000),
     (ConsensusVersion::V13, 10_881_000),
     (ConsensusVersion::V14, 11_960_000),
-    (ConsensusVersion::V15, u32::MAX - 1),
+    (ConsensusVersion::V15, u32::MAX),
     (ConsensusVersion::V16, u32::MAX),
 ];
 
@@ -146,7 +149,7 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V12, 13_815_000),
     (ConsensusVersion::V13, 16_850_000),
     (ConsensusVersion::V14, 17_700_000),
-    (ConsensusVersion::V15, u32::MAX - 1),
+    (ConsensusVersion::V15, 19_264_000),
     (ConsensusVersion::V16, u32::MAX),
 ];
 
@@ -166,7 +169,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V12, 12_669_000),
     (ConsensusVersion::V13, 14_906_000),
     (ConsensusVersion::V14, 15_370_000),
-    (ConsensusVersion::V15, u32::MAX - 1),
+    (ConsensusVersion::V15, 16_886_000),
     (ConsensusVersion::V16, u32::MAX),
 ];
 
@@ -482,6 +485,40 @@ mod tests {
         }
     }
 
+    /// Ensure that `MAX_PROGRAM_SIZE` and `MAX_TRANSACTION_SIZE` are defined in lockstep:
+    /// the same number of entries, keyed by the same consensus versions in the same order, with the
+    /// transaction size strictly exceeding the program size at every version. The latest transaction
+    /// size must likewise exceed the latest program size, since a transaction must hold a program
+    /// plus its proofs, signatures, and metadata.
+    fn program_and_transaction_size_aligned<N: Network>() {
+        // Ensure both constants define the same number of entries.
+        assert_eq!(
+            N::MAX_PROGRAM_SIZE.len(),
+            N::MAX_TRANSACTION_SIZE.len(),
+            "MAX_PROGRAM_SIZE and MAX_TRANSACTION_SIZE must define the same number of entries"
+        );
+        // Ensure both constants are keyed by the same consensus versions, in the same order, and that
+        // the transaction size exceeds the program size at each corresponding version.
+        for (index, (program_version, program_size)) in N::MAX_PROGRAM_SIZE.iter().enumerate() {
+            let (transaction_version, transaction_size) = &N::MAX_TRANSACTION_SIZE[index];
+            assert_eq!(
+                program_version, transaction_version,
+                "MAX_PROGRAM_SIZE and MAX_TRANSACTION_SIZE must be keyed by the same consensus version at index {index}, but found {program_version} and {transaction_version}"
+            );
+            assert!(
+                transaction_size > program_size,
+                "At consensus version {program_version}: MAX_TRANSACTION_SIZE ({transaction_size}) must be greater than MAX_PROGRAM_SIZE ({program_size})"
+            );
+        }
+        // Ensure the latest transaction size exceeds the latest program size.
+        assert!(
+            N::LATEST_MAX_TRANSACTION_SIZE() > N::LATEST_MAX_PROGRAM_SIZE(),
+            "LATEST_MAX_TRANSACTION_SIZE ({}) must be greater than LATEST_MAX_PROGRAM_SIZE ({})",
+            N::LATEST_MAX_TRANSACTION_SIZE(),
+            N::LATEST_MAX_PROGRAM_SIZE()
+        );
+    }
+
     /// Ensure that the number of constant definitions is the same across networks.
     fn constants_equal_length<N1: Network, N2: Network, N3: Network>() {
         // If we can construct an array, that means the underlying types must be the same.
@@ -544,6 +581,10 @@ mod tests {
         transaction_size_exceeds_program_size::<MainnetV0>();
         transaction_size_exceeds_program_size::<TestnetV0>();
         transaction_size_exceeds_program_size::<CanaryV0>();
+
+        program_and_transaction_size_aligned::<MainnetV0>();
+        program_and_transaction_size_aligned::<TestnetV0>();
+        program_and_transaction_size_aligned::<CanaryV0>();
 
         latest_max_functions_are_safe::<MainnetV0>();
         latest_max_functions_are_safe::<TestnetV0>();

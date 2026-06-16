@@ -16,6 +16,12 @@
 // Tests for quorum block compute spend limits.
 mod block_spend_limit;
 
+// Tests for increased program size limits.
+mod program_size;
+
+// Tests for the `<name>/checksum` component checksum operand.
+mod component_checksum;
+
 // Tests for block-wide density limits on deployments.
 mod blockwide_synthesis_limit;
 
@@ -23,13 +29,7 @@ use super::*;
 
 use std::{collections::HashSet, sync::Arc};
 
-use crate::vm::test_helpers::{
-    CurrentAleo,
-    CurrentNetwork,
-    LedgerType,
-    sample_genesis_private_key,
-    sample_vm_at_height,
-};
+use crate::vm::test_helpers::*;
 
 use console::{
     account::{Address, PrivateKey},

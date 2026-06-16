@@ -290,7 +290,7 @@ fn check_ecdsa<const VARIANT: u8, H: Hash<Input = bool, Output = Vec<bool>>>(
         message.clone(),
     )
     .unwrap();
-    let result_a = operation.finalize(&stack, &mut finalize_registers);
+    let result_a = operation.finalize(&stack, None, &mut finalize_registers);
     // Enforce that the signature verifies successfully.
     assert!(result_a.is_ok(), "The finalization should succeed for a valid operand");
     let output = finalize_registers.load(&stack, &destination_operand).unwrap();
@@ -313,7 +313,7 @@ fn check_ecdsa<const VARIANT: u8, H: Hash<Input = bool, Output = Vec<bool>>>(
         message,
     )
     .unwrap();
-    let result_b = operation.finalize(&stack, &mut finalize_registers);
+    let result_b = operation.finalize(&stack, None, &mut finalize_registers);
     // Enforce that the signature verification fails.
     assert!(result_b.is_ok(), "The finalization should succeed for the operand");
     let output = finalize_registers.load(&stack, &destination_operand).unwrap();

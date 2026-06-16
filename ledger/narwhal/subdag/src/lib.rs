@@ -486,8 +486,7 @@ mod tests {
         assert_eq!(empty_subdag.spend_limit(v16_height), Some(0));
     }
 
-    /// Doubling the number of certificates must (at most) double the spend limit,
-    /// and the result must differ by at most 1 due to integer truncation.
+    /// Doubling the number of certificates must double the spend limit.
     #[test]
     fn test_spend_limit_proportional_to_cert_count() {
         let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
@@ -500,9 +499,7 @@ mod tests {
         let limit_n = subdag_n.spend_limit(v16_height).unwrap();
         let limit_2n = subdag_2n.spend_limit(v16_height).unwrap();
 
-        // 2 * floor(x) ≤ floor(2x) ≤ 2 * floor(x) + 1
-        assert!(limit_2n >= 2 * limit_n, "limit_2n={limit_2n} limit_n={limit_n}");
-        assert!(limit_2n <= 2 * limit_n + 1, "limit_2n={limit_2n} limit_n={limit_n}");
+        assert!(limit_2n == 2 * limit_n, "limit_2n={limit_2n} limit_n={limit_n}");
     }
 
     /// `spend_limit` must be monotonically non-decreasing as certificate count grows.

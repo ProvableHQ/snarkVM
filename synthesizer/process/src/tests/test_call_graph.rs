@@ -388,8 +388,7 @@ fn test_mixed_static_and_dynamic_calls() {
 }
 
 /// Two independent root transitions in one execution (disconnected components).
-/// Neither calls the other.
-/// Expected graph: `{ t_a → [], t_b → [] }`.
+/// This must be rejected because a single authorization must form one call tree.
 #[test]
 fn test_multiple_independent_roots() {
     let process = make_process(&[
@@ -412,11 +411,8 @@ fn test_multiple_independent_roots() {
     let t_b = fake_transition(beta_pid, Identifier::from_str("fb").unwrap(), 1);
     let transitions = [&t_a, &t_b];
 
-    let graph = construct_call_graph(&process, &transitions).unwrap();
-
-    assert_eq!(graph.len(), 2);
-    assert_eq!(graph[t_a.id()], [] as [_; 0]);
-    assert_eq!(graph[t_b.id()], [] as [_; 0]);
+    let result = construct_call_graph(&process, &transitions);
+    assert!(result.is_err(), "expected disjoint transition trees to be rejected");
 }
 
 /// A static call where the actual transition has a different function name than the one declared in the call instruction.

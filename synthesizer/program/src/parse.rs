@@ -483,10 +483,10 @@ function compute:
             let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("closure c{i}:\n    input r0 as u128;\n"));
-                for j in 0..10 {
-                    s.push_str(&format!("    add r0 r0 into r{j};\n"));
+                for j in 0..30 {
+                    s.push_str(&format!("    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{j} as [u128; 64u32];\n"));
                 }
-                s.push_str(&format!("    output r{} as u128;\n", 4000));
+                s.push_str(&format!("    output r{} as [u128; 32u32];\n", 4000));
             }
             s
         };
@@ -496,8 +496,8 @@ function compute:
             let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("function f{i}:\n    add 1u128 1u128 into r0;\n"));
-                for j in 0..500 {
-                    s.push_str(&format!("    add r0 r0 into r{j};\n"));
+                for j in 0..250 {
+                    s.push_str(&format!("    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{j} as [u128; 64u32];\n"));
                 }
             }
             s
@@ -508,7 +508,7 @@ function compute:
             let program = format!("{imports}\nprogram to_parse.aleo;\n\n{body}");
             let result = Program::<CurrentNetwork>::from_str(&program);
             if result.is_ok() != should_succeed {
-                println!("Program failed to parse: {program}");
+                println!("Program failed to parse");
             }
             assert_eq!(result.is_ok(), should_succeed);
         };

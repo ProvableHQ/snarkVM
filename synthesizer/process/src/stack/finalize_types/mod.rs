@@ -27,6 +27,7 @@ use console::{
         Identifier,
         LiteralType,
         PlaintextType,
+        ProgramID,
         Register,
         RegisterType,
         StructType,
@@ -133,6 +134,10 @@ impl<N: Network> FinalizeTypes<N> {
             )?)),
             Operand::Edition(_) => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U16)),
             Operand::ProgramOwner(_) => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Address)),
+            Operand::ComponentChecksum(..) => FinalizeType::Plaintext(PlaintextType::Array(ArrayType::new(
+                PlaintextType::Literal(LiteralType::U8),
+                vec![U32::new(32)],
+            )?)),
         })
     }
 

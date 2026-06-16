@@ -19,6 +19,7 @@
 use crate::{Process, Stack};
 use console::network::{MainnetV0, prelude::*};
 use snarkvm_synthesizer_program::{Program, StackTrait};
+use std::{panic, sync::mpsc, thread, time::Duration};
 
 type CurrentNetwork = MainnetV0;
 
@@ -57,6 +58,26 @@ function foo:
     let program = stack.program();
     // Check that the program is the same as the initial program.
     assert_eq!(program, &initial_program);
+    Ok(())
+}
+
+#[test]
+fn test_nested_process_lock_fails_loudly() -> Result<()> {
+    let (sender, receiver) = mpsc::channel();
+
+    thread::spawn(move || {
+        let process = Process::<CurrentNetwork>::load().expect("Failed to load process");
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let guard = process.lock();
+            guard.lock();
+        }));
+        sender.send(result.is_err()).expect("Failed to send test result");
+    });
+
+    assert!(
+        receiver.recv_timeout(Duration::from_secs(5)).expect("Failed to receive test result"),
+        "Expected nested process lock to panic instead of deadlocking"
+    );
     Ok(())
 }
 
