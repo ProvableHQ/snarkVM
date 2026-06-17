@@ -215,7 +215,7 @@ pub fn execute_compute_cost_in_microcredits(
 /// Returns the minimum cost in microcredits to publish the given deployment (V4).
 ///
 /// Identical to V3 except in that it replaces the factor (`num_combined_variables` + `num_combined_constraints`)
-// of the synthesis cost by the deployment's combined density.
+/// of the synthesis cost by the deployment's combined density.
 pub fn deployment_cost_v4<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
