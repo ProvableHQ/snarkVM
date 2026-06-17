@@ -209,6 +209,32 @@ impl<N: Network> Stack<N> {
         }
         lap!(timer, "Verify the request");
 
+        // TODO (Antonio) Records, dynamic or external
+        // TODO (Antonio) document
+        // In AuthorizeMocked mode, detect whether any input records have been minted
+        if let CallStack::AuthorizeMocked(_, _, authorization, _, input_records) = &call_stack {
+            // TODO (Antonio) correct?
+            let current_request_index = authorization.len() - 1;
+
+            // TODO (Antonio) document
+            let mut input_records = input_records.write();
+
+            for (input_index, input) in inputs.iter().enumerate() {
+                match input {
+                    Value::Record(record) => {
+                        // TODO (Antonio) control already-present nonce like below
+                        input_records.insert(*record.nonce().to_x_coordinate(), (current_request_index, input_index));
+                    }
+                    Value::DynamicRecord(dynamic_record) => {
+                        // TODO (Antonio) control already-present nonce like below
+                        input_records
+                            .insert(*dynamic_record.nonce().to_x_coordinate(), (current_request_index, input_index));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         // Initialize the registers.
         let mut registers = Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone());
         // Set the transition signer.
@@ -311,6 +337,25 @@ impl<N: Network> Stack<N> {
             .collect::<Result<Vec<_>>>()?;
         lap!(timer, "Load the outputs");
 
+        // TODO (Antonio) document; also explain why in this case we only track static records
+        if let CallStack::AuthorizeMocked(_, _, authorization, minted_static_records, _) =
+            &mut registers.call_stack_ref()
+        {
+            let current_request_index = authorization.len() - 1;
+
+            let mut minted_static_records = minted_static_records.write();
+
+            for output in outputs.iter() {
+                if let Value::Record(record) = output {
+                    // Insert into the minted-record tracker, returning an error if the nonce is already present.
+                    if minted_static_records.insert(*record.nonce().to_x_coordinate(), current_request_index).is_some()
+                    {
+                        return Err(anyhow!("Duplicate output-record nonce found in CallStack::AuthorizeMocked. Ensure the program is correct and rerun with a different RNG state.").into());
+                    }
+                }
+            }
+        }
+
         // Map the output operands to registers.
         let output_registers = output_operands
             .iter()
@@ -346,7 +391,7 @@ impl<N: Network> Stack<N> {
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
         }
-        if let CallStack::AuthorizeMocked(_, _, authorization) = registers.call_stack_ref() {
+        if let CallStack::AuthorizeMocked(_, _, authorization, _, _) = registers.call_stack_ref() {
             // Construct the transition without checking correctness of input IDs.
             let transition =
                 Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;

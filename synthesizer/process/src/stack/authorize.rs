@@ -14,7 +14,10 @@
 // limitations under the License.
 
 use super::*;
+
 use snarkvm_synthesizer_error::*;
+
+use std::collections::HashMap;
 
 impl<N: Network> Stack<N> {
     /// Authorizes a call to the program function for the given inputs.
@@ -147,6 +150,28 @@ impl<N: Network> Stack<N> {
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
+        self.sample_authorization_with_tracking::<A, R>(address, program_id, function_name, inputs, rng)
+            .map(|(authorization, _)| authorization)
+    }
+
+    /// Produces a mocked `Authorization` with the same properties as
+    /// `sample_authorization` and, in addition, returns tracking information on
+    /// records which are both minted by a request in the transaction and
+    /// received (possibly as external or dynamic) by other requests in the
+    /// transaction.
+    ///
+    /// Entry `(n, m) -> k` in the returned map indicates that the `m`-th input
+    /// of the `n`-th request in the transaction comes from a static record
+    /// which was minted by the `k`-th request.
+    #[inline]
+    pub fn sample_authorization_with_tracking<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        address: Address<A::Network>,
+        program_id: ProgramID<A::Network>,
+        function_name: Identifier<A::Network>,
+        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
+        rng: &mut R,
+    ) -> Result<(Authorization<N>, HashMap<(usize, usize), usize>), StackAuthError> {
         let timer = timer!("Stack::sample_authorization");
 
         if program_id != *self.program.id() {
@@ -170,14 +195,35 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Compute the mocked request");
         // Initialize the authorization.
         let authorization = Authorization::new(mocked_request.clone());
+        // Initialize Arc-wrapped trackers for static records minted in the transaction and static,
+        // dynamic and external records received by any request in the transaction
+        let minted_static_records = Arc::new(RwLock::new(HashMap::new()));
+        let input_records = Arc::new(RwLock::new(HashMap::new()));
         // Construct the call stack.
-        let call_stack = CallStack::AuthorizeMocked(vec![mocked_request], address, authorization.clone());
+        let call_stack = CallStack::AuthorizeMocked(
+            vec![mocked_request],
+            address,
+            authorization.clone(),
+            minted_static_records.clone(),
+            input_records.clone(),
+        );
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
         finish!(timer, "Construct the mocked authorization from the function");
 
-        // Return the authorization.
-        Ok(authorization)
+        // Collate the information on minted and consumed records:
+        let mut record_tracking = HashMap::new();
+        let input_records = input_records.read();
+        let minted_static_records = minted_static_records.read();
+
+        for (nonce_x, (consumer_request_index, input_index)) in input_records.iter() {
+            if let Some(minter_request_index) = minted_static_records.get(nonce_x) {
+                record_tracking.insert((*consumer_request_index, *input_index), *minter_request_index);
+            }
+        }
+
+        // Return the authorization and record tracking.
+        Ok((authorization, record_tracking))
     }
 
     /// Authorizes a call to a public function for the given request.

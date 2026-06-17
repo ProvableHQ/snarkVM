@@ -96,6 +96,7 @@ use parking_lot::RwLock;
 use rand::{CryptoRng, RngExt as Rng, SeedableRng, rngs::StdRng};
 use std::{
     cell::OnceCell,
+    collections::HashMap,
     sync::{Arc, Weak},
 };
 
@@ -114,8 +115,14 @@ pub type Translations<N> = Arc<RwLock<Vec<Vec<(TranslationAssignment<N>, Proving
 pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
-    /// Mock an evaluation for cost estimation.
-    AuthorizeMocked(Vec<Request<N>>, Address<N>, Authorization<N>),
+    /// Mock an evaluation.
+    AuthorizeMocked(
+        Vec<Request<N>>,
+        Address<N>,
+        Authorization<N>,
+        Arc<RwLock<HashMap<N::Field, usize>>>,
+        Arc<RwLock<HashMap<N::Field, (usize, usize)>>>,
+    ),
     /// Authorize a collection of requests coming from a single root call.
     // (full vector of requests in pre-order, index of the request currently being explored, authorization being constructed)
     AuthorizeRequests(Vec<Request<N>>, Arc<RwLock<usize>>, Authorization<N>),
@@ -170,8 +177,14 @@ impl<N: Network> CallStack<N> {
             CallStack::Authorize(requests, private_key, authorization) => {
                 CallStack::Authorize(requests.clone(), *private_key, authorization.replicate())
             }
-            CallStack::AuthorizeMocked(requests, address, authorization) => {
-                CallStack::AuthorizeMocked(requests.clone(), *address, authorization.replicate())
+            CallStack::AuthorizeMocked(requests, address, authorization, minted_static_records, input_records) => {
+                CallStack::AuthorizeMocked(
+                    requests.clone(),
+                    *address,
+                    authorization.replicate(),
+                    Arc::new(RwLock::new(minted_static_records.read().clone())),
+                    Arc::new(RwLock::new(input_records.read().clone())),
+                )
             }
             CallStack::AuthorizeRequests(requests, current_index, authorization) => CallStack::AuthorizeRequests(
                 requests.clone(),
