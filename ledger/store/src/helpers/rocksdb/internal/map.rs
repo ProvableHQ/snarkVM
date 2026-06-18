@@ -419,6 +419,34 @@ impl<
     fn values_confirmed(&'a self) -> Self::Values {
         Values::new(self.database.prefix_iterator(&self.context))
     }
+
+    ///
+    /// Returns the confirmed keys whose serialized form begins with the serialized `prefix`.
+    ///
+    fn get_keys_confirmed_with_prefix<Q>(&'a self, prefix: &Q) -> Result<Vec<K>>
+    where
+        Q: Serialize,
+    {
+        // Build the raw prefix: the map context (network ID + map ID) followed by the serialized prefix.
+        let mut raw_prefix = self.context.clone();
+        bincode::serialize_into(&mut raw_prefix, prefix)?;
+
+        // Seek to the prefix and collect every key sharing it. The fixed-prefix extractor only spans
+        // the map context, so the boundary of the longer prefix is checked explicitly.
+        let mut iter = self.database.raw_iterator();
+        iter.seek(&raw_prefix);
+
+        let mut keys = Vec::new();
+        while iter.valid() {
+            let Some(key) = iter.key() else { break };
+            if !key.starts_with(&raw_prefix) {
+                break;
+            }
+            keys.push(unchecked_deserialize(&key[PREFIX_LEN..])?);
+            iter.next();
+        }
+        Ok(keys)
+    }
 }
 
 /// An iterator over all key-value pairs in a data map.
