@@ -120,7 +120,7 @@ pub enum CallStack<N: Network> {
         Vec<Request<N>>,
         Address<N>,
         Authorization<N>,
-        Arc<RwLock<HashMap<N::Field, usize>>>,
+        Arc<RwLock<HashMap<N::Field, (usize, u64)>>>,
         Arc<RwLock<HashMap<N::Field, (usize, usize)>>>,
     ),
     /// Authorize a collection of requests coming from a single root call.

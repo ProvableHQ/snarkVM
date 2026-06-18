@@ -22,6 +22,9 @@ mod program_size;
 // Tests for the `<name>/checksum` component checksum operand.
 mod component_checksum;
 
+// TODO (Antonio) remove once no longer needed
+mod construct_authorization_examples;
+
 use super::*;
 
 use crate::vm::test_helpers::*;

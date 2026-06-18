@@ -150,28 +150,50 @@ impl<N: Network> Stack<N> {
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
-        self.sample_authorization_with_tracking::<A, R>(address, program_id, function_name, inputs, rng)
-            .map(|(authorization, _)| authorization)
+        self.sample_authorization_extended::<A, R>(address, program_id, function_name, inputs, rng)
+            .map(|(authorization, _, _, _)| authorization)
     }
 
+    // TODO (Antonio) decide whether to make any of the types below into a named
+    // type/struct and move the documentation there.
     /// Produces a mocked `Authorization` with the same properties as
-    /// `sample_authorization` and, in addition, returns tracking information on
-    /// records which are both minted by a request in the transaction and
-    /// received (possibly as external or dynamic) by other requests in the
-    /// transaction.
+    /// `sample_authorization` alongside some extra information necessary to
+    /// populate the mocked `Request`s. These additional outputs are as follows:
     ///
-    /// Entry `(n, m) -> k` in the returned map indicates that the `m`-th input
-    /// of the `n`-th request in the transaction comes from a static record
-    /// which was minted by the `k`-th request.
+    ///  - HashMap<(usize, usize), (usize, u64)>: Record-tracking information on
+    ///    records which are both minted by a request in the transaction and
+    ///    received (possibly as external or dynamic) by other requests in the
+    ///    transaction. Entry `(n, m) -> (k, l)` in the returned map indicates that
+    ///    the `m`-th input of the `n`-th request in the transaction comes from a
+    ///    static record which was minted by the `k`-th request, where it was the
+    ///    `l`-th output.
+    ///  - HashMap<(usize, usize), Identifier<CurrentNetwork>>: record-name
+    ///    information for *all* input static records to to any of the resulting
+    ///    requests. Entry `(n, m) -> r_name` in the returned map indicates that
+    ///    the `m`-th input of the `n`-th request in the transaction is a static
+    ///    `Record` with name `r_name`.
+    ///  - HashMap<usize, Field<CurrentNetwork>>: Program-checksum information:
+    ///    entry `n -> c` in the returned map indicates that the `n`-th request
+    ///    in the transaction corresponds to a program with program checksum
+    ///    `c`. Requests corresponding to programs without checksum do not have
+    ///    an entry in this map.
     #[inline]
-    pub fn sample_authorization_with_tracking<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+    pub fn sample_authorization_extended<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
         address: Address<A::Network>,
         program_id: ProgramID<A::Network>,
         function_name: Identifier<A::Network>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
         rng: &mut R,
-    ) -> Result<(Authorization<N>, HashMap<(usize, usize), usize>), StackAuthError> {
+    ) -> Result<
+        (
+            Authorization<N>,
+            HashMap<(usize, usize), (usize, u64)>,
+            HashMap<(usize, usize), Identifier<N>>,
+            HashMap<usize, Field<N>>,
+        ),
+        StackAuthError,
+    > {
         let timer = timer!("Stack::sample_authorization");
 
         if program_id != *self.program.id() {
@@ -209,7 +231,7 @@ impl<N: Network> Stack<N> {
         );
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
-        finish!(timer, "Construct the mocked authorization from the function");
+        lap!(timer, "Construct the mocked authorization from the function");
 
         // Collate the information on minted and consumed records:
         let mut record_tracking = HashMap::new();
@@ -217,13 +239,41 @@ impl<N: Network> Stack<N> {
         let minted_static_records = minted_static_records.read();
 
         for (nonce_x, (consumer_request_index, input_index)) in input_records.iter() {
-            if let Some(minter_request_index) = minted_static_records.get(nonce_x) {
-                record_tracking.insert((*consumer_request_index, *input_index), *minter_request_index);
+            if let Some(minter_request_and_register) = minted_static_records.get(nonce_x) {
+                record_tracking.insert((*consumer_request_index, *input_index), *minter_request_and_register);
             }
         }
 
+        // Collect the names of (all) static Record inputs and the program checksums
+        let mut record_names = HashMap::new();
+        let mut program_checksums = HashMap::new();
+
+        for (request_index, request) in authorization.to_vec_deque().iter().enumerate() {
+            let request_program_id = request.program_id();
+
+            let program_stack = if request_program_id == self.program.id() {
+                self
+            } else {
+                &*self.get_external_stack(request_program_id)?
+            };
+
+            let input_types = program_stack.get_function(request.function_name())?.input_types();
+
+            for (input_index, input_type) in input_types.iter().enumerate() {
+                if let ValueType::Record(record_name) = input_type {
+                    record_names.insert((request_index, input_index), *record_name);
+                }
+            }
+
+            if program_stack.program().contains_constructor() {
+                program_checksums.insert(request_index, program_stack.program_checksum_as_field()?);
+            }
+        }
+
+        finish!(timer, "Gather record-tracking and other auxiliary information");
+
         // Return the authorization and record tracking.
-        Ok((authorization, record_tracking))
+        Ok((authorization, record_tracking, record_names, program_checksums))
     }
 
     /// Authorizes a call to a public function for the given request.

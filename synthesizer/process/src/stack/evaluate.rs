@@ -337,6 +337,7 @@ impl<N: Network> Stack<N> {
             .collect::<Result<Vec<_>>>()?;
         lap!(timer, "Load the outputs");
 
+        // TODO (Antonio) move to below, where the operands are ready
         // TODO (Antonio) document; also explain why in this case we only track static records
         if let CallStack::AuthorizeMocked(_, _, authorization, minted_static_records, _) =
             &mut registers.call_stack_ref()
@@ -345,10 +346,18 @@ impl<N: Network> Stack<N> {
 
             let mut minted_static_records = minted_static_records.write();
 
-            for output in outputs.iter() {
-                if let Value::Record(record) = output {
-                    // Insert into the minted-record tracker, returning an error if the nonce is already present.
-                    if minted_static_records.insert(*record.nonce().to_x_coordinate(), current_request_index).is_some()
+            for ((output, output_type), operand) in outputs.iter().zip(&function.output_types()).zip(output_operands) {
+                // The output type is needed to distinguish static Records from ExternalRecords
+                // (which also appear as Value::Record at this point)
+                if let Value::Record(record) = output
+                    && let ValueType::Record(_) = output_type
+                    && let Operand::Register(register) = operand
+                {
+                    // TODO (Antonio) document why this is okay
+                    // Insert into the minted-record tracker, returning an error if the nonce is already present
+                    if minted_static_records
+                        .insert(*record.nonce().to_x_coordinate(), (current_request_index, register.locator()))
+                        .is_some()
                     {
                         return Err(anyhow!("Duplicate output-record nonce found in CallStack::AuthorizeMocked. Ensure the program is correct and rerun with a different RNG state.").into());
                     }
