@@ -23,7 +23,7 @@ mod program_size;
 mod component_checksum;
 
 // TODO (Antonio) remove once no longer needed
-mod construct_authorization_examples;
+pub(crate) mod construct_authorization_examples;
 
 use super::*;
 
