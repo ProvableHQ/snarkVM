@@ -1,86 +1,119 @@
 # Aleo Slipstream Plugin Interface
 
-This crate enables a plugin to be added into a SnarkVM runtime to take actions at the time of
-mapping updates at block finalization; for example, saving historical mapping state and staking
-data to an external database. The plugin must implement the `SlipstreamPlugin` trait. See
-`slipstream_plugin_interface.rs` for the full interface definition.
+Slipstream is a plugin system that streams canonical mapping updates and staking rewards from
+snarkVM's finalize stage to external services (databases, metrics pipelines, etc.) in real time,
+without modifying node code.
 
 > **Feature flag:** compile with `--features slipstream-plugins` to enable plugin support.
 > Plugin callbacks fire only during **canonical finalize** — speculative and dry-run executions
 > are never observed by plugins.
 
-# Components
+---
+
+## How plugins are loaded
+
+Plugins are **statically linked** into the `snarkos` binary at compile time. There is no dynamic
+`.so`/`.dylib` loading and no C FFI boundary. Each plugin crate calls `inventory::submit!` at link
+time to register a `PluginRegistration` factory. snarkOS iterates
+`inventory::iter::<PluginRegistration>()` at startup, matches each config file's `name` field
+against the registered factories, and calls `register()` on the manager for each match.
+
+---
+
+## Components
 
 ### `plugins/slipstream_plugin_interface`
-Defines the `SlipstreamPlugin` trait — the interface all plugins must implement.
+
+Defines the `SlipstreamPlugin` trait and the `PluginRegistration` factory type.
+
+**`SlipstreamPlugin` trait:**
 
 | Method | Description |
 |---|---|
-| `on_load` / `on_unload` | Lifecycle hooks called on startup and shutdown |
-| `subscribed_events` | Returns the event types a plugin subscribes to. Defaults to `&[]` — a plugin that does not override this method receives **no callbacks**. |
-| `on_broadcast` | Called once per key-value update (and once per entry in a `replace_mapping` batch). Only fires for event kinds in the subscribed list. |
+| `name` | Returns the plugin's static name string. Must match the `name` field in the config file. |
+| `on_load(config_file, is_reload)` | Called once at startup. Reads config, connects to external services, verifies schema, replays any WAL. Node aborts if this returns `Err`. |
+| `on_unload` | Called on graceful shutdown. Flush buffers, close connections. |
+| `subscribed_events` | Returns the `BroadcastEventKind`s this plugin wants to receive. Defaults to `&[]` — a plugin that does not override this receives **no callbacks** and pays no serialization cost. |
+| `on_broadcast(event)` | Called inline on the finalize thread for each subscribed event. Errors are logged as warnings and never propagated to consensus. |
+
+**`PluginRegistration`:**
+
+```rust
+pub struct PluginRegistration {
+    pub name: &'static str,
+    pub factory: fn() -> Box<dyn SlipstreamPlugin>,
+}
+inventory::collect!(PluginRegistration);
+```
+
+Plugin crates register themselves at link time:
+
+```rust
+inventory::submit! {
+    PluginRegistration {
+        name: "my-plugin",
+        factory: || Box::new(MyPlugin::new()),
+    }
+}
+```
+
+---
 
 ### `plugins/slipstream_plugin_manager`
-Manages loaded plugins and their backing `libloading::Library` handles.
 
-- **`LoadedSlipstreamPlugin`** — wrapper holding a boxed plugin + its name; implements `Deref`/`DerefMut`
-- **`SlipstreamPluginManager`**
-  - `from_config_files` — takes a slice of config file paths and loads one plugin per file
-  - `load_plugin(path)` / `unload_plugin(name)` — load or unload a single plugin at runtime
-  - `unload()` — fires `on_unload()` on every plugin then drops the libraries; field declaration order guarantees all plugin code finishes executing before the backing `.so` is unmapped
-  - `has_subscribers()` — aggregate opt-in check; used internally to skip serialization when no plugin is interested in an event kind
-  - `broadcast()` — fan-out broadcast to all interested plugins
-  - `list_plugins()` — returns the names of all loaded plugins
+Owns all active plugins and drives their lifecycle.
+
+**`LoadedSlipstreamPlugin`** — wrapper holding a boxed plugin and its name. `Drop` calls
+`on_unload()` automatically, so removing a plugin from `self.plugins` always triggers cleanup.
+
+**`SlipstreamPluginManager`:**
+
+| Method | Description |
+|---|---|
+| `register(plugin, config_file)` | Calls `on_load`, then adds the plugin to the active list. Returns `Err` if a plugin with the same name is already loaded or `on_load` fails. |
+| `unload()` | Clears `self.plugins`; `Drop` on each entry fires `on_unload()`. |
+| `unload_plugin(name)` | Removes and drops a single plugin by name. |
+| `has_subscribers(kind)` | Returns `true` if any plugin subscribes to the given event kind. Used as a pre-serialization guard to skip byte serialization when no plugin would receive the event. |
+| `broadcast(event)` | Fan-out: calls `on_broadcast` on every plugin subscribed to the event's kind. Errors are logged as warnings, never propagated. |
+| `list_plugins()` | Returns the names of all active plugins. |
 
 ---
 
 ## Plugin Config File (JSON5)
 
-Each plugin requires a config file:
+Each plugin requires a JSON5 config file passed to `snarkos start --slipstream-plugins`:
+
 ```json5
 {
-  "libpath": "/path/to/libmy_plugin.so",  // required; relative paths resolve from the config file's dir
-  "name": "my_plugin"                      // optional; overrides the plugin's name() return value
+  // Required: must match the name registered via inventory::submit! in the plugin crate.
+  name: "my-plugin",
+
+  // Plugin-specific fields — read by the plugin's own on_load implementation.
+  connection_string: "postgres://user:pass@localhost/aleo",
+  batch_size: 100,
 }
 ```
-
----
-
-## Plugin Library Convention
-
-The shared library (`.so` / `.dylib` / `.dll`) must export a C function:
-```rust
-#[no_mangle]
-pub extern "C" fn _create_plugin() -> *mut dyn SlipstreamPlugin {
-    Box::into_raw(Box::new(MyPlugin::new()))
-}
-```
-
----
-
-## Broadcast Event Format
-
-All byte-slice fields in `BroadcastEvent` are serialized in **little-endian** format (via
-`to_bytes_le()`). Plugin implementations must deserialize accordingly.
 
 ---
 
 ## Startup
 
-`SlipstreamPluginManager::from_config_files()` takes a slice of config file paths and returns a
-manager object. Install it into the `FinalizeStore` before the node begins processing blocks:
+snarkOS reads each config file, looks up the matching `PluginRegistration` factory via
+`inventory::iter`, and calls `register()`:
 
 ```rust
-let manager = SlipstreamPluginManager::from_config_files(&[
-    PathBuf::from("/etc/aleo/plugins/my_plugin.json5"),
-])?;
-finalize_store.set_slipstream_plugin_manager(manager);
+let plugin = factory();
+manager.register(plugin, config_path)?;
 ```
+
+`on_load` is called synchronously on the startup thread before the consensus engine starts. If
+`on_load` returns `Err` for any plugin, the node exits immediately — there is no fallback.
+
+---
 
 ## Shutdown
 
-Call `manager.unload()` during graceful shutdown before aborting tasks. This fires `on_unload()`
-on every plugin — the right place for flushing buffers, closing connections, etc.:
+`manager.unload()` fires `on_unload()` on every plugin in reverse registration order:
 
 ```rust
 if let Some(manager) = finalize_store.slipstream_plugin_manager().write().as_mut() {
@@ -88,4 +121,71 @@ if let Some(manager) = finalize_store.slipstream_plugin_manager().write().as_mut
 }
 ```
 
-> Errors from plugin callbacks (`on_broadcast`) are logged as warnings and never propagated — a misbehaving plugin will not crash the node.
+---
+
+## Broadcast Event Format
+
+All `&[u8]` fields in `BroadcastEvent` carry **little-endian** byte representations of the
+corresponding snarkVM console types (serialized via `ToBytes`). Plugin implementations must
+deserialize accordingly.
+
+```rust
+pub enum BroadcastEvent<'a> {
+    MappingUpdate { program_id: &'a [u8], mapping_name: &'a [u8], key: &'a [u8], value: &'a [u8], block_height: u32 },
+    StakingReward  { staker: &'a [u8], validator: &'a [u8], reward: u64, new_stake: u64, block_height: u32 },
+}
+```
+
+`BroadcastEvent` is `Copy`, so the same value can be fanned out to multiple plugins without cloning.
+
+---
+
+## Writing a Plugin
+
+1. Add dependencies:
+
+```toml
+[dependencies]
+snarkvm-slipstream-plugin-interface = { git = "https://github.com/ProvableHQ/snarkVM.git" }
+inventory = "0.3"
+```
+
+2. Implement the trait and self-register:
+
+```rust
+use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::{
+    SlipstreamPlugin, PluginRegistration,
+};
+
+#[derive(Debug)]
+struct MyPlugin;
+
+impl SlipstreamPlugin for MyPlugin {
+    fn name(&self) -> &'static str { "my-plugin" }
+    // override on_load, on_broadcast, on_unload as needed
+}
+
+inventory::submit! {
+    PluginRegistration {
+        name: "my-plugin",
+        factory: || Box::new(MyPlugin::new()),
+    }
+}
+```
+
+3. Add the plugin crate as an optional dependency under the `slipstream-plugins` feature in
+   `snarkOS/node/Cargo.toml`:
+
+```toml
+[dependencies.my-plugin]
+path = "../../my-plugin"
+optional = true
+
+[features]
+slipstream-plugins = [
+    "snarkvm/slipstream-plugins",
+    "dep:my-plugin",
+]
+```
+
+See `slipstream-plugin-postgres` for a complete reference implementation.

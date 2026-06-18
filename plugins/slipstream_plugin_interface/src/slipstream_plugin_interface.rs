@@ -88,3 +88,13 @@ pub trait SlipstreamPlugin: Any + Send + Sync + std::fmt::Debug {
         Ok(())
     }
 }
+
+/// A factory record submitted by plugin crates at link time via `inventory::submit!`.
+/// snarkOS uses `inventory::iter::<PluginRegistration>()` to discover all statically
+/// linked plugins without needing explicit per-plugin match arms.
+pub struct PluginRegistration {
+    pub name: &'static str,
+    pub factory: fn() -> Box<dyn SlipstreamPlugin>,
+}
+
+inventory::collect!(PluginRegistration);
