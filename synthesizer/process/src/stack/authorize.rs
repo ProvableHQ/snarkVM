@@ -154,8 +154,8 @@ impl<N: Network> Stack<N> {
             .map(|(authorization, _, _, _)| authorization)
     }
 
-    // TODO (Antonio) decide whether to make any of the types below into a named
-    // type/struct and move the documentation there.
+    // TODO (Antonio) decide whether to make any of the types below into a named type/struct and move the documentation there.
+
     /// Produces a mocked `Authorization` with the same properties as
     /// `sample_authorization` alongside some extra information necessary to
     /// populate the mocked `Request`s. These additional outputs are as follows:
@@ -238,9 +238,11 @@ impl<N: Network> Stack<N> {
         let input_records = input_records.read();
         let minted_static_records = minted_static_records.read();
 
-        for (nonce_x, (consumer_request_index, input_index)) in input_records.iter() {
+        for (nonce_x, consumers) in input_records.iter() {
             if let Some(minter_request_and_register) = minted_static_records.get(nonce_x) {
-                record_tracking.insert((*consumer_request_index, *input_index), *minter_request_and_register);
+                for (consumer_request_index, input_index) in consumers {
+                    record_tracking.insert((*consumer_request_index, *input_index), *minter_request_and_register);
+                }
             }
         }
 

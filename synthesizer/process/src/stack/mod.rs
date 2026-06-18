@@ -121,7 +121,7 @@ pub enum CallStack<N: Network> {
         Address<N>,
         Authorization<N>,
         Arc<RwLock<HashMap<N::Field, (usize, u64)>>>,
-        Arc<RwLock<HashMap<N::Field, (usize, usize)>>>,
+        Arc<RwLock<HashMap<N::Field, Vec<(usize, usize)>>>>,
     ),
     /// Authorize a collection of requests coming from a single root call.
     // (full vector of requests in pre-order, index of the request currently being explored, authorization being constructed)

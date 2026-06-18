@@ -65,7 +65,7 @@ mod amendments;
 mod authorize_requests_helpers;
 use authorize_requests_helpers::reauthorize_from_execution;
 
-use super::{test_v16::construct_authorization_examples::construct_authorization::construct_authorization, *};
+use super::*;
 
 use crate::{
     circuit::{Eject, Inject, Mode},
@@ -156,8 +156,7 @@ use snarkvm_utilities::TestRng;
 // for deployments. Furthermore, if that is the case, it is checked that
 // authorize_requests recovers a consistent authorization when provided
 // with the same requests.
-// TODO (Antonio)
-pub(crate) fn add_and_test_with_costs_original(
+pub(crate) fn add_and_test_with_costs(
     vm: &VM<CurrentNetwork, LedgerType>,
     caller_private_key: &PrivateKey<CurrentNetwork>,
     inputs: Option<&[&[Value<CurrentNetwork>]]>,
@@ -232,112 +231,6 @@ pub(crate) fn add_and_test_with_costs_original(
                     assert_eq!(original.inputs(), reauthorized.inputs());
                     assert_eq!(original.outputs(), reauthorized.outputs());
                 }
-            }
-        }
-    }
-}
-
-// TODO (Antonio) remove
-pub(crate) fn add_and_test_with_costs(
-    vm: &VM<CurrentNetwork, LedgerType>,
-    caller_private_key: &PrivateKey<CurrentNetwork>,
-    inputs: Option<&[&[Value<CurrentNetwork>]]>,
-    transactions: &[Transaction<CurrentNetwork>],
-    rng: &mut TestRng,
-) {
-    // Construct the transactions to add to the block.
-    let transactions: Vec<_> = match inputs {
-        // Reconstruct each transaction by manually rebuilding the authorization and
-        // reusing the fee from the original transaction.
-        Some(inputs) => transactions
-            .iter()
-            .zip_eq(inputs)
-            .map(|(original, inputs)| {
-                // Recover the root-call information from the original execution. The
-                // root call corresponds to the last transition.
-                let execution = original.execution().unwrap();
-                let root_transition = execution.transitions().last().unwrap();
-                let program_id = *root_transition.program_id();
-                let function_name = *root_transition.function_name();
-
-                // Manually construct the authorization from the root-call information.
-                let authorization =
-                    construct_authorization(vm, *caller_private_key, program_id, function_name, inputs, rng);
-                let execution_id = authorization.to_execution_id().unwrap();
-
-                // Reuse the fee from the original transaction to authorize a new fee.
-                let base_fee = *original.base_fee_amount().unwrap();
-                let priority_fee = *original.priority_fee_amount().unwrap();
-                let fee_authorization =
-                    vm.authorize_fee_public(caller_private_key, base_fee, priority_fee, execution_id, rng).unwrap();
-
-                // Prove the authorization and the fee to construct the execution transaction.
-                let transaction = vm.execute_authorization(authorization, Some(fee_authorization), None, rng).unwrap();
-
-                // Check the transaction.
-                vm.check_transaction(&transaction, None, rng)
-                    .map_err(|e| anyhow!("Transaction check failed: {e}"))
-                    .unwrap();
-
-                // TODO (Antonio) remove
-                println!("PASSED checking of transaction from manual authorization");
-                
-                transaction
-            })
-            .collect(),
-        // Default flow: use the provided transactions (as produced by `vm.execute`) directly.
-        None => transactions
-            .iter()
-            .map(|tx_0| {
-                // Serialize and deserialize the transaction to ensure consistency.
-                let tx_bytes_0 = tx_0.to_bytes_le().unwrap();
-                let tx_1 = Transaction::<CurrentNetwork>::from_bytes_le(&tx_bytes_0).unwrap();
-                assert_eq!(tx_0, &tx_1);
-                assert_eq!(tx_bytes_0, tx_1.to_bytes_le().unwrap());
-                // Stringify and parse the transaction to ensure consistency.
-                let tx_1_string = tx_1.to_string();
-                let tx = Transaction::<CurrentNetwork>::from_str(&tx_1_string).unwrap();
-                assert_eq!(tx_0, &tx);
-                assert_eq!(tx_1_string, tx.to_string());
-                // Check the transaction.
-                vm.check_transaction(&tx, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
-                tx
-            })
-            .collect(),
-    };
-
-    // Sample the next block.
-    let block = sample_next_block(vm, caller_private_key, &transactions, rng).unwrap();
-    // Assert all transactions were accepted.
-    assert_eq!(block.transactions().num_accepted(), transactions.len());
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
-
-    // Add the next block to the VM.
-    vm.add_next_block(&block).unwrap();
-
-    // Check the cost estimation is correct:
-    if let Some(inputs) = inputs {
-        for (transaction, inputs) in transactions.iter().zip_eq(inputs) {
-            if let Some(execution) = transaction.execution() {
-                let actual_cost = execution_cost(vm.process(), execution, ConsensusVersion::V14).unwrap();
-                let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
-                let estimated_cost_authorization =
-                    execution_cost_for_authorization(vm.process(), &authorization, ConsensusVersion::V14).unwrap();
-                assert_eq!(actual_cost, estimated_cost_authorization);
-
-                let root_transition = execution.transitions().last().unwrap();
-                let estimated_cost_request = execution_cost_for_call::<CurrentAleo, _>(
-                    vm.process(),
-                    Address::try_from(caller_private_key).unwrap(),
-                    *root_transition.program_id(),
-                    *root_transition.function_name(),
-                    inputs.iter(),
-                    ConsensusVersion::V14,
-                    rng,
-                )
-                .unwrap();
-                assert_eq!(actual_cost, estimated_cost_request);
             }
         }
     }

@@ -209,26 +209,26 @@ impl<N: Network> Stack<N> {
         }
         lap!(timer, "Verify the request");
 
-        // TODO (Antonio) Records, dynamic or external
-        // TODO (Antonio) document
-        // In AuthorizeMocked mode, detect whether any input records have been minted
+        // In AuthorizeMocked mode, detect whether any input static, external or dynamic records
+        // have been minted by other requests in the transaction and track them.
         if let CallStack::AuthorizeMocked(_, _, authorization, _, input_records) = &call_stack {
-            // TODO (Antonio) correct?
             let current_request_index = authorization.len() - 1;
 
-            // TODO (Antonio) document
             let mut input_records = input_records.write();
 
             for (input_index, input) in inputs.iter().enumerate() {
                 match input {
                     Value::Record(record) => {
-                        // TODO (Antonio) control already-present nonce like below
-                        input_records.insert(*record.nonce().to_x_coordinate(), (current_request_index, input_index));
+                        input_records
+                            .entry(*record.nonce().to_x_coordinate())
+                            .or_default()
+                            .push((current_request_index, input_index));
                     }
                     Value::DynamicRecord(dynamic_record) => {
-                        // TODO (Antonio) control already-present nonce like below
                         input_records
-                            .insert(*dynamic_record.nonce().to_x_coordinate(), (current_request_index, input_index));
+                            .entry(*dynamic_record.nonce().to_x_coordinate())
+                            .or_default()
+                            .push((current_request_index, input_index));
                     }
                     _ => {}
                 }
@@ -337,8 +337,7 @@ impl<N: Network> Stack<N> {
             .collect::<Result<Vec<_>>>()?;
         lap!(timer, "Load the outputs");
 
-        // TODO (Antonio) move to below, where the operands are ready
-        // TODO (Antonio) document; also explain why in this case we only track static records
+        // In AuthorizeMocked mode, track the minting of static records.
         if let CallStack::AuthorizeMocked(_, _, authorization, minted_static_records, _) =
             &mut registers.call_stack_ref()
         {
@@ -353,8 +352,8 @@ impl<N: Network> Stack<N> {
                     && let ValueType::Record(_) = output_type
                     && let Operand::Register(register) = operand
                 {
-                    // TODO (Antonio) document why this is okay
-                    // Insert into the minted-record tracker, returning an error if the nonce is already present
+                    // Insert into the minted-record tracker, returning an error if the nonce is
+                    // already present (two static records which the same nonce cannot be minted.)
                     if minted_static_records
                         .insert(*record.nonce().to_x_coordinate(), (current_request_index, register.locator()))
                         .is_some()

@@ -82,7 +82,6 @@ pub(crate) fn construct_authorization(
     //  - scm: Field<N>,                // Computed in step 2.3
     //  - is_dynamic: bool,             // Already ok in the mocked request
 
-    // TODO (Antonio) maybe tvks can be removed
     let mut tvks = Vec::with_capacity(mock_requests.len());
     let mut populated_requests: Vec<Request<CurrentNetwork>> = Vec::with_capacity(mock_requests.len());
 
