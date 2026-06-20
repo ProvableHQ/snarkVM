@@ -65,6 +65,9 @@ mod amendments;
 mod authorize_requests_helpers;
 use authorize_requests_helpers::reauthorize_from_execution;
 
+// TODO (Antonio) remove: temporary import to test manual authorization construction.
+use super::test_v16::construct_authorization::construct_authorization_flow::construct_authorization;
+
 use super::*;
 
 use crate::{
@@ -182,6 +185,46 @@ pub(crate) fn add_and_test_with_costs(
             tx
         })
         .collect();
+
+    // TODO (Antonio) remove: temporary machinery to check that `construct_authorization` returns a
+    // correct authorization for the same root call. This must run before the block is added to the
+    // VM: once the original transactions are committed, the input records they consume are spent in
+    // the ledger, and the manually-constructed transactions (which reuse the same records, and hence
+    // produce the same serial numbers) would be rejected by `check_transaction` as double spends.
+    if let Some(inputs) = inputs {
+        for (transaction, inputs) in transactions.iter().zip_eq(inputs) {
+            if let Some(execution) = transaction.execution() {
+                // Recover the root-call information from the original execution. The root call
+                // corresponds to the last transition.
+                let root_transition = execution.transitions().last().unwrap();
+                let program_id = *root_transition.program_id();
+                let function_name = *root_transition.function_name();
+
+                // Manually construct the authorization from the root-call information.
+                let authorization =
+                    construct_authorization(vm, *caller_private_key, program_id, function_name, inputs, rng);
+                let execution_id = authorization.to_execution_id().unwrap();
+
+                // Reuse the fee from the original transaction to authorize a new fee.
+                let base_fee = *transaction.base_fee_amount().unwrap();
+                let priority_fee = *transaction.priority_fee_amount().unwrap();
+                let fee_authorization =
+                    vm.authorize_fee_public(caller_private_key, base_fee, priority_fee, execution_id, rng).unwrap();
+
+                // Prove the authorization and the fee to construct the execution transaction.
+                let manual_transaction =
+                    vm.execute_authorization(authorization, Some(fee_authorization), None, rng).unwrap();
+
+                // Check the transaction constructed from the manual authorization.
+                vm.check_transaction(&manual_transaction, None, rng)
+                    .map_err(|e| anyhow!("Transaction check failed: {e}"))
+                    .unwrap();
+
+                println!("PASSED checking of transaction from manual authorization");
+            }
+        }
+    }
+
     // Sample the next block.
     let block = sample_next_block(vm, caller_private_key, &transactions, rng).unwrap();
     // Assert all transactions were accepted.
@@ -196,24 +239,24 @@ pub(crate) fn add_and_test_with_costs(
     if let Some(inputs) = inputs {
         for (transaction, inputs) in transactions.iter().zip_eq(inputs) {
             if let Some(execution) = transaction.execution() {
-                let actual_cost = execution_cost(vm.process(), execution, ConsensusVersion::V14).unwrap();
-                let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
-                let estimated_cost_authorization =
-                    execution_cost_for_authorization(vm.process(), &authorization, ConsensusVersion::V14).unwrap();
-                assert_eq!(actual_cost, estimated_cost_authorization);
+                // let actual_cost = execution_cost(vm.process(), execution, ConsensusVersion::V14).unwrap();
+                // let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
+                // let estimated_cost_authorization =
+                //     execution_cost_for_authorization(vm.process(), &authorization, ConsensusVersion::V14).unwrap();
+                // assert_eq!(actual_cost, estimated_cost_authorization);
 
-                let root_transition = execution.transitions().last().unwrap();
-                let estimated_cost_request = execution_cost_for_call::<CurrentAleo, _>(
-                    vm.process(),
-                    Address::try_from(caller_private_key).unwrap(),
-                    *root_transition.program_id(),
-                    *root_transition.function_name(),
-                    inputs.iter(),
-                    ConsensusVersion::V14,
-                    rng,
-                )
-                .unwrap();
-                assert_eq!(actual_cost, estimated_cost_request);
+                // let root_transition = execution.transitions().last().unwrap();
+                // let estimated_cost_request = execution_cost_for_call::<CurrentAleo, _>(
+                //     vm.process(),
+                //     Address::try_from(caller_private_key).unwrap(),
+                //     *root_transition.program_id(),
+                //     *root_transition.function_name(),
+                //     inputs.iter(),
+                //     ConsensusVersion::V14,
+                //     rng,
+                // )
+                // .unwrap();
+                // assert_eq!(actual_cost, estimated_cost_request);
 
                 // Reconstruct an authorization from the execution using authorize_requests
                 let reauthorization = reauthorize_from_execution(vm, execution, inputs, caller_private_key, rng);

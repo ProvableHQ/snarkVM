@@ -251,10 +251,13 @@ impl<N: Network> Stack<N> {
         for (request_index, request) in authorization.to_vec_deque().iter().enumerate() {
             let request_program_id = request.program_id();
 
+            // Resolve the stack via the process-level map rather than `get_external_stack`: a request
+            // may correspond to a program reached through a dynamic call (or a transitive import) that
+            // the root program does not directly import.
             let program_stack = if request_program_id == self.program.id() {
                 self
             } else {
-                &*self.get_external_stack(request_program_id)?
+                &*self.get_stack_global(request_program_id)?
             };
 
             let input_types = program_stack.get_function(request.function_name())?.input_types();
