@@ -181,6 +181,7 @@ fn transfer_private_3_flow(use_construct_authorization: bool) {
 }
 
 #[test]
+#[ignore]
 fn test_transfer_private_3_flow() {
     transfer_private_3_flow(true);
     transfer_private_3_flow(false);

@@ -85,6 +85,11 @@ pub(crate) fn construct_authorization(
     let mut tvks = Vec::with_capacity(mock_requests.len());
     let mut populated_requests: Vec<Request<CurrentNetwork>> = Vec::with_capacity(mock_requests.len());
 
+    // We will be mutating the inputs of future requests as record-minting requests sample their
+    // tvks, so we pull out all inputs here to avoid looping issues.
+    let mut corrected_inputs: Vec<Vec<Value<CurrentNetwork>>> =
+        mock_requests.iter().map(|request| request.inputs().to_vec()).collect();
+
     for (request_index, mock_request) in mock_requests.iter().enumerate() {
         // Determine whether this request corresponds to the root call (the first request).
         let is_root = request_index == 0;
@@ -96,69 +101,14 @@ pub(crate) fn construct_authorization(
         tvks.push(tvk);
 
         // ****************************************************************************************
-        // Step 2.2: Correct the inputs which are dependent on previous tvks: Record, (incl.
-        //           ExternalRecord) and DynamicRecord
-
-        let corrected_inputs = mock_request
-            .inputs()
-            .iter()
-            .enumerate()
-            .map(|(input_index, input)| {
-                match input {
-                    Value::Record(_) | Value::DynamicRecord(_) => {
-                        // Use the tracking information to find the index (in mocked_requests) of the
-                        // request which minted the corresponding static record and its output register
-                        // *if* that happened in the transaction being processed. Otherwise, the
-                        // static/dynamic/external record ultimately comes from a root-call-input static
-                        // record and it is already correct
-                        if let Some((minter_request_index, output_register)) =
-                            record_tracking.get(&(request_index, input_index))
-                        {
-                            // Compute the updated nonce with the tvk used to populate the minting request
-                            let minter_tvk = tvks[*minter_request_index];
-                            let index = Field::from_u64(*output_register);
-                            let randomizer = CurrentNetwork::hash_to_scalar_psd2(&[minter_tvk, index]).unwrap();
-                            let nonce = CurrentNetwork::g_scalar_multiply(&randomizer);
-
-                            match input {
-                                Value::Record(record) => Value::Record(
-                                    Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
-                                        record.owner().clone(),
-                                        record.data().clone(),
-                                        nonce,
-                                        *record.version(),
-                                    )
-                                    .unwrap(),
-                                ),
-                                Value::DynamicRecord(dynamic_record) => {
-                                    Value::DynamicRecord(DynamicRecord::new_unchecked(
-                                        *dynamic_record.owner(),
-                                        *dynamic_record.root(),
-                                        nonce,
-                                        *dynamic_record.version(),
-                                        dynamic_record.data().clone(),
-                                    ))
-                                }
-                                _ => unreachable!(),
-                            }
-                        } else {
-                            input.clone()
-                        }
-                    }
-                    _ => input.clone(),
-                }
-            })
-            .collect_vec();
-
-        // ****************************************************************************************
-        // Step 2.3: Derive the tcm and scm
+        // Step 2.2: Derive the tcm and scm
 
         let root_tvk = tvks[0];
         let tcm = CurrentNetwork::hash_psd2(&[tvk]).unwrap();
         let scm = CurrentNetwork::hash_psd2(&[signer.to_field().unwrap(), root_tvk]).unwrap();
 
         // ****************************************************************************************
-        // Step 2.4 (Requires private key material if any inputs are of type Record)
+        // Step 2.3 (Requires private key material if any inputs are of type Record)
         //          Derive the input IDs (of the corrected inputs) using the updated tvk
 
         // Compute the function ID.
@@ -169,7 +119,7 @@ pub(crate) fn construct_authorization(
         // We only use the mocked request's input IDs to determine the type of each input.
         // Note that the value of the input is not quite enough: for instance, an input with value
         // of type Value::Record can correspond to a Record or an ExternalRecord input.
-        let corrected_input_ids = corrected_inputs
+        let corrected_input_ids = corrected_inputs[request_index]
             .iter()
             .zip_eq(mock_request.input_ids().iter())
             .enumerate()
@@ -256,7 +206,7 @@ pub(crate) fn construct_authorization(
             .collect_vec();
 
         // ****************************************************************************************
-        // Step 2.5 (Requires private key material)
+        // Step 2.4 (Requires private key material)
         //           Sign the request.
 
         // Sample the transition secret `r` and compute `g_r` as `r * G`.
@@ -300,7 +250,7 @@ pub(crate) fn construct_authorization(
         let signature = Signature::from((challenge, response, compute_key));
 
         // ****************************************************************************************
-        // Step 2.6: Construct the signed request from the computed values.
+        // Step 2.5: Construct the signed request from the computed values.
 
         let request = Request::from((
             signer,
@@ -308,7 +258,7 @@ pub(crate) fn construct_authorization(
             *mock_request.program_id(),
             *mock_request.function_name(),
             corrected_input_ids,
-            corrected_inputs,
+            corrected_inputs[request_index].clone(),
             signature,
             sk_tag,
             tvk,
@@ -318,6 +268,49 @@ pub(crate) fn construct_authorization(
         ));
 
         populated_requests.push(request);
+
+        // ****************************************************************************************
+        // Step 2.6: Correct the inputs of any subsequent requests which receive records minted by
+        //           this request. The nonces of those input records (static, external or dynamic)
+        //           depend on this request's tvk, so we recompute them here the corresponding
+        //           future iterations of the loop.
+        for ((minter_request_index, output_register), consumers) in record_tracking.iter() {
+            // Only handle the records minted by the current request.
+            if *minter_request_index != request_index {
+                continue;
+            }
+
+            // Compute the updated nonce with the tvk used to populate this (minting) request.
+            let output_register_field = Field::from_u64(*output_register);
+            let randomizer = CurrentNetwork::hash_to_scalar_psd2(&[tvk, output_register_field]).unwrap();
+            let nonce = CurrentNetwork::g_scalar_multiply(&randomizer);
+
+            // Update the nonce in every consuming request's input indicated by the tracking entry.
+            // Note that ExternalRecord inputs appear as the Value::Record variant, just like static
+            // ones.
+            for (consumer_request_index, consumer_input_index) in consumers.iter() {
+                let corrected = match &corrected_inputs[*consumer_request_index][*consumer_input_index] {
+                    Value::Record(record) => Value::Record(
+                        Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+                            record.owner().clone(),
+                            record.data().clone(),
+                            nonce,
+                            *record.version(),
+                        )
+                        .unwrap(),
+                    ),
+                    Value::DynamicRecord(dynamic_record) => Value::DynamicRecord(DynamicRecord::new_unchecked(
+                        *dynamic_record.owner(),
+                        *dynamic_record.root(),
+                        nonce,
+                        *dynamic_record.version(),
+                        dynamic_record.data().clone(),
+                    )),
+                    _ => unreachable!("Tracked record inputs must be of type Record or DynamicRecord"),
+                };
+                corrected_inputs[*consumer_request_index][*consumer_input_index] = corrected;
+            }
+        }
     }
 
     // ********************************************************************************************

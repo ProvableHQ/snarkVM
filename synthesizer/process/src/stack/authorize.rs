@@ -154,21 +154,21 @@ impl<N: Network> Stack<N> {
             .map(|(authorization, _, _, _)| authorization)
     }
 
-    // TODO (Antonio) decide whether to make any of the types below into a named type/struct and move the documentation there.
-
     /// Produces a mocked `Authorization` with the same properties as
     /// `sample_authorization` alongside some extra information necessary to
     /// populate the mocked `Request`s. These additional outputs are as follows:
     ///
-    ///  - HashMap<(usize, usize), (usize, u64)>: Record-tracking information on
-    ///    records which are both minted by a request in the transaction and
-    ///    received (possibly as external or dynamic) by other requests in the
-    ///    transaction. Entry `(n, m) -> (k, l)` in the returned map indicates that
-    ///    the `m`-th input of the `n`-th request in the transaction comes from a
-    ///    static record which was minted by the `k`-th request, where it was the
-    ///    `l`-th output.
+    ///  - HashMap<(usize, u64), Vec<(usize, usize)>>: Record-tracking
+    ///    information on records which are both minted by a request in the
+    ///    transaction and received (possibly as external or dynamic) by other
+    ///    requests in the transaction. Entry `(n, m) -> [(k_1, l_1), (k_2,
+    ///        l_2), ...]` in the returned map indicates that the `n`-th
+    ///    transaction output a static record at register `m` which was (possiby
+    ///    after conversion to an external or dynamic record) passed as the
+    ///    `l_1`-th input to the `k_1`-th request, the `l_2`-th input to the
+    ///    `k_2`-th request, etc.
     ///  - HashMap<(usize, usize), Identifier<CurrentNetwork>>: record-name
-    ///    information for *all* input static records to to any of the resulting
+    ///    information for *all* input static records to any of the resulting
     ///    requests. Entry `(n, m) -> r_name` in the returned map indicates that
     ///    the `m`-th input of the `n`-th request in the transaction is a static
     ///    `Record` with name `r_name`.
@@ -188,7 +188,7 @@ impl<N: Network> Stack<N> {
     ) -> Result<
         (
             Authorization<N>,
-            HashMap<(usize, usize), (usize, u64)>,
+            HashMap<(usize, u64), Vec<(usize, usize)>>,
             HashMap<(usize, usize), Identifier<N>>,
             HashMap<usize, Field<N>>,
         ),
@@ -238,11 +238,9 @@ impl<N: Network> Stack<N> {
         let input_records = input_records.read();
         let minted_static_records = minted_static_records.read();
 
-        for (nonce_x, consumers) in input_records.iter() {
-            if let Some(minter_request_and_register) = minted_static_records.get(nonce_x) {
-                for (consumer_request_index, input_index) in consumers {
-                    record_tracking.insert((*consumer_request_index, *input_index), *minter_request_and_register);
-                }
+        for (nonce_x, minter_request_and_register) in minted_static_records.iter() {
+            if let Some(consumer_requests_and_indices) = input_records.get(nonce_x) {
+                record_tracking.insert(*minter_request_and_register, consumer_requests_and_indices.clone());
             }
         }
 

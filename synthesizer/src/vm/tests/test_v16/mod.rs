@@ -22,7 +22,7 @@ mod program_size;
 // Tests for the `<name>/checksum` component checksum operand.
 mod component_checksum;
 
-// TODO (Antonio) remove once no longer needed
+// Examples of a multi-request authorization flow, marked with #ignore
 pub(crate) mod construct_authorization_examples;
 
 use super::*;
