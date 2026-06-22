@@ -122,7 +122,7 @@ pub enum CallStack<N: Network> {
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
     /// Validate a `Deploy` transaction's function circuit.
-    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>),
+    CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>, Option<(u64, u64, u64)>),
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Execute a function and produce a proof.
@@ -181,15 +181,21 @@ impl<N: Network> CallStack<N> {
             CallStack::Synthesize(requests, private_key, authorization) => {
                 CallStack::Synthesize(requests.clone(), *private_key, authorization.replicate())
             }
-            CallStack::CheckDeployment(requests, private_key, assignments, constraint_limit, variable_limit) => {
-                CallStack::CheckDeployment(
-                    requests.clone(),
-                    *private_key,
-                    Arc::new(RwLock::new(assignments.read().clone())),
-                    *constraint_limit,
-                    *variable_limit,
-                )
-            }
+            CallStack::CheckDeployment(
+                requests,
+                private_key,
+                assignments,
+                constraint_limit,
+                variable_limit,
+                non_zero_limit,
+            ) => CallStack::CheckDeployment(
+                requests.clone(),
+                *private_key,
+                Arc::new(RwLock::new(assignments.read().clone())),
+                *constraint_limit,
+                *variable_limit,
+                *non_zero_limit,
+            ),
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
             CallStack::Execute(authorization, trace, translations) => CallStack::Execute(
                 authorization.replicate(),

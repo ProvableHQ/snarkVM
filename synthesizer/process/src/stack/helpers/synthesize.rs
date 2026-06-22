@@ -167,7 +167,8 @@ impl<N: Network> Stack<N> {
         );
 
         // Construct the translation circuit.
-        let circuit_assignment = translation_assignment.to_circuit_assignment::<A>(translation_index)?;
+        let circuit_assignment =
+            translation_assignment.to_circuit_assignment::<A>(translation_index, None, None, None)?;
 
         // Synthesize the proving and verifying key.
         let (proving_key, verifying_key) =

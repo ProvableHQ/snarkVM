@@ -138,7 +138,7 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
         *id_dynamic,
     ];
 
-    Ok((translation_assignment.to_circuit_assignment::<A>(translation_index)?, verifier_inputs))
+    Ok((translation_assignment.to_circuit_assignment::<A>(translation_index, None, None, None)?, verifier_inputs))
 }
 
 /// Synthesizes the circuit keys for the credits.aleo credits record translation circuit. (cargo run --release --example translation [network])
