@@ -226,13 +226,13 @@ impl<N: Network> Stack<N> {
                 match input {
                     Value::Record(record) => {
                         input_records
-                            .entry(*record.nonce().to_x_coordinate())
+                            .entry(record.nonce().to_x_coordinate())
                             .or_default()
                             .push((current_request_index, input_index));
                     }
                     Value::DynamicRecord(dynamic_record) => {
                         input_records
-                            .entry(*dynamic_record.nonce().to_x_coordinate())
+                            .entry(dynamic_record.nonce().to_x_coordinate())
                             .or_default()
                             .push((current_request_index, input_index));
                     }
@@ -357,7 +357,7 @@ impl<N: Network> Stack<N> {
                     // Insert into the minted-record tracker, returning an error if the nonce is
                     // already present (two static records which the same nonce cannot be minted.)
                     if minted_static_records
-                        .insert(*record.nonce().to_x_coordinate(), (current_request_index, register.locator()))
+                        .insert(record.nonce().to_x_coordinate(), (current_request_index, register.locator()))
                         .is_some()
                     {
                         return Err(anyhow!("Duplicate output-record nonce found in CallStack::AuthorizeMocked. Ensure the program is correct and rerun with a different RNG state.").into());

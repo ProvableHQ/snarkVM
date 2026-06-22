@@ -19,6 +19,23 @@ use snarkvm_synthesizer_error::*;
 
 use std::collections::HashMap;
 
+/// A tracker for records which are both minted by a request in a given transaction and received
+/// (possibly as external or dynamic) by other requests in the same transaction. Entry `(n, m) ->
+/// [(k_1, l_1), (k_2, l_2), ...]` indicates that the `n`-th transaction outputs a static record at
+/// register `m` which is (possibly after conversion to an external or dynamic record) passed as the
+/// `l_1`-th input to the `k_1`-th request, the `l_2`-th input to the `k_2`-th request, etc.
+pub type RecordFlowTracker = HashMap<(usize, u64), Vec<(usize, usize)>>;
+
+/// A tracker for the names of all static records passed as inputs to requests in a given transaction.
+/// Entry `(n, m) -> r_name` indicates that the `m`-th input of the `n`-th request in the transaction
+/// is a static `Record` with name `r_name`.
+pub type RecordNameTracker<N> = HashMap<(usize, usize), Identifier<N>>;
+
+/// A tracker for the program checksums of requests in a given transaction. Entry `n -> c` indicates
+/// that the `n`-th request in the transaction corresponds to a program with program checksum `c`.
+/// Requests corresponding to programs without checksum do not have an entry in this map.
+pub type ProgramChecksumTracker<N> = HashMap<usize, Field<N>>;
+
 impl<N: Network> Stack<N> {
     /// Authorizes a call to the program function for the given inputs.
     #[inline]
@@ -156,27 +173,7 @@ impl<N: Network> Stack<N> {
 
     /// Produces a mocked `Authorization` with the same properties as
     /// `sample_authorization` alongside some extra information necessary to
-    /// populate the mocked `Request`s. These additional outputs are as follows:
-    ///
-    ///  - HashMap<(usize, u64), Vec<(usize, usize)>>: Record-tracking
-    ///    information on records which are both minted by a request in the
-    ///    transaction and received (possibly as external or dynamic) by other
-    ///    requests in the transaction. Entry `(n, m) -> [(k_1, l_1), (k_2,
-    ///        l_2), ...]` in the returned map indicates that the `n`-th
-    ///    transaction output a static record at register `m` which was (possiby
-    ///    after conversion to an external or dynamic record) passed as the
-    ///    `l_1`-th input to the `k_1`-th request, the `l_2`-th input to the
-    ///    `k_2`-th request, etc.
-    ///  - HashMap<(usize, usize), Identifier<CurrentNetwork>>: record-name
-    ///    information for *all* input static records to any of the resulting
-    ///    requests. Entry `(n, m) -> r_name` in the returned map indicates that
-    ///    the `m`-th input of the `n`-th request in the transaction is a static
-    ///    `Record` with name `r_name`.
-    ///  - HashMap<usize, Field<CurrentNetwork>>: Program-checksum information:
-    ///    entry `n -> c` in the returned map indicates that the `n`-th request
-    ///    in the transaction corresponds to a program with program checksum
-    ///    `c`. Requests corresponding to programs without checksum do not have
-    ///    an entry in this map.
+    /// populate the mocked `Request`s.
     #[inline]
     pub fn sample_authorization_extended<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
@@ -185,15 +182,8 @@ impl<N: Network> Stack<N> {
         function_name: Identifier<A::Network>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
         rng: &mut R,
-    ) -> Result<
-        (
-            Authorization<N>,
-            HashMap<(usize, u64), Vec<(usize, usize)>>,
-            HashMap<(usize, usize), Identifier<N>>,
-            HashMap<usize, Field<N>>,
-        ),
-        StackAuthError,
-    > {
+    ) -> Result<(Authorization<N>, RecordFlowTracker, RecordNameTracker<N>, ProgramChecksumTracker<N>), StackAuthError>
+    {
         let timer = timer!("Stack::sample_authorization");
 
         if program_id != *self.program.id() {

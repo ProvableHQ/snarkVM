@@ -38,7 +38,7 @@ pub(super) fn construct_authorization(
     //  - At the end of Request population, since it is one of the fields of the Request object
     let sk_tag = GraphKey::try_from(view_key).unwrap().sk_tag();
     // sk_sig is needed
-    //  - If any Request has a static Record input, in step 2.4 (to compute the value gamma, in turned used to compute the serial number)
+    //  - If any Request has a static Record input, in step 2.4 (to compute the value gamma, in turn used to compute the serial number)
     //  - In step 2.5, to produce the request signature
     let sk_sig = private_key.sk_sig();
     // pk_sig and pr_sig are only needed in step 2.5, since they are part of the prefix of the message being signed
@@ -314,7 +314,7 @@ pub(super) fn construct_authorization(
     }
 
     // ********************************************************************************************
-    // Step 3: Call authorize_requests to obten correct authorizations
+    // Step 3: Call authorize_requests to obtain the correct authorizations
 
     vm.process()
         .get_stack(root_program_id)

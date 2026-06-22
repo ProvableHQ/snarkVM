@@ -110,6 +110,17 @@ pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>
 /// transition ID). Each translation datum is paired with the proving key for its record type.
 pub type Translations<N> = Arc<RwLock<Vec<Vec<(TranslationAssignment<N>, ProvingKey<N>)>>>>;
 
+/// A tracker for static records minted in a transaction. The key is the record's nonce and the value
+/// `(i, r)` contains the index `i` of the minting request in the transaction and the register `r`
+/// where that request outputs the record.
+pub type MintedRecordTracker<N> = HashMap<Field<N>, (usize, u64)>;
+
+/// A tracker for input record-like values (static `Record`s, `ExternalRecord`s and
+/// `DynamicRecord`s) received by any request in a given transaction. The key is the nonce of the
+/// corresponding static record and the value `(i, j)` contains the index `i` of the request
+/// receiving the value and the input index `j`.
+pub type InputRecordLikeTracker<N> = HashMap<Field<N>, Vec<(usize, usize)>>;
+
 /// The `CallStack` is used to track the current state of the program execution.
 #[derive(Clone, Debug)]
 pub enum CallStack<N: Network> {
@@ -120,8 +131,8 @@ pub enum CallStack<N: Network> {
         Vec<Request<N>>,
         Address<N>,
         Authorization<N>,
-        Arc<RwLock<HashMap<N::Field, (usize, u64)>>>,
-        Arc<RwLock<HashMap<N::Field, Vec<(usize, usize)>>>>,
+        Arc<RwLock<MintedRecordTracker<N>>>,
+        Arc<RwLock<InputRecordLikeTracker<N>>>,
     ),
     /// Authorize a collection of requests coming from a single root call.
     // (full vector of requests in pre-order, index of the request currently being explored, authorization being constructed)
