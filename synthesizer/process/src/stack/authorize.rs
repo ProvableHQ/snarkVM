@@ -26,16 +26,6 @@ use std::collections::HashMap;
 /// `l_1`-th input to the `k_1`-th request, the `l_2`-th input to the `k_2`-th request, etc.
 pub type RecordFlowTracker = HashMap<(usize, u64), Vec<(usize, usize)>>;
 
-/// A tracker for the names of all static records passed as inputs to requests in a given transaction.
-/// Entry `(n, m) -> r_name` indicates that the `m`-th input of the `n`-th request in the transaction
-/// is a static `Record` with name `r_name`.
-pub type RecordNameTracker<N> = HashMap<(usize, usize), Identifier<N>>;
-
-/// A tracker for the program checksums of requests in a given transaction. Entry `n -> c` indicates
-/// that the `n`-th request in the transaction corresponds to a program with program checksum `c`.
-/// Requests corresponding to programs without checksum do not have an entry in this map.
-pub type ProgramChecksumTracker<N> = HashMap<usize, Field<N>>;
-
 impl<N: Network> Stack<N> {
     /// Authorizes a call to the program function for the given inputs.
     #[inline]
@@ -234,34 +224,9 @@ impl<N: Network> Stack<N> {
             }
         }
 
-        // Collect the names of (all) static Record inputs and the program checksums
-        let mut record_names = HashMap::new();
-        let mut program_checksums = HashMap::new();
-
-        for (request_index, request) in authorization.to_vec_deque().iter().enumerate() {
-            let request_program_id = request.program_id();
-
-            // Resolve the stack via the process-level map rather than `get_external_stack`: a request
-            // may correspond to a program reached through a dynamic call (or a transitive import) that
-            // the root program does not directly import.
-            let program_stack = if request_program_id == self.program.id() {
-                self
-            } else {
-                &*self.get_stack_global(request_program_id)?
-            };
-
-            let input_types = program_stack.get_function(request.function_name())?.input_types();
-
-            for (input_index, input_type) in input_types.iter().enumerate() {
-                if let ValueType::Record(record_name) = input_type {
-                    record_names.insert((request_index, input_index), *record_name);
-                }
-            }
-
-            if program_stack.program().contains_constructor() {
-                program_checksums.insert(request_index, program_stack.program_checksum_as_field()?);
-            }
-        }
+        // Collect the names of (all) static Record inputs and the program checksums.
+        let record_names = authorization.collect_record_names(self)?;
+        let program_checksums = authorization.collect_program_checksums(self)?;
 
         finish!(timer, "Gather record-tracking and other auxiliary information");
 
