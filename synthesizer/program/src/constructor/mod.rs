@@ -99,8 +99,8 @@ impl<N: Network> ConstructorCore<N> {
         ensure!(!command.is_async(), "Forbidden operation: Constructor cannot invoke an 'async' instruction");
         // Ensure the command is not a call instruction.
         ensure!(!command.is_call(), "Forbidden operation: Constructor cannot invoke a 'call'");
-        // Ensure the command is not a cast to record instruction.
-        ensure!(!command.is_cast_to_record(), "Forbidden operation: Constructor cannot cast to a record");
+        // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
+        ensure!(!command.is_instruction_for_record(), "Forbidden operation: Constructor cannot operate on records");
         // Ensure the command is not an await command.
         ensure!(!command.is_await(), "Forbidden operation: Constructor cannot 'await'");
 

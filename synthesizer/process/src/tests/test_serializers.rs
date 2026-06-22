@@ -98,7 +98,7 @@ function test_serde_equivalence:
         let rng = &mut TestRng::default();
 
         // Load the process.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
 
         // Structs are not supported.
         let fail_get_struct = |_: &Identifier<CurrentNetwork>| bail!("structs are not supported");
@@ -117,7 +117,7 @@ function test_serde_equivalence:
         let program = construct_program(variant, type_.clone(), bits_type.clone());
 
         // Add the program to the process.
-        process.add_program(&program).unwrap();
+        process.lock().add_program(&program).unwrap();
 
         // Get the stack.
         let stack = process.get_stack(program.id()).unwrap();
@@ -192,7 +192,7 @@ fn test_value_size_in_bits() {
     const ITERATIONS: usize = 1000;
 
     // Load a process.
-    let mut process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
 
     // Define a program .
     let program0 = Program::<CurrentNetwork>::from_str(
@@ -233,7 +233,7 @@ finalize dummy:
     .unwrap();
 
     // Add the program to the process.
-    process.add_program(&program0).unwrap();
+    process.lock().add_program(&program0).unwrap();
 
     // Define a program with data types that we want to test.
     let program1 = Program::<CurrentNetwork>::from_str(
@@ -276,7 +276,7 @@ finalize dummy:
     .unwrap();
 
     // Add the program to the process.
-    process.add_program(&program1).unwrap();
+    process.lock().add_program(&program1).unwrap();
 
     // Get the stack.
     let stack = process.get_stack(program1.id()).unwrap();

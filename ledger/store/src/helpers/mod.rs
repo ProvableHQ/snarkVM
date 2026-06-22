@@ -29,7 +29,13 @@ pub use traits::*;
 /// are executed as a single large atomic operation regardless.
 #[macro_export]
 macro_rules! atomic_batch_scope {
-    ($self:expr, $ops:block) => {{
+    // Untyped variant: delegates to the typed variant with `anyhow::Error`.
+    // `From<anyhow::Error> for anyhow::Error` is the identity, so behaviour is unchanged.
+    ($self:expr, $ops:block) => {{ $crate::atomic_batch_scope!($self, ::anyhow::Error, $ops) }};
+    // Typed variant: callers specify the error type explicitly.
+    // `$err` must implement `From<anyhow::Error>` so that `finish_atomic` errors
+    // can be converted without ambiguity.
+    ($self:expr, $err:ty, $ops:block) => {{
         // Check if an atomic batch write is already in progress. If there isn't one, this means
         // this operation is a "top-level" one and is the one to start and finalize the batch.
         let is_atomic_in_progress = $self.is_atomic_in_progress();
@@ -41,7 +47,9 @@ macro_rules! atomic_batch_scope {
         }
 
         // Wrap the operations that should be batched in a closure to be able to rewind the batch on error.
-        let run_atomic_ops = || -> Result<_> { $ops };
+        // The closure is typed with the caller-provided error type so that `?` inside the block
+        // preserves the full structured error rather than erasing it through `anyhow::Error`.
+        let run_atomic_ops = || -> ::core::result::Result<_, $err> { $ops };
 
         // Run the atomic operations.
         match run_atomic_ops() {
@@ -57,7 +65,7 @@ macro_rules! atomic_batch_scope {
                 }
                 // A 'false' implies this is the top-level calling scope.
                 // Commit the atomic batch IFF it's the top-level calling scope.
-                false => $self.finish_atomic().map(|_| result),
+                false => $self.finish_atomic().map_err(<$err as ::core::convert::From<_>>::from).map(|_| result),
             },
             // Rewind this atomic batch scope.
             Err(err) => {

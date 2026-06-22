@@ -32,7 +32,7 @@ fn create_v3_deployment_transaction<C: ConsensusStorage<CurrentNetwork>, R: Rng 
     rng: &mut R,
 ) -> Result<Transaction<CurrentNetwork>> {
     // Create a deployment for the program.
-    let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(program, rng)?;
+    let mut v3_deployment = vm.process().deploy::<CurrentAleo, _>(program, rng)?;
 
     // Set the V3 deployment fields (amendment: checksum but no owner).
     // Translation VKs are retained if the program has records.
@@ -48,7 +48,7 @@ fn create_v3_deployment_transaction<C: ConsensusStorage<CurrentNetwork>, R: Rng 
 
     // Compute the deployment cost.
     let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height())?;
-    let (minimum_cost, _) = deployment_cost(&vm.process().read(), &v3_deployment, consensus_version)?;
+    let (minimum_cost, _) = deployment_cost(vm.process(), &v3_deployment, consensus_version)?;
 
     // Authorize and execute the fee.
     let fee_authorization = vm.authorize_fee_public(private_key, minimum_cost, 0, deployment_id, rng)?;
@@ -110,7 +110,7 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Verify the program is deployed with edition 0.
-    let stack = vm.process().read().get_stack("amendment_test.aleo")?;
+    let stack = vm.process().get_stack("amendment_test.aleo")?;
     assert_eq!(*stack.program_edition(), 0);
 
     // Create a V3 deployment (amendment).
@@ -147,7 +147,7 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Verify the edition hasn't changed (V3 doesn't change edition).
-    let stack = vm.process().read().get_stack("amendment_test.aleo")?;
+    let stack = vm.process().get_stack("amendment_test.aleo")?;
     assert_eq!(*stack.program_edition(), 0, "Edition should remain 0 after an amendment");
 
     Ok(())
@@ -207,7 +207,7 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Verify the program was deployed without translation VKs.
-    let stack = vm.process().read().get_stack("vk_test.aleo")?;
+    let stack = vm.process().get_stack("vk_test.aleo")?;
     assert!(
         stack.get_verifying_key(&Identifier::from_str("token")?).is_err(),
         "V2 deployment at V9 should NOT have translation VKs"
@@ -236,7 +236,7 @@ constructor:
     }
 
     // Get the deployed program.
-    let stack = vm.process().read().get_stack("vk_test.aleo")?;
+    let stack = vm.process().get_stack("vk_test.aleo")?;
     let deployed_program = stack.program().clone();
 
     // First amendment: Adds translation VKs - should succeed.
@@ -246,7 +246,7 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Verify the translation VK was added by the amendment.
-    let stack = vm.process().read().get_stack("vk_test.aleo")?;
+    let stack = vm.process().get_stack("vk_test.aleo")?;
     assert!(
         stack.get_verifying_key(&Identifier::from_str("token")?).is_ok(),
         "Amendment should have added translation VKs"
@@ -329,7 +329,7 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Get the deployed program info.
-    let stack = vm.process().read().get_stack("validation_test.aleo")?;
+    let stack = vm.process().get_stack("validation_test.aleo")?;
     let deployed_program = stack.program().clone();
 
     // Advance the VM to V14 height.
@@ -342,7 +342,7 @@ constructor:
     // Test 1: An amendment with wrong checksum should be rejected by the VM.
     // Note: Raw setters bypass construction validation, so the transaction is created,
     // but the VM will reject it during check_transaction because the checksum doesn't match.
-    let mut wrong_checksum_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
+    let mut wrong_checksum_deployment = vm.process().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
     wrong_checksum_deployment.set_edition_raw(0);
     wrong_checksum_deployment.set_program_checksum_raw(Some([0u8; 32].map(U8::new))); // Wrong checksum
     wrong_checksum_deployment.set_program_owner_raw(None);
@@ -350,7 +350,7 @@ constructor:
     let deployment_id = wrong_checksum_deployment.to_deployment_id()?;
     let owner = ProgramOwner::new(&caller_private_key, deployment_id, rng)?;
     let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height())?;
-    let (minimum_cost, _) = deployment_cost(&vm.process().read(), &wrong_checksum_deployment, consensus_version)?;
+    let (minimum_cost, _) = deployment_cost(vm.process(), &wrong_checksum_deployment, consensus_version)?;
     let fee_authorization = vm.authorize_fee_public(&caller_private_key, minimum_cost, 0, deployment_id, rng)?;
     let fee = vm.execute_fee_authorization(fee_authorization, None, rng)?;
     let wrong_checksum_tx = Transaction::from_deployment(owner, wrong_checksum_deployment, fee)?;
@@ -377,14 +377,14 @@ constructor:
 ",
     )?;
 
-    let mut nonexistent_deployment = vm.process().read().deploy::<CurrentAleo, _>(&nonexistent_program, rng)?;
+    let mut nonexistent_deployment = vm.process().deploy::<CurrentAleo, _>(&nonexistent_program, rng)?;
     nonexistent_deployment.set_edition_raw(0);
     nonexistent_deployment.set_program_checksum_raw(Some(nonexistent_program.to_checksum()));
     nonexistent_deployment.set_program_owner_raw(None);
 
     let deployment_id = nonexistent_deployment.to_deployment_id()?;
     let owner = ProgramOwner::new(&caller_private_key, deployment_id, rng)?;
-    let (minimum_cost, _) = deployment_cost(&vm.process().read(), &nonexistent_deployment, consensus_version)?;
+    let (minimum_cost, _) = deployment_cost(vm.process(), &nonexistent_deployment, consensus_version)?;
     let fee_authorization = vm.authorize_fee_public(&caller_private_key, minimum_cost, 0, deployment_id, rng)?;
     let fee = vm.execute_fee_authorization(fee_authorization, None, rng)?;
     let nonexistent_tx = Transaction::from_deployment(owner, nonexistent_deployment, fee)?;
@@ -470,7 +470,7 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Get the deployed program info.
-    let stack = vm.process().read().get_stack("permissionless_test.aleo")?;
+    let stack = vm.process().get_stack("permissionless_test.aleo")?;
     let deployed_program = stack.program().clone();
     let original_program_owner = *stack.program_owner();
 
@@ -491,7 +491,7 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Verify the program owner hasn't changed.
-    let stack = vm.process().read().get_stack("permissionless_test.aleo")?;
+    let stack = vm.process().get_stack("permissionless_test.aleo")?;
     assert_eq!(
         *stack.program_owner(),
         original_program_owner,
@@ -519,7 +519,7 @@ fn test_credits_cannot_be_amended() -> Result<()> {
     let credits_program = Program::credits()?;
 
     // Attempt to create a V3 deployment for credits.aleo - this should fail.
-    let result = vm.process().read().deploy::<CurrentAleo, _>(&credits_program, rng);
+    let result = vm.process().deploy::<CurrentAleo, _>(&credits_program, rng);
 
     // Verify that creating a deployment for credits.aleo fails.
     assert!(result.is_err(), "Creating a deployment for credits.aleo should fail");
@@ -614,7 +614,7 @@ fn test_dynamic_call_after_amendment() {
         );
     }
 
-    add_and_test_with_costs(&verifier_vm, &caller_private_key, &caller_address, None, &[deploy_legacy_pre_v14], rng);
+    add_and_test_with_costs(&verifier_vm, &caller_private_key, None, &[deploy_legacy_pre_v14], rng);
 
     // Mint a token on verifier VM.
     let mint_inputs = [Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1000u64").unwrap()];
@@ -622,7 +622,7 @@ fn test_dynamic_call_after_amendment() {
         .execute(&caller_private_key, ("legacy_token_amend.aleo", "mint"), mint_inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test_with_costs(&verifier_vm, &caller_private_key, &caller_address, Some(&[&mint_inputs]), &[mint_tx], rng);
+    add_and_test_with_costs(&verifier_vm, &caller_private_key, Some(&[&mint_inputs]), &[mint_tx], rng);
 
     // Advance verifier VM to V14.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -633,15 +633,14 @@ fn test_dynamic_call_after_amendment() {
 
     // Deploy caller program on verifier VM at V14.
     let deploy_caller_verifier = verifier_vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&verifier_vm, &caller_private_key, &caller_address, None, &[deploy_caller_verifier], rng);
+    add_and_test_with_costs(&verifier_vm, &caller_private_key, None, &[deploy_caller_verifier], rng);
 
     // Verify the verifier VM does NOT have translation keys for `legacy_token_amend.aleo/token`.
     let legacy_program_id = console::program::ProgramID::<CurrentNetwork>::from_str("legacy_token_amend.aleo").unwrap();
     let token_name = Identifier::<CurrentNetwork>::from_str("token").unwrap();
 
     {
-        let process = verifier_vm.process();
-        let vm_process = process.read();
+        let vm_process = verifier_vm.process();
         let stack = vm_process.get_stack(legacy_program_id).unwrap();
         assert_eq!(*stack.program_edition(), 0, "Verifier should have edition 0 before amendment");
         assert!(
@@ -660,11 +659,11 @@ fn test_dynamic_call_after_amendment() {
         assert!(deployment.translation_verifying_keys().is_some(), "V14 deployment should include translation keys");
     }
 
-    add_and_test_with_costs(&prover_vm, &caller_private_key, &caller_address, None, &[deploy_legacy_v14], rng);
+    add_and_test_with_costs(&prover_vm, &caller_private_key, None, &[deploy_legacy_v14], rng);
 
     // Deploy caller program on prover VM.
     let deploy_caller_prover = prover_vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&prover_vm, &caller_private_key, &caller_address, None, &[deploy_caller_prover], rng);
+    add_and_test_with_costs(&prover_vm, &caller_private_key, None, &[deploy_caller_prover], rng);
 
     // Mint a token on prover VM.
     let prover_mint_inputs =
@@ -694,14 +693,7 @@ fn test_dynamic_call_after_amendment() {
             _ => None,
         })
         .unwrap();
-    add_and_test_with_costs(
-        &prover_vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&prover_mint_inputs]),
-        &[prover_mint_tx],
-        rng,
-    );
+    add_and_test_with_costs(&prover_vm, &caller_private_key, Some(&[&prover_mint_inputs]), &[prover_mint_tx], rng);
 
     // Prover creates a transaction requiring translation.
     let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&prover_minted_record).unwrap();
@@ -737,19 +729,18 @@ fn test_dynamic_call_after_amendment() {
     // --- Amend verifier VM (V3 amendment adds translation keys) ---
 
     // Create a V3 amendment on verifier VM to add translation keys.
-    let stack = verifier_vm.process().read().get_stack("legacy_token_amend.aleo").unwrap();
+    let stack = verifier_vm.process().get_stack("legacy_token_amend.aleo").unwrap();
     let deployed_program = stack.program().clone();
     let edition = *stack.program_edition();
     drop(stack);
 
     let v3_transaction =
         create_v3_deployment_transaction(&verifier_vm, &caller_private_key, &deployed_program, edition, rng).unwrap();
-    add_and_test_with_costs(&verifier_vm, &caller_private_key, &caller_address, None, &[v3_transaction], rng);
+    add_and_test_with_costs(&verifier_vm, &caller_private_key, None, &[v3_transaction], rng);
 
     // Verify the verifier VM now HAS translation keys after amendment, and edition is unchanged.
     {
-        let process = verifier_vm.process();
-        let vm_process = process.read();
+        let vm_process = verifier_vm.process();
         let stack = vm_process.get_stack(legacy_program_id).unwrap();
         assert_eq!(*stack.program_edition(), 0, "Edition should remain 0 after amendment");
         assert!(
@@ -791,7 +782,6 @@ fn test_dynamic_call_after_amendment() {
     add_and_test_with_costs(
         &verifier_vm,
         &caller_private_key,
-        &caller_address,
         Some(&[&verifier_mint_inputs_2]),
         &[verifier_mint_tx_2],
         rng,
@@ -820,12 +810,5 @@ fn test_dynamic_call_after_amendment() {
         .expect("Verifier VM should create transaction after getting translation keys via amendment");
 
     // Verifier VM (with translation keys from amendment) should accept the transaction.
-    add_and_test_with_costs(
-        &verifier_vm,
-        &caller_private_key,
-        &caller_address,
-        Some(&[&dynamic_call_inputs]),
-        &[transaction_2],
-        rng,
-    );
+    add_and_test_with_costs(&verifier_vm, &caller_private_key, Some(&[&dynamic_call_inputs]), &[transaction_2], rng);
 }

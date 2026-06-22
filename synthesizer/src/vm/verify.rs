@@ -40,6 +40,32 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// The maximum number of executions to verify in parallel.
     pub const MAX_PARALLEL_EXECUTE_VERIFICATIONS: usize = 1000;
 
+    /// Creates the cache key for a transaction using the given prepared
+    /// execution stacks.
+    /// Note: If any of these stacks are updated in the VM
+    /// while `check_transaction` is running, the cache key will be outdated.
+    /// The cache key should therefore be checked at the end of
+    /// `check_transaction`.
+    pub fn create_cache_key_with_stacks(
+        transaction: &Transaction<N>,
+        execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+    ) -> Result<TransactionCacheKey<N>> {
+        // Get the program checksums.
+        let program_checksums = transaction
+            .transitions()
+            .map(|transition| {
+                let stack = execution_stacks
+                    .get(transition.program_id())
+                    .ok_or_else(|| anyhow!("Missing stack for transition program '{}'", transition.program_id()))?;
+                let edition = *stack.program_edition();
+                let amendment_count = stack.program_amendment_count();
+                Ok((*stack.program_checksum(), edition, amendment_count))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        // Return the cache key.
+        Ok((transaction.id(), program_checksums))
+    }
+
     /// Verifies the list of transactions in the VM. On failure, returns an error.
     pub fn check_transactions<R: CryptoRng + Rng>(
         &self,
@@ -145,26 +171,25 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Get the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
 
-        // Construct the transaction checksum.
-        let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
+        // Fetch all required stacks for transition checks once, and reuse them for static import checks.
+        // This is just a partial performance optimization, dynamic calls will fetch fresh Stacks.
+        let execution_stacks = transaction
+            .transitions()
+            .map(|t| Ok((*t.program_id(), self.process.get_stack(t.program_id())?)))
+            .collect::<Result<IndexMap<_, _>>>()?;
 
-        // Get the program editions from the transaction.
-
-        let mut program_editions = Vec::with_capacity(Transaction::<N>::MAX_TRANSITIONS);
-        for transition in transaction.transitions() {
-            // Get the stack.
-            let stack = self.process.read().get_stack(transition.program_id())?;
-            // Get the program ID.
-            let program_id = *stack.program_id();
+        // Perform a check relevant to the V8 migration on the execution.
+        // TODO: this can be pruned in the future with an appropriate documentation strategy.
+        for stack in execution_stacks.values() {
+            let program_id = stack.program_id();
             // Get the program edition.
             let edition = stack.program_edition();
-
             // If the consensus version is V8 or greater and any of the component programs (except for `credits.aleo`)
             //   - have edition 0
             //   - and the program does not have a constructor.
             // then fail.
             if consensus_version >= ConsensusVersion::V8
-                && program_id != ProgramID::from_str("credits.aleo")?
+                && *program_id != ProgramID::from_str("credits.aleo")?
                 && edition.is_zero()
                 && !stack.program().contains_constructor()
             {
@@ -173,15 +198,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     transaction.id()
                 );
             }
-            // Add the program editions.
-            program_editions.push(edition);
         }
 
+        // Construct the transaction checksum.
+        let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
+
         // Prepare the cache key.
-        let cache_key = (transaction.id(), program_editions);
+        let cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
 
         // Check if the transaction exists in the partially-verified cache.
-        let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum);
+        let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum)
+            || is_pre_accepted_testnet_transaction::<N>(transaction.id());
 
         // Verify the fee.
         self.check_fee(transaction, rejected_id, is_partially_verified)?;
@@ -270,12 +297,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                     // Returns the external record that `locator` references.
                     let get_external_record = |locator: &Locator<N>| {
-                        let external_stack = self.process.read().get_stack(locator.program_id())?;
+                        let external_stack = self.process.get_stack(locator.program_id())?;
                         external_stack.program().get_record(locator.resource()).cloned()
                     };
                     // Returns the external function that `locator` references.
                     let get_external_function = |locator: &Locator<N>| {
-                        let external_stack = self.process.read().get_stack(locator.program_id())?;
+                        let external_stack = self.process.get_stack(locator.program_id())?;
                         external_stack.program().get_function(locator.resource())
                     };
                     // Returns the *external* finalize logic that `locator` references.
@@ -283,7 +310,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         if program.id() == locator.program_id() {
                             anyhow::bail!("external finalize logic refers to the current program")
                         }
-                        let external_stack = self.process.read().get_stack(locator.program_id())?;
+                        let external_stack = self.process.get_stack(locator.program_id())?;
                         external_stack
                             .program()
                             .get_function_ref(locator.resource())?
@@ -315,7 +342,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
                     );
                     // Check that all future argument bit sizes do not exceed the maximum allowed size of u16::MAX.
-                    let stack = Stack::new(&self.process().read(), deployment.program())?;
+                    let stack = Stack::new(&self.process, deployment.program())?;
                     check_future_argument_bit_size(deployment.program(), &stack, u16::MAX as usize)?;
                     // Before V14, record verifying keys are not allowed.
                     let num_functions = deployment.num_functions();
@@ -328,6 +355,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     ensure!(
                         !deployment.program().contains_v15_syntax(),
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V15`"
+                    );
+                }
+                if consensus_version < ConsensusVersion::V16 {
+                    ensure!(
+                        !deployment.program().contains_v16_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V16`"
                     );
                 }
 
@@ -366,7 +399,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     );
                 }
                 if consensus_version >= ConsensusVersion::V13 {
-                    self.process.read().mapping_types_exist(deployment.program())?;
+                    self.process.mapping_types_exist(deployment.program())?;
                 }
                 if consensus_version >= ConsensusVersion::V14 {
                     let num_functions = deployment.num_functions();
@@ -447,7 +480,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     );
 
                     // Get the existing program.
-                    let stack = self.process().read().get_stack(deployment.program_id())?;
+                    let stack = self.process.get_stack(deployment.program_id())?;
                     let existing_program = stack.program();
 
                     // Ensure the existing program matches the deployment program.
@@ -539,7 +572,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             );
                             // Get the existing program.
                             // It should be the case that the stored program matches the process program.
-                            let stack = self.process().read().get_stack(deployment.program_id())?;
+                            let stack = self.process.get_stack(deployment.program_id())?;
                             let existing_program = stack.program();
                             // Check that the new edition increments the old edition by 1.
                             let old_edition = *stack.program_edition();
@@ -629,7 +662,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let total_writes = transaction
                     .transitions()
                     .map(|t| -> Result<u16> {
-                        let stack = self.process.read().get_stack(t.program_id())?;
+                        let stack = execution_stacks
+                            .get(t.program_id())
+                            .ok_or_else(|| anyhow!("Missing stack for transition program '{}'", t.program_id()))?;
                         let program = stack.program();
                         Ok(program
                             .get_function(t.function_name())?
@@ -643,7 +678,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 );
 
                 // Verify the execution.
-                match try_vm_runtime!(|| self.check_execution_internal(execution, is_partially_verified)) {
+                match try_vm_runtime!(|| self.check_execution_internal(
+                    execution,
+                    &execution_stacks,
+                    is_partially_verified
+                )) {
                     Ok(result) => result?,
                     Err(_) => bail!("VM safely halted transaction '{id}' during verification"),
                 }
@@ -651,9 +690,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Transaction::Fee(..) => { /* no-op */ }
         }
 
-        // If the above checks have passed and this is not a fee transaction,
-        // then add the transaction ID to the partially-verified transactions cache.
-        if !matches!(transaction, Transaction::Fee(..)) && !is_partially_verified {
+        // Because the Stacks in the Process may have changed, recreate the cache key.
+        let execution_stacks = transaction
+            .transitions()
+            .map(|t| Ok((*t.program_id(), self.process.get_stack(t.program_id())?)))
+            .collect::<Result<IndexMap<_, _>>>()?;
+        let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
+        let cache_key_unchanged = cache_key == new_cache_key;
+
+        // If the above checks have passed, against the same cache key, and this
+        // is not a fee transaction, then add the transaction ID to the
+        // partially-verified transactions cache.
+        if !matches!(transaction, Transaction::Fee(..)) && !is_partially_verified && cache_key_unchanged {
             self.partially_verified_transactions.write().push(cache_key, checksum);
         }
 
@@ -672,19 +720,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let current_height = self.block_store().current_block_height();
         let consensus_version = N::CONSENSUS_VERSION(current_height)?;
         // Get the transaction spend limit.
-        let transaction_spend_limit =
-            consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
+        let transaction_spend_limit = consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version)
+            .ok_or_else(|| anyhow::anyhow!("Failed to fetch transaction spend limit"))?;
         match transaction {
             Transaction::Deploy(id, deployment_id, _, deployment, fee) => {
                 // Ensure the rejected ID is not present.
                 ensure!(rejected_id.is_none(), "Transaction '{id}' should not have a rejected ID (deployment)");
                 // Compute the minimum deployment cost.
-                let (minimum_cost, cost_details) =
-                    deployment_cost(&self.process().read(), deployment, consensus_version)?;
+                let (minimum_cost, cost_details) = deployment_cost(&self.process, deployment, consensus_version)?;
                 // Ensure the compute cost does not exceed the transaction spend limit.
                 // Comparison logic before ConsensusVersion::V10 has been pruned to simplify the code.
                 if consensus_version >= ConsensusVersion::V10 {
-                    let compute_spend = deploy_compute_cost_in_microcredits(cost_details, consensus_version)?;
+                    let compute_spend = deploy_compute_cost_in_microcredits(cost_details, consensus_version);
                     ensure!(
                         compute_spend <= transaction_spend_limit,
                         "Transaction '{id}' exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
@@ -711,12 +758,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // If the fee is required, then check that the base fee amount is satisfied.
                     if is_fee_required {
                         // Compute the minimum execution cost.
-                        let (minimum_cost, cost_details) =
-                            execution_cost(&self.process().read(), execution, consensus_version)?;
+                        let (minimum_cost, cost_details) = execution_cost(&self.process, execution, consensus_version)?;
                         // Ensure the compute cost does not exceed the transaction spend limit.
                         // Comparison logic before ConsensusVersion::V10 has been pruned to simplify the code.
                         if consensus_version >= ConsensusVersion::V10 {
-                            let compute_spend = execute_compute_cost_in_microcredits(cost_details, consensus_version)?;
+                            let compute_spend = execute_compute_cost_in_microcredits(cost_details, consensus_version);
                             ensure!(
                                 compute_spend <= transaction_spend_limit,
                                 "Transaction '{id}' exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
@@ -788,7 +834,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Note: This is an internal check only. To ensure all components of the execution are checked,
     /// use `VM::check_transaction` instead.
     #[inline]
-    fn check_execution_internal(&self, execution: &Execution<N>, is_partially_verified: bool) -> Result<()> {
+    fn check_execution_internal(
+        &self,
+        execution: &Execution<N>,
+        execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+        is_partially_verified: bool,
+    ) -> Result<()> {
         let timer = timer!("VM::check_execution");
 
         // Retrieve the block height.
@@ -828,9 +879,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the execution proof, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => {
-                self.process.read().verify_execution(consensus_version, varuna_version, inclusion_version, execution)
-            }
+            false => Process::verify_execution(
+                consensus_version,
+                varuna_version,
+                inclusion_version,
+                execution,
+                execution_stacks,
+            ),
         };
         lap!(timer, "Verify the execution");
 
@@ -883,7 +938,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the fee, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.read().verify_fee(
+            false => self.process.verify_fee(
                 consensus_version,
                 varuna_version,
                 inclusion_version,
@@ -936,7 +991,6 @@ mod tests {
     use crate::vm::test_helpers::sample_finalize_state;
     use console::account::ViewKey;
 
-    use crate::vm::test_helpers::LedgerType;
     use console::{account::Address, types::Field};
     #[cfg(feature = "test")]
     use console::{
@@ -952,21 +1006,15 @@ mod tests {
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
-    // A helper function to create the cache key for a transaction in the partially-verified transactions cache.
-    fn create_cache_key(
-        vm: &VM<CurrentNetwork, LedgerType>,
-        transaction: &Transaction<CurrentNetwork>,
-    ) -> (<CurrentNetwork as Network>::TransactionID, Vec<U16<CurrentNetwork>>) {
-        // Get the program editions.
-        let program_editions = transaction
-            .transitions()
-            .map(|transition| {
-                vm.process().read().get_stack(transition.program_id()).map(|stack| stack.program_edition())
-            })
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-        // Return the cache key.
-        (transaction.id(), program_editions)
+    fn create_cache_key_for_test<N: Network, C: ConsensusStorage<N>>(
+        vm: &VM<N, C>,
+        transaction: &Transaction<N>,
+    ) -> TransactionCacheKey<N> {
+        let mut execution_stacks = IndexMap::new();
+        for transition in transaction.transitions() {
+            execution_stacks.insert(*transition.program_id(), vm.process().get_stack(transition.program_id()).unwrap());
+        }
+        VM::<N, C>::create_cache_key_with_stacks(transaction, &execution_stacks).unwrap()
     }
 
     #[test]
@@ -976,7 +1024,7 @@ mod tests {
 
         // Fetch a deployment transaction.
         let deployment_transaction = crate::vm::test_helpers::sample_deployment_transaction(rng);
-        let cache_key = create_cache_key(&vm, &deployment_transaction);
+        let cache_key = create_cache_key_for_test(&vm, &deployment_transaction);
         // Ensure the transaction verifies.
         vm.check_transaction(&deployment_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
@@ -984,7 +1032,7 @@ mod tests {
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
-        let cache_key = create_cache_key(&vm, &execution_transaction);
+        let cache_key = create_cache_key_for_test(&vm, &execution_transaction);
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
@@ -992,7 +1040,7 @@ mod tests {
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
-        let cache_key = create_cache_key(&vm, &execution_transaction);
+        let cache_key = create_cache_key_for_test(&vm, &execution_transaction);
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
@@ -1045,8 +1093,13 @@ mod tests {
                 Transaction::Execute(_, _, execution, _) => {
                     // Ensure the proof exists.
                     assert!(execution.proof().is_some());
+                    let mut execution_stacks = IndexMap::new();
+                    for transition in execution.transitions() {
+                        execution_stacks
+                            .insert(*transition.program_id(), vm.process().get_stack(transition.program_id()).unwrap());
+                    }
                     // Verify the execution.
-                    vm.check_execution_internal(&execution, false).unwrap();
+                    vm.check_execution_internal(&execution, &execution_stacks, false).unwrap();
                     // Ensure the partially_verified_transactions cache has the same size.
                     assert_eq!(vm.partially_verified_transactions.read().len(), cache_size);
 
@@ -1054,7 +1107,7 @@ mod tests {
                     let serialized_execution = execution.to_string();
                     let recovered_execution: Execution<CurrentNetwork> =
                         serde_json::from_str(&serialized_execution).unwrap();
-                    vm.check_execution_internal(&recovered_execution, false).unwrap();
+                    vm.check_execution_internal(&recovered_execution, &execution_stacks, false).unwrap();
                     // Ensure the partially_verified_transactions cache has the same size.
                     assert_eq!(vm.partially_verified_transactions.read().len(), cache_size);
                 }
@@ -1115,21 +1168,21 @@ mod tests {
 
         // Fetch a valid execution transaction with a private fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
-        let cache_key = create_cache_key(&vm, &valid_transaction);
+        let cache_key = create_cache_key_for_test(&vm, &valid_transaction);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
-        let cache_key = create_cache_key(&vm, &valid_transaction);
+        let cache_key = create_cache_key_for_test(&vm, &valid_transaction);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch a valid execution transaction with no fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_without_fee(rng);
-        let cache_key = create_cache_key(&vm, &valid_transaction);
+        let cache_key = create_cache_key_for_test(&vm, &valid_transaction);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
@@ -1238,7 +1291,7 @@ mod tests {
         // Execute.
         let transaction =
             vm.execute(&caller_private_key, ("testing.aleo", "initialize"), inputs, credits, 10, None, rng).unwrap();
-        let cache_key = create_cache_key(&vm, &transaction);
+        let cache_key = create_cache_key_for_test(&vm, &transaction);
 
         // Verify.
         vm.check_transaction(&transaction, None, rng).unwrap();
@@ -1293,7 +1346,7 @@ function compute:
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
-        let cache_key = create_cache_key(&vm, &valid_transaction);
+        let cache_key = create_cache_key_for_test(&vm, &valid_transaction);
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
@@ -1344,7 +1397,7 @@ function compute:
 
         // Construct the transaction.
         let mutated_transaction = Transaction::from_execution(mutated_execution, Some(fee)).unwrap();
-        let cache_key = create_cache_key(&vm, &mutated_transaction);
+        let cache_key = create_cache_key_for_test(&vm, &mutated_transaction);
 
         // Ensure that the mutated transaction fails verification due to an extra output.
         assert!(vm.check_transaction(&mutated_transaction, None, rng).is_err());

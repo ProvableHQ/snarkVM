@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer"
-version = "4.6.0"
+version = "4.7.3"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Synthesizer for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -33,7 +33,7 @@ locktick = [
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-history = [ "snarkvm-ledger-store/history" ]
+history = [ "snarkvm-ledger-store/history", "snarkvm-synthesizer-process/history" ]
 history-staking-rewards = [ "snarkvm-ledger-store/history-staking-rewards" ]
 slipstream-plugins = [ "snarkvm-ledger-store/slipstream-plugins" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
@@ -48,7 +48,7 @@ serial = [
   "snarkvm-synthesizer-snark/serial"
 ]
 setup = [ ]
-test = [ "snarkvm-console/test", "snarkvm-synthesizer-process/test" ]
+test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 timer = [ "aleo-std/timer" ]
 wasm = [
   "snarkvm-console/wasm",
@@ -72,6 +72,11 @@ path = "benches/kary_merkle_tree.rs"
 harness = false
 
 [[bench]]
+name = "total_deployment_verification"
+path = "benches/total_deployment_verification.rs"
+harness = false
+
+[[bench]]
 name = "check_transaction_multirecord"
 path = "benches/check_transaction_multirecord/main.rs"
 harness = false
@@ -83,6 +88,9 @@ workspace = true
 workspace = true
 
 [dependencies.snarkvm-console]
+workspace = true
+
+[dependencies.snarkvm-ledger-authority]
 workspace = true
 
 [dependencies.snarkvm-ledger-block]
@@ -191,6 +199,10 @@ workspace = true
 features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-narwhal-batch-header]
+workspace = true
+features = [ "test-helpers" ]
+
+[dev-dependencies.snarkvm-ledger-narwhal-subdag]
 workspace = true
 features = [ "test-helpers" ]
 

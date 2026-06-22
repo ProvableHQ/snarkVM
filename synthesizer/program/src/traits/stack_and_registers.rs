@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use crate::{FinalizeGlobalState, Function, Operand, Program};
+use crate::{FinalizeGlobalState, FinalizeStoreTrait, Function, Operand, Program};
 use console::{
     account::Group,
     network::Network,
@@ -114,8 +114,17 @@ pub trait StackTrait<N: Network> {
     /// Returns the program checksum as a field element.
     fn program_checksum_as_field(&self) -> Result<Field<N>>;
 
+    /// Returns the checksum of the program component (function, closure, or view) with the given name.
+    fn component_checksum(&self, name: &Identifier<N>) -> Result<&[U8<N>; 32]>;
+
     /// Returns the program edition.
     fn program_edition(&self) -> U16<N>;
+
+    /// Returns the number of amendments for the current program edition.
+    fn program_amendment_count(&self) -> u64;
+
+    /// Sets the number of amendments for the current program edition.
+    fn set_program_amendment_count(&mut self, program_amendment_count: u64);
 
     /// Returns the program owner.
     /// The program owner should only be set for programs that are deployed after `ConsensusVersion::V9` is active.
@@ -174,6 +183,21 @@ pub trait StackTrait<N: Network> {
         index: Field<N>,
         rng: &mut R,
     ) -> Result<Record<N, Plaintext<N>>>;
+
+    /// Evaluates a view function on this stack against the given finalize-store state.
+    ///
+    /// The caller (`Call::finalize`) loads operand values from the caller's registers and
+    /// passes them as `inputs`; this method runs the view body and returns its outputs. It
+    /// is the cross-crate hook that lets `Call::finalize` (in `snarkvm-synthesizer-program`)
+    /// dispatch view-call evaluation into `snarkvm-synthesizer-process` without depending on
+    /// concrete `Stack` / `FinalizeRegisters` types.
+    fn evaluate_view(
+        &self,
+        state: FinalizeGlobalState,
+        store: &dyn FinalizeStoreTrait<N>,
+        view_name: &Identifier<N>,
+        inputs: Vec<Value<N>>,
+    ) -> Result<Vec<Value<N>>>;
 }
 
 /// Are the two types either the same, or both structurally equivalent `PlaintextType`s?
@@ -283,14 +307,17 @@ pub trait FinalizeRegistersState<N: Network>: RegistersTrait<N> {
     /// Returns the global state for the finalize scope.
     fn state(&self) -> &FinalizeGlobalState;
 
-    /// Returns the transition ID for the finalize scope.
-    fn transition_id(&self) -> &N::TransitionID;
+    /// Returns the transition ID for the finalize scope, if one is associated with this scope.
+    /// View functions are externally-callable and have no associated transition, so this is
+    /// `None` on the view path; finalize and constructor scopes always have `Some(...)`.
+    fn transition_id(&self) -> Option<&N::TransitionID>;
 
     /// Returns the function name for the finalize scope.
     fn function_name(&self) -> &Identifier<N>;
 
-    /// Returns the nonce for the finalize registers.
-    fn nonce(&self) -> u64;
+    /// Returns the nonce for the finalize registers, if one is associated with this scope.
+    /// `None` on the view path (no transition → no nonce); always `Some(...)` on finalize.
+    fn nonce(&self) -> Option<u64>;
 }
 
 pub trait RegistersSigner<N: Network>: RegistersTrait<N> {

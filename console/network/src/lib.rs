@@ -149,11 +149,18 @@ pub trait Network:
     const EXECUTION_STORAGE_PENALTY_THRESHOLD: u64 = 5000;
     /// The cost in microcredits per constraint for the deployment transaction.
     const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
-    /// The maximum number of variables in a deployment.
-    const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 23; // 8,388,608 variables
-    /// The maximum number of constraints in a deployment.
-    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 23; // 8,388,608 constraints
-    /// The maximum number of instances to verify in a batch proof.
+    /// The maximum number of variables in a deployment. This limit was enforced at the transaction level up to
+    /// consensus version V16 (inclusive). This corresponds to ~0.5 second single-threaded runtime at
+    /// mainnet launch reference validator hardware.
+    const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
+    /// The maximum number of constraints in a deployment. This limit was enforced at the transaction level up to
+    /// consensus version V16 (inclusive). This corresponds to ~0.5 second single-threaded runtime at mainnet
+    /// launch reference validator hardware.
+    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
+    /// Approximate conversion factor from non-zero circuit entries to seconds of certificate-verification work
+    /// when checking a deployment. From it, a per-proposal synthesis limit is enforced starting at consensus
+    /// version V17 which overrides the two per-transaction limits above.
+    const SYNTHESIS_PER_SECOND_OF_RUNTIME: u64 = 1_500_000;
     const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
@@ -162,7 +169,11 @@ pub trait Network:
     const TRANSACTION_SPEND_LIMIT: [(ConsensusVersion, u64); 2] =
         [(ConsensusVersion::V1, 100_000_000), (ConsensusVersion::V10, 4_000_000)];
     /// The compute discount approved by ARC 0005.
-    const ARC_0005_COMPUTE_DISCOUNT: u64 = 25;
+    const ARC_0005_COMPUTE_DISCOUNT: u64 =
+        Self::CREDITS_PER_SECOND_OF_RUNTIME[0].1 / Self::CREDITS_PER_SECOND_OF_RUNTIME[1].1;
+    /// The number of microcredits representing a second of runtime.
+    const CREDITS_PER_SECOND_OF_RUNTIME: [(ConsensusVersion, u64); 2] =
+        [(ConsensusVersion::V1, 100_000_000), (ConsensusVersion::V10, 4_000_000)];
 
     /// The anchor height, defined as the expected number of blocks to reach the coinbase target.
     /// Note: The anchor height used exclusively by `coinbase_reward_v1`.
@@ -212,9 +223,10 @@ pub trait Network:
     const MAX_RECORD_ENTRIES: usize = Self::MIN_RECORD_ENTRIES.saturating_add(Self::MAX_DATA_ENTRIES);
 
     /// The maximum program size by number of characters.
-    const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 2] = [
-        (ConsensusVersion::V1, 100_000),  // 100 kB
-        (ConsensusVersion::V14, 512_000), // 512 kB
+    const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 3] = [
+        (ConsensusVersion::V1, 100_000),    // 100 kB
+        (ConsensusVersion::V14, 512_000),   // 512 kB
+        (ConsensusVersion::V16, 2_048_000), // 2048 kB
     ];
     /// The maximum number of mappings in a program.
     const MAX_MAPPINGS: usize = 31;
@@ -226,12 +238,18 @@ pub trait Network:
     const MAX_RECORDS: usize = 10 * Self::MAX_FUNCTIONS;
     /// The maximum number of closures in a program.
     const MAX_CLOSURES: usize = 2 * Self::MAX_FUNCTIONS;
+    /// The maximum number of view functions in a program.
+    const MAX_VIEWS: usize = 2 * Self::MAX_FUNCTIONS;
     /// The maximum number of operands in an instruction.
     const MAX_OPERANDS: usize = Self::MAX_INPUTS;
     /// The maximum number of instructions in a closure or function.
     const MAX_INSTRUCTIONS: usize = u16::MAX as usize;
     /// The maximum number of commands in finalize.
     const MAX_COMMANDS: usize = u16::MAX as usize;
+    /// The maximum number of `call` commands in a finalize body. Matched to
+    /// `Transaction::MAX_TRANSITIONS` so view-call arity in a finalize is bounded analogously
+    /// to the static-call bound on transition graphs.
+    const MAX_CALLS: usize = 32;
     /// The maximum number of write commands in finalize.
     const MAX_WRITES: [(ConsensusVersion, u16); 2] = [(ConsensusVersion::V1, 16), (ConsensusVersion::V14, 32)];
     /// The maximum number of `position` commands in finalize.
@@ -255,9 +273,10 @@ pub trait Network:
     /// MAX_TRANSACTION_SIZE = C + MAX_PROGRAM_SIZE + (673 + 58) * (MAX_FUNCTIONS + MAX_RECORDS)
     /// C = fixed size components (Up to 2367 bytes)
     // Note: This value must **not** decrease without considering the impact on transaction validity.
-    const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 2] = [
-        (ConsensusVersion::V1, 128_000),  // 128 kB
-        (ConsensusVersion::V14, 768_000), // 768 kB
+    const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 3] = [
+        (ConsensusVersion::V1, 128_000),    // 128 kB
+        (ConsensusVersion::V14, 768_000),   // 768 kB
+        (ConsensusVersion::V16, 2_304_000), // 2304 kB
     ];
 
     /// The state root type.

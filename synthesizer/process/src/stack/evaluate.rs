@@ -112,6 +112,10 @@ impl<N: Network> Stack<N> {
                     Operand::Edition(_) => bail!("Cannot retrieve the edition from a closure scope."),
                     // If the operand is the program owner, throw an error.
                     Operand::ProgramOwner(_) => bail!("Cannot retrieve the program owner from a closure scope."),
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Cannot retrieve the component checksum from a closure scope.")
+                    }
                 }
             })
             .map(|res| res.map_err(StackEvalError::from))
@@ -140,6 +144,10 @@ impl<N: Network> Stack<N> {
             match &mut call_stack {
                 CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
                 CallStack::AuthorizeMocked(..) => (call_stack.pop()?, call_stack),
+                CallStack::AuthorizeRequests(requests, current_index, _) => {
+                    let request = requests.get(*current_index.read()).ok_or_else(|| anyhow!("Attempted to recover request at index {}, but the AuthorizeRequests call stack only contains {} request(s)", *current_index.read(), requests.len()))?;
+                    (request.clone(), call_stack)
+                }
                 CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
                 // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
                 // This is done to ensure that evaluation during execution is performed consistently.
@@ -152,7 +160,7 @@ impl<N: Network> Stack<N> {
                     (request, call_stack)
                 }
                 _ => return Err(anyhow!(
-                    "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `AuthorizeMocked` in `evaluate_function`."
+                    "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `AuthorizeMocked` or `AuthorizeRequests` in `evaluate_function`."
                 )
                 .into()),
             };
@@ -294,6 +302,10 @@ impl<N: Network> Stack<N> {
                     Operand::Edition(_) => bail!("Cannot retrieve the edition from a function scope."),
                     // If the operand is the program owner, throw an error.
                     Operand::ProgramOwner(_) => bail!("Cannot retrieve the program owner from a function scope."),
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Cannot retrieve the component checksum from a function scope.")
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;
@@ -324,8 +336,10 @@ impl<N: Network> Stack<N> {
         )?;
         finish!(timer);
 
-        // If the circuit is in `Authorize` or `AuthorizeMocked` mode, then save the transition.
-        if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
+        // If the circuit is in `Authorize`, `AuthorizeMocked` or `AuthorizeRequests` mode, then save the transition.
+        if let CallStack::Authorize(_, _, authorization) | CallStack::AuthorizeRequests(_, _, authorization) =
+            registers.call_stack_ref()
+        {
             // Construct the transition.
             let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
             // Add the transition to the authorization.

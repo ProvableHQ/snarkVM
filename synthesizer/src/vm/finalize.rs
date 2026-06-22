@@ -18,7 +18,57 @@ use super::*;
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
 #[cfg(feature = "history-staking-rewards")]
 use snarkvm_ledger_store::helpers::Map;
+use snarkvm_synthesizer_error::{FinalizeError, IndexedFinalizeError, IntoIndexedFinalize, indexed_finalize_bail};
 use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
+
+/// Uniqueness tracking accumulated while assembling a candidate block's transactions.
+struct CandidateTransactionDetails<N: Network> {
+    transition_ids: IndexSet<N::TransitionID>,
+    input_ids: IndexSet<Field<N>>,
+    output_ids: IndexSet<Field<N>>,
+    tpks: IndexSet<Group<N>>,
+    deployment_payers: IndexSet<Address<N>>,
+    deployments: IndexSet<ProgramID<N>>,
+    block_combined_density: u64,
+}
+
+impl<N: Network> Default for CandidateTransactionDetails<N> {
+    fn default() -> Self {
+        Self {
+            transition_ids: IndexSet::new(),
+            input_ids: IndexSet::new(),
+            output_ids: IndexSet::new(),
+            tpks: IndexSet::new(),
+            deployment_payers: IndexSet::new(),
+            deployments: IndexSet::new(),
+            block_combined_density: 0,
+        }
+    }
+}
+
+impl<N: Network> CandidateTransactionDetails<N> {
+    /// Records a transaction: extends uniqueness sets and updates counters.
+    fn record_transaction(&mut self, transaction: &Transaction<N>) {
+        self.transition_ids.extend(transaction.transition_ids());
+        self.input_ids.extend(transaction.input_ids());
+        self.output_ids.extend(transaction.output_ids());
+        self.tpks.extend(transaction.transition_public_keys());
+        if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
+            fee.payer().map(|payer| self.deployment_payers.insert(payer));
+            self.deployments.insert(*deployment.program_id());
+            self.block_combined_density = self.block_combined_density.saturating_add(deployment.combined_density());
+        }
+    }
+}
+
+type AbortReason = String;
+type ComputeSpend = u64;
+/// An intermediary speculation artifact indicating whether a transaction should
+/// be aborted or finalized with a certain compute_spend.
+enum ShouldAbortResult {
+    Abort(AbortReason),
+    Finalize(ComputeSpend),
+}
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Speculates on the given list of transactions in the VM.
@@ -63,7 +113,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // If the current state root does not exist in the block store, then the genesis block has not been introduced yet.
             true => (candidate_transactions, vec![]),
             // Verify transactions for all non-genesis cases.
-            false => self.prepare_for_speculate(&candidate_transactions, rng)?,
+            false => self.prepare_for_speculate(&candidate_transactions, state, rng)?,
         };
 
         // Performs a **dry-run** over the list of ratifications, solutions, and transactions.
@@ -161,9 +211,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure the transactions after speculation match.
         let confirmed_transactions = confirmed_transactions.into_iter().collect();
         if transactions != &confirmed_transactions {
-            let confirmed_transaction_ids = confirmed_transactions.transaction_ids().collect::<Vec<_>>();
+            let confirmed_transaction_ids =
+                confirmed_transactions.transaction_ids().map(|id| id.to_string()).collect::<Vec<_>>();
             bail!(
-                "The transactions after speculation do not match the transactions in the block. IDs: {confirmed_transaction_ids:?} - Transactions:{transactions:?}"
+                "The transactions after speculation do not match the transactions in the block. IDs: {confirmed_transaction_ids:?} - Transactions:{transactions:?} - confirmed_transactions:{confirmed_transactions:?}"
             );
         }
         // Ensure there are no aborted transaction IDs from this speculation.
@@ -284,6 +335,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine the maximum number of aborted transactions allowed in a block.
         let max_aborted_transactions = Transactions::<N>::max_aborted_transactions();
 
+        // Clear out any pending rejection reasons in case of errors in the previous iteration.
+        {
+            let mut rejected_reasons = self.pending_rejected_reasons.write();
+            if !rejected_reasons.is_empty() {
+                error!("There are pending rejection reasons, clearing them up: {:?}", &*rejected_reasons);
+            }
+            rejected_reasons.clear();
+        }
+
         // Update the block height used for the purposes of historical mapping accounting.
         #[cfg(feature = "history")]
         self.store
@@ -335,10 +395,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Perform the atomic finalize over the transactions. */
 
-            // Acquire the write lock on the process.
+            // Acquire a guard on the contents of the process.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
-            // we choose to acquire the write lock for the entire duration of this atomic batch.
-            let process = self.process.write();
+            // we choose to acquire it for the entire duration of this atomic batch.
+            let process = self.process.lock();
 
             // Revert any unstaged stacks, when the function returns.
             // Note. This function does not call `commit_stacks` so the staged stacks will always be reverted
@@ -353,18 +413,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut aborted = Vec::new();
             // Initialize a counter for the confirmed transaction index.
             let mut counter = 0u32;
-            // Initialize a list of created transition IDs.
-            let mut transition_ids: IndexSet<N::TransitionID> = IndexSet::new();
-            // Initialize a list of spent input IDs.
-            let mut input_ids: IndexSet<Field<N>> = IndexSet::new();
-            // Initialize a list of created output IDs.
-            let mut output_ids: IndexSet<Field<N>> = IndexSet::new();
-            // Initialize the list of created transition public keys.
-            let mut tpks: IndexSet<Group<N>> = IndexSet::new();
-            // Initialize the list of deployment payers.
-            let mut deployment_payers: IndexSet<Address<N>> = IndexSet::new();
-            // Initialize a list of the successful deployments.
-            let mut deployments = IndexSet::new();
+            // Accumulate per-block uniqueness checks.
+            let mut candidate_transaction_details = CandidateTransactionDetails::<N>::default();
+            // Accumulate per-block spend.
+            let mut block_spend = 0u64;
+            // Determine the transaction spend limit. These unwraps are safe, see tests in consensus_heights.rs
+            let consensus_version = N::CONSENSUS_VERSION(state.block_height()).unwrap();
+            let transaction_spend_limit =
+                consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
+            // Determine the block spend limit.
+            let block_spend_limit = state.block_spend_limit();
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
@@ -377,20 +435,43 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     continue 'outer;
                 }
 
-                // Determine if the transaction should be aborted.
-                if let Some(reason) = self.should_abort_transaction(
+                // Determine whether to skip this transaction.
+                match self.should_abort_transaction(
                     &transaction,
-                    &transition_ids,
-                    &input_ids,
-                    &output_ids,
-                    &tpks,
-                    &deployment_payers,
-                    &deployments,
+                    &candidate_transaction_details,
+                    transaction_spend_limit,
+                    None,
+                    consensus_version,
                 ) {
-                    // Store the aborted transaction.
-                    aborted.push((transaction.clone(), reason));
-                    // Continue to the next transaction.
-                    continue 'outer;
+                    ShouldAbortResult::Abort(abort_reason) => {
+                        // Store the aborted transaction.
+                        aborted.push((transaction.clone(), abort_reason));
+                        // Continue to the next transaction.
+                        continue 'outer;
+                    }
+                    ShouldAbortResult::Finalize(compute_spend) => {
+                        // If the consensus version is >= V16, ensure that the
+                        // transaction is not exceeding block spend limits.
+                        //
+                        // TODO(vicsn) a more robust setup would rely on the
+                        // batch_spend_limit directly, checking on a
+                        // per-certificate basis whether or not transactions
+                        // exceed it.
+                        if consensus_version >= ConsensusVersion::V16 {
+                            if let Some(block_spend_limit) = block_spend_limit {
+                                if block_spend.saturating_add(compute_spend) > block_spend_limit {
+                                    aborted.push((
+                                        transaction.clone(),
+                                        format!("Exceeds the block spend limit with compute_spend: '{compute_spend}'"),
+                                    ));
+                                    // Continue to the next transaction.
+                                    continue 'outer;
+                                }
+                            }
+                            // Track the compute_spend used so far.
+                            block_spend = block_spend.saturating_add(compute_spend);
+                        }
+                    }
                 }
 
                 // Process the transaction in an isolated atomic batch.
@@ -403,34 +484,49 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Define the closure for processing a rejected deployment.
                         let process_rejected_deployment =
                             |fee: &Fee<N>,
-                             deployment: Deployment<N>|
+                             deployment: Deployment<N>,
+                             rejected_reason: RejectedReason<N>|
                              -> Result<Result<ConfirmedTransaction<N>, String>> {
                                 process
                                     .finalize_fee(state, store, fee)
+                                    .map_err(anyhow::Error::from)
                                     .and_then(|finalize| {
                                         Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
                                     })
                                     .map(|(fee_tx, finalize)| {
                                         let rejected = Rejected::new_deployment(*program_owner, deployment);
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
+                                            .and_then(|confirmed_tx| {
+                                                // Store the rejection reason.
+                                                self.pending_rejected_reasons
+                                                    .write()
+                                                    .insert(confirmed_tx.id(), rejected_reason.clone());
+                                                store
+                                                    .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
+                                                    .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
+                                                Ok(confirmed_tx)
+                                            })
                                             .map_err(|e| e.to_string())
                                     })
                             };
 
                         // Check if the program has already been deployed in this block.
-                        match deployments.contains(deployment.program_id()) {
+                        match candidate_transaction_details.deployments.contains(deployment.program_id()) {
                             // If the program has already been deployed, construct the rejected deploy transaction.
-                            true => match process_rejected_deployment(fee, *deployment.clone()) {
-                                Ok(result) => result,
-                                Err(error) => {
-                                    // Note: On failure, skip this transaction, and continue speculation.
-                                    dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
-                                    // Store the aborted transaction.
-                                    aborted.push((transaction.clone(), error.to_string()));
-                                    // Continue to the next transaction.
-                                    continue 'outer;
+                            true => {
+                                let rejected_reason = RejectedReason::DuplicateProgramID(*deployment.program_id());
+                                match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
+                                    Ok(result) => result,
+                                    Err(error) => {
+                                        // Note: On failure, skip this transaction, and continue speculation.
+                                        dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                        // Store the aborted transaction.
+                                        aborted.push((transaction.clone(), error.to_string()));
+                                        // Continue to the next transaction.
+                                        continue 'outer;
+                                    }
                                 }
-                            },
+                            }
                             // If the program has not yet been deployed, attempt to deploy it.
                             false => match process.finalize_deployment(state, store, deployment, fee) {
                                 // Construct the accepted deploy transaction.
@@ -444,7 +540,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 Err(error) => {
                                     dev_eprintln!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
-                                    match process_rejected_deployment(fee, *deployment.clone()) {
+                                    let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
+                                    match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
                                         Ok(result) => result,
                                         Err(error) => {
                                             // Note: On failure, skip this transaction, and continue speculation.
@@ -463,7 +560,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // and update the respective leaves of the finalize tree.
                     Transaction::Execute(_, _, execution, fee) => {
                         // Determine if the transaction is safe for execution, and proceed to execute it.
-                        match Self::prepare_for_execution(state, store, execution)
+                        match self
+                            .prepare_for_execution(state, store, execution)
                             .and_then(|_| process.finalize_execution(state, store, execution, fee.as_ref()))
                         {
                             // Construct the accepted execute transaction.
@@ -475,12 +573,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             Err(error) => {
                                 dev_eprintln!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
+                                let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                 match fee {
                                     // Finalize the fee, to ensure it is valid.
                                     Some(fee) => {
-                                        match process.finalize_fee(state, store, fee).and_then(|finalize| {
-                                            Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
-                                        }) {
+                                        match process
+                                            .finalize_fee(state, store, fee)
+                                            .map_err(anyhow::Error::from)
+                                            .and_then(|finalize| {
+                                                Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
+                                            }) {
                                             Ok((fee_tx, finalize)) => {
                                                 // Construct the rejected execution.
                                                 let rejected = Rejected::new_execution(*execution.clone());
@@ -488,6 +590,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                                 ConfirmedTransaction::rejected_execute(
                                                     counter, fee_tx, rejected, finalize,
                                                 )
+                                                .and_then(|confirmed_tx| {
+                                                    // Store the rejection reason.
+                                                    self.pending_rejected_reasons
+                                                        .write()
+                                                        .insert(confirmed_tx.id(), rejected_reason.clone());
+                                                    store
+                                                        .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
+                                                        .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
+                                                    Ok(confirmed_tx)
+                                                })
                                                 .map_err(|e| e.to_string())
                                             }
                                             Err(error) => {
@@ -534,19 +646,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 match outcome {
                     // If the transaction succeeded, store it and continue to the next transaction.
                     Ok(confirmed_transaction) => {
-                        // Add the transition IDs to the set of produced transition IDs.
-                        transition_ids.extend(confirmed_transaction.transaction().transition_ids());
-                        // Add the input IDs to the set of spent input IDs.
-                        input_ids.extend(confirmed_transaction.transaction().input_ids());
-                        // Add the output IDs to the set of produced output IDs.
-                        output_ids.extend(confirmed_transaction.transaction().output_ids());
-                        // Add the transition public keys to the set of produced transition public keys.
-                        tpks.extend(confirmed_transaction.transaction().transition_public_keys());
-                        // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
-                        if let Transaction::Deploy(_, _, _, deployment, fee) = confirmed_transaction.transaction() {
-                            fee.payer().map(|payer| deployment_payers.insert(payer));
-                            deployments.insert(*deployment.program_id());
-                        }
+                        // Track the accepted transaction details.
+                        candidate_transaction_details.record_transaction(confirmed_transaction.transaction());
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
                         // Increment the transaction index counter.
@@ -658,11 +759,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         #[cfg(feature = "slipstream-plugins")]
         {
             self.store.finalize_store().is_finalize_mode().store(true, std::sync::atomic::Ordering::SeqCst);
-            self.store
-                .finalize_store()
-                .slipstream_block_height()
-                .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
         }
+        self.store.finalize_store().block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
         // Perform the finalize operation on the preset finalize mode.
         let finalize_result = atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
@@ -694,10 +792,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Perform the atomic finalize over the transactions. */
 
-            // Acquire the write lock on the process.
+            // Acquire a guard on the contents of the process.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
-            // we choose to acquire the write lock for the entire duration of this atomic batch.
-            let process = self.process.write();
+            // we choose to acquire it for the entire duration of this atomic batch.
+            let process = self.process.lock();
 
             // Revert any unstaged stacks, when the function returns.
             // Note. `commit_stacks` is called at the bottom of this function after successful finalization.
@@ -773,7 +871,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         }
                         Ok(())
                     }
-                    ConfirmedTransaction::RejectedDeploy(_, Transaction::Fee(_, fee), rejected, finalize) => {
+                    ConfirmedTransaction::RejectedDeploy(_, Transaction::Fee(fee_tx_id, fee), rejected, finalize) => {
                         // Extract the rejected deployment.
                         let Some(deployment) = rejected.deployment() else {
                             // Note: This will abort the entire atomic batch.
@@ -804,6 +902,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         "Mismatch in finalize operations for a rejected deploy - (found: {finalize_operations:?}, expected: {finalize:?})"
                                     ));
                                 }
+
+                                if let Some(rejected_reason) = self.pending_rejected_reasons.write().remove(fee_tx_id) {
+                                    store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
+                                        |_| "Couldn't store the reason behind a rejected deployment".to_string(),
+                                    )?;
+                                }
                             }
                             // Note: This will abort the entire atomic batch.
                             Err(_e) => {
@@ -812,7 +916,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         }
                         Ok(())
                     }
-                    ConfirmedTransaction::RejectedExecute(_, Transaction::Fee(_, fee), rejected, finalize) => {
+                    ConfirmedTransaction::RejectedExecute(_, Transaction::Fee(fee_tx_id, fee), rejected, finalize) => {
                         // Extract the rejected execution.
                         let Some(execution) = rejected.execution() else {
                             // Note: This will abort the entire atomic batch.
@@ -842,6 +946,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     return Err(format!(
                                         "Mismatch in finalize operations for a rejected execute - (found: {finalize_operations:?}, expected: {finalize:?})"
                                     ));
+                                }
+
+                                if let Some(rejected_reason) = self.pending_rejected_reasons.write().remove(fee_tx_id) {
+                                    store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
+                                        |_| "Couldn't store the reason behind a rejected execute".to_string(),
+                                    )?;
                                 }
                             }
                             // Note: This will abort the entire atomic batch.
@@ -897,7 +1007,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         finalize_result
     }
 
-    /// Returns `Some(reason)` if the transaction is aborted. Otherwise, returns `None`.
+    /// Returns ShouldAbortResult.
     ///
     /// The transaction will be aborted if any of the following conditions are met:
     /// - The transaction is producing a duplicate transition
@@ -906,20 +1016,23 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is producing a duplicate transition public key
     /// - The transaction is another deployment in the block from the same public fee payer.
     /// - The transaction contains a transition that has been deployed or upgraded in this block.
+    /// - The transaction surpasses the spend limits.
     ///
     /// - Note: If a transaction is a deployment for a program following its deployment or redeployment in this block,
     ///   it is not aborted. Instead, it will be rejected and its fee will be consumed.
-    #[allow(clippy::too_many_arguments)]
     fn should_abort_transaction(
         &self,
         transaction: &Transaction<N>,
-        transition_ids: &IndexSet<N::TransitionID>,
-        input_ids: &IndexSet<Field<N>>,
-        output_ids: &IndexSet<Field<N>>,
-        tpks: &IndexSet<Group<N>>,
-        deployment_payers: &IndexSet<Address<N>>,
-        deployments: &IndexSet<ProgramID<N>>,
-    ) -> Option<String> {
+        candidate_transaction_details: &CandidateTransactionDetails<N>,
+        transaction_spend_limit: u64,
+        block_synthesis_limit: Option<u64>,
+        consensus_version: ConsensusVersion,
+    ) -> ShouldAbortResult {
+        // Ensure that the transaction is not a fee transaction.
+        if let Transaction::Fee(..) = transaction {
+            return ShouldAbortResult::Abort("Fee transactions are not allowed in speculate".to_string());
+        }
+
         // Ensure that:
         //  - the transaction is not producing a duplicate transition.
         //  - the programs in the component transitions haven't been deployed or upgraded in this block.
@@ -927,14 +1040,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Get the transition ID.
             let transition_id = transition.id();
             // If the transition ID is already produced in this block or previous blocks, abort the transaction.
-            if transition_ids.contains(transition_id)
+            if candidate_transaction_details.transition_ids.contains(transition_id)
                 || self.transition_store().contains_transition_id(transition_id).unwrap_or(true)
             {
-                return Some(format!("Duplicate transition {transition_id}"));
+                return ShouldAbortResult::Abort(format!("Duplicate transition {transition_id}"));
             }
             // If the transition's program is being deployed or redeployed in this block, abort the transaction.
-            if deployments.contains(transition.program_id()) {
-                return Some(format!(
+            if candidate_transaction_details.deployments.contains(transition.program_id()) {
+                return ShouldAbortResult::Abort(format!(
                     "Program {} is being deployed or redeployed in this block",
                     transition.program_id()
                 ));
@@ -944,16 +1057,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure that the transaction is not double-spending an input.
         for input_id in transaction.input_ids() {
             // If the input ID is already spent in this block or previous blocks, abort the transaction.
-            if input_ids.contains(input_id) || self.transition_store().contains_input_id(input_id).unwrap_or(true) {
-                return Some(format!("Double-spending input {input_id}"));
+            if candidate_transaction_details.input_ids.contains(input_id)
+                || self.transition_store().contains_input_id(input_id).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Double-spending input {input_id}"));
             }
         }
 
         // Ensure that the transaction is not producing a duplicate output.
         for output_id in transaction.output_ids() {
             // If the output ID is already produced in this block or previous blocks, abort the transaction.
-            if output_ids.contains(output_id) || self.transition_store().contains_output_id(output_id).unwrap_or(true) {
-                return Some(format!("Duplicate output {output_id}"));
+            if candidate_transaction_details.output_ids.contains(output_id)
+                || self.transition_store().contains_output_id(output_id).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Duplicate output {output_id}"));
             }
         }
 
@@ -961,8 +1078,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Note that the tpk and tcm are corresponding, so a uniqueness check for just the tpk is sufficient.
         for tpk in transaction.transition_public_keys() {
             // If the transition public key is already produced in this block or previous blocks, abort the transaction.
-            if tpks.contains(tpk) || self.transition_store().contains_tpk(tpk).unwrap_or(true) {
-                return Some(format!("Duplicate transition public key {tpk}"));
+            if candidate_transaction_details.tpks.contains(tpk)
+                || self.transition_store().contains_tpk(tpk).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Duplicate transition public key {tpk}"));
             }
         }
 
@@ -970,14 +1089,63 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         if let Transaction::Deploy(_, _, _, _, fee) = transaction {
             // If any public deployment payer has already deployed in this block, abort the transaction.
             if let Some(payer) = fee.payer() {
-                if deployment_payers.contains(&payer) {
-                    return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
+                if candidate_transaction_details.deployment_payers.contains(&payer) {
+                    return ShouldAbortResult::Abort(format!(
+                        "Another deployment in the block from the same public fee payer {payer}"
+                    ));
                 }
             }
         }
 
-        // Return `None` because the transaction is well-formed.
-        None
+        // Before V16, we return without tracking any compute spend and checking deployment limits.
+        if consensus_version < ConsensusVersion::V16 {
+            ShouldAbortResult::Finalize(0)
+        // If the consensus version is >= V16, ensure that the transaction is not exceeding spend or deployment limits.
+        } else {
+            // Compute microcredit spend from deployment or execution cost details.
+            let compute_spend = match transaction {
+                Transaction::Deploy(_, _, _, deployment, _) => {
+                    match deployment_cost(self.process(), deployment, consensus_version) {
+                        Ok((_, cost_details)) => deploy_compute_cost_in_microcredits(cost_details, consensus_version),
+                        Err(e) => {
+                            return ShouldAbortResult::Abort(format!("Failed to compute the deployment cost: {e}"));
+                        }
+                    }
+                }
+                Transaction::Execute(_, _, execution, _) => {
+                    match execution_cost(self.process(), execution, consensus_version) {
+                        Ok((_, cost_details)) => execute_compute_cost_in_microcredits(cost_details, consensus_version),
+                        Err(e) => {
+                            return ShouldAbortResult::Abort(format!("Failed to compute the execution cost: {e}"));
+                        }
+                    }
+                }
+                Transaction::Fee(..) => 0, // Fee transactions are already aborted above and don't contribute compute spend.
+            };
+
+            if compute_spend > transaction_spend_limit {
+                return ShouldAbortResult::Abort(format!(
+                    "Exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
+                ));
+            }
+            // In consensus version >= V17, if we are keeping track of block-wide circuit density and this transaction
+            // contains a deployment, make sure its density does not make the running total exceed the limit.
+            if consensus_version >= ConsensusVersion::V17
+                && let Transaction::Deploy(_, _, _, deployment, _) = transaction
+                && let Some(synthesis_limit) = block_synthesis_limit
+                && candidate_transaction_details.block_combined_density.saturating_add(deployment.combined_density())
+                    > synthesis_limit
+            {
+                return ShouldAbortResult::Abort(format!(
+                    "Deployment density '{}' added to current accumulated block-wide density '{}' exceeds the limit '{}'",
+                    deployment.combined_density(),
+                    candidate_transaction_details.block_combined_density,
+                    synthesis_limit
+                ));
+            }
+
+            ShouldAbortResult::Finalize(compute_spend)
+        }
     }
 
     /// Performs precondition checks on the transactions prior to speculation.
@@ -988,6 +1156,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub(crate) fn prepare_for_speculate<'a, R: CryptoRng + Rng>(
         &self,
         transactions: &[&'a Transaction<N>],
+        state: FinalizeGlobalState,
         rng: &mut R,
     ) -> Result<(Vec<&'a Transaction<N>>, Vec<(&'a Transaction<N>, String)>)> {
         // Construct the list of transactions that need to verified.
@@ -996,60 +1165,33 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut valid_transactions = Vec::with_capacity(transactions.len());
         let mut aborted_transactions = Vec::with_capacity(transactions.len());
 
-        // Initialize a list of created transition IDs.
-        let mut transition_ids: IndexSet<N::TransitionID> = Default::default();
-        // Initialize a list of spent input IDs.
-        let mut input_ids: IndexSet<Field<N>> = Default::default();
-        // Initialize a list of created output IDs.
-        let mut output_ids: IndexSet<Field<N>> = Default::default();
-        // Initialize the list of created transition public keys.
-        let mut tpks: IndexSet<Group<N>> = Default::default();
-        // Initialize the list of deployment payers.
-        let mut deployment_payers: IndexSet<Address<N>> = Default::default();
-        // Initialize a list of the successful deployments.
-        let mut deployments = IndexSet::new();
+        // Accumulate per-block uniqueness checks.
+        let mut candidate_transaction_details = CandidateTransactionDetails::<N>::default();
+        // Determine the transaction spend limit. These unwraps are safe, see tests in consensus_heights.rs
+        let consensus_version = N::CONSENSUS_VERSION(state.block_height()).unwrap();
+        let transaction_spend_limit =
+            consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
 
-        // Abort the transactions that are have duplicates or are invalid. This will prevent the VM from performing
-        // verification on transactions that would have been aborted in `VM::atomic_speculate`.
+        // Abort duplicate, overspending, invalid, or disallowed transactions before verification.
         for transaction in transactions.iter() {
-            // Abort the transaction early if it is a fee transaction.
-            if transaction.is_fee() {
-                aborted_transactions.push((*transaction, "Fee transactions are not allowed in speculate".to_string()));
-                continue;
-            }
-
-            // Determine if the transaction should be aborted.
             match self.should_abort_transaction(
                 transaction,
-                &transition_ids,
-                &input_ids,
-                &output_ids,
-                &tpks,
-                &deployment_payers,
-                &deployments,
+                &candidate_transaction_details,
+                transaction_spend_limit,
+                state.block_synthesis_limit(),
+                consensus_version,
             ) {
-                // Store the aborted transaction.
-                Some(reason) => aborted_transactions.push((*transaction, reason.to_string())),
-                // Track the transaction state.
-                None => {
-                    // Add the transition IDs to the set of produced transition IDs.
-                    transition_ids.extend(transaction.transition_ids());
-                    // Add the input IDs to the set of spent input IDs.
-                    input_ids.extend(transaction.input_ids());
-                    // Add the output IDs to the set of produced output IDs.
-                    output_ids.extend(transaction.output_ids());
-                    // Add the transition public keys to the set of produced transition public keys.
-                    tpks.extend(transaction.transition_public_keys());
-                    // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
-                    if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
-                        fee.payer().map(|payer| deployment_payers.insert(payer));
-                        deployments.insert(*deployment.program_id());
-                    }
-
-                    // Add the transaction to the list of transactions to verify.
+                ShouldAbortResult::Abort(abort_reason) => {
+                    // Store the aborted transaction.
+                    aborted_transactions.push((*transaction, abort_reason));
+                }
+                ShouldAbortResult::Finalize(_compute_spend) => {
+                    // Track the accepted transaction details.
+                    candidate_transaction_details.record_transaction(transaction);
+                    // Mark the transaction ready to verify.
                     transactions_to_verify.push(transaction);
                 }
-            };
+            }
         }
 
         // Separate the transactions into deploys and executions.
@@ -1091,18 +1233,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Performs precondition checks on the transaction prior to execution.
     ///
     /// This method is used to check the following conditions:
-    /// - If the transaction contains a `credits.aleo/bond_public` transition,
+    /// - If the transaction contains a `credits.aleo/bond_validator` transition,
     ///   then the outcome should not exceed the maximum committee size.
     #[inline]
     fn prepare_for_execution(
+        &self,
         state: FinalizeGlobalState,
         store: &FinalizeStore<N, C::FinalizeStorage>,
         execution: &Execution<N>,
-    ) -> Result<()> {
+    ) -> Result<(), IndexedFinalizeError<N, Command<N>>> {
         // Construct the program ID.
         let program_id = ProgramID::from_str("credits.aleo")?;
         // Construct the committee mapping name.
         let committee_mapping = Identifier::from_str("committee")?;
+        // Construct the bond_validator resource name.
+        let bond_validator = Identifier::from_str("bond_validator")?;
 
         // Check if the execution has any `bond_validator` transitions, and collect
         // the unique validator addresses if so.
@@ -1134,7 +1279,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         Plaintext::Literal(Literal::Address(address), _) => Ok(address),
                         _ => Err(anyhow!("Invalid committee key (missing address) - {key}")),
                     })
-                    .collect::<Result<HashSet<_>>>()?;
+                    .collect::<Result<HashSet<_>>>()
+                    .into_indexed(
+                        Some((program_id, self.process().get_latest_edition_for_program(&program_id))),
+                        Some(committee_mapping),
+                        None::<(usize, Command<N>)>,
+                    )?;
+                // Retrieve the latest edition for error context.
+                let program_edition = self.process().get_latest_edition_for_program(&program_id);
                 // Get the number of new validators being bonded to.
                 let num_new_validators =
                     bond_validator_addresses.into_iter().filter(|address| !committee_members.contains(address)).count();
@@ -1145,7 +1297,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     .ok_or(anyhow!("Failed to retrieve the maximum committee size"))?;
                 // Check that the number of new validators being bonded does not exceed the maximum number of validators.
                 match next_committee_size > max_committee_size as usize {
-                    true => Err(anyhow!("Call to 'credits.aleo/bond_public' exceeds the committee size")),
+                    true => indexed_finalize_bail!(
+                        Some((program_id, program_edition)),
+                        Some(bond_validator),
+                        "Call to '{program_id}/bond_validator' exceeds the committee size"
+                    ),
                     false => Ok(()),
                 }
             }
@@ -1632,12 +1788,25 @@ finalize transfer_public:
         let next_timestamp = (next_block_height
             >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
         .then_some(next_block_timestamp);
-        let finalize_state =
-            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
+        let finalize_state = FinalizeGlobalState::from(
+            next_block_height as u64,
+            next_block_height,
+            next_timestamp,
+            [0u8; 32],
+            None,
+            None,
+        );
 
         // Speculate on the candidate ratifications, solutions, and transactions.
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            vm.speculate(finalize_state, time_since_last_block, None, vec![], &None.into(), transactions.iter(), rng)?;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
+            finalize_state,
+            time_since_last_block,
+            Some(0u64),
+            vec![],
+            &None.into(),
+            transactions.iter(),
+            rng,
+        )?;
 
         // Construct the metadata associated with the block.
         let metadata = Metadata::new(
@@ -3157,6 +3326,12 @@ finalize compute:
         // Add the genesis block to the VM.
         vm_2.add_next_block(&genesis_2).unwrap();
 
+        println!("[VM2] Generating the next block.");
+        let next_block =
+            sample_next_block(&vm_2, validators.keys().next().unwrap(), &[], &genesis_2, &mut vec![], rng).unwrap();
+        println!("[VM2] Adding the next block to the VM to simulate block rewards.");
+        vm_2.add_next_block(&next_block).unwrap();
+
         println!("Checking that all mappings in `credits.aleo` are equal across the two VMs.");
 
         // Check that all mappings in `credits.aleo` are equal across the two VMs.
@@ -3660,5 +3835,93 @@ finalize compute:
         for entry in actual_withdraw.iter() {
             assert!(expected_withdraw.contains(entry));
         }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_rejection_reason_storage() {
+        let rng = &mut TestRng::default();
+
+        // Sample a private key.
+        let private_key = test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the vm.
+        let vm = test_helpers::sample_vm_with_genesis_block(rng);
+
+        // Deploy a new program.
+        let genesis =
+            vm.block_store().get_block(&vm.block_store().get_block_hash(0).unwrap().unwrap()).unwrap().unwrap();
+
+        // Get the unspent records.
+        let mut unspent_records = genesis
+            .transitions()
+            .cloned()
+            .flat_map(Transition::into_records)
+            .map(|(_, record)| record)
+            .collect::<Vec<_>>();
+
+        // Construct the deployment block.
+        let deployment_block = {
+            let program = Program::<CurrentNetwork>::from_str(
+                "
+program testing.aleo;
+
+mapping entries:
+    key as address.public;
+    value as u8.public;
+
+function compute:
+    input r0 as u8.public;
+    async compute self.caller r0 into r1;
+    output r1 as testing.aleo/compute.future;
+
+finalize compute:
+    input r0 as address.public;
+    input r1 as u8.public;
+    get.or_use entries[r0] r1 into r2;
+    add r1 r2 into r3;
+    set r3 into entries[r0];
+    get entries[r0] into r4;
+    add r4 r1 into r5;
+    set r5 into entries[r0];
+",
+            )
+            .unwrap();
+
+            // Prepare the additional fee.
+            let view_key = ViewKey::<CurrentNetwork>::try_from(private_key).unwrap();
+            let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
+
+            // Deploy.
+            let transaction = vm.deploy(&private_key, &program, credits, 10, None, rng).unwrap();
+
+            // Construct the new block.
+            sample_next_block(&vm, &private_key, &[transaction], &genesis, &mut unspent_records, rng).unwrap()
+        };
+
+        // Add the deployment block to the VM.
+        vm.add_next_block(&deployment_block).unwrap();
+
+        // Create an execution transaction, that will be rejected.
+        let r0 = Value::<CurrentNetwork>::from_str("100u8").unwrap();
+        let rejected_tx =
+            create_execution(&vm, private_key, "testing.aleo", "compute", vec![r0], &mut unspent_records, rng);
+
+        // Construct the next block with the rejected transaction.
+        let next_block =
+            sample_next_block(&vm, &private_key, &[rejected_tx], &deployment_block, &mut unspent_records, rng).unwrap();
+
+        // Check that the transaction was rejected.
+        assert_eq!(next_block.transactions().len(), 1);
+        let rejected_transaction = next_block.transactions().iter().next().unwrap();
+        assert!(rejected_transaction.is_rejected());
+
+        // Add the next block to the VM.
+        vm.add_next_block(&next_block).unwrap();
+
+        // Check that the rejection reason was stored.
+        let tx_id = *rejected_transaction.id();
+        let rejection_reason = vm.finalize_store().get_rejected_reason(&tx_id).unwrap();
+        assert!(rejection_reason.is_some(), "Rejection reason should be stored");
     }
 }

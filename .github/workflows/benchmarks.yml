@@ -4,13 +4,15 @@ on:
   push:
     branches:
       - 'staging'
+      - 'fix_benchmark_pushing'
   workflow_dispatch:
 
 jobs:
   # Run benchmarks and stores the output to a file
   benchmark:
     name: Benchmark
-    runs-on: ubuntu-latest
+    # Pin to a specific image to reduce runner-image drift between comparisons.
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -118,16 +120,7 @@ jobs:
           alert-threshold: '150%'
           comment-on-alert: true
           fail-on-alert: true
-          alert-comment-cc-users: '@raychu86'
-          # Only push the results on staging (see below)
-          auto-push: false
+          alert-comment-cc-users: '@vicsn'
+          auto-push: true
           # Enable Job Summary for PRs
           summary-always: true
-
-      - name: Push benchmark result
-        # Avoid pushing results on pull requests or experimental branches, to reduce noise in the data.
-        # The results for all other runs are still accessible through the workflow summary.
-        if: github.ref_name == 'staging'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git push origin gh-pages

@@ -170,7 +170,7 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Check that the program is deployed.
-    let stack = vm.process().read().get_stack("adder.aleo")?;
+    let stack = vm.process().get_stack("adder.aleo")?;
     assert_eq!(stack.program_id(), &ProgramID::from_str("adder.aleo")?);
     assert_eq!(*stack.program_edition(), 0);
 
@@ -239,7 +239,7 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Check that the program is upgraded.
-    let stack = vm.process().read().get_stack("adder.aleo")?;
+    let stack = vm.process().get_stack("adder.aleo")?;
     assert_eq!(stack.program_id(), &ProgramID::from_str("adder.aleo")?);
     assert_eq!(*stack.program_edition(), 1);
 
@@ -333,11 +333,11 @@ constructor:
 
     // Using the off-chain VM, generate a sequence of deployments.
     let deployment_v0_pass = off_chain_vm.deploy(&caller_private_key, &program_v0, None, 0, None, rng)?;
-    off_chain_vm.process().write().add_program(&program_v0)?;
+    off_chain_vm.process().lock().add_program(&program_v0)?;
     let deployment_v1_fail = off_chain_vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
     let deployment_v1_pass = off_chain_vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
     let deployment_v2_as_v1_fail = off_chain_vm.deploy(&caller_private_key, &program_v2_as_v1, None, 0, None, rng)?;
-    off_chain_vm.process().write().add_program(&program_v1)?;
+    off_chain_vm.process().lock().add_program(&program_v1)?;
     let deployment_v2_fail = off_chain_vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
     let deployment_v2_pass = off_chain_vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
 
@@ -363,7 +363,7 @@ constructor:
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     on_chain_vm.add_next_block(&block)?;
-    let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
+    let stack = on_chain_vm.process().get_stack("basic.aleo")?;
     assert_eq!(*stack.program_edition(), 0);
 
     // This deployment should fail because it does not increment the edition.
@@ -379,7 +379,7 @@ constructor:
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     on_chain_vm.add_next_block(&block)?;
-    let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
+    let stack = on_chain_vm.process().get_stack("basic.aleo")?;
     assert_eq!(*stack.program_edition(), 1);
 
     // This deployment should fail because it attempt to redeploy at the same edition.
@@ -395,7 +395,7 @@ constructor:
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     on_chain_vm.add_next_block(&block)?;
-    let stack = on_chain_vm.process().read().get_stack("basic.aleo")?;
+    let stack = on_chain_vm.process().get_stack("basic.aleo")?;
     assert_eq!(*stack.program_edition(), 2);
 
     Ok(())
@@ -2062,13 +2062,13 @@ constructor:
     vm.add_next_block(&block).unwrap();
 
     // Check the owners of the programs.
-    let stack = vm.process().read().get_stack("credits.aleo").unwrap();
+    let stack = vm.process().get_stack("credits.aleo").unwrap();
     assert!(stack.program_owner().is_none());
 
-    let stack = vm.process().read().get_stack("test_program_0.aleo").unwrap();
+    let stack = vm.process().get_stack("test_program_0.aleo").unwrap();
     assert!(stack.program_owner().is_none());
 
-    let stack = vm.process().read().get_stack("test_program_1.aleo").unwrap();
+    let stack = vm.process().get_stack("test_program_1.aleo").unwrap();
     assert!(stack.program_owner().is_some());
     assert_eq!(stack.program_owner().unwrap(), caller_address);
 }
@@ -2435,7 +2435,7 @@ constructor:
     // Initialize a new VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap(), rng);
     // Add the programs to the VM.
-    vm.process().write().add_programs_with_editions(&[(program_a_v1, 1), (program_b_v0, 0)]).unwrap();
+    vm.process().lock().add_programs_with_editions(&[(program_a_v1, 1), (program_b_v0, 0)]).unwrap();
 
     // Check that the programs can be executed.
     let execution_foo = vm
@@ -2675,8 +2675,7 @@ finalize set_first:
     vm.add_next_block(&block).unwrap();
 
     // Check that the program was upgraded.
-    let edition =
-        *vm.process().read().get_stack(ProgramID::from_str("test_one.aleo").unwrap()).unwrap().program_edition();
+    let edition = *vm.process().get_stack(ProgramID::from_str("test_one.aleo").unwrap()).unwrap().program_edition();
     assert_eq!(edition, 1);
 
     // Verify that the first execution was successful.
@@ -2724,8 +2723,7 @@ finalize set_first:
     vm.add_next_block(&block).unwrap();
 
     // Check that the program was upgraded.
-    let edition =
-        *vm.process().read().get_stack(ProgramID::from_str("test_one.aleo").unwrap()).unwrap().program_edition();
+    let edition = *vm.process().get_stack(ProgramID::from_str("test_one.aleo").unwrap()).unwrap().program_edition();
     assert_eq!(edition, 2);
 
     // Now add an old execution that was made before the upgrade.
@@ -2863,13 +2861,13 @@ function baz:
 
     // Generate the deployments.
     // Note that we are attempting to upgrade twice with consecutive editions.
-    let mut process = Process::load().unwrap();
-    process.add_program(&program_v0).unwrap();
+    let process = Process::load().unwrap();
+    process.lock().add_program(&program_v0).unwrap();
     let mut deployment_v1 = process.deploy::<CurrentAleo, _>(&program_v1, rng).unwrap();
     deployment_v1.set_program_checksum_raw(Some(deployment_v1.program().to_checksum()));
     deployment_v1.set_program_owner_raw(Some(Address::try_from(&private_key_1).unwrap()));
     assert_eq!(deployment_v1.edition(), 1);
-    process.add_program(&program_v1).unwrap();
+    process.lock().add_program(&program_v1).unwrap();
     let mut deployment_v2 = process.deploy::<CurrentAleo, _>(&program_v2, rng).unwrap();
     deployment_v2.set_program_checksum_raw(Some(deployment_v2.program().to_checksum()));
     deployment_v2.set_program_owner_raw(Some(Address::try_from(&private_key_2).unwrap()));
@@ -3321,10 +3319,10 @@ constructor:
     // Check that all programs are present in the process.
     for i in 0..(Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1) {
         let program_id = ProgramID::from_str(&format!("parent_program_{i}.aleo")).unwrap();
-        assert!(vm.process().read().get_stack(program_id).is_ok(), "Program parent_program_{i}.aleo should exist.");
+        assert!(vm.process().get_stack(program_id).is_ok(), "Program parent_program_{i}.aleo should exist.");
     }
     assert!(
-        vm.process().read().get_stack(ProgramID::from_str("parent_program_negative.aleo").unwrap()).is_ok(),
+        vm.process().get_stack(ProgramID::from_str("parent_program_negative.aleo").unwrap()).is_ok(),
         "Program parent_program_negative.aleo should exist."
     );
 
@@ -3554,11 +3552,11 @@ constructor:
 
     // Check that the parent program exists in the process.
     let parent_program_id = ProgramID::from_str("parent_program.aleo").unwrap();
-    assert!(vm.process().read().get_stack(parent_program_id).is_ok(), "Program parent_program.aleo should exist.");
+    assert!(vm.process().get_stack(parent_program_id).is_ok(), "Program parent_program.aleo should exist.");
 
     // Check that the child program exists in the process.
     let child_program_id = ProgramID::from_str("child_program.aleo").unwrap();
-    assert!(vm.process().read().get_stack(child_program_id).is_ok(), "Program child_program.aleo should exist.");
+    assert!(vm.process().get_stack(child_program_id).is_ok(), "Program child_program.aleo should exist.");
 
     // Execute the child program to verify it still works.
     let execution = vm

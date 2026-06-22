@@ -25,7 +25,7 @@ mod verify;
 #[cfg(test)]
 mod tests;
 
-use crate::{Restrictions, Stack, cast_mut_ref, cast_ref, convert, process};
+use crate::{Command, Restrictions, Stack, cast_mut_ref, cast_ref, convert, process};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -42,8 +42,9 @@ use console::{
         Response,
         Value,
     },
-    types::{Field, Group, U16, U64},
+    types::{Field, Group, U8, U64},
 };
+use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
@@ -56,6 +57,7 @@ use snarkvm_ledger_block::{
     Ratifications,
     Ratify,
     Rejected,
+    RejectedReason,
     Solutions,
     Transaction,
     Transactions,
@@ -92,7 +94,6 @@ use snarkvm_synthesizer_program::{
     Program,
     StackTrait as _,
 };
-use snarkvm_synthesizer_snark::VerifyingKey;
 use snarkvm_utilities::try_vm_runtime;
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -106,7 +107,7 @@ use lru::LruCache;
 use parking_lot::{Mutex, RwLock};
 use rand::{SeedableRng, rngs::StdRng};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     num::NonZeroUsize,
     sync::{Arc, mpsc},
     thread,
@@ -116,14 +117,15 @@ use std::{
 use rayon::prelude::*;
 
 // The key for the partially-verified transactions cache.
-// The key is a tuple of the transaction ID and a list of program checksums for the transitions in the transaction.
-// Note: If a program is upgraded and its contents are changed, then the program checksums will change, invalidating the previously cached result.
-type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<U16<N>>);
+// The key is a tuple of the transaction ID and a list of `(program checksum, edition, amendment count)` for each transition.
+// Note: Program upgrades and amendments can change verification behavior without changing the transaction ID, so the cache key
+// must include program metadata in addition to the checksum.
+pub type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<([U8<N>; 32], u16, u64)>);
 
 #[derive(Clone)]
 pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// The process.
-    process: Arc<RwLock<Process<N>>>,
+    process: Arc<Process<N>>,
     /// The puzzle.
     puzzle: Puzzle<N>,
     /// The VM store.
@@ -132,6 +134,9 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     partially_verified_transactions: Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>>,
     /// The restrictions list.
     restrictions: Restrictions<N>,
+    /// The list of rejection reasons for pending confirmed transactions.
+    /// TODO: it would be cleaner if these are passed along as an argument to `add_next_block`, but this requires a bigger refactor.
+    pending_rejected_reasons: Arc<RwLock<HashMap<N::TransactionID, RejectedReason<N>>>>,
     /// A sender to the channel for operations that must be performed sequentially.
     sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
     /// The handle to the thread which processes operations sequentially.
@@ -158,7 +163,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let block_store = store.block_store();
 
         #[cfg(not(any(test, feature = "test")))]
-        let mut process = {
+        let process = {
             // Determine the latest block height.
             let latest_block_height = block_store.current_block_height();
             // Determine the consensus version.
@@ -172,7 +177,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         };
         #[cfg(any(test, feature = "test"))]
         // Initialize a new process.
-        let mut process = Process::load()?;
+        let process = Process::load()?;
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
@@ -226,7 +231,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Construct the VM object.
         let vm = Self {
-            process: Arc::new(RwLock::new(process)),
+            process: Arc::new(process),
             puzzle: Self::new_puzzle()?,
             store,
             partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
@@ -234,6 +239,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             ))),
             restrictions: Restrictions::load()?,
             sequential_ops_tx: Default::default(),
+            pending_rejected_reasons: Default::default(),
             sequential_ops_thread: Default::default(),
         };
 
@@ -252,13 +258,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns `true` if a program with the given program ID exists.
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
-        self.process.read().contains_program(program_id)
+        self.process.contains_program(program_id)
     }
 
     /// Returns the process.
     #[inline]
-    pub fn process(&self) -> Arc<RwLock<Process<N>>> {
-        self.process.clone()
+    pub fn process(&self) -> &Arc<Process<N>> {
+        &self.process
     }
 
     /// Returns the puzzle.
@@ -299,6 +305,120 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     #[inline]
     pub fn transaction_store(&self) -> &TransactionStore<N, C::TransactionStorage> {
         self.store.transaction_store()
+    }
+
+    /// Builds a `FinalizeGlobalState` from the block at the given `height`.
+    ///
+    /// Returns an error if no block exists at `height`. Views reuse the same shape that
+    /// the consensus path uses in `add_next_block_inner`, populating round, timestamp, the
+    /// cumulative weights, and the previous-block hash from the actual block — so any
+    /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
+    /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
+    #[cfg(feature = "history")]
+    fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
+        let block_hash =
+            self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
+        let block = self
+            .block_store()
+            .get_block(&block_hash)?
+            .ok_or_else(|| anyhow!("Block hash for height {height} resolved but the block could not be loaded"))?;
+        // Match the consensus path's gating: the timestamp is only included from V12 onward.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
+        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
+            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
+        } else {
+            (None, None)
+        };
+        FinalizeGlobalState::new::<N>(
+            block.round(),
+            block.height(),
+            block_timestamp,
+            block.cumulative_weight(),
+            block.cumulative_proof_target(),
+            block.previous_hash(),
+            block_spend_limit,
+            block_synthesis_limit,
+        )
+    }
+
+    /// Evaluates a view function against finalize-store state at the given block `height`.
+    /// Returns the typed outputs.
+    ///
+    /// Mapping reads are pinned to `height` via the per-key historical update map, and the
+    /// `FinalizeGlobalState` is reconstructed from the block at `height`. Available only with
+    /// `--features history`.
+    ///
+    /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
+    /// for historic views. `height` must satisfy `height <= current_block_height()`.
+    ///
+    /// The view body is taken from the program edition live at `height`.
+    #[cfg(feature = "history")]
+    #[inline]
+    pub fn evaluate_view_at_height(
+        &self,
+        program_id: impl TryInto<ProgramID<N>>,
+        view_name: impl TryInto<Identifier<N>>,
+        inputs: Vec<Value<N>>,
+        height: u32,
+    ) -> Result<Vec<Value<N>>> {
+        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
+        let view_name = view_name.try_into().map_err(|_| anyhow!("Invalid view function name"))?;
+        let state = self.finalize_state_for_block(height)?;
+        let edition = self.resolve_program_edition_at_height(&program_id, height)?;
+        let latest_stack = self.process.get_stack(program_id)?;
+        let stack = if *latest_stack.program_edition() == edition {
+            // The historic edition is already the loaded one.
+            latest_stack
+        } else {
+            // Build a one-off stack for the historic edition. `new_raw` skips upgrade validation, as the
+            // process holds a newer edition; views can't `call`, so the live (latest) imports resolve
+            // identically (struct, record, and mapping types are frozen across upgrades).
+            let program = self
+                .transaction_store()
+                .deployment_store()
+                .get_program_for_edition(&program_id, edition)?
+                .ok_or_else(|| anyhow!("Program '{program_id}' (edition {edition}) was not found in storage"))?;
+            let stack = Stack::new_raw(&self.process, &program, edition)?;
+            stack.initialize_and_check(&self.process)?;
+            Arc::new(stack)
+        };
+        snarkvm_synthesizer_process::evaluate_view_with_stack_at_height(
+            state,
+            self.finalize_store(),
+            &stack,
+            &view_name,
+            inputs,
+            height,
+        )
+    }
+
+    /// Returns the program edition live at block `height`: the newest edition whose original
+    /// deployment was confirmed at or before `height`. Editions deploy in increasing block order.
+    #[cfg(feature = "history")]
+    fn resolve_program_edition_at_height(&self, program_id: &ProgramID<N>, height: u32) -> Result<u16> {
+        let deployment_store = self.transaction_store().deployment_store();
+        let block_store = self.block_store();
+        let latest_edition = deployment_store
+            .get_latest_edition_for_program(program_id)?
+            .ok_or_else(|| anyhow!("Program '{program_id}' has not been deployed"))?;
+        for edition in (0..=latest_edition).rev() {
+            let Some(transaction_id) =
+                deployment_store.find_original_transaction_id_from_program_id_and_edition(program_id, edition)?
+            else {
+                continue;
+            };
+            let Some(block_hash) = block_store.find_block_hash(&transaction_id)? else {
+                continue;
+            };
+            let Some(deployment_height) = block_store.get_block_height(&block_hash)? else {
+                continue;
+            };
+            if deployment_height <= height {
+                return Ok(edition);
+            }
+        }
+        bail!("Program '{program_id}' was not deployed at or before height {height}")
     }
 
     /// Returns the transition store.
@@ -492,6 +612,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine if the block timestamp should be included.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
+        // Determine the block spend and synthesis limits.
+        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
+            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
+        } else {
+            (None, None)
+        };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
@@ -500,6 +626,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             block.cumulative_weight(),
             block.cumulative_proof_target(),
             block.previous_hash(),
+            block_spend_limit,
+            block_synthesis_limit,
         )?;
 
         // Pause the atomic writes, so that both the insertion and finalization belong to a single batch.
@@ -525,7 +653,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Ok(_ratified_finalize_operations) => {
                 // If the block advances to `ConsensusVersion::V8`, updated the VKs used for the credits program.
                 if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
-                    self.update_credits_verifying_keys()?;
+                    self.process.lock().update_credits_verifying_keys()?;
                 }
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
@@ -567,37 +695,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Err(finalize_error)
             }
         }
-    }
-}
-
-impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
-    /// Update the `credits.aleo` program in the VM with the latest verifying keys.
-    fn update_credits_verifying_keys(&self) -> Result<()> {
-        // Initialize the store for 'credits.aleo'.
-        let credits = Program::<N>::credits()?;
-
-        // Acquire the process lock.
-        let process = self.process.write();
-
-        // Synthesize the 'credits.aleo' verifying keys.
-        for function_name in credits.functions().keys() {
-            // Remove the proving key.
-            process.remove_proving_key(credits.id(), function_name)?;
-            // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
-            // Retrieve the number of public and private variables.
-            // Note: This number does *NOT* include the number of constants. This is safe because
-            // this program is never deployed, as it is a first-class citizen of the protocol.
-            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
-            // Insert the verifying key.
-            process.insert_verifying_key(
-                credits.id(),
-                function_name,
-                VerifyingKey::new(verifying_key.clone(), num_variables),
-            )?;
-        }
-
-        Ok(())
     }
 }
 
@@ -649,7 +746,7 @@ pub(crate) mod test_helpers {
 
     /// Samples a new finalize state.
     pub(crate) fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
+        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None, None)
     }
 
     pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
@@ -950,12 +1047,25 @@ function compute:
         let next_timestamp = (next_block_height
             >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
         .then_some(next_block_timestamp);
-        let finalize_state =
-            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
+        let finalize_state = FinalizeGlobalState::from(
+            next_block_height as u64,
+            next_block_height,
+            next_timestamp,
+            [0u8; 32],
+            None,
+            None,
+        );
 
         // Speculate on the ratifications, solutions, and transactions.
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            vm.speculate(finalize_state, time_since_last_block, None, vec![], &None.into(), transactions.iter(), rng)?;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
+            finalize_state,
+            time_since_last_block,
+            Some(0u64),
+            vec![],
+            &None.into(),
+            transactions.iter(),
+            rng,
+        )?;
 
         // Construct the metadata associated with the block.
         let metadata = Metadata::new(
@@ -3129,13 +3239,13 @@ function check:
         assert!(vm.contains_program(&ProgramID::from_str("grandparent_program.aleo").unwrap()));
 
         // Initialize the process.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
 
         // Load the child and parent program
-        process.add_program(&child_program_1).unwrap();
-        process.add_program(&child_program_2).unwrap();
-        process.add_program(&parent_program).unwrap();
-        process.add_program(&grandparent_program).unwrap();
+        process.lock().add_program(&child_program_1).unwrap();
+        process.lock().add_program(&child_program_2).unwrap();
+        process.lock().add_program(&parent_program).unwrap();
+        process.lock().add_program(&grandparent_program).unwrap();
 
         // Specify the function name on the parent program
         let function_name = Identifier::<CurrentNetwork>::from_str("check").unwrap();
@@ -3284,7 +3394,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment_1.fee_amount().unwrap(), 2483025);
         // Add the first program to the off-chain VM.
-        off_chain_vm.process().write().add_program(&program_1).unwrap();
+        off_chain_vm.process().lock().add_program(&program_1).unwrap();
         // Deploy the second program.
         let deployment_2 = off_chain_vm.deploy(&private_key_2, &program_2, None, 0, None, rng).unwrap();
         // Check that the account has enough to pay for the deployment.
@@ -3299,7 +3409,7 @@ function adder:
         vm.add_next_block(&block).unwrap();
 
         // Check that only `child_program.aleo` is in the VM.
-        assert!(vm.process().read().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
+        assert!(vm.process().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
     }
 
     #[cfg(feature = "test")]
@@ -3402,7 +3512,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment.fee_amount().unwrap(), 2483025);
         // Add the program to the off-chain VM.
-        off_chain_vm.process().write().add_program(&program).unwrap();
+        off_chain_vm.process().lock().add_program(&program).unwrap();
         // Execute the program.
         let transaction = off_chain_vm
             .execute(
@@ -3429,7 +3539,7 @@ function adder:
         vm.add_next_block(&block).unwrap();
 
         // Check that the program was deployed.
-        assert!(vm.process().read().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
+        assert!(vm.process().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
     }
 
     #[cfg(feature = "test")]
@@ -3518,7 +3628,7 @@ constructor:
         // vm.add_next_block(&block).unwrap();
 
         // // Check that the program was deployed.
-        // assert!(vm.process().read().contains_program(&ProgramID::from_str("strings_0.aleo").unwrap()));
+        // assert!(vm.process().contains_program(&ProgramID::from_str("strings_0.aleo").unwrap()));
 
         // let hello_literal = Literal::String(StringType::new("hello"));
         // let hello_friend_literal = Literal::String(StringType::new("hello_friend"));
@@ -3596,6 +3706,6 @@ constructor:
         // vm.add_next_block(&block).unwrap();
 
         // // Check that the program was notdeployed.
-        // assert!(!vm.process().read().contains_program(&ProgramID::from_str("strings_1.aleo").unwrap()));
+        // assert!(!vm.process().contains_program(&ProgramID::from_str("strings_1.aleo").unwrap()));
     }
 }

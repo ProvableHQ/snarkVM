@@ -78,7 +78,7 @@ fn group_from_field_off_curve(c: &mut Criterion) {
 
 criterion_group! {
     name = group;
-    config = Criterion::default().sample_size(20);
+    config = Criterion::default().sample_size(10);
     targets = group_from_field, group_from_field_on_curve, group_from_field_off_curve
 }
 

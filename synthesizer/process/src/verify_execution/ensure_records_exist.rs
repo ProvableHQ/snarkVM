@@ -260,9 +260,9 @@ impl<N: Network> Process<N> {
     /// children of a given Transition ID must appear in the same order as the corresponding calls happen in the
     /// function.
     pub fn ensure_records_exist<'a>(
-        &self,
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>> + DoubleEndedIterator + Clone,
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
+        execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
     ) -> Result<()> {
         let root_transition = transitions.clone().last().ok_or_else(|| anyhow!("Empty transition list"))?;
 
@@ -274,7 +274,9 @@ impl<N: Network> Process<N> {
         let root_transition_id = root_transition.id();
 
         let input_registers = {
-            let stack = self.get_stack(root_transition.program_id())?;
+            let stack = execution_stacks
+                .get(root_transition.program_id())
+                .ok_or_else(|| anyhow!("Missing stack for program '{}'", root_transition.program_id()))?;
             let root_function = stack.get_function_ref(root_transition.function_name())?;
 
             root_function.inputs().iter().map(|input| input.register().locator()).collect::<Vec<u64>>()
@@ -307,7 +309,14 @@ impl<N: Network> Process<N> {
         let mut global_check = GlobalCheck::new(non_static_input_registers);
 
         // Recursively explore the execution, keeping track of record connections across the relevant casts and calls.
-        process_transition(self, &mut global_check, root_transition.id(), None, &tid_to_transition, call_graph)?;
+        process_transition(
+            execution_stacks,
+            &mut global_check,
+            root_transition.id(),
+            None,
+            &tid_to_transition,
+            call_graph,
+        )?;
 
         // Ensure the global check passes.
         global_check.validate().map_err(|register| anyhow!("Non-static record input at r{register} of the root function {}/{} is not known to correspond to a record on the ledger",
@@ -321,8 +330,8 @@ impl<N: Network> Process<N> {
 // families, tracking connections and marking families as existing if they are found to correspond to a record on the
 // ledger (global check). Furthermore, it also performs the function's local record-existence check.
 fn process_transition<N: Network>(
-    // Process being checked, from which function and closure definitions are retrieved
-    process: &Process<N>,
+    // Cached stacks used to resolve function and closure definitions.
+    execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
     // Global check keeping track of families of registers connected to DynamicRecords or ExternalRecords input to the
     // root transition.
     global_check: &mut GlobalCheck<N>,
@@ -341,7 +350,9 @@ fn process_transition<N: Network>(
 ) -> Result<()> {
     let transition =
         tid_to_transition.get(transition_id).ok_or_else(|| anyhow!("Missing transition with ID {transition_id}"))?;
-    let stack = process.get_stack(transition.program_id())?;
+    let stack = execution_stacks
+        .get(transition.program_id())
+        .ok_or_else(|| anyhow!("Missing stack for program '{}'", transition.program_id()))?;
     let function = stack.get_function_ref(transition.function_name())?;
     let locator = Locator::new(*transition.program_id(), *transition.function_name());
 
@@ -444,8 +455,9 @@ fn process_transition<N: Network>(
                             )
                         })
                     }
-                    CallOperator::Locator(locator) => process
-                        .get_stack(locator.program_id())?
+                    CallOperator::Locator(locator) => execution_stacks
+                        .get(locator.program_id())
+                        .ok_or_else(|| anyhow!("Missing stack for program '{}'", locator.program_id()))?
                         .program()
                         .get_closure(locator.resource())?
                         .outputs()
@@ -509,7 +521,7 @@ fn process_transition<N: Network>(
 
                 // Recursively updating the global check and performing the local check in the callee.
                 process_transition(
-                    process,
+                    execution_stacks,
                     global_check,
                     tid_callee,
                     Some((*transition_id, &caller_input_registers, &caller_output_registers)),

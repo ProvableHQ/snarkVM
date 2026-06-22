@@ -153,7 +153,11 @@ impl<N: Network> Trace<N> {
 impl<N: Network> Trace<N> {
     /// Constructs the call graph.
     pub fn construct_call_graph(&mut self, process: &crate::Process<N>) -> Result<()> {
-        self.call_graph = process.construct_call_graph(self.transitions.iter())?;
+        let mut execution_stacks = indexmap::IndexMap::new();
+        for transition in &self.transitions {
+            execution_stacks.insert(*transition.program_id(), process.get_stack(transition.program_id())?);
+        }
+        self.call_graph = crate::Process::construct_call_graph(self.transitions.iter(), &execution_stacks)?;
         Ok(())
     }
 }
@@ -432,7 +436,9 @@ impl<N: Network> Trace<N> {
         for (proving_key, assignments) in translation_assignments {
             let circuit_assignments = assignments
                 .iter()
-                .map(|(assignment, translation_index)| assignment.to_circuit_assignment::<A>(*translation_index))
+                .map(|(assignment, translation_index)| {
+                    assignment.to_circuit_assignment::<A>(*translation_index, None, None, None)
+                })
                 .collect::<Result<Vec<Assignment<N::Field>>>>()?;
             // Note that the `ProvingKey` contains an `Arc` to the underlying proving key, so cloning is cheap.
             proving_tasks.push((proving_key.clone(), circuit_assignments));

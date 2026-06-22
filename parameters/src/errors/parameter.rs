@@ -40,9 +40,9 @@ pub enum ParameterError {
 }
 
 #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
-impl From<reqwest::Error> for ParameterError {
-    fn from(error: reqwest::Error) -> Self {
-        ParameterError::Crate("reqwest", format!("{error}"))
+impl From<ureq::Error> for ParameterError {
+    fn from(error: ureq::Error) -> Self {
+        ParameterError::Crate("ureq", format!("{error}"))
     }
 }
 

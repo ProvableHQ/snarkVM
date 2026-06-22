@@ -42,7 +42,7 @@ impl<N: Network> Process<N> {
     /// Adds the newly-deployed program.
     /// This method assumes the given deployment **is valid**.
     #[inline]
-    pub fn load_deployment(&mut self, deployment: &Deployment<N>) -> Result<()> {
+    pub fn load_deployment(&self, deployment: &Deployment<N>) -> Result<()> {
         let timer = timer!("Process::load_deployment");
 
         // Get the deployment version.
@@ -63,6 +63,11 @@ impl<N: Network> Process<N> {
             DeploymentVersion::V3 => {
                 // V3 is an amendment — get the existing stack.
                 let existing_stack = self.get_stack(deployment.program_id())?;
+                // Increment the amendment count while preserving the existing edition.
+                let amendment_count = existing_stack
+                    .program_amendment_count()
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow!("Overflow while incrementing the program amendment count"))?;
 
                 // Compute a new stack with the same program and edition.
                 // Note: `Stack::new` cannot be used here because it would increment the edition.
@@ -71,6 +76,8 @@ impl<N: Network> Process<N> {
                 stack.initialize_and_check(self)?;
                 lap!(timer, "Compute the stack");
 
+                // Set the amendment count for this edition.
+                stack.set_program_amendment_count(amendment_count);
                 // Set the program owner to the existing owner.
                 stack.set_program_owner(*existing_stack.program_owner());
 
@@ -85,7 +92,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Insert the verifying keys");
 
         // Add the stack to the process.
-        self.add_stack(stack);
+        self.lock().add_stack(stack);
 
         finish!(timer);
 

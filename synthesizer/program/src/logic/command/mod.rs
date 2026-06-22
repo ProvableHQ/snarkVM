@@ -53,6 +53,7 @@ use console::{
     network::{error, prelude::*},
     program::{Identifier, Register},
 };
+use snarkvm_synthesizer_error::FinalizeError;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Command<N: Network> {
@@ -105,9 +106,38 @@ impl<N: Network> Command<N> {
         matches!(self, Command::Instruction(Instruction::Call(_) | Instruction::CallDynamic(_)))
     }
 
-    /// Returns `true` if the command is a cast to record instruction.
+    /// Returns `true` if the command is specifically a dynamic call instruction.
+    pub fn is_dynamic_call(&self) -> bool {
+        matches!(self, Command::Instruction(Instruction::CallDynamic(_)))
+    }
+
+    /// Returns `true` if the command is a cast-to-record instruction. Covers all three
+    /// record cast variants: static `record`, `external_record`, and `dynamic.record`.
     pub fn is_cast_to_record(&self) -> bool {
-        matches!(self, Command::Instruction(Instruction::Cast(cast)) if matches!(cast.cast_type(), CastType::Record(_) | CastType::ExternalRecord(_)))
+        matches!(
+            self,
+            Command::Instruction(Instruction::Cast(cast))
+                if matches!(
+                    cast.cast_type(),
+                    CastType::Record(_) | CastType::ExternalRecord(_) | CastType::DynamicRecord
+                )
+        )
+    }
+
+    /// Returns `true` if the command is a `get.record.dynamic` instruction.
+    pub fn is_get_record_dynamic(&self) -> bool {
+        matches!(self, Command::Instruction(Instruction::GetRecordDynamic(_)))
+    }
+
+    /// Returns `true` if the command operates on a record value, either by creating one via
+    /// `cast` (static, external, or dynamic) or by reading one via `get.record.dynamic`.
+    pub fn is_instruction_for_record(&self) -> bool {
+        self.is_cast_to_record() || self.is_get_record_dynamic()
+    }
+
+    /// Returns `true` if the command is a `rand.chacha` command.
+    pub fn is_rand_chacha(&self) -> bool {
+        matches!(self, Command::RandChaCha(_))
     }
 
     /// Returns `true` if the command is a write operation.
@@ -179,44 +209,48 @@ impl<N: Network> Command<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        store: &impl FinalizeStoreTrait<N>,
+        store: &dyn FinalizeStoreTrait<N>,
         registers: &mut impl FinalizeRegistersState<N>,
-    ) -> Result<Option<FinalizeOperation<N>>> {
+    ) -> Result<Option<FinalizeOperation<N>>, FinalizeError> {
         match self {
             // Finalize the instruction, and return no finalize operation.
-            Command::Instruction(instruction) => {
-                instruction.finalize(stack, registers).map_err(Into::into).map(|_| None)
-            }
+            Command::Instruction(instruction) => instruction.finalize(stack, Some(store), registers).map(|_| None),
             // `await` commands are processed by the caller of this method.
-            Command::Await(_) => bail!("`await` commands cannot be finalized directly."),
+            Command::Await(_) => Err(FinalizeError::Anyhow(anyhow!("`await` commands cannot be finalized directly."))),
             // Finalize the 'contains' command, and return no finalize operation.
-            Command::Contains(contains) => contains.finalize(stack, store, registers).map(|_| None),
+            Command::Contains(contains) => contains.finalize(stack, store, registers).map(|_| None).map_err(Into::into),
             // Finalize the `contains.dynamic` command, and return no finalize operation.
             Command::ContainsDynamic(contains_dynamic) => {
-                contains_dynamic.finalize(stack, store, registers).map(|_| None)
+                contains_dynamic.finalize(stack, store, registers).map(|_| None).map_err(Into::into)
             }
             // Finalize the 'get' command, and return no finalize operation.
-            Command::Get(get) => get.finalize(stack, store, registers).map(|_| None),
+            Command::Get(get) => get.finalize(stack, store, registers).map(|_| None).map_err(Into::into),
             // Finalize the `get.dynamic` and return no finalize operation.
-            Command::GetDynamic(get_dynamic) => get_dynamic.finalize(stack, store, registers).map(|_| None),
+            Command::GetDynamic(get_dynamic) => {
+                get_dynamic.finalize(stack, store, registers).map(|_| None).map_err(Into::into)
+            }
             // Finalize the 'get.or_use' command, and return no finalize operation.
-            Command::GetOrUse(get_or_use) => get_or_use.finalize(stack, store, registers).map(|_| None),
+            Command::GetOrUse(get_or_use) => {
+                get_or_use.finalize(stack, store, registers).map(|_| None).map_err(Into::into)
+            }
             // Finalize the `get.or_use.dynamic` command, and return no finalize operation.
             Command::GetOrUseDynamic(get_or_use_dynamic) => {
-                get_or_use_dynamic.finalize(stack, store, registers).map(|_| None)
+                get_or_use_dynamic.finalize(stack, store, registers).map(|_| None).map_err(Into::into)
             }
             // Finalize the `rand.chacha` command, and return no finalize operation.
-            Command::RandChaCha(rand_chacha) => rand_chacha.finalize(stack, registers).map(|_| None),
+            Command::RandChaCha(rand_chacha) => {
+                rand_chacha.finalize(stack, registers).map(|_| None).map_err(Into::into)
+            }
             // Finalize the 'remove' command, and return the finalize operation.
-            Command::Remove(remove) => remove.finalize(stack, store, registers),
+            Command::Remove(remove) => remove.finalize(stack, store, registers).map_err(Into::into),
             // Finalize the 'set' command, and return the finalize operation.
-            Command::Set(set) => set.finalize(stack, store, registers).map(Some),
+            Command::Set(set) => set.finalize(stack, store, registers).map(Some).map_err(Into::into),
             // 'branch.eq' and 'branch.neq' commands are processed by the caller of this method.
             Command::BranchEq(_) | Command::BranchNeq(_) => {
-                bail!("`branch` commands cannot be finalized directly.")
+                Err(FinalizeError::Anyhow(anyhow!("`branch` commands cannot be finalized directly.")))
             }
             // Finalize the `position` command, and return no finalize operation.
-            Command::Position(position) => position.finalize().map(|_| None),
+            Command::Position(position) => position.finalize().map(|_| None).map_err(Into::into),
         }
     }
 

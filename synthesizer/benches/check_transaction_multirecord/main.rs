@@ -64,7 +64,7 @@ fn sample_next_block<R: Rng + CryptoRng>(
         >= CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
     .then_some(next_block_timestamp);
     let finalize_state =
-        FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
+        FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32], None, None);
 
     let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
         vm.speculate(finalize_state, time_since_last_block, None, vec![], &None.into(), transactions.iter(), rng)?;

@@ -150,7 +150,7 @@ fn add_program_at_depth(process: &mut Process<CurrentNetwork>, depth: usize) {
     };
 
     // Add the program to the process.
-    process.add_program(&program).unwrap();
+    process.lock().add_program(&program).unwrap();
 }
 
 // Samples a random identifier as a string.

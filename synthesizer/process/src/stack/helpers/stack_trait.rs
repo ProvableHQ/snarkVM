@@ -218,10 +218,28 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         Field::from_bits_le(&bits)
     }
 
+    /// Returns the checksum of the program component (function, closure, or view) with the given name.
+    fn component_checksum(&self, name: &Identifier<N>) -> Result<&[U8<N>; 32]> {
+        self.component_checksums
+            .get(name)
+            .ok_or_else(|| anyhow!("'{name}' is not a function, closure, or view in '{}'.", self.program_id()))
+    }
+
     /// Returns the program edition.
     #[inline]
     fn program_edition(&self) -> U16<N> {
         self.program_edition
+    }
+
+    /// Returns the number of amendments for the current program edition.
+    #[inline]
+    fn program_amendment_count(&self) -> u64 {
+        self.program_amendment_count
+    }
+
+    /// Sets the number of amendments for the current program edition.
+    fn set_program_amendment_count(&mut self, program_amendment_count: u64) {
+        self.program_amendment_count = program_amendment_count;
     }
 
     /// Returns the program owner.
@@ -444,6 +462,16 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         let record_nonce = N::g_scalar_multiply(&randomizer);
         // Sample the record with that nonce.
         self.sample_record(burner_address, record_name, record_nonce, rng)
+    }
+
+    fn evaluate_view(
+        &self,
+        state: FinalizeGlobalState,
+        store: &dyn FinalizeStoreTrait<N>,
+        view_name: &Identifier<N>,
+        inputs: Vec<Value<N>>,
+    ) -> Result<Vec<Value<N>>> {
+        crate::view::evaluate_view_inner(state, store, self, view_name, inputs)
     }
 }
 
@@ -732,8 +760,8 @@ function dynamic_func:
         )
         .unwrap();
         // Add the program to a fresh process (no deployment needed for stack inspection).
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
-        process.add_program(&program).unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        process.lock().add_program(&program).unwrap();
         let stack = process.get_stack("dynamic_test.aleo").unwrap();
         // `dynamic_func` contains a `call.dynamic` instruction and must be detected.
         let function_name = Identifier::from_str("dynamic_func").unwrap();
@@ -771,9 +799,9 @@ function caller_func:
         )
         .unwrap();
         // Add programs in dependency order: helper first, then caller.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
-        process.add_program(&helper_program).unwrap();
-        process.add_program(&caller_program).unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        process.lock().add_program(&helper_program).unwrap();
+        process.lock().add_program(&caller_program).unwrap();
         let stack = process.get_stack("caller.aleo").unwrap();
         // `caller_func` transitively reaches `call.dynamic` via `helper.aleo/dynamic_helper`.
         let function_name = Identifier::from_str("caller_func").unwrap();

@@ -70,6 +70,8 @@ macro_rules! impl_store_and_remote_fetch {
 
         #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
+            use std::io::Read;
+
             #[cfg(not(feature = "no_std_out"))]
             {
                 use colored::*;
@@ -77,26 +79,23 @@ macro_rules! impl_store_and_remote_fetch {
                 println!("{}", output.dimmed());
             }
 
-            let host = url.split('/').nth(2).unwrap_or_default().to_string();
-            let retry_policy = reqwest::retry::for_host(host)
-                .max_retries_per_request(3)
-                .classify_fn(|req_rep| {
-                    if req_rep.error().is_some() {
-                        return req_rep.retryable();
+            // Retry up to 3 times on transient errors (5xx, 429, IO, timeout).
+            let mut attempts = 3u32;
+            loop {
+                match ureq::get(url).config().max_redirects(10).build().call() {
+                    Ok(mut response) => {
+                        response.body_mut().as_reader().read_to_end(buffer)?;
+                        break;
                     }
-                    match req_rep.status() {
-                        Some(status) if status.is_server_error() || status.as_u16() == 429 => req_rep.retryable(),
-                        _ => req_rep.success(),
+                    Err(ureq::Error::StatusCode(code)) if attempts > 0 && (code >= 500 || code == 429) => {
+                        attempts -= 1;
                     }
-                });
-
-            let client = reqwest::blocking::Client::builder()
-                .redirect(reqwest::redirect::Policy::limited(10)) // Limit to 10 redirects.
-                .retry(retry_policy)
-                .build()?;
-
-            let mut response = client.get(url).send()?.error_for_status()?;
-            response.copy_to(buffer)?;
+                    Err(ureq::Error::Io(_) | ureq::Error::Timeout(_)) if attempts > 0 => {
+                        attempts -= 1;
+                    }
+                    Err(err) => return Err(err.into()),
+                }
+            }
 
             #[cfg(not(feature = "no_std_out"))]
             {

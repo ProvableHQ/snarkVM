@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-parameters"
-version = "4.6.0"
+version = "4.7.3"
 authors = ["The Aleo Team <hello@aleo.org>"]
 description = "Parameters for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -29,6 +29,7 @@ large_params = []
 locktick = ["dep:locktick"]
 no_std_out = []
 rocks = ["snarkvm-ledger-store/rocks"]
+no-embedded-srs = []
 wasm = ["encoding", "js-sys", "web-sys"]
 dev-print = ["snarkvm-utilities/dev-print"]
 
@@ -93,15 +94,13 @@ version = "0.3.64"
 features = ["XmlHttpRequest"]
 optional = true
 
-[target.'cfg(all(any(target_os = "android", target_os = "ios"), not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.reqwest]
-version = "0.13"
-default-features = false
-features = ["blocking", "native-tls"]
+[target.'cfg(all(any(target_os = "android", target_os = "ios"), not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.ureq]
+workspace = true
+features = ["native-tls"]
 
-[target.'cfg(all(not(any(target_os = "android", target_os = "ios")), not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.reqwest]
-version = "0.13"
-default-features = false
-features = ["blocking", "rustls"]
+[target.'cfg(all(not(any(target_os = "android", target_os = "ios")), not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.ureq]
+workspace = true
+features = ["rustls"]
 
 [dev-dependencies.snarkvm-algorithms]
 path = "../algorithms"

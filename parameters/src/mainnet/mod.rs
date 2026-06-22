@@ -26,7 +26,10 @@ const REMOTE_URLS: [&str; 2] =
     ["https://parameters.provable.com/mainnet", "https://s3.us-west-1.amazonaws.com/mainnet.parameters"];
 
 // Degrees
+#[cfg(not(feature = "no-embedded-srs"))]
 impl_local!(Degree15, "resources/", "powers-of-beta-15", "usrs");
+#[cfg(feature = "no-embedded-srs")]
+impl_remote!(Degree15, REMOTE_URLS, "resources/", "powers-of-beta-15", "usrs");
 impl_remote!(Degree16, REMOTE_URLS, "resources/", "powers-of-beta-16", "usrs");
 impl_remote!(Degree17, REMOTE_URLS, "resources/", "powers-of-beta-17", "usrs");
 impl_remote!(Degree18, REMOTE_URLS, "resources/", "powers-of-beta-18", "usrs");
@@ -50,8 +53,14 @@ impl_remote!(Degree27, REMOTE_URLS, "resources/", "powers-of-beta-27", "usrs");
 impl_remote!(Degree28, REMOTE_URLS, "resources/", "powers-of-beta-28", "usrs");
 
 // Shifted Degrees
+#[cfg(not(feature = "no-embedded-srs"))]
 impl_local!(ShiftedDegree15, "resources/", "shifted-powers-of-beta-15", "usrs");
+#[cfg(feature = "no-embedded-srs")]
+impl_remote!(ShiftedDegree15, REMOTE_URLS, "resources/", "shifted-powers-of-beta-15", "usrs");
+#[cfg(not(feature = "no-embedded-srs"))]
 impl_local!(ShiftedDegree16, "resources/", "shifted-powers-of-beta-16", "usrs");
+#[cfg(feature = "no-embedded-srs")]
+impl_remote!(ShiftedDegree16, REMOTE_URLS, "resources/", "shifted-powers-of-beta-16", "usrs");
 impl_remote!(ShiftedDegree17, REMOTE_URLS, "resources/", "shifted-powers-of-beta-17", "usrs");
 impl_remote!(ShiftedDegree18, REMOTE_URLS, "resources/", "shifted-powers-of-beta-18", "usrs");
 impl_remote!(ShiftedDegree19, REMOTE_URLS, "resources/", "shifted-powers-of-beta-19", "usrs");

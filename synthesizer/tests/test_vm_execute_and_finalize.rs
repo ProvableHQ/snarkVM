@@ -252,15 +252,15 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
 
             // Test cost computation given the Authorization and the request
             if consensus_version >= ConsensusVersion::V4 {
-                let actual_cost = execution_cost(&vm.process().read(), execution, consensus_version).unwrap();
+                let actual_cost = execution_cost(vm.process(), execution, consensus_version).unwrap();
 
                 let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
                 let expected_cost_given_authorization =
-                    execution_cost_for_authorization(&vm.process().read(), &authorization, consensus_version).unwrap();
+                    execution_cost_for_authorization(vm.process(), &authorization, consensus_version).unwrap();
                 assert_eq!(actual_cost, expected_cost_given_authorization);
 
                 let expected_cost_given_call = execution_cost_for_call::<CurrentAleo, _>(
-                    &vm.process().read(),
+                    vm.process(),
                     address,
                     program_id,
                     function_name,
@@ -650,6 +650,8 @@ fn construct_finalize_global_state<C: ConsensusStorage<CurrentNetwork>>(
         latest_cumulative_weight,
         0u128,
         latest_block.hash(),
+        None,
+        None,
     )
     .unwrap()
 }

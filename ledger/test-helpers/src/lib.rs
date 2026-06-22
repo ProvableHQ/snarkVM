@@ -581,9 +581,9 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             let program = large_transaction_program();
 
             // Construct the process.
-            let mut process = snarkvm_synthesizer_process::Process::load().unwrap();
+            let process = snarkvm_synthesizer_process::Process::load().unwrap();
             // Add the program.
-            process.add_program(&program).unwrap();
+            process.lock().add_program(&program).unwrap();
 
             // Initialize a private key.
             let private_key = PrivateKey::new(rng).unwrap();

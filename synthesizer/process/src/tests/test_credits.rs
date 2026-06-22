@@ -70,7 +70,7 @@ macro_rules! test_atomic_finalize {
 
 /// Samples a new finalize state.
 fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
+    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None, None)
 }
 
 /// Returns the `value` for the given `key` in the `mapping` for the given `program_id`.
@@ -339,7 +339,7 @@ fn execute_function<F: FinalizeStorage<CurrentNetwork>>(
     let block_height = block_height.unwrap_or(1);
 
     // Add an atomic finalize wrapper around the finalize function.
-    process.finalize_execution(sample_finalize_state(block_height), finalize_store, &execution, None)?;
+    process.lock().finalize_execution(sample_finalize_state(block_height), finalize_store, &execution, None)?;
 
     Ok(())
 }
@@ -2868,7 +2868,7 @@ mod sanity_checks {
         // Initialize the assignments.
         let assignments = Assignments::<N>::default();
         // Initialize the call stack.
-        let call_stack = CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), None, None);
+        let call_stack = CallStack::CheckDeployment(vec![request], *private_key, assignments.clone(), None, None, None);
         // Synthesize the circuit.
         let _response = stack.execute_function::<A, _>(call_stack, None, None, rng).unwrap();
         // Retrieve the assignment.
@@ -2905,7 +2905,7 @@ mod sanity_checks {
         assert_eq!(18, assignment.num_public());
         assert_eq!(62398, assignment.num_private());
         assert_eq!(62461, assignment.num_constraints());
-        assert_eq!((121404, 135548, 94473), assignment.num_nonzeros());
+        assert_eq!((121399, 135544, 94473), assignment.num_nonzeros());
     }
 
     #[test]
@@ -2995,7 +2995,7 @@ mod sanity_checks {
         assert_eq!(16, assignment.num_public());
         assert_eq!(45456, assignment.num_private());
         assert_eq!(45502, assignment.num_constraints());
-        assert_eq!((86977, 97375, 67786), assignment.num_nonzeros());
+        assert_eq!((86974, 97373, 67786), assignment.num_nonzeros());
     }
 
     #[test]

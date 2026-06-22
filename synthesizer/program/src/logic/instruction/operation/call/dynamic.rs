@@ -16,7 +16,7 @@
 use crate::{
     Opcode,
     Operand,
-    traits::{RegistersCircuit, RegistersTrait, StackTrait},
+    traits::{FinalizeRegistersState, FinalizeStoreTrait, RegistersCircuit, RegistersTrait, StackTrait},
 };
 
 use console::{
@@ -174,8 +174,9 @@ impl<N: Network> CallDynamic<N> {
     #[inline]
     pub fn finalize(
         &self,
-        _stack: &(impl StackTrait<N> + StackTrait<N>),
-        _registers: &mut impl RegistersTrait<N>,
+        _stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        _registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<()> {
         bail!("Forbidden operation: Finalize cannot invoke a 'call.dynamic'.")
     }

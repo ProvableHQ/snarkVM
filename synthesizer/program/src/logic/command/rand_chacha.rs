@@ -88,11 +88,18 @@ impl<N: Network> RandChaCha<N> {
         // Construct the random seed.
         // If the height is greater than or equal to consensus V3, then use the new preimage definition.
         // The difference is that a nonce is also included in the new definition.
+        //
+        // `transition_id` and `nonce` are `Option`s on the trait — the view path leaves both as
+        // `None`. Views already reject `rand.chacha` at construction, so reaching this code on
+        // a view is unreachable, but we surface a clear runtime error here as a defense in depth.
         let consensus_version = N::CONSENSUS_VERSION(registers.state().block_height())?;
+        let transition_id = registers
+            .transition_id()
+            .ok_or_else(|| anyhow!("'rand.chacha' requires a transition ID, which is not available in this scope"))?;
         let preimage = if (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
             to_bits_le![
                 registers.state().random_seed(),
-                **registers.transition_id(),
+                **transition_id,
                 stack.program_id(),
                 registers.function_name(),
                 self.destination.locator(),
@@ -100,12 +107,15 @@ impl<N: Network> RandChaCha<N> {
                 seeds
             ]
         } else {
+            let nonce = registers
+                .nonce()
+                .ok_or_else(|| anyhow!("'rand.chacha' requires a nonce, which is not available in this scope"))?;
             to_bits_le![
                 registers.state().random_seed(),
-                **registers.transition_id(),
+                **transition_id,
                 stack.program_id(),
                 registers.function_name(),
-                registers.nonce(),
+                nonce,
                 self.destination.locator(),
                 self.destination_type.type_id(),
                 seeds

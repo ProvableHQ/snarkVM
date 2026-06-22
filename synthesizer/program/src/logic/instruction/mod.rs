@@ -25,7 +25,7 @@ pub use operation::*;
 mod bytes;
 mod parse;
 
-use crate::{RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait, instruction};
+use crate::{FinalizeRegistersState, FinalizeStoreTrait, RegistersCircuit, RegistersSigner, StackTrait, instruction};
 use console::{
     network::Network,
     prelude::{
@@ -623,9 +623,10 @@ impl<N: Network> Instruction<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        registers: &mut impl RegistersTrait<N>,
+        store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<(), FinalizeError> {
-        instruction!(self, |instruction| instruction.finalize(stack, registers).map_err(Into::into))
+        instruction!(self, |instruction| instruction.finalize(stack, store, registers).map_err(Into::into))
     }
 
     /// Returns the output type from the given input types.

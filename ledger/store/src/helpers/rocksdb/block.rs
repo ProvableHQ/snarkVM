@@ -18,6 +18,7 @@ use crate::{
     ConfirmedTxType,
     TransactionStore,
     TransitionStore,
+    block::block_tree_cache_path,
     helpers::{
         rocksdb::{
             BlockMap,
@@ -35,7 +36,7 @@ use snarkvm_ledger_block::{Header, Ratifications, Rejected, Solutions};
 use snarkvm_ledger_puzzle::SolutionID;
 use snarkvm_synthesizer_program::FinalizeOperation;
 
-use aleo_std_storage::{StorageMode, aleo_ledger_dir};
+use aleo_std_storage::StorageMode;
 use std::fs;
 use tracing::debug;
 
@@ -246,8 +247,9 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
             N::merkle_tree_bhp(&hashes)
         }
 
-        let mut path = aleo_ledger_dir(N::ID, self.storage_mode());
-        path.push("block_tree");
+        let Some(path) = block_tree_cache_path::<N, _>(self) else {
+            bail!("Failed to determine the block tree cache path");
+        };
 
         if let Ok(serialized_tree) = fs::read(&path) {
             debug!("Loading the cached block tree from {}", path.display());

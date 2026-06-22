@@ -79,7 +79,7 @@ impl<N: Network> ContainsDynamic<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        store: &impl FinalizeStoreTrait<N>,
+        store: &dyn FinalizeStoreTrait<N>,
         registers: &mut impl RegistersTrait<N>,
     ) -> Result<()> {
         // Get the program name.
