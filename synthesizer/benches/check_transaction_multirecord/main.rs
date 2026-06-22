@@ -155,9 +155,10 @@ fn main() {
     // Add the genesis block.
     vm.add_next_block(&genesis).unwrap();
 
-    // Advance the ledger to ConsensusV16
+    // Advance the ledger to the latest consensus version (must be >= V17 so the large deployment is accepted)
     let transactions: [Transaction<CurrentNetwork>; 0] = [];
-    while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap() {
+    let latest_version_height = CurrentNetwork::CONSENSUS_VERSION_HEIGHTS().last().unwrap().1;
+    while vm.block_store().current_block_height() < latest_version_height {
         let next_block = sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
         vm.add_next_block(&next_block).unwrap();
     }
