@@ -160,9 +160,7 @@ pub trait Network:
     /// Approximate conversion factor from non-zero circuit entries to seconds of certificate-verification work
     /// when checking a deployment. From it, a per-proposal synthesis limit is enforced starting at consensus
     /// version V17 which overrides the two per-transaction limits above.
-    // 2^24 non-zero entries correspond to ~10 seconds of verification work single-threaded runtime on reference
-    // validator hardware.
-    const SYNTHESIS_PER_SECOND_OF_RUNTIME: u64 = (1 << 24) / 10;
+    const SYNTHESIS_PER_SECOND_OF_RUNTIME: u64 = 1_500_000;
     const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;

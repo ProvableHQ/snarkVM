@@ -151,32 +151,32 @@ fn test_blockwide_synthesis_limit() {
     // - 32:     8_447_296   8_084_643
     // - 64:    16_967_680  16_110_403
     let cases = vec![
-        // Synthesis limit = 16_777_210, densities: [4_187_104, 4_187_104, 4_187_104, 4_187_104], total 16_748_416 below limit
-        (2 * current_max_certificates as u64, vec![(16, true); 4], vec![false; 4]),
-        // Synthesis limit = 16_777_210, densities: [4_187_104, 4_187_104, 4_187_104, 4_187_104, 4_187_104], the last one goes over the limit
-        (2 * current_max_certificates as u64, vec![(16, true); 5], vec![false, false, false, false, true]),
-        // Synthesis limit = 18_390_403, densities: [16_967_680]
-        ((2.2 * current_max_certificates) as u64, vec![(64, true)], vec![false; 1]),
-        // Synthesis limit = 18_390_403, densities: [8_447_296, 8_447_296, 8_447_296], the third one goes over the limit
-        ((2.2 * current_max_certificates) as u64, vec![(32, true); 3], vec![false, false, true]),
-        // Synthesis limit = 18_390_403, densities: [8_084_643, 8_084_643, 8_084_643], the third one goes over the limit
-        ((2.2 * current_max_certificates) as u64, vec![(32, false); 3], vec![false, false, true]),
-        // Synthesis limit = 26_779_008, densities: [8_084_643, 8_084_643, 8_084_643]
-        ((3.2 * current_max_certificates) as u64, vec![(32, false); 3], vec![false, false, false]),
-        // Synthesis limit = 33554420, densities: [8_447_296, 8_447_296, 8_447_296], the third one now fits thanks to the increased limit
+        // Synthesis limit = 14_999_999, densities: [4_187_104, 4_187_104, 4_187_104], total 12_561_312 below limit
+        (2 * current_max_certificates as u64, vec![(16, true); 3], vec![false; 3]),
+        // Synthesis limit = 14_999_999, densities: [4_187_104, 4_187_104, 4_187_104, 4_187_104], the last one goes over the limit
+        (2 * current_max_certificates as u64, vec![(16, true); 4], vec![false, false, false, true]),
+        // Synthesis limit = 17_956_730, densities: [16_967_680]
+        ((2.4 * current_max_certificates) as u64, vec![(64, true)], vec![false; 1]),
+        // Synthesis limit = 17_956_730, densities: [8_447_296, 8_447_296, 8_447_296], the third one goes over the limit
+        ((2.4 * current_max_certificates) as u64, vec![(32, true); 3], vec![false, false, true]),
+        // Synthesis limit = 17_956_730, densities: [8_084_643, 8_084_643, 8_084_643], the third one goes over the limit
+        ((2.4 * current_max_certificates) as u64, vec![(32, false); 3], vec![false, false, true]),
+        // Synthesis limit = 24_735_576, densities: [8_084_643, 8_084_643, 8_084_643]
+        ((3.3 * current_max_certificates) as u64, vec![(32, false); 3], vec![false, false, false]),
+        // Synthesis limit = 29_999_999, densities: [8_447_296, 8_447_296, 8_447_296], the third one now fits thanks to the increased limit
         (4 * current_max_certificates as u64, vec![(32, true); 3], vec![false, false, false]),
-        // Synthesis limit = 16_777_210, densities: [4_187_104, 8_447_296, 4_187_104, 2_057_008, 4_187_104, 2_057_008],
+        // Synthesis limit = 16_802_884, densities: [4_187_104, 8_447_296, 4_187_104, 2_057_008, 4_187_104, 2_057_008],
         // the third and fifth go over the limit, fourth and sixth still fit
         (
-            2 * current_max_certificates as u64,
+            (2.245 * current_max_certificates) as u64,
             vec![(16, true), (32, true), (16, true), (8, true), (16, true), (8, true)],
             vec![false, false, true, false, true, false],
         ),
         // Similar to above, but we mix function- and record-heavy programs
-        // Synthesis limit = 16_777_210, densities: [4_187_104, 8_084_643, 2_064_991, 4_187_104, 2_064_991, 4_071_763, 2_057_008],
+        // Synthesis limit = 16_802_884, densities: [4_187_104, 8_084_643, 2_064_991, 4_187_104, 2_064_991, 4_071_763, 2_057_008],
         // the third and fifth go over the limit, fourth and sixth still fit
         (
-            2 * current_max_certificates as u64,
+            (2.245 * current_max_certificates) as u64,
             vec![(16, true), (32, false), (8, false), (16, true), (8, false), (16, false)],
             vec![false, false, false, true, false, true],
         ),
