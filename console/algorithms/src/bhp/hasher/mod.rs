@@ -47,7 +47,7 @@ pub struct BHPHasher<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u
     // For each group of BHP_NUM_COMBINED_CHUNKS contiguous
     // BHP_LOOKUP_SIZE-element tuples in `bases_lookup`, this contains
     // all possible BHP_LOOKUP_SIZE^BHP_NUM_COMBINED_CHUNKS cross-tuple sums.
-    combined_bases_lookup: Arc<Vec<Vec<Vec<Group<E>>>>>,
+    combined_bases_lookup: Arc<[Vec<Vec<Group<E>>>]>,
     /// The random base for the BHP commitment.
     random_base: Arc<Vec<Group<E>>>,
 }
@@ -139,7 +139,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         // corresponding to the first six bits of the input. Note that bases
         // lookup must still be kept around since the ending bits of an input
         // could end in the middle of any preprocessed combined chunk.
-        let combined_bases_lookup = cfg_iter!(bases_lookup)
+        let combined_bases_lookup: Arc<[Vec<Vec<Group<E>>>]> = cfg_iter!(bases_lookup)
             .map(|window| {
                 window
                     .chunks_exact(BHP_NUM_COMBINED_CHUNKS)
@@ -153,7 +153,8 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
                     })
                     .collect::<Vec<_>>()
             })
-            .collect::<Vec<Vec<_>>>();
+            .collect::<Vec<_>>()
+            .into();
 
         // Next, compute the random base.
         let (generator, _, _) =
@@ -207,7 +208,7 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> BHPHasher<E, 
         Ok(Self {
             bases: Arc::new(bases),
             bases_lookup: Arc::new(bases_lookup),
-            combined_bases_lookup: Arc::new(combined_bases_lookup),
+            combined_bases_lookup,
             random_base: Arc::new(random_base),
         })
     }
