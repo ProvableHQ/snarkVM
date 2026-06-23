@@ -31,7 +31,7 @@ use crate::vm::test_helpers::*;
 
 use console::{account::Address, network::ConsensusVersion, prelude::FromStr, program::Value};
 
-use snarkvm_ledger_block::Solutions;
+use snarkvm_ledger_block::{Solutions, Transaction};
 use snarkvm_synthesizer_process::{execute_compute_cost_in_microcredits, execution_cost};
 use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
 use snarkvm_utilities::TestRng;

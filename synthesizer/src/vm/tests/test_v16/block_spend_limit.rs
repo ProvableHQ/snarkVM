@@ -96,6 +96,7 @@ fn test_quorum_block_spend_limit_aborts_excess_transactions() {
         next_timestamp,
         [0u8; 32],
         Some(compute_per_transfer),
+        None,
     );
 
     let (ratifications, confirmed_transactions, aborted_transaction_ids, _finalize_operations) = vm

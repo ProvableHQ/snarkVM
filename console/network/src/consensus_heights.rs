@@ -62,6 +62,8 @@ pub enum ConsensusVersion {
     ///      Increase the program size limit to 2048 kB and the transaction size limit to 2304 kB.
     ///      Update the deployment storage cost for programs exceeding 512 kB.
     V16 = 16,
+    /// V17: Introduces block-wide deployment limits.
+    V17 = 17,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -90,6 +92,7 @@ impl FromBytes for ConsensusVersion {
             14 => Ok(Self::V14),
             15 => Ok(Self::V15),
             16 => Ok(Self::V16),
+            17 => Ok(Self::V17),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -129,6 +132,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V14, 11_960_000),
     (ConsensusVersion::V15, u32::MAX),
     (ConsensusVersion::V16, u32::MAX),
+    (ConsensusVersion::V17, u32::MAX),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -149,6 +153,7 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V14, 17_700_000),
     (ConsensusVersion::V15, 19_264_000),
     (ConsensusVersion::V16, u32::MAX),
+    (ConsensusVersion::V17, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -169,6 +174,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V14, 15_370_000),
     (ConsensusVersion::V15, 16_886_000),
     (ConsensusVersion::V16, u32::MAX),
+    (ConsensusVersion::V17, u32::MAX),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -189,6 +195,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V14, 17),
     (ConsensusVersion::V15, 18),
     (ConsensusVersion::V16, 19),
+    (ConsensusVersion::V17, 25),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
