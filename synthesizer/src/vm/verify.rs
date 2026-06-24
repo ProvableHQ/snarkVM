@@ -688,6 +688,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .transitions()
             .map(|t| Ok((*t.program_id(), self.process.get_stack(t.program_id())?)))
             .collect::<Result<IndexMap<_, _>>>()?;
+        let current_block_height = self.block_store().current_block_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height).unwrap();
         let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)?;
         let cache_key_unchanged = cache_key == new_cache_key;
 
