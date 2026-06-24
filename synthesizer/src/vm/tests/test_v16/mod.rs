@@ -22,6 +22,9 @@ mod program_size;
 // Tests for the `<name>/checksum` component checksum operand.
 mod component_checksum;
 
+// Tests an example flow with sample_authorization_extended and authorize_requests.
+pub(crate) mod construct_authorization;
+
 use super::*;
 
 use crate::vm::test_helpers::*;

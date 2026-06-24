@@ -96,6 +96,7 @@ use parking_lot::RwLock;
 use rand::{CryptoRng, RngExt as Rng, SeedableRng, rngs::StdRng};
 use std::{
     cell::OnceCell,
+    collections::HashMap,
     sync::{Arc, Weak},
 };
 
@@ -109,13 +110,30 @@ pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>
 /// transition ID). Each translation datum is paired with the proving key for its record type.
 pub type Translations<N> = Arc<RwLock<Vec<Vec<(TranslationAssignment<N>, ProvingKey<N>)>>>>;
 
+/// A tracker for static records minted in a transaction. The key is the record's nonce and the value
+/// `(i, r)` contains the index `i` of the minting request in the transaction and the register `r`
+/// where that request outputs the record.
+pub type MintedRecordTracker<N> = HashMap<Field<N>, (usize, u64)>;
+
+/// A tracker for input record-like values (static `Record`s, `ExternalRecord`s and
+/// `DynamicRecord`s) received by any request in a given transaction. The key is the nonce of the
+/// corresponding static record and the value `(i, j)` contains the index `i` of the request
+/// receiving the value and the input index `j`.
+pub type InputRecordLikeTracker<N> = HashMap<Field<N>, Vec<(usize, usize)>>;
+
 /// The `CallStack` is used to track the current state of the program execution.
 #[derive(Clone, Debug)]
 pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
-    /// Mock an evaluation for cost estimation.
-    AuthorizeMocked(Vec<Request<N>>, Address<N>, Authorization<N>),
+    /// Mock an evaluation.
+    AuthorizeMocked(
+        Vec<Request<N>>,
+        Address<N>,
+        Authorization<N>,
+        Arc<RwLock<MintedRecordTracker<N>>>,
+        Arc<RwLock<InputRecordLikeTracker<N>>>,
+    ),
     /// Authorize a collection of requests coming from a single root call.
     // (full vector of requests in pre-order, index of the request currently being explored, authorization being constructed)
     AuthorizeRequests(Vec<Request<N>>, Arc<RwLock<usize>>, Authorization<N>),
@@ -170,8 +188,14 @@ impl<N: Network> CallStack<N> {
             CallStack::Authorize(requests, private_key, authorization) => {
                 CallStack::Authorize(requests.clone(), *private_key, authorization.replicate())
             }
-            CallStack::AuthorizeMocked(requests, address, authorization) => {
-                CallStack::AuthorizeMocked(requests.clone(), *address, authorization.replicate())
+            CallStack::AuthorizeMocked(requests, address, authorization, minted_static_records, input_records) => {
+                CallStack::AuthorizeMocked(
+                    requests.clone(),
+                    *address,
+                    authorization.replicate(),
+                    Arc::new(RwLock::new(minted_static_records.read().clone())),
+                    Arc::new(RwLock::new(input_records.read().clone())),
+                )
             }
             CallStack::AuthorizeRequests(requests, current_index, authorization) => CallStack::AuthorizeRequests(
                 requests.clone(),
