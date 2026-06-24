@@ -53,7 +53,7 @@ pub(super) fn construct_authorization(
         .process()
         .get_stack(root_program_id)
         .unwrap()
-        .sample_authorization_extended::<CurrentAleo, _>(
+        .sample_authorization_with_record_tracking::<CurrentAleo, _>(
             signer,
             root_program_id,
             root_function_name,

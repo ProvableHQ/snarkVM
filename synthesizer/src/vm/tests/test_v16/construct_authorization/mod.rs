@@ -35,7 +35,7 @@ use snarkvm_synthesizer_program::Program;
 //   4.
 //    - If `use_construct_authorization` is true:
 //       - Manually construct the authorization from the root-call information using
-//        `sample_authorization_extended`, populating the requests and calling
+//        `sample_authorization_with_record_tracking`, populating the requests and calling
 //        `authorize_requests`.
 //       - Estimate the fee and construct the fee transaction.
 //       - Manually construct an execution transaction by proving the authorization.

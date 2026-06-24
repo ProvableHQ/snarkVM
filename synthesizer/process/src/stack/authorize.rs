@@ -157,15 +157,18 @@ impl<N: Network> Stack<N> {
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
-        self.sample_authorization_extended::<A, R>(address, program_id, function_name, inputs, rng)
+        self.sample_authorization_with_record_tracking::<A, R>(address, program_id, function_name, inputs, rng)
             .map(|(authorization, _, _, _)| authorization)
     }
 
     /// Produces a mocked `Authorization` with the same properties as
     /// `sample_authorization` alongside some extra information necessary to
-    /// populate the mocked `Request`s.
+    /// populate the mocked `Request`s. In a multi-request signing flow,
+    /// sampling the `tvk` of a request requires static, external and dynamic
+    /// record inputs to subsequent mocked requests to be updated with nonces
+    /// derived from the fresh `tvk`.
     #[inline]
-    pub fn sample_authorization_extended<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+    pub fn sample_authorization_with_record_tracking<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
         address: Address<A::Network>,
         program_id: ProgramID<A::Network>,
