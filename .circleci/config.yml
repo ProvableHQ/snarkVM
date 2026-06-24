@@ -1324,8 +1324,7 @@ workflows:
       or pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "move_spend_limits"
-      or pipeline.git.branch == "feat/expand_sample_authorization"
+      or pipeline.git.branch == "revert_anchor_times"
     jobs:
       - check-unused-dependencies # This can be cleaned up before releases
       - check-cargo-semver-checks # This can be cleaned up before releases
