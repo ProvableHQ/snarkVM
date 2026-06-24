@@ -62,7 +62,7 @@ pub enum ConsensusVersion {
     ///      Increase the program size limit to 2048 kB and the transaction size limit to 2304 kB.
     ///      Update the deployment storage cost for programs exceeding 512 kB.
     V16 = 16,
-    /// V17: Introduces block-wide deployment limits.
+    /// V17: Introduces block-wide deployment limits, reverts the anchor time to 25.
     V17 = 17,
 }
 
