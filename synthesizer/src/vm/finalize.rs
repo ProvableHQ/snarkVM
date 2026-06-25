@@ -133,8 +133,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let unordered_aborted_transaction_ids: IndexMap<N::TransactionID, &String> =
             verification_aborted_transaction_ids.chain(speculation_aborted_transaction_ids).collect();
 
-        dev_eprintln!("Unordered aborted transactions: {unordered_aborted_transaction_ids:?}");
-
         // Filter and order the aborted transaction ids according to candidate_transactions
         let aborted_transaction_ids: Vec<_> = candidate_transaction_ids
             .into_iter()

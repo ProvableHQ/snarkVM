@@ -35,7 +35,7 @@ use snarkvm_console::{
         MainnetV0,
         prelude::{FromStr, Network, TestRng},
     },
-    prelude::{FromBytes, ToBytes, Uniform},
+    prelude::{ConsensusVersion, FromBytes, ToBytes, Uniform},
     program::Value,
 };
 use snarkvm_ledger::{
@@ -110,18 +110,25 @@ fn main() {
 
     let rng = &mut TestRng::from_seed(CHAIN_ROOT_SEED);
 
-    let (genesis_pk, committee_keys, genesis) = genesis_with_fixed_committee_seed(rng, 4, GENESIS_COMMITTEE_SEED);
+    // We ensure rounds are full later on so the large programs can be deployed.
+    let max_validators = CurrentNetwork::LATEST_MAX_CERTIFICATES();
+
+    let (genesis_pk, committee_keys, genesis) =
+        genesis_with_fixed_committee_seed(rng, max_validators as usize, GENESIS_COMMITTEE_SEED);
 
     let mut chain_builder = TestChainBuilder::from_components(committee_keys, genesis.clone()).unwrap();
     let ledger =
         Ledger::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>::load(genesis, StorageMode::new_test(None)).unwrap();
     let num_validators = chain_builder.private_keys().len();
 
+    let min_blocks_to_generate = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V17).unwrap() as usize;
+
     for block in chain_builder
         .generate_blocks_with_opts(
-            64,
+            min_blocks_to_generate,
             GenerateBlocksOptions {
                 skip_to_current_version: true,
+                skip_nodes: (1..max_validators as usize / 3).collect(),
                 num_validators,
                 deterministic_block_timestamp_start: Some(DETERMINISTIC_WARMUP_TIMESTAMP),
                 ..Default::default()
@@ -185,9 +192,9 @@ fn main() {
     )
     .unwrap();
 
-    let mut wrapper_program = r"
+    let mut moderate_wrapper_program = r"
     import one_to_many_records.aleo;
-    program wrapper.aleo;
+    program moderate_wrapper.aleo;
     constructor:
         assert.eq true true;
     function call_one_to_many_records:
@@ -204,11 +211,12 @@ fn main() {
         call_str.push_str(";\n");
         call_str
     };
-    for i in 0..30 {
+
+    for i in 0..18 {
         let start_index = 3 + (i * 16);
-        wrapper_program.push_str(&call(start_index));
+        moderate_wrapper_program.push_str(&call(start_index));
     }
-    let wrapper_program = Program::from_str(&wrapper_program).unwrap();
+    let moderate_wrapper_program = Program::from_str(&moderate_wrapper_program).unwrap();
 
     let case =
         if env::args().any(|arg| arg == "--transfer_public") { "transfer_public" } else { "one_to_many_records" };
@@ -240,8 +248,9 @@ fn main() {
 
         let deploy_two_rng = &mut TestRng::from_seed(RNG_DEPLOY_TWO);
 
-        println!("Deploying wrapper.aleo");
-        let deployment_two = ledger.vm().deploy(&genesis_pk, &wrapper_program, None, 0, None, deploy_two_rng).unwrap();
+        println!("Deploying moderate_wrapper.aleo");
+        let deployment_two =
+            ledger.vm().deploy(&genesis_pk, &moderate_wrapper_program, None, 0, None, deploy_two_rng).unwrap();
 
         let block_two_rng = &mut TestRng::from_seed(RNG_BLOCK_TWO);
 
@@ -287,7 +296,7 @@ fn main() {
                         .vm()
                         .execute(
                             &genesis_pk,
-                            ("wrapper.aleo", "call_one_to_many_records"),
+                            ("moderate_wrapper.aleo", "call_one_to_many_records"),
                             [
                                 Value::from_str(&format!("{i}u64")).unwrap(),
                                 Value::from_str(&format!("{genesis_address}")).unwrap(),
