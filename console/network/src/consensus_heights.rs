@@ -21,7 +21,7 @@ use std::io;
 
 /// The different consensus versions.
 /// If you need the version active for a specific height, see: `N::CONSENSUS_VERSION`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Sequence)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Sequence)]
 #[repr(u16)]
 pub enum ConsensusVersion {
     /// V1: The initial genesis consensus version.
@@ -63,7 +63,7 @@ pub enum ConsensusVersion {
     ///      Increase the program size limit to 2048 kB and the transaction size limit to 2304 kB.
     ///      Update the deployment storage cost for programs exceeding 512 kB.
     V16 = 16,
-    /// V17: Introduces block-wide deployment limits.
+    /// V17: Introduces block-wide deployment limits, reverts the anchor time to 25.
     V17 = 17,
 }
 

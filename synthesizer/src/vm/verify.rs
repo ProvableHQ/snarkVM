@@ -49,6 +49,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn create_cache_key_with_stacks(
         transaction: &Transaction<N>,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+        consensus_version: ConsensusVersion,
     ) -> Result<TransactionCacheKey<N>> {
         // Get the program checksums.
         let program_checksums = transaction
@@ -59,7 +60,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     .ok_or_else(|| anyhow!("Missing stack for transition program '{}'", transition.program_id()))?;
                 let edition = *stack.program_edition();
                 let amendment_count = stack.program_amendment_count();
-                Ok((*stack.program_checksum(), edition, amendment_count))
+                Ok((*stack.program_checksum(), edition, amendment_count, consensus_version))
             })
             .collect::<Result<Vec<_>>>()?;
         // Return the cache key.
@@ -204,7 +205,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
 
         // Prepare the cache key.
-        let cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
+        let cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)?;
 
         // Check if the transaction exists in the partially-verified cache.
         let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum)
@@ -695,7 +696,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .transitions()
             .map(|t| Ok((*t.program_id(), self.process.get_stack(t.program_id())?)))
             .collect::<Result<IndexMap<_, _>>>()?;
-        let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
+        let current_block_height = self.block_store().current_block_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height).unwrap();
+        let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)?;
         let cache_key_unchanged = cache_key == new_cache_key;
 
         // If the above checks have passed, against the same cache key, and this
@@ -1014,7 +1017,9 @@ mod tests {
         for transition in transaction.transitions() {
             execution_stacks.insert(*transition.program_id(), vm.process().get_stack(transition.program_id()).unwrap());
         }
-        VM::<N, C>::create_cache_key_with_stacks(transaction, &execution_stacks).unwrap()
+        let current_block_height = vm.block_store().current_block_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height).unwrap();
+        VM::<N, C>::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version).unwrap()
     }
 
     #[test]
