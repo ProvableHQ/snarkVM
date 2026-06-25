@@ -80,7 +80,7 @@ fn test_closure_record_input() -> Result<()> {
 
     // Deploy the program.
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction], rng);
 
     // Execute the function to mint a record and extract its amount via the closure.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("42u64")?];
@@ -101,7 +101,7 @@ fn test_closure_record_input() -> Result<()> {
         other => panic!("Expected public output, got: {other:?}"),
     }
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[transaction], rng);
 
     Ok(())
 }
@@ -199,11 +199,11 @@ fn test_closure_external_record_input() -> Result<()> {
 
     // Deploy the parent program.
     let transaction = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction], rng);
 
     // Deploy the child program.
     let transaction = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction], rng);
 
     // Mint an item via the parent program.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("99u32")?];
@@ -216,7 +216,7 @@ fn test_closure_external_record_input() -> Result<()> {
         _ => panic!("Expected record output"),
     };
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[transaction], rng);
 
     // Execute the child function with the external record.
     let inputs = [Value::<CurrentNetwork>::Record(item_record)];
@@ -237,7 +237,7 @@ fn test_closure_external_record_input() -> Result<()> {
         other => panic!("Expected public output, got: {other:?}"),
     }
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[transaction], rng);
 
     Ok(())
 }
@@ -249,7 +249,6 @@ fn test_closure_external_record_input() -> Result<()> {
 fn test_closure_external_record_output() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let parent_program = Program::from_str(
         r"
@@ -291,7 +290,7 @@ fn test_closure_external_record_output() -> Result<()> {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // The deployment transaction is created successfully, but rejected during block production.
     let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
@@ -347,7 +346,7 @@ fn test_closure_dynamic_record_input() -> Result<()> {
 
     // Deploy the program.
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[transaction], rng);
 
     // Mint an asset record.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("500u64")?];
@@ -357,7 +356,7 @@ fn test_closure_dynamic_record_input() -> Result<()> {
     // Decrypt the minted record.
     let asset_record = decrypt_first_record(&transaction, &caller_view_key);
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[transaction], rng);
 
     // Execute the function that reads the dynamic record via the closure.
     let inputs = [Value::<CurrentNetwork>::Record(asset_record)];
@@ -378,7 +377,7 @@ fn test_closure_dynamic_record_input() -> Result<()> {
         other => panic!("Expected public output, got: {other:?}"),
     }
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[transaction], rng);
 
     Ok(())
 }
@@ -489,10 +488,10 @@ fn test_external_record_cast_to_dynamic_then_closure_fails_existence_check() -> 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Mint a gem.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("24u32")?];
@@ -501,7 +500,7 @@ fn test_external_record_cast_to_dynamic_then_closure_fails_existence_check() -> 
 
     let gem_record = decrypt_first_record(&tx, &caller_view_key);
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Execute the child function. The ExternalRecord is cast to DynamicRecord and passed only
     // to a closure. The existence check rejects this because the family is never resolved
@@ -582,17 +581,17 @@ fn test_pre_v15_closure_external_record_input_only_rejected_at_v15() -> Result<(
 
     // Deploy both programs before V15. The deployments must be accepted.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Mint a gem to use as input to the child function.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("77u64")?];
     let mint_tx =
         vm.execute(&caller_private_key, ("closure_legacy_parent.aleo", "mint_gem"), inputs.iter(), None, 0, None, rng)?;
     let gem_record = decrypt_first_record(&mint_tx, &caller_view_key);
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[mint_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[mint_tx], rng);
 
     // Advance to V15.
     advance_to_v15(&vm, &caller_private_key, rng)?;
@@ -672,10 +671,10 @@ fn test_pre_v15_closure_external_record_output_rejected_at_v15_runtime() -> Resu
 
     // Deploy both programs before V15. Both deployments must be accepted.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Mint a widget to use as input.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("42u64")?];
@@ -689,7 +688,7 @@ fn test_pre_v15_closure_external_record_output_rejected_at_v15_runtime() -> Resu
         rng,
     )?;
     let widget_record = decrypt_first_record(&tx, &caller_view_key);
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Advance to V15 (height 18) by adding empty blocks.
     advance_to_v15(&vm, &caller_private_key, rng)?;
@@ -774,10 +773,10 @@ fn test_mixed_closures_forbidden_output_rejected_at_v15_runtime() -> Result<()> 
 
     // Deploy both programs before V15. Both deployments must be accepted.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Mint a token.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("50u64")?];
@@ -791,7 +790,7 @@ fn test_mixed_closures_forbidden_output_rejected_at_v15_runtime() -> Result<()> 
         rng,
     )?;
     let token_record = decrypt_first_record(&tx, &caller_view_key);
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Advance to V15.
     advance_to_v15(&vm, &caller_private_key, rng)?;
@@ -891,20 +890,20 @@ fn test_pre_v15_cross_program_closure_forbidden_output_rejected_at_v15_runtime()
 
     // Deploy all three programs before V15. All deployments must be accepted.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let tx = vm.deploy(&caller_private_key, &lib_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let tx = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Mint a widget to use as input.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("42u64")?];
     let tx =
         vm.execute(&caller_private_key, ("locator_parent.aleo", "mint_widget"), inputs.iter(), None, 0, None, rng)?;
     let widget_record = decrypt_first_record(&tx, &caller_view_key);
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Advance to V15 (height 18) by adding empty blocks.
     advance_to_v15(&vm, &caller_private_key, rng)?;
@@ -1032,24 +1031,24 @@ fn test_pre_v15_closure_external_record_output_works_before_v15() -> Result<()> 
 
     // Deploy both programs before V15.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Mint a widget.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("42u64")?];
     let tx =
         vm.execute(&caller_private_key, ("pre_v15_ok_parent.aleo", "mint_widget"), inputs.iter(), None, 0, None, rng)?;
     let widget_record = decrypt_first_record(&tx, &caller_view_key);
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Execute at pre-V15. The closure outputs ExternalRecord, which must be accepted.
     let inputs = [Value::<CurrentNetwork>::Record(widget_record)];
     let transaction =
         vm.execute(&caller_private_key, ("pre_v15_ok_child.aleo", "use_closure"), inputs.iter(), None, 0, None, rng)?;
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[transaction], rng);
 
     Ok(())
 }
@@ -1061,7 +1060,6 @@ fn test_pre_v15_closure_external_record_output_works_before_v15() -> Result<()> 
 fn test_mixed_closures_deploy_rejected_at_v15() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Parent defines the record.
     let parent_program = Program::from_str(
@@ -1111,7 +1109,7 @@ fn test_mixed_closures_deploy_rejected_at_v15() -> Result<()> {
 
     // Deploy the parent program.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Deploy the child program. The transaction is created, but rejected during block production
     // because `bad_passthrough` outputs ExternalRecord.

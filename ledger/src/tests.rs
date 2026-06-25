@@ -80,7 +80,9 @@ fn create_cache_key(
     for transition in transaction.transitions() {
         execution_stacks.insert(*transition.program_id(), vm.process().get_stack(transition.program_id())?);
     }
-    VM::<CurrentNetwork, LedgerType>::create_cache_key_with_stacks(transaction, &execution_stacks)
+    let current_block_height = vm.block_store().current_block_height();
+    let consensus_version = CurrentNetwork::CONSENSUS_VERSION(current_block_height)?;
+    VM::<CurrentNetwork, LedgerType>::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)
 }
 
 #[test]

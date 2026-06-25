@@ -174,6 +174,10 @@ impl<N: Network> Stack<N> {
                     Operand::ProgramOwner(_) => {
                         bail!("Illegal operation: cannot retrieve the program owner in a closure scope")
                     }
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Illegal operation: cannot retrieve the component checksum in a closure scope")
+                    }
                 }
             })
             .map(|res| res.map_err(StackExecError::Anyhow))
@@ -207,9 +211,10 @@ impl<N: Network> Stack<N> {
 
         // If in 'CheckDeployment' mode, set the constraint limit and variable limit.
         // We do not have to reset it after function calls because `CheckDeployment` mode does not execute those.
-        if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit) = &call_stack {
+        if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit, non_zero_limit) = &call_stack {
             A::set_constraint_limit(*constraint_limit);
             A::set_variable_limit(*variable_limit);
+            A::set_non_zero_limit(*non_zero_limit);
         }
 
         // Retrieve the next request.
@@ -493,6 +498,10 @@ impl<N: Network> Stack<N> {
                     Operand::ProgramOwner(_) => {
                         bail!("Illegal operation: cannot retrieve the program owner in a function scope")
                     }
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Illegal operation: cannot retrieve the component checksum in a function scope")
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;
@@ -604,7 +613,7 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Save the transition");
         }
         // If the circuit is in `CheckDeployment` mode, then save the assignment.
-        else if let CallStack::CheckDeployment(_, _, assignments, _, _) = registers.call_stack_ref() {
+        else if let CallStack::CheckDeployment(_, _, assignments, _, _, _) = registers.call_stack_ref() {
             // Construct the call metrics.
             let metrics = CallMetrics {
                 program_id: *self.program_id(),

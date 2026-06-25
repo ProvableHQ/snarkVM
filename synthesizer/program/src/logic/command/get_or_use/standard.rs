@@ -82,7 +82,7 @@ impl<N: Network> GetOrUse<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        store: &impl FinalizeStoreTrait<N>,
+        store: &dyn FinalizeStoreTrait<N>,
         registers: &mut impl RegistersTrait<N>,
     ) -> Result<()> {
         // Determine the program ID and mapping name.

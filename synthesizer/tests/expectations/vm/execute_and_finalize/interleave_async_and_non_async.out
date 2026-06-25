@@ -4,7 +4,7 @@ outputs:
   execute:
     mid.aleo/save_mid_rand_2:
       outputs:
-      - '{"type":"future","id":"2878353827198670623231294750081724022984594585763717956113636988916521617793field","value":"{\n  program_id: mid.aleo,\n  function_name: save_mid_rand_2,\n  arguments: [\n    {\n      program_id: inner.aleo,\n      function_name: save_inner_rand,\n      arguments: [\n        0field\n      ]\n    }\n  \n  ]\n}"}'
+      - '{"type":"future","id":"8009204501511275587697542963525270875212940154019273108840753583311242404162field","value":"{\n  program_id: mid.aleo,\n  function_name: save_mid_rand_2,\n  arguments: [\n    {\n      program_id: inner.aleo,\n      function_name: save_inner_rand,\n      arguments: [\n        0field\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
@@ -66,7 +66,7 @@ additional:
       outputs: []
     inner.aleo/save_inner_rand:
       outputs:
-      - '{"type":"future","id":"8366192340036573395118615250593900847980287668564845566328188675640851249690field","value":"{\n  program_id: inner.aleo,\n  function_name: save_inner_rand,\n  arguments: [\n    0field\n  ]\n}"}'
+      - '{"type":"future","id":"2365093003967900179245172884225953417281756766350572588040715319475371144827field","value":"{\n  program_id: inner.aleo,\n  function_name: save_inner_rand,\n  arguments: [\n    0field\n  ]\n}"}'
     credits.aleo/fee_public:
       outputs:
       - '{"type":"future","id":"5506163603353531800745592051640144725193298690477107166536640413946780637203field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    5753u64\n  ]\n}"}'

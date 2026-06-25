@@ -36,10 +36,9 @@ mod deploy;
 mod evaluate;
 mod execute;
 mod finalize;
-#[cfg(feature = "history")]
 mod view;
 #[cfg(feature = "history")]
-pub use view::evaluate_view_at_height;
+pub use view::evaluate_view_with_stack_at_height;
 mod verify_deployment;
 mod verify_execution;
 mod verify_fee;
@@ -135,6 +134,12 @@ impl<'a, N: Network> std::ops::Deref for ProcessExclusiveGuard<'a, N> {
 }
 
 impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
+    /// Panics, since this guard already holds the process lock.
+    #[inline]
+    pub fn lock(&self) -> ! {
+        panic!("Attempted to lock `Process` from `ProcessExclusiveGuard`; this would deadlock")
+    }
+
     /// Adds a new stack to the process.
     /// If the program already exists, then the existing stack is replaced and the original stack is returned.
     /// Note. This method assumes that the provided stack is valid.

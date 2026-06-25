@@ -13,10 +13,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+    register_types_equivalent,
+};
 use console::{
     network::prelude::*,
-    program::{Identifier, Locator, Register, RegisterType},
+    program::{FinalizeType, Identifier, Locator, Register, RegisterType, Value},
 };
 
 /// The operator references a function name or closure name.
@@ -181,9 +190,55 @@ impl<N: Network> Call<N> {
     }
 
     /// Finalizes the instruction.
+    ///
+    /// In a finalize context, the only legal `call` target is a view function (gated at
+    /// deploy time by `check_instruction_opcode`). Loads operand values from `caller_registers`,
+    /// dispatches the view body through `StackTrait::evaluate_view` against the appropriate
+    /// target stack (same-program for `CallOperator::Resource`, external for `Locator`), and
+    /// writes outputs back into the caller's destination registers.
     #[inline]
-    pub fn finalize(&self, _stack: &impl StackTrait<N>, _registers: &mut impl RegistersTrait<N>) -> Result<()> {
-        bail!("Forbidden operation: Finalize cannot invoke a 'call' directly. Use 'call' in 'Stack' instead.")
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        store: Option<&dyn FinalizeStoreTrait<N>>,
+        caller_registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
+        // A finalize-context `call` actually executes a view body, which reads from the
+        // finalize store; reject the storeless dispatch path explicitly.
+        let store = store.ok_or_else(|| anyhow!("`call` from a finalize context requires a finalize store"))?;
+
+        // Load inputs from the caller's registers (operands resolve against the caller's stack).
+        let inputs: Vec<Value<N>> =
+            self.operands.iter().map(|op| caller_registers.load(stack, op)).collect::<Result<_>>()?;
+
+        // Inherit the caller's global finalize state for the view body.
+        let state = *caller_registers.state();
+
+        // Dispatch to the target stack (external for locator-typed targets, current stack for
+        // resource-typed targets). Views are leaves — their bodies reject `is_call` at
+        // construction — so this never recurses through `Command::finalize` back into another
+        // view call.
+        let outputs = match &self.operator {
+            CallOperator::Locator(locator) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                external_stack.evaluate_view(state, store, locator.resource(), inputs)?
+            }
+            CallOperator::Resource(name) => stack.evaluate_view(state, store, name, inputs)?,
+        };
+
+        // Type-check at deploy time guarantees this match, but we sanity-check at runtime too.
+        ensure!(
+            self.destinations.len() == outputs.len(),
+            "View returned {} outputs but the call expects {}",
+            outputs.len(),
+            self.destinations.len(),
+        );
+
+        // Write the view's outputs into the caller's destination registers.
+        for (dest, value) in self.destinations.iter().zip_eq(outputs) {
+            caller_registers.store(stack, dest, value)?;
+        }
+        Ok(())
     }
 
     /// Returns the output type from the given program and input types.
@@ -211,8 +266,59 @@ impl<N: Network> Call<N> {
             }
         };
 
+        // If the operator is a view function, retrieve the view and compute the output types.
+        // Views are externally-callable and declared as `FinalizeType::Plaintext(_)` for both
+        // inputs and outputs (enforced by `ViewCore::add_input`/`add_output`); we therefore
+        // pattern-match `FinalizeType::Plaintext` directly when constructing the `RegisterType`.
+        if let Ok(view) = program.get_view_ref(name) {
+            if view.inputs().len() != self.operands.len() {
+                bail!("Expected {} inputs, found {}", view.inputs().len(), self.operands.len())
+            }
+            if view.inputs().len() != input_types.len() {
+                bail!("Expected {} input types, found {}", view.inputs().len(), input_types.len())
+            }
+            if view.outputs().len() != self.destinations.len() {
+                bail!("Expected {} outputs, found {}", view.outputs().len(), self.destinations.len())
+            }
+
+            // Per-operand type-equivalence check, against the view's declared input types. For a
+            // cross-program target, `qualify` rewrites local struct references to `ExternalStruct`
+            // locators so `register_types_equivalent` resolves them through the target stack.
+            for (index, (operand_type, input)) in input_types.iter().zip(view.inputs().iter()).enumerate() {
+                let plaintext_type = match input.finalize_type() {
+                    FinalizeType::Plaintext(plaintext_type) => plaintext_type.clone(),
+                    FinalizeType::Future(_) | FinalizeType::DynamicFuture => {
+                        bail!("View '{name}' input '{index}' must be a plaintext type")
+                    }
+                };
+                let mut expected_type = RegisterType::Plaintext(plaintext_type);
+                if is_external {
+                    expected_type = expected_type.qualify(*program.id());
+                }
+                if !register_types_equivalent(stack, &expected_type, stack, operand_type)? {
+                    bail!("Input '{index}' of view '{name}' expects '{expected_type}', found '{operand_type}'");
+                }
+            }
+
+            view.outputs()
+                .iter()
+                .map(|output| match output.finalize_type() {
+                    FinalizeType::Plaintext(plaintext_type) => Ok(RegisterType::Plaintext(plaintext_type.clone())),
+                    FinalizeType::Future(_) | FinalizeType::DynamicFuture => {
+                        bail!("View '{name}' output must be a plaintext type")
+                    }
+                })
+                .map(|result| {
+                    result.map(
+                        |register_type| {
+                            if is_external { register_type.qualify(*program.id()) } else { register_type }
+                        },
+                    )
+                })
+                .collect::<Result<Vec<_>>>()
+        }
         // If the operator is a closure, retrieve the closure and compute the output types.
-        if let Ok(closure) = program.get_closure(name) {
+        else if let Ok(closure) = program.get_closure(name) {
             // Ensure the number of operands matches the number of input statements.
             if closure.inputs().len() != self.operands.len() {
                 bail!("Expected {} inputs, found {}", closure.inputs().len(), self.operands.len())

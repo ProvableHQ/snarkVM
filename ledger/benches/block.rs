@@ -17,7 +17,7 @@
 extern crate criterion;
 
 use snarkvm_console::{account::PrivateKey, network::MainnetV0, prelude::*};
-use snarkvm_ledger::test_helpers::{TestChainBuilder, sample_genesis_block};
+use snarkvm_ledger::test_helpers::sample_genesis_block;
 
 use criterion::Criterion;
 
@@ -74,41 +74,19 @@ fn bench_serialization<T: Serialize + DeserializeOwned + ToBytes + FromBytes + C
     }
 }
 
-fn block_serialization(c: &mut Criterion) {
+/// Serialization benches for one sampled genesis block and derived header, transactions, transaction, and transition.
+///
+/// A single `sample_genesis_block` call amortizes construction across all nested types.
+fn block_and_nested_serialization(c: &mut Criterion) {
     let mut rng = TestRng::default();
+    let block = sample_genesis_block(&mut rng);
 
-    let mut builder = TestChainBuilder::<CurrentNetwork>::new(&mut rng).unwrap();
-    let block = builder.generate_block(&mut rng).unwrap();
-
-    bench_serialization(c, "Block", block);
-}
-
-fn block_header_serialization(c: &mut Criterion) {
-    let mut rng = TestRng::default();
-
-    let mut builder = TestChainBuilder::<CurrentNetwork>::new(&mut rng).unwrap();
-    let block = builder.generate_block(&mut rng).unwrap();
-
+    bench_serialization(c, "Block", block.clone());
     bench_serialization(c, "Header", *block.header());
-}
-
-fn block_transactions_serialization(c: &mut Criterion) {
-    let mut rng = TestRng::default();
-    let block = sample_genesis_block(&mut rng);
     bench_serialization(c, "Transactions", block.transactions().clone());
-}
 
-fn transaction_serialization(c: &mut Criterion) {
-    let mut rng = TestRng::default();
-    let block = sample_genesis_block(&mut rng);
     let transaction = block.transactions().iter().next().unwrap().clone();
-    bench_serialization(c, "Transaction", transaction);
-}
-
-fn transition_serialization(c: &mut Criterion) {
-    let mut rng = TestRng::default();
-    let block = sample_genesis_block(&mut rng);
-    let transaction = block.transactions().iter().next().unwrap().clone();
+    bench_serialization(c, "Transaction", transaction.clone());
     let transition = transaction.transitions().next().unwrap().clone();
     bench_serialization(c, "Transition", transition);
 }
@@ -126,8 +104,7 @@ fn signature_serialization(c: &mut Criterion) {
 criterion_group! {
     name = block;
     config = Criterion::default().sample_size(10);
-    targets = block_serialization,block_header_serialization, block_transactions_serialization,
-    transaction_serialization, transition_serialization, signature_serialization,
+    targets = block_and_nested_serialization, signature_serialization,
 }
 
 criterion_main!(block);

@@ -47,6 +47,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn create_cache_key_with_stacks(
         transaction: &Transaction<N>,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+        consensus_version: ConsensusVersion,
     ) -> Result<TransactionCacheKey<N>> {
         // Get the program checksums.
         let program_checksums = transaction
@@ -57,7 +58,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     .ok_or_else(|| anyhow!("Missing stack for transition program '{}'", transition.program_id()))?;
                 let edition = *stack.program_edition();
                 let amendment_count = stack.program_amendment_count();
-                Ok((*stack.program_checksum(), edition, amendment_count))
+                Ok((*stack.program_checksum(), edition, amendment_count, consensus_version))
             })
             .collect::<Result<Vec<_>>>()?;
         // Return the cache key.
@@ -202,10 +203,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
 
         // Prepare the cache key.
-        let cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
+        let cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)?;
 
         // Check if the transaction exists in the partially-verified cache.
-        let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum);
+        let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum)
+            || is_pre_accepted_testnet_transaction::<N>(transaction.id());
 
         // Verify the fee.
         self.check_fee(transaction, rejected_id, is_partially_verified)?;
@@ -352,6 +354,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     ensure!(
                         !deployment.program().contains_v15_syntax(),
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V15`"
+                    );
+                }
+                if consensus_version < ConsensusVersion::V16 {
+                    ensure!(
+                        !deployment.program().contains_v16_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V16`"
                     );
                 }
 
@@ -686,7 +694,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .transitions()
             .map(|t| Ok((*t.program_id(), self.process.get_stack(t.program_id())?)))
             .collect::<Result<IndexMap<_, _>>>()?;
-        let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
+        let current_block_height = self.block_store().current_block_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height).unwrap();
+        let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)?;
         let cache_key_unchanged = cache_key == new_cache_key;
 
         // If the above checks have passed, against the same cache key, and this
@@ -711,8 +721,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let current_height = self.block_store().current_block_height();
         let consensus_version = N::CONSENSUS_VERSION(current_height)?;
         // Get the transaction spend limit.
-        let transaction_spend_limit =
-            consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
+        let transaction_spend_limit = consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version)
+            .ok_or_else(|| anyhow::anyhow!("Failed to fetch transaction spend limit"))?;
         match transaction {
             Transaction::Deploy(id, deployment_id, _, deployment, fee) => {
                 // Ensure the rejected ID is not present.
@@ -722,7 +732,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Ensure the compute cost does not exceed the transaction spend limit.
                 // Comparison logic before ConsensusVersion::V10 has been pruned to simplify the code.
                 if consensus_version >= ConsensusVersion::V10 {
-                    let compute_spend = deploy_compute_cost_in_microcredits(cost_details, consensus_version)?;
+                    let compute_spend = deploy_compute_cost_in_microcredits(cost_details, consensus_version);
                     ensure!(
                         compute_spend <= transaction_spend_limit,
                         "Transaction '{id}' exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
@@ -753,7 +763,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Ensure the compute cost does not exceed the transaction spend limit.
                         // Comparison logic before ConsensusVersion::V10 has been pruned to simplify the code.
                         if consensus_version >= ConsensusVersion::V10 {
-                            let compute_spend = execute_compute_cost_in_microcredits(cost_details, consensus_version)?;
+                            let compute_spend = execute_compute_cost_in_microcredits(cost_details, consensus_version);
                             ensure!(
                                 compute_spend <= transaction_spend_limit,
                                 "Transaction '{id}' exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
@@ -1008,7 +1018,9 @@ mod tests {
         for transition in transaction.transitions() {
             execution_stacks.insert(*transition.program_id(), vm.process().get_stack(transition.program_id()).unwrap());
         }
-        VM::<N, C>::create_cache_key_with_stacks(transaction, &execution_stacks).unwrap()
+        let current_block_height = vm.block_store().current_block_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height).unwrap();
+        VM::<N, C>::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version).unwrap()
     }
 
     #[test]

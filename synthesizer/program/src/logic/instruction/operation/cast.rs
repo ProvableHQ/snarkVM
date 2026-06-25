@@ -13,7 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait, types_equivalent};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersSigner,
+    RegistersTrait,
+    StackTrait,
+    types_equivalent,
+};
 use console::{
     network::prelude::*,
     program::{
@@ -634,7 +644,12 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
     }
 
     /// Finalizes the instruction.
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         // If the variant is `cast.lossy`, then check that the `cast_type` is a `PlaintextType::Literal`.
         if VARIANT == CastVariant::CastLossy as u8 {
             ensure!(

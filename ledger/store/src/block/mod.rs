@@ -112,6 +112,34 @@ fn to_confirmed_transaction<N: Network>(
     }
 }
 
+pub(crate) fn block_tree_cache_path<N: Network, B: BlockStorage<N>>(storage: &B) -> Option<std::path::PathBuf> {
+    #[cfg(feature = "rocks")]
+    {
+        let mut path = aleo_ledger_dir(N::ID, storage.storage_mode());
+        path.push("block_tree");
+        Some(path)
+    }
+    #[cfg(not(feature = "rocks"))]
+    {
+        let _ = storage;
+        None
+    }
+}
+
+fn missing_block_in_tree_error(height: u32, block_tree_cache_path: Option<&std::path::Path>) -> String {
+    match block_tree_cache_path {
+        Some(path) => format!(
+            "Block {height} exists in tree but not in storage;\
+            perhaps you used a wrong block tree cache file at '{}'?",
+            path.display()
+        ),
+        None => format!(
+            "Block {height} exists in tree but not in storage;\
+            perhaps you used a wrong block tree cache file?"
+        ),
+    }
+}
+
 /// A trait for block storage.
 pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     /// The mapping of `block height` to `state root`.
@@ -1038,6 +1066,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         let storage = B::open(storage)?;
 
         let tree = storage.create_block_tree()?;
+        let block_tree_cache_path = block_tree_cache_path::<N, _>(&storage);
 
         let mut initial_cache = Vec::new();
         let cache_end_height = u32::try_from(tree.number_of_leaves())?;
@@ -1050,12 +1079,10 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
             }
 
             // Get the hash for the next block to add to the cache.
-            let hash = storage.id_map().get_confirmed(&height)?.with_context(|| {
-                format!(
-                    "Block {height} exists in tree but not in storage;\
-                    perhaps you used a wrong block tree cache file?"
-                )
-            })?;
+            let hash = storage
+                .id_map()
+                .get_confirmed(&height)?
+                .with_context(|| missing_block_in_tree_error(height, block_tree_cache_path.as_deref()))?;
 
             initial_cache.push(
                 storage.get_block(&hash)?.with_context(|| format!("Block {hash} exists in tree but not in storage"))?,
@@ -1231,8 +1258,9 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     #[cfg(feature = "rocks")]
     pub fn cache_block_tree(&self) -> Result<()> {
         // Prepare the path for the target file.
-        let mut path = aleo_ledger_dir(N::ID, self.storage.storage_mode());
-        path.push("block_tree");
+        let Some(path) = block_tree_cache_path::<N, _>(&self.storage) else {
+            bail!("Failed to determine the block tree cache path");
+        };
 
         // Create the target file.
         let file = fs::File::create(&path)?;
@@ -1563,6 +1591,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 mod tests {
     use super::*;
     use crate::helpers::memory::BlockMemory;
+    use std::path::Path;
 
     type CurrentNetwork = console::network::MainnetV0;
 
@@ -1762,5 +1791,14 @@ mod tests {
         assert!(matches!(txn3, Transaction::Fee(..)));
         assert_ne!(txn1, txn3);
         assert_eq!(txn3, txn4);
+    }
+
+    #[test]
+    fn test_missing_block_in_tree_error_includes_block_tree_path() {
+        let error = missing_block_in_tree_error(42, Some(Path::new("/tmp/snarkvm/ledger/block_tree")));
+
+        assert!(error.contains("Block 42 exists in tree but not in storage"));
+        assert!(error.contains("wrong block tree cache file"));
+        assert!(error.contains("/tmp/snarkvm/ledger/block_tree"));
     }
 }

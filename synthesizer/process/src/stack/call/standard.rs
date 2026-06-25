@@ -116,7 +116,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             }
 
             // In AuthorizeMocked mode, we need to compute the mocked request and push it onto the call stack.
-            if let CallStack::AuthorizeMocked(requests, address, authorization) = &mut call_stack {
+            if let CallStack::AuthorizeMocked(requests, address, authorization, _, _) = &mut call_stack {
                 // Compute the mocked request.
                 let request = Request::sample(
                     *address,
@@ -129,6 +129,43 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 )?;
                 // Add the request to the requests.
                 requests.push(request.clone());
+                // Add the request to the authorization.
+                authorization.push(request.clone())?;
+            }
+
+            // In AuthorizeRequests mode, we retrieve the expected request and match it against the call's target and inputs.
+            if let CallStack::AuthorizeRequests(requests, current_index, authorization) = &mut call_stack {
+                // Increment the index to advance the pre-order DFS traversal of the request tree.
+                *current_index.write() += 1;
+
+                let request = requests.get(*current_index.read()).ok_or_else(||
+                    anyhow!("Call::evaluate attempted to retrieve request at index {}, but the AuthorizeRequests call stack only contains {} request(s)",
+                    *current_index.read(),
+                    requests.len())
+                )?;
+
+                // Sanity checks
+                if *request.signer() != registers.signer()? {
+                    return Err(anyhow!(
+                        "Call::evaluate retrieved a request with a different signer than the signer in the registers"
+                    )
+                    .into());
+                }
+                if request.is_dynamic() {
+                    return Err(anyhow!("Call::evaluate retrieved a dynamic request").into());
+                }
+
+                // Consistency checks: target program, target function and inputs
+                if request.program_id() != substack.program_id() {
+                    return Err(anyhow!("Call::evaluate retrieved a request with a different program ID than the one in the call instruction").into());
+                }
+                if request.function_name() != function.name() {
+                    return Err(anyhow!("Call::evaluate retrieved a request with a different function name than the one in the call instruction").into());
+                }
+                if request.inputs() != inputs {
+                    return Err(anyhow!("Call::evaluate retrieved a request with different inputs than the ones passed to the call instruction").into());
+                }
+
                 // Add the request to the authorization.
                 authorization.push(request.clone())?;
             }
@@ -302,9 +339,13 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         // Return the request and response.
                         (request, response)
                     }
-                    // If the circuit is in authorize mocked mode, throw an error.
+                    // If the circuit is in AuthorizeMocked mode, throw an error.
                     CallStack::AuthorizeMocked(..) => {
                         return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into());
+                    }
+                    // If the circuit is in AuthorizeRequests mode, throw an error.
+                    CallStack::AuthorizeRequests(..) => {
+                        return Err(anyhow!("Cannot 'execute' a function in 'authorize requests' mode.").into());
                     }
                     // If the proving key is missing, build real sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) if pk_missing => {

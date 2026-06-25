@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use crate::{FinalizeGlobalState, Function, Operand, Program};
+use crate::{FinalizeGlobalState, FinalizeStoreTrait, Function, Operand, Program};
 use console::{
     account::Group,
     network::Network,
@@ -114,6 +114,9 @@ pub trait StackTrait<N: Network> {
     /// Returns the program checksum as a field element.
     fn program_checksum_as_field(&self) -> Result<Field<N>>;
 
+    /// Returns the checksum of the program component (function, closure, or view) with the given name.
+    fn component_checksum(&self, name: &Identifier<N>) -> Result<&[U8<N>; 32]>;
+
     /// Returns the program edition.
     fn program_edition(&self) -> U16<N>;
 
@@ -180,6 +183,21 @@ pub trait StackTrait<N: Network> {
         index: Field<N>,
         rng: &mut R,
     ) -> Result<Record<N, Plaintext<N>>>;
+
+    /// Evaluates a view function on this stack against the given finalize-store state.
+    ///
+    /// The caller (`Call::finalize`) loads operand values from the caller's registers and
+    /// passes them as `inputs`; this method runs the view body and returns its outputs. It
+    /// is the cross-crate hook that lets `Call::finalize` (in `snarkvm-synthesizer-program`)
+    /// dispatch view-call evaluation into `snarkvm-synthesizer-process` without depending on
+    /// concrete `Stack` / `FinalizeRegisters` types.
+    fn evaluate_view(
+        &self,
+        state: FinalizeGlobalState,
+        store: &dyn FinalizeStoreTrait<N>,
+        view_name: &Identifier<N>,
+        inputs: Vec<Value<N>>,
+    ) -> Result<Vec<Value<N>>>;
 }
 
 /// Are the two types either the same, or both structurally equivalent `PlaintextType`s?

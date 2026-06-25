@@ -4,17 +4,17 @@ outputs:
   execute:
     parent.aleo/omega_wrapper:
       outputs:
-      - '{"type":"private","id":"5920803809476675346336704148497669217440977310773593672059117974532970949852field","value":"ciphertext1qyqvtpw60dmlfsq0tkxd809gtqdlaak0x6x4k0ehhq2qy8qnwrel2pqgz3tn4"}'
-      - '{"type":"private","id":"369987071565014928240501585721062055834452886424246364537666448777968245658field","value":"ciphertext1qyq8ke26y4pmv2350sx7dqzlqm9s3psft4j5jmq8eznzlzsu4fyespsmfdnx4"}'
-      - '{"type":"future","id":"5927473876842904650089207953922274543844162374348320294931562831855034309627field","value":"{\n  program_id: parent.aleo,\n  function_name: omega_wrapper,\n  arguments: [\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n    {\n      program_id: child.aleo,\n      function_name: create_another_wrapper,\n      arguments: [\n        {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n}\n      ]\n    }\n  \n  ]\n}"}'
+      - '{"type":"private","id":"8152622999267022397185040953057302323393251445531388630218536625155763139395field","value":"ciphertext1qyq9g2c4cgay6kgvu9jpfh4dnlgzj3mj0trfajrv3an54cljryv0jqchy2lad"}'
+      - '{"type":"private","id":"3202221556953977641149701630737226037677578628918685246541529771232381509482field","value":"ciphertext1qyqymccnqq47p0ryaqc7w793sesxhvtmerplnhr5aff5ddtg64y2kqcyp523m"}'
+      - '{"type":"future","id":"6154893783233828420633117152167226825748418092017434238713500255945288828015field","value":"{\n  program_id: parent.aleo,\n  function_name: omega_wrapper,\n  arguments: [\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n},\n    {\n      program_id: child.aleo,\n      function_name: create_another_wrapper,\n      arguments: [\n        {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n}\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
 - child_outputs:
     child.aleo/create_another_wrapper:
       outputs:
-      - '{"type":"private","id":"6190681010980323098877295516785127913176924698800590618699508241206754598464field","value":"ciphertext1qyqg7835cja3wm3tdecnx4r3mw0kv7tpjzayv8fcfss5wun25z8wkpsse768t"}'
-      - '{"type":"future","id":"4715897316616438711057826328822555562856360516903371454158376240847717218887field","value":"{\n  program_id: child.aleo,\n  function_name: create_another_wrapper,\n  arguments: [\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n}\n  ]\n}"}'
+      - '{"type":"private","id":"3140701032315843720187712619853792200172526176758818448302025639527324490369field","value":"ciphertext1qyq22fevjmjw7t3hfpwp7mmcqejpy5eetfzx9tnpd7pc3aa6lsg4szspgjqvg"}'
+      - '{"type":"future","id":"4659252179289930745543235565088815097205752036944792559493084486327282683483field","value":"{\n  program_id: child.aleo,\n  function_name: create_another_wrapper,\n  arguments: [\n    {\n  woo: {\n    a: 1u32,\n    b: 2u32\n  }\n}\n  ]\n}"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"456014838351211070886209160586592954623536342646074561307062459787361643360field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2354u64\n  ]\n}"}'
+      - '{"type":"future","id":"1953172547617092925471096658310011546253964584776499347956791935927078526137field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2354u64\n  ]\n}"}'

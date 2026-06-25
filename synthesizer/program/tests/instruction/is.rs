@@ -191,7 +191,7 @@ fn check_is<const VARIANT: u8>(
             Plaintext::from(literal_a),
         ])
         .unwrap();
-        operation.finalize(&stack, &mut registers).unwrap();
+        operation.finalize(&stack, None, &mut registers).unwrap();
 
         // Retrieve the output.
         let output_c = registers.load_literal(&stack, &destination_operand).unwrap();
@@ -287,7 +287,7 @@ fn check_is<const VARIANT: u8>(
             Plaintext::from(literal_b),
         ])
         .unwrap();
-        operation.finalize(&stack, &mut registers).unwrap();
+        operation.finalize(&stack, None, &mut registers).unwrap();
 
         // Retrieve the output.
         let output_c = registers.load_literal(&stack, &destination_operand).unwrap();
