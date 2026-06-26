@@ -44,6 +44,9 @@ use std::sync::{Arc, atomic::AtomicU32};
 #[cfg(any(feature = "history", feature = "history-staking-rewards", feature = "slipstream-plugins"))]
 use std::{borrow::Cow, sync::atomic::Ordering};
 
+#[cfg(feature = "history")]
+const CREDITS_HISTORY_ONLY: bool = option_env!("HISTORY_CREDITS_ONLY").is_some();
+
 /// Serialized form of a mapping replacement, captured before storage consumes the entries.
 #[cfg(feature = "slipstream-plugins")]
 struct SerializedMappingEntries {
@@ -305,15 +308,17 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             // Update the historical maps.
             #[cfg(feature = "history")]
             {
-                let current_height = self.current_block_height().load(Ordering::SeqCst);
+                if !CREDITS_HISTORY_ONLY || program_id == ProgramID::from_str("credits.aleo")? {
+                    let current_height = self.current_block_height().load(Ordering::SeqCst);
 
-                // Insert the initial value as the first historical update.
-                self.mapping_update_map()
-                    .insert((program_id, mapping_name, key.clone(), current_height), value.clone())?;
+                    // Insert the initial value as the first historical update.
+                    self.mapping_update_map()
+                        .insert((program_id, mapping_name, key.clone(), current_height), value.clone())?;
 
-                // Insert the first historical update height.
-                let height_update_key = (program_id, mapping_name, key.clone());
-                self.mapping_update_heights_map().insert(height_update_key, vec![current_height])?;
+                    // Insert the first historical update height.
+                    let height_update_key = (program_id, mapping_name, key.clone());
+                    self.mapping_update_heights_map().insert(height_update_key, vec![current_height])?;
+                }
             }
 
             // Update the key-value map with the new key-value.
@@ -351,20 +356,22 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             // Update the historical maps.
             #[cfg(feature = "history")]
             {
-                let current_height = self.current_block_height().load(Ordering::SeqCst);
+                if !CREDITS_HISTORY_ONLY || program_id == ProgramID::from_str("credits.aleo")? {
+                    let current_height = self.current_block_height().load(Ordering::SeqCst);
 
-                // Register the updated value at the current height.
-                self.mapping_update_map()
-                    .insert((program_id, mapping_name, key.clone(), current_height), value.clone())?;
+                    // Register the updated value at the current height.
+                    self.mapping_update_map()
+                        .insert((program_id, mapping_name, key.clone(), current_height), value.clone())?;
 
-                // Obtain the list of past update heights.
-                let key = (program_id, mapping_name, key.clone());
-                let update_heights =
-                    self.mapping_update_heights_map().get_confirmed(&key)?.map(|list| list.into_owned());
-                let mut update_heights = update_heights.unwrap_or_default();
-                // Extend the historical update heights with the current height.
-                update_heights.push(current_height);
-                self.mapping_update_heights_map().insert(key, update_heights)?;
+                    // Obtain the list of past update heights.
+                    let key = (program_id, mapping_name, key.clone());
+                    let update_heights =
+                        self.mapping_update_heights_map().get_confirmed(&key)?.map(|list| list.into_owned());
+                    let mut update_heights = update_heights.unwrap_or_default();
+                    // Extend the historical update heights with the current height.
+                    update_heights.push(current_height);
+                    self.mapping_update_heights_map().insert(key, update_heights)?;
+                }
             }
 
             // Update the key-value map with the new key-value.
@@ -430,20 +437,22 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
                 // Update the historical maps.
                 #[cfg(feature = "history")]
                 {
-                    let current_height = self.current_block_height().load(Ordering::SeqCst);
+                    if !CREDITS_HISTORY_ONLY || program_id == ProgramID::from_str("credits.aleo")? {
+                        let current_height = self.current_block_height().load(Ordering::SeqCst);
 
-                    // Register the updated value at the current height.
-                    self.mapping_update_map()
-                        .insert((program_id, mapping_name, key.clone(), current_height), value.clone())?;
+                        // Register the updated value at the current height.
+                        self.mapping_update_map()
+                            .insert((program_id, mapping_name, key.clone(), current_height), value.clone())?;
 
-                    // Obtain the list of past update heights.
-                    let key = (program_id, mapping_name, key.clone());
-                    let update_heights =
-                        self.mapping_update_heights_map().get_confirmed(&key)?.map(|list| list.into_owned());
-                    let mut update_heights = update_heights.unwrap_or_default();
-                    // Extend the historical update heights with the current height.
-                    update_heights.push(current_height);
-                    self.mapping_update_heights_map().insert(key, update_heights)?;
+                        // Obtain the list of past update heights.
+                        let key = (program_id, mapping_name, key.clone());
+                        let update_heights =
+                            self.mapping_update_heights_map().get_confirmed(&key)?.map(|list| list.into_owned());
+                        let mut update_heights = update_heights.unwrap_or_default();
+                        // Extend the historical update heights with the current height.
+                        update_heights.push(current_height);
+                        self.mapping_update_heights_map().insert(key, update_heights)?;
+                    }
                 }
 
                 // Insert the key-value entry.
