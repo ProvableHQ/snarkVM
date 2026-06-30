@@ -1,14 +1,14 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    public_wallet.aleo/init:
-      outputs:
-      - '{"type":"future","id":"7521410779205050140046175990383113891650589512327507752085356344527817284639field","value":"{\n  program_id: public_wallet.aleo,\n  function_name: init,\n  arguments: [\n    {\n      program_id: token.aleo,\n      function_name: mint_public,\n      arguments: [\n        aleo1sry3pke49ykrf0aeshf889tr98r4c86p5f4ms766795ssdwfdyqq9jdg0j,\n        10u64\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
-- child_outputs:
+- execute:
+    public_wallet.aleo/init:
+      outputs:
+      - '{"type":"future","id":"7521410779205050140046175990383113891650589512327507752085356344527817284639field","value":"{\n  program_id: public_wallet.aleo,\n  function_name: init,\n  arguments: [\n    {\n      program_id: token.aleo,\n      function_name: mint_public,\n      arguments: [\n        aleo1sry3pke49ykrf0aeshf889tr98r4c86p5f4ms766795ssdwfdyqq9jdg0j,\n        10u64\n      ]\n    }\n  \n  ]\n}"}'
+  child_outputs:
     token.aleo/mint_public:
       outputs:
       - '{"type":"future","id":"5059289782475319519694484047854183472187251756040722143101916351864724001426field","value":"{\n  program_id: token.aleo,\n  function_name: mint_public,\n  arguments: [\n    aleo1sry3pke49ykrf0aeshf889tr98r4c86p5f4ms766795ssdwfdyqq9jdg0j,\n    10u64\n  ]\n}"}'
