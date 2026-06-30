@@ -4,16 +4,16 @@ outputs:
   execute:
     external_structs.aleo/main:
       outputs:
-      - '{"type":"public","id":"583596047610703566298715827039039382843676904881168039671306749861657935416field","value":"{\n  a: 1u32,\n  b: 2u32\n}"}'
-      - '{"type":"public","id":"6137936613112259051065802222211819284823325590583633263350745235262855631999field","value":"{\n  c: {\n    a: 1u32,\n    b: 2u32\n  }\n}"}'
-      - '{"type":"public","id":"2796747460347545951102428961938632600608505729375568988479556864605660959629field","value":"{\n  a: 1u32,\n  b: 2u32\n}"}'
+      - '{"type":"public","id":"1406837918638854908555135138396827210627310889149238982121977223579722353254field","value":"{\n  a: 1u32,\n  b: 2u32\n}"}'
+      - '{"type":"public","id":"8120990330155971415457622636068785317994937018486543863982313754651252664403field","value":"{\n  c: {\n    a: 1u32,\n    b: 2u32\n  }\n}"}'
+      - '{"type":"public","id":"5080722385840084764168466237367128824000915160110376895252648399053883048245field","value":"{\n  a: 1u32,\n  b: 2u32\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
 - child_outputs:
     child1.aleo/main_2:
       outputs:
-      - '{"type":"private","id":"5837753780816939543870703158586943948202741713896146836801503850923282953028field","value":"ciphertext1qyqthz0x44cwekvgnzhxjpwe8d9md43tvyxvyuhp9nknldsnhdwyqrq8h62p7"}'
+      - '{"type":"private","id":"6179112425662888063853062260188453019956441249648799859033105413515697701298field","value":"ciphertext1qyqp0pca28dwde8zm8trsn6e6tlyx6qnwtap9zz27r0fshnlatw9qrqg5e4ek"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"149615693767215607095606073405591723206960605987523098323538447716784201050field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1l92c2rcgwnfg2hwv7pvd60yvyf5usv7xfw4vg6k6hmt4trqg4vyqkre9hy,\n    2104u64\n  ]\n}"}'
+      - '{"type":"future","id":"2236224172003041926599905234294101071205386507638739686142613415225558142578field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1l92c2rcgwnfg2hwv7pvd60yvyf5usv7xfw4vg6k6hmt4trqg4vyqkre9hy,\n    2104u64\n  ]\n}"}'

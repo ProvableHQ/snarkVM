@@ -194,6 +194,27 @@ impl<N: Network> Subdag<N> {
         }
     }
 
+    /// Returns the synthesis limit for this subdag at `block_height`.
+    // Note: This limit refers to the total number of non-zero entries across all circuits in all deployments in the subdag.
+    #[inline]
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn synthesis_limit(&self, block_height: u32) -> Option<u64> {
+        if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap() {
+            // One full round of consensus has a synthesis budget of 5 seconds.
+            let synthesis_per_second_runtime = 5_f64 * N::SYNTHESIS_PER_SECOND_OF_RUNTIME as f64;
+            // A certificate therefore has a synthesis budget of 5 seconds / MAX_CERTIFICATES.
+            let synthesis_per_certificate = synthesis_per_second_runtime
+                / consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap() as f64;
+            // Compute the number of certificates in the subdag.
+            let subdag_certificates_count =
+                self.values().map(|certificates| certificates.len() as u64).sum::<u64>() as f64;
+            // The synthesis limit is the number of certificates times the synthesis budget per certificate.
+            Some((synthesis_per_certificate * subdag_certificates_count) as u64)
+        } else {
+            None
+        }
+    }
+
     /// Returns the leader certificate.
     pub fn leader_certificate(&self) -> &BatchCertificate<N> {
         // Retrieve entry for the anchor round.
@@ -329,23 +350,11 @@ pub mod test_helpers {
         // Return the sample vector.
         sample
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use console::network::ConsensusVersion;
-    use snarkvm_ledger_narwhal_batch_certificate::test_helpers::sample_batch_certificate_for_round;
-    use snarkvm_ledger_narwhal_batch_header::BatchHeader;
-
-    type CurrentNetwork = console::network::MainnetV0;
-
-    const ITERATIONS: u64 = 100;
 
     /// Constructs a subdag (via `from_unchecked`) that contains `cert_count` certificates
     /// placed in a single even-numbered round.  The DAG structure is not valid, but
     /// `spend_limit` only inspects certificate counts, so this is sufficient for unit tests.
-    fn subdag_with_cert_count(cert_count: usize, rng: &mut TestRng) -> Subdag<CurrentNetwork> {
+    pub fn subdag_with_cert_count(cert_count: usize, rng: &mut TestRng) -> Subdag<CurrentNetwork> {
         let mut certs = IndexSet::new();
         for _ in 0..cert_count {
             // Round 2 is arbitrary; any even round keeps the anchor-round invariant if desired.
@@ -355,6 +364,19 @@ mod tests {
         map.insert(2u64, certs);
         Subdag::from_unchecked(map)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::ConsensusVersion;
+    use snarkvm_ledger_narwhal_batch_header::BatchHeader;
+
+    use crate::test_helpers::subdag_with_cert_count;
+
+    type CurrentNetwork = console::network::MainnetV0;
+
+    const ITERATIONS: u64 = 100;
 
     #[test]
     fn test_max_certificates() {

@@ -20,7 +20,7 @@ use std::io;
 
 /// The different consensus versions.
 /// If you need the version active for a specific height, see: `N::CONSENSUS_VERSION`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Sequence)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Sequence)]
 #[repr(u16)]
 pub enum ConsensusVersion {
     /// V1: The initial genesis consensus version.
@@ -65,6 +65,8 @@ pub enum ConsensusVersion {
     /// V17: NOTE: V17 landed chronologically on mainnet before it landed on testnet.
     ///      Reverts the anchor time to 25.
     V17 = 17,
+    /// V18: Introduces block-wide deployment limits.
+    V18 = 18,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -94,6 +96,7 @@ impl FromBytes for ConsensusVersion {
             15 => Ok(Self::V15),
             16 => Ok(Self::V16),
             17 => Ok(Self::V17),
+            18 => Ok(Self::V18),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -134,6 +137,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V15, u32::MAX),
     (ConsensusVersion::V16, u32::MAX),
     (ConsensusVersion::V17, u32::MAX),
+    (ConsensusVersion::V18, u32::MAX),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -155,6 +159,7 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V15, 19_264_000),
     (ConsensusVersion::V16, 19_860_000),
     (ConsensusVersion::V17, 19_860_001),
+    (ConsensusVersion::V18, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -176,6 +181,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V15, 16_886_000),
     (ConsensusVersion::V16, 17_319_000),
     (ConsensusVersion::V17, u32::MAX),
+    (ConsensusVersion::V18, u32::MAX),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -197,6 +203,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V15, 18),
     (ConsensusVersion::V16, 19),
     (ConsensusVersion::V17, 20),
+    (ConsensusVersion::V18, 21),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]

@@ -4066,6 +4066,7 @@ dependencies = [
  "snarkvm-ledger-committee",
  "snarkvm-ledger-narwhal-batch-header",
  "snarkvm-ledger-narwhal-data",
+ "snarkvm-ledger-narwhal-subdag",
  "snarkvm-ledger-puzzle",
  "snarkvm-ledger-puzzle-epoch",
  "snarkvm-ledger-query",

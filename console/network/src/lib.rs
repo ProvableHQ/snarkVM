@@ -149,11 +149,18 @@ pub trait Network:
     const EXECUTION_STORAGE_PENALTY_THRESHOLD: u64 = 5000;
     /// The cost in microcredits per constraint for the deployment transaction.
     const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
-    /// The maximum number of variables in a deployment.
+    /// The maximum number of variables in a deployment. This limit was enforced at the transaction level up to
+    /// consensus version V16 (inclusive). This corresponds to ~0.5 second single-threaded runtime at
+    /// mainnet launch reference validator hardware.
     const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
-    /// The maximum number of constraints in a deployment.
+    /// The maximum number of constraints in a deployment. This limit was enforced at the transaction level up to
+    /// consensus version V16 (inclusive). This corresponds to ~0.5 second single-threaded runtime at mainnet
+    /// launch reference validator hardware.
     const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
-    /// The maximum number of instances to verify in a batch proof.
+    /// Approximate conversion factor from non-zero circuit entries to seconds of certificate-verification work
+    /// when checking a deployment. From it, a per-proposal synthesis limit is enforced starting at consensus
+    /// version V17 which overrides the two per-transaction limits above.
+    const SYNTHESIS_PER_SECOND_OF_RUNTIME: u64 = 1_500_000;
     const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;

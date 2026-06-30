@@ -651,6 +651,7 @@ fn construct_finalize_global_state<C: ConsensusStorage<CurrentNetwork>>(
         0u128,
         latest_block.hash(),
         None,
+        None,
     )
     .unwrap()
 }
