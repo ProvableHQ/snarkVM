@@ -172,7 +172,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Fetch all required stacks for transition checks once, and reuse them for static import checks.
         // This is just a partial performance optimization, dynamic calls will fetch fresh Stacks.
-        let execution_stacks = self.process.get_stacks_with_imports(transaction.transitions())?;
+        // Starting at ConsensusVersion::V18, we also include first-level imports for the record-existance
+        // check.
+        let include_direct_imports = consensus_version >= ConsensusVersion::V18;
+        let execution_stacks = self.process.get_stacks(transaction.transitions(), include_direct_imports)?;
 
         // Perform a check relevant to the V8 migration on the execution.
         // TODO: this can be pruned in the future with an appropriate documentation strategy.
@@ -1099,7 +1102,7 @@ mod tests {
                 Transaction::Execute(_, _, execution, _) => {
                     // Ensure the proof exists.
                     assert!(execution.proof().is_some());
-                    let execution_stacks = vm.process().get_stacks_with_imports(execution.transitions()).unwrap();
+                    let execution_stacks = vm.process().get_stacks(execution.transitions(), false).unwrap();
                     // Verify the execution.
                     vm.check_execution_internal(&execution, &execution_stacks, false).unwrap();
                     // Ensure the partially_verified_transactions cache has the same size.

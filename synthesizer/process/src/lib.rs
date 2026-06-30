@@ -517,11 +517,14 @@ impl<N: Network> Process<N> {
         Ok(stack)
     }
 
-    /// Returns the stacks of all given transitions as well as their direct imports.
+    /// Returns the stacks of the programs corresponding to all given transitions, keyed by
+    /// `ProgramID`. If `include_direct_imports` is true, the stacks of the programs *directly*
+    /// imported by those are also included.
     #[inline]
-    pub fn get_stacks_with_imports<'a>(
+    pub fn get_stacks<'a>(
         &self,
         transitions: impl IntoIterator<Item = &'a Transition<N>>,
+        include_direct_imports: bool,
     ) -> Result<IndexMap<ProgramID<N>, Arc<Stack<N>>>>
     where
         N: 'a,
@@ -537,17 +540,21 @@ impl<N: Network> Process<N> {
             if !execution_stacks.contains_key(program_id) {
                 execution_stacks.insert(*transition.program_id(), stack.clone());
             }
+        }
 
-            // Fetch those direct imports of the program which have not been fetched before. Note
-            // this cannot be done inside the conditional block above since then direct imports of
-            // direct imports which are themselves called later on would be missed (consider the
-            // transition list [A, B] where A imports B and B imports C).
-            for import_program_id in stack.program().imports().keys() {
-                if !execution_stacks.contains_key(import_program_id) {
-                    execution_stacks.insert(*import_program_id, self.get_stack(import_program_id)?);
+        // Fetch stacks of direct dependencies. Note some of these may have been fetched in the
+        // previous loop.
+        if include_direct_imports {
+            let imported_program_ids: Vec<ProgramID<N>> =
+                execution_stacks.values().flat_map(|stack| stack.program().imports().keys().copied()).collect();
+
+            for imported_program_id in imported_program_ids {
+                if !execution_stacks.contains_key(&imported_program_id) {
+                    execution_stacks.insert(imported_program_id, self.get_stack(&imported_program_id)?);
                 }
             }
         }
+
         Ok(execution_stacks)
     }
 

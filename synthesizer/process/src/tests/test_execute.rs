@@ -574,7 +574,7 @@ fn test_process_execute_transfer_public_to_private() {
             VarunaVersion::V2,
             InclusionVersion::V1,
             &execution,
-            &process.get_stacks_with_imports(execution.transitions()).unwrap(),
+            &process.get_stacks(execution.transitions(), false).unwrap(),
         )
         .unwrap();
 
@@ -1375,7 +1375,7 @@ finalize compute:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &process.get_stacks_with_imports(execution.transitions()).unwrap(),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -1502,7 +1502,7 @@ finalize compute:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &process.get_stacks_with_imports(execution.transitions()).unwrap(),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -1647,7 +1647,7 @@ finalize mint_public:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &process.get_stacks_with_imports(execution.transitions()).unwrap(),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -1830,7 +1830,7 @@ finalize init:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &process.get_stacks_with_imports(execution.transitions()).unwrap(),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -1959,7 +1959,7 @@ finalize compute:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &process.get_stacks_with_imports(execution.transitions()).unwrap(),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -2137,7 +2137,7 @@ finalize a:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &process.get_stacks_with_imports(execution.transitions()).unwrap(),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -2419,7 +2419,7 @@ fn test_complex_execution_order() {
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &process.get_stacks_with_imports(execution.transitions()).unwrap(),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -2561,7 +2561,7 @@ finalize compute:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &process.get_stacks_with_imports(execution.transitions()).unwrap(),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -2683,7 +2683,7 @@ function compute:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &process.get_stacks_with_imports(execution.transitions()).unwrap(),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
