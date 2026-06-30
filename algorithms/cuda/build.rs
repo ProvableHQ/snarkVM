@@ -90,6 +90,7 @@ fn main() {
             // Generate code for both A100 (sm_80) and H100 (sm_90)
             nvcc.flag("-gencode=arch=compute_80,code=sm_80");
             nvcc.flag("-gencode=arch=compute_90,code=sm_90");
+            nvcc.flag("-gencode=arch=compute_120,code=sm_120");
         }
 
         nvcc.flag("-maxrregcount=255");
