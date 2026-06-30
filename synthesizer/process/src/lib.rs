@@ -534,11 +534,9 @@ impl<N: Network> Process<N> {
         for transition in transitions.into_iter() {
             let program_id = transition.program_id();
 
-            let stack = self.get_stack(transition.program_id())?;
-
             // If the program's stack has not been fetched before, fetch it.
             if !execution_stacks.contains_key(program_id) {
-                execution_stacks.insert(*transition.program_id(), stack.clone());
+                execution_stacks.insert(*program_id, self.get_stack(program_id)?);
             }
         }
 
@@ -550,7 +548,7 @@ impl<N: Network> Process<N> {
 
             for imported_program_id in imported_program_ids {
                 if !execution_stacks.contains_key(&imported_program_id) {
-                    execution_stacks.insert(imported_program_id, self.get_stack(&imported_program_id)?);
+                    execution_stacks.insert(imported_program_id, self.get_stack(imported_program_id)?);
                 }
             }
         }
