@@ -319,8 +319,11 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                 }
             }
 
-            // Add the `execute` mapping to `result` mapping.
-            result.insert(serde_yaml::Value::String("execute".to_string()), serde_yaml::Value::Mapping(execute));
+            // Add the `execute` mapping to the `other` mapping so that it is stored in `additional` but not
+            // compared against the expected output. Transition outputs (ciphertexts, field IDs) are tied to
+            // the RNG state at a specific block height and change whenever the default `start_height` shifts
+            // due to a new ConsensusVersion, even when no semantic behavior changes.
+            other.insert(serde_yaml::Value::String("execute".to_string()), serde_yaml::Value::Mapping(execute));
             // Add the child outputs to the `other` mapping.
             other.insert(
                 serde_yaml::Value::String("child_outputs".to_string()),
