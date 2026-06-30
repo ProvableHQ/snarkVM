@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm"
-version = "4.7.3"
+version = "4.8.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -181,6 +181,7 @@ dev_skip_checks = [
   "snarkvm-console/dev_skip_checks",
   "snarkvm-synthesizer/dev_skip_checks"
 ]
+dev-committee = [ "snarkvm-ledger/dev-committee" ]
 save_r1cs_hashes = [ "snarkvm-circuit/save_r1cs_hashes" ]
 test_exports = [ "snarkvm-algorithms/test_exports" ]
 test_targets = [ "snarkvm-console/test_targets" ]

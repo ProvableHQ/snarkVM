@@ -8,6 +8,3 @@ rustflags = [
     "-C", "link-arg=-fuse-ld=lld",
     "-C", "target-cpu=native"
 ]
-
-[env]
-CXXFLAGS = "-include cstdint" #TODO: remove once RocksDB 0.24 is released

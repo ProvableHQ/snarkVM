@@ -218,6 +218,13 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         Field::from_bits_le(&bits)
     }
 
+    /// Returns the checksum of the program component (function, closure, or view) with the given name.
+    fn component_checksum(&self, name: &Identifier<N>) -> Result<&[U8<N>; 32]> {
+        self.component_checksums
+            .get(name)
+            .ok_or_else(|| anyhow!("'{name}' is not a function, closure, or view in '{}'.", self.program_id()))
+    }
+
     /// Returns the program edition.
     #[inline]
     fn program_edition(&self) -> U16<N> {

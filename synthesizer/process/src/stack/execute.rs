@@ -174,6 +174,10 @@ impl<N: Network> Stack<N> {
                     Operand::ProgramOwner(_) => {
                         bail!("Illegal operation: cannot retrieve the program owner in a closure scope")
                     }
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Illegal operation: cannot retrieve the component checksum in a closure scope")
+                    }
                 }
             })
             .map(|res| res.map_err(StackExecError::Anyhow))
@@ -491,6 +495,10 @@ impl<N: Network> Stack<N> {
                     // If the operand is the program owner, throw an error.
                     Operand::ProgramOwner(_) => {
                         bail!("Illegal operation: cannot retrieve the program owner in a function scope")
+                    }
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Illegal operation: cannot retrieve the component checksum in a function scope")
                     }
                 }
             })

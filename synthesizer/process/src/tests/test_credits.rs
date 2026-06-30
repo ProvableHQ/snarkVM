@@ -70,7 +70,7 @@ macro_rules! test_atomic_finalize {
 
 /// Samples a new finalize state.
 fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
+    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None)
 }
 
 /// Returns the `value` for the given `key` in the `mapping` for the given `program_id`.

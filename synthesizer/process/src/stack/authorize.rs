@@ -205,4 +205,51 @@ impl<N: Network> Stack<N> {
         // Return the authorization.
         Ok(authorization)
     }
+
+    /// Authorizes a number of `Request`s resulting from a root call and populated with correct data
+    /// (`tvk`, input IDs, signature, etc.), checking they are correctly related. The `Request`s
+    /// must be in DFS pre-order (as present, for instance, in `Authorization`s).
+    #[inline]
+    pub fn authorize_requests<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        requests: Vec<Request<N>>,
+        rng: &mut R,
+    ) -> Result<Authorization<N>, StackAuthError> {
+        let timer = timer!("Stack::authorize_requests");
+
+        if requests.is_empty() {
+            return Err(anyhow!("No requests provided").into());
+        }
+
+        if *requests[0].program_id() != *self.program.id() {
+            return Err(anyhow!("Program ID mismatch in 'authorize_requests'").into());
+        }
+
+        // This index, passed to the call stack, tracks the element in the requests array currently
+        // being explored. It is shared throughout the entire evaluation of the call stack, just like
+        // the authorization is handled.
+        let current_index = Arc::new(RwLock::new(0));
+
+        // Initialize the authorization with the request corresponding to the root call.
+        let authorization = Authorization::new(requests[0].clone());
+        let num_requests = requests.len();
+
+        // Construct the call stack in AuthorizeRequests mode.
+        let call_stack = CallStack::AuthorizeRequests(requests, current_index, authorization.clone());
+
+        // Populate the authorization by processing the call stack.
+        let _response = self.evaluate_function::<A, R>(call_stack, None, None, rng)?;
+
+        finish!(timer, "Construct the authorization from the function");
+
+        if authorization.transitions().len() != num_requests {
+            return Err(anyhow!(
+                "Not all requests supplied were explored while evaluating CallStack::AuthorizeRequests"
+            )
+            .into());
+        }
+
+        // Return the authorization.
+        Ok(authorization)
+    }
 }

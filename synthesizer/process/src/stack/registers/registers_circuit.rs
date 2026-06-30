@@ -143,6 +143,8 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersCircuit<N, A> for Regis
             Operand::Edition(_) => bail!("Cannot load the edition in a non-finalize context"),
             // If the operand is the program owner, throw an error.
             Operand::ProgramOwner(_) => bail!("Cannot load the program owner in a non-finalize context"),
+            // If the operand is the component checksum, throw an error.
+            Operand::ComponentChecksum(..) => bail!("Cannot load the component checksum in a non-finalize context"),
         };
 
         // Retrieve the circuit value.

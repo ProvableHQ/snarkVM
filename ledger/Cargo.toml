@@ -109,9 +109,9 @@ test-helpers = [
 test_targets = [
   "snarkvm-console/test_targets",
 ]
-timer = [ "aleo-std/timer" ]
+dev-committee = []
 dev-print = [ "snarkvm-utilities/dev-print" ]
-
+timer = [ "aleo-std/timer" ]
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -160,6 +160,9 @@ workspace = true
 features = [ "storage" ]
 
 [dependencies.anyhow]
+workspace = true
+
+[dependencies.cfg-if]
 workspace = true
 
 [dependencies.indexmap]

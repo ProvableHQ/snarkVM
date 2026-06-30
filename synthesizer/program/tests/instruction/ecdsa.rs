@@ -179,7 +179,7 @@ pub fn sample_ecdsa_finalize_registers(
 ) -> Result<FinalizeRegisters<CurrentNetwork>> {
     // Initialize the registers.
     let mut finalize_registers = FinalizeRegisters::<CurrentNetwork>::new(
-        FinalizeGlobalState::from(1, 1, None, [0; 32]),
+        FinalizeGlobalState::from(1, 1, None, [0; 32], None),
         Some(<CurrentNetwork as Network>::TransitionID::default()),
         *function_name,
         stack.get_finalize_types(function_name)?.clone(),

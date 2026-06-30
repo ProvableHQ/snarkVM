@@ -82,7 +82,7 @@ fn test_evaluate_view_reflects_finalize_state() -> Result<()> {
 
     // Deploy.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Read against an untouched mapping should return the default (0).
     let height = vm.block_store().current_block_height();
@@ -97,7 +97,7 @@ fn test_evaluate_view_reflects_finalize_state() -> Result<()> {
     // Execute increment(addr, 10).
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("10u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_lifecycle.aleo", "increment"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Read should now reflect the finalize-set value.
     let height = vm.block_store().current_block_height();
@@ -112,7 +112,7 @@ fn test_evaluate_view_reflects_finalize_state() -> Result<()> {
     // Increment again by 32. New total: 42.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("32u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_lifecycle.aleo", "increment"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     let height = vm.block_store().current_block_height();
     let outputs = vm.evaluate_view_at_height(
@@ -162,7 +162,7 @@ fn test_evaluate_view_multi_output() -> Result<()> {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let outputs = vm.evaluate_view_at_height(
         "vw_multi_output.aleo",
@@ -185,7 +185,6 @@ fn test_evaluate_view_multi_output() -> Result<()> {
 fn test_evaluate_view_multi_input() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Pure-arithmetic view, no mappings needed.
     let program = Program::from_str(
@@ -211,7 +210,7 @@ fn test_evaluate_view_multi_input() -> Result<()> {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let outputs = vm.evaluate_view_at_height(
         "vw_multi_in.aleo",
@@ -234,7 +233,6 @@ fn test_evaluate_view_multi_input() -> Result<()> {
 fn test_evaluate_view_with_branch() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     let program = Program::from_str(
         r"
@@ -259,7 +257,7 @@ fn test_evaluate_view_with_branch() -> Result<()> {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // r0 = 0: branch is taken, doubling is skipped.
     let outputs = vm.evaluate_view_at_height(
@@ -287,7 +285,6 @@ fn test_evaluate_view_with_branch() -> Result<()> {
 fn test_evaluate_view_zero_inputs() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     let program = Program::from_str(
         r"
@@ -308,7 +305,7 @@ fn test_evaluate_view_zero_inputs() -> Result<()> {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let outputs =
         vm.evaluate_view_at_height("vw_zeroin.aleo", "fixed_value", vec![], vm.block_store().current_block_height())?;
@@ -322,7 +319,6 @@ fn test_evaluate_view_zero_inputs() -> Result<()> {
 fn test_evaluate_view_arity_mismatch() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     let program = Program::from_str(
         r"
@@ -345,7 +341,7 @@ fn test_evaluate_view_arity_mismatch() -> Result<()> {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Too few inputs.
     let result = vm.evaluate_view_at_height(
@@ -376,7 +372,6 @@ fn test_evaluate_view_arity_mismatch() -> Result<()> {
 fn test_evaluate_view_unknown_view() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     let program = Program::from_str(
         r"
@@ -397,7 +392,7 @@ fn test_evaluate_view_unknown_view() -> Result<()> {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let result =
         vm.evaluate_view_at_height("vw_unknown.aleo", "missing", vec![], vm.block_store().current_block_height());
@@ -655,19 +650,19 @@ fn test_finalize_calls_same_program_view() -> Result<()> {
 
     // Deploy.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Seed `balances[caller] = 21`.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("21u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_call_same.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Run `compute_doubled(caller)`. Its finalize calls `lookup(caller)` (→ 21), doubles
     // (→ 42), and writes to `doubled[caller]`.
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx =
         vm.execute(&caller_private_key, ("vw_call_same.aleo", "compute_doubled"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Confirm the new mapping value via an external read.
     #[cfg(feature = "history")]
@@ -754,21 +749,21 @@ fn test_finalize_calls_cross_program_view() -> Result<()> {
 
     // Deploy the data program, then the caller program (which imports it).
     let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
     let tx_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_caller], rng);
 
     // Seed `balances[caller] = 14` in the data program.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("14u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_call_data.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Run `compute_doubled(caller)`. Its finalize calls `vw_call_data.aleo/lookup(caller)`
     // (→ 14), multiplies by 3 (→ 42), and writes to `doubled[caller]`.
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx =
         vm.execute(&caller_private_key, ("vw_call_caller.aleo", "compute_doubled"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
@@ -938,12 +933,12 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
 
     // Deploy.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Seed `balances[caller] = 11`.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("11u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_call_seq.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Run `compute(caller)`. The finalize:
     //   - first call → v_old = 11
@@ -952,7 +947,7 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
     //   - store 11 * 1000 + 55 = 11055 in `before_after[caller]`.
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx = vm.execute(&caller_private_key, ("vw_call_seq.aleo", "compute"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Confirm both calls observed the expected (old, new) pair via the encoded result.
     #[cfg(feature = "history")]
@@ -1004,7 +999,6 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
 fn test_finalize_calls_cross_program_non_view_rejected_at_deploy() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Imported program: exposes a regular `function` (no view).
     let data_program = Program::from_str(
@@ -1045,7 +1039,7 @@ fn test_finalize_calls_cross_program_non_view_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
 
     // Either parse or deploy must reject — same pattern as the same-program negative test.
     if let Ok(caller_program) = caller_program {
@@ -1228,7 +1222,6 @@ fn test_finalize_call_self_locator_rejected_at_deploy() {
 fn test_finalize_call_missing_import_rejected_at_deploy() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Target program with a view (deployed first). Includes a noop function so the program
     // has at least one deployable function alongside the view.
@@ -1278,7 +1271,7 @@ fn test_finalize_call_missing_import_rejected_at_deploy() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng).unwrap();
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
 
     if let Ok(caller_program) = caller_program {
         let deploy = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
@@ -1373,13 +1366,13 @@ fn test_finalize_call_multi_output_multi_type() -> Result<()> {
 
     // Deploy.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Run `compute(caller)`. The view observes balances[caller]=0, returns (7u64, true, caller),
     // and the finalize routes each output into its respective mapping.
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx = vm.execute(&caller_private_key, ("vw_multi_type.aleo", "compute"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Verify each destination received the expected typed value.
     #[cfg(feature = "history")]
@@ -1511,21 +1504,21 @@ fn test_finalize_call_struct_return_cross_program() -> Result<()> {
 
     // Deploy data then caller (caller imports data).
     let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
     let tx_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_caller], rng);
 
     // Seed balances[caller] = 77 in the data program.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("77u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_struct_data.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Run `compute(caller)`. The finalize calls `summarize` which returns Summary{total: 77,
     // flag: true}, extracts the `total` field, and stores it in `totals`.
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx =
         vm.execute(&caller_private_key, ("vw_struct_caller.aleo", "compute"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Verify totals[caller] = 77 (the extracted .total field of the returned struct).
     #[cfg(feature = "history")]
@@ -1693,7 +1686,7 @@ fn test_finalize_call_view_runtime_failure_rejects_tx() -> Result<()> {
 
     // Deploy succeeds.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Execute `caller(caller_address)` — `balances[caller_address]` is unset, so the view's
     // strict `get` fails. The block must finalize-reject the transaction.
@@ -1763,11 +1756,11 @@ fn test_finalize_call_as_only_finalize_instruction() -> Result<()> {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx = vm.execute(&caller_private_key, ("vw_call_only.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     Ok(())
 }
@@ -1811,11 +1804,11 @@ fn test_finalize_calls_zero_input_view() -> Result<()> {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let inputs = [Value::from_str(&caller_address.to_string())?];
     let tx = vm.execute(&caller_private_key, ("vw_call_zero.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Confirm out[caller] = 42 via the historic store.
     #[cfg(feature = "history")]
@@ -1904,17 +1897,17 @@ fn test_finalize_call_inside_branch() -> Result<()> {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Seed `seeds[caller] = 7`.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("7u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_call_branch.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Branch taken (r1 == 0u8): call is skipped, `out[r0]` stays unset.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("0u8")?];
     let tx = vm.execute(&caller_private_key, ("vw_call_branch.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     #[cfg(feature = "history")]
     {
@@ -1932,7 +1925,7 @@ fn test_finalize_call_inside_branch() -> Result<()> {
         let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("1u8")?];
         let tx =
             vm.execute(&caller_private_key, ("vw_call_branch.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-        add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+        add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
         let height = vm.block_store().current_block_height();
         let value = vm
@@ -2029,9 +2022,9 @@ fn test_finalize_cross_program_multiple_calls() -> Result<()> {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_data], rng);
     let tx_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx_caller], rng);
 
     // Sample a second address to use as the other key.
     let other_private_key = PrivateKey::<CurrentNetwork>::new(rng)?;
@@ -2041,18 +2034,18 @@ fn test_finalize_cross_program_multiple_calls() -> Result<()> {
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("17u64")?];
     let tx =
         vm.execute(&caller_private_key, ("vw_cross_multi_data.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
     let inputs = [Value::from_str(&other_address.to_string())?, Value::from_str("25u64")?];
     let tx =
         vm.execute(&caller_private_key, ("vw_cross_multi_data.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     // Run `combine(caller, other)` — finalize calls `lookup` twice, sums (17 + 25 = 42), stores
     // into `totals[caller]`.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str(&other_address.to_string())?];
     let tx =
         vm.execute(&caller_private_key, ("vw_cross_multi_caller.aleo", "combine"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     #[cfg(feature = "history")]
     {
@@ -2125,13 +2118,13 @@ fn test_finalize_call_zero_output_guard_view() -> Result<()> {
 
     // Deploy succeeds — a zero-output view is now a valid program element.
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     // Happy path: pass `0u64`. The guard's `assert.eq` holds, the finalize body continues and
     // writes `out[caller] = 1`.
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("0u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_guard.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
 
     #[cfg(feature = "history")]
     {
@@ -2224,4 +2217,117 @@ fn test_finalize_call_zero_output_view_with_destinations_rejected_at_deploy() {
         let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
         assert!(deploy.is_err(), "deploy should reject binding destinations to a zero-output view");
     }
+}
+
+/// Three upgrades change a view body. The mapping value is held constant, so each height must resolve to the
+/// edition live then — the middle case (height_v1 -> edition 1) checks that the scan picks the intermediate
+/// edition, not just the newest or oldest.
+#[cfg(feature = "history")]
+#[test]
+fn test_evaluate_view_uses_historic_program_edition() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    // `total_balance` returns `balances[addr] + bump`; only `bump` changes across editions.
+    let program = |bump: u64| -> Result<Program<CurrentNetwork>> {
+        Program::from_str(&format!(
+            r"
+        program vw_upgrade.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function increment:
+            input r0 as address.public;
+            input r1 as u64.public;
+            async increment r0 r1 into r2;
+            output r2 as vw_upgrade.aleo/increment.future;
+
+        finalize increment:
+            input r0 as address.public;
+            input r1 as u64.public;
+            get.or_use balances[r0] 0u64 into r2;
+            add r2 r1 into r3;
+            set r3 into balances[r0];
+
+        view total_balance:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            add r1 {bump}u64 into r2;
+            output r2 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+        ))
+    };
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
+
+    // Deploy edition 0, then set `balances[addr] = 5`.
+    let tx = vm.deploy(&caller_private_key, &program(0)?, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
+    let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("5u64")?];
+    let tx = vm.execute(&caller_private_key, ("vw_upgrade.aleo", "increment"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
+    let height_v0 = vm.block_store().current_block_height();
+
+    // Upgrade to edition 1 (+100), then edition 2 (+1000).
+    let tx = vm.deploy(&caller_private_key, &program(100)?, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
+    let height_v1 = vm.block_store().current_block_height();
+    let tx = vm.deploy(&caller_private_key, &program(1000)?, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
+    let height_v2 = vm.block_store().current_block_height();
+
+    let total = |height: u32| {
+        vm.evaluate_view_at_height(
+            "vw_upgrade.aleo",
+            "total_balance",
+            vec![Value::from_str(&caller_address.to_string()).unwrap()],
+            height,
+        )
+    };
+    assert_eq!(expect_u64(&total(height_v0)?), 5, "edition 0 body at its height");
+    assert_eq!(expect_u64(&total(height_v1)?), 105, "edition 1 body at its height (intermediate)");
+    assert_eq!(expect_u64(&total(height_v2)?), 1005, "edition 2 body at its height");
+
+    Ok(())
+}
+
+/// Querying a view at a height before the program was deployed returns an error.
+#[cfg(feature = "history")]
+#[test]
+fn test_evaluate_view_before_deployment_height_errors() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let program = Program::from_str(
+        r"
+        program vw_predeploy.aleo;
+
+        function noop:
+            input r0 as u64.private;
+            output r0 as u64.private;
+
+        constructor:
+            assert.eq true true;
+
+        view fixed:
+            add 0u64 7u64 into r0;
+            output r0 as u64.public;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
+    // A valid block height that predates the program's deployment.
+    let before = vm.block_store().current_block_height();
+    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
+
+    let err = vm.evaluate_view_at_height("vw_predeploy.aleo", "fixed", vec![], before).unwrap_err().to_string();
+    assert!(err.contains("was not deployed at or before height"), "unexpected error: {err}");
+    Ok(())
 }

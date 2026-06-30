@@ -165,6 +165,49 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 authorization.push(request)?;
             };
 
+            // In AuthorizeRequests mode, we retrieve the expected request and match it against the call's target and inputs.
+            if let CallStack::AuthorizeRequests(requests, current_index, authorization) = &mut call_stack {
+                // Increment the index to advance the pre-order DFS traversal of the request tree.
+                *current_index.write() += 1;
+
+                let request = requests.get(*current_index.read()).ok_or_else(||
+                    anyhow!("CallDynamic::evaluate attempted to retrieve request at index {}, but the AuthorizeRequests call stack only contains {} request(s)",
+                    *current_index.read(),
+                    requests.len())
+                )?;
+
+                // Sanity checks
+                if *request.signer() != registers.signer()? {
+                    return Err(anyhow!("CallDynamic::evaluate retrieved a request with a different signer than the signer in the registers").into());
+                }
+                if !request.is_dynamic() {
+                    return Err(anyhow!("CallDynamic::evaluate retrieved a static request").into());
+                }
+
+                // Consistency checks: target program, target function and inputs. Note that as seen by the caller
+                if request.program_id() != substack.program_id() {
+                    return Err(anyhow!("CallDynamic::evaluate retrieved a request with a different program ID than the one in the call instruction").into());
+                }
+                if request.function_name() != function.name() {
+                    return Err(anyhow!("CallDynamic::evaluate retrieved a request with a different function name than the one in the call instruction").into());
+                }
+                // Note the request contains the inputs as seen by the callee, yet `inputs` contains the caller's view.
+                // In order to consistency-check the two, we convert the latter representation to the former.
+                let callee_input_view = {
+                    let input_types = substack.program().get_function_ref(function_name)?.input_types();
+                    if input_types.len() != inputs.len() {
+                        return Err(anyhow!("Expected {} inputs, found {}", input_types.len(), inputs.len()).into());
+                    }
+                    convert_caller_inputs_to_callee_inputs(inputs, &input_types, substack)?
+                };
+                if request.inputs() != callee_input_view {
+                    return Err(anyhow!("CallDynamic::evaluate retrieved a request with different inputs than the ones passed to the call instruction").into());
+                }
+
+                // Add the request to the authorization.
+                authorization.push(request.clone())?;
+            }
+
             // Set the (console) caller.
             let console_caller = Some(*stack.program_id());
             // Evaluate the function.
@@ -346,9 +389,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs)
                     }
-                    // In `AuthorizeMocked` mode, throw an error.
+                    // If the circuit is in AuthorizeMocked mode, throw an error.
                     CallStack::AuthorizeMocked(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into());
+                        return Err(anyhow!("Cannot 'execute' a function in 'authorize mocked' mode.").into());
+                    }
+                    // If the circuit is in AuthorizeRequests mode, throw an error.
+                    CallStack::AuthorizeRequests(..) => {
+                        return Err(anyhow!("Cannot 'execute' a function in 'authorize requests' mode.").into());
                     }
                     // In `Synthesize` or `CheckDeployment` mode, we use dummy inputs and outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {

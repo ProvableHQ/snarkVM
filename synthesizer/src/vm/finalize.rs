@@ -21,6 +21,52 @@ use snarkvm_ledger_store::helpers::Map;
 use snarkvm_synthesizer_error::{FinalizeError, IndexedFinalizeError, IntoIndexedFinalize, indexed_finalize_bail};
 use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
+/// Uniqueness tracking accumulated while assembling a candidate block's transactions.
+struct CandidateTransactionDetails<N: Network> {
+    transition_ids: IndexSet<N::TransitionID>,
+    input_ids: IndexSet<Field<N>>,
+    output_ids: IndexSet<Field<N>>,
+    tpks: IndexSet<Group<N>>,
+    deployment_payers: IndexSet<Address<N>>,
+    deployments: IndexSet<ProgramID<N>>,
+}
+
+impl<N: Network> Default for CandidateTransactionDetails<N> {
+    fn default() -> Self {
+        Self {
+            transition_ids: IndexSet::new(),
+            input_ids: IndexSet::new(),
+            output_ids: IndexSet::new(),
+            tpks: IndexSet::new(),
+            deployment_payers: IndexSet::new(),
+            deployments: IndexSet::new(),
+        }
+    }
+}
+
+impl<N: Network> CandidateTransactionDetails<N> {
+    /// Records an accepted transaction: extends uniqueness sets.
+    fn record_accepted_transaction(&mut self, transaction: &Transaction<N>) {
+        self.transition_ids.extend(transaction.transition_ids());
+        self.input_ids.extend(transaction.input_ids());
+        self.output_ids.extend(transaction.output_ids());
+        self.tpks.extend(transaction.transition_public_keys());
+        if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
+            fee.payer().map(|payer| self.deployment_payers.insert(payer));
+            self.deployments.insert(*deployment.program_id());
+        }
+    }
+}
+
+type AbortReason = String;
+type ComputeSpend = u64;
+/// An intermediary speculation artifact indicating whether a transaction should
+/// be aborted or finalized with a certain compute_spend.
+enum ShouldAbortResult {
+    Abort(AbortReason),
+    Finalize(ComputeSpend),
+}
+
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Speculates on the given list of transactions in the VM.
     /// This function aborts all transactions that are not are well-formed or unique.
@@ -64,7 +110,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // If the current state root does not exist in the block store, then the genesis block has not been introduced yet.
             true => (candidate_transactions, vec![]),
             // Verify transactions for all non-genesis cases.
-            false => self.prepare_for_speculate(&candidate_transactions, rng)?,
+            false => self.prepare_for_speculate(&candidate_transactions, state, rng)?,
         };
 
         // Performs a **dry-run** over the list of ratifications, solutions, and transactions.
@@ -364,18 +410,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut aborted = Vec::new();
             // Initialize a counter for the confirmed transaction index.
             let mut counter = 0u32;
-            // Initialize a list of created transition IDs.
-            let mut transition_ids: IndexSet<N::TransitionID> = IndexSet::new();
-            // Initialize a list of spent input IDs.
-            let mut input_ids: IndexSet<Field<N>> = IndexSet::new();
-            // Initialize a list of created output IDs.
-            let mut output_ids: IndexSet<Field<N>> = IndexSet::new();
-            // Initialize the list of created transition public keys.
-            let mut tpks: IndexSet<Group<N>> = IndexSet::new();
-            // Initialize the list of deployment payers.
-            let mut deployment_payers: IndexSet<Address<N>> = IndexSet::new();
-            // Initialize a list of the successful deployments.
-            let mut deployments = IndexSet::new();
+            // Accumulate per-block uniqueness checks.
+            let mut candidate_transaction_details = CandidateTransactionDetails::<N>::default();
+            // Accumulate per-block spend.
+            let mut block_spend = 0u64;
+            // Determine the transaction spend limit. These unwraps are safe, see tests in consensus_heights.rs
+            let consensus_version = N::CONSENSUS_VERSION(state.block_height()).unwrap();
+            let transaction_spend_limit =
+                consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
+            // Determine the block spend limit.
+            let block_spend_limit = state.block_spend_limit();
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
@@ -388,20 +432,42 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     continue 'outer;
                 }
 
-                // Determine if the transaction should be aborted.
-                if let Some(reason) = self.should_abort_transaction(
+                // Determine whether to skip this transaction.
+                match self.should_abort_transaction(
                     &transaction,
-                    &transition_ids,
-                    &input_ids,
-                    &output_ids,
-                    &tpks,
-                    &deployment_payers,
-                    &deployments,
+                    &candidate_transaction_details,
+                    transaction_spend_limit,
+                    consensus_version,
                 ) {
-                    // Store the aborted transaction.
-                    aborted.push((transaction.clone(), reason));
-                    // Continue to the next transaction.
-                    continue 'outer;
+                    ShouldAbortResult::Abort(abort_reason) => {
+                        // Store the aborted transaction.
+                        aborted.push((transaction.clone(), abort_reason));
+                        // Continue to the next transaction.
+                        continue 'outer;
+                    }
+                    ShouldAbortResult::Finalize(compute_spend) => {
+                        // If the consensus version is >= V16, ensure that the
+                        // transaction is not exceeding block spend limits.
+                        //
+                        // TODO(vicsn) a more robust setup would rely on the
+                        // batch_spend_limit directly, checking on a
+                        // per-certificate basis whether or not transactions
+                        // exceed it.
+                        if consensus_version >= ConsensusVersion::V16 {
+                            if let Some(block_spend_limit) = block_spend_limit {
+                                if block_spend.saturating_add(compute_spend) > block_spend_limit {
+                                    aborted.push((
+                                        transaction.clone(),
+                                        format!("Exceeds the block spend limit with compute_spend: '{compute_spend}'"),
+                                    ));
+                                    // Continue to the next transaction.
+                                    continue 'outer;
+                                }
+                            }
+                            // Track the compute_spend used so far.
+                            block_spend = block_spend.saturating_add(compute_spend);
+                        }
+                    }
                 }
 
                 // Process the transaction in an isolated atomic batch.
@@ -441,7 +507,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             };
 
                         // Check if the program has already been deployed in this block.
-                        match deployments.contains(deployment.program_id()) {
+                        match candidate_transaction_details.deployments.contains(deployment.program_id()) {
                             // If the program has already been deployed, construct the rejected deploy transaction.
                             true => {
                                 let rejected_reason = RejectedReason::DuplicateProgramID(*deployment.program_id());
@@ -576,19 +642,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 match outcome {
                     // If the transaction succeeded, store it and continue to the next transaction.
                     Ok(confirmed_transaction) => {
-                        // Add the transition IDs to the set of produced transition IDs.
-                        transition_ids.extend(confirmed_transaction.transaction().transition_ids());
-                        // Add the input IDs to the set of spent input IDs.
-                        input_ids.extend(confirmed_transaction.transaction().input_ids());
-                        // Add the output IDs to the set of produced output IDs.
-                        output_ids.extend(confirmed_transaction.transaction().output_ids());
-                        // Add the transition public keys to the set of produced transition public keys.
-                        tpks.extend(confirmed_transaction.transaction().transition_public_keys());
-                        // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
-                        if let Transaction::Deploy(_, _, _, deployment, fee) = confirmed_transaction.transaction() {
-                            fee.payer().map(|payer| deployment_payers.insert(payer));
-                            deployments.insert(*deployment.program_id());
-                        }
+                        // Track the accepted transaction details.
+                        candidate_transaction_details.record_accepted_transaction(confirmed_transaction.transaction());
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
                         // Increment the transaction index counter.
@@ -948,7 +1003,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         finalize_result
     }
 
-    /// Returns `Some(reason)` if the transaction is aborted. Otherwise, returns `None`.
+    /// Returns ShouldAbortResult.
     ///
     /// The transaction will be aborted if any of the following conditions are met:
     /// - The transaction is producing a duplicate transition
@@ -957,20 +1012,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is producing a duplicate transition public key
     /// - The transaction is another deployment in the block from the same public fee payer.
     /// - The transaction contains a transition that has been deployed or upgraded in this block.
+    /// - The transaction surpasses the spend limits.
     ///
     /// - Note: If a transaction is a deployment for a program following its deployment or redeployment in this block,
     ///   it is not aborted. Instead, it will be rejected and its fee will be consumed.
-    #[allow(clippy::too_many_arguments)]
     fn should_abort_transaction(
         &self,
         transaction: &Transaction<N>,
-        transition_ids: &IndexSet<N::TransitionID>,
-        input_ids: &IndexSet<Field<N>>,
-        output_ids: &IndexSet<Field<N>>,
-        tpks: &IndexSet<Group<N>>,
-        deployment_payers: &IndexSet<Address<N>>,
-        deployments: &IndexSet<ProgramID<N>>,
-    ) -> Option<String> {
+        candidate_transaction_details: &CandidateTransactionDetails<N>,
+        transaction_spend_limit: u64,
+        consensus_version: ConsensusVersion,
+    ) -> ShouldAbortResult {
+        // Ensure that the transaction is not a fee transaction.
+        if let Transaction::Fee(..) = transaction {
+            return ShouldAbortResult::Abort("Fee transactions are not allowed in speculate".to_string());
+        }
+
         // Ensure that:
         //  - the transaction is not producing a duplicate transition.
         //  - the programs in the component transitions haven't been deployed or upgraded in this block.
@@ -978,14 +1035,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Get the transition ID.
             let transition_id = transition.id();
             // If the transition ID is already produced in this block or previous blocks, abort the transaction.
-            if transition_ids.contains(transition_id)
+            if candidate_transaction_details.transition_ids.contains(transition_id)
                 || self.transition_store().contains_transition_id(transition_id).unwrap_or(true)
             {
-                return Some(format!("Duplicate transition {transition_id}"));
+                return ShouldAbortResult::Abort(format!("Duplicate transition {transition_id}"));
             }
             // If the transition's program is being deployed or redeployed in this block, abort the transaction.
-            if deployments.contains(transition.program_id()) {
-                return Some(format!(
+            if candidate_transaction_details.deployments.contains(transition.program_id()) {
+                return ShouldAbortResult::Abort(format!(
                     "Program {} is being deployed or redeployed in this block",
                     transition.program_id()
                 ));
@@ -995,16 +1052,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Ensure that the transaction is not double-spending an input.
         for input_id in transaction.input_ids() {
             // If the input ID is already spent in this block or previous blocks, abort the transaction.
-            if input_ids.contains(input_id) || self.transition_store().contains_input_id(input_id).unwrap_or(true) {
-                return Some(format!("Double-spending input {input_id}"));
+            if candidate_transaction_details.input_ids.contains(input_id)
+                || self.transition_store().contains_input_id(input_id).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Double-spending input {input_id}"));
             }
         }
 
         // Ensure that the transaction is not producing a duplicate output.
         for output_id in transaction.output_ids() {
             // If the output ID is already produced in this block or previous blocks, abort the transaction.
-            if output_ids.contains(output_id) || self.transition_store().contains_output_id(output_id).unwrap_or(true) {
-                return Some(format!("Duplicate output {output_id}"));
+            if candidate_transaction_details.output_ids.contains(output_id)
+                || self.transition_store().contains_output_id(output_id).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Duplicate output {output_id}"));
             }
         }
 
@@ -1012,8 +1073,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Note that the tpk and tcm are corresponding, so a uniqueness check for just the tpk is sufficient.
         for tpk in transaction.transition_public_keys() {
             // If the transition public key is already produced in this block or previous blocks, abort the transaction.
-            if tpks.contains(tpk) || self.transition_store().contains_tpk(tpk).unwrap_or(true) {
-                return Some(format!("Duplicate transition public key {tpk}"));
+            if candidate_transaction_details.tpks.contains(tpk)
+                || self.transition_store().contains_tpk(tpk).unwrap_or(true)
+            {
+                return ShouldAbortResult::Abort(format!("Duplicate transition public key {tpk}"));
             }
         }
 
@@ -1021,14 +1084,48 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         if let Transaction::Deploy(_, _, _, _, fee) = transaction {
             // If any public deployment payer has already deployed in this block, abort the transaction.
             if let Some(payer) = fee.payer() {
-                if deployment_payers.contains(&payer) {
-                    return Some(format!("Another deployment in the block from the same public fee payer {payer}"));
+                if candidate_transaction_details.deployment_payers.contains(&payer) {
+                    return ShouldAbortResult::Abort(format!(
+                        "Another deployment in the block from the same public fee payer {payer}"
+                    ));
                 }
             }
         }
 
-        // Return `None` because the transaction is well-formed.
-        None
+        // Before V16, we return without tracking any compute spend.
+        if consensus_version < ConsensusVersion::V16 {
+            ShouldAbortResult::Finalize(0)
+        // If the consensus version is >= V16, ensure that the transaction is not exceeding spend limits.
+        } else {
+            // Compute microcredit spend from deployment or execution cost details.
+            let compute_spend = match transaction {
+                Transaction::Deploy(_, _, _, deployment, _) => {
+                    match deployment_cost(self.process(), deployment, consensus_version) {
+                        Ok((_, cost_details)) => deploy_compute_cost_in_microcredits(cost_details, consensus_version),
+                        Err(e) => {
+                            return ShouldAbortResult::Abort(format!("Failed to compute the deployment cost: {e}"));
+                        }
+                    }
+                }
+                Transaction::Execute(_, _, execution, _) => {
+                    match execution_cost(self.process(), execution, consensus_version) {
+                        Ok((_, cost_details)) => execute_compute_cost_in_microcredits(cost_details, consensus_version),
+                        Err(e) => {
+                            return ShouldAbortResult::Abort(format!("Failed to compute the execution cost: {e}"));
+                        }
+                    }
+                }
+                Transaction::Fee(..) => 0, // Fee transactions are already aborted above and don't contribute compute spend.
+            };
+
+            if compute_spend > transaction_spend_limit {
+                return ShouldAbortResult::Abort(format!(
+                    "Exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
+                ));
+            }
+
+            ShouldAbortResult::Finalize(compute_spend)
+        }
     }
 
     /// Performs precondition checks on the transactions prior to speculation.
@@ -1039,6 +1136,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub(crate) fn prepare_for_speculate<'a, R: CryptoRng + Rng>(
         &self,
         transactions: &[&'a Transaction<N>],
+        state: FinalizeGlobalState,
         rng: &mut R,
     ) -> Result<(Vec<&'a Transaction<N>>, Vec<(&'a Transaction<N>, String)>)> {
         // Construct the list of transactions that need to verified.
@@ -1047,60 +1145,34 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut valid_transactions = Vec::with_capacity(transactions.len());
         let mut aborted_transactions = Vec::with_capacity(transactions.len());
 
-        // Initialize a list of created transition IDs.
-        let mut transition_ids: IndexSet<N::TransitionID> = Default::default();
-        // Initialize a list of spent input IDs.
-        let mut input_ids: IndexSet<Field<N>> = Default::default();
-        // Initialize a list of created output IDs.
-        let mut output_ids: IndexSet<Field<N>> = Default::default();
-        // Initialize the list of created transition public keys.
-        let mut tpks: IndexSet<Group<N>> = Default::default();
-        // Initialize the list of deployment payers.
-        let mut deployment_payers: IndexSet<Address<N>> = Default::default();
-        // Initialize a list of the successful deployments.
-        let mut deployments = IndexSet::new();
+        // Accumulate per-block uniqueness checks.
+        let mut candidate_transaction_details = CandidateTransactionDetails::<N>::default();
+        // Determine the transaction spend limit. These unwraps are safe, see tests in consensus_heights.rs
+        let consensus_version = N::CONSENSUS_VERSION(state.block_height()).unwrap();
+        let transaction_spend_limit =
+            consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
 
-        // Abort the transactions that are have duplicates or are invalid. This will prevent the VM from performing
-        // verification on transactions that would have been aborted in `VM::atomic_speculate`.
+        // Abort duplicate, overspending, invalid, or disallowed transactions before verification.
         for transaction in transactions.iter() {
-            // Abort the transaction early if it is a fee transaction.
-            if transaction.is_fee() {
-                aborted_transactions.push((*transaction, "Fee transactions are not allowed in speculate".to_string()));
-                continue;
-            }
-
-            // Determine if the transaction should be aborted.
             match self.should_abort_transaction(
                 transaction,
-                &transition_ids,
-                &input_ids,
-                &output_ids,
-                &tpks,
-                &deployment_payers,
-                &deployments,
+                &candidate_transaction_details,
+                transaction_spend_limit,
+                consensus_version,
             ) {
-                // Store the aborted transaction.
-                Some(reason) => aborted_transactions.push((*transaction, reason.to_string())),
-                // Track the transaction state.
-                None => {
-                    // Add the transition IDs to the set of produced transition IDs.
-                    transition_ids.extend(transaction.transition_ids());
-                    // Add the input IDs to the set of spent input IDs.
-                    input_ids.extend(transaction.input_ids());
-                    // Add the output IDs to the set of produced output IDs.
-                    output_ids.extend(transaction.output_ids());
-                    // Add the transition public keys to the set of produced transition public keys.
-                    tpks.extend(transaction.transition_public_keys());
-                    // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
-                    if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
-                        fee.payer().map(|payer| deployment_payers.insert(payer));
-                        deployments.insert(*deployment.program_id());
-                    }
-
-                    // Add the transaction to the list of transactions to verify.
+                ShouldAbortResult::Abort(abort_reason) => {
+                    // Store the aborted transaction.
+                    aborted_transactions.push((*transaction, abort_reason));
+                }
+                // We do not further track the compute spend here, to not count
+                // aborted transactions towards the block spend limit.
+                ShouldAbortResult::Finalize(_compute_spend) => {
+                    // Track the accepted transaction details.
+                    candidate_transaction_details.record_accepted_transaction(transaction);
+                    // Mark the transaction ready to verify.
                     transactions_to_verify.push(transaction);
                 }
-            };
+            }
         }
 
         // Separate the transactions into deploys and executions.
@@ -1698,7 +1770,7 @@ finalize transfer_public:
             >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
         .then_some(next_block_timestamp);
         let finalize_state =
-            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
+            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32], None);
 
         // Speculate on the candidate ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(

@@ -38,7 +38,7 @@ mod execute;
 mod finalize;
 mod view;
 #[cfg(feature = "history")]
-pub use view::evaluate_view_at_height;
+pub use view::evaluate_view_with_stack_at_height;
 mod verify_deployment;
 mod verify_execution;
 mod verify_fee;

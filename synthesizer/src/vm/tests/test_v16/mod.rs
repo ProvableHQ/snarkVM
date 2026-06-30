@@ -13,29 +13,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "test")]
-mod test_v8;
+// Tests for quorum block compute spend limits.
+mod block_spend_limit;
 
-#[cfg(feature = "test")]
-mod test_v9;
+// Tests for increased program size limits.
+mod program_size;
 
-#[cfg(feature = "test")]
-mod test_v10;
+// Tests for the `<name>/checksum` component checksum operand.
+mod component_checksum;
 
-#[cfg(feature = "test")]
-mod test_v11;
-
-#[cfg(feature = "test")]
-mod test_v13;
-
-#[cfg(feature = "test")]
-mod test_v14;
-
-#[cfg(feature = "test")]
-mod test_v15;
-
-#[cfg(feature = "test")]
-mod test_v16;
-
-#[cfg(feature = "test")]
 use super::*;
+
+use crate::vm::test_helpers::*;
+
+use console::{account::Address, network::ConsensusVersion, prelude::FromStr, program::Value};
+
+use snarkvm_ledger_block::Solutions;
+use snarkvm_synthesizer_process::{execute_compute_cost_in_microcredits, execution_cost};
+use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
+use snarkvm_utilities::TestRng;

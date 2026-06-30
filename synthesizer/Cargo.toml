@@ -80,6 +80,9 @@ workspace = true
 [dependencies.snarkvm-console]
 workspace = true
 
+[dependencies.snarkvm-ledger-authority]
+workspace = true
+
 [dependencies.snarkvm-ledger-block]
 workspace = true
 

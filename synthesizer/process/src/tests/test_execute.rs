@@ -46,7 +46,7 @@ type CurrentAleo = AleoV0;
 
 /// Samples a new finalize state.
 pub fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
+    FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None)
 }
 
 fn execution_stacks_for_execution<N: Network>(

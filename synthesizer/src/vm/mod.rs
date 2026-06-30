@@ -45,6 +45,7 @@ use console::{
     types::{Field, Group, U8, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
+use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
@@ -325,6 +326,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Match the consensus path's gating: the timestamp is only included from V12 onward.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
+        let block_spend_limit =
+            if let Authority::Quorum(subdag) = block.authority() { subdag.spend_limit(block.height()) } else { None };
         FinalizeGlobalState::new::<N>(
             block.round(),
             block.height(),
@@ -332,6 +335,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             block.cumulative_weight(),
             block.cumulative_proof_target(),
             block.previous_hash(),
+            block_spend_limit,
         )
     }
 
@@ -345,10 +349,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
     /// for historic views. `height` must satisfy `height <= current_block_height()`.
     ///
-    /// Caveat: the `Stack` itself uses interior mutability, so a concurrent redeploy of the
-    /// same program could perturb its structural caches mid-view. Mapping values are
-    /// snapshot-consistent at `height`; program structure is not. Known gap; a future
-    /// `StackSnapshot`-style fix would close it.
+    /// The view body is taken from the program edition live at `height`.
     #[cfg(feature = "history")]
     #[inline]
     pub fn evaluate_view_at_height(
@@ -358,8 +359,63 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         inputs: Vec<Value<N>>,
         height: u32,
     ) -> Result<Vec<Value<N>>> {
+        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
+        let view_name = view_name.try_into().map_err(|_| anyhow!("Invalid view function name"))?;
         let state = self.finalize_state_for_block(height)?;
-        self.process.evaluate_view_at_height(state, self.finalize_store(), program_id, view_name, inputs, height)
+        let edition = self.resolve_program_edition_at_height(&program_id, height)?;
+        let latest_stack = self.process.get_stack(program_id)?;
+        let stack = if *latest_stack.program_edition() == edition {
+            // The historic edition is already the loaded one.
+            latest_stack
+        } else {
+            // Build a one-off stack for the historic edition. `new_raw` skips upgrade validation, as the
+            // process holds a newer edition; views can't `call`, so the live (latest) imports resolve
+            // identically (struct, record, and mapping types are frozen across upgrades).
+            let program = self
+                .transaction_store()
+                .deployment_store()
+                .get_program_for_edition(&program_id, edition)?
+                .ok_or_else(|| anyhow!("Program '{program_id}' (edition {edition}) was not found in storage"))?;
+            let stack = Stack::new_raw(&self.process, &program, edition)?;
+            stack.initialize_and_check(&self.process)?;
+            Arc::new(stack)
+        };
+        snarkvm_synthesizer_process::evaluate_view_with_stack_at_height(
+            state,
+            self.finalize_store(),
+            &stack,
+            &view_name,
+            inputs,
+            height,
+        )
+    }
+
+    /// Returns the program edition live at block `height`: the newest edition whose original
+    /// deployment was confirmed at or before `height`. Editions deploy in increasing block order.
+    #[cfg(feature = "history")]
+    fn resolve_program_edition_at_height(&self, program_id: &ProgramID<N>, height: u32) -> Result<u16> {
+        let deployment_store = self.transaction_store().deployment_store();
+        let block_store = self.block_store();
+        let latest_edition = deployment_store
+            .get_latest_edition_for_program(program_id)?
+            .ok_or_else(|| anyhow!("Program '{program_id}' has not been deployed"))?;
+        for edition in (0..=latest_edition).rev() {
+            let Some(transaction_id) =
+                deployment_store.find_original_transaction_id_from_program_id_and_edition(program_id, edition)?
+            else {
+                continue;
+            };
+            let Some(block_hash) = block_store.find_block_hash(&transaction_id)? else {
+                continue;
+            };
+            let Some(deployment_height) = block_store.get_block_height(&block_hash)? else {
+                continue;
+            };
+            if deployment_height <= height {
+                return Ok(edition);
+            }
+        }
+        bail!("Program '{program_id}' was not deployed at or before height {height}")
     }
 
     /// Returns the transition store.
@@ -553,6 +609,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine if the block timestamp should be included.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
+        // Determine the block spend limit.
+        let block_spend_limit =
+            if let Authority::Quorum(subdag) = block.authority() { subdag.spend_limit(block.height()) } else { None };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
@@ -561,6 +620,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             block.cumulative_weight(),
             block.cumulative_proof_target(),
             block.previous_hash(),
+            block_spend_limit,
         )?;
 
         // Pause the atomic writes, so that both the insertion and finalization belong to a single batch.
@@ -679,7 +739,7 @@ pub(crate) mod test_helpers {
 
     /// Samples a new finalize state.
     pub(crate) fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
+        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None)
     }
 
     pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
@@ -981,7 +1041,7 @@ function compute:
             >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
         .then_some(next_block_timestamp);
         let finalize_state =
-            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
+            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32], None);
 
         // Speculate on the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(

@@ -355,6 +355,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V15`"
                     );
                 }
+                if consensus_version < ConsensusVersion::V16 {
+                    ensure!(
+                        !deployment.program().contains_v16_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V16`"
+                    );
+                }
 
                 // Checks required for current and future consensus versions (>= V9).
                 //
@@ -712,8 +718,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let current_height = self.block_store().current_block_height();
         let consensus_version = N::CONSENSUS_VERSION(current_height)?;
         // Get the transaction spend limit.
-        let transaction_spend_limit =
-            consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
+        let transaction_spend_limit = consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version)
+            .ok_or_else(|| anyhow::anyhow!("Failed to fetch transaction spend limit"))?;
         match transaction {
             Transaction::Deploy(id, deployment_id, _, deployment, fee) => {
                 // Ensure the rejected ID is not present.
@@ -723,7 +729,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Ensure the compute cost does not exceed the transaction spend limit.
                 // Comparison logic before ConsensusVersion::V10 has been pruned to simplify the code.
                 if consensus_version >= ConsensusVersion::V10 {
-                    let compute_spend = deploy_compute_cost_in_microcredits(cost_details, consensus_version)?;
+                    let compute_spend = deploy_compute_cost_in_microcredits(cost_details, consensus_version);
                     ensure!(
                         compute_spend <= transaction_spend_limit,
                         "Transaction '{id}' exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
@@ -754,7 +760,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Ensure the compute cost does not exceed the transaction spend limit.
                         // Comparison logic before ConsensusVersion::V10 has been pruned to simplify the code.
                         if consensus_version >= ConsensusVersion::V10 {
-                            let compute_spend = execute_compute_cost_in_microcredits(cost_details, consensus_version)?;
+                            let compute_spend = execute_compute_cost_in_microcredits(cost_details, consensus_version);
                             ensure!(
                                 compute_spend <= transaction_spend_limit,
                                 "Transaction '{id}' exceeds the transaction spend limit with compute_spend: '{compute_spend}'"

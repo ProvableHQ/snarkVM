@@ -115,6 +115,9 @@ impl<N: Network> RegisterTypes<N> {
             Operand::Checksum(_) => bail!("'checksum' is not a valid operand in a non-finalize context."),
             Operand::Edition(_) => bail!("'edition' is not a valid operand in a non-finalize context."),
             Operand::ProgramOwner(_) => bail!("'program_owner' is not a valid operand in a non-finalize context."),
+            Operand::ComponentChecksum(..) => {
+                bail!("a component checksum is not a valid operand in a non-finalize context.")
+            }
         })
     }
 

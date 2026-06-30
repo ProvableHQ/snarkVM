@@ -114,6 +114,9 @@ pub trait StackTrait<N: Network> {
     /// Returns the program checksum as a field element.
     fn program_checksum_as_field(&self) -> Result<Field<N>>;
 
+    /// Returns the checksum of the program component (function, closure, or view) with the given name.
+    fn component_checksum(&self, name: &Identifier<N>) -> Result<&[U8<N>; 32]>;
+
     /// Returns the program edition.
     fn program_edition(&self) -> U16<N>;
 

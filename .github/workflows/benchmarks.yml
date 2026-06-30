@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - 'staging'
-      - 'copilot/reduce-snarkvm-ci-benchmark-scope'
+      - 'fix_benchmark_pushing'
   workflow_dispatch:
 
 jobs:
@@ -121,15 +121,6 @@ jobs:
           comment-on-alert: true
           fail-on-alert: true
           alert-comment-cc-users: '@vicsn'
-          # Only push the results on staging (see below)
-          auto-push: false
+          auto-push: true
           # Enable Job Summary for PRs
           summary-always: true
-
-      - name: Push benchmark result
-        # Avoid pushing results on pull requests or experimental branches, to reduce noise in the data.
-        # The results for all other runs are still accessible through the workflow summary.
-        if: github.ref_name == 'staging'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git push origin gh-pages

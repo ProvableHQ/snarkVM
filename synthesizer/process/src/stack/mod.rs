@@ -116,6 +116,9 @@ pub enum CallStack<N: Network> {
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
     /// Mock an evaluation for cost estimation.
     AuthorizeMocked(Vec<Request<N>>, Address<N>, Authorization<N>),
+    /// Authorize a collection of requests coming from a single root call.
+    // (full vector of requests in pre-order, index of the request currently being explored, authorization being constructed)
+    AuthorizeRequests(Vec<Request<N>>, Arc<RwLock<usize>>, Authorization<N>),
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
     /// Validate a `Deploy` transaction's function circuit.
@@ -134,6 +137,7 @@ impl<N: Network> CallStack<N> {
         match self {
             CallStack::Authorize(..) => "Authorize".to_string(),
             CallStack::AuthorizeMocked(..) => "Mock".to_string(),
+            CallStack::AuthorizeRequests(..) => "AuthorizeRequests".to_string(),
             CallStack::Synthesize(..) => "Synthesize".to_string(),
             CallStack::CheckDeployment(..) => "CheckDeployment".to_string(),
             CallStack::Evaluate(..) => "Evaluate".to_string(),
@@ -169,6 +173,11 @@ impl<N: Network> CallStack<N> {
             CallStack::AuthorizeMocked(requests, address, authorization) => {
                 CallStack::AuthorizeMocked(requests.clone(), *address, authorization.replicate())
             }
+            CallStack::AuthorizeRequests(requests, current_index, authorization) => CallStack::AuthorizeRequests(
+                requests.clone(),
+                Arc::new(RwLock::new(*current_index.read())),
+                authorization.replicate(),
+            ),
             CallStack::Synthesize(requests, private_key, authorization) => {
                 CallStack::Synthesize(requests.clone(), *private_key, authorization.replicate())
             }
@@ -210,6 +219,9 @@ impl<N: Network> CallStack<N> {
                 // Push the request to the stack.
                 requests.push(request)
             }
+            CallStack::AuthorizeRequests(..) => {
+                bail!("Cannot push a request to the stack in AuthorizeRequests mode");
+            }
             CallStack::Evaluate(authorization) => authorization.push(request)?,
             CallStack::Execute(authorization, ..) => authorization.push(request)?,
         }
@@ -226,6 +238,9 @@ impl<N: Network> CallStack<N> {
             | CallStack::PackageRun(requests, ..) => {
                 requests.pop().ok_or_else(|| anyhow!("No more requests on the stack"))
             }
+            CallStack::AuthorizeRequests(..) => {
+                Err(anyhow!("Cannot pop a request from the stack in AuthorizeRequests mode"))
+            }
             CallStack::Evaluate(authorization) => authorization.next(),
             CallStack::Execute(authorization, ..) => authorization.next(),
         }
@@ -240,6 +255,13 @@ impl<N: Network> CallStack<N> {
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
                 requests.last().cloned().ok_or_else(|| anyhow!("No more requests on the stack"))
+            }
+            CallStack::AuthorizeRequests(requests, current_index, ..) => {
+                requests.get(*current_index.read()).cloned().ok_or_else(|| anyhow!(
+                    "CallStack::peek attempted to retrieve request at index {}, but the AuthorizeRequests call stack only contains {} request(s)",
+                    *current_index.read(),
+                    requests.len()
+                ))
             }
             CallStack::Evaluate(authorization) => authorization.peek_next(),
             CallStack::Execute(authorization, ..) => authorization.peek_next(),
@@ -273,6 +295,8 @@ pub struct Stack<N: Network> {
     program_address: Address<N>,
     /// The program checksum.
     program_checksum: [U8<N>; 32],
+    /// The checksum of each component (function, closure, or view) in the program.
+    component_checksums: IndexMap<Identifier<N>, [U8<N>; 32]>,
     /// The program edition.
     program_edition: U16<N>,
     /// The number of amendments applied to the current program edition.
