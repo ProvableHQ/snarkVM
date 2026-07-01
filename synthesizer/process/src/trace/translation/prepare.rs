@@ -99,7 +99,7 @@ impl<N: Network> Translation<N> {
         // Note: Validation that a transition should be dynamic based on the call graph is done in
         // `verify_execution.rs::to_transition_verifier_inputs`, which checks that the parent instruction
         // is `CallDynamic` and validates that inputs/outputs use the correct `*WithDynamicID` variants
-        // via the `to_caller_input().matches_type()` and `to_caller_output().matches_type()` checks.
+        // via the `to_caller_input().is_type()` and `to_caller_output().is_type()` checks.
         for transition in transitions {
             let transition_id = transition.id();
 

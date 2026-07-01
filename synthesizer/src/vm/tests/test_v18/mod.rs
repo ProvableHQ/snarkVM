@@ -16,6 +16,9 @@
 // Tests for stack fetching relevant to the record-existence check.
 mod record_existence_stacks;
 
+// Tests that the translation-marked variants of Input and Output are checked correctly.
+mod translated_type_checks;
+
 use super::*;
 
 use super::test_v14::add_and_test_with_costs;

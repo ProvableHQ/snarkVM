@@ -180,8 +180,14 @@ impl<N: Network> Process<N> {
 
             // Obtain the is_dynamic flag used by Input::matches_type and Output::matches_type. At
             // this point, we only want to enforce strict matching for the root call: we do not know
-            // which of the non-root ones are dynamic or not yet.
-            let is_dynamic_for_types = if reverse_call_graph.get(transition.id()).is_none() { Some(false) } else { None };
+            // which of the non-root ones are dynamic or not yet. Strict matching is not applied
+            // before ConsensusVersion::V18.
+            let is_dynamic_for_types = if reverse_call_graph.get(transition.id()).is_none()
+                && consensus_version >= ConsensusVersion::V18 {
+                    Some(false)
+                } else {
+                    None
+                };
 
             // Ensure the input and output types are equivalent to the ones defined in the function.
             // We only need to check that the variant type matches because we already check the hashes in
