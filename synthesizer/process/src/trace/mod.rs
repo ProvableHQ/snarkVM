@@ -39,9 +39,9 @@ use crate::Authorization;
 #[derive(Clone, Debug, Default)]
 pub struct Trace<N: Network> {
     /// The list of transitions.
-    transitions: Vec<Transition<N>>,
+    pub transitions: Vec<Transition<N>>,
     /// A map of locators to (proving key, assignments) pairs.
-    transition_tasks: HashMap<Locator<N>, (ProvingKey<N>, Vec<Assignment<N::Field>>)>,
+    pub transition_tasks: HashMap<Locator<N>, (ProvingKey<N>, Vec<Assignment<N::Field>>)>,
     /// A tracker for all inclusion tasks.
     inclusion_tasks: Inclusion<N>,
     /// A tracker for all translation tasks.
@@ -364,7 +364,7 @@ impl<N: Network> Trace<N> {
 
 impl<N: Network> Trace<N> {
     /// Returns the global state root and proof for the given assignments.
-    fn prove_batch<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+    pub fn prove_batch<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         locator: &str,
         varuna_version: VarunaVersion,
         mut proving_tasks: Vec<(ProvingKey<N>, Vec<Assignment<N::Field>>)>,

@@ -178,6 +178,11 @@ impl<N: Network> Process<N> {
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
             ensure!(function.outputs().len() == num_outputs, "The number of transition outputs is incorrect");
 
+            // Obtain the is_dynamic flag used by Input::matches_type and Output::matches_type. At
+            // this point, we only want to enforce strict matching for the root call: we do not know
+            // which of the non-root ones are dynamic or not yet.
+            let is_dynamic_for_types = if reverse_call_graph.get(transition.id()).is_none() { Some(false) } else { None };
+
             // Ensure the input and output types are equivalent to the ones defined in the function.
             // We only need to check that the variant type matches because we already check the hashes in
             // the `Input::verify` and `Output::verify` functions.
@@ -185,18 +190,20 @@ impl<N: Network> Process<N> {
             // so `zip_eq` here is safe and acts as a defense-in-depth assertion.
             for (function_input, transition_input) in function.input_types().iter().zip_eq(transition.inputs().iter()) {
                 ensure!(
-                    transition_input.is_type(function_input),
-                    "Input variant mismatch: expected '{function_input}', found '{transition_input}'",
+                    transition_input.matches_type(function_input, is_dynamic_for_types),
+                    "Incorrect input variant or mismatch with the expected value type: {} call has input '{transition_input}' but the function expects type '{function_input}'",
+                    if is_dynamic_for_types.is_some() { "root" } else { "non-root" },
                 );
             }
             for (output_index, (function_output, transition_output)) in
                 function.output_types().iter().zip_eq(transition.outputs().iter()).enumerate()
             {
                 ensure!(
-                    transition_output.is_type(function_output),
-                    "Output variant mismatch at index {output_index} in '{}/{}': expected '{function_output}', found '{transition_output}'",
+                    transition_output.matches_type(function_output, is_dynamic_for_types),
+                    "Incorrect output variant or mismatch with the expected value type at index {output_index} in '{}/{}': {} call has output '{transition_output}' but the function declares type '{function_output}'",
                     transition.program_id(),
                     transition.function_name(),
+                    if is_dynamic_for_types.is_some() { "root" } else { "non-root" },
                 );
             }
 
