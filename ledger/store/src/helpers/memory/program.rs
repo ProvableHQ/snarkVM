@@ -47,12 +47,9 @@ pub struct FinalizeMemory<N: Network> {
     key_value_map: NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
     /// The rejection reason map.
     rejected_reason_map: MemoryMap<Field<N>, RejectedReason<N>>,
-    /// The historical mapping value update map.
+    /// The historical mapping value map (keyed by big-endian block height).
     #[cfg(feature = "history")]
-    mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>,
-    /// The historical mapping update heights map.
-    #[cfg(feature = "history")]
-    mapping_update_heights_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
+    mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, [u8; 4]), Value<N>>,
     /// The current block height.
     #[cfg(feature = "history")]
     block_height: Arc<AtomicU32>,
@@ -70,9 +67,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
     #[cfg(feature = "history")]
-    type MappingUpdateMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>;
-    #[cfg(feature = "history")]
-    type MappingUpdateHeightsMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
+    type MappingUpdateMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, [u8; 4]), Value<N>>;
     #[cfg(feature = "history-staking-rewards")]
     type StakingRewardsMap = MemoryMap<(Address<N>, u32), (Address<N>, u64, u64)>;
 
@@ -89,8 +84,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             rejected_reason_map: MemoryMap::default(),
             #[cfg(feature = "history")]
             mapping_update_map: MemoryMap::default(),
-            #[cfg(feature = "history")]
-            mapping_update_heights_map: MemoryMap::default(),
             #[cfg(feature = "history")]
             block_height: Default::default(),
             #[cfg(feature = "history-staking-rewards")]
@@ -123,11 +116,6 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     #[cfg(feature = "history")]
     fn mapping_update_map(&self) -> &Self::MappingUpdateMap {
         &self.mapping_update_map
-    }
-
-    #[cfg(feature = "history")]
-    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap {
-        &self.mapping_update_heights_map
     }
 
     /// Returns the historical staking rewards map.

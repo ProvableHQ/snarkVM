@@ -213,7 +213,6 @@ pub enum ProgramMap {
     ProgramID = DataID::ProgramIDMap as u16,
     KeyValueID = DataID::KeyValueMap as u16,
     MappingUpdate = DataID::MappingUpdateMap as u16,
-    MappingUpdateHeights = DataID::MappingUpdateHeightsMap as u16,
     StakingRewards = DataID::StakingRewardsMap as u16,
     RejectedReason = DataID::RejectedReasonMap as u16,
 }
