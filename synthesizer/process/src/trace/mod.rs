@@ -39,9 +39,9 @@ use crate::Authorization;
 #[derive(Clone, Debug, Default)]
 pub struct Trace<N: Network> {
     /// The list of transitions.
-    pub transitions: Vec<Transition<N>>,
+    transitions: Vec<Transition<N>>,
     /// A map of locators to (proving key, assignments) pairs.
-    pub transition_tasks: HashMap<Locator<N>, (ProvingKey<N>, Vec<Assignment<N::Field>>)>,
+    transition_tasks: HashMap<Locator<N>, (ProvingKey<N>, Vec<Assignment<N::Field>>)>,
     /// A tracker for all inclusion tasks.
     inclusion_tasks: Inclusion<N>,
     /// A tracker for all translation tasks.
@@ -78,6 +78,11 @@ impl<N: Network> Trace<N> {
     /// Returns the list of transitions.
     pub fn transitions(&self) -> &[Transition<N>] {
         &self.transitions
+    }
+
+    /// Returns the transition proving tasks (proving key + assignments), keyed by locator.
+    pub fn transition_tasks(&self) -> &HashMap<Locator<N>, (ProvingKey<N>, Vec<Assignment<N::Field>>)> {
+        &self.transition_tasks
     }
 
     /// Returns the call metrics.

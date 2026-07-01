@@ -26,7 +26,7 @@ use indexmap::IndexMap;
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Execution<N: Network> {
     /// The transitions.
-    pub transitions: IndexMap<N::TransitionID, Transition<N>>,
+    transitions: IndexMap<N::TransitionID, Transition<N>>,
     /// The global state root.
     global_state_root: N::StateRoot,
     /// The proof.

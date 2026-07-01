@@ -182,8 +182,8 @@ impl<N: Network> Process<N> {
             // this point, we only want to enforce strict matching for the root call: we do not know
             // which of the non-root ones are dynamic or not yet. Strict matching is not applied
             // before ConsensusVersion::V18.
-            let is_dynamic_for_types = if reverse_call_graph.get(transition.id()).is_none()
-                && consensus_version >= ConsensusVersion::V18 {
+            let is_dynamic_for_types =
+                if !reverse_call_graph.contains_key(transition.id()) && consensus_version >= ConsensusVersion::V18 {
                     Some(false)
                 } else {
                     None

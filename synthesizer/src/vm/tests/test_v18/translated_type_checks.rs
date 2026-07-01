@@ -15,31 +15,11 @@
 
 use super::*;
 
-// TODO (Antonio) document
-
-
-use crate::vm::test_helpers::sample_finalize_state;
-use aleo_std::StorageMode;
-use circuit::network::AleoV0;
-use console::{
-    account::{Address, PrivateKey},
-    network::MainnetV0,
-    program::{
-        DynamicRecord, Identifier, InputID, Literal, Plaintext, ProgramID, Record, Value, compute_function_id,
-    },
-    types::{Field, U64},
-};
+use console::program::{DynamicRecord, InputID, compute_function_id};
 use snarkvm_ledger_block::{Input, Transition};
-use snarkvm_ledger_store::{FinalizeStore, helpers::memory::FinalizeMemory};
 use snarkvm_synthesizer_process::TranslationAssignment;
 
-use snarkvm_synthesizer_program::{FinalizeStoreTrait, Program};
-
-type CurrentNetwork = MainnetV0;
-type CurrentAleo = AleoV0;
-
-/// Re-encodes the transition's root external-record input as `ExternalRecordWithDynamicID`
-/// (the only change a malicious prover makes).
+// Re-encodes the transition's root external-record input as ExternalRecordWithDynamicID.
 fn replace_external_input(
     transition: &Transition<CurrentNetwork>,
     dynamic_id: Field<CurrentNetwork>,
@@ -62,85 +42,87 @@ fn replace_external_input(
     .unwrap()
 }
 
+// Checks that a root call with an Input::ExternalRecordWithDynamicID is rejected.
 #[test]
-fn external_record_with_dynamic_id_drains_funded_vault() {
-
+fn external_record_with_dynamic_id_input_to_root() {
     let consensus_version = ConsensusVersion::V18;
 
     let rng = &mut TestRng::default();
-    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-    let attacker = Address::try_from(private_key).unwrap();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let address = Address::try_from(&caller_private_key).unwrap();
 
-    // Issuer defines the `ticket` external record honored by the vault.
-    let issuer = Program::<CurrentNetwork>::from_str(
+    let program_a = Program::<CurrentNetwork>::from_str(
         r"
-program root_dyn_issuer.aleo;
+        program issuer.aleo;
 
-record ticket:
-owner as address.private;
-amount as u64.public;
+        record ticket:
+        owner as address.private;
+        amount as u64.public;
 
-function noop:
+        function foo:
+            assert.eq true true;
 
-constructor:
-assert.eq true true;
-",
+        constructor:
+        assert.eq true true;
+        ",
     )
     .unwrap();
 
-    // Vault pays out `ticket.amount` from its own public credits to the caller.
-    let vault = Program::<CurrentNetwork>::from_str(
+    let program_b = Program::<CurrentNetwork>::from_str(
         r"
-import root_dyn_issuer.aleo;
-import credits.aleo;
+        import issuer.aleo;
 
-program root_dyn_consumer.aleo;
+        program checker.aleo;
 
-function claim:
-input r0 as root_dyn_issuer.aleo/ticket.record;
-input r1 as address.public;
-call root_dyn_issuer.aleo/noop;
-call credits.aleo/transfer_public r1 r0.amount into r2;
-async claim r2 into r3;
-output r3 as root_dyn_consumer.aleo/claim.future;
+        function check_ticket:
+            input r0 as issuer.aleo/ticket.record;
+            input r1 as address.public;
 
-finalize claim:
-input r0 as credits.aleo/transfer_public.future;
-await r0;
+            lt r0.amount 1000u64 into r2;
+            assert.eq r2 true;
 
-constructor:
-assert.eq true true;
-",
+        constructor:
+            assert.eq true true;
+        ",
     )
     .unwrap();
 
+    // Initialize the VM at V18 and deploy the two programs.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(consensus_version).unwrap(), rng);
+    let deploy_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[deploy_a], rng);
+    let deploy_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[deploy_b], rng);
+
+    // Build the forged execution with a standalone process. We cannot use `vm.execute` here because
+    // the (fake) ticket record does not exist on the ledger, so the record-existence check would
+    // reject the honest execution before we get a chance to forge it.
     let process = crate::Process::<CurrentNetwork>::load().unwrap();
-    process.lock().add_program(&issuer).unwrap();
-    process.lock().add_program(&vault).unwrap();
+    process.lock().add_program(&program_a).unwrap();
+    process.lock().add_program(&program_b).unwrap();
 
-    // A fake `ticket`, never issued on-ledger. `amount` = funds stolen.
-    let steal_amount = 4242u64;
-    let record = Record::<CurrentNetwork, console::program::Plaintext<CurrentNetwork>>::from_str(&format!(
-        "{{ owner: {attacker}.private, amount: {steal_amount}u64.public, _nonce: 0group.public, _version: 1u8.public }}"
+    let amount = 42u64;
+    let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&format!(
+        "{{ owner: {address}.private, amount: {amount}u64.public, _nonce: 0group.public, _version: 1u8.public }}"
     ))
     .unwrap();
     let record_value = Value::<CurrentNetwork>::Record(record.clone());
-    let receiver_value = Value::<CurrentNetwork>::from_str(&attacker.to_string()).unwrap();
+    let receiver_value = Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap();
 
-    let function_name = Identifier::<CurrentNetwork>::from_str("claim").unwrap();
+    let function_name = Identifier::<CurrentNetwork>::from_str("check_ticket").unwrap();
     let authorization = process
         .authorize::<CurrentAleo, _>(
-            &private_key,
-            vault.id(),
+            &caller_private_key,
+            program_b.id(),
             function_name,
             [record_value, receiver_value].iter(),
             rng,
         )
         .unwrap();
+
     let request = authorization.peek_next().unwrap();
     let tvk = *request.tvk();
-    let function_id =
-        compute_function_id(request.network_id(), request.program_id(), request.function_name()).unwrap();
+    let function_id = compute_function_id(request.network_id(), request.program_id(), request.function_name()).unwrap();
     let id_static = match request.input_ids()[0] {
         InputID::ExternalRecord(id) => id,
         ref other => panic!("expected external-record request input id, found {other:?}"),
@@ -152,41 +134,22 @@ assert.eq true true;
         _ => unreachable!(),
     };
 
-    let (_response, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
-    let root_index = trace.transitions.len() - 1;
+    let (_response, trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+    let mut transitions = trace.transitions().to_vec();
+    let root_index = transitions.len() - 1;
 
-    let global_state_root = <CurrentNetwork as Network>::StateRoot::from(Field::<CurrentNetwork>::one());
+    // Prove against the VM's current state root so the execution proof is otherwise well-formed.
+    let global_state_root = vm.block_store().current_state_root();
 
-    // Control: the same fake ticket as an honest, un-forged `ExternalRecord` is rejected by
-    // the V15 existence check, so an honest prover can never reach finalize / move funds.
-    {
-        let honest_execution =
-            Execution::from(trace.transitions.iter().cloned(), global_state_root, None).unwrap();
-
-        let honest_err = crate::Process::verify_execution(
-            consensus_version,
-            VarunaVersion::V2,
-            InclusionVersion::V1,
-            &honest_execution,
-            &process.get_stacks(honest_execution.transitions(), true).unwrap(),
-        )
-        .unwrap_err()
-        .to_string();
-        assert!(
-            honest_err.contains("not known to correspond to a record on the ledger"),
-            "honest fake claim must be rejected by the V15 existence check; got: {honest_err}"
-        );
-    }
-
-    // A real translation proving key and assignment for the dynamic-id binding.
+    // Create the translation assignment.
     process
-        .synthesize_translation_key::<CurrentAleo, _>(issuer.id(), &Identifier::from_str("ticket").unwrap(), rng)
+        .synthesize_translation_key::<CurrentAleo, _>(program_a.id(), &Identifier::from_str("ticket").unwrap(), rng)
         .unwrap();
-    let translation_pk = process.get_proving_key(issuer.id(), Identifier::from_str("ticket").unwrap()).unwrap();
+    let translation_pk = process.get_proving_key(program_a.id(), Identifier::from_str("ticket").unwrap()).unwrap();
     let translation_assignment = TranslationAssignment::new(
         record,
         dynamic_record,
-        *issuer.id(),
+        *program_a.id(),
         function_id,
         Identifier::from_str("ticket").unwrap(),
         true,
@@ -199,14 +162,14 @@ assert.eq true true;
         id_static,
     );
 
-    // FORGE: encode the root `ExternalRecord` input as `ExternalRecordWithDynamicID`.
-    let forged_transition = replace_external_input(&trace.transitions.get(root_index).unwrap(), id_dynamic);
-    trace.transitions[root_index] = forged_transition;
+    // Replace the Input::ExternalRecord by a malicious Input::ExternalRecordWithDynamicID.
+    let forged_transition = replace_external_input(&transitions[root_index], id_dynamic);
+    transitions[root_index] = forged_transition;
 
-    let proving_tasks = trace.transition_tasks.values().cloned().collect::<Vec<_>>();
+    let proving_tasks = trace.transition_tasks().values().cloned().collect::<Vec<_>>();
     let translation_assignments = vec![(translation_pk, vec![(translation_assignment, 0)])];
     let (_root, proof) = Trace::<CurrentNetwork>::prove_batch::<CurrentAleo, _>(
-        "root_dyn_consumer.aleo/claim",
+        "checker.aleo/check_ticket",
         VarunaVersion::V2,
         proving_tasks,
         &translation_assignments,
@@ -216,50 +179,22 @@ assert.eq true true;
     )
     .unwrap();
 
-    let forged_execution =
-        Execution::from(trace.transitions.iter().cloned(), global_state_root, Some(proof)).unwrap();
+    let forged_execution = Execution::from(transitions.iter().cloned(), global_state_root, Some(proof)).unwrap();
 
-    // The forged execution (never-issued ticket) is accepted by the verifier.
-    crate::Process::verify_execution(
-        consensus_version,
-        VarunaVersion::V2,
-        InclusionVersion::V1,
-        &forged_execution,
-        &process.get_stacks(forged_execution.transitions(), true).unwrap(),
-    )
-    .unwrap();
+    // Compute the updated fee
+    let execution_id = forged_execution.to_execution_id().unwrap();
+    let (base_fee, _) = execution_cost(vm.process(), &forged_execution, consensus_version).unwrap();
+    let fee_authorization = vm.authorize_fee_public(&caller_private_key, base_fee, 0, execution_id, rng).unwrap();
+    let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
+    let forged_transaction = Transaction::from_execution(forged_execution, Some(fee)).unwrap();
 
-    // Apply the forged execution's finalize and observe the on-ledger balance change.
-    let finalize_store =
-        FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
-    let credits = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
-    let account = Identifier::<CurrentNetwork>::from_str("account").unwrap();
-    finalize_store.initialize_mapping(credits, account).unwrap();
+    // The VM must reject the forged transaction because a root (static) transition may not carry an
+    // `ExternalRecordWithDynamicID` input.
+    let error = vm.check_transaction(&forged_transaction, None, rng).unwrap_err();
 
-    let vault_key = Plaintext::from(Literal::Address(vault.id().to_address().unwrap()));
-    let attacker_key = Plaintext::from(Literal::Address(attacker));
-
-    // Fund the vault's public credits (the funds at risk).
-    finalize_store
-        .update_key_value(credits, account, vault_key.clone(), Value::from(Literal::U64(U64::new(steal_amount))))
-        .unwrap();
-
-    let balance = |key: &Plaintext<CurrentNetwork>| -> u64 {
-        match finalize_store.get_value_speculative(credits, account, key).unwrap() {
-            Some(Value::Plaintext(Plaintext::Literal(Literal::U64(v), _))) => *v,
-            _ => 0u64,
-        }
-    };
-    assert_eq!(balance(&vault_key), steal_amount, "vault is funded before the attack");
-    assert_eq!(balance(&attacker_key), 0, "attacker starts with zero balance");
-
-    // REAL state transition: credits.aleo/transfer_public during finalize.
-    process
-        .lock()
-        .finalize_execution(sample_finalize_state(1), &finalize_store, &forged_execution, None)
-        .unwrap();
-
-    // Fund loss: the never-issued ticket drained the vault into the attacker's account.
-    assert_eq!(balance(&vault_key), 0, "vault fully drained by the forged ticket");
-    assert_eq!(balance(&attacker_key), steal_amount, "attacker received the stolen funds");
+    assert!(
+        error.to_string().contains("Incorrect input variant")
+            && error.to_string().contains("external_record_with_dynamic_id")
+            && error.to_string().contains("issuer.aleo/ticket.record"),
+    );
 }

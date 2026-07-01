@@ -254,6 +254,7 @@ impl<N: Network> Input<N> {
     ///  - `Some(true)` enforces it assuming a static call.
     ///  - `None` is flexible and makes no assumption about the type of call: both dynamic-call and
     ///    static-call matching patterns return `true`.
+    ///
     /// For inputs of an invalid type according to `is_dynamic`, this function returns false
     /// regardless of the value type.
     pub fn matches_type(&self, expected_value_type: &ValueType<N>, is_dynamic: Option<bool>) -> bool {
@@ -267,46 +268,44 @@ impl<N: Network> Input<N> {
         }
 
         if is_dynamic == Some(true) {
+            // Unmatched variants:
+            //  - Self::Record: cannot be the calle's view of a dynamic-call input, so we return
+            //    false regardless of the ValueType
+            //  - Self::ExternalRecord: same as above
             matches!(
                 (self, expected_value_type),
                 // Caller sees DynamicRecord, callee receives static Record, translation occurs
-                | (Self::RecordWithDynamicID(..), ValueType::Record(..))
+                (Self::RecordWithDynamicID(..), ValueType::Record(..))
                 // Caller sees DynamicRecord, callee receives ExternalRecord, translation occurs
                 | (Self::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(..))
                 // Caller and callee see DynamicRecord, no translation occurs
                 | (Self::DynamicRecord(..), ValueType::DynamicRecord)
-                // Unmatched variants: 
-                //  - Self::Record: cannot be the calle's view of a dynamic-call input, so we return
-                //    false regardless of the ValueType
-                //  - Self::ExternalRecord: same as above
             )
         } else if is_dynamic == Some(false) {
+            // Unmatched variants:
+            //  - Self::RecordWithDynamicID: no translation can occur in static calls
+            //  - Self::ExternalRecordWithDynamicID: same as above
             matches!(
                 (self, expected_value_type),
                 // This can only occur for the root transition since static local calls are
                 // disallowed
-                | (Self::Record(..), ValueType::Record(..))
+                (Self::Record(..), ValueType::Record(..))
                 // Pass-through of External records (no translation )
                 | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
                 // Since this is a static call, dynamic records are only passed through
                 | (Self::DynamicRecord(..), ValueType::DynamicRecord)
-                // Unmatched variants:
-                //  - Self::RecordWithDynamicID: no translation can occur in static calls
-                //  - Self::ExternalRecordWithDynamicID: same as above
             )
         } else {
             // is_dynamic = None: flexible matching
             matches!(
                 (self, expected_value_type),
-                | (Self::Record(..), ValueType::Record(..))
-                | (Self::RecordWithDynamicID(..), ValueType::Record(..))
-                | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
-                | (Self::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(..))
-                | (Self::DynamicRecord(..), ValueType::DynamicRecord)
+                (Self::Record(..), ValueType::Record(..))
+                    | (Self::RecordWithDynamicID(..), ValueType::Record(..))
+                    | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
+                    | (Self::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(..))
+                    | (Self::DynamicRecord(..), ValueType::DynamicRecord)
             )
         }
-
-        // TODO (Antonio) ::Record cases; also, is the combination caller ::ExternalRecord, callee ::Record possible?
     }
 }
 
