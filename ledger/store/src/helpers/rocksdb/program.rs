@@ -50,6 +50,9 @@ pub struct FinalizeDB<N: Network> {
     /// The historical mapping value map (keyed by big-endian block height).
     #[cfg(feature = "history")]
     mapping_update_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, [u8; 4]), Value<N>>,
+    /// The legacy heights index; present only for keys written before the BE schema change.
+    #[cfg(feature = "history")]
+    mapping_update_heights_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
     /// The current block height.
     #[cfg(feature = "history")]
     block_height: Arc<AtomicU32>,
@@ -68,6 +71,8 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     type RejectedReasonMap = DataMap<Field<N>, RejectedReason<N>>;
     #[cfg(feature = "history")]
     type MappingUpdateMap = DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, [u8; 4]), Value<N>>;
+    #[cfg(feature = "history")]
+    type MappingUpdateHeightsMap = DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
     #[cfg(feature = "history-staking-rewards")]
     type StakingRewardsMap = DataMap<(Address<N>, u32), (Address<N>, u64, u64)>;
 
@@ -84,6 +89,8 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             rejected_reason_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::RejectedReason))?,
             #[cfg(feature = "history")]
             mapping_update_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::MappingUpdate))?,
+            #[cfg(feature = "history")]
+            mapping_update_heights_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::MappingUpdateHeights))?,
             #[cfg(feature = "history")]
             block_height: Default::default(),
             #[cfg(feature = "history-staking-rewards")]
@@ -116,6 +123,11 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
     #[cfg(feature = "history")]
     fn mapping_update_map(&self) -> &Self::MappingUpdateMap {
         &self.mapping_update_map
+    }
+
+    #[cfg(feature = "history")]
+    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap {
+        &self.mapping_update_heights_map
     }
 
     /// Returns the historical staking rewards map.

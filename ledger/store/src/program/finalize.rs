@@ -105,8 +105,19 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// `height_be` is the block height encoded as a big-endian `[u8; 4]` so that
     /// lexicographic key order matches numeric height order, enabling O(log n)
     /// floor lookups via `get_floor_confirmed`.
+    ///
+    /// **Legacy note**: nodes that synced before this schema change have entries encoded
+    /// with little-endian `u32` (bincode default) instead. Those keys are detected via
+    /// `mapping_update_heights_map` and continue to use the O(n) binary-search path.
     #[cfg(feature = "history")]
     type MappingUpdateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>, [u8; 4]), Value<N>>;
+    /// The mapping of `(program ID, mapping name, key)` to `[height]`.
+    ///
+    /// Present only for keys written before the big-endian schema change. Acts as a
+    /// "legacy sentinel": if an entry exists here the key still uses the old LE encoding,
+    /// and `get_historical_mapping_value` falls back to the O(n) binary-search path.
+    #[cfg(feature = "history")]
+    type MappingUpdateHeightsMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
     /// The mapping of `(staker address, height)` to `(validator address, block reward, new stake)`.
     #[cfg(feature = "history-staking-rewards")]
     type StakingRewardsMap: for<'a> Map<'a, (Address<N>, u32), (Address<N>, u64, u64)>;
@@ -125,6 +136,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns the historical mapping value map.
     #[cfg(feature = "history")]
     fn mapping_update_map(&self) -> &Self::MappingUpdateMap;
+    /// Returns the historical mapping update heights map (legacy: present only for pre-schema-change keys).
+    #[cfg(feature = "history")]
+    fn mapping_update_heights_map(&self) -> &Self::MappingUpdateHeightsMap;
     /// Returns the historical staking rewards map.
     #[cfg(feature = "history-staking-rewards")]
     fn staking_rewards_map(&self) -> &Self::StakingRewardsMap;
@@ -139,7 +153,10 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.key_value_map().start_atomic();
         self.rejected_reason_map().start_atomic();
         #[cfg(feature = "history")]
-        self.mapping_update_map().start_atomic();
+        {
+            self.mapping_update_map().start_atomic();
+            self.mapping_update_heights_map().start_atomic();
+        }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().start_atomic();
     }
@@ -151,7 +168,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             || self.key_value_map().is_atomic_in_progress()
             || self.rejected_reason_map().is_atomic_in_progress();
         #[cfg(feature = "history")]
-        let ret = ret || self.mapping_update_map().is_atomic_in_progress();
+        let ret = ret
+            || self.mapping_update_map().is_atomic_in_progress()
+            || self.mapping_update_heights_map().is_atomic_in_progress();
         #[cfg(feature = "history-staking-rewards")]
         let ret = ret || self.staking_rewards_map().is_atomic_in_progress();
 
@@ -165,7 +184,10 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.key_value_map().atomic_checkpoint();
         self.rejected_reason_map().atomic_checkpoint();
         #[cfg(feature = "history")]
-        self.mapping_update_map().atomic_checkpoint();
+        {
+            self.mapping_update_map().atomic_checkpoint();
+            self.mapping_update_heights_map().atomic_checkpoint();
+        }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().atomic_checkpoint();
     }
@@ -177,7 +199,10 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.key_value_map().clear_latest_checkpoint();
         self.rejected_reason_map().clear_latest_checkpoint();
         #[cfg(feature = "history")]
-        self.mapping_update_map().clear_latest_checkpoint();
+        {
+            self.mapping_update_map().clear_latest_checkpoint();
+            self.mapping_update_heights_map().clear_latest_checkpoint();
+        }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().clear_latest_checkpoint();
     }
@@ -189,7 +214,10 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.key_value_map().atomic_rewind();
         self.rejected_reason_map().atomic_rewind();
         #[cfg(feature = "history")]
-        self.mapping_update_map().atomic_rewind();
+        {
+            self.mapping_update_map().atomic_rewind();
+            self.mapping_update_heights_map().atomic_rewind();
+        }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().atomic_rewind();
     }
@@ -201,7 +229,10 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.key_value_map().abort_atomic();
         self.rejected_reason_map().abort_atomic();
         #[cfg(feature = "history")]
-        self.mapping_update_map().abort_atomic();
+        {
+            self.mapping_update_map().abort_atomic();
+            self.mapping_update_heights_map().abort_atomic();
+        }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().abort_atomic();
     }
@@ -213,7 +244,10 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.key_value_map().finish_atomic()?;
         self.rejected_reason_map().finish_atomic()?;
         #[cfg(feature = "history")]
-        self.mapping_update_map().finish_atomic()?;
+        {
+            self.mapping_update_map().finish_atomic()?;
+            self.mapping_update_heights_map().finish_atomic()?;
+        }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().finish_atomic()?;
         Ok(())
@@ -325,9 +359,22 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             #[cfg(feature = "history")]
             {
                 let current_height = self.current_block_height().load(Ordering::SeqCst);
-                // Record the value at the current height using big-endian encoding.
-                self.mapping_update_map()
-                    .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
+                let heights_key = (program_id, mapping_name, key.clone());
+
+                // If this key has a legacy heights-map entry it was written before the BE schema
+                // change; continue appending to the heights vec and write with the original LE
+                // encoding so that reads using the heights-map path remain correct.
+                if let Some(heights) = self.mapping_update_heights_map().get_confirmed(&heights_key)? {
+                    let mut heights = heights.into_owned();
+                    self.mapping_update_map()
+                        .insert((program_id, mapping_name, key.clone(), current_height.to_le_bytes()), value.clone())?;
+                    heights.push(current_height);
+                    self.mapping_update_heights_map().insert(heights_key, heights)?;
+                } else {
+                    // New key: use the big-endian encoding so floor seeks work correctly.
+                    self.mapping_update_map()
+                        .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
+                }
             }
 
             // Update the key-value map with the new key-value.
@@ -394,9 +441,24 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
                 #[cfg(feature = "history")]
                 {
                     let current_height = self.current_block_height().load(Ordering::SeqCst);
-                    // Record the value at the current height using big-endian encoding.
-                    self.mapping_update_map()
-                        .insert((program_id, mapping_name, key.clone(), current_height.to_be_bytes()), value.clone())?;
+                    let heights_key = (program_id, mapping_name, key.clone());
+
+                    // Legacy keys (pre-BE schema) continue using LE encoding + heights vec.
+                    if let Some(heights) = self.mapping_update_heights_map().get_confirmed(&heights_key)? {
+                        let mut heights = heights.into_owned();
+                        self.mapping_update_map().insert(
+                            (program_id, mapping_name, key.clone(), current_height.to_le_bytes()),
+                            value.clone(),
+                        )?;
+                        heights.push(current_height);
+                        self.mapping_update_heights_map().insert(heights_key, heights)?;
+                    } else {
+                        // New key: big-endian encoding.
+                        self.mapping_update_map().insert(
+                            (program_id, mapping_name, key.clone(), current_height.to_be_bytes()),
+                            value.clone(),
+                        )?;
+                    }
                 }
 
                 // Insert the key-value entry.
@@ -782,9 +844,13 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
     /// Returns the historical value of a mapping at or before the given block height.
     ///
-    /// Uses a single O(log n) floor lookup on `mapping_update_map` rather than loading
-    /// an unbounded heights vector. Heights are encoded big-endian in the key so that
-    /// lexicographic order matches numeric order.
+    /// **Fast path** (new keys, no `mapping_update_heights_map` entry): single O(log n)
+    /// floor seek on `mapping_update_map`, which uses big-endian height encoding.
+    ///
+    /// **Legacy path** (keys written before the BE schema change, heights-map entry
+    /// present): O(n) binary search over the heights `Vec`, then a point lookup using
+    /// the original little-endian encoding. Correct but slower; these keys stay on this
+    /// path until the node is resynced or an offline migration is performed.
     #[cfg(feature = "history")]
     pub fn get_historical_mapping_value(
         &self,
@@ -798,17 +864,31 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             return Ok(None);
         }
 
-        // Seek to the greatest key ≤ (program_id, mapping_name, mapping_key, height_be).
+        // Check for a legacy heights-map entry (pre-BE schema change).
+        let heights_key = (program_id, mapping_name, mapping_key.clone());
+        if let Some(heights) = self.storage.mapping_update_heights_map().get_confirmed(&heights_key)? {
+            // Legacy O(n) path: binary search on the heights Vec.
+            let heights = heights.into_owned();
+            let applicable_height = match heights.binary_search(&height) {
+                Ok(_) => height,
+                Err(0) => return Ok(None),
+                Err(idx) => heights[idx - 1],
+            };
+            // Look up with the original little-endian encoding.
+            return self.storage.mapping_update_map().get_confirmed(&(
+                program_id,
+                mapping_name,
+                mapping_key,
+                applicable_height.to_le_bytes(),
+            ));
+        }
+
+        // New fast path: O(log n) floor seek with big-endian encoding.
         let seek_key = (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes());
         match self.storage.mapping_update_map().get_floor_confirmed(&seek_key)? {
             Some((found_key, found_value)) => {
                 let (p, m, k, _h) = found_key.into_owned();
-                // Verify the found entry belongs to the same (program, mapping, key) triple.
-                if p == program_id && m == mapping_name && k == mapping_key {
-                    Ok(Some(found_value))
-                } else {
-                    Ok(None)
-                }
+                if p == program_id && m == mapping_name && k == mapping_key { Ok(Some(found_value)) } else { Ok(None) }
             }
             None => Ok(None),
         }
@@ -816,8 +896,9 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
     /// Returns the heights at which past mapping updates occurred, in ascending order.
     ///
-    /// This reconstructs the height list by scanning `mapping_update_map`. It is O(n updates)
-    /// and intended for diagnostic / test use only; `get_historical_mapping_value` is O(log n).
+    /// For legacy keys (heights-map entry present) the list is read directly from the
+    /// heights map. For new keys it is reconstructed by scanning `mapping_update_map`.
+    /// Either way this is O(n updates) and is intended for diagnostic / test use only.
     #[cfg(feature = "history")]
     pub fn get_mapping_update_heights(
         &self,
@@ -825,6 +906,13 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_name: Identifier<N>,
         mapping_key: Plaintext<N>,
     ) -> Result<Option<Cow<'_, Vec<u32>>>, Error> {
+        // Legacy path: heights are stored explicitly in the heights map.
+        let heights_key = (program_id, mapping_name, mapping_key.clone());
+        if let Some(heights) = self.storage.mapping_update_heights_map().get_confirmed(&heights_key)? {
+            return Ok(Some(heights));
+        }
+
+        // New path: reconstruct from mapping_update_map keys (big-endian encoded heights).
         let mut heights: Vec<u32> = self
             .storage
             .mapping_update_map()
@@ -832,7 +920,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             .filter_map(|(k, _v)| {
                 let (p, m, key, h_be) = k.into_owned();
                 if p == program_id && m == mapping_name && key == mapping_key {
-                    // Heights are stored big-endian.
                     Some(u32::from_be_bytes(h_be))
                 } else {
                     None
@@ -844,8 +931,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             return Ok(None);
         }
 
-        // iter_confirmed returns entries in key (byte) order, which equals ascending numeric
-        // order because heights are big-endian encoded. Sort explicitly to be safe.
         heights.sort_unstable();
         Ok(Some(Cow::Owned(heights)))
     }
@@ -1816,46 +1901,121 @@ mod tests {
         finalize_store.update_key_value(program_id, mapping_name, key.clone(), value_100.clone()).unwrap();
 
         // Height 0 (before first insert) => None.
-        assert!(finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 0).unwrap().is_none());
+        assert!(
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 0).unwrap().is_none()
+        );
 
         // Height 9 (just before first insert) => None.
-        assert!(finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 9).unwrap().is_none());
+        assert!(
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 9).unwrap().is_none()
+        );
 
         // Height 10 (exact match) => value_10.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 10).unwrap().unwrap();
+        let v =
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 10).unwrap().unwrap();
         assert_eq!(*v, value_10);
 
         // Height 15 (floor → 10) => value_10.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 15).unwrap().unwrap();
+        let v =
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 15).unwrap().unwrap();
         assert_eq!(*v, value_10);
 
         // Height 20 (exact match) => value_20.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 20).unwrap().unwrap();
+        let v =
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 20).unwrap().unwrap();
         assert_eq!(*v, value_20);
 
         // Height 49 (floor → 20) => value_20.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 49).unwrap().unwrap();
+        let v =
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 49).unwrap().unwrap();
         assert_eq!(*v, value_20);
 
         // Height 50 (exact match) => value_50.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 50).unwrap().unwrap();
+        let v =
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 50).unwrap().unwrap();
         assert_eq!(*v, value_50);
 
         // Height 75 (floor → 50) => value_50.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 75).unwrap().unwrap();
+        let v =
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 75).unwrap().unwrap();
         assert_eq!(*v, value_50);
 
         // Height 100 (exact match) => value_100.
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 100).unwrap().unwrap();
+        let v =
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 100).unwrap().unwrap();
         assert_eq!(*v, value_100);
 
         // Advance chain past last update height; querying height 150 should floor to 100.
         finalize_store.storage.current_block_height().store(200, Ordering::SeqCst);
-        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 150).unwrap().unwrap();
+        let v =
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 150).unwrap().unwrap();
         assert_eq!(*v, value_100);
 
         // get_mapping_update_heights returns all heights sorted ascending.
-        let heights = finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
+        let heights =
+            finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
         assert_eq!(&*heights, &[10, 20, 50, 100]);
+    }
+
+    /// Verifies the legacy (pre-BE schema) read path: keys whose heights are stored in
+    /// `mapping_update_heights_map` continue to be found correctly via binary search.
+    #[test]
+    #[cfg(feature = "history")]
+    fn test_get_historical_mapping_value_legacy() {
+        use std::sync::atomic::Ordering;
+
+        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let key = Plaintext::from_str("1field").unwrap();
+
+        let program_memory = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
+        let finalize_store = FinalizeStore::from(program_memory).unwrap();
+
+        finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
+
+        // Simulate legacy writes: insert directly into the LE-keyed update map AND into the heights map,
+        // exactly as the old code did.
+        let v5 = Value::from_str("5u64").unwrap();
+        let v10 = Value::from_str("10u64").unwrap();
+        finalize_store
+            .storage
+            .mapping_update_map()
+            .insert((program_id, mapping_name, key.clone(), 5u32.to_le_bytes()), v5.clone())
+            .unwrap();
+        finalize_store
+            .storage
+            .mapping_update_map()
+            .insert((program_id, mapping_name, key.clone(), 10u32.to_le_bytes()), v10.clone())
+            .unwrap();
+        finalize_store
+            .storage
+            .mapping_update_heights_map()
+            .insert((program_id, mapping_name, key.clone()), vec![5, 10])
+            .unwrap();
+        finalize_store.storage.current_block_height().store(20, Ordering::SeqCst);
+
+        // Height before first update → None.
+        assert!(
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 4).unwrap().is_none()
+        );
+        // Height 5 (exact) → v5.
+        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 5).unwrap().unwrap();
+        assert_eq!(*v, v5);
+        // Height 7 (floor → 5) → v5.
+        let v = finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 7).unwrap().unwrap();
+        assert_eq!(*v, v5);
+        // Height 10 (exact) → v10.
+        let v =
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 10).unwrap().unwrap();
+        assert_eq!(*v, v10);
+        // Height 15 (floor → 10) → v10.
+        let v =
+            finalize_store.get_historical_mapping_value(program_id, mapping_name, key.clone(), 15).unwrap().unwrap();
+        assert_eq!(*v, v10);
+
+        // Heights list comes from the heights map.
+        let heights =
+            finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
+        assert_eq!(&*heights, &[5, 10]);
     }
 }
