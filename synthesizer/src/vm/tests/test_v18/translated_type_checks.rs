@@ -44,7 +44,7 @@ fn replace_external_input(
 
 // Checks that a root call with an Input::ExternalRecordWithDynamicID is rejected.
 #[test]
-fn external_record_with_dynamic_id_input_to_root() {
+fn test_external_record_with_dynamic_id_input_to_root() {
     let consensus_version = ConsensusVersion::V18;
 
     let rng = &mut TestRng::default();
