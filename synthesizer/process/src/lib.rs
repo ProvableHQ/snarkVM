@@ -517,6 +517,45 @@ impl<N: Network> Process<N> {
         Ok(stack)
     }
 
+    /// Returns the stacks of the programs corresponding to all given transitions, keyed by
+    /// `ProgramID`. If `include_direct_imports` is true, the stacks of the programs *directly*
+    /// imported by those are also included.
+    #[inline]
+    pub fn get_stacks<'a>(
+        &self,
+        transitions: impl IntoIterator<Item = &'a Transition<N>>,
+        include_direct_imports: bool,
+    ) -> Result<IndexMap<ProgramID<N>, Arc<Stack<N>>>>
+    where
+        N: 'a,
+    {
+        let mut execution_stacks = indexmap::IndexMap::new();
+
+        for transition in transitions.into_iter() {
+            let program_id = transition.program_id();
+
+            // If the program's stack has not been fetched before, fetch it.
+            if !execution_stacks.contains_key(program_id) {
+                execution_stacks.insert(*program_id, self.get_stack(program_id)?);
+            }
+        }
+
+        // Fetch stacks of direct dependencies. Note some of these may have been fetched in the
+        // previous loop.
+        if include_direct_imports {
+            let imported_program_ids: Vec<ProgramID<N>> =
+                execution_stacks.values().flat_map(|stack| stack.program().imports().keys().copied()).collect();
+
+            for imported_program_id in imported_program_ids {
+                if !execution_stacks.contains_key(&imported_program_id) {
+                    execution_stacks.insert(imported_program_id, self.get_stack(imported_program_id)?);
+                }
+            }
+        }
+
+        Ok(execution_stacks)
+    }
+
     /// Returns the latest deployed edition for the given program ID, defaulting to 0 if unknown.
     #[inline]
     pub fn get_latest_edition_for_program(&self, program_id: &ProgramID<N>) -> u16 {

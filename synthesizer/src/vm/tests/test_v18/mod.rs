@@ -13,32 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests for the record-existence check.
-mod record_existence;
-// Tests on the input/output behaviour of closures and related functionality.
-mod closure_records;
-// Tests on the use of `commit_*_raw` instruction variants.
-mod commit_raw;
-// Additional test for cost estimation without a private key.
-mod cost_for_call;
-
-// Tests for the externally-callable `view` function prototype.
-mod views;
-
-// Tests for restricted keywords at V15.
-mod restricted_keywords;
+// Tests for stack fetching relevant to the record-existence check.
+mod record_existence_stacks;
 
 use super::*;
 
-use crate::vm::test_helpers::*;
-
-use console::{
-    account::ViewKey,
-    network::ConsensusVersion,
-    program::{Identifier, Value},
-};
-
-use snarkvm_synthesizer_program::Program;
-use snarkvm_utilities::TestRng;
-
 use super::test_v14::add_and_test_with_costs;
+use crate::vm::test_helpers::*;
