@@ -127,8 +127,8 @@ fn test_blockwide_synthesis_limit() {
 
     let rng = &mut TestRng::default();
 
-    let v17_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V17).unwrap();
-    let vm = sample_vm_at_height(v17_height, rng);
+    let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
+    let vm = sample_vm_at_height(v18_height, rng);
     let genesis_private_key = sample_genesis_private_key(rng);
 
     // Set to true to print the combined density of each individual deployment.
@@ -275,8 +275,8 @@ fn test_blockwide_synthesis_limit() {
 fn test_vk_num_non_zero_detected() {
     let rng = &mut TestRng::default();
 
-    let v17_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V17).unwrap();
-    let vm = sample_vm_at_height(v17_height, rng);
+    let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
+    let vm = sample_vm_at_height(v18_height, rng);
     let genesis_private_key = sample_genesis_private_key(rng);
 
     let cases = vec![("function", 1), ("function", 2), ("function", 4), ("function", 8), ("record", 1)];
@@ -338,7 +338,7 @@ fn test_vk_num_non_zero_detected() {
             // check_transaction uses try_vm_runtime! and replaces the halt panic with a generic message.
             // We call the latter directly to receive the finer-grained error.
             let verification_result = try_vm_runtime!(|| {
-                vm.process().verify_deployment::<CurrentAleo, _>(ConsensusVersion::V17, &tampered_deployment, rng)
+                vm.process().verify_deployment::<CurrentAleo, _>(ConsensusVersion::V18, &tampered_deployment, rng)
             });
 
             let error_message = match verification_result {

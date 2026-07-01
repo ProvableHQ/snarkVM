@@ -199,7 +199,7 @@ impl<N: Network> Subdag<N> {
     #[inline]
     #[allow(clippy::cast_possible_truncation)]
     pub fn synthesis_limit(&self, block_height: u32) -> Option<u64> {
-        if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V17).unwrap() {
+        if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap() {
             // One full round of consensus has a synthesis budget of 5 seconds.
             let synthesis_per_second_runtime = 5_f64 * N::SYNTHESIS_PER_SECOND_OF_RUNTIME as f64;
             // A certificate therefore has a synthesis budget of 5 seconds / MAX_CERTIFICATES.

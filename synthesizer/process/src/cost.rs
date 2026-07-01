@@ -44,7 +44,7 @@ pub fn deployment_cost<N: Network>(
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    if consensus_version >= ConsensusVersion::V17 {
+    if consensus_version >= ConsensusVersion::V18 {
         deployment_cost_v4(process, deployment)
     } else if consensus_version >= ConsensusVersion::V16 {
         deployment_cost_v3(process, deployment)

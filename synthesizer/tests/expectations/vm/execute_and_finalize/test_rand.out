@@ -1,47 +1,47 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    test_rand.aleo/rand_chacha_with_literals:
-      outputs:
-      - '{"type":"future","id":"1086159858373684924326838047906467730477527710678648444202403192849077721382field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_with_literals,\n  arguments: [\n    0scalar,\n    0group,\n    0u8,\n    2i16,\n    4u32,\n    7i64,\n    8u128,\n    10field\n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    test_rand.aleo/rand_chacha_with_struct:
-      outputs:
-      - '{"type":"future","id":"4730763952744064473740587618181378295313632788156937732690978133090287639700field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_with_struct,\n  arguments: [\n    {\n  first: 0field,\n  second: 0field,\n  third: 0field,\n  fourth: 0field,\n  fifth: 0field\n}\n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    test_rand.aleo/rand_chacha_check:
-      outputs:
-      - '{"type":"future","id":"7687317270624750718234985429715552485743038298692085857105504290445237998835field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_check,\n  arguments: [\n    1field,\n    true\n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    test_rand.aleo/rand_chacha_check:
-      outputs:
-      - '{"type":"future","id":"8129088930228982968808203170422086133604479006252173574889821129129983900160field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_check,\n  arguments: [\n    4field,\n    false\n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
-- child_outputs:
+- execute:
+    test_rand.aleo/rand_chacha_with_literals:
+      outputs:
+      - '{"type":"future","id":"5102038009020533731844782156118375757727610098613388474802700949982136972580field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_with_literals,\n  arguments: [\n    0scalar,\n    0group,\n    0u8,\n    2i16,\n    4u32,\n    7i64,\n    8u128,\n    10field\n  ]\n}"}'
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"1000294836015170489491962623010886738344420239984789205690494127090379914458field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1vf9njx4j0kf2r24x52a9ftl569v75p0ys3l37avgycyym4xtlvyqgk4kj2,\n    25838u64\n  ]\n}"}'
-- child_outputs:
+      - '{"type":"future","id":"7322057028547022602074287374226793684261978708418540776971106514165554591824field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1vf9njx4j0kf2r24x52a9ftl569v75p0ys3l37avgycyym4xtlvyqgk4kj2,\n    25838u64\n  ]\n}"}'
+- execute:
+    test_rand.aleo/rand_chacha_with_struct:
+      outputs:
+      - '{"type":"future","id":"482174963780124108786128234836627821724305550501866375697366264773952922026field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_with_struct,\n  arguments: [\n    {\n  first: 0field,\n  second: 0field,\n  third: 0field,\n  fourth: 0field,\n  fifth: 0field\n}\n  ]\n}"}'
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"2210411068504216212993506527254681656515093417711746838726928777122099729876field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1vf9njx4j0kf2r24x52a9ftl569v75p0ys3l37avgycyym4xtlvyqgk4kj2,\n    2711u64\n  ]\n}"}'
-- child_outputs:
+      - '{"type":"future","id":"4946977589305077180349776064958482383013669820471931787428578911699931647108field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1vf9njx4j0kf2r24x52a9ftl569v75p0ys3l37avgycyym4xtlvyqgk4kj2,\n    2711u64\n  ]\n}"}'
+- execute:
+    test_rand.aleo/rand_chacha_check:
+      outputs:
+      - '{"type":"future","id":"1570769487878974437081885634900648302244928245971192094848228534413638987183field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_check,\n  arguments: [\n    1field,\n    true\n  ]\n}"}'
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"8234498994961137575688138804273566260723591479803748971539318549867932402505field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1vf9njx4j0kf2r24x52a9ftl569v75p0ys3l37avgycyym4xtlvyqgk4kj2,\n    2396u64\n  ]\n}"}'
-- child_outputs:
+      - '{"type":"future","id":"1452797368278080175662040237480831796947635212130923017288522952418689935524field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1vf9njx4j0kf2r24x52a9ftl569v75p0ys3l37avgycyym4xtlvyqgk4kj2,\n    2396u64\n  ]\n}"}'
+- execute:
+    test_rand.aleo/rand_chacha_check:
+      outputs:
+      - '{"type":"future","id":"5077734656045242940626023407162461123888003839058071588609845203491859009360field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_check,\n  arguments: [\n    4field,\n    false\n  ]\n}"}'
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"1507439923805139548435477371222097071210428876887981950977116642635076682836field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1vf9njx4j0kf2r24x52a9ftl569v75p0ys3l37avgycyym4xtlvyqgk4kj2,\n    2396u64\n  ]\n}"}'
+      - '{"type":"future","id":"2073924506636794686104397413998990121919856896229428122753202120841830861945field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1vf9njx4j0kf2r24x52a9ftl569v75p0ys3l37avgycyym4xtlvyqgk4kj2,\n    2396u64\n  ]\n}"}'
