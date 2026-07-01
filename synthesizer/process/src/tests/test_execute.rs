@@ -22,7 +22,7 @@ use console::{
     types::{Field, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
-use snarkvm_ledger_block::{Execution, Fee, Output, Transaction, Transition};
+use snarkvm_ledger_block::{Fee, Output, Transaction, Transition};
 use snarkvm_ledger_query::Query;
 use snarkvm_ledger_store::{
     BlockStorage,
@@ -47,17 +47,6 @@ type CurrentAleo = AleoV0;
 /// Samples a new finalize state.
 pub fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
     FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None, None)
-}
-
-fn execution_stacks_for_execution<N: Network>(
-    process: &Process<N>,
-    execution: &Execution<N>,
-) -> indexmap::IndexMap<ProgramID<N>, Arc<crate::Stack<N>>> {
-    let mut execution_stacks = indexmap::IndexMap::new();
-    for transition in execution.transitions() {
-        execution_stacks.insert(*transition.program_id(), process.get_stack(transition.program_id()).unwrap());
-    }
-    execution_stacks
 }
 
 /// Samples a valid fee for the given process, block store, and finalize store.
@@ -585,7 +574,7 @@ fn test_process_execute_transfer_public_to_private() {
             VarunaVersion::V2,
             InclusionVersion::V1,
             &execution,
-            &execution_stacks_for_execution(&process, &execution),
+            &process.get_stacks(execution.transitions(), false).unwrap(),
         )
         .unwrap();
 
@@ -1386,7 +1375,7 @@ finalize compute:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &execution_stacks_for_execution(&process, &execution),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -1513,7 +1502,7 @@ finalize compute:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &execution_stacks_for_execution(&process, &execution),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -1658,7 +1647,7 @@ finalize mint_public:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &execution_stacks_for_execution(&process, &execution),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -1841,7 +1830,7 @@ finalize init:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &execution_stacks_for_execution(&process, &execution),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -1970,7 +1959,7 @@ finalize compute:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &execution_stacks_for_execution(&process, &execution),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -2148,7 +2137,7 @@ finalize a:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &execution_stacks_for_execution(&process, &execution),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -2430,7 +2419,7 @@ fn test_complex_execution_order() {
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &execution_stacks_for_execution(&process, &execution),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -2572,7 +2561,7 @@ finalize compute:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &execution_stacks_for_execution(&process, &execution),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
@@ -2694,7 +2683,7 @@ function compute:
         VarunaVersion::V2,
         InclusionVersion::V1,
         &execution,
-        &execution_stacks_for_execution(&process, &execution),
+        &process.get_stacks(execution.transitions(), false).unwrap(),
     )
     .unwrap();
 
