@@ -187,4 +187,27 @@ pub trait MapRead<
     /// Returns an iterator over each value in the map.
     ///
     fn values_confirmed(&'a self) -> Self::Values;
+
+    ///
+    /// Returns the confirmed keys whose serialized form begins with the serialized `prefix`.
+    ///
+    /// This enables prefix range scans over composite keys (e.g. retrieving every `height` recorded
+    /// for a given `(program ID, mapping name, key)`) without scanning the entire map. The `prefix`
+    /// must serialize to a byte-prefix of the stored keys, which holds for a leading sub-tuple of a
+    /// tuple key, since `bincode` serializes tuple fields in order.
+    ///
+    fn get_keys_confirmed_with_prefix<Q>(&'a self, prefix: &Q) -> Result<Vec<K>>
+    where
+        Q: Serialize,
+    {
+        // Default implementation: scan every confirmed key and filter by the serialized prefix.
+        let prefix = bincode::serialize(prefix)?;
+        let mut keys = Vec::new();
+        for key in self.keys_confirmed() {
+            if bincode::serialize(key.as_ref())?.starts_with(&prefix) {
+                keys.push(key.into_owned());
+            }
+        }
+        Ok(keys)
+    }
 }
