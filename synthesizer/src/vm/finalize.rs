@@ -339,7 +339,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         {
             let mut rejected_reasons = self.pending_rejected_reasons.write();
             if !rejected_reasons.is_empty() {
-                error!("There are pending rejection reasons, clearing them up: {:?}", &*rejected_reasons);
+                // This may be emitted once during shutdown.
+                warn!("There are pending rejection reasons, clearing them up: {:?}", &*rejected_reasons);
             }
             rejected_reasons.clear();
         }
