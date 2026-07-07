@@ -33,7 +33,7 @@ version = "0.3.11"
 features = [ ]
 
 [dependencies.sppark]
-version = "0.1.5"
+path = "sppark"
 
 [build-dependencies.cc]
 version = "^1.0.83"
