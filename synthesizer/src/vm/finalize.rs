@@ -1103,26 +1103,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             ShouldAbortResult::Finalize(0)
         // If the consensus version is >= V16, ensure that the transaction is not exceeding spend or deployment limits.
         } else {
-            // Compute microcredit spend from deployment or execution cost details.
-            let compute_spend = match transaction {
-                Transaction::Deploy(_, _, _, deployment, _) => {
-                    match deployment_cost(self.process(), deployment, consensus_version) {
-                        Ok((_, cost_details)) => deploy_compute_cost_in_microcredits(cost_details, consensus_version),
-                        Err(e) => {
-                            return ShouldAbortResult::Abort(format!("Failed to compute the deployment cost: {e}"));
-                        }
-                    }
-                }
-                Transaction::Execute(_, _, execution, _) => {
-                    match execution_cost(self.process(), execution, consensus_version) {
-                        Ok((_, cost_details)) => execute_compute_cost_in_microcredits(cost_details, consensus_version),
-                        Err(e) => {
-                            return ShouldAbortResult::Abort(format!("Failed to compute the execution cost: {e}"));
-                        }
-                    }
-                }
-                Transaction::Fee(..) => 0, // Fee transactions are already aborted above and don't contribute compute spend.
-            };
+            let compute_spend =
+                match transaction_compute_spend_in_microcredits(self.process(), transaction, consensus_version) {
+                    Ok(compute_spend) => compute_spend,
+                    Err(e) => return ShouldAbortResult::Abort(format!("Failed to compute transaction spend: {e}")),
+                };
 
             if compute_spend > transaction_spend_limit {
                 return ShouldAbortResult::Abort(format!(

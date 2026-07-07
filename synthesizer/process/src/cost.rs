@@ -212,6 +212,27 @@ pub fn execute_compute_cost_in_microcredits(
     }
 }
 
+/// Returns the compute spend for a transaction in microcredits.
+/// This is used to limit the amount of single-threaded compute in block generation and finalization hot paths.
+/// This does NOT represent the full cost which a user has to pay.
+pub fn transaction_compute_spend_in_microcredits<N: Network>(
+    process: &Process<N>,
+    transaction: &Transaction<N>,
+    consensus_version: ConsensusVersion,
+) -> Result<u64> {
+    match transaction {
+        Transaction::Deploy(_, _, _, deployment, _) => {
+            let (_, cost_details) = deployment_cost(process, deployment, consensus_version)?;
+            Ok(deploy_compute_cost_in_microcredits(cost_details, consensus_version))
+        }
+        Transaction::Execute(_, _, execution, _) => {
+            let (_, cost_details) = execution_cost(process, execution, consensus_version)?;
+            Ok(execute_compute_cost_in_microcredits(cost_details, consensus_version))
+        }
+        Transaction::Fee(id, _) => bail!("Fee transaction '{id}' does not have deployment or execution spend"),
+    }
+}
+
 /// Returns the minimum cost in microcredits to publish the given deployment (V4).
 ///
 /// Identical to V3 except in that it replaces the factor (`num_combined_variables` + `num_combined_constraints`)
