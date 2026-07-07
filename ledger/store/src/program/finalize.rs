@@ -52,6 +52,17 @@ struct SerializedMappingEntries {
     entries: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
+/// The block height component of a [`FinalizeStorage::MappingUpdateMap`] key, stored as 4 raw bytes.
+///
+/// New entries encode the height in **big-endian** order so that lexicographic key order matches
+/// numeric height order, enabling O(log n) floor seeks via `get_floor_confirmed`.
+///
+/// Legacy entries (written before this schema change) use **little-endian** order (the `bincode`
+/// default for `u32`).  They are distinguished at read time by the presence of an entry in
+/// `mapping_update_heights_map`; see `get_historical_mapping_value` for details.
+#[cfg(feature = "history")]
+pub(crate) type HeightBytes = [u8; 4];
+
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
 fn to_mapping_id<N: Network>(program_id: &ProgramID<N>, mapping_name: &Identifier<N>) -> Result<Field<N>> {
@@ -100,17 +111,15 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     /// The mapping of `transaction ID` to `rejection reason`.
     type RejectedReasonMap: for<'a> Map<'a, Field<N>, RejectedReason<N>>;
-    /// The mapping of `(program ID, mapping name, key, height_be)` to `value`.
+    /// The mapping of `(program ID, mapping name, key, height)` to `value`.
     ///
-    /// `height_be` is the block height encoded as a big-endian `[u8; 4]` so that
-    /// lexicographic key order matches numeric height order, enabling O(log n)
-    /// floor lookups via `get_floor_confirmed`.
+    /// The height component is a [`HeightBytes`]: big-endian for new entries, little-endian
+    /// for legacy entries (detected via `mapping_update_heights_map`).
     ///
-    /// **Legacy note**: nodes that synced before this schema change have entries encoded
-    /// with little-endian `u32` (bincode default) instead. Those keys are detected via
-    /// `mapping_update_heights_map` and continue to use the O(n) binary-search path.
+    /// Big-endian encoding lets lexicographic key order match numeric height order, enabling
+    /// O(log n) floor lookups via `get_floor_confirmed`.
     #[cfg(feature = "history")]
-    type MappingUpdateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>, [u8; 4]), Value<N>>;
+    type MappingUpdateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>;
     /// The mapping of `(program ID, mapping name, key)` to `[height]`.
     ///
     /// Present only for keys written before the big-endian schema change. Acts as a

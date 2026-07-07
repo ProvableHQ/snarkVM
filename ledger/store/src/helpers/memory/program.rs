@@ -15,6 +15,8 @@
 
 #![allow(clippy::type_complexity)]
 
+#[cfg(feature = "history")]
+use crate::program::HeightBytes;
 use crate::{
     CommitteeStorage,
     CommitteeStore,
@@ -49,7 +51,7 @@ pub struct FinalizeMemory<N: Network> {
     rejected_reason_map: MemoryMap<Field<N>, RejectedReason<N>>,
     /// The historical mapping value map (keyed by big-endian block height).
     #[cfg(feature = "history")]
-    mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, [u8; 4]), Value<N>>,
+    mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>,
     /// The legacy heights index; present only for keys written before the BE schema change.
     #[cfg(feature = "history")]
     mapping_update_heights_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
@@ -70,7 +72,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
     #[cfg(feature = "history")]
-    type MappingUpdateMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, [u8; 4]), Value<N>>;
+    type MappingUpdateMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>;
     #[cfg(feature = "history")]
     type MappingUpdateHeightsMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
     #[cfg(feature = "history-staking-rewards")]
