@@ -347,6 +347,27 @@ impl<
     }
 
     ///
+    /// Returns the (key, value) pair for the greatest confirmed key ≤ the given key,
+    /// or `None` if no such entry exists in this map.
+    ///
+    /// Uses `BTreeMap::range` for O(log n) performance.
+    ///
+    fn get_floor_confirmed<Q>(&'a self, key: &Q) -> Result<Option<(Cow<'a, K>, Cow<'a, V>)>>
+    where
+        K: Borrow<Q>,
+        Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+    {
+        let key_bytes = bincode::serialize(key)?;
+        // Note: The 'unwrap' is safe here, because the keys are defined by us.
+        Ok(self
+            .map
+            .read()
+            .range(..=key_bytes)
+            .next_back()
+            .map(|(k, v)| (Cow::Owned(unchecked_deserialize(k).unwrap()), Cow::Owned(v.clone()))))
+    }
+
+    ///
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator {
