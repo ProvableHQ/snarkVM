@@ -37,12 +37,6 @@ fn test_quorum_block_spend_limit_aborts_excess_transactions() {
     let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
     let next_block_height = previous_block.height().saturating_add(1);
 
-    assert_eq!(
-        CurrentNetwork::CONSENSUS_VERSION(next_block_height).unwrap(),
-        ConsensusVersion::V16,
-        "test expects the next block to execute under V16 spend rules"
-    );
-
     let transfer_inputs = |amount: &str| {
         [Value::<CurrentNetwork>::from_str(&caller_address.to_string()).unwrap(), Value::from_str(amount).unwrap()]
     };

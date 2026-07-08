@@ -185,6 +185,9 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
+// We want each to come immediately after the previous one by default for faster testing.
+// Whether activating them all at height 0 is possible is open for investigation.
+// If a test needs to stay on one consensus version for a while, consider just locally testing or using a custom `CONSENSUS_VERSION_HEIGHTS` environment variable.
 pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] = [
     (ConsensusVersion::V1, 0),
     (ConsensusVersion::V2, 5),

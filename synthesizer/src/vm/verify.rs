@@ -1008,9 +1008,6 @@ mod tests {
     #[cfg(feature = "test")]
     use snarkvm_utilities::bytes_from_bits_le;
 
-    #[cfg(feature = "test")]
-    use k256::elliptic_curve::Generate;
-
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
     fn create_cache_key_for_test<N: Network, C: ConsensusStorage<N>>(
@@ -1708,7 +1705,14 @@ function compute:
         vm.add_next_block(&next_block).unwrap();
 
         // Execute the program and ensure that the signature verifies.
-        let ecdsa_signing_key = k256::ecdsa::SigningKey::generate_from_rng(rng);
+        // Note: `SigningKey::random` requires a `rand_core` version that `TestRng` does not
+        // implement, so we sample random scalar bytes and reject any that are not a valid key.
+        let ecdsa_signing_key = loop {
+            let sk_bytes: [u8; 32] = core::array::from_fn(|_| rng.random());
+            if let Ok(signing_key) = k256::ecdsa::SigningKey::from_slice(&sk_bytes) {
+                break signing_key;
+            }
+        };
         let ecdsa_verifying_key = k256::ecdsa::VerifyingKey::from(&ecdsa_signing_key);
         let ethereum_address = ECDSASignature::ethereum_address_from_public_key(&ecdsa_verifying_key).unwrap();
         let message: [u8; 100] = (0..100).map(|_| rng.random::<u8>()).collect::<Vec<u8>>().try_into().unwrap();
