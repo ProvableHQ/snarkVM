@@ -178,16 +178,17 @@ impl<N: Network> Process<N> {
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
             ensure!(function.outputs().len() == num_outputs, "The number of transition outputs is incorrect");
 
-            // Obtain the is_dynamic flag used by Input::matches_type and Output::matches_type. At
+            // Obtain the is_dynamic flag used by Input::valid_as_argument and Output::valid_as_output. At
             // this point, we only want to enforce strict matching for the root call: we do not know
             // which of the non-root ones are dynamic or not yet. Strict matching is not applied
             // before ConsensusVersion::V18.
-            let is_dynamic_for_types =
-                if !reverse_call_graph.contains_key(transition.id()) && consensus_version >= ConsensusVersion::V18 {
-                    Some(false)
-                } else {
-                    None
-                };
+            let is_dynamic_for_types = if transition.id() == execution.transitions().last().unwrap().id()
+                && consensus_version >= ConsensusVersion::V18
+            {
+                Some(false)
+            } else {
+                None
+            };
 
             // Ensure the input and output types are equivalent to the ones defined in the function.
             // We only need to check that the variant type matches because we already check the hashes in
@@ -196,7 +197,7 @@ impl<N: Network> Process<N> {
             // so `zip_eq` here is safe and acts as a defense-in-depth assertion.
             for (function_input, transition_input) in function.input_types().iter().zip_eq(transition.inputs().iter()) {
                 ensure!(
-                    transition_input.matches_type(function_input, is_dynamic_for_types),
+                    transition_input.valid_as_argument(function_input, is_dynamic_for_types),
                     "Incorrect input variant or mismatch with the expected value type: {} call has input '{transition_input}' but the function expects type '{function_input}'",
                     if is_dynamic_for_types.is_some() { "root" } else { "non-root" },
                 );
@@ -205,7 +206,7 @@ impl<N: Network> Process<N> {
                 function.output_types().iter().zip_eq(transition.outputs().iter()).enumerate()
             {
                 ensure!(
-                    transition_output.matches_type(function_output, is_dynamic_for_types),
+                    transition_output.valid_as_output(function_output, is_dynamic_for_types),
                     "Incorrect output variant or mismatch with the expected value type at index {output_index} in '{}/{}': {} call has output '{transition_output}' but the function declares type '{function_output}'",
                     transition.program_id(),
                     transition.function_name(),
@@ -466,7 +467,7 @@ impl<N: Network> Process<N> {
                     child_function.input_types().iter().zip_eq(child_transition.inputs().iter())
                 {
                     ensure!(
-                        transition_input.matches_type(function_input, is_dynamic),
+                        transition_input.valid_as_argument(function_input, is_dynamic),
                         "Incorrect input variant or mismatch with the expected value type in '{}/{}': {call_kind} call has input '{transition_input}' but the function expects type '{function_input}'",
                         child_transition.program_id(),
                         child_transition.function_name(),
@@ -476,7 +477,7 @@ impl<N: Network> Process<N> {
                     child_function.output_types().iter().zip_eq(child_transition.outputs().iter()).enumerate()
                 {
                     ensure!(
-                        transition_output.matches_type(function_output, is_dynamic),
+                        transition_output.valid_as_output(function_output, is_dynamic),
                         "Incorrect output variant or mismatch with the expected value type at index {output_index} in '{}/{}': {call_kind} call has output '{transition_output}' but the function declares type '{function_output}'",
                         child_transition.program_id(),
                         child_transition.function_name(),

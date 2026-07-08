@@ -428,10 +428,10 @@ impl<N: Network> Output<N> {
     ///
     /// For outputs of an invalid type according to `is_dynamic`, this function returns false
     /// regardless of the value type.
-    pub fn matches_type(&self, expected_value_type: &ValueType<N>, is_dynamic: Option<bool>) -> bool {
+    pub fn valid_as_output(&self, callee_value_type: &ValueType<N>, is_dynamic: Option<bool>) -> bool {
         // These variants are call-type independent, so they always match their value type.
         if matches!(
-            (self, expected_value_type),
+            (self, callee_value_type),
             (Self::Constant(..), ValueType::Constant(..))
                 | (Self::Public(..), ValueType::Public(..))
                 | (Self::Private(..), ValueType::Private(..))
@@ -446,7 +446,7 @@ impl<N: Network> Output<N> {
             //    false regardless of the ValueType
             //  - Self::ExternalRecord: same as above
             matches!(
-                (self, expected_value_type),
+                (self, callee_value_type),
                 // Callee produces a static Record, caller sees DynamicRecord, translation occurs
                 (Self::RecordWithDynamicID(..), ValueType::Record(..))
                 // Callee produces an ExternalRecord, caller sees DynamicRecord, translation occurs
@@ -459,7 +459,7 @@ impl<N: Network> Output<N> {
             //  - Self::RecordWithDynamicID: no translation can occur in static calls
             //  - Self::ExternalRecordWithDynamicID: same as above
             matches!(
-                (self, expected_value_type),
+                (self, callee_value_type),
                 // Callee produces a static Record (e.g. the root transition or the fee)
                 (Self::Record(..), ValueType::Record(..))
                 // Pass-through of External records (no translation)
@@ -470,7 +470,7 @@ impl<N: Network> Output<N> {
         } else {
             // is_dynamic = None: flexible matching
             matches!(
-                (self, expected_value_type),
+                (self, callee_value_type),
                 (Self::Record(..), ValueType::Record(..))
                     | (Self::RecordWithDynamicID(..), ValueType::Record(..))
                     | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))

@@ -250,16 +250,16 @@ impl<N: Network> Input<N> {
     /// Returns `true` if the input matches the given value type as seen by the callee. `Record`,
     /// `ExternalRecord`, `DynamicRecord`, `RecordWithDynamicID` and `ExternalRecordWithDynamicID`
     /// inputs are handled according to the value of `is_dynamic`:
-    ///  - `Some(false)` enforces type correspondence assuming the inputs refer to a dynamic call.
-    ///  - `Some(true)` enforces it assuming a static call.
+    ///  - `Some(true)` enforces type correspondence assuming the inputs refer to a dynamic call.
+    ///  - `Some(false)` enforces it assuming a static call.
     ///  - `None` is flexible and makes no assumption about the type of call: both dynamic-call and
     ///    static-call matching patterns return `true`.
     ///
     /// For inputs of an invalid type according to `is_dynamic`, this function returns false
     /// regardless of the value type.
-    pub fn matches_type(&self, expected_value_type: &ValueType<N>, is_dynamic: Option<bool>) -> bool {
+    pub fn valid_as_argument(&self, callee_value_type: &ValueType<N>, is_dynamic: Option<bool>) -> bool {
         if matches!(
-            (self, expected_value_type),
+            (self, callee_value_type),
             (Self::Constant(..), ValueType::Constant(..))
                 | (Self::Public(..), ValueType::Public(..))
                 | (Self::Private(..), ValueType::Private(..))
@@ -269,11 +269,11 @@ impl<N: Network> Input<N> {
 
         if is_dynamic == Some(true) {
             // Unmatched variants:
-            //  - Self::Record: cannot be the calle's view of a dynamic-call input, so we return
+            //  - Self::Record: cannot be the callee's view of a dynamic-call input, so we return
             //    false regardless of the ValueType
             //  - Self::ExternalRecord: same as above
             matches!(
-                (self, expected_value_type),
+                (self, callee_value_type),
                 // Caller sees DynamicRecord, callee receives static Record, translation occurs
                 (Self::RecordWithDynamicID(..), ValueType::Record(..))
                 // Caller sees DynamicRecord, callee receives ExternalRecord, translation occurs
@@ -286,7 +286,7 @@ impl<N: Network> Input<N> {
             //  - Self::RecordWithDynamicID: no translation can occur in static calls
             //  - Self::ExternalRecordWithDynamicID: same as above
             matches!(
-                (self, expected_value_type),
+                (self, callee_value_type),
                 // This can only occur for the root transition since static local calls are
                 // disallowed
                 (Self::Record(..), ValueType::Record(..))
@@ -298,7 +298,7 @@ impl<N: Network> Input<N> {
         } else {
             // is_dynamic = None: flexible matching
             matches!(
-                (self, expected_value_type),
+                (self, callee_value_type),
                 (Self::Record(..), ValueType::Record(..))
                     | (Self::RecordWithDynamicID(..), ValueType::Record(..))
                     | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
