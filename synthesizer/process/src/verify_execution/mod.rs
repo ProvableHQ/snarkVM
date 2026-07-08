@@ -230,6 +230,7 @@ impl<N: Network> Process<N> {
                 &mut function_id_cache,
                 &network_id,
                 execution_stacks,
+                consensus_version,
             )?;
             lap!(timer, "Constructed the verifier inputs for a transition of {}", function.name());
 
@@ -347,6 +348,7 @@ impl<N: Network> Process<N> {
         function_id_cache: &mut HashMap<(ProgramID<N>, Identifier<N>), Field<N>>,
         network_id: &U16<N>,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+        consensus_version: ConsensusVersion,
     ) -> Result<Vec<N::Field>> {
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = transition.tpk().to_xy_coordinates();
@@ -434,7 +436,7 @@ impl<N: Network> Process<N> {
         for (child_transition_id, call_instruction) in child_transition_ids.iter().zip_eq(parent_function_calls) {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
-            let (child_transition, _) = transition_map.get(child_transition_id).unwrap();
+            let (child_transition, child_function) = transition_map.get(child_transition_id).unwrap();
 
             // Retrieve (or compute and cache) the function ID for the child transition.
             let child_function_id = get_or_compute_function_id(
@@ -451,6 +453,36 @@ impl<N: Network> Process<N> {
                 // This should never occur, since `parent_function_calls` only contains `Call` and `CallDynamic`.
                 _ => bail!("Unexpected instruction type in parent function calls"),
             };
+
+            // Ensure the child transition's input and output variants correspond to the child
+            // function's declared types, enforcing strict matching depending on whether this is a
+            // static or dynamic call. This check only happens at ConsensusVersion >= V18.
+            // Note: The counts are already validated for every transition in the main verification
+            // loop, so `zip_eq` is safe.
+            if consensus_version >= ConsensusVersion::V18 {
+                let is_dynamic = Some(call_dynamic.is_some());
+                let call_kind = if call_dynamic.is_some() { "dynamic" } else { "static" };
+                for (function_input, transition_input) in
+                    child_function.input_types().iter().zip_eq(child_transition.inputs().iter())
+                {
+                    ensure!(
+                        transition_input.matches_type(function_input, is_dynamic),
+                        "Incorrect input variant or mismatch with the expected value type in '{}/{}': {call_kind} call has input '{transition_input}' but the function expects type '{function_input}'",
+                        child_transition.program_id(),
+                        child_transition.function_name(),
+                    );
+                }
+                for (output_index, (function_output, transition_output)) in
+                    child_function.output_types().iter().zip_eq(child_transition.outputs().iter()).enumerate()
+                {
+                    ensure!(
+                        transition_output.matches_type(function_output, is_dynamic),
+                        "Incorrect output variant or mismatch with the expected value type at index {output_index} in '{}/{}': {call_kind} call has output '{transition_output}' but the function declares type '{function_output}'",
+                        child_transition.program_id(),
+                        child_transition.function_name(),
+                    );
+                }
+            }
 
             // [Inputs] Extend the verifier inputs with the program ID and function name if the child transition is dynamic.
             if call_dynamic.is_some() {
@@ -483,8 +515,9 @@ impl<N: Network> Process<N> {
                         child_transition.function_name(),
                         input,
                     );
-                    // Ensure the input type matches the caller's expectation.
-                    // Use the caller's view of the input (e.g., RecordWithDynamicID -> DynamicRecord).
+                    // Ensure the input type matches the caller's expectation - which is different
+                    // the callee-view check from above. We use the caller's view of the input
+                    // (e.g., RecordWithDynamicID -> DynamicRecord).
                     ensure!(
                         input.to_caller_input().is_type(input_type),
                         "Input {i} in dynamic call to {} should be of type {}, found: {}",
