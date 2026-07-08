@@ -86,6 +86,7 @@ use snarkvm_synthesizer_process::{
     deployment_cost,
     execute_compute_cost_in_microcredits,
     execution_cost,
+    transaction_compute_spend_in_microcredits,
 };
 use snarkvm_synthesizer_program::{
     FinalizeCore,
