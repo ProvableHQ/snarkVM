@@ -15,6 +15,8 @@
 
 #![allow(clippy::type_complexity)]
 
+#[cfg(feature = "history")]
+use crate::program::HeightBytes;
 use crate::{
     CommitteeStorage,
     CommitteeStore,
@@ -47,10 +49,10 @@ pub struct FinalizeMemory<N: Network> {
     key_value_map: NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
     /// The rejection reason map.
     rejected_reason_map: MemoryMap<Field<N>, RejectedReason<N>>,
-    /// The historical mapping value update map.
+    /// The historical mapping value map (keyed by big-endian block height).
     #[cfg(feature = "history")]
-    mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>,
-    /// The historical mapping update heights map.
+    mapping_update_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>,
+    /// The legacy heights index; present only for keys written before the BE schema change.
     #[cfg(feature = "history")]
     mapping_update_heights_map: MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
     /// The current block height.
@@ -70,7 +72,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
     type RejectedReasonMap = MemoryMap<Field<N>, RejectedReason<N>>;
     #[cfg(feature = "history")]
-    type MappingUpdateMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>;
+    type MappingUpdateMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>;
     #[cfg(feature = "history")]
     type MappingUpdateHeightsMap = MemoryMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>;
     #[cfg(feature = "history-staking-rewards")]
@@ -81,6 +83,10 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         let storage = storage.into();
         // Initialize the committee store.
         let committee_store = CommitteeStore::<N, CommitteeMemory<N>>::open(storage.clone())?;
+        // Seed the history height guard from the last committed block height.
+        // Returns 0 for a fresh database that has no committee data yet.
+        #[cfg(feature = "history")]
+        let initial_height = committee_store.current_height().unwrap_or(0);
         // Return the finalize store.
         Ok(Self {
             committee_store,
@@ -92,7 +98,7 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
             #[cfg(feature = "history")]
             mapping_update_heights_map: MemoryMap::default(),
             #[cfg(feature = "history")]
-            block_height: Default::default(),
+            block_height: Arc::new(AtomicU32::new(initial_height)),
             #[cfg(feature = "history-staking-rewards")]
             staking_rewards_map: MemoryMap::default(),
             storage_mode: storage,
