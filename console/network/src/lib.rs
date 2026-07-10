@@ -40,7 +40,7 @@ mod testnet_v0;
 pub use testnet_v0::*;
 
 pub mod prelude {
-    #[cfg(feature = "wasm")]
+    #[cfg(any(feature = "wasm", feature = "set_consensus_heights"))]
     pub use crate::get_or_init_consensus_version_heights;
     pub use crate::{
         CANARY_V0_CONSENSUS_VERSION_HEIGHTS,
@@ -621,7 +621,7 @@ pub trait Network:
 /// This method should be called by `wasm` users who need to set test values for consensus heights
 /// for purposes such as testing on a local devnet. If this method needs to be used, it should be
 /// called immediately after the wasm module is initialized.
-#[cfg(feature = "wasm")]
+#[cfg(any(feature = "wasm", feature = "set_consensus_heights"))]
 pub fn get_or_init_consensus_version_heights(
     heights: Option<String>,
 ) -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {

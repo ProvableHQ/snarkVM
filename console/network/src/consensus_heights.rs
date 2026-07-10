@@ -205,7 +205,13 @@ pub fn load_test_consensus_heights() -> [(ConsensusVersion, u32); NUM_CONSENSUS_
     load_test_consensus_heights_inner(std::env::var("CONSENSUS_VERSION_HEIGHTS").ok())
 }
 
-#[cfg(any(test, feature = "test", feature = "test_consensus_heights", feature = "wasm"))]
+#[cfg(any(
+    test,
+    feature = "test",
+    feature = "test_consensus_heights",
+    feature = "wasm",
+    feature = "set_consensus_heights"
+))]
 pub(crate) fn load_test_consensus_heights_inner(
     consensus_version_heights: Option<String>,
 ) -> [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] {

@@ -16,6 +16,11 @@ wasm = [
 test = [ ]
 test_targets = [ ]
 test_consensus_heights = [ ]
+# Exposes `get_or_init_consensus_version_heights` for NATIVE (non-wasm) builds
+# that need to pin consensus-version activation heights at runtime — e.g. an SDK
+# aligning its VM with a local devnet. Unlike `test_consensus_heights` it does
+# not change the default height source; it only unlocks the runtime setter.
+set_consensus_heights = [ ]
 
 [dependencies.snarkvm-algorithms]
 workspace = true
