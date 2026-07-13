@@ -54,6 +54,10 @@ impl<E: Environment, const NUM_WINDOWS: u8, const WINDOW_SIZE: u8> HashUncompres
             Cow::Borrowed(input)
         };
 
+        // Compute sum of h_i^{sum of (1-2*c_{i,j,2})*(1+c_{i,j,0}+2*c_{i,j,1})*2^{4*(j-1)} for all j in segment}
+        // for all i (described in section 5.4.1.7 in the Zcash protocol specification) in batched form: the summand
+        // resulting from each group of BHP_NUM_COMBINED_CHUNKS = 4 bit triplets (c_{i,j,0}, c_{i,j,1}, c_{i,j,2})
+        // has already been precomputed in `combined_bases_lookup`.
         let sum = input
             .chunks(WINDOW_SIZE as usize * BHP_CHUNK_SIZE)
             .zip(self.combined_bases_lookup.iter())

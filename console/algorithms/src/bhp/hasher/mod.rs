@@ -31,7 +31,9 @@ use std::sync::Arc;
 pub(super) const BHP_CHUNK_SIZE: usize = 3;
 pub(super) const BHP_LOOKUP_SIZE: usize = 1 << BHP_CHUNK_SIZE;
 
-// The amount of chunks (i.e. bit triplets) to preprocess together in the lookup table.
+/// The amount of chunks (i.e. bit triplets) to preprocess together in the lookup table.
+// The value 4 results in a total lookup size of ~0.13 GB and a x4 speedup in hash_uncompressed.
+// Switching to 5 would increase the lookup size to an excessive ~0.8 GB lookup for a x5 speedup.
 pub(super) const BHP_NUM_COMBINED_CHUNKS: usize = 4;
 
 /// BHP is a collision-resistant hash function that takes a variable-length input.
