@@ -63,8 +63,11 @@ pub enum ConsensusVersion {
     ///      Increase the program size limit to 2048 kB and the transaction size limit to 2304 kB.
     ///      Update the deployment storage cost for programs exceeding 512 kB.
     V16 = 16,
-    /// V17: Introduces block-wide deployment limits, reverts the anchor time to 25.
+    /// V17: NOTE: V17 landed chronologically on mainnet before it landed on testnet.
+    ///      Reverts the anchor time to 25.
     V17 = 17,
+    /// V18: Introduces block-wide deployment limits.
+    V18 = 18,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -94,6 +97,7 @@ impl FromBytes for ConsensusVersion {
             15 => Ok(Self::V15),
             16 => Ok(Self::V16),
             17 => Ok(Self::V17),
+            18 => Ok(Self::V18),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -134,6 +138,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V15, u32::MAX),
     (ConsensusVersion::V16, u32::MAX),
     (ConsensusVersion::V17, u32::MAX),
+    (ConsensusVersion::V18, u32::MAX),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -153,8 +158,9 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V13, 16_850_000),
     (ConsensusVersion::V14, 17_700_000),
     (ConsensusVersion::V15, 19_264_000),
-    (ConsensusVersion::V16, u32::MAX),
-    (ConsensusVersion::V17, u32::MAX),
+    (ConsensusVersion::V16, 19_860_000),
+    (ConsensusVersion::V17, 19_860_001),
+    (ConsensusVersion::V18, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -174,11 +180,15 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V13, 14_906_000),
     (ConsensusVersion::V14, 15_370_000),
     (ConsensusVersion::V15, 16_886_000),
-    (ConsensusVersion::V16, u32::MAX),
+    (ConsensusVersion::V16, 17_319_000),
     (ConsensusVersion::V17, u32::MAX),
+    (ConsensusVersion::V18, u32::MAX),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
+// We want each to come immediately after the previous one by default for faster testing.
+// Whether activating them all at height 0 is possible is open for investigation.
+// If a test needs to stay on one consensus version for a while, consider just locally testing or using a custom `CONSENSUS_VERSION_HEIGHTS` environment variable.
 pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] = [
     (ConsensusVersion::V1, 0),
     (ConsensusVersion::V2, 5),
@@ -196,7 +206,8 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V14, 17),
     (ConsensusVersion::V15, 18),
     (ConsensusVersion::V16, 19),
-    (ConsensusVersion::V17, 25),
+    (ConsensusVersion::V17, 20),
+    (ConsensusVersion::V18, 21),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]

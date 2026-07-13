@@ -1,20 +1,20 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    parent.aleo/foo:
-      outputs:
-      - '{"type":"future","id":"4571643955566424296061144977742509270559634239115504102748117632820937355081field","value":"{\n  program_id: parent.aleo,\n  function_name: foo,\n  arguments: [\n    {\n      program_id: child.aleo,\n      function_name: boo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: boo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: boo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
-- child_outputs:
+- execute:
+    parent.aleo/foo:
+      outputs:
+      - '{"type":"future","id":"3725940447914047747088721354704832552525617411954720228113217830809865670394field","value":"{\n  program_id: parent.aleo,\n  function_name: foo,\n  arguments: [\n    {\n      program_id: child.aleo,\n      function_name: boo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: boo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: foo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    },\n    {\n      program_id: child.aleo,\n      function_name: boo,\n      arguments: [\n        aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n      ]\n    }\n  \n  ]\n}"}'
+  child_outputs:
     child.aleo/foo:
       outputs:
-      - '{"type":"future","id":"6696824033451661141302734848892298960965500271114429867609960379982464253600field","value":"{\n  program_id: child.aleo,\n  function_name: foo,\n  arguments: [\n    aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n  ]\n}"}'
+      - '{"type":"future","id":"3001858799628276486919615645427960745313086858700982137690238466993843544919field","value":"{\n  program_id: child.aleo,\n  function_name: foo,\n  arguments: [\n    aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n  ]\n}"}'
     child.aleo/boo:
       outputs:
-      - '{"type":"future","id":"1954396032478706974521134520410924375517516282239124192373664008466303384873field","value":"{\n  program_id: child.aleo,\n  function_name: boo,\n  arguments: [\n    aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n  ]\n}"}'
+      - '{"type":"future","id":"1250316934107660371007395579680018448385749891067342118055233529901653998248field","value":"{\n  program_id: child.aleo,\n  function_name: boo,\n  arguments: [\n    aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy\n  ]\n}"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"7182874443199053827868928937328605009268104682121240794072545076390433764732field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    9100u64\n  ]\n}"}'
+      - '{"type":"future","id":"3704756689082335913993161554977817878982006429748486533359788402601146725727field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    9100u64\n  ]\n}"}'

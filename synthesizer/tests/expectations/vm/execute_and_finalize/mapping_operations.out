@@ -1,47 +1,47 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    mapping_operations.aleo/empty_remove:
-      outputs:
-      - '{"type":"future","id":"842141513284268041422067860341596652348800837302786103114359648138652206056field","value":"{\n  program_id: mapping_operations.aleo,\n  function_name: empty_remove,\n  arguments: [\n    10u8\n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    mapping_operations.aleo/insert_contains_remove:
-      outputs:
-      - '{"type":"future","id":"6463074366400684050675819092880036740563660284476265954549500986271212509262field","value":"{\n  program_id: mapping_operations.aleo,\n  function_name: insert_contains_remove,\n  arguments: [\n    0u8,\n    0u8\n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    mapping_operations.aleo/insert_contains_remove:
-      outputs:
-      - '{"type":"future","id":"400494279222432495075932296471997129107305722522033006569208637521849660527field","value":"{\n  program_id: mapping_operations.aleo,\n  function_name: insert_contains_remove,\n  arguments: [\n    0u8,\n    0u8\n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    mapping_operations.aleo/insert_contains_remove:
-      outputs:
-      - '{"type":"future","id":"6525824834832254754117372384239459334485686367568778911443078036074057986310field","value":"{\n  program_id: mapping_operations.aleo,\n  function_name: insert_contains_remove,\n  arguments: [\n    0u8,\n    1u8\n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
-- child_outputs:
+- execute:
+    mapping_operations.aleo/empty_remove:
+      outputs:
+      - '{"type":"future","id":"4720255315962053079562296385041979267249007654648208747133563909652938857528field","value":"{\n  program_id: mapping_operations.aleo,\n  function_name: empty_remove,\n  arguments: [\n    10u8\n  ]\n}"}'
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"2471988192758416823480760994628460613865267703156062765284120355417682870228field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1eakarna6a70pg9r0l9qal20faejwctgur5xt7lnc2a42wj2yssfqc89rk8,\n    1677u64\n  ]\n}"}'
-- child_outputs:
+      - '{"type":"future","id":"3339065101012236326060388292710744531884282298224526327717529559607138819169field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1eakarna6a70pg9r0l9qal20faejwctgur5xt7lnc2a42wj2yssfqc89rk8,\n    1677u64\n  ]\n}"}'
+- execute:
+    mapping_operations.aleo/insert_contains_remove:
+      outputs:
+      - '{"type":"future","id":"3708835162308473078473646041139333101485978615754939197015383709939377316826field","value":"{\n  program_id: mapping_operations.aleo,\n  function_name: insert_contains_remove,\n  arguments: [\n    0u8,\n    0u8\n  ]\n}"}'
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"3730337424119405258594633191923371721603684333456684258042869918882772117173field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1eakarna6a70pg9r0l9qal20faejwctgur5xt7lnc2a42wj2yssfqc89rk8,\n    2391u64\n  ]\n}"}'
-- child_outputs:
+      - '{"type":"future","id":"4083940214575561688213754025600738509161732157717210044047379894017018401370field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1eakarna6a70pg9r0l9qal20faejwctgur5xt7lnc2a42wj2yssfqc89rk8,\n    2391u64\n  ]\n}"}'
+- execute:
+    mapping_operations.aleo/insert_contains_remove:
+      outputs:
+      - '{"type":"future","id":"5861687675348881647052717443577578959207408951790339489531112700925663613531field","value":"{\n  program_id: mapping_operations.aleo,\n  function_name: insert_contains_remove,\n  arguments: [\n    0u8,\n    0u8\n  ]\n}"}'
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"2692323672828057356532361272062511497604044804270465886765248639456372274520field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1eakarna6a70pg9r0l9qal20faejwctgur5xt7lnc2a42wj2yssfqc89rk8,\n    2391u64\n  ]\n}"}'
-- child_outputs:
+      - '{"type":"future","id":"5226505579689872821984374088243643346812836170710998460249185055958347481366field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1eakarna6a70pg9r0l9qal20faejwctgur5xt7lnc2a42wj2yssfqc89rk8,\n    2391u64\n  ]\n}"}'
+- execute:
+    mapping_operations.aleo/insert_contains_remove:
+      outputs:
+      - '{"type":"future","id":"2751403293489926884552826971263190281984098883725442228206911915476027507635field","value":"{\n  program_id: mapping_operations.aleo,\n  function_name: insert_contains_remove,\n  arguments: [\n    0u8,\n    1u8\n  ]\n}"}'
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"6093906389462644789942843833771436591895242239310313938955541059622485223768field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1eakarna6a70pg9r0l9qal20faejwctgur5xt7lnc2a42wj2yssfqc89rk8,\n    2391u64\n  ]\n}"}'
+      - '{"type":"future","id":"7388702317306653533458259505480678885975531110863305489372130607933938251442field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1eakarna6a70pg9r0l9qal20faejwctgur5xt7lnc2a42wj2yssfqc89rk8,\n    2391u64\n  ]\n}"}'

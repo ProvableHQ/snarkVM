@@ -1,14 +1,14 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    good_constructor.aleo/check:
-      outputs:
-      - '{"type":"future","id":"2744636406170900680234519452680607771747395264364575598595863508783394733651field","value":"{\n  program_id: good_constructor.aleo,\n  function_name: check,\n  arguments: []\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
-- child_outputs:
+- execute:
+    good_constructor.aleo/check:
+      outputs:
+      - '{"type":"future","id":"2719162933129678331550470461921211850695618062854612396341387203933701908585field","value":"{\n  program_id: good_constructor.aleo,\n  function_name: check,\n  arguments: []\n}"}'
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"628175346009334200488874029875100426519582702682740102227291807216608947182field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    1294u64\n  ]\n}"}'
+      - '{"type":"future","id":"830931640752102150394164272097982581555826186830036823670882703490676220923field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    1294u64\n  ]\n}"}'
