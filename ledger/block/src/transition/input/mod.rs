@@ -297,14 +297,7 @@ impl<N: Network> Input<N> {
             )
         } else {
             // is_dynamic = None: flexible matching
-            matches!(
-                (self, callee_value_type),
-                (Self::Record(..), ValueType::Record(..))
-                    | (Self::RecordWithDynamicID(..), ValueType::Record(..))
-                    | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
-                    | (Self::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(..))
-                    | (Self::DynamicRecord(..), ValueType::DynamicRecord)
-            )
+            self.is_type(callee_value_type)
         }
     }
 }

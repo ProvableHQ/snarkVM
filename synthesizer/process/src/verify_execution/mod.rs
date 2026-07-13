@@ -178,40 +178,44 @@ impl<N: Network> Process<N> {
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
             ensure!(function.outputs().len() == num_outputs, "The number of transition outputs is incorrect");
 
-            // Obtain the is_dynamic flag used by Input::valid_as_argument and Output::valid_as_output. At
-            // this point, we only want to enforce strict matching for the root call: we do not know
-            // which of the non-root ones are dynamic or not yet. Strict matching is not applied
-            // before ConsensusVersion::V18.
-            let is_dynamic_for_types = if transition.id() == execution.transitions().last().unwrap().id()
-                && consensus_version >= ConsensusVersion::V18
-            {
-                Some(false)
-            } else {
-                None
-            };
+            let is_root_transition = transition.id() == execution.transitions().last().unwrap().id();
 
-            // Ensure the input and output types are equivalent to the ones defined in the function.
-            // We only need to check that the variant type matches because we already check the hashes in
-            // the `Input::verify` and `Output::verify` functions.
-            // Note: The length checks above already verify that the counts match,
-            // so `zip_eq` here is safe and acts as a defense-in-depth assertion.
-            for (function_input, transition_input) in function.input_types().iter().zip_eq(transition.inputs().iter()) {
-                ensure!(
-                    transition_input.valid_as_argument(function_input, is_dynamic_for_types),
-                    "Incorrect input variant or mismatch with the expected value type: {} call has input '{transition_input}' but the function expects type '{function_input}'",
-                    if is_dynamic_for_types.is_some() { "root" } else { "non-root" },
-                );
-            }
-            for (output_index, (function_output, transition_output)) in
-                function.output_types().iter().zip_eq(transition.outputs().iter()).enumerate()
-            {
-                ensure!(
-                    transition_output.valid_as_output(function_output, is_dynamic_for_types),
-                    "Incorrect output variant or mismatch with the expected value type at index {output_index} in '{}/{}': {} call has output '{transition_output}' but the function declares type '{function_output}'",
-                    transition.program_id(),
-                    transition.function_name(),
-                    if is_dynamic_for_types.is_some() { "root" } else { "non-root" },
-                );
+            // Before ConsensusVersion::V18, we check the input and output types match the ones
+            // defined in the function under the weaker type equivalence. At ConsensusVersion::V18
+            // and higher, we perform strict type checking for the root transition only: for
+            // non-root transitions, strict type checking happens at the call site in
+            // `to_transition_verifier_inputs` instead.
+            // Note: We only need to check that the variant matches because we already check the
+            // hashes in the `Input::verify` and `Output::verify` functions. Note: The length checks
+            // above already verify that the counts match, so `zip_eq` here is safe and acts as a
+            // defense-in-depth assertion.
+            if consensus_version < ConsensusVersion::V18 || is_root_transition {
+                // Flag for `matches_as_argument` and `matches_as_output`: None for weak equivalence,
+                // Some(false) for strict static-call type equivalence.
+                let is_dynamic_for_types = if consensus_version < ConsensusVersion::V18 { None } else { Some(false) };
+
+                for (input_index, (function_input, transition_input)) in
+                    function.input_types().iter().zip_eq(transition.inputs().iter()).enumerate()
+                {
+                    ensure!(
+                        transition_input.valid_as_argument(function_input, is_dynamic_for_types),
+                        "Incorrect input variant or mismatch with the expected value type at index {input_index} in '{}/{}': {} call has input '{transition_input}' but the function expects type '{function_input}'",
+                        transition.program_id(),
+                        transition.function_name(),
+                        if is_dynamic_for_types.is_some() { "root" } else { "non-root" },
+                    );
+                }
+                for (output_index, (function_output, transition_output)) in
+                    function.output_types().iter().zip_eq(transition.outputs().iter()).enumerate()
+                {
+                    ensure!(
+                        transition_output.valid_as_output(function_output, is_dynamic_for_types),
+                        "Incorrect output variant or mismatch with the expected value type at index {output_index} in '{}/{}': {} call has output '{transition_output}' but the function declares type '{function_output}'",
+                        transition.program_id(),
+                        transition.function_name(),
+                        if is_dynamic_for_types.is_some() { "root" } else { "non-root" },
+                    );
+                }
             }
 
             // Retrieve the parent program ID.
