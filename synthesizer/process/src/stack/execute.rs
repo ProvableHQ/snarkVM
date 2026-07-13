@@ -603,7 +603,11 @@ impl<N: Network> Stack<N> {
             // Construct the transition.
             let transition = Transition::from(
                 &console_request,
-                console_response.as_ref().unwrap(),
+                // Note console_response was set to Some above except in the Synthesize and
+                // CheckDeployment modes.
+                console_response
+                    .as_ref()
+                    .expect("console_response is None in execute_function in CallStack::Authorize mode"),
                 &output_types,
                 &output_registers,
             )?;
@@ -634,7 +638,11 @@ impl<N: Network> Stack<N> {
             // Construct the transition.
             let transition = Transition::from(
                 &console_request,
-                console_response.as_ref().unwrap(),
+                // Note console_response was set to Some above except in the Synthesize and
+                // CheckDeployment modes.
+                console_response
+                    .as_ref()
+                    .expect("console_response is None in execute_function in CallStack::Execute mode"),
                 &output_types,
                 &output_registers,
             )?;

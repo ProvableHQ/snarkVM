@@ -37,18 +37,6 @@ macro_rules! matches_type {
             register_type: &RegisterType<N>,
         ) -> Result<()> {
 
-            let value_kind = match value {
-                $($type_path)::+::Value::Plaintext($($type_path)::+::Plaintext::Literal(literal, _)) => {
-                    format!("plaintext literal of type '{}'", literal.to_type())
-                }
-                $($type_path)::+::Value::Plaintext($($type_path)::+::Plaintext::Struct(..)) => "plaintext struct".to_string(),
-                $($type_path)::+::Value::Plaintext($($type_path)::+::Plaintext::Array(..)) => "plaintext array".to_string(),
-                $($type_path)::+::Value::Record(..) => "record".to_string(),
-                $($type_path)::+::Value::Future(..) => "future".to_string(),
-                $($type_path)::+::Value::DynamicRecord(..) => "dynamic record".to_string(),
-                $($type_path)::+::Value::DynamicFuture(..) => "dynamic future".to_string(),
-            };
-
             match (value, register_type) {
                 ($($type_path)::+::Value::Plaintext(plaintext), RegisterType::Plaintext(plaintext_type)) => {
                     $matches_plaintext(stack, plaintext, plaintext_type)
@@ -60,7 +48,21 @@ macro_rules! matches_type {
                 ($($type_path)::+::Value::Future(future), RegisterType::Future(locator)) => $matches_future(stack, future, locator),
                 ($($type_path)::+::Value::DynamicRecord(_), RegisterType::DynamicRecord) => Ok(()),
                 ($($type_path)::+::Value::DynamicFuture(_), RegisterType::DynamicFuture) => Ok(()),
-                _ => bail!("A value of type '{value_kind}' does not match its declared register type '{register_type}'"),
+                _ => {
+                    let value_kind = match value {
+                        $($type_path)::+::Value::Plaintext($($type_path)::+::Plaintext::Literal(literal, _)) => {
+                            format!("plaintext literal of type '{}'", literal.to_type())
+                        }
+                        $($type_path)::+::Value::Plaintext($($type_path)::+::Plaintext::Struct(..)) => "plaintext struct".to_string(),
+                        $($type_path)::+::Value::Plaintext($($type_path)::+::Plaintext::Array(..)) => "plaintext array".to_string(),
+                        $($type_path)::+::Value::Record(..) => "record".to_string(),
+                        $($type_path)::+::Value::Future(..) => "future".to_string(),
+                        $($type_path)::+::Value::DynamicRecord(..) => "dynamic record".to_string(),
+                        $($type_path)::+::Value::DynamicFuture(..) => "dynamic future".to_string(),
+                    };
+
+                    bail!("A value of type '{value_kind}' does not match its declared register type '{register_type}'")
+                },
             }
         }
 
