@@ -45,6 +45,12 @@ harness = false
 required-features = [ "test-helpers", "rocks" ]
 
 [[bench]]
+name = "prepare_advance_multirecord"
+path = "benches/prepare_advance_multirecord/main.rs"
+harness = false
+required-features = [ "test-helpers", "rocks" ]
+
+[[bench]]
 name = "dag"
 path = "benches/dag.rs"
 harness = false

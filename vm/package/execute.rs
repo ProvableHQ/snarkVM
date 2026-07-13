@@ -16,6 +16,7 @@
 use super::*;
 
 use anyhow::Context;
+use snarkvm_console::network::varuna_version_from_consensus;
 
 impl<N: Network> Package<N> {
     /// Executes a program function with the given inputs.
@@ -117,10 +118,8 @@ impl<N: Network> Package<N> {
         let call_metrics = trace.call_metrics().to_vec();
 
         // Determine which Varuna version to use.
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
+
         // Prepare the trace.
         trace.prepare(&query)?;
 

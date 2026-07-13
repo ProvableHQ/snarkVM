@@ -44,7 +44,6 @@ use console::{
     },
     types::{Field, Group, U8, U64},
 };
-use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{
     Block,

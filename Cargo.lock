@@ -3384,6 +3384,7 @@ dependencies = [
  "expect-test",
  "hex",
  "k256",
+ "rayon",
  "serde",
  "serde_json",
  "smallvec",
