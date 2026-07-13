@@ -380,6 +380,29 @@ impl<
     fn values_confirmed(&'a self) -> Self::Values {
         self.map.read().clone().into_values().map(Cow::Owned)
     }
+
+    ///
+    /// Returns the confirmed keys whose serialized form begins with the serialized `prefix`.
+    ///
+    fn get_keys_confirmed_with_prefix<Q>(&'a self, prefix: &Q) -> Result<Vec<K>>
+    where
+        Q: Serialize,
+    {
+        // Serialize the prefix; the BTreeMap keys are sorted by their serialized bytes.
+        let prefix = bincode::serialize(prefix)?;
+
+        // Seek to the prefix and collect every key sharing it.
+        // Note: The 'unwrap' is safe here, because the keys are defined by us.
+        let map = self.map.read();
+        let mut keys = Vec::new();
+        for (key, _) in map.range(prefix.clone()..) {
+            if !key.starts_with(&prefix) {
+                break;
+            }
+            keys.push(unchecked_deserialize(key)?);
+        }
+        Ok(keys)
+    }
 }
 
 impl<

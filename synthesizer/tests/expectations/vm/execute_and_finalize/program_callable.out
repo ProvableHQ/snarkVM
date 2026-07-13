@@ -2,22 +2,22 @@ errors: []
 outputs:
 - execute: 'Process execution failed: Stack execution failed: Instruction (assert.neq self.caller self.signer;) at index 0 failed: Failed to evaluate: ''assert.neq'' failed: ''aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx'' is equal to ''aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx'' (should not be equal)'
 - verified: true
-  execute:
-    parent.aleo/foo:
-      outputs:
-      - '{"type":"public","id":"6968258707849080826574120907584001692578463362935479206855570084052011733740field","value":"aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"}'
-      - '{"type":"public","id":"2331567111929460942787116856294821976006325982494000349605364497449579261227field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
-      - '{"type":"public","id":"5988610479334902253444386163286340839323368426463464535666371946323059972971field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
-      - '{"type":"public","id":"6055387425669242915773002090645651178431351846224120921249177340173382204361field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
 - {}
-- child_outputs:
+- execute:
+    parent.aleo/foo:
+      outputs:
+      - '{"type":"public","id":"5742365132514295012837644257895835270621825758036488281638356536509979752743field","value":"aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"}'
+      - '{"type":"public","id":"2374731283129561968958304066259887249428622896941741695823354587961718135476field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
+      - '{"type":"public","id":"3467972589857713073014738523837312898853359461465707048223162420028129089231field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
+      - '{"type":"public","id":"7882861688012540973381134011844899663330501559977284624116193451558329781588field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
+  child_outputs:
     child.aleo/foo:
       outputs:
-      - '{"type":"public","id":"5581155515477464889604563597731691292407862276426261879531678907538568821409field","value":"aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"}'
-      - '{"type":"public","id":"6838016300464369978471630626270146400434090879020204715487747185255643024787field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
+      - '{"type":"public","id":"3646429732159670600529960693723111615669424869055859372426428748380966659162field","value":"aleo16w8t56s7v6ud7vu33fr388ph0dq0c7yhp597cyjt88rr3nultcyqcyk9yy"}'
+      - '{"type":"public","id":"2848782211591064086110420558789526731990278399329007947315117295994744106646field","value":"aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"2310376719001314907361252000211249035468640511232895093986948015670816841491field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2187u64\n  ]\n}"}'
+      - '{"type":"future","id":"5985786159786783517416617025785265904910414774800822664598808954370859231326field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2187u64\n  ]\n}"}'

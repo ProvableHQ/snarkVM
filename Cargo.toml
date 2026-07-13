@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm"
-version = "4.7.3"
+version = "4.8.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -172,6 +172,7 @@ dev-print = [
   "snarkvm-utilities/dev-print",
   "snarkvm-algorithms/dev-print",
   "snarkvm-circuit/dev-print",
+  "snarkvm-console/dev-print",
   "snarkvm-curves/dev-print",
   "snarkvm-fields/dev-print",
   "snarkvm-parameters/dev-print",
@@ -492,7 +493,7 @@ version = "2.0"
 version = "0.14"
 
 [workspace.dependencies.k256]
-version = "0.14.0-rc.8"
+version = "0.13.4"
 features = [ "digest", "ecdsa" ]
 default-features = false
 

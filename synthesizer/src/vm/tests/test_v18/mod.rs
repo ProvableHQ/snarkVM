@@ -13,35 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "test")]
-mod test_v8;
+// Tests for stack fetching relevant to the record-existence check.
+mod record_existence_stacks;
 
-#[cfg(feature = "test")]
-mod test_v9;
-
-#[cfg(feature = "test")]
-mod test_v10;
-
-#[cfg(feature = "test")]
-mod test_v11;
-
-#[cfg(feature = "test")]
-mod test_v13;
-
-#[cfg(feature = "test")]
-mod test_v14;
-
-#[cfg(feature = "test")]
-mod test_v15;
-
-#[cfg(feature = "test")]
-mod test_v16;
-
-#[cfg(feature = "test")]
-mod test_v17;
-
-#[cfg(feature = "test")]
-mod test_v18;
-
-#[cfg(feature = "test")]
 use super::*;
+
+use super::test_v14::add_and_test_with_costs;
+use crate::vm::test_helpers::*;

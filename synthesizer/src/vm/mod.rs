@@ -44,7 +44,6 @@ use console::{
     },
     types::{Field, Group, U8, U64},
 };
-use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{
     Block,
@@ -86,6 +85,7 @@ use snarkvm_synthesizer_process::{
     deployment_cost,
     execute_compute_cost_in_microcredits,
     execution_cost,
+    transaction_compute_spend_in_microcredits,
 };
 use snarkvm_synthesizer_program::{
     FinalizeCore,

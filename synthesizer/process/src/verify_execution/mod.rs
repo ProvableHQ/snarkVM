@@ -15,6 +15,9 @@
 
 use super::*;
 
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
+
 mod ensure_records_exist;
 
 impl<N: Network> Process<N> {
@@ -139,7 +142,8 @@ impl<N: Network> Process<N> {
             // Ensure each output is valid.
             let num_inputs = transition.inputs().len();
             let num_outputs = transition.outputs().len();
-            for (index, output) in transition.outputs().iter().enumerate() {
+            let tcm = transition.tcm();
+            cfg_iter!(transition.outputs()).enumerate().try_for_each(|(index, output)| {
                 // If the consensus version are before `ConsensusVersion::V8`, ensure the output record is on Version 0.
                 // if the consensus version is on or after `ConsensusVersion::V8`, ensure the output record is on Version 1.
                 if let Some((_, record)) = output.record() {
@@ -156,10 +160,11 @@ impl<N: Network> Process<N> {
                     }
                 }
                 // Ensure the output is valid.
-                if !output.verify(function_id, transition.tcm(), num_inputs + index) {
+                if !output.verify(function_id, tcm, num_inputs + index) {
                     bail!("Failed to verify a transition output")
                 }
-            }
+                Ok(())
+            })?;
             lap!(timer, "Verify the outputs");
 
             // Retrieve the stack.
