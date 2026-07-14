@@ -28,7 +28,7 @@ fn test_program_with_output_scalar_from_atomic() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     // The three types which can be cast to a Scalar but do not always fit
     // inside one are Field, Group and Address.
@@ -139,7 +139,7 @@ fn test_program_with_output_scalar_from_record() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     for i in 0..NUM_DEPLOYMENTS {
         let program_str = format!(
@@ -183,7 +183,7 @@ fn test_program_with_output_scalar_from_record() {
         vm.add_next_block(&block).unwrap();
     }
 
-    // Mint two `token` records on-ledger (V15 requires input records to exist), then
+    // Mint two `token` records on-ledger (V18 requires input records to exist), then
     // execute both read functions to confirm the scalar entry is read at runtime.
     let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
     let mut records = Vec::with_capacity(2);
@@ -248,7 +248,7 @@ fn test_program_with_output_scalar_from_dynamic_record() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     // The read functions materialize the dynamic record with a `call.dynamic` to
     // `consume` so it passes the record-existence check at execution time.
@@ -380,7 +380,7 @@ fn test_program_with_output_scalar_from_array() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     for i in 0..NUM_DEPLOYMENTS {
         let program_str = format!(

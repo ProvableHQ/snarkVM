@@ -25,11 +25,6 @@ mod cost_for_call;
 // Tests for the externally-callable `view` function prototype.
 mod views;
 
-// Tests with Aleo functions which output scalars.
-// These changes are not ConsensusVersion::V15-gated, but they were introduced at that point in
-// time.
-mod scalar_outputs;
-
 // Tests for restricted keywords at V15.
 mod restricted_keywords;
 

@@ -16,7 +16,13 @@
 // Tests for stack fetching relevant to the record-existence check.
 mod record_existence_stacks;
 
+// Tests with Aleo functions which output scalars.
+// These changes are not ConsensusVersion::V18-gated, but they were introduced at that point in
+// time.
+mod scalar_outputs;
+
 use super::*;
 
 use super::test_v14::add_and_test_with_costs;
 use crate::vm::test_helpers::*;
+use console::account::ViewKey;
