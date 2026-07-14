@@ -544,4 +544,103 @@ function caller_func:
         let function_name = Identifier::from_str("caller_func").unwrap();
         assert!(stack.contains_dynamic_call(&function_name).unwrap());
     }
+
+    // This test verifies that `console_matches_register_type` accepts every value whose layout
+    // matches its register type and rejects every mismatched combination.
+    #[test]
+    fn test_console_matches_register_type() {
+        let program_id = "test_matcher.aleo";
+
+        // A program that defines the internal record, self-referential future, and external import
+        // needed to exercise every `RegisterType` variant. This is necessary as ExternalRecords and
+        // Records have different RegisterType but the same Value variant (if they refer to the same
+        // static-record type).
+        let program_str = r"
+            import credits.aleo;
+    
+            program test_matcher.aleo;
+    
+            record token:
+                owner as address.private;
+                amount as u64.private;
+    
+            function make_future:
+                input r0 as u64.public;
+                async make_future r0 into r1;
+                output r1 as test_matcher.aleo/make_future.future;
+    
+            finalize make_future:
+                input r0 as u64.public;
+                add r0 r0 into r1;
+            ";
+
+        let owner: &str = "aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah";
+
+        // `(register type, value)` pairs covering every `RegisterType` variant. Each value matches its
+        // own register type and no other register type in the list.
+        let cases = vec![
+            ("boolean", "true".to_string()),
+            ("field", "1field".to_string()),
+            ("group", "0group".to_string()),
+            ("scalar", "1scalar".to_string()),
+            ("u8", "1u8".to_string()),
+            ("u16", "1u16".to_string()),
+            ("u32", "1u32".to_string()),
+            ("u64", "1u64".to_string()),
+            ("u128", "1u128".to_string()),
+            ("i8", "1i8".to_string()),
+            ("i16", "1i16".to_string()),
+            ("i32", "1i32".to_string()),
+            ("i64", "1i64".to_string()),
+            ("i128", "1i128".to_string()),
+            ("[u8; 3u32]", "[1u8, 2u8, 3u8]".to_string()),
+            // A static Record. `amount` distinguishes its layout from the `credits` record, used for
+            // the ExternalRecord case.
+            (
+                "token.record",
+                format!(
+                    "{{ owner: {owner}.private, amount: 5u64.private, _nonce: 0group.public, _version: 0u8.public }}"
+                ),
+            ),
+            // An ExternalRecord. `microcredits` distinguishes its layout from that of the `token` record.
+            (
+                "credits.aleo/credits.record",
+                format!(
+                    "{{ owner: {owner}.private, microcredits: 5u64.private, _nonce: 0group.public, _version: 0u8.public }}"
+                ),
+            ),
+            // A future whose program ID, function name, and argument match `make_future`.
+            (
+                "test_matcher.aleo/make_future.future",
+                "{ program_id: test_matcher.aleo, function_name: make_future, arguments: [ 5u64 ] }".to_string(),
+            ),
+            ("dynamic.record", format!("{{ owner: {owner}, _root: 0field, _nonce: 0group, _version: 0u8 }}")),
+            (
+                "dynamic.future",
+                "{ _program_id: credits.aleo, _function_name: transfer_public, _checksum: 0field }".to_string(),
+            ),
+        ];
+
+        // Build a stack for a program that exercises every register type variant.
+        let program = Program::<CurrentNetwork>::from_str(program_str).unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        process.lock().add_program(&program).unwrap();
+        let stack = process.get_stack(program_id).unwrap();
+
+        let types: Vec<_> = cases.iter().map(|(t, _)| RegisterType::<CurrentNetwork>::from_str(t).unwrap()).collect();
+        let values: Vec<_> = cases.iter().map(|(_, v)| Value::<CurrentNetwork>::from_str(v).unwrap()).collect();
+
+        // Every value matches its own register type (all correct combinations) and fails against
+        // every other register type in the matrix (many incorrect combinations per type).
+        for (i, value) in values.iter().enumerate() {
+            for (j, register_type) in types.iter().enumerate() {
+                let result = console_matches_register_type(&*stack, value, register_type);
+                if i == j {
+                    assert!(result.is_ok(), "expected '{}' to match '{}': {result:?}", cases[i].1, cases[j].0);
+                } else {
+                    assert!(result.is_err(), "expected '{}' to not match '{}'", cases[i].1, cases[j].0);
+                }
+            }
+        }
+    }
 }
