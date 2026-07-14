@@ -16,6 +16,7 @@
 use crate::{FromBytes, ToBytes, io_error};
 
 use enum_iterator::{Sequence, last};
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use std::io;
 
 /// The different consensus versions.
@@ -318,6 +319,12 @@ macro_rules! consensus_config_value_by_version {
             }
         }
     };
+}
+
+/// Returns the Varuna version for the specified consensus version.
+pub fn varuna_version_from_consensus(consensus_version: ConsensusVersion) -> VarunaVersion {
+    // If new varuna versions are added, test_varuna_version_from_consensus below must be updated accordingly.
+    if consensus_version >= ConsensusVersion::V4 { VarunaVersion::V2 } else { VarunaVersion::V1 }
 }
 
 #[cfg(test)]
@@ -632,5 +639,12 @@ mod tests {
         assert_eq!(MainnetV0::REWARD_ANCHOR_TIME, MainnetV0::ANCHOR_TIMES.first().unwrap().1);
         assert_eq!(TestnetV0::REWARD_ANCHOR_TIME, TestnetV0::ANCHOR_TIMES.first().unwrap().1);
         assert_eq!(CanaryV0::REWARD_ANCHOR_TIME, CanaryV0::ANCHOR_TIMES.first().unwrap().1);
+    }
+
+    #[test]
+    fn test_varuna_version_from_consensus() {
+        // First boundary: V4
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V3), VarunaVersion::V1);
+        assert_eq!(varuna_version_from_consensus(ConsensusVersion::V4), VarunaVersion::V2);
     }
 }

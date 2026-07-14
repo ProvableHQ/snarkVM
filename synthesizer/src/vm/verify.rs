@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use console::network::varuna_version_from_consensus;
+
 use super::*;
 
 /// Ensures the given iterator has no duplicate elements, and that the ledger
@@ -854,10 +856,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine which consensus version to use.
         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
         // Determine which Varuna version to use.
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
         // Determine the inclusion version to use.
         let is_network_behind_upgrade_height = block_height < N::INCLUSION_UPGRADE_HEIGHT()?;
         let inclusion_version = match (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version)
@@ -929,10 +928,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Determine which Varuna version to use.
         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
         // Determine the inclusion version to use.
         let is_network_behind_upgrade_height = block_height < N::INCLUSION_UPGRADE_HEIGHT()?;
         let inclusion_version = match (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version)
