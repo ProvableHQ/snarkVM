@@ -183,7 +183,8 @@ impl<N: Network> Process<N> {
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
             ensure!(function.outputs().len() == num_outputs, "The number of transition outputs is incorrect");
 
-            let is_root_transition = transition.id() == execution.transitions().last().unwrap().id();
+            let is_root_transition =
+                transition.id() == execution.transitions().last().expect("Execution contains no transitions").id();
 
             // Before ConsensusVersion::V18, we check the input and output types match the ones
             // defined in the function under the weaker type equivalence. At ConsensusVersion::V18

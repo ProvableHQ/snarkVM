@@ -15,6 +15,7 @@
 
 use super::*;
 
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Input, Output, Transition};
 
 // Re-encodes the transition's record/external-record input at `index` as its `*WithDynamicID`
