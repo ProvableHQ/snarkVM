@@ -463,3 +463,97 @@ fn test_program_with_output_scalar_from_array() {
     assert_eq!(block.transactions().num_rejected(), 0, "expected no rejected transactions");
     assert!(block.aborted_transaction_ids().is_empty(), "expected no aborted transactions");
 }
+
+// Tests that a function which receives a struct holding a Scalar field, reads the
+// field and outputs it, deploys correctly.
+#[test]
+fn test_program_with_output_scalar_from_struct() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
+
+    for i in 0..NUM_DEPLOYMENTS {
+        let program_str = format!(
+            r"
+            program test_scalar_struct_{i}.aleo;
+
+            struct wrapper:
+                amount as scalar;
+
+            function read_scalar_struct_pub_pub:
+                input r0 as wrapper.public;
+                output r0.amount as scalar.public;
+
+            function read_scalar_struct_pub_pri:
+                input r0 as wrapper.public;
+                output r0.amount as scalar.private;
+
+            function read_scalar_struct_pri_pri:
+                input r0 as wrapper.private;
+                output r0.amount as scalar.private;
+
+            function read_scalar_struct_pri_pub:
+                input r0 as wrapper.private;
+                output r0.amount as scalar.public;
+
+            function closure_wrapper:
+                input r0 as wrapper.public;
+                call clo_read_scalar_struct r0 into r1;
+                output r1 as scalar.public;
+
+            closure clo_read_scalar_struct:
+                input r0 as wrapper;
+                add r0.amount 0scalar into r1;
+                output r1 as scalar;
+
+            constructor:
+                assert.eq true true;
+        "
+        );
+
+        let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+        // Build and apply the deployment transaction.
+        let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+        let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+
+        // The deployment must be accepted: not rejected and not aborted.
+        assert_eq!(block.transactions().num_accepted(), 1, "expected the deployment to be accepted");
+        assert_eq!(block.transactions().num_rejected(), 0, "expected no rejected transactions");
+        assert!(block.aborted_transaction_ids().is_empty(), "expected no aborted transactions");
+
+        // Commit the deployment so the program can be executed below.
+        vm.add_next_block(&block).unwrap();
+    }
+
+    // Execute the struct-reading functions with a fixed `wrapper` input and confirm
+    // the scalar field (`1scalar`) is returned by both the direct and closure paths.
+    let struct_input = vec![Value::<CurrentNetwork>::from_str("{ amount: 1scalar }").unwrap()];
+    let expected_output = Plaintext::<CurrentNetwork>::from_str("1scalar").unwrap();
+
+    let mut transactions = Vec::with_capacity(2);
+    for function in ["read_scalar_struct_pub_pub", "closure_wrapper"] {
+        let transaction = vm
+            .execute(
+                &caller_private_key,
+                ("test_scalar_struct_0.aleo", function),
+                struct_input.iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
+        assert!(
+            matches!(transaction.execution().unwrap().transitions().last().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
+            "unexpected output for {function}"
+        );
+        transactions.push(transaction);
+    }
+
+    let block = sample_next_block(&vm, &caller_private_key, &transactions, rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), transactions.len(), "expected all executions to be accepted");
+    assert_eq!(block.transactions().num_rejected(), 0, "expected no rejected transactions");
+    assert!(block.aborted_transaction_ids().is_empty(), "expected no aborted transactions");
+}
