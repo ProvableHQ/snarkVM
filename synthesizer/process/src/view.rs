@@ -182,7 +182,7 @@ pub(crate) fn evaluate_view_inner<N: Network>(
 
     // Evaluate the commands. Views reject `await` at construction (`add_command`), so the
     // dispatch is identical to `Finalize` / `Constructor` — we share `finalize_command_except_await`
-    // directly to avoid drift. `try_vm_runtime!` inside that helper also gives views panic-catch
+    // directly to avoid drift. `try_vm_runtime` inside that helper also gives views panic-catch
     // protection, which is desirable on the off-consensus / RPC-exposed path.
     //
     // Termination & cost bounds (prototype):
