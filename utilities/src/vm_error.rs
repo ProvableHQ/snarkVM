@@ -31,7 +31,7 @@ fn install_vm_runtime_hook() {
         let previous_hook = panic::take_hook();
 
         panic::set_hook(Box::new(move |info| {
-            if IN_VM_RUNTIME.with(Cell::get) {
+            if IN_VM_RUNTIME.try_with(Cell::get).unwrap_or(false) {
                 #[cfg(debug_assertions)]
                 {
                     // Remove all words up to "panicked".
