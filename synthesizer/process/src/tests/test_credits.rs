@@ -43,6 +43,22 @@ type CurrentAleo = AleoV0;
 const NUM_BLOCKS_TO_UNLOCK: u32 = 360;
 const TEST_COMMISSION: u8 = 5;
 
+#[test]
+fn test_credits_translation_verifying_key_is_loaded_and_updated() -> Result<()> {
+    let credits_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo")?;
+    let credits_record_name = Identifier::from_str("credits")?;
+    let process = Process::<CurrentNetwork>::load()?;
+
+    assert!(process.get_verifying_key(credits_id, credits_record_name).is_ok());
+
+    process.remove_verifying_key(&credits_id, &credits_record_name)?;
+    assert!(process.get_verifying_key(credits_id, credits_record_name).is_err());
+
+    process.lock().update_credits_verifying_keys()?;
+    assert!(process.get_verifying_key(credits_id, credits_record_name).is_ok());
+    Ok(())
+}
+
 /// Samples a new finalize store.
 macro_rules! sample_finalize_store {
     () => {{
