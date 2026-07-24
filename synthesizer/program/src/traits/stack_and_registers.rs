@@ -238,9 +238,13 @@ pub fn register_types_equivalent<N: Network>(
 /// The stacks are passed because struct types need to access their stack to get their
 /// structure.
 pub fn types_equivalent<N: Network>(
+    // The first stack
     stack0: &impl StackTrait<N>,
+    // The first type (from the perspective of the first stack)
     type0: &PlaintextType<N>,
+    // The second stack
     stack1: &impl StackTrait<N>,
+    // The second type (from the perspective of the second stack)
     type1: &PlaintextType<N>,
 ) -> Result<bool> {
     use PlaintextType::*;

@@ -22,13 +22,21 @@ fn test_cast_with_external_structs() -> Result<()> {
 
     let deployer_private_key = sample_genesis_private_key(rng);
 
-    // `program_a.aleo` defines `struct_a`, holding a single `u8`.
+    // `program_a.aleo` defines `struct_a`, holding a single `u8`, and `struct_d`,
+    // holding three `address` members. The latter is used to exercise casting the
+    // `address`-typed program-reference operands (program ID, signer, caller) into
+    // an externally-defined struct.
     let program_a = Program::from_str(
         r"
         program program_a.aleo;
 
         struct struct_a:
             val as u8;
+
+        struct struct_d:
+            a as address;
+            b as address;
+            c as address;
 
         function noop:
 
@@ -87,6 +95,13 @@ fn test_cast_with_external_structs() -> Result<()> {
         struct struct_c:
             a as program_a.aleo/struct_a;
             b as program_b.aleo/struct_b;
+
+        // A local struct mirroring `program_a.aleo/struct_d`, used to receive the
+        // `address` members read back out of the external struct.
+        struct struct_e:
+            a as address;
+            b as address;
+            c as address;
 
         // Case 1 / private: The function casts both external structs itself.
         function run_1:
@@ -210,6 +225,47 @@ fn test_cast_with_external_structs() -> Result<()> {
             cast r0 into r2 as program_b2.aleo/struct_b;
             cast r2.a r1 into r3 as struct_c;
 
+        // Case 11 / private: `self.signer`, `self.caller`, and the program ID
+        // `program_a.aleo` all resolve to the `address` primitive. This casts them
+        // into the external struct `program_a.aleo/struct_d` (whose members are
+        // addresses), exercising the `ProgramID | Signer | Caller` arm of
+        // `matches_struct` against an externally-defined struct. It then reads the
+        // members back out and casts them into the local `struct_e`.
+        function run_11:
+            cast self.signer self.caller program_a.aleo into r0 as program_a.aleo/struct_d;
+            cast r0.a r0.b r0.c into r1 as struct_e;
+            output r1 as struct_e.private;
+
+        // Case 12 / finalize: Mirrors case 11 in the finalize scope. Only the
+        // program ID operand resolves to an `address` there (`self.signer` and
+        // `self.caller` are rejected in a finalize scope), so this casts the program
+        // IDs `program_a.aleo`, `program_b.aleo`, and `program_c.aleo` into the
+        // external struct `program_a.aleo/struct_d`, then reads the members back out
+        // into the local `struct_e`.
+        function run_12:
+            async run_12 into r0;
+            output r0 as program_c.aleo/run_12.future;
+
+        finalize run_12:
+            cast program_a.aleo program_b.aleo program_c.aleo into r0 as program_a.aleo/struct_d;
+            cast r0.a r0.b r0.c into r1 as struct_e;
+
+        function run_13:
+            cast 24u8 into r0 as program_a.aleo/struct_a;
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r1 into r2 as struct_c;
+            cast r2.b.a into r3 as u8;
+
+            output r3 as u8.private;
+
+        function run_14:
+            cast 24u8 into r0 as program_a.aleo/struct_a;
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r1 into r2 as struct_c;
+            cast r2.b into r3 as program_b2.aleo/struct_b2;
+
+            output r3 as program_b2.aleo/struct_b2private;
+
         constructor:
             assert.eq edition 0u16;
         ",
@@ -293,6 +349,32 @@ fn test_cast_with_external_structs() -> Result<()> {
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "run_10"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
+
+    // Case 11: Cast the `address`-typed program-reference operands (signer, caller,
+    // program ID) into an external struct, in the private scope.
+    let transaction = vm.execute(
+        &deployer_private_key,
+        ("program_c.aleo", "run_11"),
+        Vec::<Value<_>>::new().iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
+
+    // Case 12: Mirrors case 11 in the finalize scope, casting program IDs into an
+    // external struct.
+    let transaction = vm.execute(
+        &deployer_private_key,
+        ("program_c.aleo", "run_12"),
+        Vec::<Value<_>>::new().iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
 
     Ok(())
 }
