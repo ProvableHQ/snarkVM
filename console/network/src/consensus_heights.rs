@@ -66,7 +66,7 @@ pub enum ConsensusVersion {
     /// V17: NOTE: V17 landed chronologically on mainnet before it landed on testnet.
     ///      Reverts the anchor time to 25.
     V17 = 17,
-    /// V18: Introduces block-wide deployment limits.
+    /// V18: Introduces block-wide deployment limits and enforces canonical subDAG certificate ordering.
     V18 = 18,
 }
 
