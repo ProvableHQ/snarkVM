@@ -16,15 +16,25 @@
 #![forbid(unsafe_code)]
 
 const GAUGE_NAMES: [&str; 1] = [committee::TOTAL_STAKE];
+const HISTOGRAM_NAMES: [&str; 3] = [database::READ_DURATION, database::WRITE_DURATION, database::DELETE_DURATION];
 
 pub mod committee {
     pub const TOTAL_STAKE: &str = "snarkvm_ledger_committee_total_stake";
+}
+
+pub mod database {
+    pub const READ_DURATION: &str = "snarkvm_database_read_duration_seconds";
+    pub const WRITE_DURATION: &str = "snarkvm_database_write_duration_seconds";
+    pub const DELETE_DURATION: &str = "snarkvm_database_delete_duration_seconds";
 }
 
 /// Registers all snarkVM metrics.
 pub fn register_metrics() {
     for name in GAUGE_NAMES {
         register_gauge(name);
+    }
+    for name in HISTOGRAM_NAMES {
+        register_histogram(name);
     }
 }
 
@@ -102,4 +112,16 @@ pub fn histogram<V: Into<f64>>(name: &'static str, value: V) {
 
 pub fn histogram_label<V: Into<f64>>(name: &'static str, label_key: &'static str, label_value: String, value: V) {
     ::metrics::histogram!(name, label_key => label_value).record(value.into());
+}
+
+/// Times a database operation and records the duration with the given map type label.
+pub fn time_database_operation<F, R>(metric_name: &'static str, map_type: &str, operation: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let start = std::time::Instant::now();
+    let result = operation();
+    let duration = start.elapsed().as_secs_f64();
+    histogram_label(metric_name, "map_type", map_type.to_string(), duration);
+    result
 }
