@@ -325,6 +325,13 @@ pub mod test_helpers {
 
     type CurrentNetwork = MainnetV0;
 
+    /// Orders the given subDAG using the same left-to-right DFS traversal as the Narwhal block producer.
+    pub fn order_subdag_with_dfs<N: Network>(
+        subdag: &BTreeMap<u64, IndexSet<BatchCertificate<N>>>,
+    ) -> BTreeMap<u64, IndexSet<BatchCertificate<N>>> {
+        super::order_subdag_with_dfs(subdag)
+    }
+
     /// Returns a sample subdag, sampled at random.
     pub fn sample_subdag(rng: &mut TestRng) -> Subdag<CurrentNetwork> {
         const F: usize = 1;

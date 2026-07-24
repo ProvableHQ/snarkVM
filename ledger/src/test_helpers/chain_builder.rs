@@ -36,7 +36,7 @@ use anyhow::{Context, Result};
 use indexmap::{IndexMap, IndexSet};
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use time::OffsetDateTime;
 
 pub type CurrentNetwork = MainnetV0;
@@ -490,27 +490,8 @@ impl<N: Network> TestChainBuilder<N> {
 
         // Validate the subDAG before reconstructing the canonical certificate order.
         let subdag = Subdag::from(subdag_map).unwrap();
-        // Order the test subDAG using the same left-to-right DFS traversal as the Narwhal block producer.
-        let mut ordered_subdag = BTreeMap::<u64, IndexSet<_>>::new();
-        let mut already_ordered = HashSet::new();
-        let mut buffer = vec![leader_certificate.clone()];
-        while let Some(certificate) = buffer.pop() {
-            ordered_subdag.entry(certificate.round()).or_default().insert(certificate.clone());
-            for previous_certificate_id in certificate.previous_certificate_ids().iter().rev() {
-                if already_ordered.contains(previous_certificate_id) {
-                    continue;
-                }
-                let Some(previous_certificate) =
-                    subdag.get(&certificate.round().saturating_sub(1)).and_then(|certificates| {
-                        certificates.iter().find(|certificate| certificate.id() == *previous_certificate_id)
-                    })
-                else {
-                    continue;
-                };
-                already_ordered.insert(previous_certificate.id());
-                buffer.push(previous_certificate.clone());
-            }
-        }
+        // Reconstruct the canonical certificate order.
+        let ordered_subdag = crate::narwhal::subdag::test_helpers::order_subdag_with_dfs(&subdag);
         let subdag = Subdag::from(ordered_subdag).unwrap();
 
         Ok((subdag, transmissions, leader_certificate))
