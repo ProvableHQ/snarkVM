@@ -19,8 +19,10 @@ impl<N: Network> RegisterTypes<N> {
     /// Checks that the given operands matches the layout of the struct. The ordering of the operands matters.
     pub fn matches_struct(
         &self,
-        operands_stack: &Stack<N>,
-        stack: &Stack<N>,
+        // The stack of the program containing the instruction which casts the struct
+        instruction_stack: &Stack<N>,
+        // The stack of the program where the struct is defined (as local)
+        definition_stack: &Stack<N>,
         operands: &[Operand<N>],
         struct_: &StructType<N>,
     ) -> Result<()> {
@@ -51,14 +53,15 @@ impl<N: Network> RegisterTypes<N> {
                 // Ensure the literal type matches the member type.
                 Operand::Literal(literal) => {
                     ensure!(
+                        // No need to call `types_equivalent`, since it can't be a struct.
                         &PlaintextType::Literal(literal.to_type()) == member_type,
                         "Struct member '{struct_name}.{member_name}' expects a {member_type}, but found '{operand}' in the operand.",
                     )
                 }
                 // Ensure the register type matches the member type.
                 Operand::Register(register) => {
-                    // Retrieve the register type.
-                    match self.get_type(operands_stack, register)? {
+                    // Operate depending on the register type.
+                    match self.get_type(instruction_stack, register)? {
                         // Ensure the register type is not a record.
                         RegisterType::ExternalRecord(..) | RegisterType::Record(..) => {
                             bail!("Casting a record into a struct entry is illegal")
@@ -76,10 +79,10 @@ impl<N: Network> RegisterTypes<N> {
                             bail!("Casting a dynamic future into a struct entry is illegal")
                         }
                         // Ensure the register type matches the member type.
-                        RegisterType::Plaintext(type_) => {
+                        RegisterType::Plaintext(plaintext_type) => {
                             ensure!(
-                                types_equivalent(operands_stack, &type_, stack, member_type)?,
-                                "Struct entry '{struct_name}.{member_name}' expects a '{member_type}', but found '{type_}' in the operand '{operand}'.",
+                                types_equivalent(instruction_stack, &plaintext_type, definition_stack, member_type)?,
+                                "Struct member '{struct_name}.{member_name}' expects a '{member_type}', but found a '{plaintext_type}' in the operand '{operand}'.",
                             )
                         }
                     }
@@ -87,14 +90,16 @@ impl<N: Network> RegisterTypes<N> {
                 // Ensure the program ID, signer, and caller types match the member type.
                 Operand::ProgramID(..) | Operand::Signer | Operand::Caller => {
                     // Retrieve the operand type.
-                    let RegisterType::Plaintext(operand_type) = self.get_type_from_operand(stack, operand)? else {
+                    // TODO (Antonio) is "definition_stack" correct here?
+                    let RegisterType::Plaintext(operand_type) = self.get_type_from_operand(instruction_stack, operand)? else {
                         bail!(
                             "Expected a plaintext type for the operand '{operand}' in struct member '{struct_name}.{member_name}'"
                         )
                     };
                     // Ensure the operand type matches the member type.
+                    // TODO (Antonio) is "definition_stack" correct here?
                     ensure!(
-                        types_equivalent(stack, &operand_type, stack, member_type)?,
+                        types_equivalent(instruction_stack, &operand_type, definition_stack, member_type)?,
                         "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{operand_type}' in the operand '{operand}'.",
                     )
                 }

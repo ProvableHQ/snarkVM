@@ -17,7 +17,15 @@ use super::*;
 
 impl<N: Network> FinalizeTypes<N> {
     /// Checks that the given operands matches the layout of the struct. The ordering of the operands matters.
-    pub fn matches_struct(&self, stack: &Stack<N>, operands: &[Operand<N>], struct_: &StructType<N>) -> Result<()> {
+    pub fn matches_struct(
+        &self,
+        // The stack of the program containing the instruction which casts the struct
+        instruction_stack: &Stack<N>,
+        // The stack of the program where the struct is defined (as local)
+        definition_stack: &Stack<N>,
+        operands: &[Operand<N>],
+        struct_: &StructType<N>
+    ) -> Result<()> {
         // Retrieve the struct name.
         let struct_name = struct_.name();
         // Ensure the struct name is valid.
@@ -52,20 +60,20 @@ impl<N: Network> FinalizeTypes<N> {
                 }
                 // Ensure the type of the register matches the member type.
                 Operand::Register(register) => {
-                    // Retrieve the type.
-                    let plaintext_type = match self.get_type(stack, register)? {
-                        // If the register is a plaintext type, return it.
-                        FinalizeType::Plaintext(plaintext_type) => plaintext_type,
-                        // If the register is a future, throw an error.
+                    // Operate depending on the register type.
+                    match self.get_type(instruction_stack, register)? {
+                        // Ensure the register type is not a future.
                         FinalizeType::Future(..) => bail!("Struct member cannot be a future"),
-                        // If the register is a dynamic future, throw an error.
+                        // Ensure the register type is not a dynamic future.
                         FinalizeType::DynamicFuture => bail!("Struct member cannot be a dynamic future"),
+                        // Ensure the plaintext register type matches the member type.
+                        FinalizeType::Plaintext(plaintext_type) => {
+                            ensure!(
+                                types_equivalent(instruction_stack, &plaintext_type, definition_stack, member_type)?,
+                                "Struct member '{struct_name}.{member_name}' expects a '{member_type}', but found a '{plaintext_type}' in the operand '{operand}'.",
+                            )
+                        }
                     };
-                    // Ensure the register type matches the member type.
-                    ensure!(
-                        types_equivalent(stack, &plaintext_type, stack, member_type)?,
-                        "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{plaintext_type}' in the operand '{operand}'.",
-                    )
                 }
                 // Ensure the program ID, block height, block timestamp, network ID, generator, checksum, edition, program owner, and component checksum types matches the member type.
                 Operand::ProgramID(..)
@@ -79,7 +87,7 @@ impl<N: Network> FinalizeTypes<N> {
                 | Operand::ProgramOwner(_)
                 | Operand::ComponentChecksum(..) => {
                     // Retrieve the operand type.
-                    let FinalizeType::Plaintext(program_ref_type) = self.get_type_from_operand(stack, operand)? else {
+                    let FinalizeType::Plaintext(program_ref_type) = self.get_type_from_operand(instruction_stack, operand)? else {
                         bail!(
                             "Expected a plaintext type for the operand '{operand}' in struct member '{struct_name}.{member_name}'"
                         )

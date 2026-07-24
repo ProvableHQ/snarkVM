@@ -985,8 +985,10 @@ impl<N: Network> FinalizeTypes<N> {
                             RegisterTypes::check_plaintext_type(stack, plaintext)?;
                             // Retrieve the struct.
                             let struct_ = stack.program().get_struct(struct_name)?;
+                            // TODO (Antonio) remove
+                            println!("----------------------------------------------------\nCalling (Finalize) ST for instruction: {instruction}");
                             // Ensure the operand types match the struct.
-                            self.matches_struct(stack, instruction.operands(), struct_)?;
+                            self.matches_struct(stack, stack, instruction.operands(), struct_)?;
                         }
                         CastType::Plaintext(plaintext @ PlaintextType::ExternalStruct(locator)) => {
                             // Ensure that the type is valid.
@@ -995,8 +997,10 @@ impl<N: Network> FinalizeTypes<N> {
                             let struct_name = locator.resource();
                             // Retrieve the struct.
                             let struct_ = external_stack.program().get_struct(struct_name)?;
+                            // TODO (Antonio) remove
+                            println!("----------------------------------------------------\nCalling (Finalize) E_ST for instruction: {instruction} (stack: {}, definition_stack: {})", stack.program_id(), external_stack.program_id());
                             // Ensure the operand types match the struct.
-                            self.matches_struct(&*external_stack, instruction.operands(), struct_)?;
+                            self.matches_struct(stack, &*external_stack, instruction.operands(), struct_)?;
                         }
                         CastType::Plaintext(plaintext @ PlaintextType::Array(array_type)) => {
                             // Ensure that the type is valid.

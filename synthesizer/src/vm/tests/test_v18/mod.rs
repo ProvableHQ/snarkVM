@@ -16,6 +16,9 @@
 // Tests for stack fetching relevant to the record-existence check.
 mod record_existence_stacks;
 
+// Tests on stack fetching for external-struct type checks
+mod external_struct_stacks;
+
 use super::*;
 
 use super::test_v14::add_and_test_with_costs;
