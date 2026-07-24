@@ -280,12 +280,6 @@ pub fn types_equivalent<N: Network>(
                 return Ok(false);
             }
             let external_stack0 = stack0.get_external_stack(loc0.program_id())?;
-            // TODO (Antonio) remove
-            println!("types_equivalent");
-            println!(" - stack0: {:?}", stack0.program_id());
-            println!(" - stack1: {:?}", stack1.program_id());
-            println!(" - type0: {:?}", type0);
-            println!(" - type1: {:?}", type1);
             let struct_type0 = external_stack0.program().get_struct(loc0.resource())?;
             let external_stack1 = stack1.get_external_stack(loc1.program_id())?;
             let struct_type1 = external_stack1.program().get_struct(loc1.resource())?;

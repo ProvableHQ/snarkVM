@@ -24,7 +24,7 @@ impl<N: Network> FinalizeTypes<N> {
         // The stack of the program where the struct is defined (as local)
         definition_stack: &Stack<N>,
         operands: &[Operand<N>],
-        struct_: &StructType<N>
+        struct_: &StructType<N>,
     ) -> Result<()> {
         // Retrieve the struct name.
         let struct_name = struct_.name();
@@ -87,7 +87,9 @@ impl<N: Network> FinalizeTypes<N> {
                 | Operand::ProgramOwner(_)
                 | Operand::ComponentChecksum(..) => {
                     // Retrieve the operand type.
-                    let FinalizeType::Plaintext(program_ref_type) = self.get_type_from_operand(instruction_stack, operand)? else {
+                    let FinalizeType::Plaintext(program_ref_type) =
+                        self.get_type_from_operand(instruction_stack, operand)?
+                    else {
                         bail!(
                             "Expected a plaintext type for the operand '{operand}' in struct member '{struct_name}.{member_name}'"
                         )

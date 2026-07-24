@@ -90,14 +90,14 @@ impl<N: Network> RegisterTypes<N> {
                 // Ensure the program ID, signer, and caller types match the member type.
                 Operand::ProgramID(..) | Operand::Signer | Operand::Caller => {
                     // Retrieve the operand type.
-                    // TODO (Antonio) is "definition_stack" correct here?
-                    let RegisterType::Plaintext(operand_type) = self.get_type_from_operand(instruction_stack, operand)? else {
+                    let RegisterType::Plaintext(operand_type) =
+                        self.get_type_from_operand(instruction_stack, operand)?
+                    else {
                         bail!(
                             "Expected a plaintext type for the operand '{operand}' in struct member '{struct_name}.{member_name}'"
                         )
                     };
                     // Ensure the operand type matches the member type.
-                    // TODO (Antonio) is "definition_stack" correct here?
                     ensure!(
                         types_equivalent(instruction_stack, &operand_type, definition_stack, member_type)?,
                         "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{operand_type}' in the operand '{operand}'.",

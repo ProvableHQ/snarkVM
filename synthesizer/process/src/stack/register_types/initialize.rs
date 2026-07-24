@@ -536,8 +536,6 @@ impl<N: Network> RegisterTypes<N> {
                             Self::check_plaintext_type(stack, plaintext)?;
                             // Retrieve the struct.
                             let struct_ = stack.program().get_struct(struct_name)?;
-                            // TODO (Antonio) remove
-                            println!("----------------------------------------------------\nCalling (Registers) ST for instruction: {instruction}");
                             // Ensure the operand types match the struct.
                             self.matches_struct(stack, stack, instruction.operands(), struct_)?;
                         }
@@ -548,8 +546,6 @@ impl<N: Network> RegisterTypes<N> {
                             let struct_name = locator.resource();
                             // Retrieve the struct.
                             let struct_ = external_stack.program().get_struct(struct_name)?;
-                            // TODO (Antonio) remove
-                            println!("----------------------------------------------------\nCalling (Registers) E_ST for instruction: {instruction} (stack: {}, definition_stack: {})", stack.program_id(), external_stack.program_id());
                             // Ensure the operand types match the struct.
                             self.matches_struct(stack, &*external_stack, instruction.operands(), struct_)?;
                         }

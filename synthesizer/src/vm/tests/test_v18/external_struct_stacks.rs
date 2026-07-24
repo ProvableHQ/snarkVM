@@ -15,17 +15,15 @@
 
 use super::*;
 
-// TODO (Antonio) document
+// Checks that various instances of casts to external structs or from using external-structs members
+// function as expected. This is tested in both the function (i.e. private, RegisterType) setting as
+// well as the public (i.e. finalise, FinaliseType) one.
 #[test]
-fn test_cast_with_external_structs() -> Result<()> {
+fn test_cast_with_external_structs_only() -> Result<()> {
     let rng = &mut TestRng::default();
 
     let deployer_private_key = sample_genesis_private_key(rng);
 
-    // `program_a.aleo` defines `struct_a`, holding a single `u8`, and `struct_d`,
-    // holding three `address` members. The latter is used to exercise casting the
-    // `address`-typed program-reference operands (program ID, signer, caller) into
-    // an externally-defined struct.
     let program_a = Program::from_str(
         r"
         program program_a.aleo;
@@ -45,8 +43,6 @@ fn test_cast_with_external_structs() -> Result<()> {
         ",
     )?;
 
-    // `program_b.aleo` imports `program_a.aleo` and defines `struct_b`, whose
-    // only member is the external struct `program_a.aleo/struct_a`.
     let program_b = Program::from_str(
         r"
         import program_a.aleo;
@@ -62,10 +58,8 @@ fn test_cast_with_external_structs() -> Result<()> {
         ",
     )?;
 
-    // `program_b2.aleo` is a distinct program that imports `program_a.aleo` and
-    // declares a `struct_b` with the same name and structure as
-    // `program_b.aleo`'s. It exercises cross-program struct equivalence (same
-    // name and structure, different defining program).
+    // This is a distinct program from program_b.aleo, but both declare a struct with the same name
+    // and member specification.
     let program_b2 = Program::from_str(
         r"
         import program_a.aleo;
@@ -81,10 +75,6 @@ fn test_cast_with_external_structs() -> Result<()> {
         ",
     )?;
 
-    // `program_c.aleo` imports both programs and defines `struct_c`, whose only
-    // member is the external struct `program_b.aleo/struct_b`. Its function
-    // casts a `struct_a` into a `struct_b`, and then that `struct_b` into the
-    // local `struct_c`.
     let program_c = Program::from_str(
         r"
         import program_a.aleo;
@@ -96,14 +86,12 @@ fn test_cast_with_external_structs() -> Result<()> {
             a as program_a.aleo/struct_a;
             b as program_b.aleo/struct_b;
 
-        // A local struct mirroring `program_a.aleo/struct_d`, used to receive the
-        // `address` members read back out of the external struct.
         struct struct_e:
             a as address;
             b as address;
             c as address;
 
-        // Case 1 / private: The function casts both external structs itself.
+        // Case 1 / function: The function casts external structs defined in program_a and program_b, then casts a struct_c.
         function run_1:
             input r0 as u8.private;
 
@@ -113,8 +101,7 @@ fn test_cast_with_external_structs() -> Result<()> {
 
             output r3 as struct_c.private;
 
-        // Case 2 / private: The function casts both external structs itself,
-        // feeding a member-access operand (`r1.val`) back into a cast.
+        // Case 2 / function: Similar to case 1 but with a cast involving a external-struct member read (r1.val) into an external-struct.
         function run_2:
             input r0 as u8.private;
 
@@ -125,8 +112,8 @@ fn test_cast_with_external_structs() -> Result<()> {
 
             output r4 as struct_c.private;
 
-        // Case 3 / private: The function casts one external struct itself and
-        // receives the other.
+        // Case 3 / function: Here struct_c is cast from an external-struct member received as an argument and
+        //                    an external-struct member cast inside the function itself.
         function run_3:
             input r0 as program_a.aleo/struct_a.private;
 
@@ -135,7 +122,7 @@ fn test_cast_with_external_structs() -> Result<()> {
 
             output r2 as struct_c.private;
 
-        // Case 4 / private: Same as case 3, but using a member-access operand
+        // Case 4 / function: Similar to case 2, but the target of the cast is the local struct_c.
         // (`r1.a`) of the received external struct.
         function run_4:
             input r0 as program_a.aleo/struct_a.private;
@@ -145,8 +132,7 @@ fn test_cast_with_external_structs() -> Result<()> {
 
             output r2 as struct_c.private;
 
-        // TODO (Antonio) document this and other cases
-        // Case 5 / private:
+        // Case 5 / function: Here the same external struct struct_a is cast into a program_b/struct_b and a program_b2/struct_b.
         function run_5:
             input r0 as program_a.aleo/struct_a.private;
 
@@ -156,101 +142,15 @@ fn test_cast_with_external_structs() -> Result<()> {
 
             output r3 as struct_c.private;
 
-        // Case 6 / finalize: Mirrors case 1, but the finalize casts both
-        // external structs itself.
+
+        // Case 6 / function: Tests casts involving the special, private-side-only operands signer, caller and program_id.
         function run_6:
-            input r0 as u8.public;
-            async run_6 r0 into r1;
-            output r1 as program_c.aleo/run_6.future;
-
-        finalize run_6:
-            input r0 as u8.public;
-
-            cast r0 into r1 as program_a.aleo/struct_a;
-            cast r1 into r2 as program_b.aleo/struct_b;
-            cast r1 r2 into r3 as struct_c;
-
-        // Case 7 / finalize: Mirrors case 2, feeding a member-access operand
-        // (`r1.val`) back into a cast in the finalize scope.
-        function run_7:
-            input r0 as u8.public;
-            async run_7 r0 into r1;
-            output r1 as program_c.aleo/run_7.future;
-
-        finalize run_7:
-            input r0 as u8.public;
-
-            cast r0 into r1 as program_a.aleo/struct_a;
-            cast r1.val into r2 as program_a.aleo/struct_a;
-            cast r2 into r3 as program_b.aleo/struct_b;
-            cast r2 r3 into r4 as struct_c;
-
-        // Case 8 / finalize: Mirrors case 3, the finalize casts one external
-        // struct itself and receives the other.
-        function run_8:
-            input r0 as program_a.aleo/struct_a.public;
-            async run_8 r0 into r1;
-            output r1 as program_c.aleo/run_8.future;
-
-        finalize run_8:
-            input r0 as program_a.aleo/struct_a.public;
-
-            cast r0 into r1 as program_b.aleo/struct_b;
-            cast r0 r1 into r2 as struct_c;
-
-        // Case 9 / finalize: Mirrors case 4, using a member-access operand
-        // (`r1.a`) of the received external struct in the finalize scope.
-        function run_9:
-            input r0 as program_a.aleo/struct_a.public;
-            async run_9 r0 into r1;
-            output r1 as program_c.aleo/run_9.future;
-
-        finalize run_9:
-            input r0 as program_a.aleo/struct_a.public;
-
-            cast r0 into r1 as program_b.aleo/struct_b;
-            cast r1.a r1 into r2 as struct_c;
-
-        // Case 10 / finalize: Mirrors case 5, exercising cross-program struct
-        // equivalence via `program_b2.aleo/struct_b` in the finalize scope.
-        function run_10:
-            input r0 as program_a.aleo/struct_a.public;
-            async run_10 r0 into r1;
-            output r1 as program_c.aleo/run_10.future;
-
-        finalize run_10:
-            input r0 as program_a.aleo/struct_a.public;
-
-            cast r0 into r1 as program_b.aleo/struct_b;
-            cast r0 into r2 as program_b2.aleo/struct_b;
-            cast r2.a r1 into r3 as struct_c;
-
-        // Case 11 / private: `self.signer`, `self.caller`, and the program ID
-        // `program_a.aleo` all resolve to the `address` primitive. This casts them
-        // into the external struct `program_a.aleo/struct_d` (whose members are
-        // addresses), exercising the `ProgramID | Signer | Caller` arm of
-        // `matches_struct` against an externally-defined struct. It then reads the
-        // members back out and casts them into the local `struct_e`.
-        function run_11:
             cast self.signer self.caller program_a.aleo into r0 as program_a.aleo/struct_d;
             cast r0.a r0.b r0.c into r1 as struct_e;
             output r1 as struct_e.private;
 
-        // Case 12 / finalize: Mirrors case 11 in the finalize scope. Only the
-        // program ID operand resolves to an `address` there (`self.signer` and
-        // `self.caller` are rejected in a finalize scope), so this casts the program
-        // IDs `program_a.aleo`, `program_b.aleo`, and `program_c.aleo` into the
-        // external struct `program_a.aleo/struct_d`, then reads the members back out
-        // into the local `struct_e`.
-        function run_12:
-            async run_12 into r0;
-            output r0 as program_c.aleo/run_12.future;
-
-        finalize run_12:
-            cast program_a.aleo program_b.aleo program_c.aleo into r0 as program_a.aleo/struct_d;
-            cast r0.a r0.b r0.c into r1 as struct_e;
-
-        function run_13:
+        // Case 7 / function: Tests a three-level struct access involving external structs.
+        function run_7:
             cast 24u8 into r0 as program_a.aleo/struct_a;
             cast r0 into r1 as program_b.aleo/struct_b;
             cast r0 r1 into r2 as struct_c;
@@ -258,7 +158,8 @@ fn test_cast_with_external_structs() -> Result<()> {
 
             output r3 as u8.private;
 
-        function run_14:
+        // Case 8 / function: Tests a casts to external struct one of whose operands involves a two-level struct access.
+        function run_8:
             cast 24u8 into r0 as program_a.aleo/struct_a;
             cast r0 into r1 as program_b.aleo/struct_b;
             cast r0 r1 into r2 as struct_c;
@@ -266,8 +167,80 @@ fn test_cast_with_external_structs() -> Result<()> {
 
             output r3 as program_b2.aleo/struct_b.private;
 
-        // Case 13 / finalize: Mirrors run_13, performing the nested cast chain and
-        // member-access read (`r2.b.a.val`) entirely in the finalize scope.
+        // Case 9 / finalize: Finalize-side mirror of case 1.
+        function run_9:
+            input r0 as u8.public;
+            async run_9 r0 into r1;
+            output r1 as program_c.aleo/run_9.future;
+
+        finalize run_9:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+
+        // Case 10 / finalize: Finalize-side mirror of case 2.
+        function run_10:
+            input r0 as u8.public;
+            async run_10 r0 into r1;
+            output r1 as program_c.aleo/run_10.future;
+
+        finalize run_10:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1.val into r2 as program_a.aleo/struct_a;
+            cast r2 into r3 as program_b.aleo/struct_b;
+            cast r2 r3 into r4 as struct_c;
+
+        // Case 11 / finalize: Finalize-side mirror of case 3.
+        function run_11:
+            input r0 as program_a.aleo/struct_a.public;
+            async run_11 r0 into r1;
+            output r1 as program_c.aleo/run_11.future;
+
+        finalize run_11:
+            input r0 as program_a.aleo/struct_a.public;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 r1 into r2 as struct_c;
+        
+        // Case 12 / finalize: Finalize-side mirror of case 4.
+        function run_12:
+            input r0 as program_a.aleo/struct_a.public;
+            async run_12 r0 into r1;
+            output r1 as program_c.aleo/run_12.future;
+
+        finalize run_12:
+            input r0 as program_a.aleo/struct_a.public;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r1.a r1 into r2 as struct_c;
+
+        // Case 13 / finalize: Finalize-side mirror of case 5.
+        function run_13:
+            input r0 as program_a.aleo/struct_a.public;
+            async run_13 r0 into r1;
+            output r1 as program_c.aleo/run_13.future;
+
+        finalize run_13:
+            input r0 as program_a.aleo/struct_a.public;
+
+            cast r0 into r1 as program_b.aleo/struct_b;
+            cast r0 into r2 as program_b2.aleo/struct_b;
+            cast r2.a r1 into r3 as struct_c;
+
+        // Case 14 / finalize: Finalize-side mirror of case 6.
+        function run_14:
+            async run_14 into r0;
+            output r0 as program_c.aleo/run_14.future;
+
+        finalize run_14:
+            cast program_a.aleo program_b.aleo program_c.aleo into r0 as program_a.aleo/struct_d;
+            cast r0.a r0.b r0.c into r1 as struct_e;
+
+        // Case 15 / finalize: Finalize-side mirror of case 7.
         function run_15:
             async run_15 into r0;
             output r0 as program_c.aleo/run_15.future;
@@ -278,8 +251,7 @@ fn test_cast_with_external_structs() -> Result<()> {
             cast r0 r1 into r2 as struct_c;
             cast r2.b.a.val into r3 as u8;
 
-        // Case 14 / finalize: Mirrors run_14, casting a member-access operand
-        // (`r2.b.a`) back into an external struct entirely in the finalize scope.
+        // Case 16 / finalize: Finalize-side mirror of case 8.
         function run_16:
             async run_16 into r0;
             output r0 as program_c.aleo/run_16.future;
@@ -295,10 +267,8 @@ fn test_cast_with_external_structs() -> Result<()> {
         ",
     )?;
 
-    // Initialize the VM at V18.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18)?, rng);
 
-    // Deploy the programs in dependency order.
     let transaction = vm.deploy(&deployer_private_key, &program_a, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
 
@@ -311,74 +281,96 @@ fn test_cast_with_external_structs() -> Result<()> {
     let transaction = vm.deploy(&deployer_private_key, &program_c, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
 
-    // Reusable literal for the external struct input.
     let struct_a = "{ val: 5u8 }";
 
-    // Case 1: The function casts both external structs itself.
+    // The cases are documented in the source of program_c.aleo above.
+
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "run_1"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 2: The function casts both external structs itself, via a member-access operand.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "run_2"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 3: The function casts one external struct itself and receives the other.
     let inputs = [Value::from_str(struct_a)?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "run_3"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 4: Same as case 3, but using a member-access operand of the received struct.
     let inputs = [Value::from_str(struct_a)?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "run_4"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 5: Cross-program struct equivalence via `program_b2.aleo/struct_b`.
     let inputs = [Value::from_str(struct_a)?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "run_5"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 6: Mirrors case 1 in the finalize scope.
+    let transaction = vm.execute(
+        &deployer_private_key,
+        ("program_c.aleo", "run_6"),
+        Vec::<Value<_>>::new().iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
+
+    let transaction = vm.execute(
+        &deployer_private_key,
+        ("program_c.aleo", "run_7"),
+        Vec::<Value<_>>::new().iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
+
+    let transaction = vm.execute(
+        &deployer_private_key,
+        ("program_c.aleo", "run_8"),
+        Vec::<Value<_>>::new().iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
+
     let inputs = [Value::from_str("5u8")?];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_6"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    // Case 7: Mirrors case 2 in the finalize scope.
-    let inputs = [Value::from_str("5u8")?];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_7"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    // Case 8: Mirrors case 3 in the finalize scope.
-    let inputs = [Value::from_str(struct_a)?];
-    let transaction =
-        vm.execute(&deployer_private_key, ("program_c.aleo", "run_8"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
-
-    // Case 9: Mirrors case 4 in the finalize scope.
-    let inputs = [Value::from_str(struct_a)?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "run_9"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 10: Mirrors case 5 in the finalize scope.
-    let inputs = [Value::from_str(struct_a)?];
+    let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "run_10"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 11: Cast the `address`-typed program-reference operands (signer, caller,
-    // program ID) into an external struct, in the private scope.
+    let inputs = [Value::from_str(struct_a)?];
+    let transaction =
+        vm.execute(&deployer_private_key, ("program_c.aleo", "run_11"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
+
+    let inputs = [Value::from_str(struct_a)?];
+    let transaction =
+        vm.execute(&deployer_private_key, ("program_c.aleo", "run_12"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
+
+    let inputs = [Value::from_str(struct_a)?];
+    let transaction =
+        vm.execute(&deployer_private_key, ("program_c.aleo", "run_13"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
+
     let transaction = vm.execute(
         &deployer_private_key,
-        ("program_c.aleo", "run_11"),
+        ("program_c.aleo", "run_14"),
         Vec::<Value<_>>::new().iter(),
         None,
         0,
@@ -387,21 +379,6 @@ fn test_cast_with_external_structs() -> Result<()> {
     )?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
 
-    // Case 12: Mirrors case 11 in the finalize scope, casting program IDs into an
-    // external struct.
-    let transaction = vm.execute(
-        &deployer_private_key,
-        ("program_c.aleo", "run_12"),
-        Vec::<Value<_>>::new().iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-    add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
-
-    // Case 13: Mirrors run_13's nested cast chain and member-access read in the
-    // finalize scope.
     let transaction = vm.execute(
         &deployer_private_key,
         ("program_c.aleo", "run_15"),
@@ -413,8 +390,6 @@ fn test_cast_with_external_structs() -> Result<()> {
     )?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
 
-    // Case 14: Mirrors run_14's member-access cast back into an external struct in
-    // the finalize scope.
     let transaction = vm.execute(
         &deployer_private_key,
         ("program_c.aleo", "run_16"),
@@ -426,23 +401,18 @@ fn test_cast_with_external_structs() -> Result<()> {
     )?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&[]]), &[transaction], rng);
 
-    // TODO (Antonio) reorder cases
-    // TODO (Antonio) add negative tests eg that one cant pass stuct_b from program b2 to a
-
     Ok(())
 }
 
-// Exercises casting arrays whose elements are externally-defined structs, drawing
-// the elements from a mix of register types and (nested) member-access operands.
-// Each scenario is tested in both a private function scope and a public finalize
-// scope.
+// Checks that various instances of casts to arrays involving external structs and their members, as
+// well as structs having arrays as members, work as expected. This is tested in both the function
+// (i.e. private, RegisterType) setting as well as the public (i.e. finalise, FinaliseType) one.
 #[test]
 fn test_cast_with_external_structs_in_arrays() -> Result<()> {
     let rng = &mut TestRng::default();
 
     let deployer_private_key = sample_genesis_private_key(rng);
 
-    // `program_a.aleo` defines `struct_a`, holding a single `u8`.
     let program_a = Program::from_str(
         r"
         program program_a.aleo;
@@ -457,8 +427,6 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
         ",
     )?;
 
-    // `program_b.aleo` imports `program_a.aleo` and defines `struct_b`, whose only
-    // member is the external struct `program_a.aleo/struct_a`.
     let program_b = Program::from_str(
         r"
         import program_a.aleo;
@@ -474,9 +442,8 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
         ",
     )?;
 
-    // `program_b2.aleo` is a distinct program declaring a `struct_b` with the same
-    // name and structure as `program_b.aleo`'s. It exercises cross-program struct
-    // equivalence (same name and structure, different defining program).
+    // This is a distinct program from program_b.aleo, but both declare a struct with the same name
+    // and member specification.
     let program_b2 = Program::from_str(
         r"
         import program_a.aleo;
@@ -492,10 +459,6 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
         ",
     )?;
 
-    // `program_c.aleo` imports the other programs and defines `struct_c`, holding a
-    // `program_a.aleo/struct_a` and a `program_b.aleo/struct_b`. Its functions cast
-    // arrays of external structs, drawing elements from registers and member-access
-    // operands.
     let program_c = Program::from_str(
         r"
         import program_a.aleo;
@@ -507,12 +470,11 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
             a as program_a.aleo/struct_a;
             b as program_b.aleo/struct_b;
 
-        // `struct_arr` wraps an array of the external struct `program_a.aleo/struct_a`.
+        // struct containing an array whose elements are external structs.
         struct struct_arr:
             arr as [program_a.aleo/struct_a; 2u32];
 
-        // Case 1 / private: Cast an array `[struct_c; 2]` from a register holding a
-        // `struct_c`.
+        // Case 1 / function: Cast an [struct_c; 2] from a register holding a struct_c.
         function fun_1:
             input r0 as u8.private;
 
@@ -523,9 +485,8 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
 
             output r4 as [struct_c; 2u32].private;
 
-        // Case 2 / private: Cast an array `[program_b.aleo/struct_b; 2]` where the
-        // first element is a register holding a `struct_b` and the second is the
-        // `struct_b` member read out of a register holding a `struct_c` (`r3.b`).
+        // Case 2 / function: Cast a [program_b.aleo/struct_b; 2] one of whose elements involves a
+        //                   read of an external struct from a local struct.
         function fun_2:
             input r0 as u8.private;
 
@@ -536,11 +497,7 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
 
             output r4 as [program_b.aleo/struct_b; 2u32].private;
 
-        // Case 3 / private: Cast an array `[program_a.aleo/struct_a; 5]` whose
-        // elements come from five different sources: a register holding a
-        // `struct_a`, the `struct_a` members of a `program_b.aleo/struct_b` and a
-        // `program_b2.aleo/struct_b`, and both the direct (`r4.a`) and nested
-        // (`r4.b.a`) `struct_a` members of a `struct_c`.
+        // Case 3 / function: Cast a [program_a.aleo/struct_a; 5] from elements involving various levels of nested reads.
         function fun_3:
             input r0 as u8.private;
 
@@ -552,21 +509,17 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
 
             output r5 as [program_a.aleo/struct_a; 5u32].private;
 
-        // Case 4 / finalize: Mirrors case 1 in the finalize scope.
+        // Case 4 / function: Cast a local struct containing an array of external structs.
         function fun_4:
-            input r0 as u8.public;
-            async fun_4 r0 into r1;
-            output r1 as program_c.aleo/fun_4.future;
-
-        finalize fun_4:
-            input r0 as u8.public;
+            input r0 as u8.private;
 
             cast r0 into r1 as program_a.aleo/struct_a;
-            cast r1 into r2 as program_b.aleo/struct_b;
-            cast r1 r2 into r3 as struct_c;
-            cast r3 r3 into r4 as [struct_c; 2u32];
+            cast r1 r1 into r2 as [program_a.aleo/struct_a; 2u32];
+            cast r2 into r3 as struct_arr;
 
-        // Case 5 / finalize: Mirrors case 2 in the finalize scope.
+            output r3 as struct_arr.private;
+
+        // Case 5 / finalize: Finalize-side mirror of case 1.
         function fun_5:
             input r0 as u8.public;
             async fun_5 r0 into r1;
@@ -578,9 +531,9 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
             cast r0 into r1 as program_a.aleo/struct_a;
             cast r1 into r2 as program_b.aleo/struct_b;
             cast r1 r2 into r3 as struct_c;
-            cast r2 r3.b into r4 as [program_b.aleo/struct_b; 2u32];
+            cast r3 r3 into r4 as [struct_c; 2u32];
 
-        // Case 6 / finalize: Mirrors case 3 in the finalize scope.
+        // Case 6 / finalize: Finalize-side mirror of case 2.
         function fun_6:
             input r0 as u8.public;
             async fun_6 r0 into r1;
@@ -591,22 +544,25 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
 
             cast r0 into r1 as program_a.aleo/struct_a;
             cast r1 into r2 as program_b.aleo/struct_b;
+            cast r1 r2 into r3 as struct_c;
+            cast r2 r3.b into r4 as [program_b.aleo/struct_b; 2u32];
+
+        // Case 7 / finalize: Finalize-side mirror of case 3.
+        function fun_7:
+            input r0 as u8.public;
+            async fun_7 r0 into r1;
+            output r1 as program_c.aleo/fun_7.future;
+
+        finalize fun_7:
+            input r0 as u8.public;
+
+            cast r0 into r1 as program_a.aleo/struct_a;
+            cast r1 into r2 as program_b.aleo/struct_b;
             cast r1 into r3 as program_b2.aleo/struct_b;
             cast r1 r2 into r4 as struct_c;
             cast r1 r2.a r3.a r4.a r4.b.a into r5 as [program_a.aleo/struct_a; 5u32];
 
-        // Case 7 / private: Cast an array of `program_a.aleo/struct_a` into the
-        // `struct_arr` struct, whose sole member is that array type.
-        function fun_7:
-            input r0 as u8.private;
-
-            cast r0 into r1 as program_a.aleo/struct_a;
-            cast r1 r1 into r2 as [program_a.aleo/struct_a; 2u32];
-            cast r2 into r3 as struct_arr;
-
-            output r3 as struct_arr.private;
-
-        // Case 8 / finalize: Mirrors case 7 in the finalize scope.
+        // Case 8 / finalize: Finalize-side mirror of case 4.
         function fun_8:
             input r0 as u8.public;
             async fun_8 r0 into r1;
@@ -624,10 +580,8 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
         ",
     )?;
 
-    // Initialize the VM at V18.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18)?, rng);
 
-    // Deploy the programs in dependency order.
     let transaction = vm.deploy(&deployer_private_key, &program_a, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
 
@@ -640,52 +594,43 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
     let transaction = vm.deploy(&deployer_private_key, &program_c, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
 
-    // Case 1: Cast an array `[struct_c; 2]` in the private scope.
+    // The cases are documented in the source of program_c.aleo above.
+
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_1"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 2: Cast an array `[struct_b; 2]` from mixed register and member-access
-    // sources in the private scope.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_2"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 3: Cast an array `[struct_a; 5]` from five mixed sources in the private
-    // scope.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_3"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 4: Mirrors case 1 in the finalize scope.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_4"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 5: Mirrors case 2 in the finalize scope.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_5"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 6: Mirrors case 3 in the finalize scope.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_6"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 7: Cast an array of external structs into `struct_arr` in the private
-    // scope.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_7"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 8: Mirrors case 7 in the finalize scope.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_8"), inputs.iter(), None, 0, None, rng)?;
@@ -694,18 +639,15 @@ fn test_cast_with_external_structs_in_arrays() -> Result<()> {
     Ok(())
 }
 
-// Exercises casting records whose entries are externally-defined structs, drawing
-// the entries from a mix of register types and (nested) member-access operands.
-// This mirrors `test_cast_with_external_structs_in_arrays`, but casts to records
-// instead of arrays (an array of N elements becomes a record of N entries). Since
-// records cannot be cast in a finalize scope, only private scopes are exercised.
+// Checks that various instances of casts to records involving external structs and their members
+// behave as expected. Tests only involve the function (i.e. non-finalize) scope, which records are
+// restricted to.
 #[test]
 fn test_cast_with_external_structs_in_records() -> Result<()> {
     let rng = &mut TestRng::default();
 
     let deployer_private_key = sample_genesis_private_key(rng);
 
-    // `program_a.aleo` defines `struct_a`, holding a single `u8`.
     let program_a = Program::from_str(
         r"
         program program_a.aleo;
@@ -720,8 +662,6 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
         ",
     )?;
 
-    // `program_b.aleo` imports `program_a.aleo` and defines `struct_b`, whose only
-    // member is the external struct `program_a.aleo/struct_a`.
     let program_b = Program::from_str(
         r"
         import program_a.aleo;
@@ -737,9 +677,8 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
         ",
     )?;
 
-    // `program_b2.aleo` is a distinct program declaring a `struct_b` with the same
-    // name and structure as `program_b.aleo`'s. It exercises cross-program struct
-    // equivalence (same name and structure, different defining program).
+    // This is a distinct program from program_b.aleo, but both declare a struct with the same name
+    // and member specification.
     let program_b2 = Program::from_str(
         r"
         import program_a.aleo;
@@ -755,10 +694,6 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
         ",
     )?;
 
-    // `program_c.aleo` imports the other programs and defines `struct_c`, holding a
-    // `program_a.aleo/struct_a` and a `program_b.aleo/struct_b`. Its records hold
-    // external structs as entries, and its functions cast into those records,
-    // drawing entries from registers and member-access operands.
     let program_c = Program::from_str(
         r"
         import program_a.aleo;
@@ -770,19 +705,16 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
             a as program_a.aleo/struct_a;
             b as program_b.aleo/struct_b;
 
-        // A record with two `struct_c` entries.
         record record_c:
             owner as address.private;
             a as struct_c.private;
             b as struct_c.private;
 
-        // A record with two `program_b.aleo/struct_b` entries.
         record record_b:
             owner as address.private;
             a as program_b.aleo/struct_b.private;
             b as program_b.aleo/struct_b.private;
 
-        // A record with five `program_a.aleo/struct_a` entries.
         record record_a:
             owner as address.private;
             a as program_a.aleo/struct_a.private;
@@ -791,7 +723,6 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
             d as program_a.aleo/struct_a.private;
             e as program_a.aleo/struct_a.private;
 
-        // A record with entries of mixed external-struct types.
         record record_mixed:
             owner as address.private;
             entry_1 as program_a.aleo/struct_a.private;
@@ -799,8 +730,7 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
             entry_3 as program_b2.aleo/struct_b.private;
             entry_4 as struct_c.private;
 
-        // Case 1 / private: Cast a `record_c` with two entries from a register
-        // holding a `struct_c`.
+        // Case 1: Cast a record_c with two entries from a register containing a local struct_c.
         function fun_1:
             input r0 as u8.private;
 
@@ -811,9 +741,8 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
 
             output r4 as record_c.record;
 
-        // Case 2 / private: Cast a `record_b` where the first entry is a register
-        // holding a `struct_b` and the second is the `struct_b` member read out of a
-        // register holding a `struct_c` (`r3.b`).
+        // Case 2: Cast a record_b where the first entry is a register holding an external struct_b
+        //         and the second is a struct_b read from a register holding a struct_c (`r3.b`).
         function fun_2:
             input r0 as u8.private;
 
@@ -824,11 +753,8 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
 
             output r4 as record_b.record;
 
-        // Case 3 / private: Cast a `record_a` whose five entries come from five
-        // different sources: a register holding a `struct_a`, the `struct_a` members
-        // of a `program_b.aleo/struct_b` and a `program_b2.aleo/struct_b`, and both
-        // the direct (`r4.a`) and nested (`r4.b.a`) `struct_a` members of a
-        // `struct_c`.
+        // Case 3: Cast a record_a whose five entries come from five different sources involving
+        //         various reads.
         function fun_3:
             input r0 as u8.private;
 
@@ -840,8 +766,7 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
 
             output r5 as record_a.record;
 
-        // Case 4 / private: Cast a `record_mixed` reading each entry directly from a
-        // register of the matching type.
+        // Case 4: Cast a record_mixed by reading each entry directly from a register of the matching type.
         function fun_4:
             input r0 as u8.private;
 
@@ -853,8 +778,7 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
 
             output r5 as record_mixed.record;
 
-        // Case 5 / private: Cast a `record_mixed` mixing member-access operands
-        // (`r4.a`, `r4.b`) with direct register reads (`r3`, `r4`).
+        // Case 5: Cast a record_mixed by combining direct registers and register member reads.
         function fun_5:
             input r0 as u8.private;
 
@@ -871,10 +795,8 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
         ",
     )?;
 
-    // Initialize the VM at V18.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18)?, rng);
 
-    // Deploy the programs in dependency order.
     let transaction = vm.deploy(&deployer_private_key, &program_a, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
 
@@ -887,33 +809,28 @@ fn test_cast_with_external_structs_in_records() -> Result<()> {
     let transaction = vm.deploy(&deployer_private_key, &program_c, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, None, &[transaction], rng);
 
-    // Case 1: Cast a `record_c` with two entries in the private scope.
+    // The cases are documented in the source of program_c.aleo above.
+
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_1"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 2: Cast a `record_b` from mixed register and member-access sources.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_2"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 3: Cast a `record_a` from five mixed sources.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_3"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 4: Cast a mixed-entry `record_mixed`, reading each entry directly from a
-    // register.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_4"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &deployer_private_key, Some(&[&inputs]), &[transaction], rng);
 
-    // Case 5: Cast a mixed-entry `record_mixed`, mixing member-access operands with
-    // direct register reads.
     let inputs = [Value::from_str("5u8")?];
     let transaction =
         vm.execute(&deployer_private_key, ("program_c.aleo", "fun_5"), inputs.iter(), None, 0, None, rng)?;
