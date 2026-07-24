@@ -169,6 +169,18 @@ pub trait MapRead<
     }
 
     ///
+    /// Returns the (key, value) pair for the greatest confirmed key that is ≤ the given key,
+    /// or `None` if no such entry exists.
+    ///
+    /// This enables O(log n) "floor" lookups over ordered keys (e.g., block heights encoded
+    /// as big-endian bytes so that lexicographic ≤ matches numeric ≤).
+    ///
+    fn get_floor_confirmed<Q>(&'a self, key: &Q) -> Result<Option<(Cow<'a, K>, Cow<'a, V>)>>
+    where
+        K: Borrow<Q>,
+        Q: PartialEq + Eq + Hash + Serialize + ?Sized;
+
+    ///
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator;
