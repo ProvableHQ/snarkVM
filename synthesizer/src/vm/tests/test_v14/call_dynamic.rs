@@ -92,8 +92,8 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
                 ",
     )?;
 
-    // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+    // Initialize the VM at V18, when native credits record translation is enabled.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18)?, rng);
 
     // Deploy the program.
     println!("Deploying program: {}", program.id());
@@ -174,9 +174,21 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     verifier.load_deployment(&deployment)?;
     let execution = transaction.execution().ok_or_else(|| anyhow!("Expected an execution transaction"))?;
     let execution_stacks = verifier.get_stacks(execution.transitions(), false)?;
+    let error = Process::verify_execution(
+        ConsensusVersion::V17,
+        varuna_version_from_consensus(ConsensusVersion::V17),
+        InclusionVersion::V1,
+        execution,
+        &execution_stacks,
+    )
+    .expect_err("Native credits record translation must not verify before V18");
+    assert!(
+        error.to_string().contains("credits record translation is not enabled before ConsensusVersion::V18"),
+        "Unexpected V17 verification error: {error}"
+    );
     Process::verify_execution(
-        ConsensusVersion::V14,
-        varuna_version_from_consensus(ConsensusVersion::V14),
+        ConsensusVersion::V18,
+        varuna_version_from_consensus(ConsensusVersion::V18),
         InclusionVersion::V1,
         execution,
         &execution_stacks,
