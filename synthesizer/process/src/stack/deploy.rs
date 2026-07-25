@@ -160,7 +160,7 @@ impl<N: Network> Stack<N> {
             deployment.program().functions().values().zip_eq(deployment.function_verifying_keys())
         {
             // Initialize a burner private key.
-            let burner_private_key = PrivateKey::new(rng)?;
+            let burner_private_key = PrivateKey::new(&mut seeded_rng)?;
             // Compute the burner address.
             let burner_address = Address::try_from(&burner_private_key)?;
             // Retrieve the input types.
