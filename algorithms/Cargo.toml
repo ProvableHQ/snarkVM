@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-algorithms"
-version = "4.7.3"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Algorithms for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -42,6 +42,12 @@ bench = false
 [[bench]]
 name = "varuna"
 path = "benches/snark/varuna.rs"
+harness = false
+required-features = [ "test" ]
+
+[[bench]]
+name = "varuna_verifier"
+path = "benches/snark/varuna_verifier.rs"
 harness = false
 required-features = [ "test" ]
 

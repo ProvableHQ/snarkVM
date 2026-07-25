@@ -1,67 +1,38 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    mid.aleo/save_mid_rand_2:
-      outputs:
-      - '{"type":"future","id":"8009204501511275587697542963525270875212940154019273108840753583311242404162field","value":"{\n  program_id: mid.aleo,\n  function_name: save_mid_rand_2,\n  arguments: [\n    {\n      program_id: inner.aleo,\n      function_name: save_inner_rand,\n      arguments: [\n        0field\n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    outer.aleo/call_mid_3:
-      outputs:
-      - '{"type":"future","id":"1865104777990190101183791038066336630229786030982193764892148213012931842049field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid_3,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    },\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    outer.aleo/call_mid:
-      outputs:
-      - '{"type":"future","id":"3344050804766763413030905542282188004289422069651218981832807873204656896028field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    outer.aleo/call_mid_2:
-      outputs:
-      - '{"type":"future","id":"6809498859302718430592940363063226305226512242259330896260370485889212347458field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid_2,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    },\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    outer.aleo/dummy:
-      outputs: []
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    outer.aleo/dummy:
-      outputs: []
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    outer.aleo/dummy:
-      outputs: []
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    outer.aleo/call_mid:
-      outputs:
-      - '{"type":"future","id":"1013484871939974851220375608997557756580167373247376206065792648664075870688field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  execute:
-    outer.aleo/call_mid_2:
-      outputs:
-      - '{"type":"future","id":"3203643062146144430386904824053591462120336021073906695868322746683295143737field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid_2,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    },\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
-- child_outputs:
+- execute:
+    mid.aleo/save_mid_rand_2:
+      outputs:
+      - '{"type":"future","id":"8009204501511275587697542963525270875212940154019273108840753583311242404162field","value":"{\n  program_id: mid.aleo,\n  function_name: save_mid_rand_2,\n  arguments: [\n    {\n      program_id: inner.aleo,\n      function_name: save_inner_rand,\n      arguments: [\n        0field\n      ]\n    }\n  \n  ]\n}"}'
+  child_outputs:
     inner.aleo/dummy:
       outputs: []
     inner.aleo/save_inner_rand:
@@ -70,7 +41,11 @@ additional:
     credits.aleo/fee_public:
       outputs:
       - '{"type":"future","id":"5506163603353531800745592051640144725193298690477107166536640413946780637203field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    5753u64\n  ]\n}"}'
-- child_outputs:
+- execute:
+    outer.aleo/call_mid_3:
+      outputs:
+      - '{"type":"future","id":"1865104777990190101183791038066336630229786030982193764892148213012931842049field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid_3,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    },\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
+  child_outputs:
     inner.aleo/save_inner_rand:
       outputs:
       - '{"type":"future","id":"4317503762502531737719960959790685493247000537597870702409225021208172990119field","value":"{\n  program_id: inner.aleo,\n  function_name: save_inner_rand,\n  arguments: [\n    0field\n  ]\n}"}'
@@ -82,7 +57,11 @@ additional:
     credits.aleo/fee_public:
       outputs:
       - '{"type":"future","id":"7312666564545407100121867113112119791351740183594394165161078952237093866775field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    10667u64\n  ]\n}"}'
-- child_outputs:
+- execute:
+    outer.aleo/call_mid:
+      outputs:
+      - '{"type":"future","id":"3344050804766763413030905542282188004289422069651218981832807873204656896028field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
+  child_outputs:
     mid.aleo/dummy:
       outputs: []
     inner.aleo/save_inner_rand:
@@ -94,7 +73,11 @@ additional:
     credits.aleo/fee_public:
       outputs:
       - '{"type":"future","id":"5729538811196459201832321048735617880248840902289673235049945929620758060795field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    6916u64\n  ]\n}"}'
-- child_outputs:
+- execute:
+    outer.aleo/call_mid_2:
+      outputs:
+      - '{"type":"future","id":"6809498859302718430592940363063226305226512242259330896260370485889212347458field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid_2,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    },\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
+  child_outputs:
     inner.aleo/save_inner_rand:
       outputs:
       - '{"type":"future","id":"1229227864614038902798552653240749981310950058158987195817054396194757490679field","value":"{\n  program_id: inner.aleo,\n  function_name: save_inner_rand,\n  arguments: [\n    0field\n  ]\n}"}'
@@ -106,19 +89,32 @@ additional:
     credits.aleo/fee_public:
       outputs:
       - '{"type":"future","id":"6027905603500361641681181219974117049591045195963497745017091666259493895398field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    10667u64\n  ]\n}"}'
-- child_outputs:
+- execute:
+    outer.aleo/dummy:
+      outputs: []
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
       - '{"type":"future","id":"4331619254812630927856323717820733239252810213237999078535809533102252695318field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    1140u64\n  ]\n}"}'
-- child_outputs:
+- execute:
+    outer.aleo/dummy:
+      outputs: []
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
       - '{"type":"future","id":"1627585082115216484938472130883963045156742388438162671678551848326664192934field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    1140u64\n  ]\n}"}'
-- child_outputs:
+- execute:
+    outer.aleo/dummy:
+      outputs: []
+  child_outputs:
     credits.aleo/fee_public:
       outputs:
       - '{"type":"future","id":"6511764724577381617224389166578143266631687208210016079255307080810188103259field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    1140u64\n  ]\n}"}'
-- child_outputs:
+- execute:
+    outer.aleo/call_mid:
+      outputs:
+      - '{"type":"future","id":"1013484871939974851220375608997557756580167373247376206065792648664075870688field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
+  child_outputs:
     mid.aleo/dummy:
       outputs: []
     inner.aleo/save_inner_rand:
@@ -130,7 +126,11 @@ additional:
     credits.aleo/fee_public:
       outputs:
       - '{"type":"future","id":"5380304453795696614896136591103090017347151553499289119860920103827360877951field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1dg8dpzx0d53ajd87nhppq79z9vrvhelhh45frsqkusndtaasgcxqqs0ay8,\n    6916u64\n  ]\n}"}'
-- child_outputs:
+- execute:
+    outer.aleo/call_mid_2:
+      outputs:
+      - '{"type":"future","id":"3203643062146144430386904824053591462120336021073906695868322746683295143737field","value":"{\n  program_id: outer.aleo,\n  function_name: call_mid_2,\n  arguments: [\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    },\n    {\n      program_id: mid.aleo,\n      function_name: save_mid_rand,\n      arguments: [\n        {\n          program_id: inner.aleo,\n          function_name: save_inner_rand,\n          arguments: [\n            0field\n          ]\n        }\n      \n      ]\n    }\n  \n  ]\n}"}'
+  child_outputs:
     inner.aleo/save_inner_rand:
       outputs:
       - '{"type":"future","id":"4195821102327101956651340932636109431847560050965790490030494497367557736876field","value":"{\n  program_id: inner.aleo,\n  function_name: save_inner_rand,\n  arguments: [\n    0field\n  ]\n}"}'

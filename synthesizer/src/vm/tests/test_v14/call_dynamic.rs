@@ -15,6 +15,8 @@
 
 use super::*;
 
+use console::network::varuna_version_from_consensus;
+
 // Tests `call.dynamic` to `credits.aleo` functions including `transfer_public_as_signer`, `transfer_public_to_private`, and `transfer_private`.
 #[test]
 fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
@@ -90,12 +92,13 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
                 ",
     )?;
 
-    // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+    // Initialize the VM at V18, when native credits record translation is enabled.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18)?, rng);
 
     // Deploy the program.
     println!("Deploying program: {}", program.id());
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    let deployment = transaction.deployment().ok_or_else(|| anyhow!("Expected a deployment transaction"))?.clone();
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
@@ -165,6 +168,32 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
         rng,
     )?;
     vm.check_transaction(&transaction, None, rng)?;
+
+    // Verify the proof in a fresh process that did not synthesize the credits translation key while proving.
+    let verifier = Process::<CurrentNetwork>::load()?;
+    verifier.load_deployment(&deployment)?;
+    let execution = transaction.execution().ok_or_else(|| anyhow!("Expected an execution transaction"))?;
+    let execution_stacks = verifier.get_stacks(execution.transitions(), false)?;
+    let error = Process::verify_execution(
+        ConsensusVersion::V17,
+        varuna_version_from_consensus(ConsensusVersion::V17),
+        InclusionVersion::V1,
+        execution,
+        &execution_stacks,
+    )
+    .expect_err("Native credits record translation must not verify before V18");
+    assert!(
+        error.to_string().contains("credits record translation is not enabled before ConsensusVersion::V18"),
+        "Unexpected V17 verification error: {error}"
+    );
+    Process::verify_execution(
+        ConsensusVersion::V18,
+        varuna_version_from_consensus(ConsensusVersion::V18),
+        InclusionVersion::V1,
+        execution,
+        &execution_stacks,
+    )?;
+
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);

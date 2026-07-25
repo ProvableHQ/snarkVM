@@ -17,6 +17,7 @@
 
 use super::*;
 
+use console::network::varuna_version_from_consensus;
 use snarkvm_synthesizer_error::*;
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -194,10 +195,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Check whether the authorization is creating valid records.
         authorization.check_valid_records(consensus_version)?;
         // Determine which Varuna version to use.
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
                 // Prepare the authorization.
@@ -215,10 +213,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // received as inputs or from callees exist on the ledger at the end of
                 // the execution (whether spent or not).
                 if consensus_version >= ConsensusVersion::V15 {
-                    let mut execution_stacks = indexmap::IndexMap::new();
-                    for transition in trace.transitions().iter() {
-                        execution_stacks.insert(*transition.program_id(), $process.get_stack(transition.program_id())?);
-                    }
+                    let include_direct_imports = consensus_version >= ConsensusVersion::V18;
+                    let execution_stacks = $process.get_stacks(trace.transitions(), include_direct_imports)?;
                     Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
                     lap!(timer, "Check record existence");
                 }
@@ -256,10 +252,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Check whether the authorization is creating valid records.
         authorization.check_valid_records(consensus_version)?;
         // Determine which Varuna version to use.
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
                 // Prepare the authorization.
@@ -277,10 +270,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // received as inputs or from callees exist on the ledger at the end of
                 // the execution (whether spent or not).
                 if consensus_version >= ConsensusVersion::V15 {
-                    let mut execution_stacks = indexmap::IndexMap::new();
-                    for transition in trace.transitions().iter() {
-                        execution_stacks.insert(*transition.program_id(), $process.get_stack(transition.program_id())?);
-                    }
+                    let include_direct_imports = consensus_version >= ConsensusVersion::V18;
+                    let execution_stacks = $process.get_stacks(trace.transitions(), include_direct_imports)?;
                     Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
                     lap!(timer, "Check record existence");
                 }

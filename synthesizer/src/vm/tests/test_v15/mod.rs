@@ -30,7 +30,7 @@ mod restricted_keywords;
 
 use super::*;
 
-use crate::vm::test_helpers::{sample_vm_at_height, *};
+use crate::vm::test_helpers::*;
 
 use console::{
     account::ViewKey,

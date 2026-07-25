@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-program"
-version = "4.7.3"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Program operations for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -16,7 +16,11 @@ harness = false
 [features]
 default = [ ]
 test = [ ]
-dev-print = [ "snarkvm-utilities/dev-print" ]
+dev-print = [
+  "snarkvm-utilities/dev-print",
+  "snarkvm-console-algorithms/dev-print",
+  "snarkvm-console-network/dev-print"
+]
 
 [dependencies.snarkvm-console-account]
 workspace = true

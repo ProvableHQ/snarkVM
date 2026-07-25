@@ -209,6 +209,38 @@ impl<N: Network> Stack<N> {
         }
         lap!(timer, "Verify the request");
 
+        // In AuthorizeMocked mode, capture the index of the request currently being evaluated,
+        // which is necessary to populate the record-tracking machinery. Note the same value is
+        // used below when processing the outputs.
+        let current_request_index = match &call_stack {
+            CallStack::AuthorizeMocked(_, _, authorization, _, _) => authorization.len() - 1,
+            _ => 0,
+        };
+
+        // In AuthorizeMocked mode, detect whether any input static, external or dynamic records
+        // have been minted by other requests in the transaction and track them.
+        if let CallStack::AuthorizeMocked(_, _, _, _, input_records) = &call_stack {
+            let mut input_records = input_records.write();
+
+            for (input_index, input) in inputs.iter().enumerate() {
+                match input {
+                    Value::Record(record) => {
+                        input_records
+                            .entry(record.nonce().to_x_coordinate())
+                            .or_default()
+                            .push((current_request_index, input_index));
+                    }
+                    Value::DynamicRecord(dynamic_record) => {
+                        input_records
+                            .entry(dynamic_record.nonce().to_x_coordinate())
+                            .or_default()
+                            .push((current_request_index, input_index));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         // Initialize the registers.
         let mut registers = Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone());
         // Set the transition signer.
@@ -311,6 +343,29 @@ impl<N: Network> Stack<N> {
             .collect::<Result<Vec<_>>>()?;
         lap!(timer, "Load the outputs");
 
+        // In AuthorizeMocked mode, track the minting of static records.
+        if let CallStack::AuthorizeMocked(_, _, _, minted_static_records, _) = &mut registers.call_stack_ref() {
+            let mut minted_static_records = minted_static_records.write();
+
+            for ((output, output_type), operand) in outputs.iter().zip(&function.output_types()).zip(output_operands) {
+                // The output type is needed to distinguish static Records from ExternalRecords
+                // (which also appear as Value::Record at this point)
+                if let Value::Record(record) = output
+                    && let ValueType::Record(_) = output_type
+                    && let Operand::Register(register) = operand
+                {
+                    // Insert into the minted-record tracker, returning an error if the nonce is
+                    // already present (two static records which the same nonce cannot be minted.)
+                    if minted_static_records
+                        .insert(record.nonce().to_x_coordinate(), (current_request_index, register.locator()))
+                        .is_some()
+                    {
+                        return Err(anyhow!("Duplicate output-record nonce found in CallStack::AuthorizeMocked. Ensure the program is correct and rerun with a different RNG state.").into());
+                    }
+                }
+            }
+        }
+
         // Map the output operands to registers.
         let output_registers = output_operands
             .iter()
@@ -346,7 +401,7 @@ impl<N: Network> Stack<N> {
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
         }
-        if let CallStack::AuthorizeMocked(_, _, authorization) = registers.call_stack_ref() {
+        if let CallStack::AuthorizeMocked(_, _, authorization, _, _) = registers.call_stack_ref() {
             // Construct the transition without checking correctness of input IDs.
             let transition =
                 Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;

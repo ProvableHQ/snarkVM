@@ -116,7 +116,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             }
 
             // In AuthorizeMocked mode, we need to compute the mocked request and push it onto the call stack.
-            if let CallStack::AuthorizeMocked(requests, address, authorization) = &mut call_stack {
+            if let CallStack::AuthorizeMocked(requests, address, authorization, _, _) = &mut call_stack {
                 // Compute the mocked request.
                 let request = Request::sample(
                     *address,

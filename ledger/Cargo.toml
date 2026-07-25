@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger"
-version = "4.7.3"
+version = "4.9.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A node ledger for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -41,6 +41,12 @@ required-features = [ "test-helpers", "rocks" ]
 [[bench]]
 name = "advance"
 path = "benches/advance.rs"
+harness = false
+required-features = [ "test-helpers", "rocks" ]
+
+[[bench]]
+name = "prepare_advance_multirecord"
+path = "benches/prepare_advance_multirecord/main.rs"
 harness = false
 required-features = [ "test-helpers", "rocks" ]
 

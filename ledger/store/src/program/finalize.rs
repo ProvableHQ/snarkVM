@@ -323,7 +323,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         let value_id = N::hash_bhp1024(&(key_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
 
         atomic_batch_scope!(self, {
-            // Update the historical maps.
+            // Record the value at the current height in the historical map.
+            // The update heights are reconstructed on read by scanning this map's height suffix,
+            // so no separate (and ever-growing) per-key heights vector is maintained here.
             #[cfg(feature = "history")]
             {
                 let current_height = self.current_block_height().load(Ordering::SeqCst);
@@ -364,7 +366,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         let value_id = N::hash_bhp1024(&(key_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
 
         atomic_batch_scope!(self, {
-            // Update the historical maps.
+            // Record the updated value at the current height in the historical map.
+            // The update heights are reconstructed on read by scanning this map's height suffix,
+            // so no separate (and ever-growing) per-key heights vector is maintained here.
             #[cfg(feature = "history")]
             {
                 let current_height = self.current_block_height().load(Ordering::SeqCst);
@@ -446,7 +450,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
 
             // Insert the new key-value entries.
             for (key, value) in entries {
-                // Update the historical maps.
+                // Record the updated value at the current height in the historical map.
+                // The update heights are reconstructed on read by scanning this map's height suffix,
+                // so no separate (and ever-growing) per-key heights vector is maintained here.
                 #[cfg(feature = "history")]
                 {
                     let current_height = self.current_block_height().load(Ordering::SeqCst);
