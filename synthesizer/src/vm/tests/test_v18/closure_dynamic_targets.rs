@@ -15,23 +15,12 @@
 
 use super::*;
 
-// TODO (Antonio) review documentation
-
-// Deploys a program whose function selects the target of a `call.dynamic` at runtime, based on the
-// last bit of `self.signer`, choosing between the field representation of a closure (`some_closure`)
-// and a function (`some_function`). The deployment is then verified repeatedly to ensure the
-// verification decision is stable across freshly sampled randomness.
+// Deploys a program whose function selects the target of a call.dynamic at runtime, poinring to a
+// closure or to a function depending on based on the last bit of self.signer
 #[test]
 fn test_dynamic_call_target_safe() -> Result<()> {
     let rng = &mut TestRng::default();
 
-    // The program declares a closure `some_closure` and a function `some_function`. `some_function`
-    // reads the last bit of `self.signer`, then uses it to drive a `ternary` that selects between the
-    // field representation of `some_closure` and `some_function`. The selected field is used as the
-    // function-name operand of a `call.dynamic` back into the same program.
-    // Note: `serialize.bits.raw` on an `address` yields `field`-many bits (253 for this network), so
-    // the last bit is at index 252. `ternary` is applied to the field representations (identifiers
-    // cannot be used with `ternary` directly), obtained via `cast <identifier> ... as field`.
     let program = Program::<CurrentNetwork>::from_str(
         r"
 program some_dcall.aleo;
@@ -55,13 +44,11 @@ constructor:
 ",
     )?;
 
-    // Initialize a fresh process and construct the deployment once.
     let process = Process::<CurrentNetwork>::load()?;
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng)?;
 
-    // Verify the deployment 10 times. Each call to `verify_deployment` samples fresh randomness from
-    // `rng` (which advances between iterations), so the certificates are re-checked against new
-    // randomness on every iteration.
+    // Verify the deployment 10 times, each of which has a 50% chance of selecting each of the
+    // targets.
     for _ in 0..10 {
         process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V14, &deployment, rng)?;
     }
