@@ -252,11 +252,21 @@ impl<N: Network> Process<N> {
         // Construct the list of verifier inputs.
         let mut verifier_inputs: Vec<_> = verifier_inputs.values().cloned().collect();
 
+        // Prepare the native credits record identifiers for the V18 activation check.
+        let credits_program_id = ProgramID::from_str("credits.aleo")?;
+        let credits_record_name = Identifier::from_str("credits")?;
+
         // Construct the batch of translation verifier inputs.
         let batch_translation_inputs = Translation::prepare_verifier_inputs(
             execution.transitions(),
             &transition_map,
             &|(program_id, record_name)| {
+                ensure!(
+                    consensus_version >= ConsensusVersion::V18
+                        || program_id != &credits_program_id
+                        || record_name != &credits_record_name,
+                    "The credits record translation is not enabled before ConsensusVersion::V18"
+                );
                 execution_stacks
                     .get(program_id)
                     .ok_or_else(|| anyhow!("Missing stack for program '{program_id}'"))
