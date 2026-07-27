@@ -1460,6 +1460,11 @@ impl<N: Network> ProgramCore<N> {
         command_contains || view_output_contains
     }
 
+    // TODO (Antonio) document
+    pub fn pre_v19_external_struct_casts(&self) -> Result<()> {
+        Ok(false)
+    }
+
     /// Returns `true` if a program contains any string type.
     /// Before ConsensusVersion::V12, variable-length string sampling when using them as inputs caused deployment synthesis to be inconsistent and abort with probability 63/64.
     /// After ConsensusVersion::V12, string types are disallowed.

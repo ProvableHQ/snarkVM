@@ -252,6 +252,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the argument bit size of futures does not exceed the maximum allowed size of u16::MAX.
                 //   - V3 deployments (amendments) are not allowed.
                 //   - the deployment has exactly one verifying key per function (no record verifying keys)
+                // TODO (Antonio)
                 if consensus_version < ConsensusVersion::V8 {
                     ensure!(
                         deployment.edition().is_zero(),
@@ -363,6 +364,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         !deployment.program().contains_v16_syntax(),
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V16`"
                     );
+                }
+                if consensus_version < ConsensusVersion::V19 {
+                    // TODO (Antonio) document
+                    deployment.program().pre_v19_external_struct_casts()?
                 }
 
                 // Checks required for current and future consensus versions (>= V9).
