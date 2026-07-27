@@ -33,6 +33,7 @@ use snarkvm_ledger_store::{
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program};
+use snarkvm_synthesizer_snark::VerifyingKey;
 
 use aleo_std::StorageMode;
 use indexmap::IndexMap;
@@ -42,6 +43,25 @@ type CurrentAleo = AleoV0;
 
 const NUM_BLOCKS_TO_UNLOCK: u32 = 360;
 const TEST_COMMISSION: u8 = 5;
+
+#[test]
+fn test_credits_translation_verifying_key_is_loaded_and_updated() -> Result<()> {
+    let credits_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo")?;
+    let credits_record_name = Identifier::from_str("credits")?;
+    let raw_verifying_key = CurrentNetwork::translation_credits_verifying_key();
+    let num_variables = raw_verifying_key.circuit_info.num_public_and_private_variables as u64;
+    let expected = VerifyingKey::new(raw_verifying_key.clone(), num_variables);
+    let process = Process::<CurrentNetwork>::load()?;
+
+    assert_eq!(expected, process.get_verifying_key(credits_id, credits_record_name)?);
+
+    process.remove_verifying_key(&credits_id, &credits_record_name)?;
+    assert!(process.get_verifying_key(credits_id, credits_record_name).is_err());
+
+    process.lock().update_credits_verifying_keys()?;
+    assert_eq!(expected, process.get_verifying_key(credits_id, credits_record_name)?);
+    Ok(())
+}
 
 /// Samples a new finalize store.
 macro_rules! sample_finalize_store {

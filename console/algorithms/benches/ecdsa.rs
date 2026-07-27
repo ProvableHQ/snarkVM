@@ -20,7 +20,10 @@ use snarkvm_console_algorithms::{ECDSASignature, Keccak256, Keccak384, Keccak512
 use snarkvm_console_types::prelude::*;
 use snarkvm_utilities::{TestRng, Uniform};
 
-use k256::ecdsa::{SigningKey, VerifyingKey};
+use k256::{
+    ecdsa::{SigningKey, VerifyingKey},
+    elliptic_curve::Generate,
+};
 
 use criterion::Criterion;
 
@@ -29,14 +32,7 @@ fn ecdsa_keccak256(c: &mut Criterion) {
     let hasher = Keccak256::default();
 
     // Sample a random signing key.
-    // Note: `SigningKey::random` requires a `rand_core` version that `TestRng` does not
-    // implement, so we sample random scalar bytes and reject any that are not a valid key.
-    let signing_key = loop {
-        let sk_bytes: [u8; 32] = core::array::from_fn(|_| u8::rand(rng));
-        if let Ok(signing_key) = SigningKey::from_slice(&sk_bytes) {
-            break signing_key;
-        }
-    };
+    let signing_key = SigningKey::generate_from_rng(rng);
     let vk = VerifyingKey::from(&signing_key);
 
     // Sample a random message.
@@ -60,14 +56,7 @@ fn ecdsa_keccak384(c: &mut Criterion) {
     let hasher = Keccak384::default();
 
     // Sample a random signing key.
-    // Note: `SigningKey::random` requires a `rand_core` version that `TestRng` does not
-    // implement, so we sample random scalar bytes and reject any that are not a valid key.
-    let signing_key = loop {
-        let sk_bytes: [u8; 32] = core::array::from_fn(|_| u8::rand(rng));
-        if let Ok(signing_key) = SigningKey::from_slice(&sk_bytes) {
-            break signing_key;
-        }
-    };
+    let signing_key = SigningKey::generate_from_rng(rng);
     let vk = VerifyingKey::from(&signing_key);
 
     // Sample a random message.
@@ -91,14 +80,7 @@ fn ecdsa_keccak512(c: &mut Criterion) {
     let hasher = Keccak512::default();
 
     // Sample a random signing key.
-    // Note: `SigningKey::random` requires a `rand_core` version that `TestRng` does not
-    // implement, so we sample random scalar bytes and reject any that are not a valid key.
-    let signing_key = loop {
-        let sk_bytes: [u8; 32] = core::array::from_fn(|_| u8::rand(rng));
-        if let Ok(signing_key) = SigningKey::from_slice(&sk_bytes) {
-            break signing_key;
-        }
-    };
+    let signing_key = SigningKey::generate_from_rng(rng);
     let vk = VerifyingKey::from(&signing_key);
 
     // Sample a random message.

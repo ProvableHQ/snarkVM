@@ -392,6 +392,41 @@ impl<
     }
 
     ///
+    /// Returns the (key, value) pair for the greatest confirmed key ≤ the given key,
+    /// or `None` if no such entry exists in this map.
+    ///
+    /// Uses RocksDB `seek_for_prev` for O(log n) performance.
+    ///
+    fn get_floor_confirmed<Q>(&'a self, key: &Q) -> Result<Option<(Cow<'a, K>, Cow<'a, V>)>>
+    where
+        K: Borrow<Q>,
+        Q: PartialEq + Eq + Hash + Serialize + ?Sized,
+    {
+        let raw_key = self.create_prefixed_key(key)?;
+
+        let mut iter = self.database.raw_iterator();
+        iter.seek_for_prev(&raw_key);
+
+        if !iter.valid() {
+            return Ok(None);
+        }
+
+        let (k_bytes, v_bytes) = match iter.item() {
+            Some(item) => item,
+            None => return Ok(None),
+        };
+
+        // Verify this entry belongs to the same map (compare the map-ID bytes in the context).
+        if k_bytes.len() < PREFIX_LEN || k_bytes[2..][..2] != self.context[2..][..2] {
+            return Ok(None);
+        }
+
+        let k: K = unchecked_deserialize(&k_bytes[PREFIX_LEN..])?;
+        let v: V = unchecked_deserialize(v_bytes)?;
+        Ok(Some((Cow::Owned(k), Cow::Owned(v))))
+    }
+
+    ///
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator {
