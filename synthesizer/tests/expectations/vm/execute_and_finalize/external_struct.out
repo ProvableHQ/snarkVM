@@ -10,7 +10,7 @@ additional:
   child_outputs:
     external_struct.aleo/make_struct:
       outputs:
-      - '{"type":"private","id":"950054391566066141831813426021543606350122839180822212323121576500426543341field","value":"ciphertext1qyq9gpt3enh23ry02wmvj4zyk3w3jkk6gga04054jxpq6ctqz8hz6qgh2g64u"}'
+      - '{"type":"private","id":"5246252169359101213978569154147909169270060709622503594375130938112780595179field","value":"ciphertext1qyqqsdmy4kn02lspw30t60f9fxxdqj2pxdw0qg2s6h8pe3umvd70wps8gs980"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"3048490372427538183609819194439442577604813977270947453894798278641990313104field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2454u64\n  ]\n}"}'
+      - '{"type":"future","id":"2788950635229564901347886261436355663369718197048283954333848513350674497490field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2454u64\n  ]\n}"}'
