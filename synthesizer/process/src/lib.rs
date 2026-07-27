@@ -280,6 +280,16 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
             )?;
         }
 
+        // Load the verifying key for translating the native credits record.
+        let record_name = Identifier::from_str("credits")?;
+        let verifying_key = N::translation_credits_verifying_key();
+        let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+        self.process.insert_verifying_key(
+            credits.id(),
+            &record_name,
+            VerifyingKey::new(verifying_key.clone(), num_variables),
+        )?;
+
         Ok(())
     }
 }
@@ -402,6 +412,12 @@ impl<N: Network> Process<N> {
             stack.insert_verifying_key(function_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
             lap!(timer, "Load verifying key for {function_name}");
         }
+
+        // Load the verifying key for translating the native credits record.
+        let record_name = Identifier::from_str("credits")?;
+        let verifying_key = N::translation_credits_verifying_key();
+        let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+        stack.insert_verifying_key(&record_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
         lap!(timer, "Load circuit keys");
 
         // Add the stack to the process.
