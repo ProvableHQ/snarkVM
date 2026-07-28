@@ -3,15 +3,3 @@ outputs:
 - verified: true
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- execute:
-    parent.aleo/omega_wrapper:
-      outputs:
-      - '{"type":"private","id":"4145116859377170829674951986845881705723073330294956158285343089389536575867field","value":"ciphertext1qyqys5na3xw665zaymwnk3s9w20vly29zzdmna9m5l2jkfyljss77qsulgmq8"}'
-  child_outputs:
-    child.aleo/create_another_wrapper:
-      outputs:
-      - '{"type":"private","id":"2469913172026955178847250068467299050607863810984307293616046177970848446395field","value":"ciphertext1qyqrmm9gl72942w05gmsvcum69fvzm3wvxfndy6dv2ghvhpwa5yzgzgrawpqy"}'
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"4108154024022038454362609489543382059512332419372409894155283434924067478385field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    1938u64\n  ]\n}"}'

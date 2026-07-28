@@ -3,12 +3,3 @@ outputs:
 - verified: true
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- execute:
-    good_constructor.aleo/check:
-      outputs:
-      - '{"type":"future","id":"6600542298259228002378236109655652417372685830331721483941745536232489151984field","value":"{\n  program_id: good_constructor.aleo,\n  function_name: check,\n  arguments: []\n}"}'
-  child_outputs:
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"2030217850579086144702637369808440164758962091655259493660009452412717467824field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    1294u64\n  ]\n}"}'

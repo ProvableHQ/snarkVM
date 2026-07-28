@@ -3,14 +3,3 @@ outputs:
 - verified: true
   speculate: the execution was accepted
   add_next_block: succeeded.
-additional:
-- execute:
-    external_struct_test.aleo/main:
-      outputs: []
-  child_outputs:
-    external_struct.aleo/make_struct:
-      outputs:
-      - '{"type":"private","id":"5246252169359101213978569154147909169270060709622503594375130938112780595179field","value":"ciphertext1qyqqsdmy4kn02lspw30t60f9fxxdqj2pxdw0qg2s6h8pe3umvd70wps8gs980"}'
-    credits.aleo/fee_public:
-      outputs:
-      - '{"type":"future","id":"2788950635229564901347886261436355663369718197048283954333848513350674497490field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1qr2ha4pfs5l28aze88yn6fhleeythklkczrule2v838uwj65n5gqxt9djx,\n    2454u64\n  ]\n}"}'
