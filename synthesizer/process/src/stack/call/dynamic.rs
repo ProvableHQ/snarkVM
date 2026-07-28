@@ -971,8 +971,8 @@ impl<'a, N: Network> ResolvedTarget<'a, N> {
 
 // A helper function that attempts to resolve the target of a dynamic call.
 // This function returns:
-// - Ok(None) in `Synthesize` or `CheckDeployment`
-// - Ok(Some(ResolvedTarget)) in other modes if the target is successfully resolved.
+// - Ok(Some(ResolvedTarget)) if the target is successfully resolved.
+// - Ok(None) in `Synthesize` or `CheckDeployment` mode when the target cannot be resolved.
 // - Err(_) in other modes when the target cannot be resolved.
 fn resolve_dynamic_target<'a, N: Network>(
     call_stack: &'a CallStack<N>,
@@ -981,32 +981,42 @@ fn resolve_dynamic_target<'a, N: Network>(
     program_network_as_field: &Field<N>,
     function_name_as_field: &Field<N>,
 ) -> Result<Option<ResolvedTarget<'a, N>>> {
-    // If in one of the two dummy modes, return None.
-    if matches!(call_stack, CallStack::Synthesize(..) | CallStack::CheckDeployment(..)) {
-        return Ok(None);
-    }
+    // Determine whether we are in "dummy" (`Synthesize` or `CheckDeployment`) mode.
+    let in_dummy_mode = matches!(call_stack, CallStack::Synthesize(..) | CallStack::CheckDeployment(..));
 
     // Decode the program name, exiting gracefully in dummy mode if it fails.
     let program_name = match Identifier::from_field(program_name_as_field) {
         Ok(id) => id,
+        Err(_) if in_dummy_mode => {
+            return Ok(None);
+        }
         Err(e) => return Err(anyhow!("Failed to decode the program name in a dynamic call: {e}")),
     };
 
     // Decode the program network, exiting gracefully in dummy mode if it fails.
     let program_network = match Identifier::from_field(program_network_as_field) {
         Ok(id) => id,
+        Err(_) if in_dummy_mode => {
+            return Ok(None);
+        }
         Err(e) => return Err(anyhow!("Failed to decode the program network in a dynamic call: {e}")),
     };
 
     // Decode the function name, exiting gracefully in dummy mode if it fails.
     let function_name = match Identifier::from_field(function_name_as_field) {
         Ok(id) => id,
+        Err(_) if in_dummy_mode => {
+            return Ok(None);
+        }
         Err(e) => return Err(anyhow!("Failed to decode the function name in a dynamic call: {e}")),
     };
 
     // Construct the program ID.
     let program_id = match ProgramID::try_from((program_name, program_network)) {
         Ok(id) => id,
+        Err(_) if in_dummy_mode => {
+            return Ok(None);
+        }
         Err(e) => return Err(anyhow!("Failed to construct the program ID in a dynamic call: {e}")),
     };
 
@@ -1024,6 +1034,9 @@ fn resolve_dynamic_target<'a, N: Network>(
     let external_stack = match stack.program().id() == &program_id {
         false => match stack.get_stack_global(&program_id) {
             Ok(ext_stack) => Some(ext_stack),
+            Err(_) if in_dummy_mode => {
+                return Ok(None);
+            }
             Err(e) => return Err(anyhow!("Failed to retrieve the external stack in a dynamic call: {e}")),
         },
         true => None,
@@ -1040,6 +1053,8 @@ fn resolve_dynamic_target<'a, N: Network>(
         Err(anyhow!("Cannot dynamically evaluate a closure: {function_name}"))
     } else if substack.program().contains_function(&function_name) {
         Ok(Some(ResolvedTarget { program_id, function_name, substack }))
+    } else if in_dummy_mode {
+        Ok(None)
     } else {
         Err(anyhow!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported."))
     }
