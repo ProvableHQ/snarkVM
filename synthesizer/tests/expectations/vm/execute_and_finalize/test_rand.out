@@ -7,7 +7,7 @@ outputs:
   speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
-  speculate: the execution was accepted
+  speculate: the execution was rejected
   add_next_block: succeeded.
 - verified: true
   speculate: the execution was accepted

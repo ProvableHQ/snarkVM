@@ -7,13 +7,13 @@ additional:
 - execute:
     external_structs.aleo/main:
       outputs:
-      - '{"type":"public","id":"7344958557193698087791158087482541016214758380877962577272656921247336051426field","value":"{\n  a: 1u32,\n  b: 2u32\n}"}'
-      - '{"type":"public","id":"252817475753187937848422792617959157590845763125114663060195164519749929541field","value":"{\n  c: {\n    a: 1u32,\n    b: 2u32\n  }\n}"}'
-      - '{"type":"public","id":"5400860607215966577153495840031606579731798482885325541308019755647522559189field","value":"{\n  a: 1u32,\n  b: 2u32\n}"}'
+      - '{"type":"public","id":"7263265023296068244225401472636217227227510377612098880988831621266032562984field","value":"{\n  a: 1u32,\n  b: 2u32\n}"}'
+      - '{"type":"public","id":"452188528123389934259268578664592035038898911522575052064415054431163439243field","value":"{\n  c: {\n    a: 1u32,\n    b: 2u32\n  }\n}"}'
+      - '{"type":"public","id":"932312690948002006929987232634191702513683175278406548683122663952793136693field","value":"{\n  a: 1u32,\n  b: 2u32\n}"}'
   child_outputs:
     child1.aleo/main_2:
       outputs:
-      - '{"type":"private","id":"2864920582939616818477313135216512880537488911984516856164916501917382194720field","value":"ciphertext1qyqfyc6fatr65ayvf5g4yhl8j2el8a7zwf7kra7a8u87tvkjuta7jyqtya6vr"}'
+      - '{"type":"private","id":"6485537688032583908659354189263341311975333842552007603308189112752072186940field","value":"ciphertext1qyq2mlahpvl8333xwnq2krpgvj47age4m4q3y2zw2zv4gx5ce6y3wqsdlv6x8"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"1766886735093113032568179980740236756169483565570128955987295198201739559075field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1l92c2rcgwnfg2hwv7pvd60yvyf5usv7xfw4vg6k6hmt4trqg4vyqkre9hy,\n    2104u64\n  ]\n}"}'
+      - '{"type":"future","id":"6192919382152638966034966195755399102357353314151667066362886224552126635618field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1l92c2rcgwnfg2hwv7pvd60yvyf5usv7xfw4vg6k6hmt4trqg4vyqkre9hy,\n    2104u64\n  ]\n}"}'

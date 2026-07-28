@@ -7,17 +7,17 @@ additional:
 - execute:
     count_usages.aleo/add_and_subtract:
       outputs:
-      - '{"type":"private","id":"270661052916982000928458466999212029272034171142350188753633426762905865676field","value":"ciphertext1qyqwvq76jummtpj6cnxu38a25sxvfz2k7dtwt8mfmc60gawmlhdt2qsukz0fd"}'
-      - '{"type":"future","id":"825007211152698104205563494466998475110677654174257776112587592450749457468field","value":"{\n  program_id: count_usages.aleo,\n  function_name: add_and_subtract,\n  arguments: [\n    {\n      program_id: basic_math.aleo,\n      function_name: add_and_count,\n      arguments: [\n        aleo1mrughg5ssadd9fc2uwve7l6u24xn76kyz24zsjtzta03vgkq4vpqggl6fg\n      ]\n    },\n    {\n      program_id: basic_math.aleo,\n      function_name: sub_and_count,\n      arguments: [\n        aleo1mrughg5ssadd9fc2uwve7l6u24xn76kyz24zsjtzta03vgkq4vpqggl6fg\n      ]\n    }\n  \n  ]\n}"}'
+      - '{"type":"private","id":"4553882490757322261508840920847567898295449359084661615613095896182422747938field","value":"ciphertext1qyqwvdjjfugz68a9ysgea3d9rqyq43vvdavmrz79nlpvk2hk2fd3sysanucay"}'
+      - '{"type":"future","id":"7896764465645118215726064297542278327923413484911973807160511826982322151828field","value":"{\n  program_id: count_usages.aleo,\n  function_name: add_and_subtract,\n  arguments: [\n    {\n      program_id: basic_math.aleo,\n      function_name: add_and_count,\n      arguments: [\n        aleo1mrughg5ssadd9fc2uwve7l6u24xn76kyz24zsjtzta03vgkq4vpqggl6fg\n      ]\n    },\n    {\n      program_id: basic_math.aleo,\n      function_name: sub_and_count,\n      arguments: [\n        aleo1mrughg5ssadd9fc2uwve7l6u24xn76kyz24zsjtzta03vgkq4vpqggl6fg\n      ]\n    }\n  \n  ]\n}"}'
   child_outputs:
     basic_math.aleo/add_and_count:
       outputs:
-      - '{"type":"private","id":"3503226657659080175327013158872165541944705105733232397330844869617320380496field","value":"ciphertext1qyqye0uftmy0jahpzj8cy37n4x8gwvsue0ghjgl5f8zn900yp35qsystqd67a"}'
-      - '{"type":"future","id":"6794020600870948876323855299561023926761343111675476272945080043303065457108field","value":"{\n  program_id: basic_math.aleo,\n  function_name: add_and_count,\n  arguments: [\n    aleo1mrughg5ssadd9fc2uwve7l6u24xn76kyz24zsjtzta03vgkq4vpqggl6fg\n  ]\n}"}'
+      - '{"type":"private","id":"7553613344890909377901305825911927135177181578679424174827381348655052378663field","value":"ciphertext1qyq86tjhu7thsvrjtrvsfpu537gxvvq4cvlgy7ghj02e9lfhves8gps3yh3zv"}'
+      - '{"type":"future","id":"52880004197507108043531498473618423232758848629054451697179810859554036771field","value":"{\n  program_id: basic_math.aleo,\n  function_name: add_and_count,\n  arguments: [\n    aleo1mrughg5ssadd9fc2uwve7l6u24xn76kyz24zsjtzta03vgkq4vpqggl6fg\n  ]\n}"}'
     basic_math.aleo/sub_and_count:
       outputs:
-      - '{"type":"private","id":"4377551602946624867074353617788880572977168270820944389931124713388322910894field","value":"ciphertext1qyq0cazqdmke27a95fnnzve4genfwyr9cpt8eeeeh5ghc6v4ldc77yq06wvjj"}'
-      - '{"type":"future","id":"296726354087198921323741191418046014051475496913964905545830432815441599941field","value":"{\n  program_id: basic_math.aleo,\n  function_name: sub_and_count,\n  arguments: [\n    aleo1mrughg5ssadd9fc2uwve7l6u24xn76kyz24zsjtzta03vgkq4vpqggl6fg\n  ]\n}"}'
+      - '{"type":"private","id":"3721846948835120108456779843089150375992480560452118887398358896301822170750field","value":"ciphertext1qyqq0zkrj8lequsp606zpu9nukpql9e5jpdcemgxrrekv894k47yuqgrvekqx"}'
+      - '{"type":"future","id":"7819852614512046949292681611406289782800041457260929666572887897361822483675field","value":"{\n  program_id: basic_math.aleo,\n  function_name: sub_and_count,\n  arguments: [\n    aleo1mrughg5ssadd9fc2uwve7l6u24xn76kyz24zsjtzta03vgkq4vpqggl6fg\n  ]\n}"}'
     credits.aleo/fee_public:
       outputs:
-      - '{"type":"future","id":"6414509637176619709959802937796465951324621701642950668802798550527316736379field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1kw4knandael9qcpxs6g36rr6h7dwvjz6q25ueah6zz9v57zjlvxsx5llq8,\n    4853u64\n  ]\n}"}'
+      - '{"type":"future","id":"6534284531622156824904041009258094768280154127254027762529586592629796815228field","value":"{\n  program_id: credits.aleo,\n  function_name: fee_public,\n  arguments: [\n    aleo1kw4knandael9qcpxs6g36rr6h7dwvjz6q25ueah6zz9v57zjlvxsx5llq8,\n    4853u64\n  ]\n}"}'
