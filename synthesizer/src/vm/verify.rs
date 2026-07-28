@@ -365,7 +365,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V16`"
                     );
                 }
-                if consensus_version < ConsensusVersion::V19 {
+                // TODO (Antonio) V19
+                if consensus_version < ConsensusVersion::V18 {
                     // TODO (Antonio) document
                     deployment.program().pre_v19_external_struct_casts()?
                 }

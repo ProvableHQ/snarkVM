@@ -1462,7 +1462,7 @@ impl<N: Network> ProgramCore<N> {
 
     // TODO (Antonio) document
     pub fn pre_v19_external_struct_casts(&self) -> Result<()> {
-        Ok(false)
+        Ok(())
     }
 
     /// Returns `true` if a program contains any string type.
