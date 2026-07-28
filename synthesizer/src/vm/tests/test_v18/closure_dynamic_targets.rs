@@ -18,7 +18,7 @@ use super::*;
 // Deploys a program whose function points the target of a call.dynamic instruction to a closure or a
 // function depending on the last bit of self.signer. The test checks several runs of test-
 #[test]
-fn test_conditional_dynamic_call_target_deployment() -> Result<()> {
+fn test_conditional_dynamic_call_target_deployment() {
     const N_EXPERIMENTS: usize = 10;
 
     let rng = &mut TestRng::default();
@@ -51,7 +51,7 @@ fn test_conditional_dynamic_call_target_deployment() -> Result<()> {
         .unwrap()
     };
 
-    let process = Process::<CurrentNetwork>::load()?;
+    let process = Process::<CurrentNetwork>::load().unwrap();
 
     // About half of the calls to process.deploy should succeed. About half of those should be
     // accepted by process.verify_deployment, but the outcome for each fixed deployment should be
@@ -61,7 +61,7 @@ fn test_conditional_dynamic_call_target_deployment() -> Result<()> {
 
         match deployment_attempt {
             Ok(deployment) => {
-                println!(" - Deployment computation {i} succeeded with ID {}", deployment.to_deployment_id()?);
+                println!(" - Deployment computation {i} succeeded with ID {}", deployment.to_deployment_id().unwrap());
 
                 // TODO (Antonio) V19
                 // Ensure that different runs of verify_deployment agree on the result - even if it is a rejection.
@@ -81,6 +81,4 @@ fn test_conditional_dynamic_call_target_deployment() -> Result<()> {
             }
         }
     }
-
-    Ok(())
 }
