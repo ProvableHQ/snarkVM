@@ -17,11 +17,13 @@
 mod record_existence_stacks;
 
 // Tests with Aleo functions which output scalars.
-// These changes are not ConsensusVersion::V18-gated, but they were introduced at that point in
-// time.
+// The relevant changes are not ConsensusVersion::V18-gated, but they were introduced at that point
+// in time.
 mod scalar_outputs;
 
 // Tests on the resolution of dynamic call targets involving closures.
+// The relevant changes are not ConsensusVersion::V18-gated, but they were introduced at that point
+// in time.
 mod closure_dynamic_targets;
 
 use super::*;

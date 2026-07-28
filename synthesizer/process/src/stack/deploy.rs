@@ -188,7 +188,7 @@ impl<N: Network> Stack<N> {
                 })
                 .collect::<Result<Vec<_>>>()?;
             lap!(timer, "Sample the inputs");
-            // Sample a dummy 'is_root'.
+            // Set 'is_root' to true. In particular, this guarantees self.caller is set to self.signer.
             let is_root = true;
 
             // Compute the request, with a burner private key.

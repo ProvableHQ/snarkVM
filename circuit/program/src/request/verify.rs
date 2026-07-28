@@ -463,7 +463,7 @@ mod tests {
 
         // Sample 'root_tvk'.
         let root_tvk = None;
-        // Sample 'is_root'.
+        // Set 'is_root' to true. In particular, this guarantees self.caller is set to self.signer.
         let is_root = true;
         // Sample 'program_checksum'.
         let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
