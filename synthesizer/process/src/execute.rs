@@ -48,7 +48,9 @@ impl<N: Network> Process<N> {
         // Retrieve the stack.
         let stack = self.get_stack(request.program_id())?;
         // Execute the circuit.
-        let response = stack.execute_function::<A, R>(call_stack, caller, root_tvk, rng)?;
+        let Some(response) = stack.execute_function::<A, R>(call_stack, caller, root_tvk, rng)? else {
+            return Err(anyhow!("Response should be present in `Execute` mode.").into());
+        };
         lap!(timer, "Execute the function");
 
         // Extract the trace.

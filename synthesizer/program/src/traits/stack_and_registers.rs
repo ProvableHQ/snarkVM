@@ -514,4 +514,11 @@ pub trait RegistersCircuit<N: Network, A: circuit::Aleo<Network = N>> {
     ) -> Result<()> {
         self.store_circuit(stack, register, circuit::Value::Plaintext(circuit::Plaintext::from(literal)))
     }
+
+    /// Checks that the given circuit value matches the layout of the register type. This is a circuit analogue of [`StackTrait::matches_register_type`].
+    fn circuit_matches_register_type(
+        stack: &impl StackTrait<N>,
+        circuit_value: &circuit::Value<A>,
+        register_type: &RegisterType<N>,
+    ) -> Result<()>;
 }
