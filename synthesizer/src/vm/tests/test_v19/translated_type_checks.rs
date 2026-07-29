@@ -240,7 +240,7 @@ fn test_dynamic_id_variant_checks() {
     )
     .unwrap();
 
-    // Initialize the VM at V18 and deploy the three programs.
+    // Initialize the VM at V19 and deploy the three programs.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V19).unwrap(), rng);
     for program in [&issuer, &checker, &top] {
         let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();

@@ -546,9 +546,8 @@ impl<N: Network> RegisterTypes<N> {
                             let struct_name = locator.resource();
                             // Retrieve the struct.
                             let struct_ = external_stack.program().get_struct(struct_name)?;
-                            // Ensure the operand types match the struct. We pass the external stack
-                            // to match pre-V19 behavior.
-                            self.matches_struct(&*external_stack, &*external_stack, instruction.operands(), struct_)?;
+                            // Ensure the operand types match the struct.
+                            self.matches_struct(stack, &*external_stack, instruction.operands(), struct_)?;
                         }
                         CastType::Plaintext(plaintext @ PlaintextType::Array(array_type)) => {
                             // Ensure the type is valid.

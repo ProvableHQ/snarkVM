@@ -24,9 +24,6 @@ mod scalar_outputs;
 // Tests for block-wide synthesis limits.
 mod blockwide_synthesis_limit;
 
-// Tests on stack fetching for external-struct type checks
-mod external_struct_stacks;
-
 use super::*;
 
 use super::test_v14::add_and_test_with_costs;

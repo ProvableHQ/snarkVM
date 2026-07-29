@@ -246,7 +246,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // If the `CONSENSUS_VERSION` is less than `V13`, ensure that
                 //   - the program does not include V13 syntax
                 //   - the program does not use the external struct syntax `some_program.aleo/Struct`
-                // TODO (Antonio) document
                 // If the `CONSENSUS_VERSION` is less than `V19`, ensure that
                 //   - the program does not break the pre-V19 version of `matches_struct` in casts to external structs within finalise-type scopes.
                 // If the `CONSENSUS_VERSION` is less than `V14`, ensure that
@@ -366,8 +365,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V16`"
                     );
                 }
-                // TODO (Antonio) V19
-                if consensus_version < ConsensusVersion::V18 {
+                if consensus_version < ConsensusVersion::V19 {
                     // Legacy check that mirrors pre-V19 checks on cast-to-external-struct
                     // instructions, which performed a single-stack-only call to `matches_struct`.
                     // Since this involves building stack and record-tracking machinery, we gate it
