@@ -60,9 +60,6 @@ impl<N: Network> FinalizeTypes<N> {
                 }
                 // Ensure the type of the register matches the member type.
                 Operand::Register(register) => {
-                    // TODO (Antonio) remove
-                    println!("About to get_type");
-                    println!("   type {:?}", self.get_type(instruction_stack, register)?);
                     // Operate depending on the register type.
                     match self.get_type(instruction_stack, register)? {
                         // Ensure the register type is not a future.
@@ -71,14 +68,8 @@ impl<N: Network> FinalizeTypes<N> {
                         FinalizeType::DynamicFuture => bail!("Struct member cannot be a dynamic future"),
                         // Ensure the plaintext register type matches the member type.
                         FinalizeType::Plaintext(plaintext_type) => {
-                            // TODO (Antonio) remove
-                            println!("About to enter types_equivalent");
-                            println!("   equivalent? {}", types_equivalent(definition_stack, &plaintext_type, definition_stack, member_type)?);
-
                             ensure!(
-                                // TODO (Antonio) re-introduce correct version
-                                // types_equivalent(instruction_stack, &plaintext_type, 
-                                types_equivalent(definition_stack, &plaintext_type, definition_stack, member_type)?,
+                                types_equivalent(instruction_stack, &plaintext_type, definition_stack, member_type)?,
                                 "Struct member '{struct_name}.{member_name}' expects a '{member_type}', but found a '{plaintext_type}' in the operand '{operand}'.",
                             )
                         }

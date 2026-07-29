@@ -74,6 +74,12 @@ pub struct FinalizeTypes<N: Network> {
 }
 
 impl<N: Network> FinalizeTypes<N> {
+    /// Initializes a new empty instance of `FinalizeTypes`.
+    #[inline]
+    pub fn new() -> Self {
+        Self { inputs: IndexMap::new(), destinations: IndexMap::new() }
+    }
+
     /// Initializes a new instance of `FinalizeTypes` for the given constructor.
     /// Checks that the given constructor is well-formed for the given stack.
     #[inline]

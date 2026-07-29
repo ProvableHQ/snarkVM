@@ -15,6 +15,8 @@
 
 use super::*;
 
+// TODO (Antonio) include tests for the constructor and view scopes
+
 // Checks that various instances of casts to external structs or from using external-structs members
 // function as expected. This is tested in both the function (i.e. private, RegisterType) setting as
 // well as the public (i.e. finalise, FinaliseType) one.
