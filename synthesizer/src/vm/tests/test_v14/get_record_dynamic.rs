@@ -331,6 +331,8 @@ fn test_get_record_dynamic() {
 
 // Translates the output of a call to `credits.aleo/transfer_public_to_private` into a dynamic record.
 // This ensures signature verification has not been broken by the new caller metadata.
+// **** Note **** This test must exceptionally be run at ConsensusVersion::V18 now that credits
+//                translation has been gated by that version.
 #[test]
 fn translate_transfer_public_to_private() {
     let credits_program_str = Identifier::<CurrentNetwork>::from_str("credits").unwrap();
@@ -372,7 +374,7 @@ fn translate_transfer_public_to_private() {
 
     let rng = &mut TestRng::default();
 
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap(), rng);
 
     let caller_private_key = sample_genesis_private_key(rng);
     let address = Address::try_from(&caller_private_key).unwrap();
