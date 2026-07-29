@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use console::network::varuna_version_from_consensus;
+
 use super::*;
 
 /// Ensures the given iterator has no duplicate elements, and that the ledger
@@ -47,6 +49,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     pub fn create_cache_key_with_stacks(
         transaction: &Transaction<N>,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+        consensus_version: ConsensusVersion,
     ) -> Result<TransactionCacheKey<N>> {
         // Get the program checksums.
         let program_checksums = transaction
@@ -57,7 +60,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     .ok_or_else(|| anyhow!("Missing stack for transition program '{}'", transition.program_id()))?;
                 let edition = *stack.program_edition();
                 let amendment_count = stack.program_amendment_count();
-                Ok((*stack.program_checksum(), edition, amendment_count))
+                Ok((*stack.program_checksum(), edition, amendment_count, consensus_version))
             })
             .collect::<Result<Vec<_>>>()?;
         // Return the cache key.
@@ -171,10 +174,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Fetch all required stacks for transition checks once, and reuse them for static import checks.
         // This is just a partial performance optimization, dynamic calls will fetch fresh Stacks.
-        let execution_stacks = transaction
-            .transitions()
-            .map(|t| Ok((*t.program_id(), self.process.get_stack(t.program_id())?)))
-            .collect::<Result<IndexMap<_, _>>>()?;
+        // Starting at ConsensusVersion::V18, we also include first-level imports for the record-existance
+        // check.
+        let include_direct_imports = consensus_version >= ConsensusVersion::V18;
+        let execution_stacks = self.process.get_stacks(transaction.transitions(), include_direct_imports)?;
 
         // Perform a check relevant to the V8 migration on the execution.
         // TODO: this can be pruned in the future with an appropriate documentation strategy.
@@ -202,7 +205,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
 
         // Prepare the cache key.
-        let cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
+        let cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)?;
 
         // Check if the transaction exists in the partially-verified cache.
         let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum)
@@ -693,7 +696,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .transitions()
             .map(|t| Ok((*t.program_id(), self.process.get_stack(t.program_id())?)))
             .collect::<Result<IndexMap<_, _>>>()?;
-        let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
+        let current_block_height = self.block_store().current_block_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height).unwrap();
+        let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version)?;
         let cache_key_unchanged = cache_key == new_cache_key;
 
         // If the above checks have passed, against the same cache key, and this
@@ -851,10 +856,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine which consensus version to use.
         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
         // Determine which Varuna version to use.
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
         // Determine the inclusion version to use.
         let is_network_behind_upgrade_height = block_height < N::INCLUSION_UPGRADE_HEIGHT()?;
         let inclusion_version = match (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version)
@@ -926,10 +928,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Determine which Varuna version to use.
         let consensus_version = N::CONSENSUS_VERSION(block_height)?;
-        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            true => VarunaVersion::V1,
-            false => VarunaVersion::V2,
-        };
+        let varuna_version = varuna_version_from_consensus(consensus_version);
         // Determine the inclusion version to use.
         let is_network_behind_upgrade_height = block_height < N::INCLUSION_UPGRADE_HEIGHT()?;
         let inclusion_version = match (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version)
@@ -1018,7 +1017,9 @@ mod tests {
         for transition in transaction.transitions() {
             execution_stacks.insert(*transition.program_id(), vm.process().get_stack(transition.program_id()).unwrap());
         }
-        VM::<N, C>::create_cache_key_with_stacks(transaction, &execution_stacks).unwrap()
+        let current_block_height = vm.block_store().current_block_height();
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height).unwrap();
+        VM::<N, C>::create_cache_key_with_stacks(transaction, &execution_stacks, consensus_version).unwrap()
     }
 
     #[test]
@@ -1097,11 +1098,7 @@ mod tests {
                 Transaction::Execute(_, _, execution, _) => {
                     // Ensure the proof exists.
                     assert!(execution.proof().is_some());
-                    let mut execution_stacks = IndexMap::new();
-                    for transition in execution.transitions() {
-                        execution_stacks
-                            .insert(*transition.program_id(), vm.process().get_stack(transition.program_id()).unwrap());
-                    }
+                    let execution_stacks = vm.process().get_stacks(execution.transitions(), false).unwrap();
                     // Verify the execution.
                     vm.check_execution_internal(&execution, &execution_stacks, false).unwrap();
                     // Ensure the partially_verified_transactions cache has the same size.

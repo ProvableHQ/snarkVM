@@ -44,7 +44,6 @@ use console::{
     },
     types::{Field, Group, U8, U64},
 };
-use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{
     Block,
@@ -86,6 +85,7 @@ use snarkvm_synthesizer_process::{
     deployment_cost,
     execute_compute_cost_in_microcredits,
     execution_cost,
+    transaction_compute_spend_in_microcredits,
 };
 use snarkvm_synthesizer_program::{
     FinalizeCore,
@@ -118,10 +118,9 @@ use std::{
 use rayon::prelude::*;
 
 // The key for the partially-verified transactions cache.
-// The key is a tuple of the transaction ID and a list of `(program checksum, edition, amendment count)` for each transition.
-// Note: Program upgrades and amendments can change verification behavior without changing the transaction ID, so the cache key
-// must include program metadata in addition to the checksum.
-pub type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<([U8<N>; 32], u16, u64)>);
+// The key is a tuple of the transaction ID and a list of `(program checksum, edition, amendment count, consensus version)` for each transition.
+// This is because program upgrades, amendments and consensus version changes can change verification behavior.
+pub type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<([U8<N>; 32], u16, u64, ConsensusVersion)>);
 
 #[derive(Clone)]
 pub struct VM<N: Network, C: ConsensusStorage<N>> {
@@ -326,8 +325,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Match the consensus path's gating: the timestamp is only included from V12 onward.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
-        let block_spend_limit =
-            if let Authority::Quorum(subdag) = block.authority() { subdag.spend_limit(block.height()) } else { None };
+        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
+            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
+        } else {
+            (None, None)
+        };
         FinalizeGlobalState::new::<N>(
             block.round(),
             block.height(),
@@ -336,6 +338,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             block.cumulative_proof_target(),
             block.previous_hash(),
             block_spend_limit,
+            block_synthesis_limit,
         )
     }
 
@@ -609,9 +612,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine if the block timestamp should be included.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
-        // Determine the block spend limit.
-        let block_spend_limit =
-            if let Authority::Quorum(subdag) = block.authority() { subdag.spend_limit(block.height()) } else { None };
+        // Determine the block spend and synthesis limits.
+        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
+            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
+        } else {
+            (None, None)
+        };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
@@ -621,6 +627,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             block.cumulative_proof_target(),
             block.previous_hash(),
             block_spend_limit,
+            block_synthesis_limit,
         )?;
 
         // Pause the atomic writes, so that both the insertion and finalization belong to a single batch.
@@ -739,7 +746,7 @@ pub(crate) mod test_helpers {
 
     /// Samples a new finalize state.
     pub(crate) fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None)
+        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None, None)
     }
 
     pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
@@ -1040,8 +1047,14 @@ function compute:
         let next_timestamp = (next_block_height
             >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
         .then_some(next_block_timestamp);
-        let finalize_state =
-            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32], None);
+        let finalize_state = FinalizeGlobalState::from(
+            next_block_height as u64,
+            next_block_height,
+            next_timestamp,
+            [0u8; 32],
+            None,
+            None,
+        );
 
         // Speculate on the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(

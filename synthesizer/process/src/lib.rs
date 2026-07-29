@@ -280,6 +280,16 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
             )?;
         }
 
+        // Load the verifying key for translating the native credits record.
+        let record_name = Identifier::from_str("credits")?;
+        let verifying_key = N::translation_credits_verifying_key();
+        let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+        self.process.insert_verifying_key(
+            credits.id(),
+            &record_name,
+            VerifyingKey::new(verifying_key.clone(), num_variables),
+        )?;
+
         Ok(())
     }
 }
@@ -402,6 +412,12 @@ impl<N: Network> Process<N> {
             stack.insert_verifying_key(function_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
             lap!(timer, "Load verifying key for {function_name}");
         }
+
+        // Load the verifying key for translating the native credits record.
+        let record_name = Identifier::from_str("credits")?;
+        let verifying_key = N::translation_credits_verifying_key();
+        let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+        stack.insert_verifying_key(&record_name, VerifyingKey::new(verifying_key.clone(), num_variables))?;
         lap!(timer, "Load circuit keys");
 
         // Add the stack to the process.
@@ -515,6 +531,45 @@ impl<N: Network> Process<N> {
         ensure!(stack.program_id() == &program_id, "Expected program '{}', found '{program_id}'", stack.program_id());
         // Return the stack.
         Ok(stack)
+    }
+
+    /// Returns the stacks of the programs corresponding to all given transitions, keyed by
+    /// `ProgramID`. If `include_direct_imports` is true, the stacks of the programs *directly*
+    /// imported by those are also included.
+    #[inline]
+    pub fn get_stacks<'a>(
+        &self,
+        transitions: impl IntoIterator<Item = &'a Transition<N>>,
+        include_direct_imports: bool,
+    ) -> Result<IndexMap<ProgramID<N>, Arc<Stack<N>>>>
+    where
+        N: 'a,
+    {
+        let mut execution_stacks = indexmap::IndexMap::new();
+
+        for transition in transitions.into_iter() {
+            let program_id = transition.program_id();
+
+            // If the program's stack has not been fetched before, fetch it.
+            if !execution_stacks.contains_key(program_id) {
+                execution_stacks.insert(*program_id, self.get_stack(program_id)?);
+            }
+        }
+
+        // Fetch stacks of direct dependencies. Note some of these may have been fetched in the
+        // previous loop.
+        if include_direct_imports {
+            let imported_program_ids: Vec<ProgramID<N>> =
+                execution_stacks.values().flat_map(|stack| stack.program().imports().keys().copied()).collect();
+
+            for imported_program_id in imported_program_ids {
+                if !execution_stacks.contains_key(&imported_program_id) {
+                    execution_stacks.insert(imported_program_id, self.get_stack(imported_program_id)?);
+                }
+            }
+        }
+
+        Ok(execution_stacks)
     }
 
     /// Returns the latest deployed edition for the given program ID, defaulting to 0 if unknown.

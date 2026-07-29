@@ -38,4 +38,10 @@ mod test_v15;
 mod test_v16;
 
 #[cfg(feature = "test")]
+mod test_v17;
+
+#[cfg(feature = "test")]
+mod test_v18;
+
+#[cfg(feature = "test")]
 use super::*;

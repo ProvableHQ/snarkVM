@@ -1,13 +1,13 @@
 errors: []
 outputs:
 - verified: true
-  execute:
-    external_struct_test.aleo/main:
-      outputs: []
   speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
-- child_outputs:
+- execute:
+    external_struct_test.aleo/main:
+      outputs: []
+  child_outputs:
     external_struct.aleo/make_struct:
       outputs:
       - '{"type":"private","id":"950054391566066141831813426021543606350122839180822212323121576500426543341field","value":"ciphertext1qyq9gpt3enh23ry02wmvj4zyk3w3jkk6gga04054jxpq6ctqz8hz6qgh2g64u"}'

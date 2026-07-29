@@ -255,7 +255,7 @@ mod tests {
     fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
         // Use `from` to avoid the BHP hash done by `new`. The seed is irrelevant for these
         // tests (no rand.chacha) and the round/timestamp aren't read either.
-        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None)
+        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None, None)
     }
 
     #[test]
@@ -577,7 +577,7 @@ view reads_ts:
         let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
 
         // Build a state with a non-trivial timestamp, mimicking what a real VM would supply.
-        let state = FinalizeGlobalState::from(1, 1, Some(1234567890), [0u8; 32], None);
+        let state = FinalizeGlobalState::from(1, 1, Some(1234567890), [0u8; 32], None, None);
         let outputs = evaluate_view_with_stack_at_height(
             state,
             &finalize_store,

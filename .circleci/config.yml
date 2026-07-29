@@ -90,7 +90,7 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v4.7.2-rust-1.88.0-snarkvm-cache
+        default: v4.7.3-rust-1.88.0-snarkvm-cache
     steps:
       - run:
           name: Prepare environment variables and install dependencies
@@ -134,8 +134,8 @@ commands:
               clang libclang-dev llvm-dev llvm lld pkg-config xz-utils make libssl-dev
       - restore_cache:
           keys:
-            - v4.7.2-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}-
-            - v4.7.2-rust-1.88.0-deps-
+            - v4.7.3-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}-
+            - v4.7.3-rust-1.88.0-deps-
       - restore_cache:
           keys:
             - << parameters.cache_key >>
@@ -145,11 +145,11 @@ commands:
     parameters:
       cache_key:
         type: string
-        default: v4.7.2-rust-1.88.0-snarkvm-cache
+        default: v4.7.3-rust-1.88.0-snarkvm-cache
     steps:
       - run: set +e
       - save_cache:
-          key: v4.7.2-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}
+          key: v4.7.3-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}
           paths:
             - /home/circleci/.cache/sccache
             - /home/circleci/.cargo/registry
@@ -188,7 +188,7 @@ commands:
           condition: << parameters.use_cache >>
           steps:
             - setup_environment:
-                cache_key: v4.7.2-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
+                cache_key: v4.7.3-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
 
       - run:
           name: Install debian packages (always)
@@ -301,7 +301,7 @@ commands:
 
             WSM="<< parameters.workspace_member >>"
 
-            # Remove any --test target flags,they cause nextest build errors
+            # Remove any --test target flags, they cause nextest build errors
             BUILD_FLAGS_SANITIZED="$(printf '%s' "$BUILD_FLAGS" \
               | sed -E "s/(^|[[:space:]])--test[[:space:]]+'[^']*'([[:space:]]|$)/ /g" \
               | sed -E 's/(^|[[:space:]])--test[[:space:]]+\"[^\"]*\"([[:space:]]|$)/ /g' \
@@ -387,10 +387,12 @@ commands:
             echo "==> test-threads override: ${TEST_THREADS:-<none>}"
             echo "==> jobs: ${JOBS}"
 
+            # Intercept compilation failure to catch sccache exit status 2
+            FAILED=0
             # Use plain cargo test if --no-run was requested
             # Otherwise, run tests with cargo nextest
             if printf '%s' " $BUILD_FLAGS_SANITIZED " | grep -q ' --no-run '; then
-              RUST_MIN_STACK=67108864 cargo test --package="<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED | tee "$OUT"
+              RUST_MIN_STACK=67108864 cargo test --package="<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED 2>&1 | tee "$OUT" || FAILED=1
               : > "$CSV"; : > "$TOP"
             else
               rm -rf target
@@ -401,24 +403,56 @@ commands:
                 --status-level fail --hide-progress-bar \
                 --no-tests=pass \
                 ${FILTER_EXPR:+--filter-expr "$FILTER_EXPR"} \
-                2>&1 | tee "$OUT"
+                2>&1 | tee "$OUT" || FAILED=1
+            fi
 
-              if [ -f "$JUNIT" ]; then
-                awk -v RS='<testcase ' '
-                  NR>1 {
-                    name=""; classname=""; time="";
-                    start=index($0,"classname=\""); if(start>0){ start+=11; rest=substr($0,start); end=index(rest,"\""); if(end>0) classname=substr(rest,1,end-1) }
-                    start=index($0,"name=\"");      if(start>0){ start+=6;  rest=substr($0,start); end=index(rest,"\""); if(end>0) name=substr(rest,1,end-1) }
-                    start=index($0,"time=\"");      if(start>0){ start+=6;  rest=substr($0,start); end=index(rest,"\""); if(end>0) time=substr(rest,1,end-1) }
-                    if(name!="" && time!=""){ full=(classname!=""?classname"::"name:name); printf "%s,%s\n", full, time }
-                  }
-                ' "$JUNIT" > "$CSV" || true
+            # Check if execution failed specifically due to sccache crash
+            if [ "$FAILED" -ne 0 ]; then
+              if grep -q "sccache" "$OUT" && grep -q "exit status: 2" "$OUT"; then
+                echo "⚠️ Detected sccache compilation crash! Wiping local cache and retrying cleanly..."
 
-                sort -t, -k2,2nr "$CSV" | head -n 30 > "$TOP" || true
+                "$CIRCLE_WORKING_DIRECTORY/.bin/sccache" --stop-server || true
+                rm -rf /home/circleci/.cache/sccache
+                rm -rf target
+                rm -rf /home/circleci/.cargo/registry/index/*
+                "$CIRCLE_WORKING_DIRECTORY/.bin/sccache" --zero-stats || true
+
+                echo "🔄 Retrying test execution..."
+                if printf '%s' " $BUILD_FLAGS_SANITIZED " | grep -q ' --no-run '; then
+                  RUST_MIN_STACK=67108864 cargo test --package="<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED 2>&1 | tee "$OUT"
+                  : > "$CSV"; : > "$TOP"
+                else
+                  RUST_MIN_STACK=67108864 \
+                  cargo nextest run \
+                    -p "<< parameters.workspace_member >>" $BUILD_FLAGS_SANITIZED \
+                    --profile ci -j "${JOBS}" "${CFG_ARGS[@]}" \
+                    --status-level fail --hide-progress-bar \
+                    --no-tests=pass \
+                    ${FILTER_EXPR:+--filter-expr "$FILTER_EXPR"} \
+                    2>&1 | tee "$OUT"
+                fi
               else
-                echo "WARN: $JUNIT not found; no timings extracted." >&2
-                : > "$CSV"; : > "$TOP"
+                echo "❌ Build failed due to legitimate code errors or test failure. Exiting."
+                exit 1
               fi
+            fi
+            # =========================================================================
+
+            if [ -f "$JUNIT" ]; then
+              awk -v RS='<testcase ' '
+                NR>1 {
+                  name=""; classname=""; time="";
+                  start=index($0,"classname=\""); if(start>0){ start+=11; rest=substr($0,start); end=index(rest,"\""); if(end>0) classname=substr(rest,1,end-1) }
+                  start=index($0,"name=\"");      if(start>0){ start+=6;  rest=substr($0,start); end=index(rest,"\""); if(end>0) name=substr(rest,1,end-1) }
+                  start=index($0,"time=\"");      if(start>0){ start+=6;  rest=substr($0,start); end=index(rest,"\""); if(end>0) time=substr(rest,1,end-1) }
+                  if(name!="" && time!=""){ full=(classname!=""?classname"::"name:name); printf "%s,%s\n", full, time }
+                }
+              ' "$JUNIT" > "$CSV" || true
+
+              sort -t, -k2,2nr "$CSV" | head -n 30 > "$TOP" || true
+            else
+              echo "WARN: $JUNIT not found; no timings extracted." >&2
+              : > "$CSV"; : > "$TOP"
             fi
 
             if [ "$USE_CACHE" = "true" ]; then
@@ -436,7 +470,7 @@ commands:
           condition: << parameters.use_cache >>
           steps:
             - clear_environment:
-                cache_key: v4.7.2-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
+                cache_key: v4.7.3-rust-1.88.0-<< parameters.workspace_member >><< parameters.cache_key_suffix >>-cache
 
   install_rust_nightly:
     description: "Install Rust nightly toolchain"
@@ -1059,7 +1093,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.2-rust-1.88.0-snarkvm-wasm-cache
+          cache_key: v4.7.3-rust-1.88.0-snarkvm-wasm-cache
       - run:
           no_output_timeout: 30m
           command: |
@@ -1080,7 +1114,7 @@ jobs:
             # Run the tests
             cd wasm && wasm-pack test --node
       - clear_environment:
-          cache_key: v4.7.2-rust-1.88.0-snarkvm-wasm-cache
+          cache_key: v4.7.3-rust-1.88.0-snarkvm-wasm-cache
 
   check-fmt:
     executor: rust-docker
@@ -1089,13 +1123,13 @@ jobs:
       - checkout
       - install_rust_nightly
       - setup_environment:
-          cache_key: v4.7.2-rust-1.88.0-snarkvm-fmt-cache
+          cache_key: v4.7.3-rust-1.88.0-snarkvm-fmt-cache
       - run:
           name: Check style
           no_output_timeout: 35m
           command: cargo +nightly fmt --all -- --check
       - clear_environment:
-          cache_key: v4.7.2-rust-1.88.0-snarkvm-fmt-cache
+          cache_key: v4.7.3-rust-1.88.0-snarkvm-fmt-cache
 
   check-unused-dependencies:
     executor: rust-docker
@@ -1103,7 +1137,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.2-rust-1.88.0-machete-cache
+          cache_key: v4.7.3-rust-1.88.0-machete-cache
       - run:
           name: Check for unused dependencies
           no_output_timeout: 10m
@@ -1114,7 +1148,7 @@ jobs:
             fi
             cargo machete
       - clear_environment:
-          cache_key: v4.7.2-rust-1.88.0-machete-cache
+          cache_key: v4.7.3-rust-1.88.0-machete-cache
 
   check-cargo-audit:
     executor: rust-docker
@@ -1122,7 +1156,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.2-rust-1.88.0-cargo-audit-cache
+          cache_key: v4.7.3-rust-1.88.0-cargo-audit-cache
       - run:
           name:  Check for security vulnerabilities
           no_output_timeout: 10m
@@ -1130,7 +1164,7 @@ jobs:
             cargo install cargo-audit@0.22.0 --locked --force
             cargo audit -D warnings
       - clear_environment:
-          cache_key: v4.7.2-rust-1.88.0-cargo-audit-cache
+          cache_key: v4.7.3-rust-1.88.0-cargo-audit-cache
 
   check-cargo-semver-checks:
     executor: rust-docker
@@ -1139,14 +1173,14 @@ jobs:
       - checkout:
           method: full
       - setup_environment:
-          cache_key: v4.7.2-rust-1.88.0-cargo-semver-checks-cache
+          cache_key: v4.7.3-rust-1.88.0-cargo-semver-checks-cache
       - run:
           name: Check for semver violations
           no_output_timeout: 15m
           command: |
             bash ./.circleci/semver-checks.sh
       - clear_environment:
-          cache_key: v4.7.2-rust-1.88.0-cargo-semver-checks-cache
+          cache_key: v4.7.3-rust-1.88.0-cargo-semver-checks-cache
 
   check-clippy:
     executor: rust-docker
@@ -1154,7 +1188,7 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.2-rust-1.88.0-snarkvm-clippy-cache
+          cache_key: v4.7.3-rust-1.88.0-snarkvm-clippy-cache
       - run:
           name: Check Clippy (default features)
           timeout: 20m
@@ -1166,7 +1200,7 @@ jobs:
           command: |
             cargo clippy --workspace --all-targets --all-features -- -D warnings
       - clear_environment:
-          cache_key: v4.7.2-rust-1.88.0-snarkvm-clippy-cache
+          cache_key: v4.7.3-rust-1.88.0-snarkvm-clippy-cache
 
   check-all-targets:
     executor: rust-docker
@@ -1174,13 +1208,13 @@ jobs:
     steps:
       - checkout
       - setup_environment:
-          cache_key: v4.7.2-rust-1.88.0-snarkvm-all-targets-cache
+          cache_key: v4.7.3-rust-1.88.0-snarkvm-all-targets-cache
       - run:
           name: Check all targets
           no_output_timeout: 35m
           command: cargo check --release --workspace --all-targets
       - clear_environment:
-          cache_key: v4.7.2-rust-1.88.0-snarkvm-all-targets-cache
+          cache_key: v4.7.3-rust-1.88.0-snarkvm-all-targets-cache
 
   verify-windows:
     executor:
@@ -1290,7 +1324,7 @@ workflows:
       or pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "main_net_v48"
+      or pipeline.git.branch == "main_net_v49"
     jobs:
       - check-unused-dependencies # This can be cleaned up before releases
       - check-cargo-semver-checks # This can be cleaned up before releases
@@ -1319,7 +1353,7 @@ workflows:
     when: pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "main_net_v48"
+      or pipeline.git.branch == "main_net_v49"
     jobs:
       - verify-windows: # Windows has never failed us when linux passed
           matrix:

@@ -29,6 +29,7 @@ struct CandidateTransactionDetails<N: Network> {
     tpks: IndexSet<Group<N>>,
     deployment_payers: IndexSet<Address<N>>,
     deployments: IndexSet<ProgramID<N>>,
+    block_combined_density: u64,
 }
 
 impl<N: Network> Default for CandidateTransactionDetails<N> {
@@ -40,13 +41,14 @@ impl<N: Network> Default for CandidateTransactionDetails<N> {
             tpks: IndexSet::new(),
             deployment_payers: IndexSet::new(),
             deployments: IndexSet::new(),
+            block_combined_density: 0,
         }
     }
 }
 
 impl<N: Network> CandidateTransactionDetails<N> {
-    /// Records an accepted transaction: extends uniqueness sets.
-    fn record_accepted_transaction(&mut self, transaction: &Transaction<N>) {
+    /// Records a transaction: extends uniqueness sets and updates counters.
+    fn record_transaction(&mut self, transaction: &Transaction<N>) {
         self.transition_ids.extend(transaction.transition_ids());
         self.input_ids.extend(transaction.input_ids());
         self.output_ids.extend(transaction.output_ids());
@@ -54,6 +56,7 @@ impl<N: Network> CandidateTransactionDetails<N> {
         if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
             fee.payer().map(|payer| self.deployment_payers.insert(payer));
             self.deployments.insert(*deployment.program_id());
+            self.block_combined_density = self.block_combined_density.saturating_add(deployment.combined_density());
         }
     }
 }
@@ -129,8 +132,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let speculation_aborted_transaction_ids = speculation_aborted_transactions.iter().map(|(tx, e)| (tx.id(), e));
         let unordered_aborted_transaction_ids: IndexMap<N::TransactionID, &String> =
             verification_aborted_transaction_ids.chain(speculation_aborted_transaction_ids).collect();
-
-        dev_eprintln!("Unordered aborted transactions: {unordered_aborted_transaction_ids:?}");
 
         // Filter and order the aborted transaction ids according to candidate_transactions
         let aborted_transaction_ids: Vec<_> = candidate_transaction_ids
@@ -336,7 +337,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         {
             let mut rejected_reasons = self.pending_rejected_reasons.write();
             if !rejected_reasons.is_empty() {
-                error!("There are pending rejection reasons, clearing them up: {:?}", &*rejected_reasons);
+                // This may be emitted once during shutdown.
+                warn!("There are pending rejection reasons, clearing them up: {:?}", &*rejected_reasons);
             }
             rejected_reasons.clear();
         }
@@ -437,6 +439,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     &transaction,
                     &candidate_transaction_details,
                     transaction_spend_limit,
+                    None,
                     consensus_version,
                 ) {
                     ShouldAbortResult::Abort(abort_reason) => {
@@ -643,7 +646,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // If the transaction succeeded, store it and continue to the next transaction.
                     Ok(confirmed_transaction) => {
                         // Track the accepted transaction details.
-                        candidate_transaction_details.record_accepted_transaction(confirmed_transaction.transaction());
+                        candidate_transaction_details.record_transaction(confirmed_transaction.transaction());
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
                         // Increment the transaction index counter.
@@ -1021,6 +1024,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         transaction: &Transaction<N>,
         candidate_transaction_details: &CandidateTransactionDetails<N>,
         transaction_spend_limit: u64,
+        block_synthesis_limit: Option<u64>,
         consensus_version: ConsensusVersion,
     ) -> ShouldAbortResult {
         // Ensure that the transaction is not a fee transaction.
@@ -1092,35 +1096,35 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
-        // Before V16, we return without tracking any compute spend.
+        // Before V16, we return without tracking any compute spend and checking deployment limits.
         if consensus_version < ConsensusVersion::V16 {
             ShouldAbortResult::Finalize(0)
-        // If the consensus version is >= V16, ensure that the transaction is not exceeding spend limits.
+        // If the consensus version is >= V16, ensure that the transaction is not exceeding spend or deployment limits.
         } else {
-            // Compute microcredit spend from deployment or execution cost details.
-            let compute_spend = match transaction {
-                Transaction::Deploy(_, _, _, deployment, _) => {
-                    match deployment_cost(self.process(), deployment, consensus_version) {
-                        Ok((_, cost_details)) => deploy_compute_cost_in_microcredits(cost_details, consensus_version),
-                        Err(e) => {
-                            return ShouldAbortResult::Abort(format!("Failed to compute the deployment cost: {e}"));
-                        }
-                    }
-                }
-                Transaction::Execute(_, _, execution, _) => {
-                    match execution_cost(self.process(), execution, consensus_version) {
-                        Ok((_, cost_details)) => execute_compute_cost_in_microcredits(cost_details, consensus_version),
-                        Err(e) => {
-                            return ShouldAbortResult::Abort(format!("Failed to compute the execution cost: {e}"));
-                        }
-                    }
-                }
-                Transaction::Fee(..) => 0, // Fee transactions are already aborted above and don't contribute compute spend.
-            };
+            let compute_spend =
+                match transaction_compute_spend_in_microcredits(self.process(), transaction, consensus_version) {
+                    Ok(compute_spend) => compute_spend,
+                    Err(e) => return ShouldAbortResult::Abort(format!("Failed to compute transaction spend: {e}")),
+                };
 
             if compute_spend > transaction_spend_limit {
                 return ShouldAbortResult::Abort(format!(
                     "Exceeds the transaction spend limit with compute_spend: '{compute_spend}'"
+                ));
+            }
+            // In consensus version >= V18, if we are keeping track of block-wide circuit density and this transaction
+            // contains a deployment, make sure its density does not make the running total exceed the limit.
+            if consensus_version >= ConsensusVersion::V18
+                && let Transaction::Deploy(_, _, _, deployment, _) = transaction
+                && let Some(synthesis_limit) = block_synthesis_limit
+                && candidate_transaction_details.block_combined_density.saturating_add(deployment.combined_density())
+                    > synthesis_limit
+            {
+                return ShouldAbortResult::Abort(format!(
+                    "Deployment density '{}' added to current accumulated block-wide density '{}' exceeds the limit '{}'",
+                    deployment.combined_density(),
+                    candidate_transaction_details.block_combined_density,
+                    synthesis_limit
                 ));
             }
 
@@ -1158,17 +1162,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 transaction,
                 &candidate_transaction_details,
                 transaction_spend_limit,
+                state.block_synthesis_limit(),
                 consensus_version,
             ) {
                 ShouldAbortResult::Abort(abort_reason) => {
                     // Store the aborted transaction.
                     aborted_transactions.push((*transaction, abort_reason));
                 }
-                // We do not further track the compute spend here, to not count
-                // aborted transactions towards the block spend limit.
                 ShouldAbortResult::Finalize(_compute_spend) => {
                     // Track the accepted transaction details.
-                    candidate_transaction_details.record_accepted_transaction(transaction);
+                    candidate_transaction_details.record_transaction(transaction);
                     // Mark the transaction ready to verify.
                     transactions_to_verify.push(transaction);
                 }
@@ -1769,8 +1772,14 @@ finalize transfer_public:
         let next_timestamp = (next_block_height
             >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
         .then_some(next_block_timestamp);
-        let finalize_state =
-            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32], None);
+        let finalize_state = FinalizeGlobalState::from(
+            next_block_height as u64,
+            next_block_height,
+            next_timestamp,
+            [0u8; 32],
+            None,
+            None,
+        );
 
         // Speculate on the candidate ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
