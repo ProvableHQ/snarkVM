@@ -1353,7 +1353,6 @@ workflows:
     when: pipeline.git.branch == "canary"
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
-      or pipeline.git.branch == "main_net_v49"
     jobs:
       - verify-windows: # Windows has never failed us when linux passed
           matrix:
