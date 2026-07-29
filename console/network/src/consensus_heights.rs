@@ -66,8 +66,11 @@ pub enum ConsensusVersion {
     /// V17: NOTE: V17 landed chronologically on mainnet before it landed on testnet.
     ///      Reverts the anchor time to 25.
     V17 = 17,
-    /// V18: Introduces block-wide deployment limits.
+    /// V18: Enables native credits record translation, introduces block-wide deployment limits,
+    ///      and enforces canonical subDAG certificate ordering.
     V18 = 18,
+    /// V19: Adds more accurate type checking for the root call.
+    V19 = 19,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -98,6 +101,7 @@ impl FromBytes for ConsensusVersion {
             16 => Ok(Self::V16),
             17 => Ok(Self::V17),
             18 => Ok(Self::V18),
+            19 => Ok(Self::V19),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -139,6 +143,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V16, u32::MAX),
     (ConsensusVersion::V17, u32::MAX),
     (ConsensusVersion::V18, u32::MAX),
+    (ConsensusVersion::V19, u32::MAX),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -161,6 +166,7 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V16, 19_860_000),
     (ConsensusVersion::V17, 19_860_001),
     (ConsensusVersion::V18, u32::MAX),
+    (ConsensusVersion::V19, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -183,6 +189,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V16, 17_319_000),
     (ConsensusVersion::V17, u32::MAX),
     (ConsensusVersion::V18, u32::MAX),
+    (ConsensusVersion::V19, u32::MAX),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -208,6 +215,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V16, 19),
     (ConsensusVersion::V17, 20),
     (ConsensusVersion::V18, 21),
+    (ConsensusVersion::V19, 22),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]

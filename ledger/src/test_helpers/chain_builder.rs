@@ -488,8 +488,11 @@ impl<N: Network> TestChainBuilder<N> {
 
         trace!("Generated {cert_count} certificates for the next block");
 
-        // Construct the block.
+        // Validate the subDAG before reconstructing the canonical certificate order.
         let subdag = Subdag::from(subdag_map).unwrap();
+        // Reconstruct the canonical certificate order.
+        let ordered_subdag = crate::narwhal::subdag::test_helpers::order_subdag_with_dfs(&subdag);
+        let subdag = Subdag::from(ordered_subdag).unwrap();
 
         Ok((subdag, transmissions, leader_certificate))
     }

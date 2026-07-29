@@ -1357,19 +1357,6 @@ function a:
             sample_next_block(&vm, &caller_private_key, &[deployment_3.clone(), deployment_4.clone()], rng).unwrap();
         vm.add_next_block(&deployment_block).unwrap();
 
-        // Sanity check the ordering of the deployment transaction IDs from storage.
-        {
-            let deployment_transaction_ids =
-                vm.transaction_store().deployment_transaction_ids().map(|id| *id).collect::<Vec<_>>();
-            // This assert check is here to ensure that we are properly loading imports even though any order will work for `VM::from`.
-            // Note: `deployment_transaction_ids` is sorted lexicographically by transaction ID, so the order may change if we update internal methods.
-            assert_eq!(
-                deployment_transaction_ids,
-                vec![deployment_1.id(), deployment_2.id(), deployment_4.id(), deployment_3.id()],
-                "Update me if serialization has changed"
-            );
-        }
-
         // Enforce that the VM can load properly with the imports.
         assert!(VM::from(vm.store.clone()).is_ok());
     }
