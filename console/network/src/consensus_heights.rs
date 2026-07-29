@@ -215,7 +215,8 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V16, 19),
     (ConsensusVersion::V17, 20),
     (ConsensusVersion::V18, 21),
-    (ConsensusVersion::V19, 22),
+    // TODO (Antonio) 22
+    (ConsensusVersion::V19, 2002),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
