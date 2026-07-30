@@ -320,8 +320,9 @@ impl Environment for Circuit {
         panic!("{}", &error)
     }
 
-    /// Returns the R1CS circuit, resetting the circuit.
-    fn inject_r1cs(r1cs: R1CS<Self::BaseField>) {
+    /// Injects the ejected R1CS circuit and restores the preserved environment state.
+    fn inject_r1cs(ejected: EjectedR1cs<Self::BaseField>) {
+        let EjectedR1cs { r1cs, variable_limit, constraint_limit, non_zero_limit, in_witness } = ejected;
         CIRCUIT.with(|circuit| {
             // Ensure the circuit is empty before injecting.
             assert_eq!(0, circuit.borrow().num_constants());
@@ -337,19 +338,31 @@ impl Environment for Circuit {
             assert_eq!(0, r1cs.num_private());
             assert_eq!(1, r1cs.num_variables());
             assert_eq!(0, r1cs.num_constraints());
-        })
+        });
+        // Restore the preserved limits.
+        Self::set_variable_limit(variable_limit);
+        Self::set_constraint_limit(constraint_limit);
+        Self::set_non_zero_limit(non_zero_limit);
+        // Restore the preserved witness mode.
+        IN_WITNESS.with(|in_witness_cell| in_witness_cell.replace(in_witness));
     }
 
-    /// Returns the R1CS circuit, resetting the circuit.
-    fn eject_r1cs_and_reset() -> R1CS<Self::BaseField> {
+    /// Returns the R1CS circuit and preserved environment state, resetting the circuit.
+    fn eject_r1cs_and_reset() -> EjectedR1cs<Self::BaseField> {
         CIRCUIT.with(|circuit| {
-            // Reset the witness mode.
-            IN_WITNESS.with(|in_witness| in_witness.replace(false));
-            // Reset the variable limit.
+            // Preserve the witness mode.
+            let in_witness = IN_WITNESS.with(|in_witness| {
+                let value = in_witness.get();
+                in_witness.replace(false);
+                value
+            });
+            // Preserve the limits.
+            let variable_limit = Self::get_variable_limit();
+            let constraint_limit = Self::get_constraint_limit();
+            let non_zero_limit = Self::get_non_zero_limit();
+            // Reset the limits for the temporary environment.
             Self::set_variable_limit(None);
-            // Reset the constraint limit.
             Self::set_constraint_limit(None);
-            // Reset the density limit.
             Self::set_non_zero_limit(None);
             // Eject the R1CS instance.
             let r1cs = circuit.replace(R1CS::<<Self as Environment>::BaseField>::new());
@@ -359,8 +372,8 @@ impl Environment for Circuit {
             assert_eq!(0, circuit.borrow().num_private());
             assert_eq!(1, circuit.borrow().num_variables());
             assert_eq!(0, circuit.borrow().num_constraints());
-            // Return the R1CS instance.
-            r1cs
+            // Return the ejected environment state.
+            EjectedR1cs::new(r1cs, variable_limit, constraint_limit, non_zero_limit, in_witness)
         })
     }
 
@@ -463,5 +476,42 @@ mod tests {
             assert_eq!(0, Circuit::num_private_in_scope());
             assert_eq!(0, Circuit::num_constraints_in_scope());
         })
+    }
+
+    #[test]
+    fn test_eject_inject_preserves_limits() {
+        use std::panic::{self, AssertUnwindSafe};
+
+        /// Compute 2^EXPONENT - 1, in a purposefully constraint-inefficient manner for testing.
+        fn add_constraints<E: Environment>(exponent: u64) {
+            let one = snarkvm_console_types::Field::<<E as Environment>::Network>::one();
+            let two = one + one;
+
+            let mut candidate = Field::<E>::new(Mode::Public, one);
+            let mut accumulator = Field::<E>::new(Mode::Private, two);
+            for _ in 0..exponent {
+                candidate += &accumulator;
+                accumulator *= Field::<E>::new(Mode::Private, two);
+            }
+        }
+
+        Circuit::reset();
+        Circuit::set_constraint_limit(Some(20));
+
+        add_constraints::<Circuit>(10);
+        assert_eq!(10, Circuit::num_constraints());
+
+        let ejected = Circuit::eject_r1cs_and_reset();
+        assert_eq!(None, Circuit::get_constraint_limit());
+        assert_eq!(Some(20), ejected.constraint_limit());
+
+        add_constraints::<Circuit>(5);
+
+        Circuit::inject_r1cs(ejected);
+        assert_eq!(Some(20), Circuit::get_constraint_limit());
+        assert_eq!(10, Circuit::num_constraints());
+
+        let result = panic::catch_unwind(AssertUnwindSafe(|| add_constraints::<Circuit>(11)));
+        assert!(result.is_err());
     }
 }

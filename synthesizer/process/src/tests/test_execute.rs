@@ -13,7 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, InclusionVersion, Process, Trace, execution_cost, execution_cost_for_authorization};
+use crate::{
+    Assignments,
+    CallStack,
+    InclusionVersion,
+    Process,
+    Request,
+    Stack,
+    Trace,
+    execution_cost,
+    execution_cost_for_authorization,
+};
 use circuit::{Aleo, network::AleoV0};
 use console::{
     account::{Address, PrivateKey, ViewKey},
@@ -2984,4 +2994,237 @@ fn test_program_exceeding_transaction_spend_limit() {
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Attempt to verify the deployment, which should fail.
     assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_ok());
+}
+
+/// Returns the number of constraints synthesized in `CheckDeployment` mode.
+fn check_deployment_num_constraints(
+    stack: &Stack<CurrentNetwork>,
+    private_key: &PrivateKey<CurrentNetwork>,
+    function_name: Identifier<CurrentNetwork>,
+    inputs: &[Value<CurrentNetwork>],
+    constraint_limit: Option<u64>,
+    variable_limit: Option<u64>,
+    non_zero_limit: Option<(u64, u64, u64)>,
+    rng: &mut TestRng,
+) -> Result<u64> {
+    use snarkvm_synthesizer_program::StackTrait;
+    use std::panic::{self, AssertUnwindSafe};
+
+    let program = stack.program();
+    let program_id = *program.id();
+    let input_types = program.get_function(&function_name)?.input_types();
+    let program_checksum = match stack.program().contains_constructor() {
+        true => Some(stack.program_checksum_as_field()?),
+        false => None,
+    };
+    let request = Request::sign(
+        private_key,
+        program_id,
+        function_name,
+        inputs.iter(),
+        &input_types,
+        None,
+        true,
+        program_checksum,
+        false,
+        rng,
+    )?;
+    let assignments = Assignments::<CurrentNetwork>::default();
+    let call_stack = CallStack::CheckDeployment(
+        vec![request],
+        *private_key,
+        assignments.clone(),
+        constraint_limit,
+        variable_limit,
+        non_zero_limit,
+    );
+
+    match panic::catch_unwind(AssertUnwindSafe(|| {
+        stack.execute_function::<CurrentAleo, _>(call_stack, None, None, rng)
+    })) {
+        Ok(Ok(_)) => Ok(assignments.read().last().unwrap().0.num_constraints()),
+        Ok(Err(err)) => bail!("{err}"),
+        Err(payload) => {
+            if let Some(message) = payload.downcast_ref::<&str>() {
+                bail!("{message}");
+            } else if let Some(message) = payload.downcast_ref::<String>() {
+                bail!("{message}");
+            }
+            bail!("Synthesis halted");
+        }
+    }
+}
+
+/// Builds a suffix of repeated field additions for synthesis limit tests.
+fn field_add_suffix(num_adds: usize) -> String {
+    let mut suffix = String::from("add r1 r1 into r2;\n");
+    for i in 2..=num_adds {
+        suffix.push_str(&format!("add r{i} r{i} into r{};\n", i + 1));
+    }
+    suffix.push_str(&format!("output r{} as field.private;", num_adds + 1));
+    suffix
+}
+
+/// Initializes a process containing the given programs.
+fn process_with_programs(programs: &[&str]) -> Process<CurrentNetwork> {
+    let process = Process::<CurrentNetwork>::load().unwrap();
+    for source in programs {
+        let (_, program) = Program::<CurrentNetwork>::parse(source).unwrap();
+        process.lock().add_program(&program).unwrap();
+    }
+    process
+}
+
+#[test]
+fn test_check_deployment_static_call_enforces_constraint_limit_after_call() {
+    let rng = &mut TestRng::default();
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let input = Value::<CurrentNetwork>::Plaintext(Plaintext::from_str("3field").unwrap());
+
+    let callee = r"
+program callee_limits.aleo;
+function noop:
+    input r0 as field.private;
+    output r0 as field.private;";
+
+    let caller_prefix = r"
+import callee_limits.aleo;
+program caller_prefix.aleo;
+function compute:
+    input r0 as field.private;
+    call callee_limits.aleo/noop r0 into r1;
+    output r1 as field.private;";
+
+    let caller_full = format!(
+        r"
+import callee_limits.aleo;
+program caller_full.aleo;
+function compute:
+    input r0 as field.private;
+    call callee_limits.aleo/noop r0 into r1;
+    {}",
+        field_add_suffix(32),
+    );
+
+    let process = process_with_programs(&[callee, caller_prefix, &caller_full]);
+    let prefix_stack = process.get_stack(ProgramID::from_str("caller_prefix.aleo").unwrap()).unwrap();
+    let full_stack = process.get_stack(ProgramID::from_str("caller_full.aleo").unwrap()).unwrap();
+    let function_name = Identifier::from_str("compute").unwrap();
+
+    let prefix_constraints = check_deployment_num_constraints(
+        &prefix_stack,
+        &private_key,
+        function_name,
+        &[input.clone()],
+        None,
+        None,
+        None,
+        rng,
+    )
+    .unwrap();
+    let full_constraints = check_deployment_num_constraints(
+        &full_stack,
+        &private_key,
+        function_name,
+        &[input.clone()],
+        None,
+        None,
+        None,
+        rng,
+    )
+    .unwrap();
+    assert!(prefix_constraints < full_constraints);
+
+    let constraint_limit = prefix_constraints + (full_constraints - prefix_constraints) / 2;
+    let result = check_deployment_num_constraints(
+        &full_stack,
+        &private_key,
+        function_name,
+        &[input],
+        Some(constraint_limit),
+        None,
+        None,
+        rng,
+    );
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("Surpassed the constraint limit"));
+}
+
+#[test]
+fn test_check_deployment_dynamic_call_enforces_constraint_limit_after_call() {
+    let rng = &mut TestRng::default();
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let input = Value::<CurrentNetwork>::Plaintext(Plaintext::from_str("3field").unwrap());
+
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let callee_prog_field = Identifier::<CurrentNetwork>::from_str("dyn_callee").unwrap().to_field().unwrap();
+    let callee_fn_field = Identifier::<CurrentNetwork>::from_str("noop").unwrap().to_field().unwrap();
+
+    let callee = r"
+program dyn_callee.aleo;
+function noop:
+    input r0 as field.private;
+    output r0 as field.private;";
+
+    let caller_prefix = format!(
+        r"
+program dyn_caller_prefix.aleo;
+function compute:
+    input r0 as field.private;
+    call.dynamic {callee_prog_field} {network_field} {callee_fn_field} with r0 (as field.private) into r1 (as field.private);
+    output r1 as field.private;"
+    );
+
+    let caller_full = format!(
+        r"
+program dyn_caller_full.aleo;
+function compute:
+    input r0 as field.private;
+    call.dynamic {callee_prog_field} {network_field} {callee_fn_field} with r0 (as field.private) into r1 (as field.private);
+    {}",
+        field_add_suffix(32),
+    );
+
+    let process = process_with_programs(&[callee, &caller_prefix, &caller_full]);
+    let prefix_stack = process.get_stack(ProgramID::from_str("dyn_caller_prefix.aleo").unwrap()).unwrap();
+    let full_stack = process.get_stack(ProgramID::from_str("dyn_caller_full.aleo").unwrap()).unwrap();
+    let function_name = Identifier::from_str("compute").unwrap();
+
+    let prefix_constraints = check_deployment_num_constraints(
+        &prefix_stack,
+        &private_key,
+        function_name,
+        &[input.clone()],
+        None,
+        None,
+        None,
+        rng,
+    )
+    .unwrap();
+    let full_constraints = check_deployment_num_constraints(
+        &full_stack,
+        &private_key,
+        function_name,
+        &[input.clone()],
+        None,
+        None,
+        None,
+        rng,
+    )
+    .unwrap();
+    assert!(prefix_constraints < full_constraints);
+
+    let constraint_limit = prefix_constraints + (full_constraints - prefix_constraints) / 2;
+    let result = check_deployment_num_constraints(
+        &full_stack,
+        &private_key,
+        function_name,
+        &[input],
+        Some(constraint_limit),
+        None,
+        None,
+        rng,
+    );
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("Surpassed the constraint limit"));
 }
