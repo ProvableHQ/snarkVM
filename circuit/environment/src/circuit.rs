@@ -505,13 +505,18 @@ mod tests {
         assert_eq!(None, Circuit::get_constraint_limit());
         assert_eq!(Some(20), ejected.constraint_limit());
 
-        add_constraints::<Circuit>(5);
+        // Without limits, the temporary environment can synthesize beyond the preserved limit.
+        add_constraints::<Circuit>(25);
+        assert_eq!(25, Circuit::num_constraints());
+
+        // Nested execution resets the circuit before returning control to the caller.
+        Circuit::reset();
 
         Circuit::inject_r1cs(ejected);
         assert_eq!(Some(20), Circuit::get_constraint_limit());
         assert_eq!(10, Circuit::num_constraints());
 
-        let result = panic::catch_unwind(AssertUnwindSafe(|| add_constraints::<Circuit>(11)));
+        let result = panic::catch_unwind(AssertUnwindSafe(|| add_constraints::<Circuit>(12)));
         assert!(result.is_err());
     }
 }
