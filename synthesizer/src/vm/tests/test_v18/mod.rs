@@ -21,8 +21,13 @@ mod record_existence_stacks;
 // time.
 mod scalar_outputs;
 
+// Tests for block-wide synthesis limits.
+mod blockwide_synthesis_limit;
+
 use super::*;
 
 use super::test_v14::add_and_test_with_costs;
 use crate::vm::test_helpers::*;
 use console::account::ViewKey;
+use snarkvm_ledger_narwhal_subdag::test_helpers::subdag_with_cert_count;
+use snarkvm_synthesizer_snark::VerifyingKey;
