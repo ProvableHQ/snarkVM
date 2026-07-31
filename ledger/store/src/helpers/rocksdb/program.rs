@@ -16,7 +16,7 @@
 #![allow(clippy::type_complexity)]
 
 #[cfg(feature = "history")]
-use crate::program::HeightBytes;
+use crate::program::{HeightBytes, migrate_legacy_mapping_updates};
 use crate::{
     CommitteeStorage,
     CommitteeStore,
@@ -52,7 +52,7 @@ pub struct FinalizeDB<N: Network> {
     /// The historical mapping value map (keyed by big-endian block height).
     #[cfg(feature = "history")]
     mapping_update_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>, HeightBytes), Value<N>>,
-    /// The legacy heights index; present only for keys written before the BE schema change.
+    /// The legacy heights index, retained only to migrate pre-schema-change entries.
     #[cfg(feature = "history")]
     mapping_update_heights_map: DataMap<(ProgramID<N>, Identifier<N>, Plaintext<N>), Vec<u32>>,
     /// The current block height.
@@ -89,8 +89,8 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
         // Returns 0 for a fresh database that has no committee data yet.
         #[cfg(feature = "history")]
         let initial_height = committee_store.current_height().unwrap_or(0);
-        // Return the finalize storage.
-        Ok(Self {
+        // Initialize the finalize storage.
+        let storage = Self {
             committee_store,
             program_id_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::ProgramID))?,
             key_value_map: rocksdb::RocksDB::open_nested_map(N::ID, storage.clone(), MapID::Program(ProgramMap::KeyValueID))?,
@@ -104,7 +104,11 @@ impl<N: Network> FinalizeStorage<N> for FinalizeDB<N> {
             #[cfg(feature = "history-staking-rewards")]
             staking_rewards_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Program(ProgramMap::StakingRewards))?,
             storage_mode: storage,
-        })
+        };
+        // Rewrite legacy history entries before accepting requests.
+        #[cfg(feature = "history")]
+        migrate_legacy_mapping_updates(&storage)?;
+        Ok(storage)
     }
 
     /// Returns the committee store.
