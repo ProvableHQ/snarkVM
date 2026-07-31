@@ -97,15 +97,24 @@ pub(crate) fn migrate_legacy_mapping_updates<N: Network, P: FinalizeStorage<N>>(
             .collect::<Result<Vec<_>>>()?;
 
         atomic_batch_scope!(storage, {
-            for ((program_id, mapping_name, mapping_key), heights, legacy_keys, values) in prepared {
-                for ((height, legacy_key), value) in heights.into_iter().zip_eq(legacy_keys).zip_eq(values) {
+            // Remove every LE source first, then insert every BE destination. Atomic batches keep the
+            // last op per key, so this ordering preserves values when LE and BE encodings collide
+            // (identical bytes, or swapped pairs such as heights 256 and 65_536).
+            for ((program_id, mapping_name, mapping_key), heights, legacy_keys, values) in &prepared {
+                for ((height, legacy_key), value) in heights.iter().zip_eq(legacy_keys).zip_eq(values) {
+                    ensure!(value.is_some(), "Missing legacy mapping update at height {height}");
+                    storage.mapping_update_map().remove(legacy_key)?;
+                }
+                storage.mapping_update_heights_map().remove(&(*program_id, *mapping_name, mapping_key.clone()))?;
+            }
+            for ((program_id, mapping_name, mapping_key), heights, _legacy_keys, values) in prepared {
+                for (height, value) in heights.into_iter().zip_eq(values) {
+                    // Checked above while preparing the removals.
                     let value = value.ok_or_else(|| anyhow!("Missing legacy mapping update at height {height}"))?;
                     storage
                         .mapping_update_map()
                         .insert((program_id, mapping_name, mapping_key.clone(), height.to_be_bytes()), value)?;
-                    storage.mapping_update_map().remove(&legacy_key)?;
                 }
-                storage.mapping_update_heights_map().remove(&(program_id, mapping_name, mapping_key))?;
             }
             Ok(())
         })?;
@@ -2021,6 +2030,70 @@ mod tests {
         let heights =
             finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
         assert_eq!(&*heights, &[5, 10]);
+    }
+
+    /// Verifies migration preserves values when LE and BE height encodings collide.
+    #[test]
+    #[cfg(feature = "history")]
+    fn test_migrate_legacy_mapping_updates_endian_collisions() {
+        use std::sync::atomic::Ordering;
+
+        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let key = Plaintext::from_str("1field").unwrap();
+
+        // Height whose LE and BE encodings are identical.
+        let self_collision = 65_792u32;
+        assert_eq!(self_collision.to_le_bytes(), self_collision.to_be_bytes());
+        // Heights whose LE/BE encodings swap with each other.
+        let swap_a = 256u32;
+        let swap_b = 65_536u32;
+        assert_eq!(swap_a.to_le_bytes(), swap_b.to_be_bytes());
+        assert_eq!(swap_b.to_le_bytes(), swap_a.to_be_bytes());
+
+        let program_memory = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
+        let finalize_store = FinalizeStore::from(program_memory).unwrap();
+        finalize_store.initialize_mapping(program_id, mapping_name).unwrap();
+
+        let value_self = Value::from_str("1u64").unwrap();
+        let value_a = Value::from_str("2u64").unwrap();
+        let value_b = Value::from_str("3u64").unwrap();
+        for (height, value) in
+            [(self_collision, value_self.clone()), (swap_a, value_a.clone()), (swap_b, value_b.clone())]
+        {
+            finalize_store
+                .storage
+                .mapping_update_map()
+                .insert((program_id, mapping_name, key.clone(), height.to_le_bytes()), value)
+                .unwrap();
+        }
+        finalize_store
+            .storage
+            .mapping_update_heights_map()
+            .insert((program_id, mapping_name, key.clone()), vec![self_collision, swap_a, swap_b])
+            .unwrap();
+        finalize_store.storage.current_block_height().store(self_collision, Ordering::SeqCst);
+
+        migrate_legacy_mapping_updates(&finalize_store.storage).unwrap();
+
+        assert_eq!(
+            *finalize_store
+                .get_historical_mapping_value(program_id, mapping_name, key.clone(), self_collision)
+                .unwrap()
+                .unwrap(),
+            value_self
+        );
+        assert_eq!(
+            *finalize_store
+                .get_historical_mapping_value(program_id, mapping_name, key.clone(), swap_a)
+                .unwrap()
+                .unwrap(),
+            value_a
+        );
+        assert_eq!(
+            *finalize_store.get_historical_mapping_value(program_id, mapping_name, key, swap_b).unwrap().unwrap(),
+            value_b
+        );
     }
 
     /// Measures legacy history migration throughput.
