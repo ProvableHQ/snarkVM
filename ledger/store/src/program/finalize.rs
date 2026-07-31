@@ -82,17 +82,17 @@ pub(crate) fn migrate_legacy_mapping_updates<N: Network, P: FinalizeStorage<N>>(
 
         atomic_batch_scope!(storage, {
             for ((program_id, mapping_name, mapping_key), heights) in legacy_entries {
-                for height in heights {
-                    let legacy_key = (program_id, mapping_name, mapping_key.clone(), height.to_le_bytes());
-                    let value = storage
-                        .mapping_update_map()
-                        .get_confirmed(&legacy_key)?
-                        .ok_or_else(|| anyhow!("Missing legacy mapping update at height {height}"))?;
+                let legacy_keys = heights
+                    .iter()
+                    .map(|height| (program_id, mapping_name, mapping_key.clone(), height.to_le_bytes()))
+                    .collect::<Vec<_>>();
+                let values = storage.mapping_update_map().get_many_confirmed(&legacy_keys)?;
 
-                    storage.mapping_update_map().insert(
-                        (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes()),
-                        value.into_owned(),
-                    )?;
+                for ((height, legacy_key), value) in heights.into_iter().zip_eq(legacy_keys).zip_eq(values) {
+                    let value = value.ok_or_else(|| anyhow!("Missing legacy mapping update at height {height}"))?;
+                    storage
+                        .mapping_update_map()
+                        .insert((program_id, mapping_name, mapping_key.clone(), height.to_be_bytes()), value)?;
                     storage.mapping_update_map().remove(&legacy_key)?;
                 }
                 storage.mapping_update_heights_map().remove(&(program_id, mapping_name, mapping_key))?;
@@ -2023,6 +2023,11 @@ mod tests {
             .unwrap_or_else(|_| "100000".to_string())
             .parse()
             .expect("Failed to parse MIGRATION_NUM_ITEMS as usize");
+        // Default to one historical update per legacy mapping key.
+        let num_heights = std::env::var("MIGRATION_HEIGHTS_PER_KEY")
+            .unwrap_or_else(|_| "1".to_string())
+            .parse()
+            .expect("Failed to parse MIGRATION_HEIGHTS_PER_KEY as u32");
 
         #[cfg(not(feature = "rocks"))]
         let storage = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
@@ -2038,19 +2043,23 @@ mod tests {
         let value = Value::from_str("5u64").unwrap();
         for index in 0..num_items {
             let key = Plaintext::from_str(&format!("{index}field")).unwrap();
-            storage
-                .mapping_update_map()
-                .insert((program_id, mapping_name, key.clone(), 5u32.to_le_bytes()), value.clone())
-                .unwrap();
-            storage.mapping_update_heights_map().insert((program_id, mapping_name, key), vec![5]).unwrap();
+            let heights = (0u32..num_heights).map(|offset| offset + 5).collect::<Vec<_>>();
+            for height in &heights {
+                storage
+                    .mapping_update_map()
+                    .insert((program_id, mapping_name, key.clone(), height.to_le_bytes()), value.clone())
+                    .unwrap();
+            }
+            storage.mapping_update_heights_map().insert((program_id, mapping_name, key), heights).unwrap();
         }
 
         let timer = std::time::Instant::now();
         migrate_legacy_mapping_updates(&storage).unwrap();
         let elapsed = timer.elapsed();
+        let num_updates = num_items * usize::try_from(num_heights).expect("u32 always fits in usize");
         println!(
-            "migrate_legacy_mapping_updates: {num_items} entries in {elapsed:?} ({:.0} entries/s)",
-            num_items as f64 / elapsed.as_secs_f64()
+            "migrate_legacy_mapping_updates: {num_items} keys / {num_updates} updates in {elapsed:?} ({:.0} updates/s)",
+            num_updates as f64 / elapsed.as_secs_f64()
         );
     }
 

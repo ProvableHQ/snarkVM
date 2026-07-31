@@ -370,6 +370,22 @@ impl<
     }
 
     ///
+    /// Returns the values for the given keys from the map, in the same order as the keys.
+    ///
+    fn get_many_confirmed(&'a self, keys: &[K]) -> Result<Vec<Option<V>>> {
+        let raw_keys = keys.iter().map(|key| self.create_prefixed_key(key)).collect::<Result<Vec<_>>>()?;
+
+        self.database
+            .multi_get_opt(raw_keys, &self.database.default_readopts)
+            .into_iter()
+            .map(|value| match value? {
+                Some(bytes) => Ok(Some(unchecked_deserialize(&bytes)?)),
+                None => Ok(None),
+            })
+            .collect()
+    }
+
+    ///
     /// Returns the current value for the given key if it is scheduled
     /// to be inserted as part of an atomic batch.
     ///
@@ -866,6 +882,19 @@ mod tests {
             .expect("Failed to open data map");
 
         crate::helpers::test_helpers::map::check_remove_and_get_speculative(map);
+    }
+
+    #[test]
+    #[traced_test]
+    fn test_get_many_confirmed() {
+        // Initialize a map.
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
+        map.insert(1, "one".to_string()).unwrap();
+        map.insert(2, "two".to_string()).unwrap();
+
+        let values = map.get_many_confirmed(&[2, 3, 1]).unwrap();
+        assert_eq!(values, vec![Some("two".to_string()), None, Some("one".to_string())]);
     }
 
     #[test]
