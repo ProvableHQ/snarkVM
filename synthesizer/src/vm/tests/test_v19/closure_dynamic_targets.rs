@@ -61,10 +61,8 @@ fn test_conditional_dynamic_call_target_deployment() {
 
         match deployment_attempt {
             Ok(deployment) => {
-                // TODO (Antonio) remove
                 println!(" - Deployment computation {i} succeeded with ID {}", deployment.to_deployment_id().unwrap());
 
-                // TODO (Antonio) V19
                 // Ensure that different runs of verify_deployment agree on the result - even if it is a rejection.
                 let verification_successful =
                     process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V19, &deployment, rng).is_ok();
