@@ -61,7 +61,7 @@ pub(crate) type HeightBytes = [u8; 4];
 
 /// The number of legacy mapping keys migrated in a single atomic batch.
 #[cfg(feature = "history")]
-const MIGRATION_BATCH_SIZE: usize = 128;
+const MIGRATION_BATCH_SIZE: usize = 1024;
 
 /// Migrates legacy little-endian historical mapping updates to big-endian keys.
 ///
@@ -2011,6 +2011,47 @@ mod tests {
         let heights =
             finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
         assert_eq!(&*heights, &[5, 10]);
+    }
+
+    /// Measures legacy history migration throughput.
+    #[test]
+    #[ignore]
+    #[cfg(feature = "history")]
+    fn test_migrate_legacy_mapping_updates_timings() {
+        // Default to 100,000 entries if the environment variable is absent or invalid.
+        let num_items = std::env::var("MIGRATION_NUM_ITEMS")
+            .unwrap_or_else(|_| "100000".to_string())
+            .parse()
+            .expect("Failed to parse MIGRATION_NUM_ITEMS as usize");
+
+        #[cfg(not(feature = "rocks"))]
+        let storage = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
+
+        #[cfg(feature = "rocks")]
+        let storage = {
+            let temp_dir = std::sync::Arc::new(tempfile::tempdir().expect("Failed to open temporary directory"));
+            crate::helpers::rocksdb::FinalizeDB::open(temp_dir).unwrap()
+        };
+
+        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let value = Value::from_str("5u64").unwrap();
+        for index in 0..num_items {
+            let key = Plaintext::from_str(&format!("{index}field")).unwrap();
+            storage
+                .mapping_update_map()
+                .insert((program_id, mapping_name, key.clone(), 5u32.to_le_bytes()), value.clone())
+                .unwrap();
+            storage.mapping_update_heights_map().insert((program_id, mapping_name, key), vec![5]).unwrap();
+        }
+
+        let timer = std::time::Instant::now();
+        migrate_legacy_mapping_updates(&storage).unwrap();
+        let elapsed = timer.elapsed();
+        println!(
+            "migrate_legacy_mapping_updates: {num_items} entries in {elapsed:?} ({:.0} entries/s)",
+            num_items as f64 / elapsed.as_secs_f64()
+        );
     }
 
     /// Verifies all legacy entries are migrated when they span multiple batches.
