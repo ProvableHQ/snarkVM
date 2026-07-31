@@ -36,6 +36,8 @@ use indexmap::IndexSet;
 use locktick::parking_lot::RwLock;
 #[cfg(all(feature = "slipstream-plugins", not(feature = "locktick")))]
 use parking_lot::RwLock;
+#[cfg(all(feature = "history", not(feature = "serial")))]
+use rayon::prelude::*;
 #[cfg(feature = "slipstream-plugins")]
 use snarkvm_slipstream_plugin_manager::{BroadcastEvent, BroadcastEventKind, SlipstreamPluginManager};
 #[cfg(feature = "slipstream-plugins")]
@@ -66,6 +68,7 @@ const MIGRATION_BATCH_SIZE: usize = 2048;
 /// Migrates legacy little-endian historical mapping updates to big-endian keys.
 ///
 /// Each batch is migrated atomically so an interrupted migration can safely resume at startup.
+/// Reads are parallelized across keys; writes remain serial inside the atomic batch.
 #[cfg(feature = "history")]
 pub(crate) fn migrate_legacy_mapping_updates<N: Network, P: FinalizeStorage<N>>(storage: &P) -> Result<()> {
     loop {
@@ -80,14 +83,21 @@ pub(crate) fn migrate_legacy_mapping_updates<N: Network, P: FinalizeStorage<N>>(
             return Ok(());
         }
 
-        atomic_batch_scope!(storage, {
-            for ((program_id, mapping_name, mapping_key), heights) in legacy_entries {
+        // Parallelize confirmed reads across keys. Writes stay serial below so they do not contend
+        // on the atomic-batch mutex and so a failed read never races with abort_atomic.
+        let prepared = cfg_iter!(legacy_entries)
+            .map(|((program_id, mapping_name, mapping_key), heights)| {
                 let legacy_keys = heights
                     .iter()
-                    .map(|height| (program_id, mapping_name, mapping_key.clone(), height.to_le_bytes()))
+                    .map(|height| (*program_id, *mapping_name, mapping_key.clone(), height.to_le_bytes()))
                     .collect::<Vec<_>>();
                 let values = storage.mapping_update_map().get_many_confirmed(&legacy_keys)?;
+                Ok(((*program_id, *mapping_name, mapping_key.clone()), heights.clone(), legacy_keys, values))
+            })
+            .collect::<Result<Vec<_>>>()?;
 
+        atomic_batch_scope!(storage, {
+            for ((program_id, mapping_name, mapping_key), heights, legacy_keys, values) in prepared {
                 for ((height, legacy_key), value) in heights.into_iter().zip_eq(legacy_keys).zip_eq(values) {
                     let value = value.ok_or_else(|| anyhow!("Missing legacy mapping update at height {height}"))?;
                     storage
