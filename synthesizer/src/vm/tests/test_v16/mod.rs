@@ -27,8 +27,6 @@ pub(crate) mod construct_authorization;
 
 use super::*;
 
-use crate::vm::test_helpers::*;
-
 use console::{account::Address, network::ConsensusVersion, prelude::FromStr, program::Value};
 
 use snarkvm_ledger_block::{Solutions, Transaction};
