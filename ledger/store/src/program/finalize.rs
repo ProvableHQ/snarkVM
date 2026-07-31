@@ -59,37 +59,47 @@ struct SerializedMappingEntries {
 #[cfg(feature = "history")]
 pub(crate) type HeightBytes = [u8; 4];
 
+/// The number of legacy mapping keys migrated in a single atomic batch.
+#[cfg(feature = "history")]
+const MIGRATION_BATCH_SIZE: usize = 128;
+
 /// Migrates legacy little-endian historical mapping updates to big-endian keys.
 ///
-/// Each legacy key is migrated atomically so an interrupted migration can safely resume at startup.
+/// Each batch is migrated atomically so an interrupted migration can safely resume at startup.
 #[cfg(feature = "history")]
 pub(crate) fn migrate_legacy_mapping_updates<N: Network, P: FinalizeStorage<N>>(storage: &P) -> Result<()> {
-    let legacy_entries = storage
-        .mapping_update_heights_map()
-        .iter_confirmed()
-        .map(|(key, heights)| (key.into_owned(), heights.into_owned()))
-        .collect::<Vec<_>>();
+    loop {
+        let legacy_entries = storage
+            .mapping_update_heights_map()
+            .iter_confirmed()
+            .take(MIGRATION_BATCH_SIZE)
+            .map(|(key, heights)| (key.into_owned(), heights.into_owned()))
+            .collect::<Vec<_>>();
 
-    for ((program_id, mapping_name, mapping_key), heights) in legacy_entries {
+        if legacy_entries.is_empty() {
+            return Ok(());
+        }
+
         atomic_batch_scope!(storage, {
-            for height in heights {
-                let legacy_key = (program_id, mapping_name, mapping_key.clone(), height.to_le_bytes());
-                let value = storage
-                    .mapping_update_map()
-                    .get_confirmed(&legacy_key)?
-                    .ok_or_else(|| anyhow!("Missing legacy mapping update at height {height}"))?;
+            for ((program_id, mapping_name, mapping_key), heights) in legacy_entries {
+                for height in heights {
+                    let legacy_key = (program_id, mapping_name, mapping_key.clone(), height.to_le_bytes());
+                    let value = storage
+                        .mapping_update_map()
+                        .get_confirmed(&legacy_key)?
+                        .ok_or_else(|| anyhow!("Missing legacy mapping update at height {height}"))?;
 
-                storage.mapping_update_map().insert(
-                    (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes()),
-                    value.into_owned(),
-                )?;
-                storage.mapping_update_map().remove(&legacy_key)?;
+                    storage.mapping_update_map().insert(
+                        (program_id, mapping_name, mapping_key.clone(), height.to_be_bytes()),
+                        value.into_owned(),
+                    )?;
+                    storage.mapping_update_map().remove(&legacy_key)?;
+                }
+                storage.mapping_update_heights_map().remove(&(program_id, mapping_name, mapping_key))?;
             }
-            storage.mapping_update_heights_map().remove(&(program_id, mapping_name, mapping_key))?;
             Ok(())
         })?;
     }
-    Ok(())
 }
 
 /// TODO (howardwu): Remove this.
@@ -2001,5 +2011,29 @@ mod tests {
         let heights =
             finalize_store.get_mapping_update_heights(program_id, mapping_name, key.clone()).unwrap().unwrap();
         assert_eq!(&*heights, &[5, 10]);
+    }
+
+    /// Verifies all legacy entries are migrated when they span multiple batches.
+    #[test]
+    #[cfg(feature = "history")]
+    fn test_migrate_legacy_mapping_updates_in_batches() {
+        let program_id = ProgramID::<CurrentNetwork>::from_str("hello.aleo").unwrap();
+        let mapping_name = Identifier::from_str("account").unwrap();
+        let storage = FinalizeMemory::open(StorageMode::Test(None)).unwrap();
+        let value = Value::from_str("5u64").unwrap();
+
+        for index in 0..=MIGRATION_BATCH_SIZE {
+            let key = Plaintext::from_str(&format!("{index}field")).unwrap();
+            storage
+                .mapping_update_map()
+                .insert((program_id, mapping_name, key.clone(), 5u32.to_le_bytes()), value.clone())
+                .unwrap();
+            storage.mapping_update_heights_map().insert((program_id, mapping_name, key), vec![5]).unwrap();
+        }
+
+        migrate_legacy_mapping_updates(&storage).unwrap();
+
+        assert_eq!(storage.mapping_update_heights_map().iter_confirmed().count(), 0);
+        assert_eq!(storage.mapping_update_map().iter_confirmed().count(), MIGRATION_BATCH_SIZE + 1);
     }
 }
