@@ -24,7 +24,7 @@ fn fund_deployer_keys(
     count: usize,
     rng: &mut TestRng,
 ) -> Vec<PrivateKey<CurrentNetwork>> {
-    let funds_per_deployer: usize = 4_000_000_000_000;
+    let funds_per_deployer: usize = 4_000_000_000;
 
     let mut deployer_keys = Vec::with_capacity(count);
 
@@ -61,7 +61,7 @@ fn function_program_from_multiplier(multiplier: usize, name_prefix: &str, suffix
     program {name_prefix}_fun_{suffix}.aleo;
 
     function fun:
-        input r0 as [field; 32u32].public;
+        input r0 as [field; 2u32].public;
 "
     );
 
@@ -95,7 +95,7 @@ fn record_program_from_multiplier(multiplier: usize, name_prefix: &str, suffix: 
             r"
             record rec_{name_prefix}_{j}_:
                 owner as address.private;
-                data as [u128; 32u32].public;
+                data as field.public;
         "
         );
     }
@@ -142,42 +142,42 @@ fn test_blockwide_synthesis_limit() {
     // - as: for each deployment (in the same order as above), whether it is expected to be aborted
     //
     // For reference, these are the function- and record-program densities for a few selected multipliers:
-    //          function    record
-    // - 1:        193_174     308_194
-    // - 2:        459_436     559_165
-    // - 4:        991_960   1_061_107
-    // - 8:      2_057_008   2_064_991
-    // - 16:     4_187_104   4_071_763
-    // - 32:     8_447_296   8_084_643
-    // - 64:    16_967_680  16_110_403
+    //          function     record
+    // - 1:       69_418    171_395
+    // - 2:       84_631    285_567
+    // - 4:      115_057    513_911
+    // - 8:      175_909    970_287
+    // - 16:     297_613  1_882_985
+    // - 32:     541_021  3_708_137
+    // - 64:   1_027_837  7_358_441
     let cases = vec![
-        // Synthesis limit = 14_999_999, densities: [4_187_104, 4_187_104, 4_187_104], total 12_561_312 below limit
-        (2 * current_max_certificates as u64, vec![(16, true); 3], vec![false; 3]),
-        // Synthesis limit = 14_999_999, densities: [4_187_104, 4_187_104, 4_187_104, 4_187_104], the last one goes over the limit
-        (2 * current_max_certificates as u64, vec![(16, true); 4], vec![false, false, false, true]),
-        // Synthesis limit = 17_956_730, densities: [16_967_680]
-        ((2.4 * current_max_certificates) as u64, vec![(64, true)], vec![false; 1]),
-        // Synthesis limit = 17_956_730, densities: [8_447_296, 8_447_296, 8_447_296], the third one goes over the limit
-        ((2.4 * current_max_certificates) as u64, vec![(32, true); 3], vec![false, false, true]),
-        // Synthesis limit = 17_956_730, densities: [8_084_643, 8_084_643, 8_084_643], the third one goes over the limit
-        ((2.4 * current_max_certificates) as u64, vec![(32, false); 3], vec![false, false, true]),
-        // Synthesis limit = 24_735_576, densities: [8_084_643, 8_084_643, 8_084_643]
-        ((3.3 * current_max_certificates) as u64, vec![(32, false); 3], vec![false, false, false]),
-        // Synthesis limit = 29_999_999, densities: [8_447_296, 8_447_296, 8_447_296], the third one now fits thanks to the increased limit
-        (4 * current_max_certificates as u64, vec![(32, true); 3], vec![false, false, false]),
-        // Synthesis limit = 16_802_884, densities: [4_187_104, 8_447_296, 4_187_104, 2_057_008, 4_187_104, 2_057_008],
+        // Synthesis limit = 1_081_730, densities: [297_613, 297_613, 297_613], total 892_839 below limit
+        ((0.15 * current_max_certificates) as u64, vec![(16, true); 3], vec![false; 3]),
+        // Synthesis limit = 1_081_730, densities: [297_613, 297_613, 297_613, 297_613], the last one goes over the limit
+        ((0.15 * current_max_certificates) as u64, vec![(16, true); 4], vec![false, false, false, true]),
+        // Synthesis limit = 1_442_307, densities: [1_027_837]
+        ((0.2 * current_max_certificates) as u64, vec![(64, true)], vec![false; 1]),
+        // Synthesis limit = 1_442_307, densities: [541_021, 541_021, 541_021], the third one goes over the limit
+        ((0.2 * current_max_certificates) as u64, vec![(32, true); 3], vec![false, false, true]),
+        // Synthesis limit = 1_442_307, densities: [513_911, 513_911, 513_911], the third one goes over the limit
+        ((0.2 * current_max_certificates) as u64, vec![(4, false); 3], vec![false, false, true]),
+        // Synthesis limit = 11_250_000, densities: [3_708_137, 3_708_137, 3_708_137]
+        ((1.5 * current_max_certificates) as u64, vec![(32, false); 3], vec![false, false, false]),
+        // Synthesis limit = 1_874_999, densities: [541_021, 541_021, 541_021], the third one now fits thanks to the increased limit
+        ((0.25 * current_max_certificates) as u64, vec![(32, true); 3], vec![false, false, false]),
+        // Synthesis limit = 1_081_730, densities: [297_613, 541_021, 297_613, 84_631, 297_613, 84_631],
         // the third and fifth go over the limit, fourth and sixth still fit
         (
-            (2.245 * current_max_certificates) as u64,
-            vec![(16, true), (32, true), (16, true), (8, true), (16, true), (8, true)],
+            (0.15 * current_max_certificates) as u64,
+            vec![(16, true), (32, true), (16, true), (2, true), (16, true), (2, true)],
             vec![false, false, true, false, true, false],
         ),
         // Similar to above, but we mix function- and record-heavy programs
-        // Synthesis limit = 16_802_884, densities: [4_187_104, 8_084_643, 2_064_991, 4_187_104, 2_064_991, 4_071_763, 2_057_008],
-        // the third and fifth go over the limit, fourth and sixth still fit
+        // Synthesis limit = 1_225_961, densities: [297_613, 513_911, 171_395, 297_613, 171_395, 285_567],
+        // the fourth and sixth go over the limit, the fifth still fits
         (
-            (2.245 * current_max_certificates) as u64,
-            vec![(16, true), (32, false), (8, false), (16, true), (8, false), (16, false)],
+            (0.17 * current_max_certificates) as u64,
+            vec![(16, true), (4, false), (1, false), (16, true), (1, false), (2, false)],
             vec![false, false, false, true, false, true],
         ),
     ];
