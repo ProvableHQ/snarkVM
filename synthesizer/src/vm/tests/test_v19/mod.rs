@@ -13,26 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests for block-wide synthesis limits.
-mod blockwide_synthesis_limit;
+// Tests that the translation-marked variants of Input and Output are checked correctly.
+mod translated_type_checks;
+
+// Tests on the resolution of dynamic call targets involving closures. The relevant changes are not
+// ConsensusVersion::V19-gated, but they were introduced at that point in time.
+mod closure_dynamic_targets;
 
 use super::*;
 
-use std::{collections::HashSet, sync::Arc};
-
-use crate::vm::test_helpers::*;
-
-use console::{
-    account::{Address, PrivateKey},
-    network::ConsensusVersion,
-    prelude::FromStr,
-    program::Value,
-};
-
-use snarkvm_ledger_block::{Deployment, Solutions, Transaction};
-use snarkvm_ledger_narwhal_subdag::test_helpers::subdag_with_cert_count;
-use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
-use snarkvm_synthesizer_snark::VerifyingKey;
-use snarkvm_utilities::{TestRng, try_vm_runtime};
-
 use super::test_v14::add_and_test_with_costs;
+use crate::vm::test_helpers::*;

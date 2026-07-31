@@ -53,24 +53,25 @@ fn test_conditional_dynamic_call_target_deployment() {
 
     let process = Process::<CurrentNetwork>::load().unwrap();
 
-    // About half of the calls to process.deploy should succeed. About half of those should be
-    // accepted by process.verify_deployment, but the outcome for each fixed deployment should be
-    // the same across all calls to verify_deployment.
+    // About half of the calls to process.deploy should succeed. Among succeeded ones, about half
+    // should be accepted by process.verify_deployment, but the outcome for each fixed deployment
+    // should be the same across all calls to verify_deployment.
     for i in 0..N_EXPERIMENTS {
         let deployment_attempt = process.deploy::<CurrentAleo, _>(&parse_program(i), rng);
 
         match deployment_attempt {
             Ok(deployment) => {
+                // TODO (Antonio) remove
                 println!(" - Deployment computation {i} succeeded with ID {}", deployment.to_deployment_id().unwrap());
 
                 // TODO (Antonio) V19
                 // Ensure that different runs of verify_deployment agree on the result - even if it is a rejection.
                 let verification_successful =
-                    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V18, &deployment, rng).is_ok();
+                    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V19, &deployment, rng).is_ok();
                 for _ in 1..N_EXPERIMENTS {
                     assert_eq!(
                         verification_successful,
-                        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V18, &deployment, rng).is_ok(),
+                        process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V19, &deployment, rng).is_ok(),
                         "Verifier disagreement during deployment verification",
                     );
                 }
