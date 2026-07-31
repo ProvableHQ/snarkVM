@@ -61,7 +61,7 @@ pub(crate) type HeightBytes = [u8; 4];
 
 /// The number of legacy mapping keys migrated in a single atomic batch.
 #[cfg(feature = "history")]
-const MIGRATION_BATCH_SIZE: usize = 1024;
+const MIGRATION_BATCH_SIZE: usize = 2048;
 
 /// Migrates legacy little-endian historical mapping updates to big-endian keys.
 ///
