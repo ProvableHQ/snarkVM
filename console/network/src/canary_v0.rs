@@ -651,6 +651,14 @@ impl Network for CanaryV0 {
         MerkleTree::new(&*CANARY_BHP_1024, &*CANARY_BHP_512, leaves)
     }
 
+    /// Recreates a Merkle tree with a BHP leaf hasher of 1024-bits and a BHP path hasher of
+    /// 512-bits from the given state, e.g. one that was previously cached on disk.
+    fn merkle_tree_bhp_from_state<const DEPTH: u8>(
+        state: MerkleTreeState<'_, Self>,
+    ) -> Result<BHPMerkleTree<Self, DEPTH>> {
+        MerkleTree::from_state(&*CANARY_BHP_1024, &*CANARY_BHP_512, state)
+    }
+
     /// Returns a Merkle tree with a Poseidon leaf hasher with input rate of 4 and a Poseidon path hasher with input rate of 2.
     fn merkle_tree_psd<const DEPTH: u8>(leaves: &[Vec<Field<Self>>]) -> Result<PoseidonMerkleTree<Self, DEPTH>> {
         MerkleTree::new(&*CANARY_POSEIDON_4, &*CANARY_POSEIDON_2, leaves)
