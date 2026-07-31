@@ -139,6 +139,13 @@ pub trait MapRead<
         Q: PartialEq + Eq + Hash + Serialize + ?Sized;
 
     ///
+    /// Returns the values for the given keys from the map, in the same order as the keys.
+    ///
+    fn get_many_confirmed(&'a self, keys: &[K]) -> Result<Vec<Option<V>>> {
+        keys.iter().map(|key| self.get_confirmed(key).map(|value| value.map(Cow::into_owned))).collect()
+    }
+
+    ///
     /// Returns the current value for the given key if it is scheduled
     /// to be inserted as part of an atomic batch.
     ///
