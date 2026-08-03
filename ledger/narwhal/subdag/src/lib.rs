@@ -215,41 +215,80 @@ impl<N: Network> Subdag<N> {
         self.values().flatten()
     }
 
-    /// Returns the block spend limit for this subdag at `block_height`.
+    /// Returns the number of certificates in this subdag.
     #[inline]
     #[allow(clippy::cast_possible_truncation)]
-    pub fn spend_limit(&self, block_height: u32) -> Option<u64> {
+    pub fn certificate_count(&self) -> u64 {
+        self.values().map(|certificates| certificates.len() as u64).sum()
+    }
+
+    /// Returns the maximum number of certificates in a maximally dense subdag at `block_height`.
+    ///
+    /// This is `MAX_ROUNDS * MAX_CERTIFICATES(block_height)`, matching the bound checked in
+    /// `test_max_certificates`.
+    #[inline]
+    pub fn max_certificates(block_height: u32) -> u64 {
+        let max_certificates_per_round = consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap() as u64;
+        Self::MAX_ROUNDS.saturating_mul(max_certificates_per_round)
+    }
+
+    /// Returns the block spend limit for `certificate_count` certificates at `block_height`.
+    #[inline]
+    pub fn spend_limit_from_certificate_count(block_height: u32, certificate_count: u64) -> Option<u64> {
         if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap() {
-            // Compute the number of certificates in the subdag.
-            let subdag_certificates_count = self.values().map(|certificates| certificates.len() as u64).sum::<u64>();
-            // Compute the batch spend limit.
-            let batch_spend_limit = BatchHeader::<N>::batch_spend_limit(block_height);
-            // For each certificate in the subdag, we can spend up to the batch spend limit.
-            Some(subdag_certificates_count.saturating_mul(batch_spend_limit))
+            // For each certificate, we can spend up to the batch spend limit.
+            Some(certificate_count.saturating_mul(BatchHeader::<N>::batch_spend_limit(block_height)))
         } else {
             None
         }
     }
 
-    /// Returns the synthesis limit for this subdag at `block_height`.
-    // Note: This limit refers to the total number of non-zero entries across all circuits in all deployments in the subdag.
+    /// Returns the synthesis limit for `certificate_count` certificates at `block_height`.
+    ///
+    /// Note: This limit refers to the total number of non-zero entries across all circuits in all
+    /// deployments in the subdag.
     #[inline]
     #[allow(clippy::cast_possible_truncation)]
-    pub fn synthesis_limit(&self, block_height: u32) -> Option<u64> {
+    pub fn synthesis_limit_from_certificate_count(block_height: u32, certificate_count: u64) -> Option<u64> {
         if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap() {
             // One full round of consensus has a synthesis budget of 5 seconds.
             let synthesis_per_second_runtime = 5_f64 * N::SYNTHESIS_PER_SECOND_OF_RUNTIME as f64;
             // A certificate therefore has a synthesis budget of 5 seconds / MAX_CERTIFICATES.
             let synthesis_per_certificate = synthesis_per_second_runtime
                 / consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap() as f64;
-            // Compute the number of certificates in the subdag.
-            let subdag_certificates_count =
-                self.values().map(|certificates| certificates.len() as u64).sum::<u64>() as f64;
             // The synthesis limit is the number of certificates times the synthesis budget per certificate.
-            Some((synthesis_per_certificate * subdag_certificates_count) as u64)
+            Some((synthesis_per_certificate * certificate_count as f64) as u64)
         } else {
             None
         }
+    }
+
+    /// Returns the block spend limit for this subdag at `block_height`.
+    #[inline]
+    pub fn spend_limit(&self, block_height: u32) -> Option<u64> {
+        Self::spend_limit_from_certificate_count(block_height, self.certificate_count())
+    }
+
+    /// Returns the synthesis limit for this subdag at `block_height`.
+    #[inline]
+    pub fn synthesis_limit(&self, block_height: u32) -> Option<u64> {
+        Self::synthesis_limit_from_certificate_count(block_height, self.certificate_count())
+    }
+
+    /// Returns the block spend limit for a maximally dense subdag at `block_height`.
+    ///
+    /// Used for beacon blocks, which have no subdag but must still enforce block-wide limits.
+    #[inline]
+    pub fn max_spend_limit(block_height: u32) -> Option<u64> {
+        Self::spend_limit_from_certificate_count(block_height, Self::max_certificates(block_height))
+    }
+
+    /// Returns the synthesis limit for a maximally dense subdag at `block_height`.
+    ///
+    /// Used for beacon blocks, which have no subdag but must still enforce block-wide limits.
+    #[inline]
+    pub fn max_synthesis_limit(block_height: u32) -> Option<u64> {
+        Self::synthesis_limit_from_certificate_count(block_height, Self::max_certificates(block_height))
     }
 
     /// Returns the leader certificate.
@@ -601,6 +640,58 @@ mod tests {
             let limit = subdag_with_cert_count(n, &mut rng).spend_limit(v16_height).unwrap();
             assert!(limit >= previous, "spend_limit must not decrease: n={n}, limit={limit}, previous={previous}");
             previous = limit;
+        }
+    }
+
+    /// Beacon max limits must equal the limits of a subdag with `max_certificates` certificates.
+    #[test]
+    fn test_max_limits_equivalent_to_maximally_dense_subdag() {
+        let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
+        let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
+        let mut rng = TestRng::default();
+
+        for height in [v16_height, v18_height, v18_height.saturating_add(1), u32::MAX] {
+            let max_certs = Subdag::<CurrentNetwork>::max_certificates(height);
+
+            // Equivalence: max_* is defined as the limit for a subdag with exactly max_certificates.
+            assert_eq!(
+                Subdag::<CurrentNetwork>::max_spend_limit(height),
+                Subdag::<CurrentNetwork>::spend_limit_from_certificate_count(height, max_certs),
+                "max_spend_limit must match a maximally dense subdag at height {height}"
+            );
+            assert_eq!(
+                Subdag::<CurrentNetwork>::max_synthesis_limit(height),
+                Subdag::<CurrentNetwork>::synthesis_limit_from_certificate_count(height, max_certs),
+                "max_synthesis_limit must match a maximally dense subdag at height {height}"
+            );
+
+            // Concrete subdags must use the same certificate-count formulas.
+            for n in [0usize, 1, 7, 16] {
+                let subdag = subdag_with_cert_count(n, &mut rng);
+                assert_eq!(subdag.certificate_count(), n as u64);
+                assert_eq!(
+                    subdag.spend_limit(height),
+                    Subdag::<CurrentNetwork>::spend_limit_from_certificate_count(height, n as u64)
+                );
+                assert_eq!(
+                    subdag.synthesis_limit(height),
+                    Subdag::<CurrentNetwork>::synthesis_limit_from_certificate_count(height, n as u64)
+                );
+            }
+
+            // Linearity of spend_limit: scaling certificate count scales the limit.
+            if height >= v16_height {
+                let n = 8u64;
+                let unit_limit = Subdag::<CurrentNetwork>::spend_limit_from_certificate_count(height, 1).unwrap();
+                assert_eq!(
+                    Subdag::<CurrentNetwork>::max_spend_limit(height),
+                    Some(unit_limit.saturating_mul(max_certs)),
+                );
+                assert_eq!(
+                    Subdag::<CurrentNetwork>::spend_limit_from_certificate_count(height, n),
+                    Some(unit_limit.saturating_mul(n)),
+                );
+            }
         }
     }
 }

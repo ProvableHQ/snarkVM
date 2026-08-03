@@ -115,6 +115,28 @@ impl<N: Network> Authority<N> {
             Self::Quorum(subdag) => subdag.leader_address(),
         }
     }
+
+    /// Returns the block spend limit for this authority at `block_height`.
+    ///
+    /// Quorum authorities use the subdag certificate count. Beacon authorities use the limit of a
+    /// maximally dense subdag, so block-wide spend limits are enforced on trusted/dev chains too.
+    pub fn spend_limit(&self, block_height: u32) -> Option<u64> {
+        match self {
+            Self::Quorum(subdag) => subdag.spend_limit(block_height),
+            Self::Beacon(_) => Subdag::<N>::max_spend_limit(block_height),
+        }
+    }
+
+    /// Returns the block synthesis limit for this authority at `block_height`.
+    ///
+    /// Quorum authorities use the subdag certificate count. Beacon authorities use the limit of a
+    /// maximally dense subdag, so block-wide synthesis limits are enforced on trusted/dev chains too.
+    pub fn synthesis_limit(&self, block_height: u32) -> Option<u64> {
+        match self {
+            Self::Quorum(subdag) => subdag.synthesis_limit(block_height),
+            Self::Beacon(_) => Subdag::<N>::max_synthesis_limit(block_height),
+        }
+    }
 }
 
 #[cfg(any(test, feature = "test-helpers"))]

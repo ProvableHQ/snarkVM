@@ -44,7 +44,6 @@ use console::{
     },
     types::{Field, Group, U8, U64},
 };
-use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
@@ -325,11 +324,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Match the consensus path's gating: the timestamp is only included from V12 onward.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
-        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
-            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
-        } else {
-            (None, None)
-        };
+        // Beacon authorities use the maximally dense subdag limits.
+        let (block_spend_limit, block_synthesis_limit) =
+            (block.authority().spend_limit(block.height()), block.authority().synthesis_limit(block.height()));
         FinalizeGlobalState::new::<N>(
             block.round(),
             block.height(),
@@ -613,11 +610,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
         // Determine the block spend and synthesis limits.
-        let (block_spend_limit, block_synthesis_limit) = if let Authority::Quorum(subdag) = block.authority() {
-            (subdag.spend_limit(block.height()), subdag.synthesis_limit(block.height()))
-        } else {
-            (None, None)
-        };
+        // Beacon authorities use the maximally dense subdag limits.
+        let (block_spend_limit, block_synthesis_limit) =
+            (block.authority().spend_limit(block.height()), block.authority().synthesis_limit(block.height()));
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
