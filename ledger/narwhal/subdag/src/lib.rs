@@ -224,12 +224,14 @@ impl<N: Network> Subdag<N> {
 
     /// Returns a lower-bound certificate count for a subdag at `block_height`.
     ///
-    /// This is 66% of two rounds of certificates:
-    /// `(2 * MAX_CERTIFICATES(block_height) * 66) / 100`.
+    /// For `N = MAX_CERTIFICATES(block_height)` written as `N = 3f + 1`, this is the integer
+    /// `2 * (f + 1)`. In general (including `N = 3f + 1 + k` with `0 <= k < 3`), this is two
+    /// rounds of the availability threshold: `2 * ((N + 2) / 3)`.
     #[inline]
     pub fn min_certificates(block_height: u32) -> u64 {
-        let max_certificates_per_round = consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap() as u64;
-        max_certificates_per_round.saturating_mul(2).saturating_mul(66).saturating_div(100)
+        let n = consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap() as u64;
+        // `(N + 2) / 3 = f + 1` when `N = 3f + 1 + k` with `0 <= k < 3`.
+        n.saturating_add(2).saturating_div(3).saturating_mul(2)
     }
 
     /// Returns the block spend limit for `certificate_count` certificates at `block_height`.
@@ -652,13 +654,14 @@ mod tests {
 
         for height in [v16_height, v18_height, v18_height.saturating_add(1), u32::MAX] {
             let min_certs = Subdag::<CurrentNetwork>::min_certificates(height);
-            let max_certificates_per_round =
-                consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, height).unwrap() as u64;
-            assert_eq!(
-                min_certs,
-                max_certificates_per_round.saturating_mul(2).saturating_mul(66).saturating_div(100),
-                "min_certificates must be 66% of two rounds at height {height}"
-            );
+            let n = consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, height).unwrap() as u64;
+            // When `N = 3f + 1`, `(N + 2) / 3 = f + 1`, so the result is exactly `2 * (f + 1)`.
+            let expected = n.saturating_add(2).saturating_div(3).saturating_mul(2);
+            assert_eq!(min_certs, expected, "min_certificates must be 2*((N+2)/3) at height {height}");
+            if n % 3 == 1 {
+                let f = n.saturating_sub(1) / 3;
+                assert_eq!(min_certs, 2 * (f + 1), "min_certificates must equal 2*(f+1) when N=3f+1");
+            }
 
             // Equivalence: min_* is defined as the limit for a subdag with exactly min_certificates.
             assert_eq!(
