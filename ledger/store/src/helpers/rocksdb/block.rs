@@ -18,7 +18,7 @@ use crate::{
     ConfirmedTxType,
     TransactionStore,
     TransitionStore,
-    block::block_tree_cache_path,
+    block::{BLOCK_TREE_CACHE_PREFIX, block_tree_cache_path},
     helpers::{
         rocksdb::{
             BlockMap,
@@ -251,14 +251,26 @@ impl<N: Network> BlockStorage<N> for BlockDB<N> {
             bail!("Failed to determine the block tree cache path");
         };
 
-        if let Ok(serialized_tree) = fs::read(&path) {
-            debug!("Loading the cached block tree from {}", path.display());
+        if let Ok(cached) = fs::read(&path) {
+            let ret = match cached.strip_prefix(BLOCK_TREE_CACHE_PREFIX) {
+                Some(serialized_state) => {
+                    debug!("Loading the cached block tree from {}", path.display());
 
-            // Deserialize a ready block tree.
-            let ret = bincode::deserialize(&serialized_tree).or_else(|e| {
-                tracing::error!("Failed to deserialize the block tree ({e}), constructing from scratch");
-                construct_from_scratch(self)
-            });
+                    // Deserialize the contents of the block tree, and recreate it from them.
+                    bincode::deserialize(serialized_state)
+                        .map_err(anyhow::Error::from)
+                        .and_then(N::merkle_tree_bhp_from_state)
+                        .or_else(|e| {
+                            tracing::error!("Failed to load the cached block tree ({e}), constructing from scratch");
+                            construct_from_scratch(self)
+                        })
+                }
+                // The cache was written by a version using a different format; discard it.
+                None => {
+                    debug!("Discarding the outdated block tree cache at {}", path.display());
+                    construct_from_scratch(self)
+                }
+            };
 
             // Ensure that an old cached tree is not reused.
             let _ = fs::remove_file(path);

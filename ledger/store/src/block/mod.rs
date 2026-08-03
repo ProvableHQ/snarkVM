@@ -112,6 +112,12 @@ fn to_confirmed_transaction<N: Network>(
     }
 }
 
+/// The prefix of the block tree cache file, used to recognize its format.
+///
+/// Bump the trailing digits whenever the cached payload changes, so that a cache
+/// file written by an older version is discarded instead of failing to decode.
+pub(crate) const BLOCK_TREE_CACHE_PREFIX: &[u8; 12] = b"aleo.tree.01";
+
 pub(crate) fn block_tree_cache_path<N: Network, B: BlockStorage<N>>(storage: &B) -> Option<std::path::PathBuf> {
     #[cfg(feature = "rocks")]
     {
@@ -1269,7 +1275,10 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         // the number of syscalls involved with disk writes. 1MiB should provide
         // a good balance between the CPU cache and maximum disk throughput.
         let mut writer = BufWriter::with_capacity(1024 * 1024, file);
-        bincode::serialize_into(&mut writer, &&*self.tree.read())?;
+        writer.write_all(BLOCK_TREE_CACHE_PREFIX)?;
+        // Note: only the contents of the tree are cached, not its hashers; the latter are
+        // deterministic, and recreating them is far cheaper than deserializing them.
+        bincode::serialize_into(&mut writer, &self.tree.read().to_state())?;
         writer.flush()?;
         // TODO(ljedrz): this operation can already take ~2.5s, so we may want
         // to perform chunking and parallel serialization. This may be useful

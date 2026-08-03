@@ -44,6 +44,9 @@ workspace = true
 [dev-dependencies.snarkvm-console-network]
 path = "../network"
 
+[dev-dependencies.bincode]
+workspace = true
+
 [dev-dependencies.criterion]
 workspace = true
 

@@ -3429,6 +3429,7 @@ name = "snarkvm-console-collections"
 version = "4.9.0"
 dependencies = [
  "aleo-std",
+ "bincode",
  "criterion",
  "indexmap 2.14.0",
  "locktick",
