@@ -123,7 +123,7 @@ impl<N: Network> Authority<N> {
     pub fn spend_limit(&self, block_height: u32) -> Option<u64> {
         match self {
             Self::Quorum(subdag) => subdag.spend_limit(block_height),
-            Self::Beacon(_) => Subdag::<N>::max_spend_limit(block_height),
+            Self::Beacon(_) => Subdag::<N>::min_spend_limit(block_height),
         }
     }
 
@@ -134,7 +134,7 @@ impl<N: Network> Authority<N> {
     pub fn synthesis_limit(&self, block_height: u32) -> Option<u64> {
         match self {
             Self::Quorum(subdag) => subdag.synthesis_limit(block_height),
-            Self::Beacon(_) => Subdag::<N>::max_synthesis_limit(block_height),
+            Self::Beacon(_) => Subdag::<N>::min_synthesis_limit(block_height),
         }
     }
 }

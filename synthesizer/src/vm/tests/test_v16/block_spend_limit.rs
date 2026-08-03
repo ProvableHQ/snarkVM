@@ -21,7 +21,7 @@ use super::*;
 /// `Authority::spend_limit(height)` (see `VM::add_next_block_inner`).
 ///
 /// `Subdag::spend_limit` is `total_certificate_count * BatchHeader::batch_spend_limit(height)`.
-/// Beacon blocks use `Subdag::max_spend_limit` (`min_certificates` certificate count).
+/// Beacon blocks use `Subdag::min_spend_limit` (`min_certificates` certificate count).
 /// Using a limit of `compute_spend` for one `credits.aleo/transfer_public` execution models a
 /// quorum block whose DAG-derived ceiling equals a single such transaction; a second identical
 /// execution must then be aborted during speculation.

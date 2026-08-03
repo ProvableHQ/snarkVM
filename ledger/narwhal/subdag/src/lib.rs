@@ -279,7 +279,7 @@ impl<N: Network> Subdag<N> {
     ///
     /// Used for beacon blocks, which have no subdag but must still enforce block-wide limits.
     #[inline]
-    pub fn max_spend_limit(block_height: u32) -> Option<u64> {
+    pub fn min_spend_limit(block_height: u32) -> Option<u64> {
         Self::spend_limit_from_certificate_count(block_height, Self::min_certificates(block_height))
     }
 
@@ -287,7 +287,7 @@ impl<N: Network> Subdag<N> {
     ///
     /// Used for beacon blocks, which have no subdag but must still enforce block-wide limits.
     #[inline]
-    pub fn max_synthesis_limit(block_height: u32) -> Option<u64> {
+    pub fn min_synthesis_limit(block_height: u32) -> Option<u64> {
         Self::synthesis_limit_from_certificate_count(block_height, Self::min_certificates(block_height))
     }
 
@@ -643,9 +643,9 @@ mod tests {
         }
     }
 
-    /// Beacon max limits must equal the limits of a subdag with `min_certificates` certificates.
+    /// Beacon min limits must equal the limits of a subdag with `min_certificates` certificates.
     #[test]
-    fn test_max_limits_equivalent_to_min_certificates_subdag() {
+    fn test_min_limits_equivalent_to_min_certificates_subdag() {
         let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
         let v18_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V18).unwrap();
         let mut rng = TestRng::default();
@@ -660,16 +660,16 @@ mod tests {
                 "min_certificates must be 66% of two rounds at height {height}"
             );
 
-            // Equivalence: max_* is defined as the limit for a subdag with exactly min_certificates.
+            // Equivalence: min_* is defined as the limit for a subdag with exactly min_certificates.
             assert_eq!(
-                Subdag::<CurrentNetwork>::max_spend_limit(height),
+                Subdag::<CurrentNetwork>::min_spend_limit(height),
                 Subdag::<CurrentNetwork>::spend_limit_from_certificate_count(height, min_certs),
-                "max_spend_limit must match a min_certificates subdag at height {height}"
+                "min_spend_limit must match a min_certificates subdag at height {height}"
             );
             assert_eq!(
-                Subdag::<CurrentNetwork>::max_synthesis_limit(height),
+                Subdag::<CurrentNetwork>::min_synthesis_limit(height),
                 Subdag::<CurrentNetwork>::synthesis_limit_from_certificate_count(height, min_certs),
-                "max_synthesis_limit must match a min_certificates subdag at height {height}"
+                "min_synthesis_limit must match a min_certificates subdag at height {height}"
             );
 
             // Concrete subdags must use the same certificate-count formulas.
@@ -691,7 +691,7 @@ mod tests {
                 let n = 8u64;
                 let unit_limit = Subdag::<CurrentNetwork>::spend_limit_from_certificate_count(height, 1).unwrap();
                 assert_eq!(
-                    Subdag::<CurrentNetwork>::max_spend_limit(height),
+                    Subdag::<CurrentNetwork>::min_spend_limit(height),
                     Some(unit_limit.saturating_mul(min_certs)),
                 );
                 assert_eq!(
