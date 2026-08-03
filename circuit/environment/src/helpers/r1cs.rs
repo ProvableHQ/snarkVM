@@ -294,9 +294,10 @@ impl<F: PrimeField> EjectedR1cs<F> {
     }
 
     /// Resets the non-zero limits.
-    pub fn reset_nonzero_limit(&mut self) {
-        // TODO (Antonio) correct value?
-        self.non_zero_limit = self.non_zero_limit.map(|_| (0, 0, 0));
+    // This is only used in ConsensusVersion::V18, where density limits were introduced and before
+    // re-injection limit behaviour was corrected in V19.
+    pub fn remove_nonzero_limit(&mut self) {
+        self.non_zero_limit = None;
     }
 
     /// Returns the preserved non-zero limit.

@@ -298,7 +298,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             let mut r1cs = A::eject_r1cs_and_reset();
 
             if matches!(registers.call_stack_ref(), CallStack::CheckDeployment(_, _, _, _, _, Some((_, _, _, true)))) {
-                r1cs.reset_nonzero_limit();
+                r1cs.remove_nonzero_limit();
             }
 
             let (request, response) = {
