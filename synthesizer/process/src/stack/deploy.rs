@@ -217,7 +217,7 @@ impl<N: Network> Stack<N> {
             // If the consensus version is >= V18, set the density limit, accounting for one non-zero entry (with value 1) added to
             // each of A, B and C in order to make the Varuna zerocheck hiding.
             let non_zero_limit = if consensus_version >= ConsensusVersion::V18 {
-                let reset_with_eject = consensus_version >= ConsensusVersion::V19;
+                let reset_with_eject = consensus_version < ConsensusVersion::V19;
 
                 let info = verifying_key.circuit_info;
                 if info.num_non_zero_a >= 1 && info.num_non_zero_b >= 1 && info.num_non_zero_c >= 1 {
