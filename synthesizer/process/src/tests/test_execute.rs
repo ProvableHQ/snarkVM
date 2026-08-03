@@ -3004,7 +3004,7 @@ fn check_deployment_num_constraints(
     inputs: &[Value<CurrentNetwork>],
     constraint_limit: Option<u64>,
     variable_limit: Option<u64>,
-    non_zero_limit: Option<(u64, u64, u64)>,
+    non_zero_limit: Option<(u64, u64, u64, bool)>,
     rng: &mut TestRng,
 ) -> Result<u64> {
     use snarkvm_synthesizer_program::StackTrait;

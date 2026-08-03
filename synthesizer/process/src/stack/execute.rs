@@ -213,7 +213,7 @@ impl<N: Network> Stack<N> {
         if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit, non_zero_limit) = &call_stack {
             A::set_constraint_limit(*constraint_limit);
             A::set_variable_limit(*variable_limit);
-            A::set_non_zero_limit(*non_zero_limit);
+            A::set_non_zero_limit(non_zero_limit.map(|(a, b, c, _)| (a, b, c)));
         }
 
         // Retrieve the next request.

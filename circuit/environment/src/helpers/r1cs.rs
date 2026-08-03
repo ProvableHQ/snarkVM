@@ -293,6 +293,12 @@ impl<F: PrimeField> EjectedR1cs<F> {
         self.constraint_limit
     }
 
+    /// Resets the constraint limit to the preserved value.
+    pub fn reset_nonzero_limit(&mut self) {
+        // TODO (Antonio) correct value?
+        self.non_zero_limit = self.non_zero_limit.map(|_| (0, 0, 0));
+    }
+
     /// Returns the preserved non-zero limit.
     pub const fn non_zero_limit(&self) -> Option<(u64, u64, u64)> {
         self.non_zero_limit
