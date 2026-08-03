@@ -232,7 +232,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
         // Determine the block's spend and synthesis limits.
-        // Beacon authorities use the maximally dense subdag limits.
+        // Beacon authorities use the min_certificates subdag limits.
         let (block_spend_limit, block_synthesis_limit) =
             (block.authority().spend_limit(block.height()), block.authority().synthesis_limit(block.height()));
 

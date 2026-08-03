@@ -413,7 +413,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Determine if the block timestamp should be included.
         let next_block_timestamp =
             (next_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default()).then_some(next_timestamp);
-        // Beacon blocks have no subdag; enforce limits as if for a maximally dense subdag.
+        // Beacon blocks have no subdag; enforce limits as if for a subdag with min_certificates.
         let (block_spend_limit, block_synthesis_limit) = match subdag {
             Some(subdag) => (subdag.spend_limit(next_height), subdag.synthesis_limit(next_height)),
             None => (Subdag::<N>::max_spend_limit(next_height), Subdag::<N>::max_synthesis_limit(next_height)),

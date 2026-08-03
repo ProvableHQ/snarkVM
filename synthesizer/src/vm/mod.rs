@@ -324,7 +324,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Match the consensus path's gating: the timestamp is only included from V12 onward.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
-        // Beacon authorities use the maximally dense subdag limits.
+        // Beacon authorities use the min_certificates subdag limits.
         let (block_spend_limit, block_synthesis_limit) =
             (block.authority().spend_limit(block.height()), block.authority().synthesis_limit(block.height()));
         FinalizeGlobalState::new::<N>(
@@ -610,7 +610,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
         // Determine the block spend and synthesis limits.
-        // Beacon authorities use the maximally dense subdag limits.
+        // Beacon authorities use the min_certificates subdag limits.
         let (block_spend_limit, block_synthesis_limit) =
             (block.authority().spend_limit(block.height()), block.authority().synthesis_limit(block.height()));
         // Construct the finalize state.
