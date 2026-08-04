@@ -43,6 +43,9 @@ fn install_vm_runtime_hook() {
                         .join(" ");
 
                     // Have the message start with "VM safely halted".
+                    // Note that some VM code uses Rayon to execute work in parallel. The Rayon worker threads
+                    // will not have the IN_VM_RUNTIME thread local variable set to true, so if they panic,
+                    // we will get the standard panic message and not the "VM safely handled" one.
                     let msg = trimmed.replacen("panicked", "VM safely halted", 1);
                     eprintln!("{msg}");
                 }
