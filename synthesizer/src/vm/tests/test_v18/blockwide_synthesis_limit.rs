@@ -335,9 +335,9 @@ fn test_vk_num_non_zero_detected() {
             )
             .unwrap();
 
-            // check_transaction uses try_vm_runtime! and replaces the halt panic with a generic message.
+            // check_transaction uses try_vm_runtime and replaces the halt panic with a generic message.
             // We call the latter directly to receive the finer-grained error.
-            let verification_result = try_vm_runtime!(|| {
+            let verification_result = try_vm_runtime(|| {
                 vm.process().verify_deployment::<CurrentAleo, _>(ConsensusVersion::V18, &tampered_deployment, rng)
             });
 
